@@ -10,6 +10,7 @@ import { ReportWorkspaceSection } from "./dashboard/ReportWorkspaceSection";
 import { DashboardCharts } from "./dashboard/DashboardCharts";
 import { DashboardActions } from "./dashboard/DashboardActions";
 import { DashboardRecent } from "./dashboard/DashboardRecent";
+import { EInvoiceReadinessCard } from "@/components/einvoice/EInvoiceReadinessCard";
 
 // Dashboard page shell. State and derived data live in
 // dashboard/useCustomerDashboardModel; each visual section is a component under dashboard/.
@@ -31,6 +32,7 @@ function CustomerDashboard() {
       <DashboardOverview m={m} />
       <DashboardCharts m={m} />
       <DashboardPlanning m={m} />
+      <EInvoiceReadinessCard companyId={m.selectedCompanyId} />
       <DashboardRecent m={m} />
       {/* Reports: one collapsed row; the launcher and workspace open together (CTO 5). */}
       <div className="space-y-4">

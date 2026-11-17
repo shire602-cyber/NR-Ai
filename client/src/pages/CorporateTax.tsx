@@ -30,6 +30,7 @@ import {
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { fiscalYearContaining } from "@/lib/fiscal-year";
 import { formatCurrency } from "@/lib/format";
@@ -1417,6 +1418,29 @@ export default function CorporateTax() {
             </div>
           )}
           <DialogFooter>
+            {viewReturn && (
+              <AskNajmaButton
+                companyId={companyId}
+                topic="corporate_tax"
+                period={`${viewReturn.taxPeriodStart.slice(0, 10)} to ${viewReturn.taxPeriodEnd.slice(0, 10)}`}
+                reference={viewReturn.id.slice(0, 8)}
+                figures={[
+                  {
+                    label: t["pages.totalRevenue"],
+                    value: `AED ${Number(viewReturn.totalRevenue).toFixed(2)}`,
+                  },
+                  {
+                    label: t["pages.taxableIncome"],
+                    value: `AED ${Number(viewReturn.taxableIncome).toFixed(2)}`,
+                  },
+                  {
+                    label: t["pages.taxPayable"],
+                    value: `AED ${Number(viewReturn.taxPayable).toFixed(2)}`,
+                  },
+                ]}
+                testId="button-ask-najma-ct"
+              />
+            )}
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
               <T k="pages.close" />
             </Button>

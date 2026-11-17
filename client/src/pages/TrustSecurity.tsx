@@ -6,11 +6,13 @@ import {
   ArrowRight,
   Clock,
   Database,
+  History,
   FileCheck,
   KeyRound,
   Lock,
   ShieldCheck,
   UserCheck,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/lib/i18n";
@@ -40,6 +42,7 @@ export default function TrustSecurity() {
   const { t } = useTranslation();
   const controls = [
     { key: "access", icon: UserCheck, n: "trustControl1" },
+    { key: "roles", icon: Users, n: "trustRoles" },
     { key: "2fa", icon: KeyRound, n: "trustControl3" },
     { key: "sessions", icon: Lock, n: "trustControl2" },
   ].map(({ key, icon, n }) => ({
@@ -50,6 +53,13 @@ export default function TrustSecurity() {
     testId: `trust-control-${key}`,
   }));
   controls.push(
+    {
+      key: "activity",
+      icon: History,
+      title: t["marketing.trustActivityTitle"],
+      body: t["marketing.trustActivityBody"],
+      testId: "trust-control-activity",
+    },
     {
       key: "audit",
       icon: FileCheck,

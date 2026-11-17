@@ -5,6 +5,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { apiRequest } from "@/lib/queryClient";
 import { VatInputTrnWarnings, type VatIssueLike } from "./VatInputTrnWarnings";
+import { VatTiesToGl } from "@/components/reports/TiesToGlBadge";
+import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 
 export interface VatPreviewBoxes {
   box12TotalDueTax?: number;
@@ -32,6 +34,7 @@ export function VatPeriodPreview({
   const { data, isLoading, isError } = useQuery<{
     boxes?: VatPreviewBoxes;
     issues?: VatIssueLike[];
+    reconciliation?: Parameters<typeof VatTiesToGl>[0]["reconciliation"];
   }>({
     queryKey: ["/api/companies", companyId, "vat", "compute", periodStart, periodEnd],
     queryFn: () =>
@@ -91,6 +94,28 @@ export function VatPeriodPreview({
         </dl>
       )}
       <VatInputTrnWarnings issues={data?.issues} />
+      {!isLoading && !isError && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <VatTiesToGl reconciliation={data?.reconciliation} />
+          <AskNajmaButton
+            companyId={companyId}
+            topic="vat201"
+            period={`${periodStart} to ${periodEnd}`}
+            figures={[
+              {
+                label: t["compliance.vatFilingOutputVat"],
+                value: `AED ${Number(boxes.box12TotalDueTax ?? 0).toFixed(2)}`,
+              },
+              {
+                label: t["compliance.vatFilingInputVat"],
+                value: `AED ${Number(boxes.box13RecoverableTax ?? 0).toFixed(2)}`,
+              },
+              { label: t["compliance.vatPreview.netSoFar"], value: `AED ${net.toFixed(2)}` },
+            ]}
+            testId="button-ask-najma-vat"
+          />
+        </div>
+      )}
       <p className="text-caption text-muted-foreground">{t["compliance.vatPreview.note"]}</p>
     </div>
   );

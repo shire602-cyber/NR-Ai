@@ -170,6 +170,7 @@
   "activityLog.action.invoice.delete": "Invoice deleted",
   "activityLog.action.invoice.einvoice_cancel": "E-invoice cancelled",
   "activityLog.action.invoice.einvoice_resubmit": "E-invoice resubmitted",
+  "activityLog.action.firm.handoff_requested": "Request sent to the accounting firm",
   "activityLog.action.invoice.einvoice_submit": "E-invoice submitted",
   "activityLog.action.invoice.inbound": "Invoice received",
   "activityLog.action.invoice.issued": "Invoice issued",

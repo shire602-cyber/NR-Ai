@@ -1,6 +1,12 @@
 // @ts-expect-error - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
-import { bilingual, pdfLocale, preparePdfDocument } from "./pdf-fonts";
+import {
+  bilingual,
+  isDraftStatus,
+  pdfLocale,
+  preparePdfDocument,
+  stampDraftWatermark,
+} from "./pdf-fonts";
 import { loadCompanyLogo } from "./pdf-logo";
 import type { Quote, QuoteLine, Company } from "../../shared/schema";
 
@@ -20,6 +26,7 @@ export async function generateQuotePDF(
       const doc = new PDFDocument({
         size: "A4",
         margin: 50,
+        bufferPages: true,
         info: {
           Title: `Quotation ${quote.number}`,
           Author: company.name,
@@ -274,6 +281,7 @@ export async function generateQuotePDF(
         );
       }
 
+      if (isDraftStatus(quote.status)) stampDraftWatermark(doc);
       doc.end();
     } catch (err) {
       reject(err);

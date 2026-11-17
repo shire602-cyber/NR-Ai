@@ -100,6 +100,46 @@ export interface EInvoiceDocumentRow {
   reportBy: string | null;
 }
 
+/** Row of GET /api/companies/:id/einvoicing/compliance (invoice-list pills, X6d). */
+export interface EInvoiceCompliancePill {
+  invoiceId: string;
+  reportBy: string | null;
+  overdue: boolean;
+  reportingRequired: boolean;
+  delivery: DeliveryStatus;
+  reporting: ReportingStatus;
+}
+
+/** GET /api/companies/:id/einvoicing/readiness (X6d). */
+export interface EInvoiceReadiness {
+  mandate: {
+    scope: string | null;
+    band: string | null;
+    goLiveDate: string | null;
+    appointAspBy: string | null;
+    daysToGoLive: number | null;
+    mandatory: boolean;
+    source: "override" | "band" | "unset";
+  };
+  transmission: {
+    enabled: boolean;
+    provider: string | null;
+    environment: string | null;
+    reason: "no_provider" | "test_provider" | "legal_entity_not_active" | null;
+  };
+  items: Array<{
+    key: "scope" | "supplier_identity" | "customer_details" | "product_codes" | "provider";
+    status: "done" | "todo";
+    count: number;
+    total: number;
+    samples: string[];
+    rules: string[];
+    fixHref: string;
+  }>;
+  done: number;
+  total: number;
+}
+
 export const DELIVERY_TONE: Record<DeliveryStatus, StatusTone> = {
   draft: "neutral",
   validated: "neutral",

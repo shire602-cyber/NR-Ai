@@ -48,6 +48,7 @@ import { prepareVat201ForExport, vat201ExportFilename } from "@/lib/vat201-expor
 import VAT201Form from "@/components/VAT201Form";
 import { companyAddressLine, vatStaggerLabel } from "@/lib/company-address";
 import VatReturnControls from "@/components/vat/VatReturnControls";
+import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import VatWorkpaperPanel from "@/components/vat/VatWorkpaperPanel";
 import { VatPeriodPreview } from "@/components/vat/VatPeriodPreview";
 import { vatPeriodEnded } from "@/lib/vat-period";
@@ -1541,6 +1542,29 @@ export default function VATFiling() {
             />
           )}
           <DialogFooter>
+            {selectedReturn && (
+              <AskNajmaButton
+                companyId={companyId}
+                topic="vat201"
+                period={`${selectedReturn.periodStart.slice(0, 10)} to ${selectedReturn.periodEnd.slice(0, 10)}`}
+                reference={selectedReturn.id.slice(0, 8)}
+                figures={[
+                  {
+                    label: t["compliance.vatFilingOutputVat"],
+                    value: `AED ${Number(selectedReturn.box12TotalDueTax || 0).toFixed(2)}`,
+                  },
+                  {
+                    label: t["compliance.vatFilingInputVat"],
+                    value: `AED ${Number(selectedReturn.box13RecoverableTax || 0).toFixed(2)}`,
+                  },
+                  {
+                    label: t["launchProof.figureNetPayable"],
+                    value: `AED ${Number(selectedReturn.box14PayableTax || 0).toFixed(2)}`,
+                  },
+                ]}
+                testId="button-ask-najma-vat-return"
+              />
+            )}
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
               {locale === "ar" ? "إغلاق" : "Close"}
             </Button>

@@ -48,6 +48,7 @@ import { registerOnboardingRoutes } from "./routes/onboarding.routes";
 import { registerBackupRoutes } from "./routes/backups.routes";
 import { registerReferralRoutes } from "./routes/referrals.routes";
 import { registerFeedbackRoutes } from "./routes/feedback.routes";
+import { registerNajmaHandoffRoutes } from "./routes/najma-handoff.routes";
 import { registerClientErrorRoutes } from "./routes/client-errors.routes";
 import { registerVATRoutes } from "./routes/vat.routes";
 import { registerVATAutopilotRoutes } from "./routes/vat-autopilot.routes";
@@ -216,6 +217,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerImportRoutes(app);
   registerReferralRoutes(app);
   registerFeedbackRoutes(app);
+  registerNajmaHandoffRoutes(app);
   registerClientErrorRoutes(app);
 
   // ─── UAE Compliance ─────────────────────────────────────

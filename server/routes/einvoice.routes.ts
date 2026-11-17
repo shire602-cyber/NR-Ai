@@ -38,6 +38,8 @@ import {
   upsertEInvoiceDocument,
 } from "../services/einvoice/store";
 import { EINVOICE_TIMELINE, einvoicingScope } from "../services/einvoice/scope";
+import { listCompliancePills } from "../services/einvoice/compliance-pills";
+import { computeEInvoiceReadiness } from "../services/einvoice/readiness";
 import {
   INBOUND_SIGNATURE_HEADER,
   INBOUND_TIMESTAMP_HEADER,
@@ -590,6 +592,31 @@ export function registerEInvoiceRoutes(app: Express) {
           customerName: invoices[i]?.customerName ?? null,
         })),
       });
+    })
+  );
+
+  // X6d: company-level readiness checklist (dashboard card and onboarding).
+  app.get(
+    "/api/companies/:companyId/einvoicing/readiness",
+    authMiddleware,
+    requirePermission("reports.read"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const company = await storage.getCompany(req.params.companyId);
+      if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
+      res.json(await computeEInvoiceReadiness(company));
+    })
+  );
+
+  // X6d: invoice-list compliance pills (report-by date + delivery/reporting state); empty unless
+  // the e-invoicing mandate applies to the company.
+  app.get(
+    "/api/companies/:companyId/einvoicing/compliance",
+    authMiddleware,
+    requirePermission("reports.read"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const company = await storage.getCompany(req.params.companyId);
+      if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
+      res.json(await listCompliancePills(company));
     })
   );
 

@@ -28,6 +28,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Sheet,
@@ -329,6 +331,7 @@ export interface EInvoicePanelProps {
 }
 
 export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoicePanelProps) {
+  const { companyId: handoffCompanyId } = useDefaultCompany();
   const { t, locale } = useTranslation();
   const [historyOpen, setHistoryOpen] = useState(false);
   const status = useEInvoiceStatus(invoiceId);
@@ -639,6 +642,22 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
                   )}
                   {t["einvoicing.resubmit"]}
                 </Button>
+                <AskNajmaButton
+                  companyId={handoffCompanyId}
+                  topic="einvoice"
+                  reference={invoiceId.slice(0, 8)}
+                  figures={[
+                    {
+                      label: t["launchProof.figureErrorCode"],
+                      value: view.rejection.code ?? "",
+                    },
+                    {
+                      label: t["launchProof.figureDeliveryState"],
+                      value: delivery.status,
+                    },
+                  ]}
+                  testId="button-ask-najma-einvoice"
+                />
               </div>
               {!view.rejection.resubmittable && (
                 <p className="mt-2 text-caption text-muted-foreground">

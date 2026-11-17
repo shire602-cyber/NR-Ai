@@ -1992,3 +1992,56 @@
   gap: 0.75rem;
   margin-block-start: 2rem;
 }
+
+/* ── Product screenshots and sample invoice (X6d) ───────────────────────── */
+.mk-screens {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(1.25rem, 0.8rem + 2vw, 2rem);
+  margin-block-start: clamp(2rem, 1.2rem + 3vw, 3.5rem);
+}
+@media (min-width: 800px) {
+  .mk-screens {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.mk-screen {
+  margin: 0;
+}
+.mk-screen img {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-2);
+  background: var(--surface);
+}
+.mk-screen figcaption {
+  margin-block-start: 0.75rem;
+  color: var(--ink-2);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+.mk-sample {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+  margin-block-start: clamp(2rem, 1.2rem + 3vw, 3.5rem);
+  padding: clamp(1.25rem, 0.8rem + 1.6vw, 2rem);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+}
+.mk-sample > svg {
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  color: var(--brand);
+}
+@media (min-width: 800px) {
+  .mk-sample {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 1.5rem;
+  }
+}

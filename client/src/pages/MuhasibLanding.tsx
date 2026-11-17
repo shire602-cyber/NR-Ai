@@ -328,6 +328,76 @@ function Product() {
   );
 }
 
+/** Real screenshots of the product on sample data (X6d), plus the sample invoice PDF. */
+const SCREENS = [
+  {
+    id: "dashboard",
+    titleKey: "marketing.screenDashboardTitle",
+    altKey: "marketing.screenDashboardAlt",
+  },
+  { id: "vat", titleKey: "marketing.screenVatTitle", altKey: "marketing.screenVatAlt" },
+  {
+    id: "invoices",
+    titleKey: "marketing.screenInvoicesTitle",
+    altKey: "marketing.screenInvoicesAlt",
+  },
+  { id: "aging", titleKey: "marketing.screenAgingTitle", altKey: "marketing.screenAgingAlt" },
+] as const;
+
+function ProductScreens() {
+  const { t, locale } = useTranslation();
+  const lang = locale === "ar" ? "ar" : "en";
+  return (
+    <section
+      id="screens"
+      className="mk-section mk-section--sunken"
+      aria-labelledby="mk-screens-title"
+    >
+      <div className="mk-container">
+        <SectionHeading
+          id="mk-screens-title"
+          eyebrow={t["marketing.screensEyebrow"]}
+          title={t["marketing.screensTitle"]}
+          body={t["marketing.screensBody"]}
+        />
+        <div className="mk-screens" data-testid="landing-screenshots">
+          {SCREENS.map((screen) => (
+            <figure key={screen.id} className="mk-screen">
+              <img
+                src={`/product/${screen.id}-${lang}.webp`}
+                alt={t[screen.altKey]}
+                width={1280}
+                height={800}
+                loading="lazy"
+                decoding="async"
+                data-testid={`landing-screenshot-${screen.id}`}
+              />
+              <figcaption>{t[screen.titleKey]}</figcaption>
+            </figure>
+          ))}
+        </div>
+        <div className="mk-sample" data-testid="landing-sample-invoice">
+          <FileText aria-hidden="true" />
+          <div>
+            <h3 className="mk-h3">{t["marketing.sampleInvoiceTitle"]}</h3>
+            <p className="mk-body">{t["marketing.sampleInvoiceBody"]}</p>
+          </div>
+          <Button asChild variant="outline" size="lg">
+            <a
+              href="/samples/muhasib-sample-invoice.pdf"
+              download
+              data-testid="button-sample-invoice"
+            >
+              <FileDown aria-hidden="true" />
+              {t["marketing.sampleInvoiceCta"]}
+            </a>
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Steps() {
   const { t } = useTranslation();
   return (
@@ -477,6 +547,7 @@ export default function MuhasibLanding() {
     >
       <Hero />
       <Product />
+      <ProductScreens />
       <Steps />
       <PricingTeaser />
       <Faq />

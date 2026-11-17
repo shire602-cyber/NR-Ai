@@ -83,6 +83,54 @@ export function reportingFromLegacy(
   return status === "cleared" ? "reported" : "pending";
 }
 
+/**
+ * The two tracks and the report-by deadline of one invoice, derived from its stored e-invoice
+ * document (if any), its legacy status and whether FTA reporting is required. Shared by the
+ * per-invoice status view and the invoice-list compliance pills so both always agree (X6d).
+ */
+export function deriveInvoiceTracks(args: {
+  invoiceDate: Date | string | null | undefined;
+  invoiceStatus: string | null | undefined;
+  legacyStatus: string | null | undefined;
+  doc: {
+    deliveryStatus?: string | null;
+    reportingStatus?: string | null;
+    reportBy?: string | null;
+  } | null;
+  required: boolean;
+  now?: Date;
+}): {
+  delivery: DeliveryStatus;
+  reporting: ReportingStatus;
+  isDraft: boolean;
+  reportBy: string | null;
+  overdue: boolean;
+} {
+  const now = args.now ?? new Date();
+  const legacy = args.legacyStatus ?? "not_generated";
+  const { doc, required } = args;
+  const delivery: DeliveryStatus = isDeliveryStatus(doc?.deliveryStatus)
+    ? doc.deliveryStatus
+    : deliveryFromLegacy(legacy);
+  const storedReporting: ReportingStatus = isReportingStatus(doc?.reportingStatus)
+    ? doc.reportingStatus
+    : reportingFromLegacy(legacy, required);
+  // A "pending" report that is not (yet) required is not a pending obligation.
+  const reporting: ReportingStatus =
+    !required && storedReporting === "pending" ? "not_required" : storedReporting;
+  const isDraft = String(args.invoiceStatus ?? "").toLowerCase() === "draft";
+  // No deadline unless the mandate applies to this company; a draft has no deadline either.
+  const reportBy = required && !isDraft ? (doc?.reportBy ?? reportByDate(args.invoiceDate)) : null;
+  const today = now.toISOString().slice(0, 10);
+  return {
+    delivery,
+    reporting,
+    isDraft,
+    reportBy,
+    overdue: !isDraft && !!reportBy && reporting === "pending" && reportBy < today,
+  };
+}
+
 /** The legacy single status for a pair of tracks. */
 export function legacyFromTracks(
   delivery: DeliveryStatus,
