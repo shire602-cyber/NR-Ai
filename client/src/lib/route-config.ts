@@ -16,6 +16,7 @@ export const customerOnlyRoutes = [
   "/bank-feeds",
   "/payroll",
   "/budgets",
+  "/assistant",
   "/ai",
   "/ai-cfo",
   "/ai-features",

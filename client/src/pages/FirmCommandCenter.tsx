@@ -5,6 +5,10 @@ import type * as React from "react";
  * Executive dashboard for firm owners with key metrics, client health table,
  * alerts feed, staff workload visualization, period comparison, and batch ops.
  */
+import { PracticeNav } from "@/components/firm/PracticeNav";
+import { PracticePlanTab } from "@/pages/firm/PracticePlanTab";
+import { StatCard } from "@/components/ui/stat-card";
+import { chartTheme, ChartTooltipContent, formatAxisCompact } from "@/components/ui/chart-theme";
 import { T } from "@/components/layout/T";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
@@ -13,11 +17,9 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
-  AlertTriangle,
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
-  Bell,
   CheckCircle2,
   DollarSign,
   Mail,
@@ -170,44 +172,35 @@ function severityColor(s: Severity): string {
 
 // ─── Sub-components ─────────────────────────────────────────────────────
 
+/** Spec 2.7: the one KPI tile (StatCard) — no corner icon, no coloured numbers. */
 function MetricCard({
   title,
   value,
   subtitle,
-  icon: Icon,
   trend,
 }: {
   title: string;
   value: React.ReactNode;
   subtitle?: string;
-  icon: typeof TrendingUp;
+  icon?: unknown;
   trend?: { value: number; label: string };
 }) {
-  const isUp = (trend?.value ?? 0) >= 0;
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <Icon className="w-4 h-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-lg font-bold tabular-nums sm:text-2xl">{value}</div>
-        {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
-        {trend && (
-          <div
-            className={`text-xs mt-2 flex items-center gap-1 ${
-              isUp ? "text-success" : "text-destructive"
-            }`}
-          >
-            {isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-            <span>
-              {trend.value > 0 ? "+" : ""}
-              {trend.value}% {trend.label}
-            </span>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <StatCard
+      label={title}
+      value={value}
+      hint={subtitle}
+      delta={
+        trend
+          ? {
+              label: `${Math.abs(trend.value)}%`,
+              direction: trend.value > 0 ? "up" : trend.value < 0 ? "down" : "flat",
+              tone: trend.value >= 0 ? "positive" : "negative",
+              context: trend.label,
+            }
+          : undefined
+      }
+    />
   );
 }
 
@@ -392,19 +385,19 @@ export default function FirmCommandCenter() {
     if (!c) return [];
     return [
       {
-        name: "Previous",
+        name: t["firmOps.periodPrevious"],
         revenue: c.previous.revenue,
         invoices: c.previous.invoices,
         receipts: c.previous.receipts,
       },
       {
-        name: "Current",
+        name: t["firmOps.periodCurrent"],
         revenue: c.current.revenue,
         invoices: c.current.invoices,
         receipts: c.current.receipts,
       },
     ];
-  }, [comparisonQuery.data]);
+  }, [comparisonQuery.data, t]);
 
   // ─── Render ────────────────────────────────────────────────────────
   if (dashboardQuery.isError) {
@@ -457,6 +450,7 @@ export default function FirmCommandCenter() {
           </Button>
         }
       />
+      <PracticeNav />
 
       {/* Metrics row */}
       <div className="mobile-keep-cols grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">
@@ -495,52 +489,27 @@ export default function FirmCommandCenter() {
         />
       </div>
 
-      {/* Health summary */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">
-              <T k="pages.averageHealthScore" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-h1 font-semibold tabular-nums">
-              {summary?.averageHealthScore ?? "—"}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t["firmCommandCenter.acrossAllManagedClients"]}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-destructive" />
-              <T k="pages.criticalAlerts" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div
-              className={`text-h1 font-semibold tabular-nums ${summary?.criticalAlertCount ? "text-danger" : "text-foreground"}`}
-            >
-              {summary?.criticalAlertCount ?? "—"}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Bell className="w-4 h-4 text-warning" />
-              <T k="pages.warnings" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-h1 font-semibold tabular-nums">
-              {summary?.warningAlertCount ?? "—"}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Health summary, folded into one line (spec 3.17: no second tile row). */}
+      {summary && (
+        <p className="text-small text-muted-foreground" data-testid="command-center-health-line">
+          <T k="pages.averageHealthScore" />{" "}
+          <span className="font-medium tabular-nums text-foreground">
+            {summary.averageHealthScore}
+          </span>
+          {" · "}
+          <T k="pages.criticalAlerts" />{" "}
+          <span
+            className={`font-medium tabular-nums ${summary.criticalAlertCount ? "text-danger" : "text-foreground"}`}
+          >
+            {summary.criticalAlertCount}
+          </span>
+          {" · "}
+          <T k="pages.warnings" />{" "}
+          <span className="font-medium tabular-nums text-foreground">
+            {summary.warningAlertCount}
+          </span>
+        </p>
+      )}
 
       <Tabs defaultValue="clients" className="space-y-4">
         <TabsList>
@@ -555,6 +524,9 @@ export default function FirmCommandCenter() {
           </TabsTrigger>
           <TabsTrigger value="comparison">
             <T k="pages.periodComparison" />
+          </TabsTrigger>
+          <TabsTrigger value="plan" data-testid="command-center-tab-plan">
+            {t["firmOps.tabPlan"]}
           </TabsTrigger>
         </TabsList>
 
@@ -573,7 +545,11 @@ export default function FirmCommandCenter() {
                   />
                 </div>
                 <Select value={rankBy} onValueChange={(v) => setRankBy(v as RankBy)}>
-                  <SelectTrigger className="w-[200px]" data-testid="select-rank-by">
+                  <SelectTrigger
+                    className="w-[200px]"
+                    aria-label={t["firmOps.ariaRankBy"]}
+                    data-testid="select-rank-by"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -603,21 +579,27 @@ export default function FirmCommandCenter() {
                       icon={Calculator}
                       onConfirm={() => batchVat.mutate(selectedIds)}
                       pending={batchVat.isPending}
-                      description={`Run VAT calculation for ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
+                      description={formatMessage(t["firmOps.batchVatDescription"], {
+                        count: selectedCount,
+                      })}
                     />
                     <BatchActionButton
                       label={t["firmCommandCenter.chasePayments"]}
                       icon={Mail}
                       onConfirm={() => batchChasePayments.mutate(selectedIds)}
                       pending={batchChasePayments.isPending}
-                      description={`Queue payment chase for overdue invoices across ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
+                      description={formatMessage(t["firmOps.batchChasePaymentsDescription"], {
+                        count: selectedCount,
+                      })}
                     />
                     <BatchActionButton
                       label={t["firmCommandCenter.chaseDocuments"]}
                       icon={FileSearch}
                       onConfirm={() => batchChaseDocuments.mutate(selectedIds)}
                       pending={batchChaseDocuments.isPending}
-                      description={`Queue document chase for ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
+                      description={formatMessage(t["firmOps.batchChaseDocumentsDescription"], {
+                        count: selectedCount,
+                      })}
                     />
                   </div>
                 </div>
@@ -665,7 +647,9 @@ export default function FirmCommandCenter() {
                         <Checkbox
                           checked={selectedClients.has(c.companyId)}
                           onCheckedChange={() => toggleClient(c.companyId)}
-                          aria-label={`Select ${c.companyName}`}
+                          aria-label={formatMessage(t["firmOps.selectClient"], {
+                            name: c.companyName,
+                          })}
                         />
                       </TableCell>
                       <TableCell className="font-medium">{c.companyName}</TableCell>
@@ -741,7 +725,11 @@ export default function FirmCommandCenter() {
                   value={severityFilter}
                   onValueChange={(v) => setSeverityFilter(v as Severity | "all")}
                 >
-                  <SelectTrigger className="w-[180px]" data-testid="select-severity-filter">
+                  <SelectTrigger
+                    className="w-[180px]"
+                    aria-label={t["firmOps.ariaSeverityFilter"]}
+                    data-testid="select-severity-filter"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -754,7 +742,7 @@ export default function FirmCommandCenter() {
                     <SelectItem value="warning">
                       <T k="pages.warning" />
                     </SelectItem>
-                    <SelectItem value="info">Info</SelectItem>
+                    <SelectItem value="info">{t["anomalyDetection.info"]}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -821,11 +809,15 @@ export default function FirmCommandCenter() {
               {workloadChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={workloadChartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <RechartsTooltip />
-                    <Bar dataKey="clients" fill="#3b82f6" name="Clients assigned" />
+                    <CartesianGrid {...chartTheme.grid} />
+                    <XAxis dataKey="name" {...chartTheme.xAxis} />
+                    <YAxis {...chartTheme.yAxis} allowDecimals={false} />
+                    <RechartsTooltip {...chartTheme.tooltip} content={<ChartTooltipContent />} />
+                    <Bar
+                      dataKey="clients"
+                      {...chartTheme.bar("brand")}
+                      name={t["firmOps.chartClientsAssigned"]}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
@@ -880,7 +872,11 @@ export default function FirmCommandCenter() {
                   <T k="pages.periodComparison" />
                 </CardTitle>
                 <Select value={granularity} onValueChange={(v) => setGranularity(v as Granularity)}>
-                  <SelectTrigger className="w-[160px]" data-testid="select-granularity">
+                  <SelectTrigger
+                    className="w-[160px]"
+                    aria-label={t["firmOps.ariaGranularity"]}
+                    data-testid="select-granularity"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -911,18 +907,35 @@ export default function FirmCommandCenter() {
               </div>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={comparisonChartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <RechartsTooltip />
+                  <CartesianGrid {...chartTheme.grid} />
+                  <XAxis dataKey="name" {...chartTheme.xAxis} />
+                  <YAxis {...chartTheme.yAxis} tickFormatter={formatAxisCompact} />
+                  <RechartsTooltip {...chartTheme.tooltip} content={<ChartTooltipContent />} />
                   <Legend />
-                  <Bar dataKey="revenue" fill="#10b981" name="Revenue (AED)" />
-                  <Bar dataKey="invoices" fill="#3b82f6" name="Invoices" />
-                  <Bar dataKey="receipts" fill="#f59e0b" name="Receipts" />
+                  <Bar
+                    dataKey="revenue"
+                    {...chartTheme.bar("brand")}
+                    name={t["firmOps.chartRevenue"]}
+                  />
+                  <Bar
+                    dataKey="invoices"
+                    {...chartTheme.bar("slate")}
+                    name={t["firmOps.chartInvoices"]}
+                  />
+                  <Bar
+                    dataKey="receipts"
+                    {...chartTheme.bar("ochre")}
+                    name={t["firmOps.chartReceipts"]}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ─── Service plan tab (matrix, planner, VAT workspace; moved off /firm/clients) ─── */}
+        <TabsContent value="plan">
+          <PracticePlanTab />
         </TabsContent>
       </Tabs>
     </div>

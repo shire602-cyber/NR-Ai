@@ -1,5 +1,6 @@
 import { DatePicker } from "@/components/ui/date-picker";
 import { T } from "@/components/layout/T";
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { SectionCard } from "@/components/ui/section-card";
 import { FormActions, FormErrorSummary } from "@/components/ui/form-layout";
 import { useTranslation, translateNow } from "@/lib/i18n";
@@ -316,134 +317,589 @@ export default function CompanySettings() {
   }
 
   return (
-    <div className="space-y-8 max-w-4xl">
-      <PageHeader
-        eyebrow="Settings"
-        title={t["pageLabels.companySettings.title"]}
-        description={t["pageLabels.companySettings.description"]}
-      />
+    <SettingsLayout>
+      <div className="space-y-8 max-w-4xl">
+        <PageHeader
+          eyebrow="Settings"
+          title={t["pageLabels.companySettings.title"]}
+          description={t["pageLabels.companySettings.description"]}
+        />
 
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-6">
-          <FormErrorSummary />
-          {/* Identity */}
-          <SectionCard
-            title={<T k="pageLabels.companyIdentity" />}
-            description={<T k="pageLabels.namesRegistrationAndLogoShownOnInvoices" />}
-          >
-            <div className="space-y-6">
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-6">
+            <FormErrorSummary />
+            {/* Identity */}
+            <SectionCard
+              title={<T k="pageLabels.companyIdentity" />}
+              description={<T k="pageLabels.namesRegistrationAndLogoShownOnInvoices" />}
+            >
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>
+                          {t["pageLabels.companySettings.companyName"]}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ""}
+                            placeholder={t["companySettings.acmeTrading"]}
+                            data-testid="input-company-name"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="legalName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.legalName" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ""}
+                            placeholder={t["companySettings.acmeTradingLLC"]}
+                            data-testid="input-legal-name"
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          <T k="pageLabels.registeredNameUsedOnTaxInvoices" />
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="trnVatNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["pageLabels.companySettings.trn"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ""}
+                            placeholder="100123456789012"
+                            inputMode="numeric"
+                            maxLength={15}
+                            ltr
+                            data-testid="input-trn"
+                          />
+                        </FormControl>
+                        <FormDescription>{t["pageLabels.companySettings.trnHelp"]}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="industry"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.industry" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ""}
+                            placeholder={t["companySettings.retailConstructionSoftware"]}
+                            data-testid="input-industry"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="legalStructure"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["pages.companyProfileLegalStructureLabel"]}</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-legal-structure">
+                              <SelectValue
+                                placeholder={t["pages.companyProfileLegalStructurePlaceholder"]}
+                              />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="Sole Proprietorship">
+                              <T k="pages.soleProprietorship" />
+                            </SelectItem>
+                            <SelectItem value="LLC">LLC</SelectItem>
+                            <SelectItem value="Corporation">
+                              <T k="pages.corporation" />
+                            </SelectItem>
+                            <SelectItem value="Partnership">
+                              <T k="pages.partnership" />
+                            </SelectItem>
+                            <SelectItem value="Other">
+                              <T k="pages.other" />
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="registrationNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.businessRegistrationNumber" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ""}
+                            placeholder="1234567890"
+                            className="tabular-nums"
+                            data-testid="input-registration-number"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="websiteUrl"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.websiteUrl" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ""}
+                            placeholder="https://www.company.com"
+                            type="url"
+                            data-testid="input-website-url"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <FormItem>
+                  <FormLabel>
+                    <T k="pages.companyLogo" />
+                  </FormLabel>
+                  <div className="flex items-center gap-4">
+                    {logoPreview && (
+                      <div className="w-16 h-16 rounded border overflow-hidden flex-shrink-0 bg-muted">
+                        <img
+                          src={logoPreview}
+                          alt="Logo preview"
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <label
+                        htmlFor="logo-upload"
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-input bg-background hover:bg-muted cursor-pointer text-sm"
+                      >
+                        <Upload className="w-4 h-4" />
+                        <T k="pageLabels.chooseImage" />
+                      </label>
+                      <input
+                        id="logo-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLogoChange}
+                        className="hidden"
+                        data-testid="input-logo-upload"
+                      />
+                      <FormDescription className="mt-2">
+                        {t["pageLabels.companySettings.logoHelp"]}
+                      </FormDescription>
+                    </div>
+                  </div>
+                </FormItem>
+              </div>
+            </SectionCard>
+
+            {/* Localization & Finance */}
+            <SectionCard
+              title={<T k="pageLabels.localizationAndFinance" />}
+              description={<T k="pageLabels.currencyFiscalYearVATLanguageAndDateFormat" />}
+            >
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="baseCurrency"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>
+                          {t["pageLabels.companySettings.preferredCurrency"]}
+                        </FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value ?? "AED"}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-base-currency">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {CURRENCY_OPTIONS.map((c) => (
+                              <SelectItem key={c.value} value={c.value}>
+                                {optionLabel(t, "currency", c.value, c.label)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="fiscalYearStartMonth"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.financialYearStarts" />
+                        </FormLabel>
+                        <Select
+                          onValueChange={(v) => field.onChange(parseInt(v, 10))}
+                          value={String(field.value ?? 1)}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-fiscal-year-start">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {MONTH_OPTIONS.map((label, idx) => (
+                              <SelectItem key={idx + 1} value={String(idx + 1)}>
+                                {monthLabel(idx, locale, label)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="defaultVatRate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.defaultVATRate" />
+                        </FormLabel>
+                        <Select
+                          onValueChange={(v) => field.onChange(parseFloat(v))}
+                          value={String(field.value ?? 0.05)}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-default-vat-rate">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {VAT_RATE_OPTIONS.map((r) => (
+                              <SelectItem key={r.value} value={r.value}>
+                                {optionLabel(t, "vat", r.value, r.label)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          <T k="pageLabels.appliedToNewInvoiceLinesByDefault" />
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="dateFormat"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.dateFormat" />
+                        </FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value ?? "DD/MM/YYYY"}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-date-format">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {DATE_FORMAT_OPTIONS.map((d) => (
+                              <SelectItem key={d.value} value={d.value}>
+                                {optionLabel(t, "dateFormat", d.value, d.label)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="locale"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.language" />
+                        </FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value ?? "en"}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-locale">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="en">
+                              <T k="pageLabels.english" />
+                            </SelectItem>
+                            <SelectItem value="ar">
+                              {t["pageLabels.companySettings.arabicOption"]}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          <T k="pageLabels.usedForInvoiceTemplatesAndTheUI" />
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* Address & Contact */}
+            <SectionCard
+              title={<T k="pageLabels.addressAndContact" />}
+              description={<T k="pageLabels.usedOnInvoicesStatementsAndTaxFilings" />}
+            >
+              <div className="space-y-6">
+                <FormField
+                  control={form.control}
+                  name="businessAddress"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t["pages.companyProfileAddressLabel"]}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          value={field.value ?? ""}
+                          placeholder={t["pages.companyProfileAddressPlaceholder"]}
+                          rows={3}
+                          data-testid="textarea-business-address"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="addressStreet"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <T k="pageLabels.streetAddress" />
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          value={field.value ?? ""}
+                          placeholder={t["companySettings.office101Building7Sheikh"]}
+                          data-testid="input-address-street"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-3">
+                  <FormField
+                    control={form.control}
+                    name="addressCity"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["pageLabels.companySettings.city"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ""}
+                            placeholder={t["forms.contact.cityPlaceholder"]}
+                            data-testid="input-address-city"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="emirate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["pageLabels.companySettings.emirate"]}</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value ?? "dubai"}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-emirate">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {EMIRATE_OPTIONS.map((e) => (
+                              <SelectItem key={e.value} value={e.value}>
+                                {optionLabel(t, "emirate", e.value, e.label)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="addressCountry"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.country" />
+                        </FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value ?? "AE"}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-address-country">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {COUNTRY_OPTIONS.map((c) => (
+                              <SelectItem key={c.value} value={c.value}>
+                                {optionLabel(t, "country", c.value, c.label)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="contactPhone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.phone" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ""}
+                            type="tel"
+                            placeholder="+971 4 123 4567"
+                            data-testid="input-contact-phone"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="contactEmail"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pages.email" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            value={field.value ?? ""}
+                            type="email"
+                            placeholder="hello@acme.ae"
+                            data-testid="input-contact-email"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+            </SectionCard>
+
+            {/* Tax & Compliance (formerly Company profile) */}
+            <SectionCard
+              title={<T k="pages.taxComplianceSettings" />}
+              description={<T k="pages.vatRegistrationAndTaxComplianceInformation" />}
+            >
               <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
                 <FormField
                   control={form.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel required>{t["pageLabels.companySettings.companyName"]}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder={t["companySettings.acmeTrading"]}
-                          data-testid="input-company-name"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="legalName"
+                  name="taxRegistrationType"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        <T k="pageLabels.legalName" />
+                        <T k="pages.taxRegistrationType" />
                       </FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder={t["companySettings.acmeTradingLLC"]}
-                          data-testid="input-legal-name"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        <T k="pageLabels.registeredNameUsedOnTaxInvoices" />
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="trnVatNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t["pageLabels.companySettings.trn"]}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder="100123456789012"
-                          inputMode="numeric"
-                          maxLength={15}
-                          ltr
-                          data-testid="input-trn"
-                        />
-                      </FormControl>
-                      <FormDescription>{t["pageLabels.companySettings.trnHelp"]}</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="industry"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pages.industry" />
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder={t["companySettings.retailConstructionSoftware"]}
-                          data-testid="input-industry"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="legalStructure"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t["pages.companyProfileLegalStructureLabel"]}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value ?? ""}>
                         <FormControl>
-                          <SelectTrigger data-testid="select-legal-structure">
+                          <SelectTrigger data-testid="select-tax-registration-type">
                             <SelectValue
-                              placeholder={t["pages.companyProfileLegalStructurePlaceholder"]}
+                              placeholder={t["pages.companyProfileRegistrationTypePlaceholder"]}
                             />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="Sole Proprietorship">
-                            <T k="pages.soleProprietorship" />
+                          <SelectItem value="Standard">
+                            <T k="pages.standard" />
                           </SelectItem>
-                          <SelectItem value="LLC">LLC</SelectItem>
-                          <SelectItem value="Corporation">
-                            <T k="pages.corporation" />
+                          <SelectItem value="Flat Rate">
+                            <T k="pages.flatRate" />
                           </SelectItem>
-                          <SelectItem value="Partnership">
-                            <T k="pages.partnership" />
+                          <SelectItem value="Non-registered">
+                            <T k="pages.nonRegistered" />
                           </SelectItem>
                           <SelectItem value="Other">
                             <T k="pages.other" />
@@ -457,41 +913,104 @@ export default function CompanySettings() {
 
                 <FormField
                   control={form.control}
-                  name="registrationNumber"
+                  name="vatFilingFrequency"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t["pages.companyProfileVatFrequencyLabel"]}</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-vat-filing-frequency">
+                            <SelectValue
+                              placeholder={t["pages.companyProfileVatFrequencyPlaceholder"]}
+                            />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Monthly">
+                            <T k="pages.monthly" />
+                          </SelectItem>
+                          <SelectItem value="Quarterly">
+                            <T k="pages.quarterly" />
+                          </SelectItem>
+                          <SelectItem value="Annually">
+                            <T k="pages.annually" />
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        <T k="pages.requiredForVatRegisteredBusinesses" />
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                {vatFrequency === "Quarterly" && (
+                  <FormField
+                    control={form.control}
+                    name="vatPeriodStartMonth"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["onboarding.vatStaggerLabel"]}</FormLabel>
+                        <Select
+                          onValueChange={(v) => field.onChange(Number(v))}
+                          value={String(field.value || 1)}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-vat-stagger">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {[1, 2, 3].map((m) => (
+                              <SelectItem key={m} value={String(m)}>
+                                {t[`onboarding.vatStagger${["Jan", "Feb", "Mar"][m - 1]}`]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>{t["onboarding.vatStaggerHint"]}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                <FormField
+                  control={form.control}
+                  name="taxRegistrationDate"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
-                        <T k="pages.businessRegistrationNumber" />
+                        <T k="pages.taxRegistrationEffectiveDate" />
+                      </FormLabel>
+                      <FormControl>
+                        <DatePicker
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          data-testid="input-tax-registration-date"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="corporateTaxId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <T k="pages.corporateTaxId" />
                       </FormLabel>
                       <FormControl>
                         <Input
                           {...field}
                           value={field.value ?? ""}
-                          placeholder="1234567890"
+                          placeholder="CT-123456789"
                           className="tabular-nums"
-                          data-testid="input-registration-number"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="websiteUrl"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pages.websiteUrl" />
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder="https://www.company.com"
-                          type="url"
-                          data-testid="input-website-url"
+                          data-testid="input-corporate-tax-id"
                         />
                       </FormControl>
                       <FormMessage />
@@ -499,554 +1018,40 @@ export default function CompanySettings() {
                   )}
                 />
               </div>
+            </SectionCard>
 
-              <FormItem>
-                <FormLabel>
-                  <T k="pages.companyLogo" />
-                </FormLabel>
-                <div className="flex items-center gap-4">
-                  {logoPreview && (
-                    <div className="w-16 h-16 rounded border overflow-hidden flex-shrink-0 bg-muted">
-                      <img
-                        src={logoPreview}
-                        alt="Logo preview"
-                        className="w-full h-full object-contain"
-                      />
-                    </div>
-                  )}
-                  <div className="flex-1">
-                    <label
-                      htmlFor="logo-upload"
-                      className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-input bg-background hover:bg-muted cursor-pointer text-sm"
-                    >
-                      <Upload className="w-4 h-4" />
-                      <T k="pageLabels.chooseImage" />
-                    </label>
-                    <input
-                      id="logo-upload"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoChange}
-                      className="hidden"
-                      data-testid="input-logo-upload"
-                    />
-                    <FormDescription className="mt-2">
-                      {t["pageLabels.companySettings.logoHelp"]}
-                    </FormDescription>
-                  </div>
-                </div>
-              </FormItem>
-            </div>
-          </SectionCard>
-
-          {/* Localization & Finance */}
-          <SectionCard
-            title={<T k="pageLabels.localizationAndFinance" />}
-            description={<T k="pageLabels.currencyFiscalYearVATLanguageAndDateFormat" />}
-          >
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="baseCurrency"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel required>
-                        {t["pageLabels.companySettings.preferredCurrency"]}
-                      </FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? "AED"}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-base-currency">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {CURRENCY_OPTIONS.map((c) => (
-                            <SelectItem key={c.value} value={c.value}>
-                              {optionLabel(t, "currency", c.value, c.label)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="fiscalYearStartMonth"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pageLabels.financialYearStarts" />
-                      </FormLabel>
-                      <Select
-                        onValueChange={(v) => field.onChange(parseInt(v, 10))}
-                        value={String(field.value ?? 1)}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-fiscal-year-start">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {MONTH_OPTIONS.map((label, idx) => (
-                            <SelectItem key={idx + 1} value={String(idx + 1)}>
-                              {monthLabel(idx, locale, label)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="defaultVatRate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pageLabels.defaultVATRate" />
-                      </FormLabel>
-                      <Select
-                        onValueChange={(v) => field.onChange(parseFloat(v))}
-                        value={String(field.value ?? 0.05)}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-default-vat-rate">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {VAT_RATE_OPTIONS.map((r) => (
-                            <SelectItem key={r.value} value={r.value}>
-                              {optionLabel(t, "vat", r.value, r.label)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>
-                        <T k="pageLabels.appliedToNewInvoiceLinesByDefault" />
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="dateFormat"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pageLabels.dateFormat" />
-                      </FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? "DD/MM/YYYY"}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-date-format">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {DATE_FORMAT_OPTIONS.map((d) => (
-                            <SelectItem key={d.value} value={d.value}>
-                              {optionLabel(t, "dateFormat", d.value, d.label)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="locale"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pages.language" />
-                      </FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? "en"}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-locale">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="en">
-                            <T k="pageLabels.english" />
-                          </SelectItem>
-                          <SelectItem value="ar">
-                            {t["pageLabels.companySettings.arabicOption"]}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>
-                        <T k="pageLabels.usedForInvoiceTemplatesAndTheUI" />
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </div>
-          </SectionCard>
-
-          {/* Address & Contact */}
-          <SectionCard
-            title={<T k="pageLabels.addressAndContact" />}
-            description={<T k="pageLabels.usedOnInvoicesStatementsAndTaxFilings" />}
-          >
-            <div className="space-y-6">
-              <FormField
-                control={form.control}
-                name="businessAddress"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t["pages.companyProfileAddressLabel"]}</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        {...field}
-                        value={field.value ?? ""}
-                        placeholder={t["pages.companyProfileAddressPlaceholder"]}
-                        rows={3}
-                        data-testid="textarea-business-address"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
+            <FormActions sticky variant="page">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => company && form.reset()}
+                disabled={!form.formState.isDirty || updateMutation.isPending}
+                data-testid="button-reset"
+              >
+                <T k="pages.reset" />
+              </Button>
+              <Button
+                type="submit"
+                disabled={updateMutation.isPending || !form.formState.isDirty}
+                className="min-w-32"
+                data-testid="button-save-company-settings"
+              >
+                {updateMutation.isPending ? (
+                  t["forms.saving"]
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" />
+                    <T k="pages.saveChanges" />
+                  </>
                 )}
-              />
+              </Button>
+            </FormActions>
+          </form>
+        </Form>
 
-              <FormField
-                control={form.control}
-                name="addressStreet"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <T k="pageLabels.streetAddress" />
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        value={field.value ?? ""}
-                        placeholder={t["companySettings.office101Building7Sheikh"]}
-                        data-testid="input-address-street"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-3">
-                <FormField
-                  control={form.control}
-                  name="addressCity"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t["pageLabels.companySettings.city"]}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          placeholder={t["forms.contact.cityPlaceholder"]}
-                          data-testid="input-address-city"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="emirate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t["pageLabels.companySettings.emirate"]}</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? "dubai"}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-emirate">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {EMIRATE_OPTIONS.map((e) => (
-                            <SelectItem key={e.value} value={e.value}>
-                              {optionLabel(t, "emirate", e.value, e.label)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="addressCountry"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pageLabels.country" />
-                      </FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value ?? "AE"}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-address-country">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {COUNTRY_OPTIONS.map((c) => (
-                            <SelectItem key={c.value} value={c.value}>
-                              {optionLabel(t, "country", c.value, c.label)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="contactPhone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pages.phone" />
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          type="tel"
-                          placeholder="+971 4 123 4567"
-                          data-testid="input-contact-phone"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="contactEmail"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pages.email" />
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          value={field.value ?? ""}
-                          type="email"
-                          placeholder="hello@acme.ae"
-                          data-testid="input-contact-email"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </div>
-          </SectionCard>
-
-          {/* Tax & Compliance (formerly Company profile) */}
-          <SectionCard
-            title={<T k="pages.taxComplianceSettings" />}
-            description={<T k="pages.vatRegistrationAndTaxComplianceInformation" />}
-          >
-            <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="taxRegistrationType"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <T k="pages.taxRegistrationType" />
-                    </FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value ?? ""}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-tax-registration-type">
-                          <SelectValue
-                            placeholder={t["pages.companyProfileRegistrationTypePlaceholder"]}
-                          />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="Standard">
-                          <T k="pages.standard" />
-                        </SelectItem>
-                        <SelectItem value="Flat Rate">
-                          <T k="pages.flatRate" />
-                        </SelectItem>
-                        <SelectItem value="Non-registered">
-                          <T k="pages.nonRegistered" />
-                        </SelectItem>
-                        <SelectItem value="Other">
-                          <T k="pages.other" />
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="vatFilingFrequency"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t["pages.companyProfileVatFrequencyLabel"]}</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value ?? ""}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-vat-filing-frequency">
-                          <SelectValue
-                            placeholder={t["pages.companyProfileVatFrequencyPlaceholder"]}
-                          />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="Monthly">
-                          <T k="pages.monthly" />
-                        </SelectItem>
-                        <SelectItem value="Quarterly">
-                          <T k="pages.quarterly" />
-                        </SelectItem>
-                        <SelectItem value="Annually">
-                          <T k="pages.annually" />
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      <T k="pages.requiredForVatRegisteredBusinesses" />
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {vatFrequency === "Quarterly" && (
-                <FormField
-                  control={form.control}
-                  name="vatPeriodStartMonth"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t["onboarding.vatStaggerLabel"]}</FormLabel>
-                      <Select
-                        onValueChange={(v) => field.onChange(Number(v))}
-                        value={String(field.value || 1)}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-vat-stagger">
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {[1, 2, 3].map((m) => (
-                            <SelectItem key={m} value={String(m)}>
-                              {t[`onboarding.vatStagger${["Jan", "Feb", "Mar"][m - 1]}`]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormDescription>{t["onboarding.vatStaggerHint"]}</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-
-              <FormField
-                control={form.control}
-                name="taxRegistrationDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <T k="pages.taxRegistrationEffectiveDate" />
-                    </FormLabel>
-                    <FormControl>
-                      <DatePicker
-                        value={field.value ?? ""}
-                        onChange={field.onChange}
-                        data-testid="input-tax-registration-date"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="corporateTaxId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <T k="pages.corporateTaxId" />
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        value={field.value ?? ""}
-                        placeholder="CT-123456789"
-                        className="tabular-nums"
-                        data-testid="input-corporate-tax-id"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-          </SectionCard>
-
-          <FormActions sticky variant="page">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => company && form.reset()}
-              disabled={!form.formState.isDirty || updateMutation.isPending}
-              data-testid="button-reset"
-            >
-              <T k="pages.reset" />
-            </Button>
-            <Button
-              type="submit"
-              disabled={updateMutation.isPending || !form.formState.isDirty}
-              className="min-w-32"
-              data-testid="button-save-company-settings"
-            >
-              {updateMutation.isPending ? (
-                t["forms.saving"]
-              ) : (
-                <>
-                  <Save className="h-4 w-4" />
-                  <T k="pages.saveChanges" />
-                </>
-              )}
-            </Button>
-          </FormActions>
-        </form>
-      </Form>
-
-      {/* W3-D: WPS / MOL settings used by the payroll SIF (SCR record). */}
-      {companyId && <WpsSettingsCard companyId={companyId} />}
-    </div>
+        {/* W3-D: WPS / MOL settings used by the payroll SIF (SCR record). */}
+        {companyId && <WpsSettingsCard companyId={companyId} />}
+      </div>
+    </SettingsLayout>
   );
 }

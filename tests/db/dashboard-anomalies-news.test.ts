@@ -175,8 +175,12 @@ describe("news", () => {
     const s = await u.as.get("/api/news/status");
     expect(s.body).toMatchObject({ id: "news_feed", status: "requires_external", feedCount: 0 });
     const fs = await import("node:fs/promises");
-    const page = await fs.readFile("client/src/pages/UAENewsFeed.tsx", "utf8");
+    // WP-E: the news page was removed (/news-feed redirects to the compliance calendar until a
+    // feed exists); if it ever comes back it must not ship sample news.
+    const page = await fs.readFile("client/src/pages/UAENewsFeed.tsx", "utf8").catch(() => "");
     expect(page).not.toMatch(/SAMPLE_NEWS|initialData/);
+    const app = await fs.readFile("client/src/App.tsx", "utf8");
+    expect(app).toMatch(/<Route path="\/news-feed">\s*<RedirectTo to="\/compliance-calendar" \/>/);
   });
 
   it("R13-13 admin curation: only admins can publish; deactivated items disappear", async () => {

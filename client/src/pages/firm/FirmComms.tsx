@@ -34,6 +34,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
 import {
   Mail,
   MessageCircle,
@@ -174,22 +175,22 @@ function CommStatusBadge({ status }: { status: CommStatus }) {
   return <Badge variant={variant}>{label}</Badge>;
 }
 
-function formatRelativeTime(dateStr: string): string {
+function formatRelativeTime(dateStr: string, t: Record<string, string>, locale: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t["firmOps.agoJustNow"];
+  if (mins < 60) return formatMessage(t["firmOps.agoMinutes"], { n: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return formatMessage(t["firmOps.agoHours"], { n: hrs });
   const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString("en-AE");
+  if (days < 7) return formatMessage(t["firmOps.agoDays"], { n: days });
+  return formatDate(dateStr, locale);
 }
 
 // ─── Inbox Tab ────────────────────────────────────────────────────────────────
 
 function InboxTab() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [filterCompany, setFilterCompany] = useState("");
   const [filterChannel, setFilterChannel] = useState("");
   const [page, setPage] = useState(1);
@@ -221,7 +222,7 @@ function InboxTab() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="w-48" aria-label={t["firmOps.ariaCommsClient"]}>
             <SelectValue placeholder={t.selectClient} />
           </SelectTrigger>
           <SelectContent>
@@ -241,7 +242,7 @@ function InboxTab() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-36">
+          <SelectTrigger className="w-36" aria-label={t["firmOps.ariaCommsChannel"]}>
             <SelectValue placeholder={t.channel} />
           </SelectTrigger>
           <SelectContent>
@@ -268,7 +269,7 @@ function InboxTab() {
                   <TableRow>
                     <TableHead>{t.channel}</TableHead>
                     <TableHead>{t.clientPortfolio}</TableHead>
-                    <TableHead>Subject / Preview</TableHead>
+                    <TableHead>{t["firmOps.commsSubjectPreview"]}</TableHead>
                     <TableHead>{t.status}</TableHead>
                     <TableHead>{t.date}</TableHead>
                   </TableRow>
@@ -295,7 +296,7 @@ function InboxTab() {
                         <CommStatusBadge status={c.status} />
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatRelativeTime(c.sentAt)}
+                        {formatRelativeTime(c.sentAt, t, locale)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -327,7 +328,7 @@ function InboxTab() {
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
             >
-              Next
+              {t["firmOps.commsNext"]}
             </Button>
           </div>
         </div>
@@ -488,7 +489,7 @@ function ComposeTab() {
       {channel === "email" ? (
         <>
           <div className="space-y-1.5">
-            <Label>{t.recipient} (email)</Label>
+            <Label>{t["firmOps.commsRecipientEmail"]}</Label>
             <Input
               type="email"
               value={recipientEmail}
@@ -503,7 +504,7 @@ function ComposeTab() {
             <Input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="e.g. VAT Return Reminder"
+              placeholder={t["firmOps.commsSubjectPlaceholder"]}
             />
           </div>
         </>
@@ -622,7 +623,7 @@ function TemplatesTab() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <p className="text-sm text-muted-foreground">
-          {templates?.length ?? 0} template{(templates?.length ?? 0) !== 1 ? "s" : ""}
+          {formatMessage(t["firmOps.commsTemplateCount"], { count: templates?.length ?? 0 })}
         </p>
         <div className="flex gap-2">
           {(templates?.length ?? 0) === 0 && (
@@ -659,7 +660,7 @@ function TemplatesTab() {
                   <TableRow>
                     <TableHead>{t.templateName}</TableHead>
                     <TableHead>{t.channel}</TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>{t["firmOps.colType"]}</TableHead>
                     <TableHead>
                       <T k="pages.language" />
                     </TableHead>
@@ -737,7 +738,7 @@ function TemplatesTab() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Type</Label>
+                <Label>{t["firmOps.colType"]}</Label>
                 <Select
                   value={editTemplate?.templateType ?? "custom"}
                   onValueChange={(v) => setEditTemplate((p) => ({ ...p, templateType: v }))}
@@ -773,7 +774,7 @@ function TemplatesTab() {
                   onChange={(e) =>
                     setEditTemplate((p) => ({ ...p, subjectTemplate: e.target.value }))
                   }
-                  placeholder="e.g. VAT Return Reminder — Due [date]"
+                  placeholder={t["firmOps.commsSubjectTplPlaceholder"]}
                 />
               </div>
             )}
@@ -871,7 +872,7 @@ function BulkActionsTab() {
               <SelectContent>
                 {[3, 5, 7, 10, 14, 30].map((d) => (
                   <SelectItem key={d} value={String(d)}>
-                    {d} days
+                    {formatMessage(t["firmOps.commsDays"], { n: d })}
                   </SelectItem>
                 ))}
               </SelectContent>

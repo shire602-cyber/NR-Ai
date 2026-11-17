@@ -283,8 +283,8 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
     key: "ai",
     titleKey: "shell.nav.assistant",
     icon: Sparkles,
-    url: "/ai",
-    matches: ["/assistant"],
+    url: "/assistant",
+    matches: ["/ai"],
     items: [],
   },
 ];

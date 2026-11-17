@@ -1,27 +1,27 @@
 import { T } from "@/components/layout/T";
+import { FileDrop } from "@/components/ui/file-drop";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { vatCloseGroups } from "@/lib/month-labels";
 import { useMemo, useState } from "react";
+import { Money } from "@/components/ui/money";
+import { RowActions } from "@/components/ui/row-actions";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { StatCard } from "@/components/ui/stat-card";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   Building2,
   Plus,
   Search,
-  LayoutGrid,
-  List,
-  ChevronRight,
-  Users,
   Calendar,
   BookOpen,
   Upload,
   AlertTriangle,
-  Receipt,
   FolderOpen,
   TrendingUp,
   UserCheck,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -52,7 +52,6 @@ import {
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { format } from "date-fns";
 import {
   CLIENT_SERVICE_OPTIONS,
   DEFAULT_CLIENT_SERVICE_CODES,
@@ -67,18 +66,12 @@ import type {
 } from "./portfolio/types";
 import {
   clientNeedsAttention,
-  formatAed,
   formatDays,
   hasClientService,
   ownerPreview,
-  priorityLabel,
   vatDueSoon,
 } from "./portfolio/helpers";
 import { PriorityBadge, ServiceScopeBadges, StatusBadge } from "./portfolio/badges";
-import { OperationsBriefDialog } from "./portfolio/OperationsBriefDialog";
-import { BookkeeperCommandCenter } from "./portfolio/BookkeeperCommandCenter";
-import { RevenueGrowthPanel } from "./portfolio/RevenueGrowthPanel";
-import { VatWorkspaceDialog, VatWorkspacePanel } from "./portfolio/VatWorkspace";
 import { useFirmText } from "./portfolio/text";
 
 interface AddClientFormData {
@@ -158,18 +151,15 @@ const vatGroupFilterByQuickFilter = new Map(
 export default function ClientPortfolio() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { b, fx, fdShort } = useFirmText();
   const { setActiveClientCompany } = useActiveCompany();
-  const [view, setView] = useState<"card" | "table">("card");
   const [search, setSearch] = useState("");
   const [quickFilter, setQuickFilter] = useState<QuickFilter>("all");
   const [addOpen, setAddOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
-  const [briefClientId, setBriefClientId] = useState<string | null>(null);
-  const [vatWorkspaceClientId, setVatWorkspaceClientId] = useState<string | null>(null);
   const [form, setForm] = useState<AddClientFormData>(emptyForm);
 
   const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
@@ -189,20 +179,6 @@ export default function ClientPortfolio() {
       (bookkeeperDashboard?.clients ?? []).map((client) => [client.companyId, client])
     );
   }, [bookkeeperDashboard]);
-
-  const briefClient = useMemo(() => {
-    return briefClientId ? bookkeeperByClientId.get(briefClientId) : undefined;
-  }, [bookkeeperByClientId, briefClientId]);
-
-  const vatWorkspaceClient = useMemo(() => {
-    return vatWorkspaceClientId
-      ? clients.find((client) => client.id === vatWorkspaceClientId)
-      : undefined;
-  }, [clients, vatWorkspaceClientId]);
-
-  const vatWorkspaceOps = useMemo(() => {
-    return vatWorkspaceClientId ? bookkeeperByClientId.get(vatWorkspaceClientId) : undefined;
-  }, [bookkeeperByClientId, vatWorkspaceClientId]);
 
   const createMutation = useMutation({
     mutationFn: (data: AddClientFormData) => apiRequest("POST", "/api/firm/clients", data),
@@ -376,75 +352,29 @@ export default function ClientPortfolio() {
         }
       />
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card data-testid="card-total-clients">
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
-                <T k="pages.totalClients" />
-              </p>
-              <Users className="w-4 h-4 text-muted-foreground" />
-            </div>
-            <p className="mt-1 text-h1 font-semibold tabular-nums">
-              {overview?.totalClients ?? clients.length}
-            </p>
-          </CardContent>
-        </Card>
-        <Card data-testid="card-vat-due">
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">{t["firm.vatDue30d"]}</p>
-              <Calendar className="w-4 h-4 text-muted-foreground" aria-hidden />
-            </div>
-            <p className="mt-1 text-h1 font-semibold tabular-nums">
-              {overview?.vatDueThisMonth ?? 0}
-            </p>
-          </CardContent>
-        </Card>
-        <Card data-testid="card-overdue-ar">
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
-                <T k="pages.overdueAr" />
-              </p>
-              <Receipt className="w-4 h-4 text-muted-foreground" aria-hidden />
-            </div>
-            <p className="mt-1 text-h1 font-semibold tabular-nums">
-              {formatAed(overview?.overdueAr ?? 0)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card data-testid="card-attention">
-          <CardContent className="pt-4 pb-3">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
-                <T k="pages.needsAttention" />
-              </p>
-              <AlertTriangle className="w-4 h-4 text-muted-foreground" aria-hidden />
-            </div>
-            <p className="mt-1 text-h1 font-semibold tabular-nums">
-              {overview?.needsAttention ?? 0}
-            </p>
-          </CardContent>
-        </Card>
+      {/* Summary */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard
+          label={<T k="pages.totalClients" />}
+          value={overview?.totalClients ?? clients.length}
+          testId="card-total-clients"
+        />
+        <StatCard
+          label={t["firm.vatDue30d"]}
+          value={overview?.vatDueThisMonth ?? 0}
+          testId="card-vat-due"
+        />
+        <StatCard
+          label={<T k="pages.overdueAr" />}
+          value={<Money amount={overview?.overdueAr ?? 0} currency="AED" />}
+          testId="card-overdue-ar"
+        />
+        <StatCard
+          label={<T k="pages.needsAttention" />}
+          value={overview?.needsAttention ?? 0}
+          testId="card-attention"
+        />
       </div>
-
-      <BookkeeperCommandCenter
-        dashboard={bookkeeperDashboard}
-        onOpenBooks={handleOpenBooks}
-        onViewProfile={handleViewProfile}
-        onOpenBrief={setBriefClientId}
-        onManageStaff={() => navigate("/firm/staff")}
-      />
-
-      <RevenueGrowthPanel onOpenClient={handleViewProfile} />
-
-      <VatWorkspacePanel
-        dashboard={bookkeeperDashboard}
-        clients={clients}
-        onOpenWorkspace={setVatWorkspaceClientId}
-      />
 
       {/* Quick filters */}
       <div className="flex flex-wrap items-center gap-2">
@@ -471,7 +401,7 @@ export default function ClientPortfolio() {
           data-testid="filter-attention"
         >
           <AlertTriangle className="w-3.5 h-3.5 me-1.5" />
-          {b("Needs Attention", "يحتاج انتباهًا")} (
+          {b("Needs attention", "يحتاج انتباهًا")} (
           {(bookkeeperDashboard?.summary.critical ?? 0) +
             (bookkeeperDashboard?.summary.attention ?? 0)}
           )
@@ -483,7 +413,7 @@ export default function ClientPortfolio() {
           data-testid="filter-vat-due"
         >
           <Calendar className="w-3.5 h-3.5 me-1.5" />
-          {b("VAT Due Soon", "ضريبة قيمة مضافة قريبة الاستحقاق")} (
+          {b("VAT due soon", "ضريبة قيمة مضافة قريبة الاستحقاق")} (
           {bookkeeperDashboard?.summary.vatDue28Days ?? 0})
         </Button>
         {VAT_GROUP_FILTERS.map((group) => {
@@ -511,7 +441,7 @@ export default function ClientPortfolio() {
           data-testid="filter-close-blocked"
         >
           <TrendingUp className="w-3.5 h-3.5 me-1.5" />
-          {b("Close Blocked", "إقفال معوق")} ({bookkeeperDashboard?.summary.bookkeepingBlocked ?? 0}
+          {b("Close blocked", "إقفال معوق")} ({bookkeeperDashboard?.summary.bookkeepingBlocked ?? 0}
           )
         </Button>
         <Button
@@ -546,24 +476,6 @@ export default function ClientPortfolio() {
             data-testid="input-client-search"
           />
         </div>
-        <div className="flex border rounded-md ms-auto">
-          <Button
-            variant={view === "card" ? "secondary" : "ghost"}
-            size="sm"
-            className="rounded-e-none"
-            onClick={() => setView("card")}
-          >
-            <LayoutGrid className="w-4 h-4" />
-          </Button>
-          <Button
-            variant={view === "table" ? "secondary" : "ghost"}
-            size="sm"
-            className="rounded-s-none"
-            onClick={() => setView("table")}
-          >
-            <List className="w-4 h-4" />
-          </Button>
-        </div>
       </div>
 
       {/* Empty state */}
@@ -589,354 +501,10 @@ export default function ClientPortfolio() {
         </div>
       )}
 
-      {bookkeeperDashboard && filtered.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between gap-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <LayoutGrid className="w-4 h-4 text-primary" />
-                <T k="pages.portfolioProductionMatrix" />
-              </CardTitle>
-              <Badge variant="outline">
-                {filtered.length} {b("shown", "معروض")}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>
-                    <T k="pages.client" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pages.owner" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pages.services" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pages.priority" />
-                  </TableHead>
-                  <TableHead>VAT</TableHead>
-                  <TableHead>
-                    <T k="pages.corporateTax" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pages.close" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pages.nextAction2" />
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.slice(0, 12).map((client) => {
-                  const ops = bookkeeperByClientId.get(client.id);
-                  return (
-                    <TableRow key={`matrix-${client.id}`} className="hover:bg-muted/50">
-                      <TableCell>
-                        <button
-                          type="button"
-                          onClick={() => handleViewProfile(client.id)}
-                          className="font-medium text-start hover:underline"
-                        >
-                          {client.name}
-                        </button>
-                        <p className="text-xs text-muted-foreground">
-                          {client.trnVatNumber || b("No TRN", "بلا رقم تسجيل ضريبي")}
-                        </p>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {ops
-                          ? fx(ownerPreview(ops.assignedStaff.map((staff) => staff.name)))
-                          : fx(ownerPreview(client.assignedStaff.map((staff) => staff.name)))}
-                      </TableCell>
-                      <TableCell>
-                        <ServiceScopeBadges
-                          services={ops?.serviceScope ?? client.serviceScope}
-                          compact
-                        />
-                      </TableCell>
-                      <TableCell>
-                        {ops ? (
-                          <PriorityBadge priority={ops.priority} />
-                        ) : (
-                          <StatusBadge
-                            active={client.invoiceCount > 0 || !!client.lastReceiptDate}
-                          />
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {ops && hasClientService(ops, "vat") ? (
-                          <div>
-                            <span>
-                              {fdShort(ops.vat.dueDate)} · {fx(formatDays(ops.vat.daysTilDue))}
-                            </span>
-                            <p className="text-xs text-muted-foreground">
-                              {fx(ops.vat.cohortLabel)}
-                            </p>
-                          </div>
-                        ) : (
-                          <Badge variant="outline">
-                            <T k="pages.notScoped" />
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {ops && hasClientService(ops, "corporate_tax")
-                          ? `${fdShort(ops.corporateTax.dueDate)} · ${fx(formatDays(ops.corporateTax.daysTilDue))}`
-                          : b("Not scoped", "خارج النطاق")}
-                      </TableCell>
-                      <TableCell>
-                        {ops && hasClientService(ops, "bookkeeping") ? (
-                          <div className="min-w-28">
-                            <div className="flex items-center justify-between text-xs">
-                              <span>{ops.bookkeeping.closeProgress}%</span>
-                              <span className="text-muted-foreground">
-                                {fx(priorityLabel(ops.bookkeeping.status))}
-                              </span>
-                            </div>
-                            <div className="mt-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                              <div
-                                className="h-full bg-primary"
-                                style={{ width: `${ops.bookkeeping.closeProgress}%` }}
-                              />
-                            </div>
-                          </div>
-                        ) : (
-                          b("Not scoped", "خارج النطاق")
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-between gap-2 min-w-64">
-                          <p className="text-sm text-muted-foreground truncate">
-                            {fx(ops?.nextBestAction) || b("Open client profile", "فتح ملف العميل")}
-                          </p>
-                          <div className="flex gap-1">
-                            {ops && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setBriefClientId(client.id)}
-                              >
-                                <T k="pages.brief" />
-                              </Button>
-                            )}
-                            {(!ops || hasClientService(ops, "vat")) && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setVatWorkspaceClientId(client.id)}
-                              >
-                                {b("VAT", "ضريبة القيمة المضافة")}
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleOpenBooks(client.id)}
-                              disabled={switchMutation.isPending}
-                            >
-                              <BookOpen className="w-3.5 h-3.5 me-1" />
-                              {b("Open", "فتح")}
-                            </Button>
-                          </div>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-            {filtered.length > 12 && (
-              <p className="text-xs text-muted-foreground mt-3">
-                {b(
-                  "Showing the first 12 clients for the selected filter. Use search or table view for the full list.",
-                  "تظهر أول 12 عميلًا لعامل التصفية المحدد. استخدم البحث أو عرض الجدول للقائمة الكاملة."
-                )}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Card view */}
-      {view === "card" && filtered.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map((client) => {
-            const ops = bookkeeperByClientId.get(client.id);
-            return (
-              <Card
-                key={client.id}
-                className="hover:shadow-md transition-shadow"
-                data-testid={`client-card-${client.id}`}
-              >
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <CardTitle className="text-base truncate">{client.name}</CardTitle>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {client.trnVatNumber
-                          ? `${b("TRN", "الرقم الضريبي")}: ${client.trnVatNumber}`
-                          : b("No TRN registered", "لا يوجد رقم تسجيل ضريبي")}
-                      </p>
-                      <div className="mt-2">
-                        <ServiceScopeBadges
-                          services={ops?.serviceScope ?? client.serviceScope}
-                          compact
-                        />
-                      </div>
-                    </div>
-                    {ops ? (
-                      <PriorityBadge priority={ops.priority} />
-                    ) : (
-                      <StatusBadge active={client.invoiceCount > 0 || !!client.lastReceiptDate} />
-                    )}
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {ops && (
-                    <div className="rounded-md border bg-muted/20 p-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-xs text-muted-foreground">
-                            <T k="pages.nextAction" />
-                          </p>
-                          <p className="text-sm font-medium truncate">{fx(ops.nextBestAction)}</p>
-                        </div>
-                        <span className="text-xs font-medium shrink-0">
-                          {ops.bookkeeping.closeProgress}% {b("close", "إقفال")}
-                        </span>
-                      </div>
-                      <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className="h-full bg-primary"
-                          style={{ width: `${ops.bookkeeping.closeProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Key metrics */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-muted/40 rounded-md p-2">
-                      <p className="text-xs text-muted-foreground">
-                        <T k="pages.outstandingAr" />
-                      </p>
-                      <p className="font-semibold text-sm mt-0.5">
-                        {formatAed(client.outstandingAr)}
-                      </p>
-                    </div>
-                    <div className="bg-muted/40 rounded-md p-2">
-                      <p className="text-xs text-muted-foreground">
-                        <T k="pages.invoices" />
-                      </p>
-                      <p className="font-semibold text-sm mt-0.5">{client.invoiceCount}</p>
-                    </div>
-                  </div>
-
-                  {/* VAT status */}
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground flex items-center gap-1">
-                      <Calendar className="w-3.5 h-3.5" />
-                      <T k="pages.vatStatus" />
-                    </span>
-                    {ops && hasClientService(ops, "vat") ? (
-                      <PriorityBadge priority={ops.vat.status} />
-                    ) : (
-                      <Badge variant="outline">
-                        <T k="pages.notScoped" />
-                      </Badge>
-                    )}
-                  </div>
-
-                  {ops && (
-                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                      <span>
-                        {hasClientService(ops, "vat")
-                          ? `${fx(ops.vat.cohortLabel)} · ${fx(formatDays(ops.vat.daysTilDue))}`
-                          : b("VAT not scoped", "ضريبة القيمة المضافة خارج النطاق")}
-                      </span>
-                      <span>
-                        {hasClientService(ops, "corporate_tax")
-                          ? `${b("CT", "ضريبة الشركات")} ${fx(formatDays(ops.corporateTax.daysTilDue))}`
-                          : b("CT not scoped", "ضريبة الشركات خارج النطاق")}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Last activity */}
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>
-                      <T k="pages.lastReceipt" />
-                    </span>
-                    <span>
-                      {client.lastReceiptDate
-                        ? `${fdShort(client.lastReceiptDate)}, ${new Date(client.lastReceiptDate).getFullYear()}`
-                        : b("Never", "أبدًا")}
-                    </span>
-                  </div>
-
-                  {/* Staff */}
-                  {(ops?.assignedStaff.length ?? client.assignedStaff.length) > 0 && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Users className="w-3.5 h-3.5" />
-                      {ops
-                        ? ops.assignedStaff.map((s) => s.name).join(", ")
-                        : client.assignedStaff.map((s) => s.name).join(", ")}
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div className="flex gap-2 pt-1">
-                    {ops && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setBriefClientId(client.id)}
-                      >
-                        <T k="pages.brief" />
-                      </Button>
-                    )}
-                    {(!ops || hasClientService(ops, "vat")) && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setVatWorkspaceClientId(client.id)}
-                      >
-                        VAT
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => handleOpenBooks(client.id)}
-                      disabled={switchMutation.isPending}
-                      data-testid={`button-open-books-${client.id}`}
-                    >
-                      <BookOpen className="w-3.5 h-3.5 me-1.5" />
-                      <T k="pages.openBooks" />
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleViewProfile(client.id)}
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Table view */}
-      {view === "table" && filtered.length > 0 && (
+      {/* Clients table */}
+      {filtered.length > 0 && (
         <div className="border rounded-lg overflow-hidden overflow-x-auto">
-          <Table>
+          <Table data-testid="clients-table">
             <TableHeader>
               <TableRow>
                 <TableHead>
@@ -945,44 +513,35 @@ export default function ClientPortfolio() {
                 <TableHead>
                   <T k="pages.services" />
                 </TableHead>
-                <TableHead>TRN</TableHead>
-                <TableHead>
-                  <T k="pages.outstandingAr" />
-                </TableHead>
-                <TableHead>
-                  <T k="pages.invoices" />
-                </TableHead>
                 <TableHead>
                   <T k="pages.vatStatus" />
                 </TableHead>
-                <TableHead>
-                  <T k="pages.close" />
-                </TableHead>
+                <TableHead>{t["firmOps.colNextDeadline"]}</TableHead>
+                <TableHead>{t["firmOps.colHealth"]}</TableHead>
                 <TableHead>
                   <T k="pages.owner" />
                 </TableHead>
-                <TableHead data-numeric>
-                  <T k="pages.actions" />
-                </TableHead>
+                <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.map((client) => {
                 const ops = bookkeeperByClientId.get(client.id);
+                const vatScoped = ops && hasClientService(ops, "vat");
                 return (
                   <TableRow key={client.id} className="hover:bg-muted/50">
                     <TableCell>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium">{client.name}</p>
-                          {ops && <PriorityBadge priority={ops.priority} />}
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          {ops?.nextBestAction ??
-                            client.industry ??
-                            t["clientPortfolio.openProfileForDetails"]}
-                        </p>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleViewProfile(client.id)}
+                        className="font-medium text-start hover:underline"
+                        translate="no"
+                      >
+                        {client.name}
+                      </button>
+                      <p className="text-xs text-muted-foreground">
+                        {client.trnVatNumber || b("No TRN", "بلا رقم تسجيل ضريبي")}
+                      </p>
                     </TableCell>
                     <TableCell>
                       <ServiceScopeBadges
@@ -990,13 +549,8 @@ export default function ClientPortfolio() {
                         compact
                       />
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {client.trnVatNumber || "—"}
-                    </TableCell>
-                    <TableCell className="font-medium">{formatAed(client.outstandingAr)}</TableCell>
-                    <TableCell>{client.invoiceCount}</TableCell>
                     <TableCell>
-                      {ops && hasClientService(ops, "vat") ? (
+                      {vatScoped ? (
                         <div className="space-y-1">
                           <PriorityBadge priority={ops.vat.status} />
                           <p className="text-xs text-muted-foreground">{fx(ops.vat.cohortLabel)}</p>
@@ -1008,58 +562,40 @@ export default function ClientPortfolio() {
                       )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {ops && hasClientService(ops, "bookkeeping")
-                        ? `${ops.bookkeeping.closeProgress}% close`
-                        : !ops && client.lastReceiptDate
-                          ? format(new Date(client.lastReceiptDate), "MMM d, yyyy")
-                          : t["pages.notScoped"]}
+                      {vatScoped
+                        ? `${fdShort(ops.vat.dueDate)} · ${fx(formatDays(ops.vat.daysTilDue))}`
+                        : "—"}
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Users className="w-3.5 h-3.5 text-muted-foreground" />
-                        <span className="text-sm">
-                          {ops
-                            ? ownerPreview(ops.assignedStaff.map((staff) => staff.name))
-                            : client.assignedStaff.length}
-                        </span>
-                      </div>
+                      {ops ? (
+                        <PriorityBadge priority={ops.priority} />
+                      ) : (
+                        <StatusBadge active={client.invoiceCount > 0 || !!client.lastReceiptDate} />
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {ops
+                        ? fx(ownerPreview(ops.assignedStaff.map((staff) => staff.name)))
+                        : client.assignedStaff.length}
                     </TableCell>
                     <TableCell data-numeric>
-                      <div className="flex justify-end gap-1">
-                        {ops && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setBriefClientId(client.id)}
-                          >
-                            <T k="pages.brief" />
-                          </Button>
-                        )}
-                        {(!ops || hasClientService(ops, "vat")) && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setVatWorkspaceClientId(client.id)}
-                          >
-                            VAT
-                          </Button>
-                        )}
-                        <Button
-                          size="sm"
-                          onClick={() => handleOpenBooks(client.id)}
-                          disabled={switchMutation.isPending}
-                        >
-                          <BookOpen className="w-3.5 h-3.5 me-1" />
-                          Open
-                        </Button>
+                      <RowActions
+                        menu={
+                          <DropdownMenuItem onSelect={() => handleViewProfile(client.id)}>
+                            {t["firmOps.openProfile"]}
+                          </DropdownMenuItem>
+                        }
+                      >
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleViewProfile(client.id)}
+                          onClick={() => handleOpenBooks(client.id)}
+                          disabled={switchMutation.isPending}
                         >
-                          <ChevronRight className="w-4 h-4" />
+                          <BookOpen className="w-3.5 h-3.5 me-1" aria-hidden />
+                          {t["firmOps.openBooks"]}
                         </Button>
-                      </div>
+                      </RowActions>
                     </TableCell>
                   </TableRow>
                 );
@@ -1080,7 +616,7 @@ export default function ClientPortfolio() {
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-1.5">
-              <Label htmlFor="name">Company Name *</Label>
+              <Label htmlFor="name">{t["firmOps.companyNameRequired"]}</Label>
               <Input
                 id="name"
                 value={form.name}
@@ -1119,8 +655,12 @@ export default function ClientPortfolio() {
                       }}
                     />
                     <span>
-                      <span className="font-medium block">{option.label}</span>
-                      <span className="text-xs text-muted-foreground">{option.description}</span>
+                      <span className="font-medium block">
+                        {t[`firmOps.service_${option.code}_label`]}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {t[`firmOps.service_${option.code}_desc`]}
+                      </span>
                     </span>
                   </label>
                 ))}
@@ -1128,7 +668,7 @@ export default function ClientPortfolio() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-1.5">
-                <Label htmlFor="trn">TRN / VAT Number</Label>
+                <Label htmlFor="trn">{t["firmOps.trnVatNumber"]}</Label>
                 <Input
                   id="trn"
                   value={form.trnVatNumber}
@@ -1240,9 +780,11 @@ export default function ClientPortfolio() {
                     <SelectItem value="auto">
                       <T k="pages.autoFromNrClientGroup" />
                     </SelectItem>
-                    <SelectItem value="11">Jan / Apr / Jul / Oct</SelectItem>
-                    <SelectItem value="12">Feb / May / Aug / Nov</SelectItem>
-                    <SelectItem value="1">Mar / Jun / Sep / Dec</SelectItem>
+                    {vatCloseGroups(locale).map((group) => (
+                      <SelectItem key={group.value} value={group.value}>
+                        {group.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -1270,9 +812,9 @@ export default function ClientPortfolio() {
                     <SelectItem value="4">
                       <T k="pages.april" />
                     </SelectItem>
-                    <SelectItem value="5">May</SelectItem>
-                    <SelectItem value="6">June</SelectItem>
-                    <SelectItem value="7">July</SelectItem>
+                    <SelectItem value="5">{t["firmOps.monthMay"]}</SelectItem>
+                    <SelectItem value="6">{t["firmOps.monthJune"]}</SelectItem>
+                    <SelectItem value="7">{t["firmOps.monthJuly"]}</SelectItem>
                     <SelectItem value="8">
                       <T k="pages.august" />
                     </SelectItem>
@@ -1381,17 +923,18 @@ export default function ClientPortfolio() {
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="grid gap-1.5">
-              <Label htmlFor="import-file">CSV / XLSX file</Label>
-              <Input
+              <Label htmlFor="import-file">{t["firmOps.importFileLabel"]}</Label>
+              <FileDrop
                 id="import-file"
-                type="file"
                 accept=".csv,.xlsx,.xls"
-                onChange={(e) => {
-                  setImportFile(e.target.files?.[0] ?? null);
+                value={importFile?.name}
+                onFiles={([f]) => {
+                  setImportFile(f ?? null);
                   setImportResult(null);
                 }}
+                onClear={() => setImportFile(null)}
               />
-              <p className="text-xs text-muted-foreground">Up to 500 rows per upload.</p>
+              <p className="text-xs text-muted-foreground">{t["firmOps.importRowLimit"]}</p>
             </div>
             {importResult && (
               <div className="rounded border p-3 space-y-2">
@@ -1437,20 +980,6 @@ export default function ClientPortfolio() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <OperationsBriefDialog
-        client={briefClient}
-        open={!!briefClientId}
-        onOpenChange={(open) => !open && setBriefClientId(null)}
-        onOpenBooks={handleOpenBooks}
-        onViewProfile={handleViewProfile}
-      />
-      <VatWorkspaceDialog
-        client={vatWorkspaceClient}
-        ops={vatWorkspaceOps}
-        open={!!vatWorkspaceClientId}
-        onOpenChange={(open) => !open && setVatWorkspaceClientId(null)}
-      />
     </div>
   );
 }

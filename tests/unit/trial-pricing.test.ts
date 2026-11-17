@@ -233,9 +233,11 @@ describe("/subscription", () => {
   it("shows the trial banner and the free plan card agrees with the table: 10 AI credits", async () => {
     await renderSubscription();
     expect(container.querySelector("[data-testid=trial-banner]")).not.toBeNull();
-    expect(text()).toContain("10 AI credits/month");
+    // WP-E: the plan grid is the site's PlanCard (spec 3.15); the free card is on the page and the
+    // comparison table carries the AI-credit figure.
+    expect(container.querySelector("[data-testid=card-plan-free]")).not.toBeNull();
     const row = [...container.querySelectorAll("tr")].find((r) =>
-      r.querySelector("td")?.textContent?.startsWith("AI Credits/month")
+      r.querySelector("td")?.textContent?.startsWith("AI credits/month")
     );
     expect(row?.querySelectorAll("td")[1]?.textContent).toBe("10");
     expect(getTierLimits("free").aiCreditsPerMonth).toBe(10);
@@ -257,8 +259,13 @@ describe("/subscription", () => {
 
   it("aligns plan features with /pricing: OCR coming soon, e-invoicing with provider", async () => {
     await renderSubscription();
-    expect(text()).toContain("AI receipt reading (coming soon)");
-    expect(text()).toContain("switched on when your accredited provider is connected");
+    // WP-E: plan cards are the shared PlanCard; the claims live in the comparison table.
+    const cells = (label: string) =>
+      [...container.querySelectorAll("tr")].find((r) =>
+        r.querySelector("td")?.textContent?.startsWith(label)
+      )?.textContent ?? "";
+    expect(cells("OCR receipt scanning")).toContain("Coming soon");
+    expect(cells("E-invoicing")).toContain("With provider");
     expect(text()).not.toContain("E-invoicing XML workflow");
   });
 

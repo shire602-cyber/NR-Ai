@@ -1,4 +1,7 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { PlanCard } from "@/components/marketing/PlanCard";
+import { PLANS as MARKETING_PLANS, planNameKey } from "@/components/marketing/plans";
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -19,7 +22,6 @@ import { useToast } from "@/hooks/use-toast";
 import { ApiError } from "@/lib/queryClient";
 import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
 import {
-  CreditCard,
   Check,
   Crown,
   Gem,
@@ -148,11 +150,6 @@ const PLANS = [
     },
   },
 ];
-
-/** Whole-number price in AED for the active locale ("AED 49" / "‏49 د.إ.‏"). */
-function formatCurrency0(amount: number, locale: string): string {
-  return formatMoneyText(amount, "AED", locale, { fractionDigits: 0 });
-}
 
 /** "Contact us to upgrade" link while online checkout is not configured. */
 function contactHref(planName?: string): string {
@@ -328,420 +325,369 @@ export default function Subscription() {
     offerOpen && limit !== -1 ? limit : undefined;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow={t["pages.companyProfileEyebrow"]}
-        title={t["pages.subscriptionPageTitle"]}
-        description={t["pages.subscriptionPageDescription"]}
-      />
+    <SettingsLayout>
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow={t["pages.companyProfileEyebrow"]}
+          title={t["pages.subscriptionPageTitle"]}
+          description={t["pages.subscriptionPageDescription"]}
+        />
 
-      <TrialBanner />
+        <TrialBanner />
 
-      {/* Current Plan & Usage */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Current Plan Card */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-lg">
-                <T k="pageLabels.currentPlan" />
-              </CardTitle>
-              <Badge
-                variant={tierName === "free" ? "secondary" : "default"}
-                className={tierName !== "free" ? "" : ""}
-              >
-                <Star className="w-3 h-3 me-1" />
-                {t[currentPlan.name]}
-              </Badge>
-            </div>
-            <CardDescription>{t[currentPlan.description]}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {subscription?.status && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">
-                  <T k="banking.common.status" />
-                </span>
-                <Badge dot variant={subscription.status === "active" ? "success" : "danger"}>
-                  {t[`pages.subscriptionStatus_${subscription.status}`] ?? subscription.status}
+        {/* Current Plan & Usage */}
+        <div className="grid gap-6 md:grid-cols-2">
+          {/* Current Plan Card */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">
+                  <T k="pageLabels.currentPlan" />
+                </CardTitle>
+                <Badge
+                  variant={tierName === "free" ? "secondary" : "default"}
+                  className={tierName !== "free" ? "" : ""}
+                >
+                  <Star className="w-3 h-3 me-1" />
+                  {t[currentPlan.name]}
                 </Badge>
               </div>
-            )}
-            {subscription?.billingCycle && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">
-                  <T k="pageLabels.billingCycle" />
-                </span>
-                <span className="font-medium capitalize">
-                  {t[`pages.subscriptionCycle_${subscription.billingCycle}`] ??
-                    subscription.billingCycle}
-                </span>
-              </div>
-            )}
-            {subscription?.currentPeriodEnd && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-muted-foreground">
-                  {tierName === "free" ? (
-                    <T k="pages.subscriptionRenewal" />
-                  ) : (
-                    <T k="pageLabels.currentPeriodEnds" />
-                  )}
-                </span>
-                <span className="font-medium">
-                  {tierName === "free"
-                    ? t["pages.subscriptionNoRenewal"]
-                    : formatDisplayDate(subscription.currentPeriodEnd, locale)}
-                </span>
-              </div>
-            )}
-            {subscription?.stripeCustomerId && (
-              <Button
-                variant="outline"
-                className="w-full mt-2"
-                onClick={() => portalMutation.mutate()}
-                disabled={portalMutation.isPending}
-              >
-                {portalMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
-                ) : (
-                  <ExternalLink className="w-4 h-4 me-2" />
-                )}
-                {t["pages.subscriptionManageBilling"]}
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Usage Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">
-              <T k="pageLabels.usageThisMonth" />
-            </CardTitle>
-            <CardDescription>
-              <T k="pageLabels.yourResourceConsumptionForTheCurrent" />
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <UsageMeter
-              label={t["pages.subscriptionUsageInvoices"]}
-              used={usage?.invoices?.used ?? 0}
-              limit={usage?.invoices?.limit ?? currentPlan.limits.invoices}
-              postOfferLimit={offerNote(usage?.invoices?.limit ?? currentPlan.limits.invoices)}
-              icon={FileText}
-              {...upgradeProps}
-            />
-            <UsageMeter
-              label={t["pages.subscriptionUsageReceipts"]}
-              used={usage?.receipts?.used ?? 0}
-              limit={usage?.receipts?.limit ?? currentPlan.limits.receipts}
-              postOfferLimit={offerNote(usage?.receipts?.limit ?? currentPlan.limits.receipts)}
-              icon={Receipt}
-              {...upgradeProps}
-            />
-            <UsageMeter
-              label={t["pages.subscriptionUsageAiCredits"]}
-              used={usage?.aiCredits?.used ?? 0}
-              limit={usage?.aiCredits?.limit ?? currentPlan.limits.aiCredits}
-              icon={Brain}
-              {...upgradeProps}
-            />
-            <UsageMeter
-              label={t["pages.subscriptionUsageTeamMembers"]}
-              used={usage?.users?.used ?? 0}
-              limit={usage?.users?.limit ?? currentPlan.limits.users}
-              postOfferLimit={offerNote(usage?.users?.limit ?? currentPlan.limits.users)}
-              icon={Users}
-              {...upgradeProps}
-            />
-            {usage?.storage && usage.storage.used != null && (
-              <UsageMeter
-                label={t["pages.subscriptionUsageStorage"]}
-                used={usage.storage.used}
-                limit={usage.storage.limit}
-                unit="MB"
-                icon={HardDrive}
-                {...upgradeProps}
-              />
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {companyId && <BillingDocuments companyId={companyId} />}
-
-      {/* Billing Cycle Toggle */}
-      <div className="flex items-center justify-center gap-4 pt-4">
-        <span
-          className={`text-sm font-medium ${billingCycle === "monthly" ? "text-foreground" : "text-muted-foreground"}`}
-        >
-          <T k="firm.cycleMonthly" />
-        </span>
-        <Switch
-          aria-label={t["pages.subscriptionYearlyBilling"]}
-          checked={billingCycle === "yearly"}
-          onCheckedChange={(checked) => setBillingCycle(checked ? "yearly" : "monthly")}
-        />
-        <span
-          className={`text-sm font-medium ${billingCycle === "yearly" ? "text-foreground" : "text-muted-foreground"}`}
-        >
-          <T k="pageLabels.subscriptionYearly" />
-        </span>
-        {billingCycle === "yearly" && (
-          <Badge variant="secondary" className="bg-success/10 text-success border-success/20">
-            {t["pages.subscriptionSaveUpTo"]}
-          </Badge>
-        )}
-      </div>
-
-      {/* Plan Cards */}
-      <div id="subscription-plans" className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 scroll-mt-4">
-        {PLANS.map((plan) => {
-          const isCurrent = plan.id === tierName;
-          const price = billingCycle === "yearly" ? plan.yearlyPrice : plan.monthlyPrice;
-          const PlanIcon = plan.icon;
-
-          return (
-            <Card
-              key={plan.id}
-              className={`relative overflow-hidden transition-all duration-300 hover:-translate-y-1 ${
-                plan.popular
-                  ? "border-primary/50 shadow-lg shadow-primary/10"
-                  : isCurrent
-                    ? "border-primary/30 bg-primary/5"
-                    : "border-border"
-              }`}
-            >
-              {plan.popular && (
-                <div className="absolute top-0 end-0 px-3 py-1 bg-primary text-primary-foreground text-xs font-medium rounded-bl-lg">
-                  <T k="pageLabels.mostPopular" />
+              <CardDescription>{t[currentPlan.description]}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {subscription?.status && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    <T k="banking.common.status" />
+                  </span>
+                  <Badge dot variant={subscription.status === "active" ? "success" : "danger"}>
+                    {t[`pages.subscriptionStatus_${subscription.status}`] ?? subscription.status}
+                  </Badge>
                 </div>
               )}
-
-              <CardHeader className="pb-4">
-                <div className="flex items-center gap-3 mb-2">
-                  <div
-                    className={`w-10 h-10 rounded-lg ${plan.color} flex items-center justify-center`}
-                  >
-                    <PlanIcon className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-lg">{t[plan.name]}</CardTitle>
-                  </div>
+              {subscription?.billingCycle && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    <T k="pageLabels.billingCycle" />
+                  </span>
+                  <span className="font-medium capitalize">
+                    {t[`pages.subscriptionCycle_${subscription.billingCycle}`] ??
+                      subscription.billingCycle}
+                  </span>
                 </div>
-                <CardDescription>{t[plan.description]}</CardDescription>
-
-                <div className="pt-3">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-bold">
-                      {price === 0 ? t["pages.subscriptionFree"] : formatCurrency0(price, locale)}
-                    </span>
-                    {price > 0 && (
-                      <span className="text-muted-foreground text-sm">
-                        {t["pages.subscriptionPerMonth"]}
-                      </span>
+              )}
+              {subscription?.currentPeriodEnd && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">
+                    {tierName === "free" ? (
+                      <T k="pages.subscriptionRenewal" />
+                    ) : (
+                      <T k="pageLabels.currentPeriodEnds" />
                     )}
-                  </div>
-                  {billingCycle === "yearly" && plan.monthlyPrice > 0 && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {formatMessage(t["pages.subscriptionYearlyNote"], {
-                        total: formatCurrency0(plan.yearlyPrice * 12, locale),
-                        saving: formatCurrency0(
-                          (plan.monthlyPrice - plan.yearlyPrice) * 12,
-                          locale
-                        ),
-                      })}
-                    </p>
-                  )}
+                  </span>
+                  <span className="font-medium">
+                    {tierName === "free"
+                      ? t["pages.subscriptionNoRenewal"]
+                      : formatDisplayDate(subscription.currentPeriodEnd, locale)}
+                  </span>
                 </div>
-              </CardHeader>
-
-              <CardContent className="space-y-4">
-                <ul className="space-y-2.5">
-                  {plan.features.map((feature, i) => (
-                    <li key={i} className="flex items-start gap-2 text-sm">
-                      <Check className="w-4 h-4 text-success flex-shrink-0 mt-0.5" />
-                      <span>{t[feature]}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="pt-2">
-                  {isCurrent ? (
-                    <Button variant="outline" className="w-full" disabled>
-                      <T k="pageLabels.currentPlan" />
-                    </Button>
-                  ) : !checkoutAvailable && canManageBilling ? (
-                    <Button
-                      className="w-full"
-                      variant={plan.popular ? "default" : "outline"}
-                      asChild
-                      data-testid={`plan-contact-${plan.id}`}
-                    >
-                      <a href={contactHref(t[plan.name])}>
-                        <CreditCard className="w-4 h-4 me-2" />
-                        {isDowngrade(plan.id)
-                          ? t["pages.subscriptionContactUs"]
-                          : t["pages.subscriptionContactToUpgrade"]}
-                      </a>
-                    </Button>
+              )}
+              {subscription?.stripeCustomerId && (
+                <Button
+                  variant="outline"
+                  className="w-full mt-2"
+                  onClick={() => portalMutation.mutate()}
+                  disabled={portalMutation.isPending}
+                >
+                  {portalMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   ) : (
-                    <Button
-                      className={`w-full ${plan.popular ? "hover:" : ""}`}
-                      variant={plan.popular ? "default" : "outline"}
-                      onClick={() => checkoutMutation.mutate(plan.id)}
-                      disabled={checkoutMutation.isPending || !canManageBilling}
-                      title={!canManageBilling ? t["common.noPermission"] : undefined}
-                      data-testid={`plan-upgrade-${plan.id}`}
-                    >
-                      {checkoutMutation.isPending ? (
-                        <Loader2 className="w-4 h-4 me-2 animate-spin" />
-                      ) : (
-                        <CreditCard className="w-4 h-4 me-2" />
-                      )}
-                      {isDowngrade(plan.id)
-                        ? t["pages.subscriptionDowngrade"]
-                        : t["pages.subscriptionUpgrade"]}
-                    </Button>
+                    <ExternalLink className="w-4 h-4 me-2" />
                   )}
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+                  {t["pages.subscriptionManageBilling"]}
+                </Button>
+              )}
+            </CardContent>
+          </Card>
 
-      {/* Feature Comparison */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <T k="pageLabels.featureComparison" />
-          </CardTitle>
-          <CardDescription>
-            <T k="pageLabels.seeWhatEachPlanIncludesAt" />
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-start py-3 pe-4 font-medium text-muted-foreground">
-                    <T k="pageLabels.feature" />
-                  </th>
-                  {PLANS.map((plan) => (
-                    <th key={plan.id} className="text-center py-3 px-4 font-medium">
-                      {t[plan.name]}
+          {/* Usage Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">
+                <T k="pageLabels.usageThisMonth" />
+              </CardTitle>
+              <CardDescription>
+                <T k="pageLabels.yourResourceConsumptionForTheCurrent" />
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <UsageMeter
+                label={t["pages.subscriptionUsageInvoices"]}
+                used={usage?.invoices?.used ?? 0}
+                limit={usage?.invoices?.limit ?? currentPlan.limits.invoices}
+                postOfferLimit={offerNote(usage?.invoices?.limit ?? currentPlan.limits.invoices)}
+                icon={FileText}
+                {...upgradeProps}
+              />
+              <UsageMeter
+                label={t["pages.subscriptionUsageReceipts"]}
+                used={usage?.receipts?.used ?? 0}
+                limit={usage?.receipts?.limit ?? currentPlan.limits.receipts}
+                postOfferLimit={offerNote(usage?.receipts?.limit ?? currentPlan.limits.receipts)}
+                icon={Receipt}
+                {...upgradeProps}
+              />
+              <UsageMeter
+                label={t["pages.subscriptionUsageAiCredits"]}
+                used={usage?.aiCredits?.used ?? 0}
+                limit={usage?.aiCredits?.limit ?? currentPlan.limits.aiCredits}
+                icon={Brain}
+                {...upgradeProps}
+              />
+              <UsageMeter
+                label={t["pages.subscriptionUsageTeamMembers"]}
+                used={usage?.users?.used ?? 0}
+                limit={usage?.users?.limit ?? currentPlan.limits.users}
+                postOfferLimit={offerNote(usage?.users?.limit ?? currentPlan.limits.users)}
+                icon={Users}
+                {...upgradeProps}
+              />
+              {usage?.storage && usage.storage.used != null && (
+                <UsageMeter
+                  label={t["pages.subscriptionUsageStorage"]}
+                  used={usage.storage.used}
+                  limit={usage.storage.limit}
+                  unit="MB"
+                  icon={HardDrive}
+                  {...upgradeProps}
+                />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {companyId && <BillingDocuments companyId={companyId} />}
+
+        {/* Billing Cycle Toggle */}
+        <div className="flex items-center justify-center gap-4 pt-4">
+          <span
+            className={`text-sm font-medium ${billingCycle === "monthly" ? "text-foreground" : "text-muted-foreground"}`}
+          >
+            <T k="firm.cycleMonthly" />
+          </span>
+          <Switch
+            aria-label={t["pages.subscriptionYearlyBilling"]}
+            checked={billingCycle === "yearly"}
+            onCheckedChange={(checked) => setBillingCycle(checked ? "yearly" : "monthly")}
+          />
+          <span
+            className={`text-sm font-medium ${billingCycle === "yearly" ? "text-foreground" : "text-muted-foreground"}`}
+          >
+            <T k="pageLabels.subscriptionYearly" />
+          </span>
+          {billingCycle === "yearly" && (
+            <Badge variant="secondary" className="bg-success/10 text-success border-success/20">
+              {t["pages.subscriptionSaveUpTo"]}
+            </Badge>
+          )}
+        </div>
+
+        {/* Plan Cards */}
+        <div
+          id="subscription-plans"
+          className="grid items-stretch gap-4 sm:grid-cols-2 scroll-mt-4"
+        >
+          {/* WP-E (spec 3.15): the plan grid reuses the site's PlanCard so the app and the
+              pricing page show plans the same way; only the action differs here. */}
+          {MARKETING_PLANS.map((plan) => {
+            const isCurrent = plan.id === tierName;
+            const planName = t[planNameKey(plan.id)];
+            const action = isCurrent ? (
+              <Button variant="outline" className="h-10 w-full" disabled>
+                <T k="pageLabels.currentPlan" />
+              </Button>
+            ) : !checkoutAvailable && canManageBilling ? (
+              <Button
+                className="h-10 w-full"
+                variant={plan.featured ? "default" : "outline"}
+                asChild
+                data-testid={`plan-contact-${plan.id}`}
+              >
+                <a href={contactHref(planName)}>
+                  {isDowngrade(plan.id)
+                    ? t["pages.subscriptionContactUs"]
+                    : t["pages.subscriptionContactToUpgrade"]}
+                </a>
+              </Button>
+            ) : (
+              <Button
+                className="h-10 w-full"
+                variant={plan.featured ? "default" : "outline"}
+                onClick={() => checkoutMutation.mutate(plan.id)}
+                disabled={checkoutMutation.isPending || !canManageBilling}
+                title={!canManageBilling ? t["common.noPermission"] : undefined}
+                data-testid={`plan-upgrade-${plan.id}`}
+              >
+                {checkoutMutation.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                {isDowngrade(plan.id)
+                  ? t["pages.subscriptionDowngrade"]
+                  : t["pages.subscriptionUpgrade"]}
+              </Button>
+            );
+            return (
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                cycle={billingCycle}
+                action={action}
+                headingLevel="h3"
+                className={isCurrent ? "ring-1 ring-primary/40" : undefined}
+              />
+            );
+          })}
+        </div>
+
+        {/* Feature Comparison */}
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <T k="pageLabels.featureComparison" />
+            </CardTitle>
+            <CardDescription>
+              <T k="pageLabels.seeWhatEachPlanIncludesAt" />
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-start py-3 pe-4 font-medium text-muted-foreground">
+                      <T k="pageLabels.feature" />
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  {
-                    label: "pages.subscriptionInvoicesMonth",
-                    values: [
-                      "20",
-                      "200",
-                      "pages.subscriptionUnlimited",
-                      "pages.subscriptionUnlimited",
-                    ],
-                  },
-                  {
-                    label: "pages.subscriptionReceiptsMonth",
-                    values: [
-                      "20",
-                      "200",
-                      "pages.subscriptionUnlimited",
-                      "pages.subscriptionUnlimited",
-                    ],
-                  },
-                  {
-                    label: "pages.subscriptionAiCreditsMonth",
-                    values: ["10", "50", "500", "pages.subscriptionUnlimited"],
-                  },
-                  {
-                    label: "pages.subscriptionTeamMembers",
-                    values: ["1", "3", "10", "pages.subscriptionUnlimited"],
-                  },
-                  {
-                    label: "pages.subscriptionOcrReceiptScanning",
-                    values: [
-                      false,
-                      "pages.subscriptionComingSoon",
-                      "pages.subscriptionComingSoon",
-                      "pages.subscriptionComingSoon",
-                    ],
-                  },
-                  {
-                    label: "pages.subscriptionBankReconciliation",
-                    values: [true, true, true, true],
-                  },
-                  {
-                    label: "pages.subscriptionEInvoicing",
-                    values: [
-                      false,
-                      false,
-                      "pages.subscriptionWithProvider",
-                      "pages.subscriptionWithProvider",
-                    ],
-                  },
-                  { label: "pages.subscriptionQuotesEstimates", values: [false, true, true, true] },
-                  { label: "pages.subscriptionCreditNotes", values: [false, true, true, true] },
-                  {
-                    label: "pages.subscriptionRecurringInvoices",
-                    values: [false, true, true, true],
-                  },
-                  { label: "pages.subscriptionMultiCurrency", values: [false, true, true, true] },
-                  { label: "pages.subscriptionPurchaseOrders", values: [false, false, true, true] },
-                  {
-                    label: "pages.subscriptionAdvancedReports",
-                    values: [false, false, true, true],
-                  },
-                  { label: "pages.subscriptionBulkOperations", values: [false, false, true, true] },
-                  { label: "pages.subscriptionAiCfoAdvisor", values: [false, false, true, true] },
-                  {
-                    label: "pages.subscriptionPayrollIntegration",
-                    values: [false, false, true, true],
-                  },
-                  {
-                    label: "pages.subscriptionInventoryManagement",
-                    values: [false, true, true, true],
-                  },
-                  { label: "pages.subscriptionApiAccess", values: [false, false, false, true] },
-                  { label: "pages.subscriptionWhiteLabel", values: [false, false, false, true] },
-                  {
-                    label: "pages.subscriptionDedicatedAccountant",
-                    values: [false, false, false, true],
-                  },
-                  {
-                    label: "pages.subscriptionEnterpriseSupportTerms",
-                    values: [false, false, false, true],
-                  },
-                ].map((row) => (
-                  <tr key={row.label} className="border-b last:border-0">
-                    <td className="py-3 pe-4 text-muted-foreground">{t[row.label]}</td>
-                    {row.values.map((value, i) => (
-                      <td key={i} className="text-center py-3 px-4">
-                        {typeof value === "boolean" ? (
-                          value ? (
-                            <Check className="w-4 h-4 text-success mx-auto" />
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )
-                        ) : (
-                          <span className="font-medium">{t[value] ?? value}</span>
-                        )}
-                      </td>
+                    {PLANS.map((plan) => (
+                      <th key={plan.id} className="text-center py-3 px-4 font-medium">
+                        {t[plan.name]}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+                </thead>
+                <tbody>
+                  {[
+                    {
+                      label: "pages.subscriptionInvoicesMonth",
+                      values: [
+                        "20",
+                        "200",
+                        "pages.subscriptionUnlimited",
+                        "pages.subscriptionUnlimited",
+                      ],
+                    },
+                    {
+                      label: "pages.subscriptionReceiptsMonth",
+                      values: [
+                        "20",
+                        "200",
+                        "pages.subscriptionUnlimited",
+                        "pages.subscriptionUnlimited",
+                      ],
+                    },
+                    {
+                      label: "pages.subscriptionAiCreditsMonth",
+                      values: ["10", "50", "500", "pages.subscriptionUnlimited"],
+                    },
+                    {
+                      label: "pages.subscriptionTeamMembers",
+                      values: ["1", "3", "10", "pages.subscriptionUnlimited"],
+                    },
+                    {
+                      label: "pages.subscriptionOcrReceiptScanning",
+                      values: [
+                        false,
+                        "pages.subscriptionComingSoon",
+                        "pages.subscriptionComingSoon",
+                        "pages.subscriptionComingSoon",
+                      ],
+                    },
+                    {
+                      label: "pages.subscriptionBankReconciliation",
+                      values: [true, true, true, true],
+                    },
+                    {
+                      label: "pages.subscriptionEInvoicing",
+                      values: [
+                        false,
+                        false,
+                        "pages.subscriptionWithProvider",
+                        "pages.subscriptionWithProvider",
+                      ],
+                    },
+                    {
+                      label: "pages.subscriptionQuotesEstimates",
+                      values: [false, true, true, true],
+                    },
+                    { label: "pages.subscriptionCreditNotes", values: [false, true, true, true] },
+                    {
+                      label: "pages.subscriptionRecurringInvoices",
+                      values: [false, true, true, true],
+                    },
+                    { label: "pages.subscriptionMultiCurrency", values: [false, true, true, true] },
+                    {
+                      label: "pages.subscriptionPurchaseOrders",
+                      values: [false, false, true, true],
+                    },
+                    {
+                      label: "pages.subscriptionAdvancedReports",
+                      values: [false, false, true, true],
+                    },
+                    {
+                      label: "pages.subscriptionBulkOperations",
+                      values: [false, false, true, true],
+                    },
+                    { label: "pages.subscriptionAiCfoAdvisor", values: [false, false, true, true] },
+                    {
+                      label: "pages.subscriptionPayrollIntegration",
+                      values: [false, false, true, true],
+                    },
+                    {
+                      label: "pages.subscriptionInventoryManagement",
+                      values: [false, true, true, true],
+                    },
+                    { label: "pages.subscriptionApiAccess", values: [false, false, false, true] },
+                    { label: "pages.subscriptionWhiteLabel", values: [false, false, false, true] },
+                    {
+                      label: "pages.subscriptionDedicatedAccountant",
+                      values: [false, false, false, true],
+                    },
+                    {
+                      label: "pages.subscriptionEnterpriseSupportTerms",
+                      values: [false, false, false, true],
+                    },
+                  ].map((row) => (
+                    <tr key={row.label} className="border-b last:border-0">
+                      <td className="py-3 pe-4 text-muted-foreground">{t[row.label]}</td>
+                      {row.values.map((value, i) => (
+                        <td key={i} className="text-center py-3 px-4">
+                          {typeof value === "boolean" ? (
+                            value ? (
+                              <Check className="w-4 h-4 text-success mx-auto" />
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )
+                          ) : (
+                            <span className="font-medium">{t[value] ?? value}</span>
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </SettingsLayout>
   );
 }
 

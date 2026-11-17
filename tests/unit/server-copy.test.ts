@@ -12,6 +12,9 @@ import {
   NOTIFICATION_MESSAGE_TEMPLATES,
   NOTIFICATION_TITLE_TEMPLATES,
   cashForecastCopy,
+  describeAnomalyText,
+  describeCategorisationReason,
+  describeValueOpsText,
   describeCashForecastItemText,
   describeCashForecastText,
   describeEvidenceText,
@@ -78,11 +81,17 @@ describe("server copy templates", () => {
         // would otherwise also read as the firm "AED {amount} payable" template).
         const d = t.key.startsWith("evidence.")
           ? describeEvidenceText(text)
-          : (describeCashForecastText(text) ??
-            describeCashForecastItemText(text) ??
-            describeFirmText(text) ??
-            describeMonthEndText(text) ??
-            describeLegalSource(text));
+          : t.key.startsWith("anomaly.")
+            ? describeAnomalyText(text)
+            : t.key.startsWith("categorise.")
+              ? describeCategorisationReason(text)
+              : t.key.startsWith("valueOps.")
+                ? describeValueOpsText(text)
+                : (describeCashForecastText(text) ??
+                  describeCashForecastItemText(text) ??
+                  describeFirmText(text) ??
+                  describeMonthEndText(text) ??
+                  describeLegalSource(text));
         expect(d?.key, t.key).toBe(t.key);
         expect(d?.params, t.key).toEqual(p);
       }

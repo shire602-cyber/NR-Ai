@@ -73,15 +73,6 @@ export default function UserInvitations() {
     queryKey: ["/api/admin/clients"],
   });
 
-  // R01-15: single sign-on configuration status (OAuth providers; SAML is
-  // reported as requires_external until IdP metadata and a SAML flow exist).
-  const { data: sso } = useQuery<{
-    providers: Array<{ id: string; label: string; configured: boolean }>;
-    saml: { status: string; implemented: boolean; externalAction: { en: string; ar: string } };
-  }>({
-    queryKey: ["/api/admin/auth/sso-status"],
-  });
-
   const createInvitationMutation = useMutation({
     mutationFn: async (data: {
       email: string;
@@ -239,27 +230,6 @@ export default function UserInvitations() {
           </Button>
         }
       />
-      {sso && (
-        <Card data-testid="card-sso-status">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{t["portal.sso.title"]}</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2 text-sm">
-            {sso.providers.map((p) => (
-              <Badge key={p.id} variant={p.configured ? "default" : "secondary"}>
-                {p.label}:{" "}
-                {p.configured ? t["portal.sso.configured"] : t["portal.sso.notConfigured"]}
-              </Badge>
-            ))}
-            <Badge
-              variant="outline"
-              title={locale === "ar" ? sso.saml.externalAction.ar : sso.saml.externalAction.en}
-            >
-              {t["portal.sso.saml"]}: {t[`portal.sso.status.${sso.saml.status}`] ?? sso.saml.status}
-            </Badge>
-          </CardContent>
-        </Card>
-      )}
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -272,7 +242,7 @@ export default function UserInvitations() {
           </DialogHeader>
           <form onSubmit={handleSendInvitation} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email Address *</Label>
+              <Label htmlFor="email">{t["adminConsole.inviteEmail"]}</Label>
               <Input
                 id="email"
                 name="email"
@@ -283,7 +253,7 @@ export default function UserInvitations() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="company">Assign to Client (optional)</Label>
+              <Label htmlFor="company">{t["adminConsole.inviteAssignClient"]}</Label>
               <Select
                 value={selectedCompanyId || "none"}
                 onValueChange={(value) => setSelectedCompanyId(value === "none" ? "" : value)}
@@ -307,20 +277,17 @@ export default function UserInvitations() {
               </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="userType">User Type *</Label>
+              <Label htmlFor="userType">{t["adminConsole.inviteUserType"]}</Label>
               <Select name="userType" defaultValue="client">
                 <SelectTrigger data-testid="select-invite-usertype">
                   <SelectValue placeholder={t["portal.inviteSelectUserType"]} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="client">Client (NR-managed portal access)</SelectItem>
-                  <SelectItem value="customer">Customer (full SaaS bookkeeping)</SelectItem>
+                  <SelectItem value="client">{t["adminConsole.userTypeClient"]}</SelectItem>
+                  <SelectItem value="customer">{t["adminConsole.userTypeCustomer"]}</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Client: Simplified portal for NR-managed clients. Customer: Full self-service
-                access.
-              </p>
+              <p className="text-xs text-muted-foreground">{t["firmOps.inviteUserTypeHint"]}</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="role">
@@ -403,7 +370,11 @@ export default function UserInvitations() {
                 />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-40" data-testid="select-filter-status">
+                <SelectTrigger
+                  className="w-40"
+                  aria-label={t["firmOps.ariaInviteStatus"]}
+                  data-testid="select-filter-status"
+                >
                   <SelectValue placeholder={t["portal.inviteFilterStatus"]} />
                 </SelectTrigger>
                 <SelectContent>

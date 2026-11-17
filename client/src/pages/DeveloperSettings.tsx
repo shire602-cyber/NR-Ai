@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
@@ -149,34 +150,36 @@ export default function DeveloperSettings() {
   }
 
   return (
-    <div className="max-w-narrow">
-      <PageHeader
-        eyebrow="Settings"
-        title={t["developerSettings.developerSettings"]}
-        description={t["developerSettings.manageApiKeysAndWebhook"]}
-        className="mb-6"
-      />
-      <Tabs defaultValue="api-keys">
-        <TabsList className="mb-6">
-          <TabsTrigger value="api-keys" className="gap-2">
-            <Key className="h-4 w-4" />
-            <T k="pages.apiKeys" />
-          </TabsTrigger>
-          <TabsTrigger value="webhooks" className="gap-2">
-            <Webhook className="h-4 w-4" />
-            <T k="pageLabels.webhooks" />
-          </TabsTrigger>
-        </TabsList>
+    <SettingsLayout>
+      <div className="max-w-narrow">
+        <PageHeader
+          eyebrow="Settings"
+          title={t["developerSettings.developerSettings"]}
+          description={t["developerSettings.manageApiKeysAndWebhook"]}
+          className="mb-6"
+        />
+        <Tabs defaultValue="api-keys">
+          <TabsList className="mb-6">
+            <TabsTrigger value="api-keys" className="gap-2">
+              <Key className="h-4 w-4" />
+              <T k="pages.apiKeys" />
+            </TabsTrigger>
+            <TabsTrigger value="webhooks" className="gap-2">
+              <Webhook className="h-4 w-4" />
+              <T k="pageLabels.webhooks" />
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="api-keys">
-          {companyId && <ApiKeysTab companyId={companyId} />}
-        </TabsContent>
+          <TabsContent value="api-keys">
+            {companyId && <ApiKeysTab companyId={companyId} />}
+          </TabsContent>
 
-        <TabsContent value="webhooks">
-          {companyId && <WebhooksTab companyId={companyId} />}
-        </TabsContent>
-      </Tabs>
-    </div>
+          <TabsContent value="webhooks">
+            {companyId && <WebhooksTab companyId={companyId} />}
+          </TabsContent>
+        </Tabs>
+      </div>
+    </SettingsLayout>
   );
 }
 

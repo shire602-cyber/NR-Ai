@@ -5,9 +5,10 @@
  * documents on the firm's request lists. APIs: server/routes/firm-practice.routes.ts
  * ("Client owner side").
  */
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, CheckCircle2, FileSignature, Loader2, Upload, XCircle } from "lucide-react";
+import { CheckCircle2, FileSignature, Loader2, Upload, XCircle } from "lucide-react";
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +28,17 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest } from "@/lib/queryClient";
 import { useTranslation } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { openRequests, uploadCompanyDocument, type DocumentRequest } from "./firmRelationshipApi";
 
 interface Invitation {
@@ -74,24 +86,50 @@ const STATUS_VARIANT: Record<string, "secondary" | "success" | "danger" | "warni
   invited: "warning",
 };
 
+// WP-E (spec 3.15): statuses are shown as translated labels, never raw enums.
+const STATUS_LABEL: Record<string, string> = {
+  requested: "settingsPages.linkStatusRequested",
+  rejected: "settingsPages.linkStatusRejected",
+  uploaded: "settingsPages.linkStatusUploaded",
+  accepted: "settingsPages.linkStatusAccepted",
+  cancelled: "settingsPages.linkStatusCancelled",
+  sent: "settingsPages.linkStatusSent",
+  declined: "settingsPages.linkStatusDeclined",
+  active: "settingsPages.linkStatusActive",
+  revoked: "settingsPages.linkStatusRevoked",
+  invited: "settingsPages.linkStatusInvited",
+};
+
+function StatusPill({ status }: { status: string }) {
+  const { t } = useTranslation();
+  const key = STATUS_LABEL[status];
+  return (
+    <Badge variant={STATUS_VARIANT[status] ?? "secondary"}>
+      {key ? t[key] : t["settingsPages.linkStatusUnknown"]}
+    </Badge>
+  );
+}
+
 export default function FirmRelationship() {
   const { companyId, company } = useDefaultCompany();
   return (
-    <div className="space-y-6">
-      <PageHeader
-        icon={Building2}
-        title={<T k="portal.firmRelationshipTitle" />}
-        description={<T k="portal.firmRelationshipSubtitle" />}
-      />
-      <InvitationsCard />
-      {companyId ? (
-        <>
-          <FirmAccessCard companyId={companyId} companyName={company?.name ?? ""} />
-          <EngagementLettersCard companyId={companyId} />
-          <RequestListCard companyId={companyId} />
-        </>
-      ) : null}
-    </div>
+    <SettingsLayout>
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Settings"
+          title={<T k="portal.firmRelationshipTitle" />}
+          description={<T k="portal.firmRelationshipSubtitle" />}
+        />
+        <InvitationsCard />
+        {companyId ? (
+          <>
+            <FirmAccessCard companyId={companyId} companyName={company?.name ?? ""} />
+            <EngagementLettersCard companyId={companyId} />
+            <RequestListCard companyId={companyId} />
+          </>
+        ) : null}
+      </div>
+    </SettingsLayout>
   );
 }
 
@@ -215,6 +253,7 @@ function FirmAccessCard({ companyId, companyName }: { companyId: string; company
   const { toast } = useToast();
   const qc = useQueryClient();
   const [reason, setReason] = useState("");
+  const [revoking, setRevoking] = useState<FirmLink | null>(null);
   const key = ["/api/companies", companyId, "firm-links"];
   const { data, error } = useQuery<{ links: FirmLink[] }>({ queryKey: key, retry: false });
   const revoke = useMutation({
@@ -225,6 +264,7 @@ function FirmAccessCard({ companyId, companyName }: { companyId: string; company
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: key });
       setReason("");
+      setRevoking(null);
       toast({ title: t["portal.firmAccessRevoked"] });
     },
     onError: (e: Error) =>
@@ -234,6 +274,33 @@ function FirmAccessCard({ companyId, companyName }: { companyId: string; company
 
   return (
     <Card data-testid="card-firm-access">
+      <AlertDialog open={!!revoking} onOpenChange={(open) => !open && setRevoking(null)}>
+        <AlertDialogContent data-testid="dialog-revoke-firm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t["settingsPages.revokeTitle"]}</AlertDialogTitle>
+            <AlertDialogDescription>{t["portal.firmRevokeConfirm"]}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="revoke-reason">{t["portal.firmRevokeReason"]}</Label>
+            <Input
+              id="revoke-reason"
+              value={reason}
+              maxLength={500}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t["pages.cancel"]}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => revoking && revoke.mutate(revoking.id)}
+              data-testid="button-revoke-firm-confirm"
+            >
+              <T k="portal.firmRevoke" />
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <CardHeader>
         <CardTitle className="text-base">
           <T k="portal.firmAccess" /> {companyName ? `· ${companyName}` : null}
@@ -257,29 +324,19 @@ function FirmAccessCard({ companyId, companyName }: { companyId: string; company
             >
               <div className="flex items-center gap-2">
                 <span className="font-medium">{link.firmName}</span>
-                <Badge variant={STATUS_VARIANT[link.status] ?? "secondary"}>{link.status}</Badge>
+                <StatusPill status={link.status} />
               </div>
               {link.status === "active" ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Input
-                    className="w-64"
-                    value={reason}
-                    maxLength={500}
-                    placeholder={t["portal.firmRevokeReason"]}
-                    onChange={(e) => setReason(e.target.value)}
-                  />
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    disabled={revoke.isPending}
-                    onClick={() => {
-                      if (window.confirm(t["portal.firmRevokeConfirm"])) revoke.mutate(link.id);
-                    }}
-                    data-testid={`button-revoke-firm-${link.id}`}
-                  >
-                    <T k="portal.firmRevoke" />
-                  </Button>
-                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-danger/40 text-danger hover:bg-danger-subtle hover:text-danger"
+                  disabled={revoke.isPending}
+                  onClick={() => setRevoking(link)}
+                  data-testid={`button-revoke-firm-${link.id}`}
+                >
+                  <T k="portal.firmRevoke" />
+                </Button>
               ) : null}
             </div>
           ))
@@ -339,9 +396,7 @@ function EngagementLettersCard({ companyId }: { companyId: string }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{letter.title}</span>
                   <span className="text-xs text-muted-foreground">{letter.firmName}</span>
-                  <Badge variant={STATUS_VARIANT[letter.status] ?? "secondary"}>
-                    {letter.status}
-                  </Badge>
+                  <StatusPill status={letter.status} />
                 </div>
                 <p className="whitespace-pre-wrap text-sm">{letter.body}</p>
                 {letter.feeAmount != null ? (
@@ -405,7 +460,7 @@ function EngagementLettersCard({ companyId }: { companyId: string }) {
 }
 
 function RequestListCard({ companyId }: { companyId: string }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const qc = useQueryClient();
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -458,11 +513,11 @@ function RequestListCard({ companyId }: { companyId: string }) {
                 <div className="min-w-0 space-y-0.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{r.title}</span>
-                    <Badge variant={STATUS_VARIANT[r.status] ?? "secondary"}>{r.status}</Badge>
+                    <StatusPill status={r.status} />
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {r.firmName} · {r.listName}
-                    {r.dueDate ? ` · ${r.dueDate}` : ""}
+                    {r.dueDate ? ` · ${formatDate(r.dueDate, locale)}` : ""}
                   </p>
                   {r.description ? <p className="text-sm">{r.description}</p> : null}
                   {r.status === "rejected" && r.reviewNote ? (

@@ -1,4 +1,6 @@
 // ClientPortfolio module (W5-D split of ClientPortfolio.tsx; no behaviour change).
+import { FileDrop } from "@/components/ui/file-drop";
+import { DatePicker } from "@/components/ui/date-picker";
 import { T } from "@/components/layout/T";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -921,27 +923,19 @@ export function VatWorkspaceDialog({
                 <Label>
                   <T k="pages.periodStart2" />
                 </Label>
-                <Input
-                  type="date"
-                  value={periodStart}
-                  onChange={(e) => setPeriodStart(e.target.value)}
-                />
+                <DatePicker value={periodStart} onChange={(v) => setPeriodStart(v)} />
               </div>
               <div className="grid gap-1">
                 <Label>
                   <T k="pages.periodEnd2" />
                 </Label>
-                <Input
-                  type="date"
-                  value={periodEnd}
-                  onChange={(e) => setPeriodEnd(e.target.value)}
-                />
+                <DatePicker value={periodEnd} onChange={(v) => setPeriodEnd(v)} />
               </div>
               <div className="grid gap-1">
                 <Label>
                   <T k="pages.dueDate2" />
                 </Label>
-                <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                <DatePicker value={dueDate} onChange={(v) => setDueDate(v)} />
               </div>
               <div className="grid gap-1">
                 <Label>
@@ -1148,14 +1142,13 @@ export function VatWorkspaceDialog({
                                 />
                               </TableCell>
                               <TableCell>
-                                <Input
+                                <DatePicker
                                   className="h-8 min-w-32"
-                                  type="date"
                                   value={rowForm.documentDate}
-                                  onChange={(e) =>
+                                  onChange={(v) =>
                                     setRowForm((form) => ({
                                       ...form,
-                                      documentDate: e.target.value,
+                                      documentDate: v,
                                     }))
                                   }
                                 />
@@ -1666,29 +1659,18 @@ export function VatWorkspaceDialog({
                           </Badge>
                         ) : null}
                       </div>
-                      <Input
+                      <FileDrop
                         key={evidenceInputKey}
                         id="vat-evidence-upload"
-                        type="file"
                         accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.csv,.json,application/pdf,image/png,image/jpeg,image/webp,text/plain,text/csv,application/json"
-                        onChange={(event) => setEvidenceFile(event.target.files?.[0] ?? null)}
-                        data-testid="input-vat-evidence-upload"
+                        inputTestId="input-vat-evidence-upload"
+                        value={evidenceFile?.name}
+                        onFiles={([file]) => setEvidenceFile(file ?? null)}
+                        onClear={() => {
+                          setEvidenceFile(null);
+                          setEvidenceInputKey((key) => key + 1);
+                        }}
                       />
-                      {evidenceFile ? (
-                        <div className="flex items-center justify-between gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs">
-                          <span className="truncate">{evidenceFile.name}</span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setEvidenceFile(null);
-                              setEvidenceInputKey((key) => key + 1);
-                            }}
-                          >
-                            <T k="pages.remove" />
-                          </Button>
-                        </div>
-                      ) : null}
                       <Button
                         size="sm"
                         variant="outline"

@@ -1,7 +1,9 @@
 import { T } from "@/components/layout/T";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
+import { SetupNotice } from "@/components/ui/setup-notice";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +30,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
-import { Inbox, Plus, Trash2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 // ─── Types (mirror the firm email-intake API) ──────────────────────────────
 interface EmailSource {
@@ -113,37 +115,19 @@ export default function EmailIntake() {
     <div className="space-y-6">
       <PageHeader
         eyebrow={t["emailIntake.nraCenter"]}
-        icon={Inbox}
         title={t["emailIntake.emailDocumentIntake"]}
         description={t["emailIntake.clientsEmailTheirDocumentsThe"]}
       />
 
       {featureOff && (
-        <Alert>
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>
-            <T k="pages.pilotDisabled" />
-          </AlertTitle>
-          <AlertDescription>
-            {t["emailIntake.pilotDisabledBefore"]}
-            <code translate="no" dir="ltr">
-              EMAIL_INTAKE_ENABLED=true
-            </code>
-            {t["emailIntake.pilotDisabledAfter"]}
-          </AlertDescription>
-        </Alert>
+        <SetupNotice title={t["firmOps.intakeOffTitle"]} testId="email-intake-off">
+          {t["firmOps.intakeOffBody"]}
+        </SetupNotice>
       )}
       {mailboxOff && (
-        <Alert>
-          <Mail className="h-4 w-4" />
-          <AlertTitle>
-            <T k="pages.noMailboxConnected" />
-          </AlertTitle>
-          <AlertDescription>
-            The pilot is enabled but no mailbox is wired (<code>EMAIL_INTAKE_PROVIDER</code>).
-            Sender mappings are saved and ready; ingestion starts once a mailbox is connected.
-          </AlertDescription>
-        </Alert>
+        <SetupNotice title={t["pages.noMailboxConnected"]} testId="email-intake-no-mailbox">
+          {t["firmOps.intakeNoMailboxBody"]}
+        </SetupNotice>
       )}
 
       <Tabs defaultValue="senders">
@@ -259,7 +243,7 @@ function SendersTab({
                 <T k="pages.client" />
               </Label>
               <Select value={companyId} onValueChange={setCompanyId}>
-                <SelectTrigger data-testid="select-client">
+                <SelectTrigger aria-label={t["pages.client"]} data-testid="select-client">
                   <SelectValue placeholder={t["bulkOperations.selectClient"]} />
                 </SelectTrigger>
                 <SelectContent>
@@ -286,7 +270,7 @@ function SendersTab({
             <div className="space-y-1.5">
               <Label>{t["emailIntake.labelOptional"]}</Label>
               <Input
-                placeholder="e.g. Accounts payable"
+                placeholder={t["firmOps.intakeLabelPlaceholder"]}
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
               />
@@ -451,7 +435,10 @@ function CompletenessTab({
                 <T k="pages.client" />
               </Label>
               <Select value={companyId} onValueChange={setCompanyId}>
-                <SelectTrigger data-testid="select-completeness-client">
+                <SelectTrigger
+                  aria-label={t["pages.client"]}
+                  data-testid="select-completeness-client"
+                >
                   <SelectValue placeholder={t["bulkOperations.selectClient"]} />
                 </SelectTrigger>
                 <SelectContent>
@@ -467,17 +454,13 @@ function CompletenessTab({
               <Label>
                 <T k="pages.periodStart2" />
               </Label>
-              <Input
-                type="date"
-                value={periodStart}
-                onChange={(e) => setPeriodStart(e.target.value)}
-              />
+              <DatePicker value={periodStart} onChange={(v) => setPeriodStart(v)} />
             </div>
             <div className="space-y-1.5">
               <Label>
                 <T k="pages.periodEnd2" />
               </Label>
-              <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+              <DatePicker value={periodEnd} onChange={(v) => setPeriodEnd(v)} />
             </div>
             <div className="flex items-end">
               <Button
@@ -538,11 +521,11 @@ function CompletenessTab({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
+                    <TableHead>{t["firmOps.colDate"]}</TableHead>
                     <TableHead>
                       <T k="pages.description" />
                     </TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>{t["firmOps.colType"]}</TableHead>
                     <TableHead data-numeric>
                       <T k="pages.amount" />
                     </TableHead>
@@ -613,7 +596,6 @@ function EmailTasksTab({
       toast({ title: t["firm.emailTaskFailed"], description: e.message, variant: "destructive" }),
   });
   const messages = data?.messages ?? [];
-  const note = status ? (locale === "ar" ? status.note.ar : status.note.en) : null;
 
   return (
     <div className="space-y-4">
@@ -626,7 +608,9 @@ function EmailTasksTab({
             <T k="firm.emailTasksMailboxExternal" />
           )}
         </AlertTitle>
-        <AlertDescription>{note ?? <T k="firm.emailTasksHint" />}</AlertDescription>
+        <AlertDescription>
+          <T k="firm.emailTasksHint" />
+        </AlertDescription>
       </Alert>
       <Card>
         <CardHeader>
@@ -640,7 +624,7 @@ function EmailTasksTab({
               <T k="pages.client" />
             </Label>
             <Select value={companyId} onValueChange={setCompanyId}>
-              <SelectTrigger data-testid="select-email-task-client">
+              <SelectTrigger aria-label={t["pages.client"]} data-testid="select-email-task-client">
                 <SelectValue placeholder={t["firm.selectClient"]} />
               </SelectTrigger>
               <SelectContent>

@@ -60,20 +60,18 @@ function redirectTargetFor(path: string): string | null {
 }
 
 describe("consolidated navigation redirects (App source)", () => {
-  it("R18-09: the five AI pages redirect into one /ai hub with tabs", () => {
-    expect(redirectTargetFor("/ai-cfo")).toBe("/ai?tab=cfo");
-    expect(redirectTargetFor("/ai-features")).toBe("/ai?tab=features");
-    expect(redirectTargetFor("/smart-assistant")).toBe("/ai?tab=assistant");
-    expect(redirectTargetFor("/ai-chat")).toBe("/ai?tab=chat");
-    expect(redirectTargetFor("/ai-inbox")).toBe("/ai?tab=inbox");
-    expect(app).toContain('<Route path="/ai" component={AIHub} />');
+  it("R18-09 / WP-E: the former AI pages redirect into one /assistant route with three tabs", () => {
+    expect(redirectTargetFor("/ai")).toBe("/assistant");
+    expect(redirectTargetFor("/ai-cfo")).toBe("/assistant?tab=ask");
+    expect(redirectTargetFor("/ai-features")).toBe("/assistant?tab=automations");
+    expect(redirectTargetFor("/smart-assistant")).toBe("/assistant?tab=ask");
+    expect(redirectTargetFor("/ai-chat")).toBe("/assistant?tab=ask");
+    expect(redirectTargetFor("/ai-inbox")).toBe("/assistant?tab=review");
+    expect(app).toContain('<Route path="/assistant" component={AIHub} />');
 
     const hub = read("client/src/pages/AIHub.tsx");
-    for (const id of ["cfo", "features", "assistant", "chat", "inbox"]) {
-      expect(hub).toContain(`id: "${id}"`);
-    }
-    for (const page of ["AICFO", "AIFeatures", "SmartAssistant", "AIChat", "AIInbox"]) {
-      expect(hub).toContain(`import("@/pages/${page}")`);
+    for (const panel of ["AskPanel", "ReviewPanel", "AutomationsPanel"]) {
+      expect(hub).toContain(`import("@/pages/assistant/${panel}")`);
     }
   });
 
@@ -99,8 +97,13 @@ describe("consolidated navigation redirects (App source)", () => {
   it("R15-09: legacy /admin/clients pages redirect to /firm/clients and the admin entry is deduplicated", () => {
     expect(redirectTargetFor("/admin/clients")).toBe("/firm/clients");
     expect(redirectTargetFor("/admin/clients/:id")).toBe("/firm/clients/${params.id}");
-    expect(redirectTargetFor("/admin/clients/:id/documents")).toBe("/firm/clients/${params.id}");
-    expect(redirectTargetFor("/admin/clients/:id/tasks")).toBe("/firm/clients/${params.id}");
+    // WP-E2: documents and tasks are real tabs of the client profile.
+    expect(redirectTargetFor("/admin/clients/:id/documents")).toBe(
+      "/firm/clients/${params.id}?tab=documents"
+    );
+    expect(redirectTargetFor("/admin/clients/:id/tasks")).toBe(
+      "/firm/clients/${params.id}?tab=tasks"
+    );
     expect(redirectTargetFor("/admin")).toBe("/admin/users");
     expect(app.match(/<Route path="\/admin"/g)?.length).toBe(1);
     expect(app.match(/<Route path="\/admin\/users"/g)?.length).toBe(1);
@@ -121,9 +124,9 @@ describe("consolidated navigation redirects (App source)", () => {
   });
 
   it("R18-09: the mobile More sheet and command palette point at the hub, not the retired routes", () => {
-    // WP-A: the More sheet renders the shared nav config (Assistant entry → /ai).
+    // WP-A/WP-E: the More sheet renders the shared nav config (Assistant entry → /assistant).
     expect(read("client/src/components/MobileNav.tsx")).toContain("useNavGroups");
-    expect(read("client/src/components/layout/nav-config.ts")).toContain('url: "/ai"');
+    expect(read("client/src/components/layout/nav-config.ts")).toContain('url: "/assistant"');
     expect(read("client/src/components/CommandPalette.tsx")).toContain('href: "/ai?tab=chat"');
     expect(readDashboardSource()).toContain('<Link href="/ai?tab=cfo">');
   });

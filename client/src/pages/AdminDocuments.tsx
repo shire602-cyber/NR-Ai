@@ -1,5 +1,7 @@
 import { T } from "@/components/layout/T";
-import { useTranslation, translateNow } from "@/lib/i18n";
+import { DatePicker } from "@/components/ui/date-picker";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -97,7 +99,7 @@ const DOCUMENT_CATEGORIES = [
 ];
 
 export default function AdminDocuments() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -346,7 +348,9 @@ export default function AdminDocuments() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Bills/Expenses</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  {t["adminConsole.billsExpenses"]}
+                </CardTitle>
                 <FileUp className="w-4 h-4 text-warning" />
               </CardHeader>
               <CardContent>
@@ -432,7 +436,7 @@ export default function AdminDocuments() {
                         <TableHead>
                           <T k="pages.category" />
                         </TableHead>
-                        <TableHead>File</TableHead>
+                        <TableHead>{t["adminConsole.colFile"]}</TableHead>
                         <TableHead>
                           <T k="pages.expiry" />
                         </TableHead>
@@ -486,10 +490,14 @@ export default function AdminDocuments() {
                                   )}
                                   <Badge variant={expiryStatus.color}>
                                     {expiryStatus.status === "expired"
-                                      ? `Expired ${expiryStatus.days}d ago`
+                                      ? formatMessage(t["adminConsole.expiredDaysAgo"], {
+                                          n: expiryStatus.days,
+                                        })
                                       : expiryStatus.status === "expiring_soon"
-                                        ? `${expiryStatus.days}d left`
-                                        : format(parseISO(doc.expiryDate!), "MMM d, yyyy")}
+                                        ? formatMessage(t["adminConsole.daysLeft"], {
+                                            n: expiryStatus.days,
+                                          })
+                                        : formatDate(doc.expiryDate, locale)}
                                   </Badge>
                                 </div>
                               ) : (
@@ -554,17 +562,17 @@ export default function AdminDocuments() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Document Name *</Label>
+                <Label htmlFor="name">{t["adminConsole.docName"]}</Label>
                 <Input
                   id="name"
-                  placeholder="e.g., Invoice #001"
+                  placeholder={t["adminConsole.docNamePlaceholder"]}
                   value={newDocument.name}
                   onChange={(e) => setNewDocument({ ...newDocument, name: e.target.value })}
                   data-testid="input-document-name"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="category">Category *</Label>
+                <Label htmlFor="category">{t["adminConsole.docCategory"]}</Label>
                 <Select
                   value={newDocument.category}
                   onValueChange={(value) => setNewDocument({ ...newDocument, category: value })}
@@ -599,17 +607,16 @@ export default function AdminDocuments() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="expiryDate">Expiry Date (if applicable)</Label>
-                <Input
+                <Label htmlFor="expiryDate">{t["adminConsole.expiryIfAny"]}</Label>
+                <DatePicker
                   id="expiryDate"
-                  type="date"
                   value={newDocument.expiryDate}
-                  onChange={(e) => setNewDocument({ ...newDocument, expiryDate: e.target.value })}
+                  onChange={(v) => setNewDocument({ ...newDocument, expiryDate: v })}
                   data-testid="input-expiry-date"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="reminderDays">Remind Before (days)</Label>
+                <Label htmlFor="reminderDays">{t["adminConsole.remindBefore"]}</Label>
                 <Input
                   id="reminderDays"
                   type="number"
@@ -654,7 +661,7 @@ export default function AdminDocuments() {
                       <p>
                         <T k="pages.clickToUploadOrDragAndDrop" />
                       </p>
-                      <p className="text-xs">PDF, DOC, XLS, JPG, PNG (max 10MB)</p>
+                      <p className="text-xs">{t["adminConsole.uploadFormats"]}</p>
                     </div>
                   )}
                 </label>

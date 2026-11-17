@@ -21,7 +21,7 @@
   "aiInbox.highConfidenceTransactionsWillBe": "High-confidence transactions will be automatically posted here when scanned.",
   "aiInbox.transactionHistoryWillAppearHere": "Transaction history will appear here after items are processed.",
   "aiInbox.chooseTheCorrectAccountFor": "Choose the correct account for this transaction. This will create a new rule so similar transactions are categorized correctly in the future.",
-  "aiInbox.runScan": "Run Scan",
+  "aiInbox.runScan": "Run scan",
   "aiInbox.correct": "Correct",
   "aiInbox.chooseAnAccount": "Choose an account...",
   "anomalyDetection.accountingAnomalyChecks": "Accounting anomaly checks",
@@ -36,5 +36,17 @@
   "autoReconcile.clickRunAutoReconcileTo": "Click \"Run Auto-Reconcile\" to scan your unreconciled bank transactions and automatically find matching journal entries, invoices, and receipts.",
   "autoReconcile.runAutoReconcile": "Run Auto-Reconcile",
   "anomalyDetection.info": "Info",
-  "anomalyDetection.filter": "Filter:"
+  "anomalyDetection.filter": "Filter:",
+  "anomalyChecks.eyebrow": "Insights",
+  "anomalyChecks.pageDescription": "Rule-based checks: duplicates, unusual amounts, VAT rates and TRNs.",
+  "anomalyChecks.scanComplete": "Scan complete",
+  "anomalyChecks.newAlerts": "{count} new alert(s) recorded.",
+  "anomalyChecks.latestAlert": "Latest alert recorded: {date}",
+  "anomalyChecks.emptyBody": "No open alerts. Run a scan to check the latest transactions.",
+  "anomalyChecks.noneForSeverity": "No {severity} alerts. Try changing the filter.",
+  "anomalyChecks.typeJournalEntry": "Journal entry",
+  "anomalyChecks.typeReceipt": "Receipt",
+  "anomalyChecks.typeInvoice": "Invoice",
+  "anomalyChecks.typeVendorBill": "Vendor bill",
+  "anomalyChecks.typeAccount": "Account"
 }

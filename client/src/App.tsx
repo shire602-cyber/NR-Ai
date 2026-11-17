@@ -93,7 +93,6 @@ const ZatcaSettings = lazyWithReload(() => import("@/pages/ZatcaSettings"));
 
 // Lazy-loaded pages (large or infrequently visited)
 const Admin = lazyWithReload(() => import("@/pages/Admin"));
-const AdminDashboard = lazyWithReload(() => import("@/pages/AdminDashboard"));
 const ClientImport = lazyWithReload(() => import("@/pages/ClientImport"));
 const AIHub = lazyWithReload(() => import("@/pages/AIHub"));
 const AnalyticsHub = lazyWithReload(() => import("@/pages/AnalyticsHub"));
@@ -143,7 +142,6 @@ const TeamManagement = lazyWithReload(() => import("@/pages/TeamManagement"));
 const TaxReturnArchive = lazyWithReload(() => import("@/pages/TaxReturnArchive"));
 const ComplianceCalendar = lazyWithReload(() => import("@/pages/ComplianceCalendar"));
 const TaskCenter = lazyWithReload(() => import("@/pages/TaskCenter"));
-const UAENewsFeed = lazyWithReload(() => import("@/pages/UAENewsFeed"));
 const History = lazyWithReload(() => import("@/pages/History"));
 const BackupRestore = lazyWithReload(() => import("@/pages/BackupRestore"));
 const ImportWizard = lazyWithReload(() => import("@/pages/ImportWizard"));
@@ -700,22 +698,26 @@ function Router() {
             <Route path="/auto-reconcile">
               <RedirectTo to="/bank-reconciliation?tab=suggestions" />
             </Route>
-            <Route path="/ai" component={AIHub} />
+            {/* WP-E (spec 3.14): one Assistant route; the former AI hub routes redirect. */}
+            <Route path="/assistant" component={AIHub} />
+            <Route path="/ai">
+              <RedirectTo to="/assistant" />
+            </Route>
             <Route path="/ai-inbox">
-              <RedirectTo to="/ai?tab=inbox" />
+              <RedirectTo to="/assistant?tab=review" />
             </Route>
             <Route path="/month-end" component={MonthEndClose} />
             <Route path="/ai-cfo">
-              <RedirectTo to="/ai?tab=cfo" />
+              <RedirectTo to="/assistant?tab=ask" />
             </Route>
             <Route path="/ai-features">
-              <RedirectTo to="/ai?tab=features" />
+              <RedirectTo to="/assistant?tab=automations" />
             </Route>
             <Route path="/smart-assistant">
-              <RedirectTo to="/ai?tab=assistant" />
+              <RedirectTo to="/assistant?tab=ask" />
             </Route>
             <Route path="/ai-chat">
-              <RedirectTo to="/ai?tab=chat" />
+              <RedirectTo to="/assistant?tab=ask" />
             </Route>
             <Route path="/advanced-analytics">
               <RedirectTo to="/analytics?view=advanced" />
@@ -750,19 +752,25 @@ function Router() {
             <Route path="/tax-return-archive" component={TaxReturnArchive} />
             <Route path="/compliance-calendar" component={ComplianceCalendar} />
             <Route path="/task-center" component={TaskCenter} />
-            <Route path="/news-feed" component={UAENewsFeed} />
+            {/* WP-E: no news feed is connected yet; the route redirects until one exists. */}
+            <Route path="/news-feed">
+              <RedirectTo to="/compliance-calendar" />
+            </Route>
 
             {/* Admin Routes */}
-            <Route path="/admin/dashboard" component={AdminDashboard} />
+            {/* WP-E (spec 3.16): one platform admin page; the second dashboard redirects. */}
+            <Route path="/admin/dashboard">
+              <RedirectTo to="/admin/users" />
+            </Route>
             {/* Legacy admin client pages were replaced by the /firm/clients portfolio (R15-09) */}
             <Route path="/admin/clients">
               <RedirectTo to="/firm/clients" />
             </Route>
             <Route path="/admin/clients/:id/documents">
-              {(params) => <RedirectTo to={`/firm/clients/${params.id}`} />}
+              {(params) => <RedirectTo to={`/firm/clients/${params.id}?tab=documents`} />}
             </Route>
             <Route path="/admin/clients/:id/tasks">
-              {(params) => <RedirectTo to={`/firm/clients/${params.id}`} />}
+              {(params) => <RedirectTo to={`/firm/clients/${params.id}?tab=tasks`} />}
             </Route>
             <Route path="/admin/clients/:id">
               {(params) => <RedirectTo to={`/firm/clients/${params.id}`} />}

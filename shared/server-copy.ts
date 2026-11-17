@@ -222,6 +222,9 @@ const templateByKey = (key: string): CopyTemplate | undefined => {
       ...LEGAL_SOURCE_TEMPLATES,
       ...EVIDENCE_TEMPLATES,
       ...REPORT_DELIVERY_TEMPLATES,
+      ...ANOMALY_TEMPLATES,
+      ...CATEGORISATION_REASON_TEMPLATES,
+      ...VALUE_OPS_TEMPLATES,
     ].map((t) => [t.key, t])
   );
   return byKeyCache.get(key);
@@ -289,6 +292,229 @@ export function renderDescriptor(
   if (!key) return fallback;
   const template = catalog[serverCopyCatalogKey(key)];
   return template ? renderCopyTemplate(template, params) : fallback;
+}
+
+// ─── Anomaly checks and categorisation reasons ───────────────────────────────
+
+/**
+ * Anomaly descriptions (server: anomaly-detection.service). The English sentence stays in the
+ * alert row and the API (`description`); `message` carries the same sentence as key + params so
+ * the client renders it from the catalogs. Alerts stored before this existed are mapped back by
+ * `describeAnomalyText`. Params are raw values: money is a formatted figure, `date` an ISO day
+ * the client formats with `formatDate`.
+ */
+export const ANOMALY_TEMPLATES: readonly CopyTemplate[] = [
+  T(
+    "anomaly.duplicateReceipts",
+    "{n} receipts with the same amount (AED {amount}) on {date}. Possible duplicate entries from {merchants}."
+  ),
+  T(
+    "anomaly.duplicateInvoices",
+    "{n} invoices with the same total (AED {amount}) on {date}. Customers: {customers}."
+  ),
+  T(
+    "anomaly.unusualReceipt",
+    "Receipt from {merchant} for AED {amount} is {ratio}x the average receipt (AED {average})."
+  ),
+  T(
+    "anomaly.unusualInvoice",
+    "Invoice #{number} for {customer} (AED {amount}) is {ratio}x the average invoice amount."
+  ),
+  T(
+    "anomaly.weekendSaturday",
+    "Journal entry {number} dated Saturday {date} for AED {amount}. UAE businesses typically don't transact on weekends."
+  ),
+  T(
+    "anomaly.weekendSunday",
+    "Journal entry {number} dated Sunday {date} for AED {amount}. UAE businesses typically don't transact on weekends."
+  ),
+  T(
+    "anomaly.roundReceipt",
+    "Receipt from {merchant} has a perfectly round amount of AED {amount}. Round amounts may indicate estimates rather than actual transactions."
+  ),
+  T(
+    "anomaly.duplicateCharge",
+    "{merchant} billed AED {amount} twice within {days} day(s). This may be a duplicate charge."
+  ),
+  T(
+    "anomaly.duplicateSupplierInvoice",
+    "Supplier invoice number {number} from {vendor} was entered more than once (AED {amount}). Check for a duplicate payment."
+  ),
+  T(
+    "anomaly.vatMismatchInvoice",
+    "Invoice #{number} for {customer}: VAT AED {vat} is not 5% of the net AED {net} (expected AED {expected})."
+  ),
+  T(
+    "anomaly.vatMismatchReceipt",
+    "Receipt from {merchant}: VAT AED {vat} is not 5% of the net AED {net}."
+  ),
+  T(
+    "anomaly.vatMismatchBill",
+    "Vendor bill from {vendor}: VAT AED {vat} is not 5% of the net AED {net}."
+  ),
+  T(
+    "anomaly.trnMissingBill",
+    "Vendor bill from {vendor} carries AED {vat} input VAT but no supplier TRN. Input VAT is not recoverable without a valid TRN."
+  ),
+  T(
+    "anomaly.trnMalformedBill",
+    'Vendor bill from {vendor} has a malformed TRN "{trn}" (a UAE TRN is 15 digits).'
+  ),
+  T(
+    "anomaly.trnMalformedInvoice",
+    'Invoice #{number} for {customer} has a malformed customer TRN "{trn}" (a UAE TRN is 15 digits).'
+  ),
+  T(
+    "anomaly.baselineSpike",
+    "{account} this month (AED {amount}) is {z} standard deviations above its trailing {months}-month average (months with activity) (AED {mean})."
+  ),
+];
+
+const anomalyByKey = new Map(ANOMALY_TEMPLATES.map((t) => [t.key, t]));
+
+/** English sentence + key/params for one anomaly (server side). */
+export function anomalyCopy(
+  key: string,
+  params: Record<string, string | number>
+): { text: string; message: CopyDescriptor } {
+  const t = anomalyByKey.get(key);
+  if (!t) throw new Error(`Unknown anomaly copy key: ${key}`);
+  const stringParams: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) stringParams[k] = String(v);
+  return { text: renderCopyTemplate(t.en, stringParams), message: { key, params: stringParams } };
+}
+
+/** Map a stored anomaly description back to its key + params (null for an unknown sentence). */
+export function describeAnomalyText(text: string | null | undefined): CopyDescriptor | null {
+  return parseServerCopy(text, ANOMALY_TEMPLATES);
+}
+
+/**
+ * Reasons the transaction categoriser stores on a queue row (server: autonomous-gl.service).
+ * The model's own free-text reason is not a template: it is requested in the company language.
+ * `operator` reasons describe server configuration and are never shown to customers.
+ */
+export const CATEGORISATION_REASON_TEMPLATES: readonly CopyTemplate[] = [
+  T(
+    "categorise.matchedRule",
+    "Matched rule: {pattern} (applied {applied} times, {accepted} accepted)"
+  ),
+  T("categorise.operator.notConfigured", "OpenAI not configured — manual categorization required"),
+  T("categorise.operator.error", "AI classification error: {error}"),
+];
+
+const categoriseByKey = new Map(CATEGORISATION_REASON_TEMPLATES.map((t) => [t.key, t]));
+
+export function categorisationReasonCopy(
+  key: string,
+  params: Record<string, string | number> = {}
+): { text: string; message: CopyDescriptor } {
+  const t = categoriseByKey.get(key);
+  if (!t) throw new Error(`Unknown categorisation copy key: ${key}`);
+  const stringParams: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) stringParams[k] = String(v);
+  return { text: renderCopyTemplate(t.en, stringParams), message: { key, params: stringParams } };
+}
+
+export function describeCategorisationReason(
+  text: string | null | undefined
+): CopyDescriptor | null {
+  return parseServerCopy(text, CATEGORISATION_REASON_TEMPLATES);
+}
+
+// ─── Value programmes (server: firm-value-ops.service) ───────────────────────
+
+/**
+ * Action, review-queue and audit-pack sentences of the value programmes page. The English stays
+ * in the API; the client maps each sentence to its key with `describeValueOpsText` (parse on
+ * read, like the firm dashboard sentences) and renders it from the catalogs.
+ */
+export const VALUE_OPS_TEMPLATES: readonly CopyTemplate[] = [
+  T("valueOps.penalty.title", "Prevent filing or document penalty"),
+  T("valueOps.penalty.detail", "{docs} overdue docs, VAT due {days} days"),
+  T("valueOps.cash.title", "Recover overdue receivables"),
+  T("valueOps.cash.detail", "{n} collection or document messages ready"),
+  T("valueOps.close.title", "Unblock month-end close"),
+  T("valueOps.close.detail", "{bank} bank items, {receipts} receipts need review"),
+  T("valueOps.audit.title", "Complete audit defense evidence"),
+  T("valueOps.audit.detailReady", "{docs} missing documents; archived return ready"),
+  T("valueOps.audit.detailMissing", "{docs} missing documents; archived return missing"),
+  T("valueOps.review.bankSuggested.title", "Confirm suggested bank match"),
+  T("valueOps.review.bank.title", "Match unreconciled bank transaction"),
+  T("valueOps.review.bank.explanation", "{description} for AED {amount} is not reconciled."),
+  T(
+    "valueOps.review.bankSuggested.action",
+    "Confirm the suggested match or correct the counterparty before close."
+  ),
+  T(
+    "valueOps.review.bank.action",
+    "Match to an invoice, receipt, journal entry, or create a transfer."
+  ),
+  T("valueOps.review.receipt.title", "Review unposted receipt"),
+  T("valueOps.review.receipt.explanation", "{merchant} has not posted to GL or VAT evidence yet."),
+  T(
+    "valueOps.review.receiptSuggested.action",
+    "Approve the suggested expense account or correct it before posting."
+  ),
+  T("valueOps.review.receipt.action", "Classify the receipt, confirm VAT treatment, then post."),
+  T(
+    "valueOps.review.anomaly.action",
+    "Review the source transaction and resolve or document the exception."
+  ),
+  T("valueOps.review.vat.title", "Review VAT return before deadline"),
+  T("valueOps.review.vat.explanation", "VAT return is {status}; due {date}."),
+  T(
+    "valueOps.review.vat.action",
+    "Open the audit pack, clear missing evidence, and submit or mark filed."
+  ),
+  T("valueOps.review.document.explanation", "Required document is {status}."),
+  T(
+    "valueOps.review.document.action",
+    "Send a WhatsApp document request and attach the received file to the client vault."
+  ),
+  T("valueOps.review.trial.title", "Trial balance discrepancy"),
+  T("valueOps.review.trial.explanation", "Posted journals are out of balance by AED {amount}."),
+  T(
+    "valueOps.review.trial.action",
+    "Inspect recent posted journals and reverse or correct the unbalanced entry before close."
+  ),
+  T("valueOps.pack.vatCalc", "VAT return calculation"),
+  T("valueOps.pack.vatCalcDetail", "{status} return for {from} to {to}"),
+  T("valueOps.pack.noVat", "No VAT return exists for this client"),
+  T("valueOps.pack.sales", "Sales invoice evidence"),
+  T("valueOps.pack.salesDetail", "AED {amount} output VAT represented"),
+  T("valueOps.pack.expense", "Expense receipt evidence"),
+  T("valueOps.pack.expenseDetail", "AED {amount} input VAT represented"),
+  T("valueOps.pack.bank", "Bank statement support"),
+  T("valueOps.pack.bankDetail", "Bank statement documents in the client vault"),
+  T("valueOps.pack.trn", "TRN/tax certificate"),
+  T("valueOps.pack.trnDetail", "TRN {trn}"),
+  T("valueOps.pack.noTrn", "No TRN or tax certificate evidence found"),
+  T("valueOps.pack.archive", "Filed-return archive"),
+  T("valueOps.pack.archiveDetail", "Historical filed returns available for audit continuity"),
+  T("valueOps.pack.anomaly", "Open anomaly clearance"),
+  T("valueOps.pack.anomalyDetail", "Unresolved anomaly alerts before sign-off"),
+  T("valueOps.cfo.revenue", "Revenue for the month was AED {amount}."),
+  T(
+    "valueOps.cfo.expenses",
+    "Expenses were AED {expenses}, leaving AED {net} net before owner adjustments."
+  ),
+  T(
+    "valueOps.cfo.receivables",
+    "Open receivables stand at AED {open}, with AED {overdue} overdue."
+  ),
+  T("valueOps.cfo.vat", "Latest VAT return is {status} with AED {amount} payable."),
+  T("valueOps.cfo.noVat", "No VAT return is currently available for this client."),
+  T("valueOps.cfo.collect", "Prioritize collections on AED {amount} overdue AR."),
+  T("valueOps.cfo.reviewVat", "Review VAT return due {date}."),
+  T(
+    "valueOps.cfo.requestDocs",
+    "Request missing bank statements or source documents for the month."
+  ),
+];
+
+export function describeValueOpsText(text: string | null | undefined): CopyDescriptor | null {
+  return parseServerCopy(text, VALUE_OPS_TEMPLATES);
 }
 
 // ─── Cash forecast ───────────────────────────────────────────────────────────
@@ -1131,6 +1357,9 @@ export const ALL_SERVER_COPY_TEMPLATES: readonly CopyTemplate[] = [
   ...MONTH_END_TEMPLATES,
   ...LEGAL_SOURCE_TEMPLATES,
   ...EVIDENCE_TEMPLATES,
+  ...ANOMALY_TEMPLATES,
+  ...CATEGORISATION_REASON_TEMPLATES,
+  ...VALUE_OPS_TEMPLATES,
 ];
 
 type CopyParams = Record<string, string | number | null | undefined>;

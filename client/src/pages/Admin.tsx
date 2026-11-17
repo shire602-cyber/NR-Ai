@@ -1,9 +1,12 @@
 import { T } from "@/components/layout/T";
+import { StatCard } from "@/components/ui/stat-card";
 import { activityActionLabel, activityEntityLabel } from "@/lib/activity-log-labels";
-import { useTranslation, translateNow } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
-import { useState, useEffect } from "react";
+import { Fragment, useState, useEffect } from "react";
+import { formatDate } from "@/lib/format-date";
+import { auditDetailEntries } from "@/pages/admin/audit-details";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Settings,
@@ -11,8 +14,6 @@ import {
   DollarSign,
   Shield,
   Activity,
-  Database,
-  Bell,
   Plug,
   Save,
   Plus,
@@ -22,9 +23,7 @@ import {
   Search,
   Download,
   BarChart3,
-  CheckCircle,
   FileText,
-  Building2,
   CreditCard,
   Loader2,
 } from "lucide-react";
@@ -163,6 +162,7 @@ export default function Admin() {
     queryKey: ["/api/admin/companies"],
   });
 
+  const [expandedLog, setExpandedLog] = useState<string | null>(null);
   const { data: auditLogs = [], isLoading: logsLoading } = useQuery<AuditLog[]>({
     queryKey: ["/api/admin/audit-logs"],
   });
@@ -377,236 +377,32 @@ export default function Admin() {
         <TabsContent value="overview" className="space-y-6">
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pageLabels.totalUsers" />
-                </CardTitle>
-                <Users className="w-4 h-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-h1 font-semibold tabular-nums" data-testid="stat-total-users">
-                  {stats?.totalUsers || 0}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pageLabels.activeCompanies" />
-                </CardTitle>
-                <Building2 className="w-4 h-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div
-                  className="text-h1 font-semibold tabular-nums"
-                  data-testid="stat-total-companies"
-                >
-                  {stats?.totalCompanies || 0}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pageLabels.monthlyRevenue" />
-                </CardTitle>
-                <DollarSign className="w-4 h-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div
-                  className="text-h1 font-semibold tabular-nums"
-                  data-testid="stat-monthly-revenue"
-                >
-                  <Money amount={stats?.monthlyRevenue || 0} currency="AED" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pageLabels.aICreditsUsed" />
-                </CardTitle>
-                <Activity className="w-4 h-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-h1 font-semibold tabular-nums" data-testid="stat-ai-credits">
-                  {stats?.aiCreditsUsed || 0}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  <T k="pages.thisMonth" />
-                </p>
-              </CardContent>
-            </Card>
+            <StatCard
+              label={<T k="pageLabels.totalUsers" />}
+              value={stats?.totalUsers || 0}
+              testId="stat-total-users"
+            />
+            <StatCard
+              label={<T k="pageLabels.activeCompanies" />}
+              value={stats?.totalCompanies || 0}
+              testId="stat-total-companies"
+            />
+            <StatCard
+              label={<T k="pageLabels.monthlyRevenue" />}
+              value={<Money amount={stats?.monthlyRevenue || 0} currency="AED" />}
+              testId="stat-monthly-revenue"
+            />
+            <StatCard
+              label={<T k="pageLabels.aICreditsUsed" />}
+              value={stats?.aiCreditsUsed || 0}
+              hint={<T k="pages.thisMonth" />}
+              testId="stat-ai-credits"
+            />
           </div>
 
-          {/* Activity & Quick Actions */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  <T k="pageLabels.systemStatus" />
-                </CardTitle>
-                <CardDescription>
-                  <T k="pageLabels.currentSystemHealthAndStatus" />
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-success" />
-                    <span>
-                      <T k="pageLabels.database" />
-                    </span>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className="bg-success-subtle text-success border-success/30"
-                  >
-                    <T k="pages.healthy" />
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-success" />
-                    <span>
-                      <T k="pageLabels.aPIServices" />
-                    </span>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className="bg-success-subtle text-success border-success/30"
-                  >
-                    <T k="pageLabels.operational" />
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-success" />
-                    <span>{t["admin.aiServices"]}</span>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className="bg-success-subtle text-success border-success/30"
-                  >
-                    <T k="pages.connected" />
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  <T k="pageLabels.quickActions" />
-                </CardTitle>
-                <CardDescription>
-                  <T k="pageLabels.commonAdministrativeTasks" />
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  data-testid="button-backup-db"
-                  onClick={() => {
-                    toast({
-                      title: translateNow("toasts.backupStarted"),
-                      description: translateNow("toasts.databaseBackupIsInProgress"),
-                    });
-                    setTimeout(() => {
-                      toast({
-                        title: translateNow("toasts.backupComplete"),
-                        description: translateNow("toasts.databaseHasBeenBackedUpSuccessfully"),
-                      });
-                    }, 2000);
-                  }}
-                >
-                  <Database className="w-4 h-4 me-2" />
-                  <T k="pageLabels.backupDatabase" />
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  data-testid="button-send-newsletter"
-                  onClick={() => {
-                    toast({
-                      title: translateNow("toasts.newsletter"),
-                      description: translateNow(
-                        "toasts.newsletterFeatureWillBeAvailableSoonConfigure"
-                      ),
-                    });
-                  }}
-                >
-                  <Bell className="w-4 h-4 me-2" />
-                  <T k="pageLabels.sendNewsletter" />
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  data-testid="button-generate-report"
-                  onClick={() => {
-                    toast({
-                      title: translateNow("toasts.generatingReport"),
-                      description: translateNow("toasts.usageReportIsBeingGenerated"),
-                    });
-                    setTimeout(() => {
-                      const reportData = {
-                        generatedAt: new Date().toISOString(),
-                        totalUsers: stats?.totalUsers || 0,
-                        activeUsers: stats?.activeUsers || 0,
-                        totalCompanies: stats?.totalCompanies || 0,
-                        totalInvoices: stats?.totalInvoices || 0,
-                        totalReceipts: stats?.totalReceipts || 0,
-                        monthlyRevenue: stats?.monthlyRevenue || 0,
-                        aiCreditsUsed: stats?.aiCreditsUsed || 0,
-                      };
-                      const blob = new Blob([JSON.stringify(reportData, null, 2)], {
-                        type: "application/json",
-                      });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `usage-report-${new Date().toISOString().split("T")[0]}.json`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                      toast({
-                        title: translateNow("toasts.reportGenerated"),
-                        description: translateNow("toasts.usageReportHasBeenDownloaded"),
-                      });
-                    }, 1500);
-                  }}
-                >
-                  <FileText className="w-4 h-4 me-2" />
-                  <T k="pageLabels.generateUsageReport" />
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  data-testid="button-sync-integrations"
-                  onClick={() => {
-                    toast({
-                      title: translateNow("toasts.syncingIntegrations"),
-                      description: translateNow("toasts.checkingAllIntegrationConnections"),
-                    });
-                    setTimeout(() => {
-                      toast({
-                        title: translateNow("toasts.syncComplete"),
-                        description: translateNow("toasts.allIntegrationsAreUpToDate"),
-                      });
-                    }, 2000);
-                  }}
-                >
-                  <RefreshCw className="w-4 h-4 me-2" />
-                  <T k="pageLabels.syncAllIntegrations" />
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-
+          {/* WP-E (spec 3.16): the hard-coded "all green" system status and the quick actions
+              that only showed toasts (backup, newsletter, sync) were removed; nothing here may
+              claim work it did not do. */}
           {/* Recent Activity */}
           <Card>
             <CardHeader>
@@ -635,8 +431,10 @@ export default function Admin() {
                         {activityEntityLabel(t, log.resourceType)}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(log.createdAt).toLocaleString(
-                          locale === "ar" ? "ar-AE" : undefined
+                        {formatDate(log.createdAt, locale)}{" "}
+                        {new Date(log.createdAt).toLocaleTimeString(
+                          locale === "ar" ? "ar-AE-u-nu-latn" : "en-GB",
+                          { hour: "2-digit", minute: "2-digit" }
                         )}
                       </p>
                     </div>
@@ -721,10 +519,12 @@ export default function Admin() {
                         <span className="text-muted-foreground">
                           <T k="pageLabels.maxUsers" />
                         </span>
-                        <span>{plan.maxUsers || "Unlimited"}</span>
+                        <span>{plan.maxUsers || t["adminConsole.unlimited"]}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">AI Credits/Month</span>
+                        <span className="text-muted-foreground">
+                          {t["adminConsole.aiCreditsPerMonth"]}
+                        </span>
                         <span>{plan.aiCreditsPerMonth}</span>
                       </div>
                     </div>
@@ -738,7 +538,7 @@ export default function Admin() {
                       data-testid={`button-edit-plan-${plan.id}`}
                     >
                       <Edit2 className="w-4 h-4 me-2" />
-                      Edit
+                      {t["firmOps.edit"]}
                     </Button>
                     <Button
                       variant="outline"
@@ -812,7 +612,7 @@ export default function Admin() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>User</TableHead>
+                    <TableHead>{t["adminConsole.colUser"]}</TableHead>
                     <TableHead>
                       <T k="hr.field.email" />
                     </TableHead>
@@ -850,7 +650,9 @@ export default function Admin() {
                         <TableCell>{user.email}</TableCell>
                         <TableCell>
                           <Badge variant="outline">
-                            {companies.filter((c) => c.id).length} companies
+                            {formatMessage(t["adminConsole.companiesCount"], {
+                              count: companies.filter((c) => c.id).length,
+                            })}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -905,7 +707,7 @@ export default function Admin() {
                 >
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="edit-user-name">Name</Label>
+                      <Label htmlFor="edit-user-name">{t["adminConsole.fieldName"]}</Label>
                       <Input
                         id="edit-user-name"
                         name="name"
@@ -961,7 +763,7 @@ export default function Admin() {
                     <TableHead>
                       <T k="pages.companyName" />
                     </TableHead>
-                    <TableHead>TRN/VAT Number</TableHead>
+                    <TableHead>{t["adminConsole.trnVat"]}</TableHead>
                     <TableHead>
                       <T k="banking.accounts.currency" />
                     </TableHead>
@@ -1050,7 +852,7 @@ export default function Admin() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="edit-company-trn">TRN/VAT Number</Label>
+                      <Label htmlFor="edit-company-trn">{t["adminConsole.trnVat"]}</Label>
                       <Input
                         id="edit-company-trn"
                         name="trnVatNumber"
@@ -1218,16 +1020,16 @@ export default function Admin() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="AED">AED (UAE Dirham)</SelectItem>
-                          <SelectItem value="USD">USD (US Dollar)</SelectItem>
-                          <SelectItem value="EUR">EUR (Euro)</SelectItem>
-                          <SelectItem value="GBP">GBP (British Pound)</SelectItem>
-                          <SelectItem value="SAR">SAR (Saudi Riyal)</SelectItem>
+                          <SelectItem value="AED">{t["adminConsole.curAED"]}</SelectItem>
+                          <SelectItem value="USD">{t["adminConsole.curUSD"]}</SelectItem>
+                          <SelectItem value="EUR">{t["adminConsole.curEUR"]}</SelectItem>
+                          <SelectItem value="GBP">{t["adminConsole.curGBP"]}</SelectItem>
+                          <SelectItem value="SAR">{t["adminConsole.curSAR"]}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label>Default VAT Rate (%)</Label>
+                      <Label>{t["adminConsole.defaultVatRate"]}</Label>
                       <Input
                         type="number"
                         value={systemSettings.defaultVatRate}
@@ -1251,7 +1053,7 @@ export default function Admin() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Trial Period (Days)</Label>
+                      <Label>{t["adminConsole.trialPeriodDays"]}</Label>
                       <Input
                         type="number"
                         value={systemSettings.trialPeriod}
@@ -1309,7 +1111,7 @@ export default function Admin() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>From Email (Notifications)</Label>
+                    <Label>{t["adminConsole.fromEmail"]}</Label>
                     <Input
                       type="email"
                       placeholder="noreply@muhasib.ai"
@@ -1464,9 +1266,13 @@ export default function Admin() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gpt-4o">GPT-4o (Recommended)</SelectItem>
-                      <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
-                      <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo</SelectItem>
+                      <SelectItem value="gpt-4o">{t["adminConsole.modelRecommended"]}</SelectItem>
+                      <SelectItem value="gpt-4-turbo">
+                        <span translate="no">GPT-4 Turbo</span>
+                      </SelectItem>
+                      <SelectItem value="gpt-3.5-turbo">
+                        <span translate="no">GPT-3.5 Turbo</span>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1564,7 +1370,7 @@ export default function Admin() {
                       <TableHead>
                         <T k="pageLabels.resource" />
                       </TableHead>
-                      <TableHead>User</TableHead>
+                      <TableHead>{t["settingsPages.auditUser"]}</TableHead>
                       <TableHead>
                         <T k="reportCenter.details" />
                       </TableHead>
@@ -1587,34 +1393,75 @@ export default function Admin() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      auditLogs.map((log) => (
-                        <TableRow key={log.id}>
-                          <TableCell className="text-sm">
-                            {new Date(log.createdAt).toLocaleString(
-                              locale === "ar" ? "ar-AE" : undefined
+                      auditLogs.map((log) => {
+                        const entries = auditDetailEntries(log.details);
+                        const open = expandedLog === log.id;
+                        const actor = log.userId ? users.find((u) => u.id === log.userId) : null;
+                        return (
+                          <Fragment key={log.id}>
+                            <TableRow>
+                              <TableCell className="whitespace-nowrap text-sm tabular-nums">
+                                {formatDate(log.createdAt, locale)}{" "}
+                                <span className="text-muted-foreground">
+                                  {new Date(log.createdAt).toLocaleTimeString(
+                                    locale === "ar" ? "ar-AE-u-nu-latn" : "en-GB",
+                                    { hour: "2-digit", minute: "2-digit" }
+                                  )}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">
+                                  {activityActionLabel(t, log.action)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{activityEntityLabel(t, log.resourceType)}</TableCell>
+                              <TableCell dir="auto">
+                                {log.userId
+                                  ? (actor?.name ??
+                                    actor?.email ??
+                                    t["settingsPages.auditUnknownUser"])
+                                  : t["shell.themeSystem"]}
+                              </TableCell>
+                              <TableCell>
+                                {entries.length === 0 ? (
+                                  <span className="text-muted-foreground">—</span>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    aria-expanded={open}
+                                    onClick={() => setExpandedLog(open ? null : log.id)}
+                                    data-testid={`button-audit-details-${log.id}`}
+                                  >
+                                    {open
+                                      ? t["settingsPages.auditHide"]
+                                      : t["settingsPages.auditShow"]}
+                                  </Button>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground" dir="ltr">
+                                {log.ipAddress || "—"}
+                              </TableCell>
+                            </TableRow>
+                            {open && (
+                              <TableRow data-testid={`audit-details-${log.id}`}>
+                                <TableCell colSpan={6} className="bg-surface-sunken">
+                                  <dl className="grid grid-cols-[minmax(8rem,auto)_1fr] gap-x-6 gap-y-1 text-small">
+                                    {entries.map((e, i) => (
+                                      <Fragment key={`${e.key}-${i}`}>
+                                        <dt className="text-muted-foreground">{e.key || "—"}</dt>
+                                        <dd className="break-all" dir="auto">
+                                          {e.value}
+                                        </dd>
+                                      </Fragment>
+                                    ))}
+                                  </dl>
+                                </TableCell>
+                              </TableRow>
                             )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={
-                                log.action === "create"
-                                  ? "default"
-                                  : log.action === "delete"
-                                    ? "destructive"
-                                    : "secondary"
-                              }
-                            >
-                              {activityActionLabel(t, log.action)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{activityEntityLabel(t, log.resourceType)}</TableCell>
-                          <TableCell>{log.userId || t["shell.themeSystem"]}</TableCell>
-                          <TableCell className="max-w-xs truncate">{log.details || "-"}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {log.ipAddress || "-"}
-                          </TableCell>
-                        </TableRow>
-                      ))
+                          </Fragment>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -1637,6 +1484,7 @@ function PlanForm({
   onSubmit: (data: Partial<SubscriptionPlan>) => void;
   isPending: boolean;
 }) {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState<Partial<SubscriptionPlan>>(
     initialData || {
       name: "",
@@ -1760,7 +1608,7 @@ function PlanForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="aiCredits">AI Credits/Month</Label>
+          <Label htmlFor="aiCredits">{t["adminConsole.aiCreditsPerMonth"]}</Label>
           <Input
             id="aiCredits"
             type="number"
@@ -1813,7 +1661,7 @@ function PlanForm({
           ) : (
             <Save className="w-4 h-4 me-2" />
           )}
-          Save Plan
+          {t["adminConsole.savePlan"]}
         </Button>
       </DialogFooter>
     </form>

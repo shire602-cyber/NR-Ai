@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -409,483 +410,485 @@ export default function BackupRestore() {
   }
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Settings"
-        title={t["backupRestore.backupRestore"]}
-        testId="text-backup-title"
-        description={t["backupRestore.safeguardYourFinancialRecordsWith"]}
-        actions={
-          <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-backup">
-            <Plus className="h-4 w-4 mr-2" />
-            <T k="pages.createBackup" />
-          </Button>
-        }
-      />
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              <T k="pageLabels.createNewBackup" />
-            </DialogTitle>
-            <DialogDescription>{c.about1}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="backup-name">
-                <T k="pageLabels.backupName" />
-              </Label>
-              <Input
-                id="backup-name"
-                placeholder={`Backup ${new Date().toLocaleDateString()}`}
-                value={newBackupName}
-                onChange={(e) => setNewBackupName(e.target.value)}
-                data-testid="input-backup-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="backup-description">Description (Optional)</Label>
-              <Textarea
-                id="backup-description"
-                placeholder={t["backupRestore.addNotesAboutThisBackup"]}
-                value={newBackupDescription}
-                onChange={(e) => setNewBackupDescription(e.target.value)}
-                data-testid="input-backup-description"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-              <T k="pages.cancel" />
+    <SettingsLayout>
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Settings"
+          title={t["backupRestore.backupRestore"]}
+          testId="text-backup-title"
+          description={t["backupRestore.safeguardYourFinancialRecordsWith"]}
+          actions={
+            <Button onClick={() => setIsCreateDialogOpen(true)} data-testid="button-create-backup">
+              <Plus className="h-4 w-4 mr-2" />
+              <T k="pages.createBackup" />
             </Button>
-            <Button
-              onClick={() =>
-                createBackupMutation.mutate({
-                  name: newBackupName || `Backup ${new Date().toLocaleDateString()}`,
-                  description: newBackupDescription,
-                })
-              }
-              disabled={createBackupMutation.isPending}
-              data-testid="button-confirm-backup"
-            >
-              {createBackupMutation.isPending ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  <T k="pageLabels.creating" />
-                </>
-              ) : (
-                <>
-                  <Database className="h-4 w-4 mr-2" />
-                  <T k="pages.createBackup" />
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          }
+        />
+        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                <T k="pageLabels.createNewBackup" />
+              </DialogTitle>
+              <DialogDescription>{c.about1}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="backup-name">
+                  <T k="pageLabels.backupName" />
+                </Label>
+                <Input
+                  id="backup-name"
+                  placeholder={`Backup ${new Date().toLocaleDateString()}`}
+                  value={newBackupName}
+                  onChange={(e) => setNewBackupName(e.target.value)}
+                  data-testid="input-backup-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="backup-description">Description (Optional)</Label>
+                <Textarea
+                  id="backup-description"
+                  placeholder={t["backupRestore.addNotesAboutThisBackup"]}
+                  value={newBackupDescription}
+                  onChange={(e) => setNewBackupDescription(e.target.value)}
+                  data-testid="input-backup-description"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                <T k="pages.cancel" />
+              </Button>
+              <Button
+                onClick={() =>
+                  createBackupMutation.mutate({
+                    name: newBackupName || `Backup ${new Date().toLocaleDateString()}`,
+                    description: newBackupDescription,
+                  })
+                }
+                disabled={createBackupMutation.isPending}
+                data-testid="button-confirm-backup"
+              >
+                {createBackupMutation.isPending ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    <T k="pageLabels.creating" />
+                  </>
+                ) : (
+                  <>
+                    <Database className="h-4 w-4 mr-2" />
+                    <T k="pages.createBackup" />
+                  </>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Database className="h-4 w-4" />
+                <T k="pageLabels.totalBackups" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold" data-testid="text-total-backups">
+                {backups.length}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                <T k="pageLabels.backupHistory" />
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <HardDrive className="h-4 w-4" />
+                <T k="pageLabels.storageUsed" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold" data-testid="text-storage-used">
+                {formatBytes(backups.reduce((sum, b) => sum + (b.sizeBytes || 0), 0))}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                <T k="pageLabels.totalBackupSize" />
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                <T k="pageLabels.lastBackup" />
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-2xl font-bold" data-testid="text-last-backup">
+                {backups.length > 0 && backups[0].createdAt
+                  ? format(new Date(backups[0].createdAt), "MMM d, yyyy")
+                  : t["banking.feeds.never"]}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {backups.length > 0 && backups[0].createdAt
+                  ? format(new Date(backups[0].createdAt), "h:mm a")
+                  : t["backupRestore.createYourFirstBackup"]}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Database className="h-4 w-4" />
-              <T k="pageLabels.totalBackups" />
+          <CardHeader>
+            <CardTitle>
+              <T k="pageLabels.backupHistory2" />
             </CardTitle>
+            <CardDescription>
+              <T k="pageLabels.viewAndManageYourFinancialDataBackups" />
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold" data-testid="text-total-backups">
-              {backups.length}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              <T k="pageLabels.backupHistory" />
-            </p>
+            {isLoading ? (
+              <div className="flex items-center justify-center h-32">
+                <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : backupsFailed ? (
+              <ErrorState
+                compact
+                onRetry={() => void refetchBackups()}
+                testId="state-backups-error"
+              />
+            ) : backups.length === 0 ? (
+              <div className="text-center py-8">
+                <Database className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium mb-2">
+                  <T k="pageLabels.noBackupsYet" />
+                </h3>
+                <p className="text-muted-foreground mb-4">
+                  <T k="pageLabels.createYourFirstBackupToProtectYourFinancialRecords" />
+                </p>
+                <Button
+                  onClick={() => setIsCreateDialogOpen(true)}
+                  data-testid="button-create-first-backup"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  <T k="pageLabels.createFirstBackup" />
+                </Button>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>
+                      <T k="pages.status" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pageLabels.records" />
+                    </TableHead>
+                    <TableHead>Size</TableHead>
+                    <TableHead>
+                      <T k="pages.created" />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <T k="pages.actions" />
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {backups.map((backup) => (
+                    <TableRow key={backup.id} data-testid={`row-backup-${backup.id}`}>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium">{backup.name}</p>
+                          {backup.description && (
+                            <p className="text-xs text-muted-foreground">{backup.description}</p>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{getBackupTypeLabel(backup.backupType)}</Badge>
+                      </TableCell>
+                      <TableCell>{getStatusBadge(backup.status)}</TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          <p>{backup.accountsCount || 0} accounts</p>
+                          <p className="text-muted-foreground">
+                            {backup.invoicesCount || 0} invoices, {backup.journalEntriesCount || 0}{" "}
+                            entries
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>{formatBytes(backup.sizeBytes || 0)}</TableCell>
+                      <TableCell>
+                        {backup.createdAt && (
+                          <div>
+                            <p className="text-sm">
+                              {format(new Date(backup.createdAt), "MMM d, yyyy")}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {format(new Date(backup.createdAt), "h:mm a")}
+                            </p>
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDownload(backup)}
+                            disabled={backup.status !== "completed"}
+                            aria-label={t["common.downloadBackup"]}
+                            data-testid={`button-download-${backup.id}`}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedBackupForRestore(backup);
+                              setRestoreMode("merge");
+                              getRestorePreviewMutation.mutate({ id: backup.id, mode: "merge" });
+                            }}
+                            disabled={backup.status !== "completed"}
+                            aria-label={t["common.restoreBackup"]}
+                            data-testid={`button-restore-${backup.id}`}
+                          >
+                            <Upload className="h-4 w-4" />
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                aria-label={t["common.deleteBackup"]}
+                                data-testid={`button-delete-${backup.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>
+                                  <T k="pageLabels.deleteBackup" />
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will permanently delete "{backup.name}". This action cannot
+                                  be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>
+                                  <T k="pages.cancel" />
+                                </AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteBackupMutation.mutate(backup.id)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  <T k="pages.delete" />
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
           </CardContent>
         </Card>
+
+        <Dialog
+          open={!!restorePreview}
+          onOpenChange={() => {
+            setRestorePreview(null);
+            setSelectedBackupForRestore(null);
+            setConfirmName("");
+          }}
+        >
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-warning" />
+                {c.restoreTitle}
+              </DialogTitle>
+              <DialogDescription>{c.restoreDescription}</DialogDescription>
+            </DialogHeader>
+            {restorePreview && (
+              <div className="space-y-4 py-2">
+                <div className="grid gap-2 md:grid-cols-2">
+                  {(["merge", "replace"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      data-testid={`button-restore-mode-${m}`}
+                      onClick={() => {
+                        setRestoreMode(m);
+                        if (selectedBackupForRestore) {
+                          getRestorePreviewMutation.mutate({
+                            id: selectedBackupForRestore.id,
+                            mode: m,
+                          });
+                        }
+                      }}
+                      className={`rounded-lg border p-3 text-start text-sm ${
+                        restoreMode === m ? "border-primary bg-primary/5" : ""
+                      }`}
+                    >
+                      <p className="font-medium">{m === "merge" ? c.modeMerge : c.modeReplace}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {m === "merge" ? c.modeMergeHelp : c.modeReplaceHelp}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+                {restorePreview.tables.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{c.noChanges}</p>
+                ) : (
+                  <div className="max-h-64 overflow-auto rounded border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{c.table}</TableHead>
+                          <TableHead className="text-end">{c.insert}</TableHead>
+                          <TableHead className="text-end">{c.update}</TableHead>
+                          <TableHead className="text-end">{c.del}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {restorePreview.tables.map((d) => (
+                          <TableRow key={d.table}>
+                            <TableCell className="font-mono text-xs" dir="ltr">
+                              {d.table}
+                            </TableCell>
+                            <TableCell className="text-end">{d.insert}</TableCell>
+                            <TableCell className="text-end">{d.update}</TableCell>
+                            <TableCell className="text-end">{d.delete}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+                {restoreMode === "replace" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="confirm-backup-name">{c.confirmName}</Label>
+                    <Input
+                      id="confirm-backup-name"
+                      value={confirmName}
+                      placeholder={restorePreview.backup.name}
+                      onChange={(e) => setConfirmName(e.target.value)}
+                      data-testid="input-confirm-backup-name"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setRestorePreview(null);
+                  setSelectedBackupForRestore(null);
+                  setConfirmName("");
+                }}
+              >
+                <T k="pages.cancel" />
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() =>
+                  selectedBackupForRestore && restoreMutation.mutate(selectedBackupForRestore.id)
+                }
+                disabled={
+                  restoreMutation.isPending ||
+                  (restoreMode === "replace" && confirmName !== restorePreview?.backup.name)
+                }
+                data-testid="button-confirm-restore"
+              >
+                <Upload className="me-2 h-4 w-4" />
+                {restoreMutation.isPending ? c.restoring : c.restore}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <HardDrive className="h-4 w-4" />
-              <T k="pageLabels.storageUsed" />
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              {c.scheduleTitle}
             </CardTitle>
+            <CardDescription>{c.scheduleHelp}</CardDescription>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold" data-testid="text-storage-used">
-              {formatBytes(backups.reduce((sum, b) => sum + (b.sizeBytes || 0), 0))}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              <T k="pageLabels.totalBackupSize" />
-            </p>
+          <CardContent className="flex flex-wrap items-end gap-3">
+            <div className="flex gap-2">
+              {(["off", "daily", "weekly", "monthly"] as const).map((f) => (
+                <Button
+                  key={f}
+                  type="button"
+                  size="sm"
+                  variant={effectiveSchedule.frequency === f ? "default" : "outline"}
+                  onClick={() => setScheduleDraft({ ...effectiveSchedule, frequency: f })}
+                  data-testid={`button-schedule-${f}`}
+                >
+                  {c.frequency[f]}
+                </Button>
+              ))}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="retention-days">{c.retention}</Label>
+              <Input
+                id="retention-days"
+                type="number"
+                min={7}
+                max={3650}
+                className="w-28"
+                value={effectiveSchedule.retentionDays}
+                onChange={(e) =>
+                  setScheduleDraft({ ...effectiveSchedule, retentionDays: Number(e.target.value) })
+                }
+              />
+            </div>
+            <Button
+              size="sm"
+              disabled={!scheduleDraft || scheduleMutation.isPending}
+              onClick={() => scheduleDraft && scheduleMutation.mutate(scheduleDraft)}
+            >
+              {c.save}
+            </Button>
+            {schedule?.lastRunAt && (
+              <p className="text-xs text-muted-foreground">
+                {c.lastRun}: {format(new Date(schedule.lastRunAt), "PPpp")}
+              </p>
+            )}
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Clock className="h-4 w-4" />
-              <T k="pageLabels.lastBackup" />
+
+        <Card className="bg-muted/50">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <FileJson className="h-5 w-5" />
+              {c.aboutTitle}
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold" data-testid="text-last-backup">
-              {backups.length > 0 && backups[0].createdAt
-                ? format(new Date(backups[0].createdAt), "MMM d, yyyy")
-                : t["banking.feeds.never"]}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {backups.length > 0 && backups[0].createdAt
-                ? format(new Date(backups[0].createdAt), "h:mm a")
-                : t["backupRestore.createYourFirstBackup"]}
-            </p>
+          <CardContent className="text-sm text-muted-foreground space-y-2">
+            <p>{c.about1}</p>
+            <p>{c.about2}</p>
+            <p>{c.about3}</p>
+            <p>{c.about4}</p>
           </CardContent>
         </Card>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <T k="pageLabels.backupHistory2" />
-          </CardTitle>
-          <CardDescription>
-            <T k="pageLabels.viewAndManageYourFinancialDataBackups" />
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center h-32">
-              <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : backupsFailed ? (
-            <ErrorState
-              compact
-              onRetry={() => void refetchBackups()}
-              testId="state-backups-error"
-            />
-          ) : backups.length === 0 ? (
-            <div className="text-center py-8">
-              <Database className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium mb-2">
-                <T k="pageLabels.noBackupsYet" />
-              </h3>
-              <p className="text-muted-foreground mb-4">
-                <T k="pageLabels.createYourFirstBackupToProtectYourFinancialRecords" />
-              </p>
-              <Button
-                onClick={() => setIsCreateDialogOpen(true)}
-                data-testid="button-create-first-backup"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                <T k="pageLabels.createFirstBackup" />
-              </Button>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>
-                    <T k="pages.status" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="pageLabels.records" />
-                  </TableHead>
-                  <TableHead>Size</TableHead>
-                  <TableHead>
-                    <T k="pages.created" />
-                  </TableHead>
-                  <TableHead className="text-right">
-                    <T k="pages.actions" />
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {backups.map((backup) => (
-                  <TableRow key={backup.id} data-testid={`row-backup-${backup.id}`}>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{backup.name}</p>
-                        {backup.description && (
-                          <p className="text-xs text-muted-foreground">{backup.description}</p>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{getBackupTypeLabel(backup.backupType)}</Badge>
-                    </TableCell>
-                    <TableCell>{getStatusBadge(backup.status)}</TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        <p>{backup.accountsCount || 0} accounts</p>
-                        <p className="text-muted-foreground">
-                          {backup.invoicesCount || 0} invoices, {backup.journalEntriesCount || 0}{" "}
-                          entries
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell>{formatBytes(backup.sizeBytes || 0)}</TableCell>
-                    <TableCell>
-                      {backup.createdAt && (
-                        <div>
-                          <p className="text-sm">
-                            {format(new Date(backup.createdAt), "MMM d, yyyy")}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {format(new Date(backup.createdAt), "h:mm a")}
-                          </p>
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDownload(backup)}
-                          disabled={backup.status !== "completed"}
-                          aria-label={t["common.downloadBackup"]}
-                          data-testid={`button-download-${backup.id}`}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedBackupForRestore(backup);
-                            setRestoreMode("merge");
-                            getRestorePreviewMutation.mutate({ id: backup.id, mode: "merge" });
-                          }}
-                          disabled={backup.status !== "completed"}
-                          aria-label={t["common.restoreBackup"]}
-                          data-testid={`button-restore-${backup.id}`}
-                        >
-                          <Upload className="h-4 w-4" />
-                        </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-destructive hover:text-destructive"
-                              aria-label={t["common.deleteBackup"]}
-                              data-testid={`button-delete-${backup.id}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                <T k="pageLabels.deleteBackup" />
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This will permanently delete "{backup.name}". This action cannot be
-                                undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>
-                                <T k="pages.cancel" />
-                              </AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => deleteBackupMutation.mutate(backup.id)}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                              >
-                                <T k="pages.delete" />
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <Dialog
-        open={!!restorePreview}
-        onOpenChange={() => {
-          setRestorePreview(null);
-          setSelectedBackupForRestore(null);
-          setConfirmName("");
-        }}
-      >
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-warning" />
-              {c.restoreTitle}
-            </DialogTitle>
-            <DialogDescription>{c.restoreDescription}</DialogDescription>
-          </DialogHeader>
-          {restorePreview && (
-            <div className="space-y-4 py-2">
-              <div className="grid gap-2 md:grid-cols-2">
-                {(["merge", "replace"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    data-testid={`button-restore-mode-${m}`}
-                    onClick={() => {
-                      setRestoreMode(m);
-                      if (selectedBackupForRestore) {
-                        getRestorePreviewMutation.mutate({
-                          id: selectedBackupForRestore.id,
-                          mode: m,
-                        });
-                      }
-                    }}
-                    className={`rounded-lg border p-3 text-start text-sm ${
-                      restoreMode === m ? "border-primary bg-primary/5" : ""
-                    }`}
-                  >
-                    <p className="font-medium">{m === "merge" ? c.modeMerge : c.modeReplace}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {m === "merge" ? c.modeMergeHelp : c.modeReplaceHelp}
-                    </p>
-                  </button>
-                ))}
-              </div>
-              {restorePreview.tables.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{c.noChanges}</p>
-              ) : (
-                <div className="max-h-64 overflow-auto rounded border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>{c.table}</TableHead>
-                        <TableHead className="text-end">{c.insert}</TableHead>
-                        <TableHead className="text-end">{c.update}</TableHead>
-                        <TableHead className="text-end">{c.del}</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {restorePreview.tables.map((d) => (
-                        <TableRow key={d.table}>
-                          <TableCell className="font-mono text-xs" dir="ltr">
-                            {d.table}
-                          </TableCell>
-                          <TableCell className="text-end">{d.insert}</TableCell>
-                          <TableCell className="text-end">{d.update}</TableCell>
-                          <TableCell className="text-end">{d.delete}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-              {restoreMode === "replace" && (
-                <div className="space-y-2">
-                  <Label htmlFor="confirm-backup-name">{c.confirmName}</Label>
-                  <Input
-                    id="confirm-backup-name"
-                    value={confirmName}
-                    placeholder={restorePreview.backup.name}
-                    onChange={(e) => setConfirmName(e.target.value)}
-                    data-testid="input-confirm-backup-name"
-                  />
-                </div>
-              )}
-            </div>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setRestorePreview(null);
-                setSelectedBackupForRestore(null);
-                setConfirmName("");
-              }}
-            >
-              <T k="pages.cancel" />
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() =>
-                selectedBackupForRestore && restoreMutation.mutate(selectedBackupForRestore.id)
-              }
-              disabled={
-                restoreMutation.isPending ||
-                (restoreMode === "replace" && confirmName !== restorePreview?.backup.name)
-              }
-              data-testid="button-confirm-restore"
-            >
-              <Upload className="me-2 h-4 w-4" />
-              {restoreMutation.isPending ? c.restoring : c.restore}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Clock className="h-5 w-5" />
-            {c.scheduleTitle}
-          </CardTitle>
-          <CardDescription>{c.scheduleHelp}</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-end gap-3">
-          <div className="flex gap-2">
-            {(["off", "daily", "weekly", "monthly"] as const).map((f) => (
-              <Button
-                key={f}
-                type="button"
-                size="sm"
-                variant={effectiveSchedule.frequency === f ? "default" : "outline"}
-                onClick={() => setScheduleDraft({ ...effectiveSchedule, frequency: f })}
-                data-testid={`button-schedule-${f}`}
-              >
-                {c.frequency[f]}
-              </Button>
-            ))}
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="retention-days">{c.retention}</Label>
-            <Input
-              id="retention-days"
-              type="number"
-              min={7}
-              max={3650}
-              className="w-28"
-              value={effectiveSchedule.retentionDays}
-              onChange={(e) =>
-                setScheduleDraft({ ...effectiveSchedule, retentionDays: Number(e.target.value) })
-              }
-            />
-          </div>
-          <Button
-            size="sm"
-            disabled={!scheduleDraft || scheduleMutation.isPending}
-            onClick={() => scheduleDraft && scheduleMutation.mutate(scheduleDraft)}
-          >
-            {c.save}
-          </Button>
-          {schedule?.lastRunAt && (
-            <p className="text-xs text-muted-foreground">
-              {c.lastRun}: {format(new Date(schedule.lastRunAt), "PPpp")}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="bg-muted/50">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <FileJson className="h-5 w-5" />
-            {c.aboutTitle}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground space-y-2">
-          <p>{c.about1}</p>
-          <p>{c.about2}</p>
-          <p>{c.about3}</p>
-          <p>{c.about4}</p>
-        </CardContent>
-      </Card>
-    </div>
+    </SettingsLayout>
   );
 }
