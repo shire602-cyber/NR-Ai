@@ -19,58 +19,26 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiUrl } from "@/lib/api";
-import { formatMoneyText } from "@/lib/format-money";
+import { ChartTooltipContent, type ChartTooltipContentProps } from "@/components/ui/chart-theme";
 import { useTranslation } from "@/lib/i18n";
 import { INSIGHTS_PERIODS, type InsightsPeriod } from "./model";
 
-interface TooltipRow {
-  name?: string | number;
-  value?: number | string;
-  color?: string;
-  dataKey?: string | number;
-}
-
-/** Popover-surface tooltip: label plus one money row per series (never the Recharts default). */
+/** Shared chart tooltip (popover surface, label + Money rows); labels come through the views. */
 export function InsightsTooltip({
-  active,
-  payload,
-  label,
   seriesLabel,
   labelFormatter,
-}: {
-  active?: boolean;
-  payload?: TooltipRow[];
-  label?: string | number;
+  ...props
+}: Omit<ChartTooltipContentProps, "seriesLabel" | "labelFormatter"> & {
   seriesLabel: (key: string) => string;
   labelFormatter?: (label: string) => string;
 }) {
-  const { locale } = useTranslation();
-  if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border border-popover-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md">
-      <div className="mb-1 font-medium">
-        {labelFormatter ? labelFormatter(String(label ?? "")) : label}
-      </div>
-      <ul className="space-y-0.5">
-        {payload
-          .filter((row) => row.value !== undefined && row.value !== null)
-          .map((row) => (
-            <li key={String(row.dataKey)} className="flex items-center justify-between gap-4">
-              <span className="flex items-center gap-1.5 text-muted-foreground">
-                <span
-                  className="inline-block h-1.5 w-1.5 rounded-full"
-                  style={{ backgroundColor: row.color }}
-                  aria-hidden
-                />
-                {seriesLabel(String(row.dataKey))}
-              </span>
-              <span className="money tabular-nums">
-                {formatMoneyText(Number(row.value) || 0, "AED", locale)}
-              </span>
-            </li>
-          ))}
-      </ul>
-    </div>
+    <ChartTooltipContent
+      {...props}
+      currency="AED"
+      seriesLabel={seriesLabel}
+      labelFormatter={labelFormatter ? (label) => labelFormatter(String(label ?? "")) : undefined}
+    />
   );
 }
 

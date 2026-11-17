@@ -29,7 +29,7 @@ import { formatPercentDelta } from "@/lib/format-money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { type ComparisonMetric, comparisonDelta } from "./model";
 import { ChartCard, ControlsRow, InsightsSkeleton, InsightsTooltip } from "./shared";
-import { compactAxisValue, insightsChart } from "./chartStyle";
+import { chartAnimates, compactAxisValue, insightsChart } from "./chartStyle";
 
 interface BudgetActualRow {
   budgetId: string;
@@ -213,6 +213,7 @@ export default function BudgetView({ companyId }: { companyId: string }) {
                 radius={[0, 4, 4, 0]}
                 maxBarSize={14}
                 animationDuration={insightsChart.animationDuration}
+                isAnimationActive={chartAnimates()}
               />
               <Bar
                 dataKey="budget"
@@ -220,6 +221,7 @@ export default function BudgetView({ companyId }: { companyId: string }) {
                 radius={[0, 4, 4, 0]}
                 maxBarSize={14}
                 animationDuration={insightsChart.animationDuration}
+                isAnimationActive={chartAnimates()}
               />
             </BarChart>
           </ResponsiveContainer>

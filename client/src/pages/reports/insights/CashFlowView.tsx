@@ -35,7 +35,7 @@ import {
   PeriodSelect,
   SmallEmpty,
 } from "./shared";
-import { compactAxisValue, insightsChart } from "./chartStyle";
+import { chartAnimates, compactAxisValue, insightsChart } from "./chartStyle";
 import { trailingYearStart, type InsightsPeriod, periodWindow, todayIso } from "./model";
 
 interface CashFlowStatement {
@@ -236,6 +236,7 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
                   dot={false}
                   activeDot={{ r: 3 }}
                   animationDuration={insightsChart.animationDuration}
+                  isAnimationActive={chartAnimates()}
                   connectNulls
                 />
                 {showProjection ? (
@@ -250,6 +251,7 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
                     dot={false}
                     activeDot={{ r: 3 }}
                     animationDuration={insightsChart.animationDuration}
+                    isAnimationActive={chartAnimates()}
                     connectNulls
                   />
                 ) : null}

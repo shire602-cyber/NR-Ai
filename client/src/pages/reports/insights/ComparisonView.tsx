@@ -40,7 +40,7 @@ import {
   PeriodSelect,
   SmallEmpty,
 } from "./shared";
-import { compactAxisValue, insightsChart } from "./chartStyle";
+import { chartAnimates, compactAxisValue, insightsChart } from "./chartStyle";
 
 interface ComparisonResponse {
   current: { from: string; to: string };
@@ -190,6 +190,7 @@ export default function ComparisonView({ companyId }: { companyId: string }) {
                     radius={[4, 4, 0, 0]}
                     maxBarSize={28}
                     animationDuration={insightsChart.animationDuration}
+                    isAnimationActive={chartAnimates()}
                   />
                   <Bar
                     dataKey="previous"
@@ -197,6 +198,7 @@ export default function ComparisonView({ companyId }: { companyId: string }) {
                     radius={[4, 4, 0, 0]}
                     maxBarSize={28}
                     animationDuration={insightsChart.animationDuration}
+                    isAnimationActive={chartAnimates()}
                   />
                 </BarChart>
               </ResponsiveContainer>

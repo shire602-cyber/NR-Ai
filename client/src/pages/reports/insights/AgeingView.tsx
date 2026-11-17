@@ -25,7 +25,7 @@ import {
   InsightsTooltip,
   SmallEmpty,
 } from "./shared";
-import { compactAxisValue, insightsChart } from "./chartStyle";
+import { chartAnimates, compactAxisValue, insightsChart } from "./chartStyle";
 import { todayIso } from "./model";
 
 type Bucket = "current" | "days30" | "days60" | "days90" | "over90";
@@ -201,6 +201,7 @@ export default function AgeingView({ companyId }: { companyId: string }) {
                     radius={[4, 4, 0, 0]}
                     maxBarSize={28}
                     animationDuration={insightsChart.animationDuration}
+                    isAnimationActive={chartAnimates()}
                   />
                   <Bar
                     dataKey="payables"
@@ -208,6 +209,7 @@ export default function AgeingView({ companyId }: { companyId: string }) {
                     radius={[4, 4, 0, 0]}
                     maxBarSize={28}
                     animationDuration={insightsChart.animationDuration}
+                    isAnimationActive={chartAnimates()}
                   />
                 </BarChart>
               </ResponsiveContainer>

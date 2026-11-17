@@ -1,5 +1,9 @@
 import { T } from "@/components/layout/T";
 import { DatePicker } from "@/components/ui/date-picker";
+import { Alert } from "@/components/ui/alert";
+import { SetupNotice } from "@/components/ui/setup-notice";
+import { StatCard } from "@/components/ui/stat-card";
+import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -707,31 +711,20 @@ export default function ExchangeRates() {
       />
 
       {feedStatus && feedStatus.stale.length > 0 && (
-        <div
-          className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
-          role="status"
-          data-testid="banner-stale-rates"
-        >
-          <p className="flex items-center gap-2 font-medium">
-            <AlertTriangle className="h-4 w-4" />
-            {s.staleBannerTitle}
-          </p>
-          <p className="mt-1">
-            {s.staleBannerBody.replace("{days}", String(feedStatus.maxAgeDays))}{" "}
-            {feedStatus.stale
-              .map((p) => `${p.pair} (${p.rateType}, ${formatDate(p.date, locale)})`)
-              .join(", ")}
-          </p>
-        </div>
+        <Alert tone="warning" title={s.staleBannerTitle} data-testid="banner-stale-rates">
+          {s.staleBannerBody.replace("{days}", String(feedStatus.maxAgeDays))}{" "}
+          {feedStatus.stale
+            .map(
+              (p) =>
+                `${p.pair} (${s.rateTypes[p.rateType as RateType] ?? p.rateType}, ${formatDate(p.date, locale)})`
+            )
+            .join(", ")}
+        </Alert>
       )}
       {feedStatus && feedStatus.feed.capability !== "live" && (
-        <div
-          className="rounded-md border border-border bg-muted/40 p-3 text-sm"
-          data-testid="banner-feed-off"
-        >
-          <p className="font-medium">{s.feedOffTitle}</p>
-          <p className="mt-1 text-muted-foreground">{s.feedOffBody}</p>
-        </div>
+        <SetupNotice title={s.feedOffTitle} testId="banner-feed-off">
+          {s.feedOffBody}
+        </SetupNotice>
       )}
 
       <Card>
@@ -751,55 +744,28 @@ export default function ExchangeRates() {
           ) : (
             <div className="space-y-4">
               {(fxReport?.warnings ?? []).length > 0 && (
-                <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
-                  <p className="flex items-center gap-2 font-medium">
-                    <AlertTriangle className="h-4 w-4" />
-                    {s.warnings}
-                  </p>
-                  <ul className="mt-1 list-disc ps-5">
+                <Alert tone="warning" title={s.warnings}>
+                  <ul className="list-disc ps-5">
                     {fxReport?.warnings?.map((w) => (
                       <li key={w}>{localizeFxWarning(w, locale)}</li>
                     ))}
                   </ul>
-                </div>
+                </Alert>
               )}
-              <div className="grid gap-3 md:grid-cols-4">
-                <div className="rounded-md border bg-muted/20 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {s.openExposures}
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold">{exposureRows.length}</p>
-                </div>
-                <div className="rounded-md border bg-muted/20 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {s.unrealizedGains}
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold text-success">
-                    {formatCurrency(fxReport?.totalUnrealizedGain ?? 0, base, locale)}
-                  </p>
-                </div>
-                <div className="rounded-md border bg-muted/20 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {s.unrealizedLosses}
-                  </p>
-                  <p className="mt-1 text-2xl font-semibold text-destructive">
-                    {formatCurrency(fxReport?.totalUnrealizedLoss ?? 0, base, locale)}
-                  </p>
-                </div>
-                <div className="rounded-md border bg-muted/20 p-4">
-                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                    {s.net}
-                  </p>
-                  <p
-                    className={`mt-1 text-2xl font-semibold ${
-                      (fxReport?.netUnrealizedGainLoss ?? 0) >= 0
-                        ? "text-success"
-                        : "text-destructive"
-                    }`}
-                  >
-                    {formatCurrency(fxReport?.netUnrealizedGainLoss ?? 0, base, locale)}
-                  </p>
-                </div>
+              <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+                <StatCard label={s.openExposures} value={exposureRows.length} />
+                <StatCard
+                  label={s.unrealizedGains}
+                  value={<Money amount={fxReport?.totalUnrealizedGain ?? 0} currency={base} />}
+                />
+                <StatCard
+                  label={s.unrealizedLosses}
+                  value={<Money amount={fxReport?.totalUnrealizedLoss ?? 0} currency={base} />}
+                />
+                <StatCard
+                  label={s.net}
+                  value={<Money amount={fxReport?.netUnrealizedGainLoss ?? 0} currency={base} />}
+                />
               </div>
 
               <div className="rounded-md border overflow-x-auto">
@@ -880,6 +846,7 @@ export default function ExchangeRates() {
               <Label htmlFor="reval-date">{s.revalDate}</Label>
               <DatePicker
                 id="reval-date"
+                max={todayIso()}
                 value={revalDate}
                 onChange={(value) => {
                   setRevalDate(value);
@@ -1242,18 +1209,15 @@ export default function ExchangeRates() {
                 <T k="pages.effectiveDate" />
               </Label>
               <DatePicker
+                max={todayIso()}
                 value={formEffectiveDate}
                 onChange={(value) => setFormEffectiveDate(value)}
               />
             </div>
             {largeMove && (
-              <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
-                <p className="flex items-center gap-2 font-medium">
-                  <AlertTriangle className="h-4 w-4" />
-                  {s.largeMoveTitle}
-                </p>
-                <p className="mt-1">{largeMove}</p>
-              </div>
+              <Alert tone="warning" title={s.largeMoveTitle}>
+                {largeMove}
+              </Alert>
             )}
           </div>
           <DialogFooter>
