@@ -140,12 +140,6 @@ export default {
           foreground: "hsl(var(--sidebar-accent-foreground) / <alpha-value>)",
           border: "var(--sidebar-accent-border)",
         },
-        status: {
-          online: "rgb(34 197 94)",
-          away: "rgb(245 158 11)",
-          busy: "rgb(239 68 68)",
-          offline: "rgb(156 163 175)",
-        },
         // Semantic status families — single source of truth for "paid green",
         // "overdue red", etc. Backed by the CSS variables in index.css so
         // light/dark both work without dark: overrides.
