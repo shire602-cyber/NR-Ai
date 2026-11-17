@@ -62,7 +62,7 @@ export default function HomePanel() {
                     <div className="text-xs text-muted-foreground">
                       <T k="reportCenter.readyReports" />
                     </div>
-                    <div className="mt-1 tabular-nums text-2xl font-semibold">
+                    <div className="mt-1 text-kpi tabular-nums">
                       {reportStats.ready}
                     </div>
                   </div>
@@ -70,7 +70,7 @@ export default function HomePanel() {
                     <div className="text-xs text-muted-foreground">
                       <T k="reportCenter.liveReports" />
                     </div>
-                    <div className="mt-1 tabular-nums text-2xl font-semibold">
+                    <div className="mt-1 text-kpi tabular-nums">
                       {reportStats.live}
                     </div>
                   </div>
@@ -78,7 +78,7 @@ export default function HomePanel() {
                     <div className="text-xs text-muted-foreground">
                       <T k="reportCenter.automations" />
                     </div>
-                    <div className="mt-1 tabular-nums text-2xl font-semibold">
+                    <div className="mt-1 text-kpi tabular-nums">
                       {reportStats.automationStarters}
                     </div>
                   </div>
@@ -86,7 +86,7 @@ export default function HomePanel() {
                     <div className="text-xs text-muted-foreground">
                       <T k="reportCenter.openQueue" />
                     </div>
-                    <div className="mt-1 tabular-nums text-2xl font-semibold">
+                    <div className="mt-1 text-kpi tabular-nums">
                       {automationQueueCount}
                     </div>
                   </div>
