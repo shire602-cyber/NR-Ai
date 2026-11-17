@@ -228,7 +228,15 @@ export function registerCompanyRoutes(app: Express) {
         firmRole,
         req.user?.isAdmin === true
       );
-      res.json(companies.map((company) => withNrClientVatGroup(company)));
+      // myRole lets the client keep owner-only flows (the setup wizard) away from
+      // invited members. Firm-accessible client companies have no direct membership.
+      const roles = await storage.getCompanyRolesByUserId(userId);
+      res.json(
+        companies.map((company) => ({
+          ...withNrClientVatGroup(company),
+          myRole: roles[company.id] ?? null,
+        }))
+      );
     })
   );
 

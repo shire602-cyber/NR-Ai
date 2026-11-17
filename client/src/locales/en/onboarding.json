@@ -146,5 +146,11 @@
   "onboarding.hideReportTools": "Hide reporting automations",
   "onboarding.showReportTools": "Show reporting automations",
   "onboarding.openWorkspace": "Open {name}",
-  "onboarding.booksReadyTitle": "Books ready in 90 seconds."
+  "onboarding.booksReadyTitle": "Books ready in 90 seconds.",
+  "onboarding.defaultCompanyName": "{name}'s Company",
+  "onboarding.ownerSettingUpTitle": "Your account owner is still setting up this company",
+  "onboarding.ownerSettingUpBody": "Only the company owner can finish the initial setup. You can open the areas your role allows in the meantime, and everything will be ready once the owner is done.",
+  "onboarding.ownerSettingUpAction": "Continue to the dashboard",
+  "onboarding.vatRegisteredLabel": "This business is VAT registered",
+  "onboarding.trnRequiredVatRegistered": "Enter the 15-digit TRN: a VAT-registered business must show it on tax invoices."
 }

@@ -4,10 +4,13 @@ import { useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest, ApiError } from "@/lib/queryClient";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useActiveCompany } from "@/components/ActiveCompanyProvider";
+import { canRunCompanyOnboarding, withoutBlankValues } from "@/lib/companyRole";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -125,15 +128,59 @@ export default function Onboarding() {
   return <CustomerOnboarding />;
 }
 
+/**
+ * The wizard always targets the ACTIVE company (the one the switcher selected), never the
+ * first company in the list, and only the company owner may run it: an invited member sees a
+ * "your owner is still setting up" state instead of the owner's setup form.
+ */
 function CustomerOnboarding() {
+  const { company, isLoading } = useActiveCompany();
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (company && !canRunCompanyOnboarding(company)) {
+    return <OwnerStillSettingUp companyName={company.name} />;
+  }
+  // Keyed by company so switching companies never carries step/form state across tenants.
+  return <CustomerOnboardingWizard key={company?.id ?? "new"} />;
+}
+
+function OwnerStillSettingUp({ companyName }: { companyName: string }) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center bg-background px-4"
+      data-testid="onboarding-owner-setting-up"
+    >
+      <Card className="max-w-md w-full">
+        <CardContent className="p-6 space-y-4 text-center">
+          <Building2 className="w-8 h-8 mx-auto text-primary" aria-hidden />
+          <p className="text-sm text-muted-foreground">{companyName}</p>
+          <h1 className="font-display text-2xl leading-tight">
+            {t["onboarding.ownerSettingUpTitle"]}
+          </h1>
+          <p className="text-muted-foreground">{t["onboarding.ownerSettingUpBody"]}</p>
+          <Link href="/dashboard">
+            <Button className="w-full" data-testid="onboarding-owner-setting-up-continue">
+              {t["onboarding.ownerSettingUpAction"]}
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function CustomerOnboardingWizard() {
   const { t } = useTranslation();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const { data: companies, isLoading: companiesLoading } = useQuery<Company[]>({
-    queryKey: ["/api/companies"],
-  });
-  const company = companies?.[0];
+  const { company, isLoading: companiesLoading } = useActiveCompany();
 
   const [currentStep, setCurrentStep] = useState<Step>("welcome");
   const [direction, setDirection] = useState<1 | -1>(1);
@@ -205,7 +252,7 @@ function CustomerOnboarding() {
 
   const saveCompanyMutation = useMutation({
     mutationFn: (data: Partial<typeof companyForm>) =>
-      apiRequest("PATCH", `/api/companies/${company!.id}`, data),
+      apiRequest("PATCH", `/api/companies/${company!.id}`, withoutBlankValues(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       setCompanyFieldErrors({});
@@ -518,6 +565,7 @@ function CustomerOnboarding() {
               {currentStep === "welcome" && (
                 <WelcomeStep
                   companyName={company?.name}
+                  companyTrn={company?.trnVatNumber ?? ""}
                   onNext={goNext}
                   onExpress={handleExpressSetup}
                   expressSaving={expressSaving}
@@ -588,11 +636,13 @@ function CustomerOnboarding() {
 
 function WelcomeStep({
   companyName,
+  companyTrn,
   onNext,
   onExpress,
   expressSaving,
 }: {
   companyName?: string;
+  companyTrn?: string;
   onNext: () => void;
   // i18n-ignore: TypeScript type, not UI text
   onExpress: (data: { name: string; emirate: string; trnVatNumber: string }) => Promise<void>;
@@ -602,13 +652,19 @@ function WelcomeStep({
   const tr = t as Record<string, string>;
   const [name, setName] = useState(companyName ?? "");
   const [emirate, setEmirate] = useState("dubai");
-  const [trn, setTrn] = useState("");
+  // Prefilled from the company so registering with a TRN and then finishing setup keeps it.
+  const [trn, setTrn] = useState(companyTrn ?? "");
+  const [vatRegistered, setVatRegistered] = useState(!!companyTrn);
   const [error, setError] = useState<string | null>(null);
 
   async function handleExpress() {
     const trimmed = name.trim();
     if (!trimmed) {
       setError(tr["forms.errors.companyNameRequired"]);
+      return;
+    }
+    if (vatRegistered && !trn.trim()) {
+      setError(tr["onboarding.trnRequiredVatRegistered"]);
       return;
     }
     if (trn.trim() && !/^[0-9]{15}$/.test(trn.trim())) {
@@ -687,6 +743,21 @@ function WelcomeStep({
                 data-testid="express-trn"
               />
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="express-vat-registered"
+              checked={vatRegistered}
+              onCheckedChange={(v) => {
+                setVatRegistered(v === true);
+                setError(null);
+              }}
+              disabled={expressSaving}
+              data-testid="express-vat-registered"
+            />
+            <Label htmlFor="express-vat-registered" className="text-sm font-normal">
+              {tr["onboarding.vatRegisteredLabel"]}
+            </Label>
           </div>
           {error && (
             <p role="alert" className="text-sm text-destructive flex items-center gap-1.5">

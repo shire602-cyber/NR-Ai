@@ -199,6 +199,7 @@ import "@/styles/rtl.css";
 import "@/styles/mobile.css";
 
 // Components
+import { canRunCompanyOnboarding } from "@/lib/companyRole";
 import { OnboardingWizard } from "@/components/Onboarding";
 import { CommandPaletteProvider } from "@/components/CommandPalette";
 import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
@@ -276,7 +277,9 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (company && !company.onboardingCompleted) {
+    // Only the owner runs the setup wizard; invited members use the app (read-only
+    // where their role says so) while the owner finishes (J4).
+    if (company && !company.onboardingCompleted && canRunCompanyOnboarding(company)) {
       navigate("/onboarding");
     }
   }, [

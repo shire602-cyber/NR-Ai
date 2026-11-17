@@ -299,6 +299,7 @@ export interface IStorage {
    * Return all companies a user can access — direct company_users membership
    * plus firm-accessible client companies if firmRole is supplied.
    */
+  getCompanyRolesByUserId(userId: string): Promise<Record<string, string>>;
   getAccessibleCompanies(
     userId: string,
     firmRole?: string | null,

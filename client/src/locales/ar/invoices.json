@@ -90,5 +90,8 @@
   "invoices.einvoiceBuyerHintLink": "تحديث جهة الاتصال",
   "invoices.recurringManageRecurringInvoiceTemplates": "ادارة قوالب الفواتير المتكررة",
   "invoices.recurringNextRunDate": "التشغيل التالي",
-  "invoices.recurringDeleteConfirm": "سيؤدي هذا إلى حذف جدول الفاتورة المتكررة نهائياً. لا يمكن التراجع عن هذا الإجراء."
+  "invoices.recurringDeleteConfirm": "سيؤدي هذا إلى حذف جدول الفاتورة المتكررة نهائياً. لا يمكن التراجع عن هذا الإجراء.",
+  "invoices.supplierTrnRequiredTitle": "رقم التسجيل الضريبي للشركة مطلوب",
+  "invoices.supplierTrnRequiredBody": "شركتك مسجّلة في ضريبة القيمة المضافة لكن لا يوجد لها رقم تسجيل ضريبي. أضفه في إعدادات الشركة قبل إصدار فاتورة ضريبية تتضمن الضريبة.",
+  "invoices.supplierTrnRequiredLink": "فتح إعدادات الشركة"
 }

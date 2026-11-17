@@ -90,5 +90,8 @@
   "invoices.einvoiceBuyerHintLink": "Update the contact",
   "invoices.recurringManageRecurringInvoiceTemplates": "Manage recurring invoice templates",
   "invoices.recurringNextRunDate": "Next Run Date",
-  "invoices.recurringDeleteConfirm": "This will permanently delete this recurring invoice schedule. This action cannot be undone."
+  "invoices.recurringDeleteConfirm": "This will permanently delete this recurring invoice schedule. This action cannot be undone.",
+  "invoices.supplierTrnRequiredTitle": "Company TRN required",
+  "invoices.supplierTrnRequiredBody": "Your company is VAT registered but has no TRN. Add it in Company settings before issuing a tax invoice with VAT.",
+  "invoices.supplierTrnRequiredLink": "Open Company settings"
 }
