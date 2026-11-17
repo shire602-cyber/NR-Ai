@@ -65,7 +65,9 @@ export const ALL_AUTH_ROUTES = [
   "/settings/zatca",
   "/chart-of-accounts",
   "/invoices",
+  "/invoices/new",
   "/recurring-invoices",
+  "/recurring-invoices/new",
   "/payment-chasing",
   "/journal",
   "/reports",
@@ -75,8 +77,11 @@ export const ALL_AUTH_ROUTES = [
   "/contacts",
   "/inventory",
   "/quotes",
+  "/quotes/new",
   "/credit-notes",
+  "/credit-notes/new",
   "/purchase-orders",
+  "/purchase-orders/new",
   "/cost-centers",
   "/financial-statements",
   "/reconciliation-rules",
@@ -90,6 +95,7 @@ export const ALL_AUTH_ROUTES = [
   "/consolidation",
   "/payroll",
   "/bill-pay",
+  "/bill-pay/new",
   "/vendors",
   "/fixed-assets",
   "/budgets",
@@ -166,6 +172,8 @@ export const FIRM_ROUTES = [
 export const PARAM_ROUTES = {
   "/accounts/:id/ledger": "account",
   "/journal/:id": "journal",
+  // WP-C full-page invoice editor; resolved only when the crawl seeds an invoice id.
+  "/invoices/:id/edit": "invoice",
   "/admin/clients/:id": "company",
   "/admin/clients/:id/documents": "company",
   "/admin/clients/:id/tasks": "company",
@@ -187,4 +195,9 @@ export const ALL_CRAWL_SKIPPED = [
   "/view/invoice/:token",
   "/portal/:token",
   "/accounts",
+  // Edit routes of the document editors: the same editor as the matching /new route, for one record.
+  "/recurring-invoices/:id/edit",
+  "/quotes/:id/edit",
+  "/purchase-orders/:id/edit",
+  "/bill-pay/:id/edit",
 ];

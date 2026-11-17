@@ -8,6 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { MatchSuggestions } from "./AutoReconcile";
+import { ReconciliationRulesPanel } from "./ReconciliationRules";
 import {
   Select,
   SelectContent,
@@ -60,7 +64,6 @@ import {
   BookOpen,
   Receipt,
   Check,
-  AlertTriangle,
   BarChart3,
   Eye,
 } from "lucide-react";
@@ -363,7 +366,19 @@ export default function BankReconciliation() {
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
   const [selectedBankAccount, setSelectedBankAccount] = useState<string>("");
-  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  // `?import=1` (e.g. from Bank feeds) opens the statement import straight away.
+  const [importDialogOpen, setImportDialogOpen] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("import") === "1"
+  );
+  // Spec 3.9: suggested matches and rules are tabs of this page (old routes redirect here).
+  const [reconTab, setReconTab] = useState<string>(() => {
+    const tab =
+      typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("tab");
+    return tab === "suggestions" || tab === "rules" ? tab : "transactions";
+  });
+  const [scanRequest, setScanRequest] = useState(0);
   const [matchDialogOpen, setMatchDialogOpen] = useState(false);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<BankTransaction | null>(null);
@@ -848,41 +863,46 @@ export default function BankReconciliation() {
         eyebrow="Accounting"
         title={t.bankReconciliation}
         description={t.bankReconciliationDescription}
-        actions={
-          <>
-            <Button variant="outline" size="sm" onClick={() => setReportDialogOpen(true)}>
-              <BarChart3 className="w-4 h-4" />
-              <T k="reportCenter.report" />
-            </Button>
-            <Button variant="outline" size="sm" asChild data-testid="button-auto-reconcile">
-              <Link href="/auto-reconcile">
-                <Sparkles className="w-4 h-4" />
-                {t.autoMatch}
-              </Link>
-            </Button>
-            <Button
-              onClick={() => setImportDialogOpen(true)}
-              size="sm"
-              data-testid="button-import-transactions"
-            >
-              <Upload className="w-4 h-4" />
-              {t.importCsv}
-            </Button>
-          </>
+        primaryAction={
+          <Button
+            onClick={() => setImportDialogOpen(true)}
+            data-testid="button-import-transactions"
+          >
+            <Upload aria-hidden />
+            {t["banking.recon.importStatement"]}
+          </Button>
         }
+        secondaryActions={
+          <Button
+            variant="outline"
+            onClick={() => {
+              setReconTab("suggestions");
+              setScanRequest((n) => n + 1);
+            }}
+            data-testid="button-auto-reconcile"
+          >
+            <Search aria-hidden />
+            {t["banking.recon.findMatches"]}
+          </Button>
+        }
+        overflow={
+          <DropdownMenuItem onSelect={() => setReportDialogOpen(true)}>
+            <BarChart3 aria-hidden />
+            {t["banking.recon.report"]}
+          </DropdownMenuItem>
+        }
+        overflowLabel={t["banking.recon.moreActions"]}
       />
 
       {/* ── Summary: exceptions first ── */}
       <div className="mobile-keep-cols grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
           label={t["screens.needsReview"]}
-          icon={AlertTriangle}
           value={<span className="tabular-nums">{stats.total - stats.reconciled}</span>}
           hint={formatMessage(t["screens.suggestedCount"], { count: stats.suggested })}
         />
         <StatCard
           label={t["pages.reconciled"]}
-          icon={CheckCircle2}
           value={<span className="tabular-nums">{stats.reconciled}</span>}
           hint={formatMessage(t["screens.reconciledOfTotal"], {
             done: stats.reconciled,
@@ -897,7 +917,6 @@ export default function BankReconciliation() {
         />
         <StatCard
           label={t["pages.total2"]}
-          icon={Building2}
           value={<span className="tabular-nums">{stats.total}</span>}
           hint={t["screens.bankLinesInView"]}
         />
@@ -908,296 +927,324 @@ export default function BankReconciliation() {
         />
       </div>
 
-      {/* ── Filters (one row, not in a card) ── */}
-      <section className="space-y-4" aria-labelledby="bank-transactions-title">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="bank-transactions-title" className="text-h2 text-foreground">
-            {t.bankTransactions}
-          </h2>
-          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-            <div className="relative w-full sm:w-56">
-              <Search
-                className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-                aria-hidden
-              />
-              <Input
-                placeholder={t.search}
-                aria-label={t.search}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-9 ps-9"
-                data-testid="input-search"
-              />
-            </div>
-            <Select
-              value={selectedBankAccount || "all"}
-              onValueChange={(v) => setSelectedBankAccount(v === "all" ? "" : v)}
-            >
-              <SelectTrigger
-                className="h-9 w-full sm:w-44"
-                data-testid="select-bank-account"
-                aria-label={t["screens.bankAccount"]}
-              >
-                <SelectValue placeholder={t["pageLabels.allAccounts"]} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  <T k="pageLabels.allAccounts" />
-                </SelectItem>
-                {bankAccounts?.map((acct) => (
-                  <SelectItem key={acct.id} value={acct.id}>
-                    {acct.nameEn}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              type="button"
-              variant="outline"
-              id="show-reconciled"
-              aria-pressed={showReconciled}
-              onClick={() => setShowReconciled(!showReconciled)}
-              className={cn("h-9", showReconciled && "border-primary bg-primary/5 text-foreground")}
-            >
-              {showReconciled ? <Check aria-hidden /> : <Eye aria-hidden />}
-              <T k="pageLabels.showReconciled" />
-            </Button>
-          </div>
-        </div>
-
-        <DataTableCard
-          status={
-            isLoadingTransactions
-              ? "loading"
-              : filteredTransactions.length === 0
-                ? "empty"
-                : "ready"
-          }
-          columnLabels={[t.date, t.description, t.amount, t.status]}
-          empty={
-            // X5 (J1 L6): lines exist but every one is reconciled (and hidden) — say so.
-            allReconciledHidden
-              ? {
-                  icon: Check,
-                  title: t["banking.allReconciledTitle"],
-                  description: t["banking.allReconciledDescription"],
-                  action: {
-                    label: t["pageLabels.showReconciled"],
-                    icon: Eye,
-                    variant: "outline",
-                    onClick: () => setShowReconciled(true),
-                  },
-                  testId: "empty-state-all-reconciled",
-                }
-              : {
-                  icon: Building2,
-                  title: t["banking.emptyTransactionsTitle"],
-                  description: t["banking.emptyTransactionsDescription"],
-                  action: {
-                    label: t["banking.importStatementAction"],
-                    icon: Upload,
-                    variant: "outline",
-                    onClick: () => setImportDialogOpen(true),
-                  },
-                  testId: "empty-state-bank-transactions",
-                }
-          }
-        >
-          {/* Phones: one two-line row per bank line, the next step as a single button. */}
-          <div className="divide-hairline md:hidden" data-testid="mobile-bank-transaction-list">
-            {filteredTransactions.map((tx) => {
-              const conf = tx.matchConfidence != null ? Math.round(tx.matchConfidence * 100) : null;
-              const confMeta = conf != null ? confidenceLabel(conf) : null;
-              return (
-                <div key={tx.id} className="space-y-2 px-4 py-3">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <p dir="auto" className="min-w-0 truncate text-sm font-medium text-foreground">
-                      {tx.description}
-                    </p>
-                    <Money
-                      amount={tx.amount}
-                      tone="auto"
-                      className="shrink-0 text-sm font-semibold"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="min-w-0 truncate text-caption text-muted-foreground">
-                      {formatDate(tx.transactionDate)}
-                      {" · "}
-                      <span dir="ltr" className="[unicode-bidi:isolate]">
-                        {tx.reference || "—"}
-                      </span>
-                    </p>
-                    <StatusBadge
-                      status={
-                        tx.isReconciled
-                          ? "reconciled"
-                          : tx.matchStatus === "suggested"
-                            ? "suggested"
-                            : "unmatched"
-                      }
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-caption text-muted-foreground">
-                      {confMeta && !tx.isReconciled
-                        ? formatMessage(t["screens.matchConfidence"], {
-                            pct: conf ?? 0,
-                            level: t[confMeta.labelKey],
-                          })
-                        : null}
-                    </span>
-                    {tx.isReconciled ? (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => unmatchMutation.mutate(tx.id)}
-                        disabled={unmatchMutation.isPending}
-                      >
-                        <Unlink aria-hidden />
-                        <T k="pageLabels.unmatch" />
-                      </Button>
-                    ) : tx.matchStatus === "suggested" ? (
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => handleOpenMatch(tx)}>
-                          <T k="pages.review" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => handleAcceptSuggestion(tx)}
-                          disabled={matchMutation.isPending}
-                        >
-                          <Check aria-hidden />
-                          <T k="pages.accept" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleOpenMatch(tx)}
-                        data-testid={`mobile-button-match-${tx.id}`}
-                      >
-                        <Link2 aria-hidden />
-                        <T k="pageLabels.match" />
-                      </Button>
-                    )}
-                  </div>
+      <Tabs value={reconTab} onValueChange={setReconTab} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="transactions" data-testid="tab-recon-transactions">
+            {t["banking.recon.tabTransactions"]}
+          </TabsTrigger>
+          <TabsTrigger value="suggestions" data-testid="tab-recon-suggestions">
+            {t["banking.recon.tabSuggestions"]}
+          </TabsTrigger>
+          <TabsTrigger value="rules" data-testid="tab-recon-rules">
+            {t["banking.recon.tabRules"]}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="transactions" className="mt-0">
+          {/* ── Filters (one row, not in a card) ── */}
+          <section className="space-y-4" aria-labelledby="bank-transactions-title">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 id="bank-transactions-title" className="text-h2 text-foreground">
+                {t.bankTransactions}
+              </h2>
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                <div className="relative w-full sm:w-56">
+                  <Search
+                    className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden
+                  />
+                  <Input
+                    placeholder={t.search}
+                    aria-label={t.search}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-9 ps-9"
+                    data-testid="input-search"
+                  />
                 </div>
-              );
-            })}
-          </div>
-          <div className="hidden md:block" data-testid="bank-transaction-table">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t.date}</TableHead>
-                  <TableHead className="w-full">
-                    <T k="banking.common.description" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="banking.common.reference" />
-                  </TableHead>
-                  <TableHead data-numeric="">
-                    <T k="banking.common.amount" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="banking.common.status" />
-                  </TableHead>
-                  <TableHead>
-                    <span className="sr-only">
-                      <T k="banking.common.actions" />
-                    </span>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+                <Select
+                  value={selectedBankAccount || "all"}
+                  onValueChange={(v) => setSelectedBankAccount(v === "all" ? "" : v)}
+                >
+                  <SelectTrigger
+                    className="h-9 w-full sm:w-44"
+                    data-testid="select-bank-account"
+                    aria-label={t["screens.bankAccount"]}
+                  >
+                    <SelectValue placeholder={t["pageLabels.allAccounts"]} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      <T k="pageLabels.allAccounts" />
+                    </SelectItem>
+                    {bankAccounts?.map((acct) => (
+                      <SelectItem key={acct.id} value={acct.id}>
+                        {acct.nameEn}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  id="show-reconciled"
+                  aria-pressed={showReconciled}
+                  onClick={() => setShowReconciled(!showReconciled)}
+                  className={cn(
+                    "h-9",
+                    showReconciled && "border-primary bg-primary/5 text-foreground"
+                  )}
+                >
+                  {showReconciled ? <Check aria-hidden /> : <Eye aria-hidden />}
+                  <T k="pageLabels.showReconciled" />
+                </Button>
+              </div>
+            </div>
+
+            <DataTableCard
+              status={
+                isLoadingTransactions
+                  ? "loading"
+                  : filteredTransactions.length === 0
+                    ? "empty"
+                    : "ready"
+              }
+              columnLabels={[t.date, t.description, t.amount, t.status]}
+              empty={
+                // X5 (J1 L6): lines exist but every one is reconciled (and hidden) — say so.
+                allReconciledHidden
+                  ? {
+                      icon: Check,
+                      title: t["banking.allReconciledTitle"],
+                      description: t["banking.allReconciledDescription"],
+                      action: {
+                        label: t["pageLabels.showReconciled"],
+                        icon: Eye,
+                        variant: "outline",
+                        onClick: () => setShowReconciled(true),
+                      },
+                      testId: "empty-state-all-reconciled",
+                    }
+                  : {
+                      icon: Building2,
+                      title: t["banking.emptyTransactionsTitle"],
+                      description: t["banking.emptyTransactionsDescription"],
+                      action: {
+                        label: t["banking.importStatementAction"],
+                        icon: Upload,
+                        variant: "outline",
+                        onClick: () => setImportDialogOpen(true),
+                      },
+                      testId: "empty-state-bank-transactions",
+                    }
+              }
+            >
+              {/* Phones: one two-line row per bank line, the next step as a single button. */}
+              <div className="divide-hairline md:hidden" data-testid="mobile-bank-transaction-list">
                 {filteredTransactions.map((tx) => {
                   const conf =
                     tx.matchConfidence != null ? Math.round(tx.matchConfidence * 100) : null;
                   const confMeta = conf != null ? confidenceLabel(conf) : null;
                   return (
-                    <TableRow key={tx.id} data-testid={`row-transaction-${tx.id}`}>
-                      <TableCell data-nowrap="" className="text-muted-foreground">
-                        {formatDate(tx.transactionDate)}
-                      </TableCell>
-                      <TableCell data-truncate="" dir="auto" className="font-medium">
-                        {tx.description}
-                      </TableCell>
-                      <TableCell data-nowrap="" className="text-muted-foreground">
-                        <span dir="ltr" className="[unicode-bidi:isolate]">
-                          {tx.reference || "—"}
+                    <div key={tx.id} className="space-y-2 px-4 py-3">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p
+                          dir="auto"
+                          className="min-w-0 truncate text-sm font-medium text-foreground"
+                        >
+                          {tx.description}
+                        </p>
+                        <Money
+                          amount={tx.amount}
+                          tone="auto"
+                          className="shrink-0 text-sm font-semibold"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="min-w-0 truncate text-caption text-muted-foreground">
+                          {formatDate(tx.transactionDate)}
+                          {" · "}
+                          <span dir="ltr" className="[unicode-bidi:isolate]">
+                            {tx.reference || "—"}
+                          </span>
+                        </p>
+                        <StatusBadge
+                          status={
+                            tx.isReconciled
+                              ? "reconciled"
+                              : tx.matchStatus === "suggested"
+                                ? "suggested"
+                                : "unmatched"
+                          }
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-caption text-muted-foreground">
+                          {confMeta && !tx.isReconciled
+                            ? formatMessage(t["screens.matchConfidence"], {
+                                pct: conf ?? 0,
+                                level: t[confMeta.labelKey],
+                              })
+                            : null}
                         </span>
-                      </TableCell>
-                      <MoneyCell amount={tx.amount} tone="auto" className="font-medium" />
-                      <TableCell data-nowrap="">
-                        <div className="flex items-center gap-2">
-                          <StatusBadge
-                            status={
-                              tx.isReconciled
-                                ? "reconciled"
-                                : tx.matchStatus === "suggested"
-                                  ? "suggested"
-                                  : "unmatched"
-                            }
-                          />
-                          {confMeta && !tx.isReconciled && (
-                            <span
-                              className={`text-caption font-medium tabular-nums ${confMeta.color}`}
-                              title={t[confMeta.labelKey]}
-                            >
-                              {conf}%
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell data-nowrap="" className="text-end">
-                        <div className="flex items-center justify-end gap-1">
-                          {tx.isReconciled ? (
-                            <RowActionButton
-                              label={t["pageLabels.unmatch"]}
-                              icon={Unlink}
-                              onClick={() => unmatchMutation.mutate(tx.id)}
-                              disabled={unmatchMutation.isPending}
-                            />
-                          ) : tx.matchStatus === "suggested" ? (
-                            <>
-                              <RowActionButton
-                                label={t["screens.reviewMatch"]}
-                                icon={Eye}
-                                onClick={() => handleOpenMatch(tx)}
-                              />
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleAcceptSuggestion(tx)}
-                                disabled={matchMutation.isPending}
-                              >
-                                <Check aria-hidden />
-                                <T k="pages.accept" />
-                              </Button>
-                            </>
-                          ) : (
+                        {tx.isReconciled ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => unmatchMutation.mutate(tx.id)}
+                            disabled={unmatchMutation.isPending}
+                          >
+                            <Unlink aria-hidden />
+                            <T k="pageLabels.unmatch" />
+                          </Button>
+                        ) : tx.matchStatus === "suggested" ? (
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => handleOpenMatch(tx)}>
+                              <T k="pages.review" />
+                            </Button>
                             <Button
                               size="sm"
-                              variant="outline"
-                              onClick={() => handleOpenMatch(tx)}
-                              data-testid={`button-match-${tx.id}`}
+                              onClick={() => handleAcceptSuggestion(tx)}
+                              disabled={matchMutation.isPending}
                             >
-                              <Link2 aria-hidden />
-                              <T k="pageLabels.match" />
+                              <Check aria-hidden />
+                              <T k="pages.accept" />
                             </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
+                          </div>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleOpenMatch(tx)}
+                            data-testid={`mobile-button-match-${tx.id}`}
+                          >
+                            <Link2 aria-hidden />
+                            <T k="pageLabels.match" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   );
                 })}
-              </TableBody>
-            </Table>
-          </div>
-        </DataTableCard>
-      </section>
+              </div>
+              <div className="hidden md:block" data-testid="bank-transaction-table">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t.date}</TableHead>
+                      <TableHead className="w-full">
+                        <T k="banking.common.description" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="banking.common.reference" />
+                      </TableHead>
+                      <TableHead data-numeric="">
+                        <T k="banking.common.amount" />
+                      </TableHead>
+                      <TableHead>
+                        <T k="banking.common.status" />
+                      </TableHead>
+                      <TableHead>
+                        <span className="sr-only">
+                          <T k="banking.common.actions" />
+                        </span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTransactions.map((tx) => {
+                      const conf =
+                        tx.matchConfidence != null ? Math.round(tx.matchConfidence * 100) : null;
+                      const confMeta = conf != null ? confidenceLabel(conf) : null;
+                      return (
+                        <TableRow key={tx.id} data-testid={`row-transaction-${tx.id}`}>
+                          <TableCell data-nowrap="" className="text-muted-foreground">
+                            {formatDate(tx.transactionDate)}
+                          </TableCell>
+                          <TableCell data-truncate="" dir="auto" className="font-medium">
+                            {tx.description}
+                          </TableCell>
+                          <TableCell data-nowrap="" className="text-muted-foreground">
+                            <span dir="ltr" className="[unicode-bidi:isolate]">
+                              {tx.reference || "—"}
+                            </span>
+                          </TableCell>
+                          <MoneyCell amount={tx.amount} tone="auto" className="font-medium" />
+                          <TableCell data-nowrap="">
+                            <div className="flex items-center gap-2">
+                              <StatusBadge
+                                status={
+                                  tx.isReconciled
+                                    ? "reconciled"
+                                    : tx.matchStatus === "suggested"
+                                      ? "suggested"
+                                      : "unmatched"
+                                }
+                              />
+                              {confMeta && !tx.isReconciled && (
+                                <span
+                                  className={`text-caption font-medium tabular-nums ${confMeta.color}`}
+                                  title={t[confMeta.labelKey]}
+                                >
+                                  {conf}%
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell data-nowrap="" className="text-end">
+                            <div className="flex items-center justify-end gap-1">
+                              {tx.isReconciled ? (
+                                <RowActionButton
+                                  label={t["pageLabels.unmatch"]}
+                                  icon={Unlink}
+                                  onClick={() => unmatchMutation.mutate(tx.id)}
+                                  disabled={unmatchMutation.isPending}
+                                />
+                              ) : tx.matchStatus === "suggested" ? (
+                                <>
+                                  <RowActionButton
+                                    label={t["screens.reviewMatch"]}
+                                    icon={Eye}
+                                    onClick={() => handleOpenMatch(tx)}
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleAcceptSuggestion(tx)}
+                                    disabled={matchMutation.isPending}
+                                  >
+                                    <Check aria-hidden />
+                                    <T k="pages.accept" />
+                                  </Button>
+                                </>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleOpenMatch(tx)}
+                                  data-testid={`button-match-${tx.id}`}
+                                >
+                                  <Link2 aria-hidden />
+                                  <T k="pageLabels.match" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </DataTableCard>
+          </section>
+        </TabsContent>
+        <TabsContent value="suggestions" className="mt-0">
+          <MatchSuggestions companyId={companyId} scanRequest={scanRequest} />
+        </TabsContent>
+        <TabsContent value="rules" className="mt-0">
+          <ReconciliationRulesPanel />
+        </TabsContent>
+      </Tabs>
 
       {/* ── Match Dialog ─────────────────────────────────────────────────────── */}
       <Dialog

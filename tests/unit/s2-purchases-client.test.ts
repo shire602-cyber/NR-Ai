@@ -8,6 +8,7 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadLocale } from "../../client/src/lib/i18n";
+import { pickOption } from "./helpers/form-harness";
 import {
   billPayTabFromSearch,
   billStatusFilterFromSearch,
@@ -187,6 +188,15 @@ describe("[R05-19b] ReceiptLinesDialog", () => {
   // S5 code-splits the namespace catalogs; the dialog reads purchases.* keys.
   beforeAll(async () => {
     await loadLocale("en");
+    // Radix Select (the account picker) needs these browser APIs.
+    (globalThis as any).ResizeObserver ??= class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    };
+    (Element.prototype as any).scrollIntoView ??= () => {};
+    (Element.prototype as any).hasPointerCapture ??= () => false;
+    (Element.prototype as any).releasePointerCapture ??= () => {};
   });
 
   it("splits an unposted receipt into two account lines and PUTs them", async () => {
@@ -204,7 +214,7 @@ describe("[R05-19b] ReceiptLinesDialog", () => {
       b.textContent?.includes("Add line")
     )!;
     await act(async () => addLine.click());
-    await act(async () => setValue(byId("rl-account-1"), "acc-office"));
+    await pickOption(byId("rl-account-1"), /5050 · Office/);
     await act(async () => setValue(byId("rl-amount-1"), "40"));
     await act(async () => setValue(byId("rl-vat-1"), "2"));
     expect(byTestId("receipt-lines-total")?.textContent).toContain("105.00");
@@ -228,7 +238,7 @@ describe("[R05-19b] ReceiptLinesDialog", () => {
     expect(request).not.toHaveBeenCalled();
     expect(byTestId("receipt-lines-error")?.textContent).toMatch(/reason/i);
     await act(async () => setValue(byId("rl-reason"), "Wrong account"));
-    await act(async () => setValue(byId("rl-account-0"), "acc-office"));
+    await pickOption(byId("rl-account-0"), /5050 · Office/);
     await act(async () => (byTestId("receipt-lines-save") as HTMLButtonElement).click());
     expect(request).toHaveBeenCalledWith("POST", "/api/receipts/r2/revise", {
       lines: [{ accountId: "acc-office", amount: 200, vatAmount: 10, description: null }],

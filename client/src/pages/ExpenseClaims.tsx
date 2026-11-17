@@ -33,6 +33,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -832,6 +833,8 @@ export default function ExpenseClaims() {
                 {showActions && (
                   <TableCell data-cell="actions">
                     <RowActions
+                      // One visible action (a reviewer's is Approve); Reject and View details live in ⋯.
+                      maxInline={1}
                       collapseOnMobile
                       menu={
                         canEdit || canPay ? (
@@ -899,11 +902,13 @@ export default function ExpenseClaims() {
                             label={t["pages.approve"]}
                             icon={CheckCircle}
                             onClick={() => handleOpenReviewDialog(claim.id, "approve")}
+                            data-testid={`claim-approve-${claim.id}`}
                           />
                           <RowActionButton
                             label={t["screens.reject"]}
                             icon={XCircle}
                             onClick={() => handleOpenReviewDialog(claim.id, "reject")}
+                            data-testid={`claim-reject-${claim.id}`}
                           />
                         </>
                       )}
@@ -1152,7 +1157,7 @@ export default function ExpenseClaims() {
                               {t.date}
                             </FormLabel>
                             <FormControl>
-                              <Input type="date" dir="ltr" {...field} />
+                              <DatePicker value={field.value ?? ""} onChange={field.onChange} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -1242,26 +1247,8 @@ export default function ExpenseClaims() {
                           </FormItem>
                         )}
                       />
-                      <FormField
-                        control={claimForm.control}
-                        name={`items.${index}.receipt_url`}
-                        render={({ field }) => (
-                          <FormItem className="col-span-2">
-                            <FormLabel className={lineLabelClass}>
-                              <T k="pages.receipt" />
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                ltr
-                                placeholder={t["forms.claim.receiptUrlHint"]}
-                                {...field}
-                                value={field.value || ""}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      {/* Spec 3.8: no receipt-link field until receipt upload exists; an
+                          existing link on the line is kept as it is. */}
                       <FormField
                         control={claimForm.control}
                         name={`items.${index}.has_tax_invoice`}

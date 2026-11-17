@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/page-header";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -257,21 +258,17 @@ export default function Vendors() {
         eyebrow="Purchases"
         title={c.title}
         description={c.subtitle}
-        actions={
-          <>
-            <Button
-              variant="outline"
-              onClick={() => backfill.mutate()}
-              disabled={backfill.isPending}
-            >
-              <Link2 aria-hidden />
-              {c.linkLegacy}
-            </Button>
-            <Button onClick={() => setOpen(true)}>
-              <Plus aria-hidden />
-              {c.newVendor}
-            </Button>
-          </>
+        primaryAction={
+          <Button onClick={() => setOpen(true)}>
+            <Plus aria-hidden />
+            {c.newVendor}
+          </Button>
+        }
+        overflow={
+          <DropdownMenuItem onSelect={() => backfill.mutate()} disabled={backfill.isPending}>
+            <Link2 aria-hidden />
+            {c.linkLegacy}
+          </DropdownMenuItem>
         }
       />
       <Tabs defaultValue="list" className="space-y-4">

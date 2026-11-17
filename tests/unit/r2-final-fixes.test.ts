@@ -92,7 +92,10 @@ describe("R2 final-round fixes", () => {
     expect(read("client/src/pages/dashboard/DashboardCharts.tsx")).toContain(
       'reversed={locale === "ar"}'
     );
-    expect(read("client/src/pages/dashboard/KpiCard.tsx")).toContain("reversed");
+    // WP-C2: the sparkline mirrors itself (behaviour: wp-c2-document-editors); KpiCard no longer
+    // reverses its own series. Source check only because DashboardCharts' props are not rendered here.
+    expect(read("client/src/components/ui/stat-card.tsx")).toContain('locale === "ar"');
+    expect(read("client/src/pages/dashboard/KpiCard.tsx")).not.toContain("reverse");
   });
 
   it("row-cards keep dates whole and elide document numbers in the middle (item 22)", () => {

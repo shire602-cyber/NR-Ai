@@ -51,7 +51,7 @@ export function LineItemPicker({
       onValueChange={(id) => onPick(id === NONE ? null : (active.find((p) => p.id === id) ?? null))}
     >
       <SelectTrigger
-        className="w-44 shrink-0"
+        className="ms-7 min-w-0 flex-1 sm:ms-0 sm:w-44 sm:flex-none sm:shrink-0"
         aria-label={t["invoices.item.pickLabel"]}
         data-testid={`select-line-item-${index}`}
       >

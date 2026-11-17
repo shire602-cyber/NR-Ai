@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
-import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   DASHBOARD_PRESETS,
   DASHBOARD_PRESET_LABELS,
@@ -56,19 +56,17 @@ export function PeriodSelector({ choice, onChange, locale }: PeriodSelectorProps
           className="flex w-full flex-wrap items-center gap-2 sm:w-auto"
           data-testid="dashboard-period-custom"
         >
-          <Input
-            type="date"
+          <DatePicker
             aria-label={ar ? "من" : "From"}
             value={choice.from ?? ""}
-            onChange={(e) => onChange({ ...choice, from: e.target.value })}
+            onChange={(value) => onChange({ ...choice, from: value })}
             className="h-9 min-w-0 flex-1 sm:w-[10.5rem] sm:flex-none"
           />
           <span className="text-muted-foreground text-xs">{ar ? "إلى" : "to"}</span>
-          <Input
-            type="date"
+          <DatePicker
             aria-label={ar ? "إلى" : "To"}
             value={choice.to ?? ""}
-            onChange={(e) => onChange({ ...choice, to: e.target.value })}
+            onChange={(value) => onChange({ ...choice, to: value })}
             className="h-9 min-w-0 flex-1 sm:w-[10.5rem] sm:flex-none"
           />
           {!isCompleteChoice(choice) && (

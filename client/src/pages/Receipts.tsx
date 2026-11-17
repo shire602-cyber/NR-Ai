@@ -88,6 +88,8 @@ import {
   Plus,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ReceiptAutomation } from "./ReceiptAutopilot";
 import { ReceiptLinesDialog, type ReceiptForSplit } from "@/components/receipts/ReceiptLinesDialog";
 import { SiGooglesheets } from "react-icons/si";
 import { VirtualList } from "@/components/VirtualList";
@@ -390,6 +392,13 @@ export default function Receipts() {
     a ? accountDisplayName(a, locale) : "";
   const { toast } = useToast();
   const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
+  // Spec 3.8: automation settings are a tab here (`/receipt-autopilot` redirects to it).
+  const [receiptsTab, setReceiptsTab] = useState(() =>
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("tab") === "automation"
+      ? "automation"
+      : "receipts"
+  );
   // X3: ask up front whether automatic reading (AI/OCR) is enabled, so a scan never spins for a
   // minute and then fails. `false` = not enabled; undefined = still loading (scan proceeds).
   const { data: ocrStatus } = useQuery<{ aiConfigured: boolean }>({
@@ -1623,7 +1632,7 @@ export default function Receipts() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Purchases"
-        title={t.receiptScanner}
+        title={t["purchases.receiptsTitle"]}
         description={(t as any).receiptScannerSubtitle}
         actions={
           <Button
@@ -1637,849 +1646,893 @@ export default function Receipts() {
         }
       />
 
-      {/* Upload Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="w-5 h-5" />
-            <T k="pageLabels.uploadReceipts" />
-          </CardTitle>
-          <CardDescription>{t["pages.receiptsUploadDescription"]}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Drop Zone */}
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            className={`
-              border-2 border-dashed rounded-lg p-8 text-center transition-all
-              ${isDragging ? "border-primary bg-primary/5" : "border-border"}
-              ${processedReceipts.length > 0 ? "border-primary/60 bg-primary/5" : ""}
-              hover:border-primary hover:bg-muted/60 cursor-pointer
-            `}
-            onClick={() => document.getElementById("file-input")?.click()}
-            data-testid="drop-zone"
-          >
-            <input
-              id="file-input"
-              type="file"
-              accept="image/*,application/pdf"
-              multiple
-              className="sr-only"
-              aria-label={t["pages.receiptsUploadInputLabel"]}
-              onChange={(e) => {
-                const files = e.target.files;
-                if (files && files.length > 0) handleFilesSelect(files);
-              }}
-              data-testid="input-file"
-            />
-
-            {processedReceipts.length > 0 ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-center gap-2 text-primary">
-                  <CheckCircle2 className="w-5 h-5" />
-                  <span>
-                    {formatMessage(t["pages.receiptsImagesLoaded"], {
-                      count: processedReceipts.length,
-                    })}
-                  </span>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  <T k="pageLabels.clickOrDropMoreImagesTo" />
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex justify-center">
-                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Camera className="w-8 h-8 text-primary" />
-                  </div>
-                </div>
-                <div>
-                  <p className="text-lg font-medium">
-                    <T k="pageLabels.dropYourReceiptsHere" />
-                  </p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {t["pages.receiptsBrowseHint"]}
-                  </p>
-                </div>
-                <p className="text-xs text-muted-foreground">{t["pages.receiptsSupportedTypes"]}</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    document.getElementById("file-input")?.click();
+      <Tabs value={receiptsTab} onValueChange={setReceiptsTab} className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="receipts" data-testid="tab-receipts">
+            {t["purchases.receiptsTab"]}
+          </TabsTrigger>
+          <TabsTrigger value="automation" data-testid="tab-receipt-automation">
+            {t["purchases.automationTab"]}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="receipts" className="mt-0 space-y-6">
+          {/* Upload Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="w-5 h-5" />
+                <T k="pageLabels.uploadReceipts" />
+              </CardTitle>
+              <CardDescription>{t["pages.receiptsUploadDescription"]}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Drop Zone */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`
+                flex min-h-40 flex-col justify-center rounded-lg border border-dashed p-5 text-center transition-colors duration-fast
+                ${isDragging ? "border-primary bg-primary/5" : "border-border"}
+                ${processedReceipts.length > 0 ? "border-primary/60 bg-primary/5" : ""}
+                hover:border-primary hover:bg-muted/60 cursor-pointer
+              `}
+                onClick={() => document.getElementById("file-input")?.click()}
+                data-testid="drop-zone"
+              >
+                <input
+                  id="file-input"
+                  type="file"
+                  accept="image/*,application/pdf"
+                  multiple
+                  className="sr-only"
+                  aria-label={t["pages.receiptsUploadInputLabel"]}
+                  onChange={(e) => {
+                    const files = e.target.files;
+                    if (files && files.length > 0) handleFilesSelect(files);
                   }}
-                  data-testid="button-browse-receipts"
-                >
-                  <T k="pageLabels.browseFiles" />
-                </Button>
-              </div>
-            )}
-          </div>
+                  data-testid="input-file"
+                />
 
-          {/* Action Buttons */}
-          {processedReceipts.length > 0 && (
-            <div className="flex gap-2">
-              <Button
-                onClick={processAllReceipts}
-                disabled={isProcessingBulk || retryableOcrCount === 0}
-                className="flex-1"
-                size="lg"
-                data-testid="button-process-all"
-              >
-                {isProcessingBulk ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <T k="invoices.processing" />
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    {errorCount > 0 && pendingCount === 0
-                      ? formatMessage(t["screens.retryFailedOcr"], { count: errorCount })
-                      : errorCount > 0
-                        ? formatMessage(t["screens.processRetryOcr"], { count: retryableOcrCount })
-                        : formatMessage(t["screens.processAllReceipts"], { count: pendingCount })}
-                  </>
-                )}
-              </Button>
-
-              <Button
-                onClick={saveAllReceipts}
-                disabled={completedCount === 0 || isSavingAll || isProcessingBulk}
-                className="flex-1"
-                size="lg"
-                data-testid="button-save-all"
-              >
-                {isSavingAll ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    {formatMessage(t["screens.savingProgress"], {
-                      done: savedCount,
-                      total: totalToSave,
-                    })}
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    {formatMessage(t["screens.saveAllCount"], { count: completedCount })}
-                  </>
-                )}
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={handleDownloadOcrExcel}
-                disabled={completedCount === 0 || isOcrExporting || isProcessingBulk}
-                size="lg"
-                data-testid="button-download-ocr-excel"
-              >
-                {isOcrExporting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <T k="pageLabels.preparing" />
-                  </>
-                ) : (
-                  <>
-                    <FileSpreadsheet className="w-4 h-4" />
-                    {tr("Download Excel", "تنزيل Excel")} ({completedCount})
-                  </>
-                )}
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={resetForm}
-                disabled={isProcessingBulk}
-                data-testid="button-reset"
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </div>
-          )}
-
-          {/* Status Summary */}
-          {processedReceipts.length > 0 && (
-            <div className="flex flex-wrap gap-2 text-sm">
-              {pendingCount > 0 && (
-                <Badge variant="outline">
-                  {pendingCount} {tr("pending", "قيد الانتظار")}
-                </Badge>
-              )}
-              {processingCount > 0 && (
-                <Badge variant="outline">
-                  {processingCount} {tr("processing", "قيد المعالجة")}
-                </Badge>
-              )}
-              {completedCount > 0 && (
-                <StatusBadge tone="success">
-                  {completedCount} {tr("ready to save", "جاهزة للحفظ")}
-                </StatusBadge>
-              )}
-              {savedCount > 0 && (
-                <StatusBadge tone="info">
-                  {savedCount} {tr("saved", "تم حفظها")}
-                </StatusBadge>
-              )}
-              {errorCount > 0 && (
-                <StatusBadge tone="danger">
-                  {errorCount} {tr("OCR errors", "أخطاء قراءة")}
-                </StatusBadge>
-              )}
-              {saveErrorCount > 0 && (
-                <StatusBadge tone="warning">
-                  {saveErrorCount} {tr("save failed", "فشل الحفظ")}
-                </StatusBadge>
-              )}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Processed Receipts */}
-      {processedReceipts.length > 0 && (
-        <div className="space-y-3">
-          {processedReceipts.map((receipt, index) => (
-            <Card key={index} data-testid={`receipt-card-${index}`}>
-              <CardContent className="p-4">
-                <div className="flex flex-col gap-4 sm:flex-row">
-                  {/* Thumbnail — click to view source image alongside extracted data */}
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setImagePreview({ src: receipt.preview, merchant: receipt.data?.merchant })
-                      }
-                      className="group relative block w-24 h-24 rounded-lg overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                      aria-label={t["pages.receiptsPreviewSource"]}
-                      data-testid={`ocr-thumbnail-${index}`}
-                    >
-                      <img
-                        src={receipt.preview}
-                        alt={`Receipt ${index + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                      <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                        <ZoomIn className="w-5 h-5 text-white" />
+                {processedReceipts.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-center gap-2 text-primary">
+                      <CheckCircle2 className="w-5 h-5" />
+                      <span>
+                        {formatMessage(t["pages.receiptsImagesLoaded"], {
+                          count: processedReceipts.length,
+                        })}
                       </span>
-                    </button>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      <T k="pageLabels.clickOrDropMoreImagesTo" />
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex justify-center">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-800">
+                        <Camera
+                          className="h-5 w-5 text-neutral-500"
+                          strokeWidth={1.5}
+                          aria-hidden
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-h3 text-foreground">{t["purchases.dropReceipts"]}</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {t["pages.receiptsBrowseHint"]}
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t["pages.receiptsSupportedTypes"]}
+                    </p>
                     <Button
-                      variant="destructive"
-                      size="icon"
-                      className="absolute -top-2 -end-2 h-6 w-6"
-                      onClick={() => removeReceipt(index)}
-                      disabled={isProcessingBulk}
-                      data-testid={`button-remove-${index}`}
+                      type="button"
+                      variant="outline"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        document.getElementById("file-input")?.click();
+                      }}
+                      data-testid="button-browse-receipts"
                     >
-                      <X className="w-3 h-3" />
+                      <T k="pageLabels.browseFiles" />
                     </Button>
                   </div>
+                )}
+              </div>
 
-                  {/* Status and Data */}
-                  <div className="flex-1 space-y-3">
-                    {receipt.status === "pending" && (
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline">
-                          <T k="hr.status.pending" />
-                        </Badge>
-                        <p className="text-sm text-muted-foreground">
-                          {autoReadUnavailable ? (
-                            t["pages.receiptsReadyToAttach"]
-                          ) : (
-                            <T k="pageLabels.readyToProcess" />
-                          )}
-                        </p>
-                      </div>
+              {/* Action Buttons */}
+              {processedReceipts.length > 0 && (
+                <div className="flex gap-2">
+                  <Button
+                    onClick={processAllReceipts}
+                    disabled={isProcessingBulk || retryableOcrCount === 0}
+                    className="flex-1"
+                    size="lg"
+                    data-testid="button-process-all"
+                  >
+                    {isProcessingBulk ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <T k="invoices.processing" />
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        {errorCount > 0 && pendingCount === 0
+                          ? formatMessage(t["screens.retryFailedOcr"], { count: errorCount })
+                          : errorCount > 0
+                            ? formatMessage(t["screens.processRetryOcr"], {
+                                count: retryableOcrCount,
+                              })
+                            : formatMessage(t["screens.processAllReceipts"], {
+                                count: pendingCount,
+                              })}
+                      </>
                     )}
+                  </Button>
 
-                    {receipt.status === "processing" && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="flex items-center gap-2">
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <T k="pageLabels.processingWithOcr" />
-                          </span>
-                          <span>{receipt.progress}%</span>
-                        </div>
-                        <Progress value={receipt.progress} />
-                      </div>
+                  <Button
+                    onClick={saveAllReceipts}
+                    disabled={completedCount === 0 || isSavingAll || isProcessingBulk}
+                    className="flex-1"
+                    size="lg"
+                    data-testid="button-save-all"
+                  >
+                    {isSavingAll ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        {formatMessage(t["screens.savingProgress"], {
+                          done: savedCount,
+                          total: totalToSave,
+                        })}
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        {formatMessage(t["screens.saveAllCount"], { count: completedCount })}
+                      </>
                     )}
+                  </Button>
 
-                    {receipt.status === "error" && (
-                      <div className="flex flex-wrap items-center gap-2 text-destructive">
-                        <XCircle className="w-4 h-4 shrink-0" />
-                        <span className="text-sm">{receipt.error}</span>
-                        <Button
+                  <Button
+                    variant="outline"
+                    onClick={handleDownloadOcrExcel}
+                    disabled={completedCount === 0 || isOcrExporting || isProcessingBulk}
+                    size="lg"
+                    data-testid="button-download-ocr-excel"
+                  >
+                    {isOcrExporting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <T k="pageLabels.preparing" />
+                      </>
+                    ) : (
+                      <>
+                        <FileSpreadsheet className="w-4 h-4" />
+                        {tr("Download Excel", "تنزيل Excel")} ({completedCount})
+                      </>
+                    )}
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    onClick={resetForm}
+                    disabled={isProcessingBulk}
+                    data-testid="button-reset"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+
+              {/* Status Summary */}
+              {processedReceipts.length > 0 && (
+                <div className="flex flex-wrap gap-2 text-sm">
+                  {pendingCount > 0 && (
+                    <Badge variant="outline">
+                      {pendingCount} {tr("pending", "قيد الانتظار")}
+                    </Badge>
+                  )}
+                  {processingCount > 0 && (
+                    <Badge variant="outline">
+                      {processingCount} {tr("processing", "قيد المعالجة")}
+                    </Badge>
+                  )}
+                  {completedCount > 0 && (
+                    <StatusBadge tone="success">
+                      {completedCount} {tr("ready to save", "جاهزة للحفظ")}
+                    </StatusBadge>
+                  )}
+                  {savedCount > 0 && (
+                    <StatusBadge tone="info">
+                      {savedCount} {tr("saved", "تم حفظها")}
+                    </StatusBadge>
+                  )}
+                  {errorCount > 0 && (
+                    <StatusBadge tone="danger">
+                      {errorCount} {tr("OCR errors", "أخطاء قراءة")}
+                    </StatusBadge>
+                  )}
+                  {saveErrorCount > 0 && (
+                    <StatusBadge tone="warning">
+                      {saveErrorCount} {tr("save failed", "فشل الحفظ")}
+                    </StatusBadge>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Processed Receipts */}
+          {processedReceipts.length > 0 && (
+            <div className="space-y-3">
+              {processedReceipts.map((receipt, index) => (
+                <Card key={index} data-testid={`receipt-card-${index}`}>
+                  <CardContent className="p-4">
+                    <div className="flex flex-col gap-4 sm:flex-row">
+                      {/* Thumbnail — click to view source image alongside extracted data */}
+                      <div className="relative">
+                        <button
                           type="button"
-                          variant="outline"
-                          size="sm"
-                          className="ms-0 text-foreground sm:ms-2"
-                          onClick={() => processReceipt(index)}
-                          disabled={isProcessingBulk}
-                          data-testid={`button-retry-ocr-${index}`}
+                          onClick={() =>
+                            setImagePreview({
+                              src: receipt.preview,
+                              merchant: receipt.data?.merchant,
+                            })
+                          }
+                          className="group relative block w-24 h-24 rounded-lg overflow-hidden border hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                          aria-label={t["pages.receiptsPreviewSource"]}
+                          data-testid={`ocr-thumbnail-${index}`}
                         >
-                          <RefreshCw className="w-3 h-3" />
-                          <T k="pageLabels.tryAgain" />
+                          <img
+                            src={receipt.preview}
+                            alt={`Receipt ${index + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <ZoomIn className="w-5 h-5 text-white" />
+                          </span>
+                        </button>
+                        <Button
+                          variant="destructive"
+                          size="icon"
+                          className="absolute -top-2 -end-2 h-6 w-6"
+                          onClick={() => removeReceipt(index)}
+                          disabled={isProcessingBulk}
+                          data-testid={`button-remove-${index}`}
+                        >
+                          <X className="w-3 h-3" />
                         </Button>
                       </div>
-                    )}
 
-                    {receipt.status === "saved" && (
-                      <div className="flex items-center gap-2 text-success">
-                        <CheckCircle2 className="w-4 h-4" />
-                        <span className="text-sm font-medium">
-                          <T k="pageLabels.successfullySavedToDatabase" />
-                        </span>
-                      </div>
-                    )}
-
-                    {receipt.status === "save_error" && (
-                      <div className="flex flex-wrap items-center gap-2 text-danger">
-                        <XCircle className="w-4 h-4" />
-                        <span className="text-sm">{receipt.error || "Failed to save"}</span>
-                        {receipt.duplicate && receipt.data && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            data-testid={`button-upload-anyway-${index}`}
-                            onClick={() => {
-                              setProcessedReceipts((prev) => {
-                                const updated = [...prev];
-                                updated[index] = {
-                                  ...updated[index],
-                                  status: "completed",
-                                  duplicate: false,
-                                  error: undefined,
-                                  data: { ...updated[index].data!, confirmDuplicate: true },
-                                };
-                                return updated;
-                              });
-                            }}
-                          >
-                            {tr("Upload anyway", "رفع على أي حال")}
-                          </Button>
-                        )}
-                      </div>
-                    )}
-
-                    {receipt.status === "completed" && receipt.data && (
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div className="space-y-1">
-                          <Label className="text-xs">Merchant / Supplier</Label>
-                          <Input
-                            value={receipt.data.merchant || ""}
-                            onChange={(e) => updateReceiptData(index, { merchant: e.target.value })}
-                            className="h-8"
-                            data-testid={`input-merchant-${index}`}
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <Label className="text-xs">Date</Label>
-                          <Input
-                            type="date"
-                            value={receipt.data.date || ""}
-                            onChange={(e) => updateReceiptData(index, { date: e.target.value })}
-                            className="h-8"
-                            data-testid={`input-date-${index}`}
-                          />
-                        </div>
-
-                        {receipt.data.invoiceNumber && (
-                          <div className="space-y-1 col-span-2">
-                            <Label className="text-xs">Invoice / Receipt Number</Label>
-                            <Input
-                              value={receipt.data.invoiceNumber || ""}
-                              onChange={(e) =>
-                                updateReceiptData(index, { invoiceNumber: e.target.value })
-                              }
-                              className="h-8"
-                            />
-                          </div>
-                        )}
-
-                        <div className="space-y-1">
-                          <Label className="text-xs">Subtotal (excl. VAT)</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={receipt.data.subtotal ?? receipt.data.total ?? ""}
-                            onChange={(e) =>
-                              updateReceiptData(index, { subtotal: parseFloat(e.target.value) })
-                            }
-                            className="h-8"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <Label className="text-xs">
-                            VAT ({receipt.data.vatPercentage ?? 5}%)
-                          </Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={receipt.data.vatAmount ?? ""}
-                            onChange={(e) =>
-                              updateReceiptData(index, { vatAmount: parseFloat(e.target.value) })
-                            }
-                            className="h-8"
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <Label className="text-xs font-semibold">Total (incl. VAT)</Label>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={receipt.data.total ?? ""}
-                            onChange={(e) =>
-                              updateReceiptData(index, { total: parseFloat(e.target.value) })
-                            }
-                            className="h-8 font-semibold"
-                            data-testid={`input-amount-${index}`}
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <Label className="text-xs">
-                            <T k="pages.category" />
-                          </Label>
-                          <Select
-                            value={receipt.data.category}
-                            onValueChange={(value) => updateReceiptData(index, { category: value })}
-                          >
-                            <SelectTrigger className="h-8" data-testid={`select-category-${index}`}>
-                              <SelectValue placeholder={t["forms.claim.category"]} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="Office Supplies">
-                                <T k="pageLabels.officeSupplies" />
-                              </SelectItem>
-                              <SelectItem value="Meals">
-                                {t["pages.receiptsCategoryMeals"]}
-                              </SelectItem>
-                              <SelectItem value="Travel">
-                                <T k="pages.travel" />
-                              </SelectItem>
-                              <SelectItem value="Utilities">
-                                <T k="pages.utilities" />
-                              </SelectItem>
-                              <SelectItem value="Marketing">
-                                <T k="pageLabels.marketing" />
-                              </SelectItem>
-                              <SelectItem value="Equipment">
-                                <T k="pages.equipment" />
-                              </SelectItem>
-                              <SelectItem value="Communication">
-                                <T k="pageLabels.communication" />
-                              </SelectItem>
-                              <SelectItem value="Professional Services">
-                                <T k="pages.professionalServices" />
-                              </SelectItem>
-                              <SelectItem value="Insurance">
-                                <T k="pages.insurance" />
-                              </SelectItem>
-                              <SelectItem value="Maintenance">
-                                <T k="pages.maintenance" />
-                              </SelectItem>
-                              <SelectItem value="Rent">
-                                {t["pages.receiptsCategoryRent"]}
-                              </SelectItem>
-                              <SelectItem value="Other">
-                                <T k="pages.other" />
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-
-                        {receipt.data.lineItems && receipt.data.lineItems.length > 0 && (
-                          <div className="col-span-2 space-y-1">
-                            <Label className="text-xs">
-                              <T k="pages.lineItems" />
-                            </Label>
-                            <div className="rounded border text-xs divide-y">
-                              {receipt.data.lineItems.map((item, i) => (
-                                <div key={i} className="flex justify-between px-2 py-1">
-                                  <span className="truncate max-w-[60%]">{item.description}</span>
-                                  <span className="text-muted-foreground ms-2">
-                                    {item.quantity > 1 ? `×${item.quantity}  ` : ""}
-                                    {item.total.toFixed(2)}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {receipt.data.confidenceBand && (
-                          <div
-                            className="col-span-2 space-y-1"
-                            data-testid={`confidence-band-${index}`}
-                          >
-                            <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-2">
-                              <Badge
-                                variant={
-                                  receipt.data.confidenceBand === "high" ? "secondary" : "outline"
-                                }
-                                className={
-                                  receipt.data.confidenceBand === "low"
-                                    ? "border-destructive text-destructive"
-                                    : undefined
-                                }
-                                data-testid={`badge-band-${receipt.data.confidenceBand}-${index}`}
-                              >
-                                <Sparkles className="w-2 h-2 me-1" />
-                                {
-                                  BAND_LABELS[receipt.data.confidenceBand][
-                                    locale === "ar" ? "ar" : "en"
-                                  ]
-                                }
-                              </Badge>
-                              {typeof receipt.data.confidence === "number" && (
-                                <span>
-                                  {tr("Model confidence", "ثقة النموذج")}:{" "}
-                                  {Math.round(receipt.data.confidence * 100)}%
-                                </span>
+                      {/* Status and Data */}
+                      <div className="flex-1 space-y-3">
+                        {receipt.status === "pending" && (
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">
+                              <T k="hr.status.pending" />
+                            </Badge>
+                            <p className="text-sm text-muted-foreground">
+                              {autoReadUnavailable ? (
+                                t["pages.receiptsReadyToAttach"]
+                              ) : (
+                                <T k="pageLabels.readyToProcess" />
                               )}
-                              <span>
-                                {receipt.data.ocrSource === "browser-ocr" ||
-                                receipt.data.ocrSource === "tesseract" ||
-                                receipt.data.ocrSource === "text-parser"
-                                  ? tr("Local OCR", "التعرف المحلي")
-                                  : tr("AI vision", "الرؤية الذكية")}
-                              </span>
                             </p>
-                            {receipt.data.reviewReasons &&
-                              receipt.data.reviewReasons.length > 0 && (
-                                <ul className="text-xs text-muted-foreground list-disc ps-4">
-                                  {receipt.data.reviewReasons.map((reason, i) => (
-                                    <li key={i}>{reason}</li>
-                                  ))}
-                                </ul>
-                              )}
-                            {bandRequiresReview(receipt.data.confidenceBand) && (
+                          </div>
+                        )}
+
+                        {receipt.status === "processing" && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="flex items-center gap-2">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <T k="pageLabels.processingWithOcr" />
+                              </span>
+                              <span>{receipt.progress}%</span>
+                            </div>
+                            <Progress value={receipt.progress} />
+                          </div>
+                        )}
+
+                        {receipt.status === "error" && (
+                          <div className="flex flex-wrap items-center gap-2 text-destructive">
+                            <XCircle className="w-4 h-4 shrink-0" />
+                            <span className="text-sm">{receipt.error}</span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="ms-0 text-foreground sm:ms-2"
+                              onClick={() => processReceipt(index)}
+                              disabled={isProcessingBulk}
+                              data-testid={`button-retry-ocr-${index}`}
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                              <T k="pageLabels.tryAgain" />
+                            </Button>
+                          </div>
+                        )}
+
+                        {receipt.status === "saved" && (
+                          <div className="flex items-center gap-2 text-success">
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span className="text-sm font-medium">
+                              <T k="pageLabels.successfullySavedToDatabase" />
+                            </span>
+                          </div>
+                        )}
+
+                        {receipt.status === "save_error" && (
+                          <div className="flex flex-wrap items-center gap-2 text-danger">
+                            <XCircle className="w-4 h-4" />
+                            <span className="text-sm">{receipt.error || "Failed to save"}</span>
+                            {receipt.duplicate && receipt.data && (
                               <Button
-                                variant={receipt.data.reviewed ? "secondary" : "outline"}
+                                variant="outline"
                                 size="sm"
-                                data-testid={`button-mark-reviewed-${index}`}
-                                onClick={() =>
-                                  updateReceiptData(index, { reviewed: !receipt.data!.reviewed })
-                                }
+                                data-testid={`button-upload-anyway-${index}`}
+                                onClick={() => {
+                                  setProcessedReceipts((prev) => {
+                                    const updated = [...prev];
+                                    updated[index] = {
+                                      ...updated[index],
+                                      status: "completed",
+                                      duplicate: false,
+                                      error: undefined,
+                                      data: { ...updated[index].data!, confirmDuplicate: true },
+                                    };
+                                    return updated;
+                                  });
+                                }}
                               >
-                                {receipt.data.reviewed
-                                  ? tr("Reviewed - ready to save", "تمت المراجعة - جاهز للحفظ")
-                                  : tr("I have checked these figures", "لقد تحققت من هذه الأرقام")}
+                                {tr("Upload anyway", "رفع على أي حال")}
                               </Button>
                             )}
                           </div>
                         )}
 
-                        {(receipt.data.supplierTrn ||
-                          receipt.data.isTaxInvoice ||
-                          receipt.data.reverseChargeSuggested ||
-                          receipt.data.ocrSource === "ai") && (
-                          <div
-                            className="col-span-2 flex flex-wrap gap-2 text-xs"
-                            data-testid={`tax-invoice-signals-${index}`}
-                          >
-                            {receipt.data.supplierTrn && (
-                              <Badge variant="outline" dir="ltr">
-                                TRN {receipt.data.supplierTrn}
-                              </Badge>
+                        {receipt.status === "completed" && receipt.data && (
+                          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <Label className="text-xs">Merchant / Supplier</Label>
+                              <Input
+                                value={receipt.data.merchant || ""}
+                                onChange={(e) =>
+                                  updateReceiptData(index, { merchant: e.target.value })
+                                }
+                                className="h-8"
+                                data-testid={`input-merchant-${index}`}
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label className="text-xs">Date</Label>
+                              <DatePicker
+                                value={receipt.data.date || ""}
+                                onChange={(value) => updateReceiptData(index, { date: value })}
+                                className="h-8"
+                                data-testid={`input-date-${index}`}
+                              />
+                            </div>
+
+                            {receipt.data.invoiceNumber && (
+                              <div className="space-y-1 col-span-2">
+                                <Label className="text-xs">Invoice / Receipt Number</Label>
+                                <Input
+                                  value={receipt.data.invoiceNumber || ""}
+                                  onChange={(e) =>
+                                    updateReceiptData(index, { invoiceNumber: e.target.value })
+                                  }
+                                  className="h-8"
+                                />
+                              </div>
                             )}
-                            {receipt.data.isTaxInvoice && (
-                              <Badge variant="secondary">
-                                {receipt.data.simplifiedInvoice
-                                  ? tr("Simplified tax invoice", "فاتورة ضريبية مبسطة")
-                                  : tr("Tax invoice", "فاتورة ضريبية")}
-                              </Badge>
+
+                            <div className="space-y-1">
+                              <Label className="text-xs">Subtotal (excl. VAT)</Label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={receipt.data.subtotal ?? receipt.data.total ?? ""}
+                                onChange={(e) =>
+                                  updateReceiptData(index, { subtotal: parseFloat(e.target.value) })
+                                }
+                                className="h-8"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label className="text-xs">
+                                VAT ({receipt.data.vatPercentage ?? 5}%)
+                              </Label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={receipt.data.vatAmount ?? ""}
+                                onChange={(e) =>
+                                  updateReceiptData(index, {
+                                    vatAmount: parseFloat(e.target.value),
+                                  })
+                                }
+                                className="h-8"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label className="text-xs font-semibold">Total (incl. VAT)</Label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={receipt.data.total ?? ""}
+                                onChange={(e) =>
+                                  updateReceiptData(index, { total: parseFloat(e.target.value) })
+                                }
+                                className="h-8 font-semibold"
+                                data-testid={`input-amount-${index}`}
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label className="text-xs">
+                                <T k="pages.category" />
+                              </Label>
+                              <Select
+                                value={receipt.data.category}
+                                onValueChange={(value) =>
+                                  updateReceiptData(index, { category: value })
+                                }
+                              >
+                                <SelectTrigger
+                                  className="h-8"
+                                  data-testid={`select-category-${index}`}
+                                >
+                                  <SelectValue placeholder={t["forms.claim.category"]} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="Office Supplies">
+                                    <T k="pageLabels.officeSupplies" />
+                                  </SelectItem>
+                                  <SelectItem value="Meals">
+                                    {t["pages.receiptsCategoryMeals"]}
+                                  </SelectItem>
+                                  <SelectItem value="Travel">
+                                    <T k="pages.travel" />
+                                  </SelectItem>
+                                  <SelectItem value="Utilities">
+                                    <T k="pages.utilities" />
+                                  </SelectItem>
+                                  <SelectItem value="Marketing">
+                                    <T k="pageLabels.marketing" />
+                                  </SelectItem>
+                                  <SelectItem value="Equipment">
+                                    <T k="pages.equipment" />
+                                  </SelectItem>
+                                  <SelectItem value="Communication">
+                                    <T k="pageLabels.communication" />
+                                  </SelectItem>
+                                  <SelectItem value="Professional Services">
+                                    <T k="pages.professionalServices" />
+                                  </SelectItem>
+                                  <SelectItem value="Insurance">
+                                    <T k="pages.insurance" />
+                                  </SelectItem>
+                                  <SelectItem value="Maintenance">
+                                    <T k="pages.maintenance" />
+                                  </SelectItem>
+                                  <SelectItem value="Rent">
+                                    {t["pages.receiptsCategoryRent"]}
+                                  </SelectItem>
+                                  <SelectItem value="Other">
+                                    <T k="pages.other" />
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            {receipt.data.lineItems && receipt.data.lineItems.length > 0 && (
+                              <div className="col-span-2 space-y-1">
+                                <Label className="text-xs">
+                                  <T k="pages.lineItems" />
+                                </Label>
+                                <div className="rounded border text-xs divide-y">
+                                  {receipt.data.lineItems.map((item, i) => (
+                                    <div key={i} className="flex justify-between px-2 py-1">
+                                      <span className="truncate max-w-[60%]">
+                                        {item.description}
+                                      </span>
+                                      <span className="text-muted-foreground ms-2">
+                                        {item.quantity > 1 ? `×${item.quantity}  ` : ""}
+                                        {item.total.toFixed(2)}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
                             )}
-                            {!receipt.data.isTaxInvoice && receipt.data.ocrSource === "ai" && (
-                              <Badge variant="outline">
-                                {tr(
-                                  "Not a tax invoice - VAT may not be recoverable",
-                                  "ليست فاتورة ضريبية - قد لا تُسترد ضريبة القيمة المضافة"
+
+                            {receipt.data.confidenceBand && (
+                              <div
+                                className="col-span-2 space-y-1"
+                                data-testid={`confidence-band-${index}`}
+                              >
+                                <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-2">
+                                  <Badge
+                                    variant={
+                                      receipt.data.confidenceBand === "high"
+                                        ? "secondary"
+                                        : "outline"
+                                    }
+                                    className={
+                                      receipt.data.confidenceBand === "low"
+                                        ? "border-destructive text-destructive"
+                                        : undefined
+                                    }
+                                    data-testid={`badge-band-${receipt.data.confidenceBand}-${index}`}
+                                  >
+                                    <Sparkles className="w-2 h-2 me-1" />
+                                    {
+                                      BAND_LABELS[receipt.data.confidenceBand][
+                                        locale === "ar" ? "ar" : "en"
+                                      ]
+                                    }
+                                  </Badge>
+                                  {typeof receipt.data.confidence === "number" && (
+                                    <span>
+                                      {tr("Model confidence", "ثقة النموذج")}:{" "}
+                                      {Math.round(receipt.data.confidence * 100)}%
+                                    </span>
+                                  )}
+                                  <span>
+                                    {receipt.data.ocrSource === "browser-ocr" ||
+                                    receipt.data.ocrSource === "tesseract" ||
+                                    receipt.data.ocrSource === "text-parser"
+                                      ? tr("Local OCR", "التعرف المحلي")
+                                      : tr("AI vision", "الرؤية الذكية")}
+                                  </span>
+                                </p>
+                                {receipt.data.reviewReasons &&
+                                  receipt.data.reviewReasons.length > 0 && (
+                                    <ul className="text-xs text-muted-foreground list-disc ps-4">
+                                      {receipt.data.reviewReasons.map((reason, i) => (
+                                        <li key={i}>{reason}</li>
+                                      ))}
+                                    </ul>
+                                  )}
+                                {bandRequiresReview(receipt.data.confidenceBand) && (
+                                  <Button
+                                    variant={receipt.data.reviewed ? "secondary" : "outline"}
+                                    size="sm"
+                                    data-testid={`button-mark-reviewed-${index}`}
+                                    onClick={() =>
+                                      updateReceiptData(index, {
+                                        reviewed: !receipt.data!.reviewed,
+                                      })
+                                    }
+                                  >
+                                    {receipt.data.reviewed
+                                      ? tr("Reviewed - ready to save", "تمت المراجعة - جاهز للحفظ")
+                                      : tr(
+                                          "I have checked these figures",
+                                          "لقد تحققت من هذه الأرقام"
+                                        )}
+                                  </Button>
                                 )}
-                              </Badge>
+                              </div>
                             )}
-                            {receipt.data.reverseChargeSuggested && (
-                              <Badge variant="outline">
-                                {tr("Reverse charge suggested", "يُقترح الاحتساب العكسي")}
-                              </Badge>
-                            )}
-                          </div>
-                        )}
 
-                        {receipt.data.classifier?.method && (
-                          <div className="col-span-2">
-                            <p
-                              className="text-xs text-muted-foreground"
-                              data-testid={`text-classifier-why-${index}`}
-                              title={receipt.data.classifier.reason || undefined}
-                            >
-                              Category suggested by{" "}
-                              <span className="font-medium text-foreground">
-                                {CLASSIFIER_METHOD_LABELS[receipt.data.classifier.method] ??
-                                  receipt.data.classifier.method}
-                              </span>
-                              {typeof receipt.data.classifier.confidence === "number" && (
-                                <>
-                                  {" "}
-                                  · {Math.round(receipt.data.classifier.confidence * 100)}%
-                                  confident
-                                </>
-                              )}
-                              . You can change it above — your correction trains the model.
-                            </p>
+                            {(receipt.data.supplierTrn ||
+                              receipt.data.isTaxInvoice ||
+                              receipt.data.reverseChargeSuggested ||
+                              receipt.data.ocrSource === "ai") && (
+                              <div
+                                className="col-span-2 flex flex-wrap gap-2 text-xs"
+                                data-testid={`tax-invoice-signals-${index}`}
+                              >
+                                {receipt.data.supplierTrn && (
+                                  <Badge variant="outline" dir="ltr">
+                                    TRN {receipt.data.supplierTrn}
+                                  </Badge>
+                                )}
+                                {receipt.data.isTaxInvoice && (
+                                  <Badge variant="secondary">
+                                    {receipt.data.simplifiedInvoice
+                                      ? tr("Simplified tax invoice", "فاتورة ضريبية مبسطة")
+                                      : tr("Tax invoice", "فاتورة ضريبية")}
+                                  </Badge>
+                                )}
+                                {!receipt.data.isTaxInvoice && receipt.data.ocrSource === "ai" && (
+                                  <Badge variant="outline">
+                                    {tr(
+                                      "Not a tax invoice - VAT may not be recoverable",
+                                      "ليست فاتورة ضريبية - قد لا تُسترد ضريبة القيمة المضافة"
+                                    )}
+                                  </Badge>
+                                )}
+                                {receipt.data.reverseChargeSuggested && (
+                                  <Badge variant="outline">
+                                    {tr("Reverse charge suggested", "يُقترح الاحتساب العكسي")}
+                                  </Badge>
+                                )}
+                              </div>
+                            )}
+
+                            {receipt.data.classifier?.method && (
+                              <div className="col-span-2">
+                                <p
+                                  className="text-xs text-muted-foreground"
+                                  data-testid={`text-classifier-why-${index}`}
+                                  title={receipt.data.classifier.reason || undefined}
+                                >
+                                  Category suggested by{" "}
+                                  <span className="font-medium text-foreground">
+                                    {CLASSIFIER_METHOD_LABELS[receipt.data.classifier.method] ??
+                                      receipt.data.classifier.method}
+                                  </span>
+                                  {typeof receipt.data.classifier.confidence === "number" && (
+                                    <>
+                                      {" "}
+                                      · {Math.round(receipt.data.classifier.confidence * 100)}%
+                                      confident
+                                    </>
+                                  )}
+                                  . You can change it above — your correction trains the model.
+                                </p>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Recent Receipts */}
-      <section className="space-y-4" aria-labelledby="recent-expenses-title">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0">
-            <h2 id="recent-expenses-title" className="text-h2 text-foreground">
-              <T k="pageLabels.recentExpenses" />
-            </h2>
-            <p className="mt-1 text-small text-muted-foreground">
-              <T k="pageLabels.previouslyScannedAndSavedExpenses" />
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  disabled={isExporting}
-                  data-testid="button-export-expenses"
-                >
-                  <Download aria-hidden />
-                  {isExporting ? t["pages.receiptsExporting"] : t["pages.receiptsExport"]}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={handleExportExcel}
-                  data-testid="menu-export-expenses-excel"
-                >
-                  <FileSpreadsheet aria-hidden />
-                  {t["pages.receiptsExportExcelFull"]}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={handleDownloadReceiptsExcel}
-                  data-testid="menu-export-expenses-excel-ocr"
-                >
-                  <FileSpreadsheet aria-hidden />
-                  {t["pages.receiptsExportExcelOcr"]}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={handleExportGoogleSheets}
-                  data-testid="menu-export-expenses-sheets"
-                >
-                  <SiGooglesheets aria-hidden />
-                  <T k="reportCenter.exportToGoogleSheets" />
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-        <Card className="overflow-hidden">
-          {isLoading ? (
-            <div className="p-4">
-              <CardListSkeleton count={4} />
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-          ) : filteredReceipts && filteredReceipts.length > 0 ? (
-            <VirtualList
-              items={filteredReceipts as any[]}
-              estimateSize={64}
-              height={Math.min(720, Math.max(320, filteredReceipts.length * 64))}
-              getKey={(receipt) => receipt.id}
-              renderItem={(receipt: any) => (
-                <div
-                  key={receipt.id}
-                  className="flex items-center gap-3 border-b border-border/70 px-4 py-2.5 transition-colors duration-fast hover:bg-muted/50"
-                  data-testid={`receipt-${receipt.id}`}
-                >
-                  <ReceiptThumbnail
-                    companyId={companyId}
-                    receipt={receipt}
-                    onPreview={(src, merchant) => setImagePreview({ src, merchant })}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <p dir="auto" className="truncate text-sm font-medium text-foreground">
-                        {receipt.merchant || t["screens.unknownMerchant"]}
-                      </p>
-                      <Money
-                        amount={Number(receipt.amount || 0)}
-                        currency={receipt.currency || "AED"}
-                        className="shrink-0 text-sm font-semibold text-foreground"
-                      />
-                    </div>
-                    <div className="mt-0.5 flex items-center justify-between gap-3">
-                      <p className="min-w-0 truncate text-caption text-muted-foreground">
-                        {receipt.date ? formatDate(receipt.date, locale) : "—"}
-                        {" · "}
-                        {receipt.category
-                          ? receiptCategoryLabel(t, receipt.category)
-                          : t["pages.receiptsUncategorized"]}
-                        {isInternalClassifierMethod(receipt.classifierMethod) && (
-                          <span
-                            className="ms-2 inline-flex items-center gap-1"
-                            data-testid={`badge-classifier-internal-${receipt.id}`}
-                            title={t["screens.classifiedInternally"]}
-                          >
-                            <Brain className="h-3 w-3" aria-hidden />
-                            <T k="pageLabels.internal" />
-                          </span>
-                        )}
-                        {receipt.classifierMethod === "openai" && (
-                          <span
-                            className="ms-2 inline-flex items-center gap-1"
-                            data-testid={`badge-classifier-ai-${receipt.id}`}
-                            title={t["screens.classifiedByAi"]}
-                          >
-                            <Bot className="h-3 w-3" aria-hidden />
-                            {t["screens.aiLabel"]}
-                          </span>
-                        )}
-                      </p>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        {receipt.autoPosted ? (
-                          <Badge
-                            variant="success"
-                            dot
-                            data-testid={`badge-auto-posted-${receipt.id}`}
-                            title={t["screens.autoPostedHint"]}
-                          >
-                            <T k="reportCenter.autoPosted" />
-                          </Badge>
-                        ) : receipt.posted ? (
-                          <Badge variant="success" dot>
-                            <T k="hr.status.posted" />
-                          </Badge>
-                        ) : (
-                          <Badge variant="warning" dot>
-                            {t["screens.statusUnposted"]}
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <RowActions
-                    collapseOnMobile
-                    className="-me-2 shrink-0 md:w-[6.5rem]"
-                    menu={
-                      <>
-                        <DropdownMenuItem
-                          onSelect={() => setLinesDialog({ mode: "lines", receipt })}
-                          data-testid={`button-lines-receipt-${receipt.id}`}
-                        >
-                          <ListTree aria-hidden />
-                          {receipt.posted
-                            ? t["purchases.reviseReceipt"]
-                            : t["purchases.splitLines"]}
-                        </DropdownMenuItem>
-                        {!receipt.posted && (
-                          <DropdownMenuItem
-                            onSelect={() => setLinesDialog({ mode: "split", receipt })}
-                            data-testid={`button-split-receipt-${receipt.id}`}
-                          >
-                            <Split aria-hidden />
-                            {t["purchases.splitReceipt"]}
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem asChild>
-                          <Link
-                            href={evidenceSourceHref("receipt", receipt.id)}
-                            data-testid={`button-proof-receipt-${receipt.id}`}
-                          >
-                            <FileText aria-hidden />
-                            <T k="reportCenter.proof" />
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onSelect={() => handleDeleteReceipt(receipt)}
-                          disabled={deleteMutation.isPending}
-                          data-testid={`button-delete-receipt-${receipt.id}`}
-                        >
-                          <Trash2 aria-hidden />
-                          {t.delete}
-                        </DropdownMenuItem>
-                      </>
-                    }
-                  >
-                    {!receipt.posted && (
-                      <RowActionButton
-                        label={t["pages.receiptsPost"]}
-                        icon={CheckCircle2}
-                        onClick={() => handlePostExpense(receipt)}
-                        data-testid={`button-post-receipt-${receipt.id}`}
-                      />
-                    )}
-                    <RowActionButton
-                      label={t.edit}
-                      icon={Edit}
-                      onClick={() => handleEditReceipt(receipt)}
-                      data-testid={`button-edit-receipt-${receipt.id}`}
-                    />
-                  </RowActions>
-                </div>
-              )}
-            />
-          ) : (
-            <EmptyState
-              icon={Upload}
-              title={
-                dateRange.from || dateRange.to
-                  ? t["pages.receiptsEmptyRangeTitle"]
-                  : t["pages.receiptsEmptyTitle"]
-              }
-              description={
-                dateRange.from || dateRange.to
-                  ? t["pages.receiptsEmptyRangeBody"]
-                  : autoReadUnavailable
-                    ? t["pages.receiptsEmptyBodyManual"]
-                    : t["pages.receiptsEmptyBody"]
-              }
-              action={
-                !(dateRange.from || dateRange.to)
-                  ? {
-                      label: t["pages.receiptsUploadReceipt"],
-                      icon: Upload,
-                      onClick: () => document.getElementById("file-input")?.click(),
-                      testId: "button-upload-first-receipt",
-                    }
-                  : undefined
-              }
-              secondaryAction={
-                dateRange.from || dateRange.to
-                  ? {
-                      label: t["screens.clearFilter"],
-                      onClick: () => setDateRange({ from: undefined, to: undefined }),
-                    }
-                  : undefined
-              }
-              testId="empty-state-receipts"
-            />
           )}
-        </Card>
-      </section>
+
+          {/* Recent Receipts */}
+          <section className="space-y-4" aria-labelledby="recent-expenses-title">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div className="min-w-0">
+                <h2 id="recent-expenses-title" className="text-h2 text-foreground">
+                  <T k="pageLabels.recentExpenses" />
+                </h2>
+                <p className="mt-1 text-small text-muted-foreground">
+                  <T k="pageLabels.previouslyScannedAndSavedExpenses" />
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      disabled={isExporting}
+                      data-testid="button-export-expenses"
+                    >
+                      <Download aria-hidden />
+                      {isExporting ? t["pages.receiptsExporting"] : t["pages.receiptsExport"]}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem
+                      onClick={handleExportExcel}
+                      data-testid="menu-export-expenses-excel"
+                    >
+                      <FileSpreadsheet aria-hidden />
+                      {t["pages.receiptsExportExcelFull"]}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={handleDownloadReceiptsExcel}
+                      data-testid="menu-export-expenses-excel-ocr"
+                    >
+                      <FileSpreadsheet aria-hidden />
+                      {t["pages.receiptsExportExcelOcr"]}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={handleExportGoogleSheets}
+                      data-testid="menu-export-expenses-sheets"
+                    >
+                      <SiGooglesheets aria-hidden />
+                      <T k="reportCenter.exportToGoogleSheets" />
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+            <Card className="overflow-hidden">
+              {isLoading ? (
+                <div className="p-4">
+                  <CardListSkeleton count={4} />
+                </div>
+              ) : filteredReceipts && filteredReceipts.length > 0 ? (
+                <VirtualList
+                  items={filteredReceipts as any[]}
+                  estimateSize={64}
+                  height={Math.min(720, Math.max(320, filteredReceipts.length * 64))}
+                  getKey={(receipt) => receipt.id}
+                  renderItem={(receipt: any) => (
+                    <div
+                      key={receipt.id}
+                      className="flex items-center gap-3 border-b border-border/70 px-4 py-2.5 transition-colors duration-fast hover:bg-muted/50"
+                      data-testid={`receipt-${receipt.id}`}
+                    >
+                      <ReceiptThumbnail
+                        companyId={companyId}
+                        receipt={receipt}
+                        onPreview={(src, merchant) => setImagePreview({ src, merchant })}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <p dir="auto" className="truncate text-sm font-medium text-foreground">
+                            {receipt.merchant || t["screens.unknownMerchant"]}
+                          </p>
+                          <Money
+                            amount={Number(receipt.amount || 0)}
+                            currency={receipt.currency || "AED"}
+                            className="shrink-0 text-sm font-semibold text-foreground"
+                          />
+                        </div>
+                        <div className="mt-0.5 flex items-center justify-between gap-3">
+                          <p className="min-w-0 truncate text-caption text-muted-foreground">
+                            {receipt.date ? formatDate(receipt.date, locale) : "—"}
+                            {" · "}
+                            {receipt.category
+                              ? receiptCategoryLabel(t, receipt.category)
+                              : t["pages.receiptsUncategorized"]}
+                            {isInternalClassifierMethod(receipt.classifierMethod) && (
+                              <span
+                                className="ms-2 inline-flex items-center gap-1"
+                                data-testid={`badge-classifier-internal-${receipt.id}`}
+                                title={t["screens.classifiedInternally"]}
+                              >
+                                <Brain className="h-3 w-3" aria-hidden />
+                                <T k="pageLabels.internal" />
+                              </span>
+                            )}
+                            {receipt.classifierMethod === "openai" && (
+                              <span
+                                className="ms-2 inline-flex items-center gap-1"
+                                data-testid={`badge-classifier-ai-${receipt.id}`}
+                                title={t["screens.classifiedByAi"]}
+                              >
+                                <Bot className="h-3 w-3" aria-hidden />
+                                {t["screens.aiLabel"]}
+                              </span>
+                            )}
+                          </p>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            {receipt.autoPosted ? (
+                              <Badge
+                                variant="success"
+                                dot
+                                data-testid={`badge-auto-posted-${receipt.id}`}
+                                title={t["screens.autoPostedHint"]}
+                              >
+                                <T k="reportCenter.autoPosted" />
+                              </Badge>
+                            ) : receipt.posted ? (
+                              <Badge variant="success" dot>
+                                <T k="hr.status.posted" />
+                              </Badge>
+                            ) : (
+                              <Badge variant="warning" dot>
+                                {t["screens.statusUnposted"]}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      <RowActions
+                        maxInline={1}
+                        collapseOnMobile
+                        className="-me-2 shrink-0 md:w-[6.5rem]"
+                        menu={
+                          <>
+                            <DropdownMenuItem
+                              onSelect={() => setLinesDialog({ mode: "lines", receipt })}
+                              data-testid={`button-lines-receipt-${receipt.id}`}
+                            >
+                              <ListTree aria-hidden />
+                              {receipt.posted
+                                ? t["purchases.reviseReceipt"]
+                                : t["purchases.splitLines"]}
+                            </DropdownMenuItem>
+                            {!receipt.posted && (
+                              <DropdownMenuItem
+                                onSelect={() => setLinesDialog({ mode: "split", receipt })}
+                                data-testid={`button-split-receipt-${receipt.id}`}
+                              >
+                                <Split aria-hidden />
+                                {t["purchases.splitReceipt"]}
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem asChild>
+                              <Link
+                                href={evidenceSourceHref("receipt", receipt.id)}
+                                data-testid={`button-proof-receipt-${receipt.id}`}
+                              >
+                                <FileText aria-hidden />
+                                <T k="reportCenter.proof" />
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onSelect={() => handleDeleteReceipt(receipt)}
+                              disabled={deleteMutation.isPending}
+                              data-testid={`button-delete-receipt-${receipt.id}`}
+                            >
+                              <Trash2 aria-hidden />
+                              {t.delete}
+                            </DropdownMenuItem>
+                          </>
+                        }
+                      >
+                        {!receipt.posted && (
+                          <RowActionButton
+                            label={t["pages.receiptsPost"]}
+                            icon={CheckCircle2}
+                            onClick={() => handlePostExpense(receipt)}
+                            data-testid={`button-post-receipt-${receipt.id}`}
+                          />
+                        )}
+                        <RowActionButton
+                          label={t.edit}
+                          icon={Edit}
+                          onClick={() => handleEditReceipt(receipt)}
+                          data-testid={`button-edit-receipt-${receipt.id}`}
+                        />
+                      </RowActions>
+                    </div>
+                  )}
+                />
+              ) : (
+                <EmptyState
+                  icon={Upload}
+                  title={
+                    dateRange.from || dateRange.to
+                      ? t["pages.receiptsEmptyRangeTitle"]
+                      : t["pages.receiptsEmptyTitle"]
+                  }
+                  description={
+                    dateRange.from || dateRange.to
+                      ? t["pages.receiptsEmptyRangeBody"]
+                      : autoReadUnavailable
+                        ? t["pages.receiptsEmptyBodyManual"]
+                        : t["pages.receiptsEmptyBody"]
+                  }
+                  action={
+                    !(dateRange.from || dateRange.to)
+                      ? {
+                          label: t["pages.receiptsUploadReceipt"],
+                          icon: Upload,
+                          onClick: () => document.getElementById("file-input")?.click(),
+                          testId: "button-upload-first-receipt",
+                        }
+                      : undefined
+                  }
+                  secondaryAction={
+                    dateRange.from || dateRange.to
+                      ? {
+                          label: t["screens.clearFilter"],
+                          onClick: () => setDateRange({ from: undefined, to: undefined }),
+                        }
+                      : undefined
+                  }
+                  testId="empty-state-receipts"
+                />
+              )}
+            </Card>
+          </section>
+        </TabsContent>
+        <TabsContent value="automation" className="mt-0">
+          <ReceiptAutomation />
+        </TabsContent>
+      </Tabs>
 
       <ReceiptLinesDialog
         open={!!linesDialog}
@@ -2556,7 +2609,11 @@ export default function Receipts() {
                     <FormItem>
                       <FormLabel required>{t.date}</FormLabel>
                       <FormControl>
-                        <Input {...field} type="date" dir="ltr" data-testid="input-edit-date" />
+                        <DatePicker
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          data-testid="input-edit-date"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

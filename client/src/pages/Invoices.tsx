@@ -2,15 +2,14 @@ import { invoiceRowActions } from "@/lib/invoice-row-actions";
 import { T } from "@/components/layout/T";
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from "date-fns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import {
   Form,
@@ -21,7 +20,7 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
-import { FormActions, FormErrorSummary, FormGrid, FormSection } from "@/components/ui/form-layout";
+import { FormErrorSummary, FormGrid, FormSection } from "@/components/ui/form-layout";
 import {
   Dialog,
   DialogContent,
@@ -48,8 +47,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge, badgeVariants } from "@/components/ui/badge";
+import { EditorShell } from "@/components/ui/editor-shell";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Badge, badgeVariants, StatusBadge as InvoiceStatusBadge } from "@/components/ui/badge";
 import { statusBadgeVariant, statusDotClass } from "@/components/ui/status-meta";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
@@ -116,9 +116,6 @@ import {
   Trash2,
   Download,
   Edit,
-  Palette,
-  Save,
-  Info,
   XCircle,
   AlertTriangle,
   AlertCircle,
@@ -140,7 +137,6 @@ import {
   lineVatRate,
 } from "@/lib/invoice-totals";
 import { STANDARD_VAT_RATES, vatJurisdictionForCountry } from "@shared/vat-classification";
-import { companyLogoSrc } from "@/lib/company-logo";
 import {
   blankInvoiceLine,
   isUntouchedBlankLine,
@@ -220,24 +216,7 @@ const invoiceSchema = z.object({
   lines: z.array(invoiceLineSchema).min(1, "forms.errors.lineItemRequired"),
 });
 
-const invoiceBrandingSchema = z.object({
-  invoiceShowLogo: z.boolean().default(true),
-  invoiceShowAddress: z.boolean().default(true),
-  invoiceShowPhone: z.boolean().default(true),
-  invoiceShowEmail: z.boolean().default(true),
-  invoiceShowWebsite: z.boolean().default(false),
-  invoiceCustomTitle: z
-    .string()
-    .transform((val) => val || undefined)
-    .optional(),
-  invoiceFooterNote: z
-    .string()
-    .transform((val) => val || undefined)
-    .optional(),
-});
-
 type InvoiceFormData = z.infer<typeof invoiceSchema>;
-type InvoiceBrandingFormData = z.infer<typeof invoiceBrandingSchema>;
 
 /** Whole days past the due date for an open (sent / part-paid) invoice; 0 when not overdue. */
 function invoiceOverdueDays(invoice: InvoiceListItem): number {
@@ -274,11 +253,25 @@ function BalanceLine({ invoice }: { invoice: InvoiceListItem }) {
 }
 
 /** Only issued documents have a public link (the share endpoint refuses drafts and cancelled). */
+/** Issued and not settled: the row's one inline action is "Record payment". */
+const OPEN_FOR_PAYMENT = new Set(["sent", "partial", "overdue", "viewed"]);
+
 function isShareable(invoice: { status?: string | null }) {
   return invoice.status !== "draft" && invoice.status !== "cancelled";
 }
 
+/**
+ * Invoices list and the full-page invoice editor (spec 3.7). The editor has its own routes,
+ * `/invoices/new` and `/invoices/:id/edit`. Rendered outside the app's router (unit tests) the
+ * page is not on an /invoices path, so the editor simply opens in place.
+ */
 export default function Invoices() {
+  const [location, navigate] = useLocation();
+  const routed = location.startsWith("/invoices");
+  const [isNewRoute] = useRoute("/invoices/new");
+  const [isEditRoute, editParams] = useRoute<{ id: string }>("/invoices/:id/edit");
+  /** "new", or the id of the invoice being edited, when on an editor route. */
+  const editor = isNewRoute ? "new" : isEditRoute ? editParams?.id : undefined;
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
@@ -292,12 +285,11 @@ export default function Invoices() {
   // X6a: a company without a TRN is not VAT registered; its new lines start at 0% out of scope.
   const vatRegistered = isVatRegisteredCompany(company);
   const blankLine = useCallback(() => blankInvoiceLine(vatRegistered), [vatRegistered]);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [depositsOpen, setDepositsOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   // R18-07: a freshly saved invoice is a draft; offer to issue it right away.
   const [draftNudge, setDraftNudge] = useState<{ id: string; number: string } | null>(null);
-  const [activeTab, setActiveTab] = useState("invoices");
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [invoiceForPayment, setInvoiceForPayment] = useState<Invoice | null>(null);
   const [selectedPaymentAccount, setSelectedPaymentAccount] = useState<string>("");
@@ -459,8 +451,26 @@ export default function Invoices() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (new URLSearchParams(window.location.search).get("new") === "1") {
-      setDialogOpen(true);
+      if (routed && !editor) navigate("/invoices/new", { replace: true });
+      else setEditorOpen(true);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The editor routes: open a blank invoice or load the one being edited.
+  useEffect(() => {
+    if (editor === "new") setEditorOpen(true);
+    else if (editor) void handleEditInvoice({ id: editor } as Invoice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
+
+  // R18-07 after a routed save: the list reopens with the draft nudge for the new invoice.
+  useEffect(() => {
+    if (typeof window === "undefined" || editor) return;
+    const params = new URLSearchParams(window.location.search);
+    const issueId = params.get("issue");
+    if (issueId) setDraftNudge({ id: issueId, number: params.get("number") ?? "" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // R3 (CTO 17): command-palette record results open /invoices?open=<id> in the invoice view.
@@ -476,7 +486,7 @@ export default function Invoices() {
       "",
       window.location.pathname + (query ? `?${query}` : "") + window.location.hash
     );
-    void handleEditInvoice({ id: openId } as Invoice);
+    openInvoiceEditor({ id: openId } as Invoice);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -491,6 +501,52 @@ export default function Invoices() {
       "",
       window.location.pathname + (query ? `?${query}` : "") + window.location.hash
     );
+  };
+
+  /** Drops the one-shot `issue` / `number` params once the draft nudge has been answered. */
+  const stripIssueParams = () => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("issue")) return;
+    params.delete("issue");
+    params.delete("number");
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      "",
+      window.location.pathname + (query ? `?${query}` : "") + window.location.hash
+    );
+  };
+
+  const openNewInvoice = () => {
+    if (routed) navigate("/invoices/new");
+    else setEditorOpen(true);
+  };
+
+  function openInvoiceEditor(invoice: Invoice) {
+    if (routed && editor !== invoice.id) navigate(`/invoices/${invoice.id}/edit`);
+    else void handleEditInvoice(invoice);
+  }
+
+  /** Leaves the editor without saving. */
+  const closeEditor = () => {
+    if (routed && editor) {
+      navigate("/invoices");
+      return;
+    }
+    setEditorOpen(false);
+    stripNewInvoiceParam();
+    setEditingInvoice(null);
+    form.reset({
+      companyId: selectedCompanyId,
+      number: "",
+      customerName: "",
+      customerTrn: "",
+      date: new Date(),
+      currency: baseCurrency,
+      exchangeRate: "",
+      lines: [blankLine()],
+    });
   };
 
   // Update form's companyId when selectedCompanyId changes
@@ -519,7 +575,7 @@ export default function Invoices() {
       if (created?.id && (created.status ?? "draft") === "draft") {
         setDraftNudge({ id: created.id, number: created.number ?? "" });
       }
-      setDialogOpen(false);
+      setEditorOpen(false);
       setEditingInvoice(null);
       form.reset({
         companyId: selectedCompanyId,
@@ -551,7 +607,7 @@ export default function Invoices() {
         title: t["invoices.toastUpdated"],
         description: t["invoices.toastUpdatedBody"],
       });
-      setDialogOpen(false);
+      setEditorOpen(false);
       setEditingInvoice(null);
       form.reset({
         companyId: selectedCompanyId,
@@ -941,7 +997,7 @@ export default function Invoices() {
             )
           : [blankLine()],
       });
-      setDialogOpen(true);
+      setEditorOpen(true);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -1011,10 +1067,24 @@ export default function Invoices() {
       // E1 validate-on-save: the e-invoice status re-runs its checks on the saved data.
       queryClient.invalidateQueries({ queryKey: ["einvoice-status", editing.id] });
     } else {
-      await createMutation.mutateAsync(invoiceData);
+      const created = await createMutation.mutateAsync(invoiceData);
+      if (routed && editor) {
+        // A new invoice is a draft: the list opens with the "Issue now / Keep as draft" nudge.
+        const draft = created?.id && (created.status ?? "draft") === "draft";
+        navigate(
+          draft
+            ? `/invoices?issue=${encodeURIComponent(created.id)}&number=${encodeURIComponent(created.number ?? "")}`
+            : "/invoices"
+        );
+        return;
+      }
     }
 
-    setDialogOpen(false);
+    if (routed && editor) {
+      navigate("/invoices");
+      return;
+    }
+    setEditorOpen(false);
     resetForm();
   };
 
@@ -1023,62 +1093,6 @@ export default function Invoices() {
   const watchCurrency = form.watch("currency") || baseCurrency;
   const formTotals = computeInvoiceFormTotals(watchLines, standardRate);
   const { subtotal, vatAmount, total } = formTotals;
-
-  // Invoice Branding Form
-  const brandingForm = useForm<InvoiceBrandingFormData>({
-    resolver: zodResolver(invoiceBrandingSchema),
-    defaultValues: {
-      invoiceShowLogo: true,
-      invoiceShowAddress: true,
-      invoiceShowPhone: true,
-      invoiceShowEmail: true,
-      invoiceShowWebsite: false,
-      invoiceCustomTitle: "",
-      invoiceFooterNote: "",
-    },
-  });
-
-  // Load company branding settings into form
-  useEffect(() => {
-    if (company) {
-      brandingForm.reset({
-        invoiceShowLogo: company.invoiceShowLogo ?? true,
-        invoiceShowAddress: company.invoiceShowAddress ?? true,
-        invoiceShowPhone: company.invoiceShowPhone ?? true,
-        invoiceShowEmail: company.invoiceShowEmail ?? true,
-        invoiceShowWebsite: company.invoiceShowWebsite ?? false,
-        invoiceCustomTitle: company.invoiceCustomTitle || "",
-        invoiceFooterNote: company.invoiceFooterNote || "",
-      });
-    }
-  }, [company, brandingForm]);
-
-  const updateBrandingMutation = useMutation({
-    mutationFn: (data: InvoiceBrandingFormData) => {
-      return apiRequest("PATCH", `/api/companies/${selectedCompanyId}`, data);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
-      toast({
-        title: t["invoices.toastBrandingUpdated"],
-        description: t["invoices.toastBrandingBody"],
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: t["invoices.toastBrandingFailed"],
-        description: error?.message || t["invoices.toastTryAgain"],
-      });
-    },
-  });
-
-  const onBrandingSubmit = (data: InvoiceBrandingFormData) => {
-    updateBrandingMutation.mutate(data);
-  };
-
-  const isVATRegistered = company?.trnVatNumber && company?.trnVatNumber.length > 0;
 
   const filteredInvoices = useMemo(() => {
     if (!invoices || invoices.length === 0) return [];
@@ -1178,6 +1192,583 @@ export default function Invoices() {
     }
   };
 
+  // Spec 3.7: the invoice is written on a full page — form, sticky live bilingual preview and a
+  // sticky footer with the total — not in a modal. Posting, totals and VAT are unchanged.
+  const invoiceEditor = (
+    <EditorShell
+      testId="dialog-invoice-form"
+      backHref="/invoices"
+      backLabel={t["invoices.editor.back"]}
+      eyebrow="Sales"
+      title={editingInvoice ? t["forms.invoice.editTitle"] : t.newInvoice}
+      description={editingInvoice ? t["forms.invoice.editDesc"] : t["forms.invoice.newDesc"]}
+      status={editingInvoice ? <InvoiceStatusBadge status={editingInvoice.status} /> : undefined}
+      previewLabel={t["invoices.editor.preview"]}
+      preview={
+        <Suspense fallback={<Skeleton className="h-96 w-full rounded-xl" />}>
+          <InvoicePreview
+            sellerName={company?.legalName || company?.name}
+            sellerTrn={company?.trnVatNumber}
+            sellerAddress={company?.businessAddress}
+            number={editingInvoice ? form.watch("number") : null}
+            date={form.watch("date")}
+            customerName={form.watch("customerName")}
+            customerTrn={form.watch("customerTrn")}
+            placeOfSupply={
+              form.watch("placeOfSupplyEmirate")
+                ? t[`invoices.emirate.${form.watch("placeOfSupplyEmirate")}`]
+                : null
+            }
+            currency={watchCurrency}
+            lines={watchLines.map((line, i) => ({
+              description: line.description,
+              quantity: Number(line.quantity) || 0,
+              unitPrice: Number(line.unitPrice) || 0,
+              vatRate: formTotals.lines[i]?.vatRate ?? 0,
+              lineTotal: formTotals.lines[i]?.lineTotal ?? 0,
+            }))}
+            subtotal={subtotal}
+            vatAmount={vatAmount}
+            total={total}
+            ratesLabel={
+              formTotals.ratesCharged.length
+                ? formTotals.ratesCharged.map((r) => `${Math.round(r * 100)}%`).join(" / ")
+                : "0%"
+            }
+          />
+        </Suspense>
+      }
+      footerSummary={
+        <span className="flex flex-wrap items-baseline gap-x-2" data-testid="editor-total">
+          <span>{t["invoices.editor.total"]}</span>
+          <Money
+            amount={total}
+            currency={watchCurrency}
+            className="text-h3 font-semibold text-foreground"
+          />
+        </span>
+      }
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={closeEditor}>
+            {t.cancel}
+          </Button>
+          <Button
+            type="submit"
+            form="invoice-editor-form"
+            disabled={
+              createMutation.isPending || editMutation.isPending || checkSimilarMutation.isPending
+            }
+            className="sm:min-w-32"
+            data-testid="button-submit-invoice"
+          >
+            {createMutation.isPending || editMutation.isPending || checkSimilarMutation.isPending
+              ? t["forms.saving"]
+              : editingInvoice
+                ? t["invoices.editor.saveChanges"]
+                : t["invoices.editor.saveDraft"]}
+          </Button>
+        </>
+      }
+    >
+      {/* E1: e-invoice status of an issued invoice (re-checked after each save). */}
+      {editingInvoice && editingInvoice.status !== "draft" && (
+        <EInvoiceHeaderStrip invoiceId={editingInvoice.id} invoiceNumber={editingInvoice.number} />
+      )}
+      <Form {...form}>
+        <form
+          id="invoice-editor-form"
+          onSubmit={form.handleSubmit(onSubmit)}
+          noValidate
+          className="min-w-0"
+        >
+          <div className="min-w-0 space-y-6">
+            <FormErrorSummary />
+            <FormSection
+              title={t["forms.section.document"]}
+              description={t["forms.section.documentDesc"]}
+            >
+              <FormGrid>
+                <FormField
+                  control={form.control}
+                  name="number"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t.invoiceNumber}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          ltr
+                          data-testid="input-invoice-number"
+                          readOnly={!editingInvoice}
+                          placeholder={
+                            editingInvoice ? undefined : t["invoices.numberAssignedOnSave"]
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t.date}</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-start font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                              data-testid="button-date-picker"
+                            >
+                              <CalendarIcon className="h-4 w-4" />
+                              {field.value ? (
+                                formatDate(field.value, locale)
+                              ) : (
+                                <span>
+                                  <T k="pages.pickADate" />
+                                </span>
+                              )}
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <InvoiceCurrencyFields
+                  form={form}
+                  companyId={selectedCompanyId}
+                  baseCurrency={baseCurrency}
+                  readOnly={!!editingInvoice && editingInvoice.status !== "draft"}
+                />
+              </FormGrid>
+            </FormSection>
+
+            <FormSection
+              title={t["forms.section.customer"]}
+              description={t["forms.section.customerDesc"]}
+            >
+              <FormGrid>
+                <FormField
+                  control={form.control}
+                  name="contactId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t["invoices.contact"]}</FormLabel>
+                      <Select
+                        value={field.value || "none"}
+                        onValueChange={(val) => {
+                          const id = val === "none" ? undefined : val;
+                          field.onChange(id);
+                          const c = contacts.find((x) => x.id === id);
+                          if (c) {
+                            form.setValue("customerName", c.name);
+                            form.setValue("customerTrn", c.trnNumber || "");
+                            if (c.emirate) form.setValue("placeOfSupplyEmirate", c.emirate);
+                          }
+                        }}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-invoice-contact">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">{t["invoices.noContact"]}</SelectItem>
+                          {contacts.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>{t["invoices.contactHint"]}</FormDescription>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="placeOfSupplyEmirate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t["invoices.placeOfSupply"]}</FormLabel>
+                      <Select value={field.value || ""} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-place-of-supply">
+                            <SelectValue placeholder={t["invoices.placeOfSupplyDefault"]} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {EMIRATE_OPTIONS.map((e) => (
+                            <SelectItem key={e} value={e}>
+                              {t[`invoices.emirate.${e}`]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="customerName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t.customerName}</FormLabel>
+                      <FormControl>
+                        <Input {...field} dir="auto" data-testid="input-customer-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="customerTrn"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t.customerTRN}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          ltr
+                          inputMode="numeric"
+                          autoComplete="off"
+                          placeholder={t["forms.optional"]}
+                          data-testid="input-customer-trn"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </FormGrid>
+              {einvoiceEnabled &&
+                (() => {
+                  const buyer = contacts.find((x) => x.id === form.watch("contactId"));
+                  const vatRegistered = /^\d{15}$/.test((form.watch("customerTrn") ?? "").trim());
+                  const incomplete = !buyer || !buyer.address || !buyer.city || !buyer.emirate;
+                  if (!vatRegistered || !incomplete) return null;
+                  return (
+                    <div
+                      className="mt-3 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-subtle p-3 text-small text-warning-subtle-foreground"
+                      role="status"
+                      data-testid="einvoice-buyer-address-hint"
+                    >
+                      <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                      <p className="min-w-0 flex-1">
+                        {t["invoices.einvoiceBuyerHint"]}{" "}
+                        <Link href="/contacts" className="font-medium underline underline-offset-4">
+                          {t["invoices.einvoiceBuyerHintLink"]}
+                        </Link>
+                      </p>
+                    </div>
+                  );
+                })()}
+            </FormSection>
+
+            <FormSection
+              title={<T k="pages.lineItems" />}
+              description={t["forms.section.linesDesc"]}
+              actions={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => append(blankLine())}
+                  data-testid="button-add-line"
+                >
+                  <Plus className="h-4 w-4" />
+                  {t.addLine}
+                </Button>
+              }
+            >
+              <ol className="divide-y divide-border rounded-lg bg-surface-sunken/60 px-3">
+                {fields.map((field, index) => (
+                  <li key={field.id} className="space-y-3 py-3">
+                    {/* Phones: the description takes the full row; picker and remove wrap under it. */}
+                    <div className="flex flex-wrap items-start gap-2 sm:flex-nowrap">
+                      <span
+                        aria-hidden
+                        className="mt-2 w-5 shrink-0 text-caption tabular-nums text-muted-foreground"
+                      >
+                        {index + 1}
+                      </span>
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.description`}
+                        render={({ field }) => (
+                          <FormItem className="min-w-0 flex-1 basis-[calc(100%-1.75rem)] sm:basis-0">
+                            <FormControl>
+                              <Input
+                                {...field}
+                                dir="auto"
+                                placeholder={t.description}
+                                aria-label={formatMessage(t["forms.lineDescription"], {
+                                  n: index + 1,
+                                })}
+                                data-testid={`input-line-description-${index}`}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <LineItemPicker
+                        companyId={selectedCompanyId}
+                        index={index}
+                        value={watchLines[index]?.productId}
+                        onPick={(p) => {
+                          const opts = { shouldDirty: true, shouldValidate: true };
+                          if (!p) {
+                            form.setValue(`lines.${index}.productId`, undefined, opts);
+                            return;
+                          }
+                          form.setValue(`lines.${index}.productId`, p.id, opts);
+                          form.setValue(
+                            `lines.${index}.description`,
+                            (locale === "ar" && p.nameAr) || p.name,
+                            opts
+                          );
+                          if (Number(p.unitPrice) > 0) {
+                            form.setValue(`lines.${index}.unitPrice`, Number(p.unitPrice), opts);
+                          }
+                          if (p.vatRate !== undefined && p.vatRate !== null) {
+                            form.setValue(
+                              `lines.${index}.vatSupplyType`,
+                              Number(p.vatRate) > 0 ? "standard_rated" : "zero_rated",
+                              opts
+                            );
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="shrink-0 text-muted-foreground hover:text-danger"
+                        disabled={fields.length <= 1}
+                        aria-label={formatMessage(t["forms.removeLine"], {
+                          n: index + 1,
+                        })}
+                        onClick={() => remove(index)}
+                        data-testid={fields.length > 1 ? `button-remove-line-${index}` : undefined}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="mobile-keep-cols grid grid-cols-2 gap-x-3 gap-y-3 ps-7 sm:grid-cols-[5rem_7rem_minmax(0,1fr)_5rem_minmax(6.5rem,auto)]">
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.quantity`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-caption text-muted-foreground">
+                              {t["forms.col.qty"]}
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                name={field.name}
+                                ref={field.ref}
+                                onBlur={field.onBlur}
+                                value={field.value ?? ""}
+                                onChange={(e) =>
+                                  field.onChange(e.target.value ? parseFloat(e.target.value) : "")
+                                }
+                                data-testid={`input-line-quantity-${index}`}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.unitPrice`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-caption text-muted-foreground">
+                              {t["forms.col.unitPrice"]}
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                name={field.name}
+                                ref={field.ref}
+                                onBlur={field.onBlur}
+                                value={field.value ?? ""}
+                                onChange={(e) =>
+                                  field.onChange(e.target.value ? parseFloat(e.target.value) : "")
+                                }
+                                data-testid={`input-line-price-${index}`}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.vatSupplyType`}
+                        render={({ field }) => (
+                          <FormItem className="col-span-2 sm:col-span-1">
+                            <FormLabel className="text-caption text-muted-foreground">
+                              {t["invoices.supplyType"]}
+                            </FormLabel>
+                            <Select
+                              value={field.value}
+                              onValueChange={(val) => {
+                                field.onChange(val);
+                                form.setValue(
+                                  `lines.${index}.vatRate`,
+                                  lineVatRate(val as SupplyTypeOption, standardRate)
+                                );
+                                if (val !== "standard_rated") {
+                                  form.setValue(`lines.${index}.marginScheme`, false);
+                                }
+                              }}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid={`select-line-vat-${index}`}>
+                                  <SelectValue />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {SUPPLY_TYPE_OPTIONS.map((st) => (
+                                  <SelectItem key={st} value={st}>
+                                    {t[`invoices.supply.${st}`]}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.discountPercent`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-caption text-muted-foreground">
+                              {t["forms.col.discount"]}
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                min={0}
+                                max={100}
+                                name={field.name}
+                                ref={field.ref}
+                                onBlur={field.onBlur}
+                                value={field.value ?? ""}
+                                onChange={(e) =>
+                                  field.onChange(e.target.value ? parseFloat(e.target.value) : 0)
+                                }
+                                data-testid={`input-line-discount-${index}`}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <div className="flex flex-col items-end justify-end gap-1.5">
+                        <span className="text-caption text-muted-foreground">
+                          {t["forms.col.amount"]}
+                        </span>
+                        <span className="flex h-9 items-center text-sm font-medium">
+                          <Money
+                            amount={
+                              computeInvoiceFormLine(watchLines[index] ?? blankLine(), standardRate)
+                                .lineTotal
+                            }
+                            currency={watchCurrency}
+                          />
+                        </span>
+                      </div>
+                    </div>
+                    {(watchLines[index]?.vatSupplyType ?? "standard_rated") ===
+                      "standard_rated" && (
+                      <div className="flex flex-wrap items-center gap-3 ps-7">
+                        <FormField
+                          control={form.control}
+                          name={`lines.${index}.marginScheme`}
+                          render={({ field }) => (
+                            <FormItem className="flex items-center gap-2 space-y-0">
+                              <FormControl>
+                                <Switch
+                                  checked={!!field.value}
+                                  onCheckedChange={field.onChange}
+                                  aria-label={t["invoices.marginScheme"]}
+                                  data-testid={`switch-line-margin-${index}`}
+                                />
+                              </FormControl>
+                              <span className="text-small text-muted-foreground">
+                                {t["invoices.marginScheme"]}
+                              </span>
+                            </FormItem>
+                          )}
+                        />
+                        {watchLines[index]?.marginScheme && (
+                          <>
+                            <FormField
+                              control={form.control}
+                              name={`lines.${index}.marginPurchaseCost`}
+                              render={({ field }) => (
+                                <FormItem className="w-40">
+                                  <FormControl>
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      min={0}
+                                      placeholder={t["invoices.marginPurchaseCost"]}
+                                      aria-label={t["invoices.marginPurchaseCost"]}
+                                      value={field.value ?? ""}
+                                      onChange={(e) =>
+                                        field.onChange(
+                                          e.target.value ? parseFloat(e.target.value) : 0
+                                        )
+                                      }
+                                      data-testid={`input-line-margin-cost-${index}`}
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+                            <span className="text-caption text-muted-foreground">
+                              {t["invoices.marginSchemeHint"]}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </FormSection>
+          </div>
+        </form>
+      </Form>
+    </EditorShell>
+  );
+
   return (
     <div className="space-y-6">
       <Dialog open={!!einvoiceIssues} onOpenChange={(open) => !open && setEinvoiceIssues(null)}>
@@ -1224,64 +1815,66 @@ export default function Invoices() {
           </ul>
         </DialogContent>
       </Dialog>
-      <PageHeader
-        eyebrow="Sales"
-        title={t.invoices}
-        description={(t as any).manageInvoices ?? t["invoices.manageInvoicesAndCustomizeTheir"]}
-        actions={
-          <>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  disabled={isExporting}
-                  aria-label={t.export}
-                  className="px-2.5 sm:px-3"
-                  data-testid="button-export-invoices"
-                >
-                  <Download className="h-4 w-4" aria-hidden />
-                  <span className="hidden sm:inline">
-                    {isExporting ? t["invoices.exporting"] : t.export}
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={handleExportExcel}
-                  data-testid="menu-export-invoices-excel"
-                >
-                  <FileSpreadsheet aria-hidden />
-                  <T k="reportCenter.exportToExcel" />
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={handleExportGoogleSheets}
-                  data-testid="menu-export-invoices-sheets"
-                >
-                  <SiGooglesheets aria-hidden />
-                  <T k="reportCenter.exportToGoogleSheets" />
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button
-              variant="outline"
-              onClick={() => setDepositsOpen(true)}
-              data-testid="button-customer-deposits"
-              {...gate("ledger.post")}
-            >
-              <Wallet className="h-4 w-4" aria-hidden />
-              <span className="hidden sm:inline">{t["invoices.deposits.open"]}</span>
-            </Button>
-            <Button
-              onClick={() => setDialogOpen(true)}
-              data-testid="button-create-invoice"
-              {...gate("documents.write")}
-            >
-              <Plus className="h-4 w-4" aria-hidden />
-              {t.newInvoice}
-            </Button>
-          </>
-        }
-      />
+      {!editorOpen && (
+        <PageHeader
+          eyebrow="Sales"
+          title={t.invoices}
+          description={(t as any).manageInvoices ?? t["invoices.manageInvoicesAndCustomizeTheir"]}
+          actions={
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    disabled={isExporting}
+                    aria-label={t.export}
+                    className="px-2.5 sm:px-3"
+                    data-testid="button-export-invoices"
+                  >
+                    <Download className="h-4 w-4" aria-hidden />
+                    <span className="hidden sm:inline">
+                      {isExporting ? t["invoices.exporting"] : t.export}
+                    </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={handleExportExcel}
+                    data-testid="menu-export-invoices-excel"
+                  >
+                    <FileSpreadsheet aria-hidden />
+                    <T k="reportCenter.exportToExcel" />
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={handleExportGoogleSheets}
+                    data-testid="menu-export-invoices-sheets"
+                  >
+                    <SiGooglesheets aria-hidden />
+                    <T k="reportCenter.exportToGoogleSheets" />
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button
+                variant="outline"
+                onClick={() => setDepositsOpen(true)}
+                data-testid="button-customer-deposits"
+                {...gate("ledger.post")}
+              >
+                <Wallet className="h-4 w-4" aria-hidden />
+                <span className="hidden sm:inline">{t["invoices.deposits.open"]}</span>
+              </Button>
+              <Button
+                onClick={openNewInvoice}
+                data-testid="button-create-invoice"
+                {...gate("documents.write")}
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+                {t.newInvoice}
+              </Button>
+            </>
+          }
+        />
+      )}
 
       {selectedCompanyId && depositsOpen && (
         <Suspense fallback={null}>
@@ -1362,7 +1955,10 @@ export default function Invoices() {
       <AlertDialog
         open={draftNudge !== null}
         onOpenChange={(open) => {
-          if (!open) setDraftNudge(null);
+          if (!open) {
+            setDraftNudge(null);
+            stripIssueParams();
+          }
         }}
       >
         <AlertDialogContent data-testid="dialog-invoice-draft-nudge">
@@ -1388,6 +1984,7 @@ export default function Invoices() {
                   {
                     onSuccess: () => {
                       setDraftNudge(null);
+                      stripIssueParams();
                       toast({
                         title: t["invoices.nudgeIssued"],
                         description: formatMessage(t["invoices.nudgeIssuedBody"], {
@@ -1411,19 +2008,10 @@ export default function Invoices() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="invoices" data-testid="tab-invoices">
-            <FileText className="w-4 h-4" />
-            {t.invoices}
-          </TabsTrigger>
-          <TabsTrigger value="branding" data-testid="tab-branding">
-            <Palette className="w-4 h-4" />
-            {(t as any).invoiceBranding ?? t["invoices.invoiceBranding"]}
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="invoices" className="space-y-4 mt-0">
+      {editorOpen ? (
+        invoiceEditor
+      ) : (
+        <div className="space-y-4">
           <InvoiceStatusTiles
             companyId={selectedCompanyId}
             active={statusFilter}
@@ -1452,623 +2040,6 @@ export default function Invoices() {
                 </Badge>
               )}
             </div>
-          </div>
-
-          <div className="contents">
-            <Dialog
-              open={dialogOpen}
-              onOpenChange={(open) => {
-                setDialogOpen(open);
-                if (!open) {
-                  stripNewInvoiceParam();
-                  setEditingInvoice(null);
-                  form.reset({
-                    companyId: selectedCompanyId,
-                    number: "",
-                    customerName: "",
-                    customerTrn: "",
-                    date: new Date(),
-                    currency: baseCurrency,
-                    exchangeRate: "",
-                    lines: [blankLine()],
-                  });
-                }
-              }}
-            >
-              <DialogContent size="xl" data-testid="dialog-invoice-form">
-                <DialogHeader>
-                  <DialogTitle>
-                    {editingInvoice ? t["forms.invoice.editTitle"] : t.newInvoice}
-                  </DialogTitle>
-                  <DialogDescription>
-                    {editingInvoice ? t["forms.invoice.editDesc"] : t["forms.invoice.newDesc"]}
-                  </DialogDescription>
-                </DialogHeader>
-                {/* E1: e-invoice status of an issued invoice (re-checked after each save). */}
-                {editingInvoice && editingInvoice.status !== "draft" && (
-                  <EInvoiceHeaderStrip
-                    invoiceId={editingInvoice.id}
-                    invoiceNumber={editingInvoice.number}
-                  />
-                )}
-                <Form {...form}>
-                  <form
-                    onSubmit={form.handleSubmit(onSubmit)}
-                    noValidate
-                    className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,25rem)]"
-                  >
-                    <div className="min-w-0 space-y-6">
-                      <FormErrorSummary />
-                      <FormSection
-                        title={t["forms.section.document"]}
-                        description={t["forms.section.documentDesc"]}
-                      >
-                        <FormGrid>
-                          <FormField
-                            control={form.control}
-                            name="number"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t.invoiceNumber}</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    {...field}
-                                    ltr
-                                    data-testid="input-invoice-number"
-                                    readOnly={!editingInvoice}
-                                    placeholder={
-                                      editingInvoice
-                                        ? undefined
-                                        : t["invoices.numberAssignedOnSave"]
-                                    }
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="date"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel required>{t.date}</FormLabel>
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <FormControl>
-                                      <Button
-                                        variant="outline"
-                                        className={cn(
-                                          "w-full justify-start text-start font-normal",
-                                          !field.value && "text-muted-foreground"
-                                        )}
-                                        data-testid="button-date-picker"
-                                      >
-                                        <CalendarIcon className="h-4 w-4" />
-                                        {field.value ? (
-                                          formatDate(field.value, locale)
-                                        ) : (
-                                          <span>
-                                            <T k="pages.pickADate" />
-                                          </span>
-                                        )}
-                                      </Button>
-                                    </FormControl>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-auto p-0">
-                                    <Calendar
-                                      mode="single"
-                                      selected={field.value}
-                                      onSelect={field.onChange}
-                                      initialFocus
-                                    />
-                                  </PopoverContent>
-                                </Popover>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <InvoiceCurrencyFields
-                            form={form}
-                            companyId={selectedCompanyId}
-                            baseCurrency={baseCurrency}
-                            readOnly={!!editingInvoice && editingInvoice.status !== "draft"}
-                          />
-                        </FormGrid>
-                      </FormSection>
-
-                      <FormSection
-                        title={t["forms.section.customer"]}
-                        description={t["forms.section.customerDesc"]}
-                      >
-                        <FormGrid>
-                          <FormField
-                            control={form.control}
-                            name="contactId"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t["invoices.contact"]}</FormLabel>
-                                <Select
-                                  value={field.value || "none"}
-                                  onValueChange={(val) => {
-                                    const id = val === "none" ? undefined : val;
-                                    field.onChange(id);
-                                    const c = contacts.find((x) => x.id === id);
-                                    if (c) {
-                                      form.setValue("customerName", c.name);
-                                      form.setValue("customerTrn", c.trnNumber || "");
-                                      if (c.emirate)
-                                        form.setValue("placeOfSupplyEmirate", c.emirate);
-                                    }
-                                  }}
-                                >
-                                  <FormControl>
-                                    <SelectTrigger data-testid="select-invoice-contact">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    <SelectItem value="none">{t["invoices.noContact"]}</SelectItem>
-                                    {contacts.map((c) => (
-                                      <SelectItem key={c.id} value={c.id}>
-                                        {c.name}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                <FormDescription>{t["invoices.contactHint"]}</FormDescription>
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="placeOfSupplyEmirate"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t["invoices.placeOfSupply"]}</FormLabel>
-                                <Select value={field.value || ""} onValueChange={field.onChange}>
-                                  <FormControl>
-                                    <SelectTrigger data-testid="select-place-of-supply">
-                                      <SelectValue
-                                        placeholder={t["invoices.placeOfSupplyDefault"]}
-                                      />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    {EMIRATE_OPTIONS.map((e) => (
-                                      <SelectItem key={e} value={e}>
-                                        {t[`invoices.emirate.${e}`]}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="customerName"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel required>{t.customerName}</FormLabel>
-                                <FormControl>
-                                  <Input {...field} dir="auto" data-testid="input-customer-name" />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name="customerTrn"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>{t.customerTRN}</FormLabel>
-                                <FormControl>
-                                  <Input
-                                    {...field}
-                                    ltr
-                                    inputMode="numeric"
-                                    autoComplete="off"
-                                    placeholder={t["forms.optional"]}
-                                    data-testid="input-customer-trn"
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </FormGrid>
-                        {einvoiceEnabled &&
-                          (() => {
-                            const buyer = contacts.find((x) => x.id === form.watch("contactId"));
-                            const vatRegistered = /^\d{15}$/.test(
-                              (form.watch("customerTrn") ?? "").trim()
-                            );
-                            const incomplete =
-                              !buyer || !buyer.address || !buyer.city || !buyer.emirate;
-                            if (!vatRegistered || !incomplete) return null;
-                            return (
-                              <div
-                                className="mt-3 flex items-start gap-2 rounded-lg border border-warning/40 bg-warning-subtle p-3 text-small text-warning-subtle-foreground"
-                                role="status"
-                                data-testid="einvoice-buyer-address-hint"
-                              >
-                                <AlertTriangle
-                                  aria-hidden
-                                  className="mt-0.5 h-4 w-4 shrink-0 text-warning"
-                                />
-                                <p className="min-w-0 flex-1">
-                                  {t["invoices.einvoiceBuyerHint"]}{" "}
-                                  <Link
-                                    href="/contacts"
-                                    className="font-medium underline underline-offset-4"
-                                  >
-                                    {t["invoices.einvoiceBuyerHintLink"]}
-                                  </Link>
-                                </p>
-                              </div>
-                            );
-                          })()}
-                      </FormSection>
-
-                      <FormSection
-                        title={<T k="pages.lineItems" />}
-                        description={t["forms.section.linesDesc"]}
-                        actions={
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => append(blankLine())}
-                            data-testid="button-add-line"
-                          >
-                            <Plus className="h-4 w-4" />
-                            {t.addLine}
-                          </Button>
-                        }
-                      >
-                        <ol className="divide-y divide-border rounded-lg bg-surface-sunken/60 px-3">
-                          {fields.map((field, index) => (
-                            <li key={field.id} className="space-y-3 py-3">
-                              <div className="flex items-start gap-2">
-                                <span
-                                  aria-hidden
-                                  className="mt-2 w-5 shrink-0 text-caption tabular-nums text-muted-foreground"
-                                >
-                                  {index + 1}
-                                </span>
-                                <FormField
-                                  control={form.control}
-                                  name={`lines.${index}.description`}
-                                  render={({ field }) => (
-                                    <FormItem className="flex-1">
-                                      <FormControl>
-                                        <Input
-                                          {...field}
-                                          dir="auto"
-                                          placeholder={t.description}
-                                          aria-label={formatMessage(t["forms.lineDescription"], {
-                                            n: index + 1,
-                                          })}
-                                          data-testid={`input-line-description-${index}`}
-                                        />
-                                      </FormControl>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-                                <LineItemPicker
-                                  companyId={selectedCompanyId}
-                                  index={index}
-                                  value={watchLines[index]?.productId}
-                                  onPick={(p) => {
-                                    const opts = { shouldDirty: true, shouldValidate: true };
-                                    if (!p) {
-                                      form.setValue(`lines.${index}.productId`, undefined, opts);
-                                      return;
-                                    }
-                                    form.setValue(`lines.${index}.productId`, p.id, opts);
-                                    form.setValue(
-                                      `lines.${index}.description`,
-                                      (locale === "ar" && p.nameAr) || p.name,
-                                      opts
-                                    );
-                                    if (Number(p.unitPrice) > 0) {
-                                      form.setValue(
-                                        `lines.${index}.unitPrice`,
-                                        Number(p.unitPrice),
-                                        opts
-                                      );
-                                    }
-                                    if (p.vatRate !== undefined && p.vatRate !== null) {
-                                      form.setValue(
-                                        `lines.${index}.vatSupplyType`,
-                                        Number(p.vatRate) > 0 ? "standard_rated" : "zero_rated",
-                                        opts
-                                      );
-                                    }
-                                  }}
-                                />
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="shrink-0 text-muted-foreground hover:text-danger"
-                                  disabled={fields.length <= 1}
-                                  aria-label={formatMessage(t["forms.removeLine"], {
-                                    n: index + 1,
-                                  })}
-                                  onClick={() => remove(index)}
-                                  data-testid={
-                                    fields.length > 1 ? `button-remove-line-${index}` : undefined
-                                  }
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                              <div className="mobile-keep-cols grid grid-cols-2 gap-x-3 gap-y-3 ps-7 sm:grid-cols-[5rem_7rem_minmax(0,1fr)_5rem_minmax(6.5rem,auto)]">
-                                <FormField
-                                  control={form.control}
-                                  name={`lines.${index}.quantity`}
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel className="text-caption text-muted-foreground">
-                                        {t["forms.col.qty"]}
-                                      </FormLabel>
-                                      <FormControl>
-                                        <Input
-                                          type="number"
-                                          step="0.01"
-                                          name={field.name}
-                                          ref={field.ref}
-                                          onBlur={field.onBlur}
-                                          value={field.value ?? ""}
-                                          onChange={(e) =>
-                                            field.onChange(
-                                              e.target.value ? parseFloat(e.target.value) : ""
-                                            )
-                                          }
-                                          data-testid={`input-line-quantity-${index}`}
-                                        />
-                                      </FormControl>
-                                    </FormItem>
-                                  )}
-                                />
-                                <FormField
-                                  control={form.control}
-                                  name={`lines.${index}.unitPrice`}
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel className="text-caption text-muted-foreground">
-                                        {t["forms.col.unitPrice"]}
-                                      </FormLabel>
-                                      <FormControl>
-                                        <Input
-                                          type="number"
-                                          step="0.01"
-                                          name={field.name}
-                                          ref={field.ref}
-                                          onBlur={field.onBlur}
-                                          value={field.value ?? ""}
-                                          onChange={(e) =>
-                                            field.onChange(
-                                              e.target.value ? parseFloat(e.target.value) : ""
-                                            )
-                                          }
-                                          data-testid={`input-line-price-${index}`}
-                                        />
-                                      </FormControl>
-                                      <FormMessage />
-                                    </FormItem>
-                                  )}
-                                />
-                                <FormField
-                                  control={form.control}
-                                  name={`lines.${index}.vatSupplyType`}
-                                  render={({ field }) => (
-                                    <FormItem className="col-span-2 sm:col-span-1">
-                                      <FormLabel className="text-caption text-muted-foreground">
-                                        {t["invoices.supplyType"]}
-                                      </FormLabel>
-                                      <Select
-                                        value={field.value}
-                                        onValueChange={(val) => {
-                                          field.onChange(val);
-                                          form.setValue(
-                                            `lines.${index}.vatRate`,
-                                            lineVatRate(val as SupplyTypeOption, standardRate)
-                                          );
-                                          if (val !== "standard_rated") {
-                                            form.setValue(`lines.${index}.marginScheme`, false);
-                                          }
-                                        }}
-                                      >
-                                        <FormControl>
-                                          <SelectTrigger data-testid={`select-line-vat-${index}`}>
-                                            <SelectValue />
-                                          </SelectTrigger>
-                                        </FormControl>
-                                        <SelectContent>
-                                          {SUPPLY_TYPE_OPTIONS.map((st) => (
-                                            <SelectItem key={st} value={st}>
-                                              {t[`invoices.supply.${st}`]}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </FormItem>
-                                  )}
-                                />
-                                <FormField
-                                  control={form.control}
-                                  name={`lines.${index}.discountPercent`}
-                                  render={({ field }) => (
-                                    <FormItem>
-                                      <FormLabel className="text-caption text-muted-foreground">
-                                        {t["forms.col.discount"]}
-                                      </FormLabel>
-                                      <FormControl>
-                                        <Input
-                                          type="number"
-                                          step="0.01"
-                                          min={0}
-                                          max={100}
-                                          name={field.name}
-                                          ref={field.ref}
-                                          onBlur={field.onBlur}
-                                          value={field.value ?? ""}
-                                          onChange={(e) =>
-                                            field.onChange(
-                                              e.target.value ? parseFloat(e.target.value) : 0
-                                            )
-                                          }
-                                          data-testid={`input-line-discount-${index}`}
-                                        />
-                                      </FormControl>
-                                    </FormItem>
-                                  )}
-                                />
-                                <div className="flex flex-col items-end justify-end gap-1.5">
-                                  <span className="text-caption text-muted-foreground">
-                                    {t["forms.col.amount"]}
-                                  </span>
-                                  <span className="flex h-9 items-center text-sm font-medium">
-                                    <Money
-                                      amount={
-                                        computeInvoiceFormLine(
-                                          watchLines[index] ?? blankLine(),
-                                          standardRate
-                                        ).lineTotal
-                                      }
-                                      currency={watchCurrency}
-                                    />
-                                  </span>
-                                </div>
-                              </div>
-                              {(watchLines[index]?.vatSupplyType ?? "standard_rated") ===
-                                "standard_rated" && (
-                                <div className="flex flex-wrap items-center gap-3 ps-7">
-                                  <FormField
-                                    control={form.control}
-                                    name={`lines.${index}.marginScheme`}
-                                    render={({ field }) => (
-                                      <FormItem className="flex items-center gap-2 space-y-0">
-                                        <FormControl>
-                                          <Switch
-                                            checked={!!field.value}
-                                            onCheckedChange={field.onChange}
-                                            aria-label={t["invoices.marginScheme"]}
-                                            data-testid={`switch-line-margin-${index}`}
-                                          />
-                                        </FormControl>
-                                        <span className="text-small text-muted-foreground">
-                                          {t["invoices.marginScheme"]}
-                                        </span>
-                                      </FormItem>
-                                    )}
-                                  />
-                                  {watchLines[index]?.marginScheme && (
-                                    <>
-                                      <FormField
-                                        control={form.control}
-                                        name={`lines.${index}.marginPurchaseCost`}
-                                        render={({ field }) => (
-                                          <FormItem className="w-40">
-                                            <FormControl>
-                                              <Input
-                                                type="number"
-                                                step="0.01"
-                                                min={0}
-                                                placeholder={t["invoices.marginPurchaseCost"]}
-                                                aria-label={t["invoices.marginPurchaseCost"]}
-                                                value={field.value ?? ""}
-                                                onChange={(e) =>
-                                                  field.onChange(
-                                                    e.target.value ? parseFloat(e.target.value) : 0
-                                                  )
-                                                }
-                                                data-testid={`input-line-margin-cost-${index}`}
-                                              />
-                                            </FormControl>
-                                          </FormItem>
-                                        )}
-                                      />
-                                      <span className="text-caption text-muted-foreground">
-                                        {t["invoices.marginSchemeHint"]}
-                                      </span>
-                                    </>
-                                  )}
-                                </div>
-                              )}
-                            </li>
-                          ))}
-                        </ol>
-                      </FormSection>
-                    </div>
-
-                    <aside className="min-w-0 lg:sticky lg:top-0 lg:self-start">
-                      <Suspense fallback={<Skeleton className="h-96 w-full rounded-xl" />}>
-                        <InvoicePreview
-                          sellerName={company?.legalName || company?.name}
-                          sellerTrn={company?.trnVatNumber}
-                          sellerAddress={company?.businessAddress}
-                          number={editingInvoice ? form.watch("number") : null}
-                          date={form.watch("date")}
-                          customerName={form.watch("customerName")}
-                          customerTrn={form.watch("customerTrn")}
-                          placeOfSupply={
-                            form.watch("placeOfSupplyEmirate")
-                              ? t[`invoices.emirate.${form.watch("placeOfSupplyEmirate")}`]
-                              : null
-                          }
-                          currency={watchCurrency}
-                          lines={watchLines.map((line, i) => ({
-                            description: line.description,
-                            quantity: Number(line.quantity) || 0,
-                            unitPrice: Number(line.unitPrice) || 0,
-                            vatRate: formTotals.lines[i]?.vatRate ?? 0,
-                            lineTotal: formTotals.lines[i]?.lineTotal ?? 0,
-                          }))}
-                          subtotal={subtotal}
-                          vatAmount={vatAmount}
-                          total={total}
-                          ratesLabel={
-                            formTotals.ratesCharged.length
-                              ? formTotals.ratesCharged
-                                  .map((r) => `${Math.round(r * 100)}%`)
-                                  .join(" / ")
-                              : "0%"
-                          }
-                        />
-                      </Suspense>
-                    </aside>
-
-                    <FormActions sticky className="lg:col-span-2">
-                      <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                        {t.cancel}
-                      </Button>
-                      <Button
-                        type="submit"
-                        disabled={
-                          createMutation.isPending ||
-                          editMutation.isPending ||
-                          checkSimilarMutation.isPending
-                        }
-                        className="sm:min-w-32"
-                        data-testid="button-submit-invoice"
-                      >
-                        {createMutation.isPending ||
-                        editMutation.isPending ||
-                        checkSimilarMutation.isPending
-                          ? t["forms.saving"]
-                          : t.save}
-                      </Button>
-                    </FormActions>
-                  </form>
-                </Form>
-              </DialogContent>
-            </Dialog>
           </div>
 
           {isLoading ? (
@@ -2141,7 +2112,7 @@ export default function Invoices() {
                         <EInvoiceListCell
                           companyId={selectedCompanyId}
                           invoice={invoice}
-                          onEdit={() => handleEditInvoice(invoice)}
+                          onEdit={() => openInvoiceEditor(invoice)}
                         />
                       </div>
                     </div>
@@ -2150,7 +2121,7 @@ export default function Invoices() {
                       menu={
                         <>
                           <DropdownMenuItem
-                            onSelect={() => handleEditInvoice(invoice)}
+                            onSelect={() => openInvoiceEditor(invoice)}
                             data-testid={`mobile-button-edit-invoice-${invoice.id}`}
                           >
                             <Edit aria-hidden />
@@ -2284,11 +2255,12 @@ export default function Invoices() {
                             <EInvoiceListCell
                               companyId={selectedCompanyId}
                               invoice={invoice}
-                              onEdit={() => handleEditInvoice(invoice)}
+                              onEdit={() => openInvoiceEditor(invoice)}
                             />
                           </TableCell>
                           <TableCell data-nowrap="" className="w-px">
                             <RowActions
+                              maxInline={1}
                               menuTestId={`button-invoice-actions-${invoice.id}`}
                               menu={
                                 <>
@@ -2312,15 +2284,16 @@ export default function Invoices() {
                                   )}
                                   {/* X6b: a draft is not issued yet, so it has no payments, credit
                                       notes or e-invoice. */}
-                                  {invoiceRowActions(invoice).canRecordPayment && (
-                                    <DropdownMenuItem
-                                      onSelect={() => openAddPayment(invoice)}
-                                      data-testid={`button-add-payment-${invoice.id}`}
-                                    >
-                                      <DollarSign aria-hidden />
-                                      <T k="invoices.actionAddPayment" />
-                                    </DropdownMenuItem>
-                                  )}
+                                  {invoiceRowActions(invoice).canRecordPayment &&
+                                    !OPEN_FOR_PAYMENT.has(String(invoice.status)) && (
+                                      <DropdownMenuItem
+                                        onSelect={() => openAddPayment(invoice)}
+                                        data-testid={`button-add-payment-${invoice.id}`}
+                                      >
+                                        <DollarSign aria-hidden />
+                                        <T k="invoices.actionAddPayment" />
+                                      </DropdownMenuItem>
+                                    )}
                                   <DropdownMenuItem
                                     onSelect={() => void openViewPayments(invoice)}
                                     data-testid={`button-view-payments-${invoice.id}`}
@@ -2387,18 +2360,47 @@ export default function Invoices() {
                                 </>
                               }
                             >
-                              <RowActionButton
-                                icon={Edit}
-                                label={t.edit}
-                                onClick={() => handleEditInvoice(invoice)}
-                                data-testid={`button-edit-invoice-${invoice.id}`}
-                              />
-                              <RowActionButton
-                                icon={Download}
-                                label={t["invoices.actionDownloadPdf"]}
-                                onClick={() => void downloadInvoicePdf(invoice)}
-                                data-testid={`button-download-pdf-${invoice.id}`}
-                              />
+                              {/* Spec 2.4: one status-appropriate inline action, the rest in ⋯. */}
+                              {invoiceRowActions(invoice).canRecordPayment &&
+                                OPEN_FOR_PAYMENT.has(String(invoice.status)) && (
+                                  <RowActionButton
+                                    icon={DollarSign}
+                                    label={t["invoices.actionAddPayment"]}
+                                    onClick={() => openAddPayment(invoice)}
+                                    data-testid={`button-add-payment-${invoice.id}`}
+                                  />
+                                )}
+                              {invoice.status === "paid" ? (
+                                <>
+                                  <RowActionButton
+                                    icon={Download}
+                                    label={t["invoices.actionDownloadPdf"]}
+                                    onClick={() => void downloadInvoicePdf(invoice)}
+                                    data-testid={`button-download-pdf-${invoice.id}`}
+                                  />
+                                  <RowActionButton
+                                    icon={Edit}
+                                    label={t.edit}
+                                    onClick={() => openInvoiceEditor(invoice)}
+                                    data-testid={`button-edit-invoice-${invoice.id}`}
+                                  />
+                                </>
+                              ) : (
+                                <>
+                                  <RowActionButton
+                                    icon={Edit}
+                                    label={t.edit}
+                                    onClick={() => openInvoiceEditor(invoice)}
+                                    data-testid={`button-edit-invoice-${invoice.id}`}
+                                  />
+                                  <RowActionButton
+                                    icon={Download}
+                                    label={t["invoices.actionDownloadPdf"]}
+                                    onClick={() => void downloadInvoicePdf(invoice)}
+                                    data-testid={`button-download-pdf-${invoice.id}`}
+                                  />
+                                </>
+                              )}
                             </RowActions>
                           </TableCell>
                         </TableRow>
@@ -2425,7 +2427,7 @@ export default function Invoices() {
                                     ? {
                                         label: (t as any).newInvoiceCta ?? "New invoice",
                                         icon: Plus,
-                                        onClick: () => setDialogOpen(true),
+                                        onClick: openNewInvoice,
                                         testId: "button-create-first-invoice",
                                       }
                                     : undefined
@@ -2469,278 +2471,8 @@ export default function Invoices() {
               </div>
             </>
           )}
-        </TabsContent>
-
-        <TabsContent value="branding" className="space-y-6 mt-0">
-          {isLoading ? (
-            <Skeleton className="h-96" />
-          ) : !company ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">
-                <T k="pageLabels.companyNotFound" />
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-6 max-w-3xl">
-              {isVATRegistered && (
-                <Alert>
-                  <Info className="h-4 w-4" />
-                  <AlertDescription>
-                    Your company is VAT registered. All invoices will automatically display your TRN
-                    ({company.trnVatNumber}) and be labeled as "Tax Invoice" to comply with UAE FTA
-                    requirements.
-                  </AlertDescription>
-                </Alert>
-              )}
-
-              <Form {...brandingForm}>
-                <form onSubmit={brandingForm.handleSubmit(onBrandingSubmit)} className="space-y-8">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2">
-                        <FileText className="w-5 h-5" />
-                        <T k="pageLabels.companyDetailsDisplay" />
-                      </CardTitle>
-                      <CardDescription>
-                        <T k="pageLabels.chooseWhichCompanyInformationToDisplayOnInvoices" />
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                      <FormField
-                        control={brandingForm.control}
-                        name="invoiceShowLogo"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                            <div className="space-y-0.5">
-                              <FormLabel className="text-base">
-                                <T k="pages.showCompanyLogo" />
-                              </FormLabel>
-                              <FormDescription>
-                                Display your company logo at the top of invoices
-                                {!companyLogoSrc(company) && (
-                                  <span className="block text-xs text-warning mt-1">
-                                    Note: Set your logo in Company Profile first
-                                  </span>
-                                )}
-                              </FormDescription>
-                            </div>
-                            <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                                disabled={!companyLogoSrc(company)}
-                                data-testid="switch-show-logo"
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={brandingForm.control}
-                        name="invoiceShowAddress"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                            <div className="space-y-0.5">
-                              <FormLabel className="text-base">
-                                <T k="pageLabels.showBusinessAddress" />
-                              </FormLabel>
-                              <FormDescription>
-                                Display your business address on invoices
-                                {!company.businessAddress && (
-                                  <span className="block text-xs text-warning mt-1">
-                                    Note: Set your address in Company Profile first
-                                  </span>
-                                )}
-                              </FormDescription>
-                            </div>
-                            <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                                disabled={!company.businessAddress}
-                                data-testid="switch-show-address"
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={brandingForm.control}
-                        name="invoiceShowPhone"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                            <div className="space-y-0.5">
-                              <FormLabel className="text-base">
-                                <T k="pageLabels.showPhoneNumber" />
-                              </FormLabel>
-                              <FormDescription>
-                                Display your business phone number on invoices
-                                {!company.contactPhone && (
-                                  <span className="block text-xs text-warning mt-1">
-                                    Note: Set your phone in Company Profile first
-                                  </span>
-                                )}
-                              </FormDescription>
-                            </div>
-                            <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                                disabled={!company.contactPhone}
-                                data-testid="switch-show-phone"
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={brandingForm.control}
-                        name="invoiceShowEmail"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                            <div className="space-y-0.5">
-                              <FormLabel className="text-base">
-                                <T k="pageLabels.showEmailAddress" />
-                              </FormLabel>
-                              <FormDescription>
-                                Display your business email on invoices
-                                {!company.contactEmail && (
-                                  <span className="block text-xs text-warning mt-1">
-                                    Note: Set your email in Company Profile first
-                                  </span>
-                                )}
-                              </FormDescription>
-                            </div>
-                            <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                                disabled={!company.contactEmail}
-                                data-testid="switch-show-email"
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={brandingForm.control}
-                        name="invoiceShowWebsite"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                            <div className="space-y-0.5">
-                              <FormLabel className="text-base">
-                                <T k="pageLabels.showWebsite" />
-                              </FormLabel>
-                              <FormDescription>
-                                Display your website URL on invoices
-                                {!company.websiteUrl && (
-                                  <span className="block text-xs text-warning mt-1">
-                                    Note: Set your website in Company Profile first
-                                  </span>
-                                )}
-                              </FormDescription>
-                            </div>
-                            <FormControl>
-                              <Switch
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                                disabled={!company.websiteUrl}
-                                data-testid="switch-show-website"
-                              />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader>
-                      <CardTitle>
-                        <T k="pageLabels.invoiceCustomization" />
-                      </CardTitle>
-                      <CardDescription>
-                        <T k="pageLabels.customizeTheAppearanceAndTextOfYourInvoices" />
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-6">
-                      <FormField
-                        control={brandingForm.control}
-                        name="invoiceCustomTitle"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              <T k="pageLabels.invoiceTitle" />
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                placeholder={
-                                  isVATRegistered ? "Tax Invoice (default)" : "Invoice (default)"
-                                }
-                                {...field}
-                                data-testid="input-invoice-title"
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              {isVATRegistered
-                                ? 'For VAT-registered companies, invoices default to "Tax Invoice". You can customize this, but it must comply with FTA regulations.'
-                                : 'Custom title for your invoices. Leave blank to use "Invoice".'}
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={brandingForm.control}
-                        name="invoiceFooterNote"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              <T k="pageLabels.footerNote" />
-                            </FormLabel>
-                            <FormControl>
-                              <Textarea
-                                placeholder={t["pageLabels.thankYouForYourBusiness"]}
-                                className="resize-none"
-                                rows={3}
-                                {...field}
-                                data-testid="textarea-footer-note"
-                              />
-                            </FormControl>
-                            <FormDescription>
-                              Add a custom message at the bottom of your invoices (e.g., payment
-                              terms, thank you message)
-                            </FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </CardContent>
-                  </Card>
-
-                  <div className="flex justify-end">
-                    <Button
-                      type="submit"
-                      disabled={updateBrandingMutation.isPending}
-                      data-testid="button-save-branding"
-                    >
-                      <Save className="w-4 h-4" />
-                      {updateBrandingMutation.isPending
-                        ? "Saving..."
-                        : t["pageLabels.saveSettings"]}
-                    </Button>
-                  </div>
-                </form>
-              </Form>
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
 
       {/* Similar Invoices Warning Dialog */}
       <Dialog open={similarWarningOpen} onOpenChange={setSimilarWarningOpen}>
@@ -3007,14 +2739,12 @@ export default function Invoices() {
               <label className="text-sm font-medium" htmlFor="invoice-payment-date">
                 {t["invoices.payment.date"]}
               </label>
-              <Input
+              <DatePicker
                 id="invoice-payment-date"
-                type="date"
-                ltr
                 data-testid="input-invoice-payment-date"
                 value={paymentDate}
                 max={format(new Date(), "yyyy-MM-dd")}
-                onChange={(e) => setPaymentDate(e.target.value)}
+                onChange={setPaymentDate}
               />
             </div>
 

@@ -1,25 +1,19 @@
+import type React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Badge, StatusBadge } from "@/components/ui/badge";
+import { StatusBadge as ToneBadge } from "@/components/ui/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Money } from "@/components/ui/money";
-import { formatCurrency, formatMonthKey } from "@/lib/format";
+import { formatMonthKey } from "@/lib/format";
 import { formatDateRange } from "@/lib/format-date";
 import { formatPercentDelta } from "@/lib/format-money";
 import { apiRequest } from "@/lib/queryClient";
 import { useTranslation } from "@/lib/i18n";
-import { CHART_COLORS, CHART_TOOLTIP_STYLE } from "./chart-colors";
+import { chartTheme, ChartTooltipContent, formatAxisCompact } from "@/components/ui/chart-theme";
+import { EmptyState } from "@/components/ui/empty-state";
 import { dashboardPeriodLabel } from "./period";
 import type {
   BudgetVsActualRow,
@@ -33,8 +27,6 @@ interface WidgetProps {
   loading: boolean;
   locale: string;
 }
-
-const L = (locale: string, en: string, ar: string) => (locale === "ar" ? ar : en);
 
 /** Delta pill: same sign rules as money (true minus), colour = good or bad news. */
 function ChangeBadge({ value, inverse = false }: { value: number | null; inverse?: boolean }) {
@@ -187,166 +179,213 @@ export function CashMovement({ stats, loading, locale }: WidgetProps) {
   const accounts = stats.bankVsGl.accounts;
   return (
     <Card className="h-full" data-testid="dashboard-cash-movement">
-      <CardHeader className="pb-2">
-        <CardTitle>{L(locale, "Cash in and out", "حركة النقد الداخلة والخارجة")}</CardTitle>
+      <CardHeader className="flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 space-y-0 pb-2">
+        <CardTitle>{tt["dashboard.cashInOutTitle"]}</CardTitle>
+        <ul className="flex items-center gap-4 text-caption text-muted-foreground">
+          <li className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-sm bg-chart-1" aria-hidden />
+            {tt["dashboard.cashIn"]}
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-sm bg-chart-neutral" aria-hidden />
+            {tt["dashboard.cashOut"]}
+          </li>
+        </ul>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="h-44 w-full" dir="ltr">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} barGap={2} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 4" vertical={false} />
-              <XAxis
-                dataKey="name"
-                reversed={locale === "ar"}
-                tickFormatter={(key: string) => formatMonthKey(key, locale)}
-                fontSize={11}
-                tickLine={false}
-                axisLine={false}
-                stroke="hsl(var(--muted-foreground))"
-              />
-              <YAxis
-                orientation={locale === "ar" ? "right" : "left"}
-                fontSize={11}
-                width={44}
-                tickLine={false}
-                axisLine={false}
-                stroke="hsl(var(--muted-foreground))"
-                tickFormatter={(v: number) => `${Math.round(v / 1000)}k`}
-              />
-              <Tooltip
-                cursor={{ fill: "hsl(var(--muted))" }}
-                contentStyle={CHART_TOOLTIP_STYLE}
-                formatter={(v: number) => formatCurrency(v, "AED", locale)}
-                labelFormatter={(key: any) => formatMonthKey(String(key), locale)}
-              />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-              <Bar
-                dataKey="inflow"
-                name={L(locale, "Cash in", "داخل")}
-                fill={CHART_COLORS.accent}
-                radius={[3, 3, 0, 0]}
-                maxBarSize={24}
-              />
-              <Bar
-                dataKey="outflow"
-                name={L(locale, "Cash out", "خارج")}
-                fill={CHART_COLORS.neutral}
-                radius={[3, 3, 0, 0]}
-                maxBarSize={24}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="space-y-1" data-testid="dashboard-bank-vs-gl">
-          <div className="text-caption font-medium text-muted-foreground">
-            {L(
-              locale,
-              "Bank statement balance vs general ledger",
-              "رصيد كشف البنك مقابل دفتر الأستاذ"
-            )}
+        {data.length >= 2 ? (
+          <div className="h-48 w-full" dir="ltr">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={data}
+                {...chartTheme.barChart}
+                margin={{ top: 4, right: 4, bottom: 0, left: 0 }}
+              >
+                <CartesianGrid {...chartTheme.grid} />
+                <XAxis
+                  dataKey="name"
+                  reversed={locale === "ar"}
+                  tickFormatter={(key: string) => formatMonthKey(key, locale)}
+                  {...chartTheme.xAxis}
+                />
+                <YAxis
+                  orientation={locale === "ar" ? "right" : "left"}
+                  tickFormatter={formatAxisCompact}
+                  {...chartTheme.yAxis}
+                />
+                <Tooltip
+                  {...chartTheme.tooltip}
+                  content={
+                    <ChartTooltipContent
+                      currency="AED"
+                      seriesLabel={(key) =>
+                        key === "inflow" ? tt["dashboard.cashIn"] : tt["dashboard.cashOut"]
+                      }
+                      labelFormatter={(key) => formatMonthKey(String(key), locale)}
+                    />
+                  }
+                />
+                <Bar
+                  dataKey="inflow"
+                  name={tt["dashboard.cashIn"]}
+                  {...chartTheme.bar("brand")}
+                  isAnimationActive={chartTheme.animate()}
+                />
+                <Bar
+                  dataKey="outflow"
+                  name={tt["dashboard.cashOut"]}
+                  {...chartTheme.bar("neutral")}
+                  isAnimationActive={chartTheme.animate()}
+                />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
-          {accounts.length === 0 ? (
-            <p className="text-caption text-muted-foreground">
-              {L(
-                locale,
-                "No bank accounts are linked yet. The ledger cash balance is shown above; add a bank account in Banking to compare it with statements.",
-                "لم يتم ربط حسابات بنكية بعد. يظهر رصيد النقد في الدفتر أعلاه؛ أضف حساباً بنكياً من صفحة البنوك لمقارنته بالكشوف."
-              )}
-            </p>
-          ) : (
-            <div className="divide-hairline">
-              {accounts.map((a) => (
-                <div
-                  key={a.bankAccountId}
-                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2 text-sm"
-                >
-                  <span dir="auto" className="min-w-0 truncate">
-                    {a.name}
-                  </span>
-                  <span className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-                    {/* X6a: no statement imported means nothing to compare and no difference. */}
-                    {a.hasStatement === false || a.statementBalance === null ? (
-                      <span
-                        className="text-caption text-muted-foreground"
-                        data-testid={`bank-vs-gl-no-statement-${a.bankAccountId}`}
-                      >
-                        {tt["dashboard.bankNoStatement"]}
-                      </span>
-                    ) : (
-                      <Money amount={a.statementBalance} currency={a.currency} />
-                    )}
-                    {a.glBalance === null ? (
-                      <span className="text-muted-foreground">–</span>
-                    ) : (
-                      <Money
-                        amount={a.glBalance}
-                        currency={a.currency}
-                        className="text-muted-foreground"
-                      />
-                    )}
-                    {a.difference !== null && a.difference !== 0 && (
-                      <Badge variant="warning">
-                        <Money amount={a.difference} currency={a.currency} signDisplay="always" />
-                      </Badge>
-                    )}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        ) : (
+          <EmptyState size="sm" title={tt["dashboard.chartNotEnoughData"]} />
+        )}
+        <BankVsLedger accounts={accounts} />
       </CardContent>
     </Card>
   );
 }
 
+type BankVsGlAccount = DashboardStats["bankVsGl"]["accounts"][number];
+
+/**
+ * Bank statement balance against the ledger, one row per bank account (spec 3.6): the
+ * difference is labelled and carries the same ties / differs badge as the X6d GL proofs.
+ */
+function BankVsLedger({ accounts }: { accounts: BankVsGlAccount[] }) {
+  const { t } = useTranslation();
+  const tt = t as Record<string, string>;
+  return (
+    <div className="border-t border-border pt-4" data-testid="dashboard-bank-vs-gl">
+      <h3 className="text-caption font-medium text-muted-foreground">
+        {tt["dashboard.bankVsGlTitle"]}
+      </h3>
+      {accounts.length === 0 ? (
+        <p className="mt-1 text-small text-muted-foreground">
+          {tt["dashboard.bankVsGlNoAccounts"]}
+        </p>
+      ) : (
+        <ul className="mt-1 divide-hairline">
+          {accounts.map((a) => {
+            // X6a: no statement imported means nothing to compare and no difference.
+            const noStatement = a.hasStatement === false || a.statementBalance === null;
+            const ties = !noStatement && (a.difference ?? 0) === 0;
+            const figure = (label: string, value: React.ReactNode) => (
+              <div className="min-w-0">
+                <dt className="text-caption text-muted-foreground">{label}</dt>
+                <dd className="truncate text-small tabular-nums">{value}</dd>
+              </div>
+            );
+            return (
+              <li key={a.bankAccountId} className="space-y-1.5 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span dir="auto" className="min-w-0 truncate text-small font-medium">
+                    {a.name}
+                  </span>
+                  {noStatement ? (
+                    <span
+                      className="shrink-0 text-caption text-muted-foreground"
+                      data-testid={`bank-vs-gl-no-statement-${a.bankAccountId}`}
+                    >
+                      {tt["dashboard.bankNoStatement"]}
+                    </span>
+                  ) : (
+                    <ToneBadge
+                      tone={ties ? "success" : "danger"}
+                      data-ties-state={ties ? "ties" : "differs"}
+                      className="shrink-0"
+                    >
+                      {ties ? t["launchProof.ties"] : t["launchProof.differs"]}
+                    </ToneBadge>
+                  )}
+                </div>
+                <dl className="grid grid-cols-3 gap-3">
+                  {figure(
+                    tt["dashboard.bankColStatement"],
+                    noStatement ? "–" : <Money amount={a.statementBalance!} currency={a.currency} />
+                  )}
+                  {figure(
+                    tt["dashboard.bankColLedger"],
+                    a.glBalance === null ? (
+                      "–"
+                    ) : (
+                      <Money amount={a.glBalance} currency={a.currency} />
+                    )
+                  )}
+                  {figure(
+                    tt["dashboard.bankColDifference"],
+                    noStatement ? (
+                      "–"
+                    ) : (
+                      <Money
+                        amount={a.difference ?? 0}
+                        currency={a.currency}
+                        signDisplay={ties ? "auto" : "always"}
+                        className={ties ? undefined : "font-medium"}
+                      />
+                    )
+                  )}
+                </dl>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** At most three rows per side, so the card stays compact; "View all" opens the full list. */
+const OVERDUE_ROWS = 3;
+
 function OverdueList({
   title,
   docs,
   href,
-  locale,
   testId,
 }: {
   title: string;
   docs: DashboardOverdueDocument[];
   href: string;
-  locale: string;
   testId: string;
 }) {
+  const { t } = useTranslation();
+  const tt = t as Record<string, string>;
   return (
-    <div data-testid={testId}>
-      <Link
-        href={href}
-        className="text-caption font-medium text-muted-foreground hover:text-foreground"
-      >
-        {title}
-      </Link>
+    <div className="min-w-0" data-testid={testId}>
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-caption font-medium text-muted-foreground">{title}</h3>
+        {docs.length > 0 && (
+          <Link href={href} className="text-caption font-medium text-accent hover:underline">
+            {tt["dashboard.viewAll"]}
+          </Link>
+        )}
+      </div>
       {docs.length === 0 ? (
-        <p className="mt-1 text-caption text-muted-foreground">
-          {L(locale, "Nothing overdue", "لا توجد مبالغ متأخرة")}
-        </p>
+        <p className="mt-2 text-small text-muted-foreground">{tt["dashboard.overdueNone"]}</p>
       ) : (
         <div className="mt-1 divide-hairline">
-          {docs.map((d) => (
-            <div
-              key={d.documentId}
-              className="flex items-center justify-between gap-3 py-2 text-sm"
-            >
-              <span className="min-w-0 truncate">
-                <span dir="auto">{d.name}</span>
-                {d.number ? (
-                  <span className="text-muted-foreground">
-                    {" · "}
+          {docs.slice(0, OVERDUE_ROWS).map((d) => (
+            <div key={d.documentId} className="flex items-center justify-between gap-3 py-2">
+              <div className="min-w-0">
+                <div dir="auto" className="truncate text-small font-medium text-foreground">
+                  {d.name}
+                </div>
+                <div className="truncate text-caption text-muted-foreground">
+                  {d.number ? (
                     <span dir="ltr" className="[unicode-bidi:isolate]">
                       {d.number}
                     </span>
-                  </span>
-                ) : null}
-              </span>
-              <span className="flex shrink-0 items-center gap-2">
-                <Money amount={d.open} className="font-medium" />
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                <Money amount={d.open} className="text-small font-medium" />
                 <StatusBadge status="overdue" overdueDays={d.daysPastDue} />
-              </span>
+              </div>
             </div>
           ))}
         </div>
@@ -355,26 +394,27 @@ function OverdueList({
   );
 }
 
-export function OverdueSummary({ stats, loading, locale }: WidgetProps) {
+/** Customers and suppliers side by side, so neither half of the card sits empty (spec 3.6). */
+export function OverdueSummary({ stats, loading }: WidgetProps) {
+  const { t } = useTranslation();
+  const tt = t as Record<string, string>;
   if (loading || !stats) return <Skeleton className="h-40 w-full" />;
   return (
     <Card className="h-full" data-testid="dashboard-top-overdue">
       <CardHeader className="pb-2">
-        <CardTitle>{L(locale, "Top overdue", "أعلى المتأخرات")}</CardTitle>
+        <CardTitle>{tt["dashboard.topOverdueTitle"]}</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="grid gap-6 pt-0 sm:grid-cols-2">
         <OverdueList
-          title={L(locale, "Customers owing you", "عملاء مستحق عليهم")}
+          title={tt["dashboard.overdueCustomers"]}
           docs={stats.topOverdue.receivables}
           href={stats.links.overdue}
-          locale={locale}
           testId="overdue-receivables"
         />
         <OverdueList
-          title={L(locale, "Bills you owe", "فواتير مستحقة عليك")}
+          title={tt["dashboard.overdueSuppliers"]}
           docs={stats.topOverdue.payables}
           href={stats.links.payables}
-          locale={locale}
           testId="overdue-payables"
         />
       </CardContent>
@@ -414,23 +454,15 @@ export function BudgetVsActualWidget({
     <Card className="flex h-full flex-col" data-testid="dashboard-budget-vs-actual">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center justify-between gap-3">
-          <span>
-            {L(locale, "Budget vs actual · this month", "الموازنة مقابل الفعلي · هذا الشهر")}
-          </span>
+          <span>{tt["dashboard.budgetTitle"]}</span>
           <Link href="/budgets" className="text-small font-medium text-accent hover:underline">
-            {L(locale, "Open budgets", "فتح الموازنات")}
+            {tt["dashboard.budgetOpen"]}
           </Link>
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 pt-0">
         {rows.length === 0 ? (
-          <p className="text-caption text-muted-foreground">
-            {L(
-              locale,
-              "No approved budget covers this month. Approve a budget to compare it with actuals here.",
-              "لا توجد موازنة معتمدة لهذا الشهر. اعتمد موازنة لمقارنتها بالفعلي هنا."
-            )}
-          </p>
+          <p className="text-caption text-muted-foreground">{tt["dashboard.budgetNone"]}</p>
         ) : (
           <table className="mobile-fit w-full table-fixed border-separate border-spacing-0 text-caption tabular-nums sm:text-sm">
             <thead>

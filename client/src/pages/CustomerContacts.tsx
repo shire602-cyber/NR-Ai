@@ -1,3 +1,10 @@
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { T } from "@/components/layout/T";
 import {
   ErrorSummary,
@@ -9,6 +16,7 @@ import {
 } from "@/components/ui/form-layout";
 import { useFormGate } from "@/hooks/use-form-gate";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { PORTAL_LINK_TTL_DAYS } from "@shared/validators/portal";
 import { useState, useCallback } from "react";
@@ -134,6 +142,9 @@ async function downloadContactTemplate(companyId: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+/** Select sentinel for "use the company emirate" (Radix items cannot carry an empty value). */
+const EMIRATE_DEFAULT = "default";
+
 const CONTACT_EMIRATES = [
   "abu_dhabi",
   "dubai",
@@ -249,19 +260,26 @@ function ContactForm({
             label={t["invoices.placeOfSupply"]}
             help={t["forms.contact.emirateHelp"]}
           >
-            <select
-              className="h-9 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground shadow-xs focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20"
-              value={formData.emirate}
-              onChange={(e) => setFormData({ ...formData, emirate: e.target.value })}
-              data-testid="select-contact-emirate"
+            <Select
+              value={formData.emirate || EMIRATE_DEFAULT}
+              onValueChange={(value) =>
+                setFormData({ ...formData, emirate: value === EMIRATE_DEFAULT ? "" : value })
+              }
             >
-              <option value="">{t["invoices.placeOfSupplyDefault"]}</option>
-              {CONTACT_EMIRATES.map((e) => (
-                <option key={e} value={e}>
-                  {t[`invoices.emirate.${e}`]}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id={`${idp}-emirate`} data-testid="select-contact-emirate">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={EMIRATE_DEFAULT}>
+                  {t["invoices.placeOfSupplyDefault"]}
+                </SelectItem>
+                {CONTACT_EMIRATES.map((e) => (
+                  <SelectItem key={e} value={e}>
+                    {t[`invoices.emirate.${e}`]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
           <Field
             id={`${idp}-terms`}
@@ -959,9 +977,10 @@ export default function CustomerContacts() {
                   {
                     key: "actions",
                     header: <span className="sr-only">{t["pages.contactsColActions"]}</span>,
-                    width: "112px",
+                    width: "80px",
                     cell: (contact) => (
                       <RowActions
+                        maxInline={1}
                         menu={
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
@@ -973,6 +992,12 @@ export default function CustomerContacts() {
                           </DropdownMenuItem>
                         }
                       >
+                        <RowActionButton
+                          label={t.edit}
+                          icon={Edit}
+                          onClick={() => setEditContact(contact)}
+                          data-testid={`button-edit-contact-${contact.id}`}
+                        />
                         <RowActionButton
                           label={t["screens.portalLink"]}
                           icon={Link2}
@@ -997,12 +1022,6 @@ export default function CustomerContacts() {
                             })
                           }
                           data-testid={`button-portal-access-${contact.id}`}
-                        />
-                        <RowActionButton
-                          label={t.edit}
-                          icon={Edit}
-                          onClick={() => setEditContact(contact)}
-                          data-testid={`button-edit-contact-${contact.id}`}
                         />
                       </RowActions>
                     ),
@@ -1303,7 +1322,7 @@ export default function CustomerContacts() {
                 {formatMessage(t["customerContacts.linkValidUntil"], {
                   days: portalLinkDialog.ttlDays || PORTAL_LINK_TTL_DAYS,
                   date: portalLinkDialog.expiresAt
-                    ? new Date(portalLinkDialog.expiresAt).toLocaleDateString(locale)
+                    ? formatDate(portalLinkDialog.expiresAt, locale)
                     : "",
                 })}
               </p>
@@ -1336,12 +1355,12 @@ export default function CustomerContacts() {
                           </Badge>
                           <span className="ms-2 text-muted-foreground">
                             {formatMessage(t["customerContacts.portalLinkExpires"], {
-                              date: new Date(link.expiresAt).toLocaleDateString(locale),
+                              date: formatDate(link.expiresAt, locale),
                             })}
                             {" · "}
                             {link.lastUsedAt
                               ? formatMessage(t["customerContacts.portalLinkLastUsed"], {
-                                  date: new Date(link.lastUsedAt).toLocaleDateString(locale),
+                                  date: formatDate(link.lastUsedAt, locale),
                                 })
                               : t["customerContacts.portalLinkNeverUsed"]}
                           </span>

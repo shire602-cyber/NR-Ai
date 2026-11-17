@@ -1,8 +1,8 @@
 import { useMemo } from "react";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Money } from "@/components/ui/money";
 import { formatMessage } from "@/lib/i18n";
-import { FileText } from "lucide-react";
 import { Link } from "wouter";
 import { KpiCard } from "./KpiCard";
 import type { DashboardModel } from "./useCustomerDashboardModel";
@@ -37,29 +37,20 @@ export function DashboardOverview({ m }: { m: DashboardModel }) {
   );
   const vsPrior = tt["dashboard.vsPriorPeriod"];
   const margin = stats?.margin ?? null;
+  // Net margin moves in percentage points against the prior period; its sparkline is the
+  // monthly margin from the same trend the other three tiles draw (months without revenue = 0).
+  const priorMargin = stats?.prior.margin ?? null;
+  const marginDelta = margin !== null && priorMargin !== null ? margin - priorMargin : undefined;
+  const marginSeries = useMemo(
+    () =>
+      sparks.revenue.series.map((revenue, i) =>
+        revenue ? (sparks.profit.series[i] / Math.abs(revenue)) * 100 : 0
+      ),
+    [sparks.revenue.series, sparks.profit.series]
+  );
 
   return (
     <>
-      {/* ── First-invoice guide / draft explainer (R18-07, R18-12, R18-13) ──── */}
-      {!invoicesLoading && (recentInvoices?.length ?? 0) === 0 && (
-        <section
-          className="flex flex-col gap-3 rounded-xl border border-brand-200 bg-brand-50 p-4 dark:border-brand-900 dark:bg-brand-950/50 md:flex-row md:items-center md:justify-between md:p-5"
-          data-testid="card-first-invoice-guide"
-        >
-          <div className="min-w-0">
-            <h2 className="text-h3 text-foreground">{t["dashboard.firstInvoiceTitle"]}</h2>
-            <p className="mt-0.5 max-w-2xl text-small text-muted-foreground">
-              {t["dashboard.firstInvoiceBody"]}
-            </p>
-          </div>
-          <Button asChild size="sm" className="shrink-0" data-testid="button-first-invoice">
-            <Link href="/invoices?new=1">
-              <FileText aria-hidden />
-              {t["dashboard.firstInvoiceCta"]}
-            </Link>
-          </Button>
-        </section>
-      )}
       {!invoicesLoading &&
         (() => {
           const draftCount = (recentInvoices ?? []).filter(
@@ -67,28 +58,18 @@ export function DashboardOverview({ m }: { m: DashboardModel }) {
           ).length;
           if (draftCount === 0 || (stats?.revenue ?? 0) > 0) return null;
           return (
-            <section
-              className="flex flex-col gap-3 rounded-xl border border-warning/25 bg-warning-subtle p-4 md:flex-row md:items-center md:justify-between md:p-5"
+            <Alert
+              tone="warning"
+              title={t["dashboard.draftNotRevenueTitle"]}
               data-testid="card-draft-not-revenue"
+              action={
+                <Button asChild size="sm" variant="outline" data-testid="button-review-drafts">
+                  <Link href="/invoices">{t["dashboard.draftNotRevenueCta"]}</Link>
+                </Button>
+              }
             >
-              <div className="min-w-0">
-                <h2 className="text-h3 text-warning-subtle-foreground">
-                  {t["dashboard.draftNotRevenueTitle"]}
-                </h2>
-                <p className="mt-0.5 max-w-2xl text-small text-warning-subtle-foreground">
-                  {formatMessage(t["dashboard.draftNotRevenueBody"], { count: draftCount })}
-                </p>
-              </div>
-              <Button
-                asChild
-                size="sm"
-                variant="outline"
-                className="shrink-0"
-                data-testid="button-review-drafts"
-              >
-                <Link href="/invoices">{t["dashboard.draftNotRevenueCta"]}</Link>
-              </Button>
-            </section>
+              {formatMessage(t["dashboard.draftNotRevenueBody"], { count: draftCount })}
+            </Alert>
           );
         })()}
 
@@ -160,7 +141,18 @@ export function DashboardOverview({ m }: { m: DashboardModel }) {
                 {margin === null ? "—" : `${margin < 0 ? "−" : ""}${Math.abs(margin).toFixed(1)}%`}
               </span>
             }
-            hint={tt["dashboard.marginHint"]}
+            delta={marginDelta}
+            deltaLabel={
+              marginDelta === undefined
+                ? undefined
+                : formatMessage(tt["dashboard.marginDeltaPts"], {
+                    value: `${marginDelta > 0 ? "+" : marginDelta < 0 ? "−" : ""}${Math.abs(marginDelta).toFixed(1)}`,
+                  })
+            }
+            trend={marginDelta === undefined ? undefined : marginDelta >= 0 ? "up" : "down"}
+            deltaContext={vsPrior}
+            spark={marginSeries}
+            accent="brand"
             isLoading={statsLoading}
           />
         </div>

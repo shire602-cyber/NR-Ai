@@ -1,7 +1,6 @@
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { T } from "@/components/layout/T";
 import {
-  FormActions,
   FormErrorSummary,
   FormGrid,
   FormSection,
@@ -12,6 +11,9 @@ import {
   lineLabelClass,
 } from "@/components/ui/form-layout";
 import { PageHeader } from "@/components/ui/page-header";
+import { EditorShell } from "@/components/ui/editor-shell";
+import { PageSkeleton } from "@/components/PageSkeleton";
+import { useEditorRoute } from "@/hooks/useEditorRoute";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -29,14 +31,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -172,7 +166,8 @@ export default function PurchaseOrders() {
   const { toast } = useToast();
   const { company: _company, companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const { routed, editor, toNew, toEdit, toList } = useEditorRoute("/purchase-orders");
+  const [editorOpen, setEditorOpen] = useState(false);
   const [editingPO, setEditingPO] = useState<PurchaseOrder | null>(null);
 
   const { data: purchaseOrders, isLoading } = useQuery<PurchaseOrder[]>({
@@ -191,7 +186,7 @@ export default function PurchaseOrders() {
     }>
   >({
     queryKey: [`/api/companies/${selectedCompanyId}/products`],
-    enabled: !!selectedCompanyId && dialogOpen,
+    enabled: !!selectedCompanyId && (editorOpen || !!editor),
   });
   const stockProducts = products.filter((p) => p.isActive !== false);
 
@@ -232,9 +227,7 @@ export default function PurchaseOrders() {
         title: translateNow("toasts.purchaseOrderCreated"),
         description: translateNow("toasts.yourPurchaseOrderHasBeenCreatedSuccessfully"),
       });
-      setDialogOpen(false);
-      setEditingPO(null);
-      resetForm();
+      leaveEditor();
     },
     onError: (error: any) => {
       toast({
@@ -256,9 +249,7 @@ export default function PurchaseOrders() {
         title: translateNow("toasts.purchaseOrderUpdated"),
         description: translateNow("toasts.yourPurchaseOrderHasBeenUpdatedSuccessfully"),
       });
-      setDialogOpen(false);
-      setEditingPO(null);
-      resetForm();
+      leaveEditor();
     },
     onError: (error: any) => {
       toast({
@@ -367,15 +358,42 @@ export default function PurchaseOrders() {
         notes: full.notes || "",
         lines: full.lines || [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
       });
-      setDialogOpen(true);
+      setEditorOpen(true);
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: translateNow("toasts.error"),
         description: error?.message || translateNow("toasts.failedToLoadPurchaseOrderDetails"),
       });
+      if (routed) toList();
     }
   };
+
+  const openNewPO = () => {
+    if (routed) toNew();
+    else setEditorOpen(true);
+  };
+
+  const openPOEditor = (po: PurchaseOrder) => {
+    if (routed && editor !== po.id) toEdit(po.id);
+    else void handleEditPO(po);
+  };
+
+  /** Closes the editor and returns to the list. */
+  function leaveEditor() {
+    setEditorOpen(false);
+    resetForm();
+    if (routed && editor) toList();
+  }
+
+  const closeEditor = leaveEditor;
+
+  // The editor routes: a blank purchase order, or the one being edited.
+  useEffect(() => {
+    if (editor === "new") setEditorOpen(true);
+    else if (editor) void handleEditPO({ id: editor } as PurchaseOrder);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
 
   const onSubmit = async (data: PurchaseOrderFormData) => {
     const poData: PoPayload = {
@@ -431,6 +449,414 @@ export default function PurchaseOrders() {
     );
   }
 
+  // Spec 3.7: a purchase order is written on a full page (EditorShell), not in a modal.
+  const poEditor = (
+    <EditorShell
+      testId="dialog-po-form"
+      backHref="/purchase-orders"
+      backLabel={t["invoices.editor.backPurchaseOrders"]}
+      eyebrow="Purchases"
+      title={editingPO ? t["screens.editPo"] : t["pageLabels.newPurchaseOrder"]}
+      description={editingPO ? t["forms.po.editDesc"] : t["forms.po.newDesc"]}
+      footerSummary={
+        <span className="flex flex-wrap items-baseline gap-x-2" data-testid="editor-total">
+          <span>{t["invoices.editor.total"]}</span>
+          <Money amount={total} currency="AED" className="text-h3 font-semibold text-foreground" />
+        </span>
+      }
+      footer={
+        <>
+          <Button type="button" variant="ghost" onClick={closeEditor}>
+            <T k="pages.cancel" />
+          </Button>
+          <Button
+            type="submit"
+            form="po-editor-form"
+            className="sm:min-w-32"
+            disabled={createMutation.isPending || editMutation.isPending}
+            data-testid="button-submit-po"
+          >
+            {createMutation.isPending || editMutation.isPending ? t["forms.saving"] : t.save}
+          </Button>
+        </>
+      }
+    >
+      <Form {...form}>
+        <form
+          id="po-editor-form"
+          onSubmit={form.handleSubmit(onSubmit)}
+          noValidate
+          className="min-w-0 space-y-6"
+        >
+          <FormErrorSummary />
+          <FormSection
+            title={t["forms.section.document"]}
+            description={t["forms.section.documentDesc"]}
+          >
+            <FormGrid>
+              <FormField
+                control={form.control}
+                name="number"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      <T k="pageLabels.poNumber" />
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        ltr={!!editingPO}
+                        value={editingPO ? field.value : pc.numberAssigned}
+                        readOnly
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="currency"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      <T k="pages.currency" />
+                    </FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t["screens.selectCurrency"]} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="AED">AED</SelectItem>
+                        <SelectItem value="USD">USD</SelectItem>
+                        <SelectItem value="EUR">EUR</SelectItem>
+                        <SelectItem value="GBP">GBP</SelectItem>
+                        <SelectItem value="SAR">SAR</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              {(["date", "expectedDeliveryDate"] as const).map((name) => (
+                <FormField
+                  key={name}
+                  control={form.control}
+                  name={name}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>
+                        {name === "date" ? t.date : <T k="pageLabels.expectedDeliveryDate" />}
+                      </FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-start font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                            >
+                              <CalendarIcon className="h-4 w-4" />
+                              {field.value ? (
+                                formatDate(field.value, locale)
+                              ) : (
+                                <span>
+                                  <T k="pages.pickADate" />
+                                </span>
+                              )}
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ))}
+            </FormGrid>
+          </FormSection>
+
+          <FormSection title={t["forms.section.vendor"]}>
+            <FormGrid>
+              <FormField
+                control={form.control}
+                name="vendorName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel required>
+                      <T k="pages.vendorName" />
+                    </FormLabel>
+                    <FormControl>
+                      <Input {...field} dir="auto" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="vendorTrn"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      <T k="pages.vendorTrn" />
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        ltr
+                        inputMode="numeric"
+                        placeholder={t["screens.optional"]}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </FormGrid>
+          </FormSection>
+
+          <FormSection
+            title={<T k="pages.lineItems" />}
+            actions={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
+                }
+              >
+                <Plus className="h-4 w-4" />
+                <T k="pages.addLine" />
+              </Button>
+            }
+          >
+            <LineItemList>
+              {fields.map((field, index) => (
+                <LineItem
+                  key={field.id}
+                  index={index}
+                  onRemove={() => remove(index)}
+                  canRemove={fields.length > 1}
+                  gridClassName="sm:grid-cols-[6rem_8rem_7rem_minmax(0,1fr)]"
+                  main={
+                    <div className="space-y-2">
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.productId`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <Select
+                              value={field.value || "none"}
+                              onValueChange={(val) => {
+                                const id = val === "none" ? null : val;
+                                field.onChange(id);
+                                const p = stockProducts.find((x) => x.id === id);
+                                if (p) {
+                                  if (!form.getValues(`lines.${index}.description`)) {
+                                    form.setValue(
+                                      `lines.${index}.description`,
+                                      locale === "ar" && p.nameAr ? p.nameAr : p.name
+                                    );
+                                  }
+                                  if (!Number(form.getValues(`lines.${index}.unitPrice`))) {
+                                    form.setValue(
+                                      `lines.${index}.unitPrice`,
+                                      Number(p.costPrice) || 0
+                                    );
+                                  }
+                                }
+                              }}
+                            >
+                              <FormControl>
+                                <SelectTrigger
+                                  aria-label={formatMessage(t["purchases.poLineProduct"], {
+                                    n: index + 1,
+                                  })}
+                                  data-testid={`po-line-product-${index}`}
+                                >
+                                  <SelectValue />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="none">{t["purchases.poNoProduct"]}</SelectItem>
+                                {stockProducts.map((p) => (
+                                  <SelectItem key={p.id} value={p.id}>
+                                    {p.sku ? `${p.sku} - ` : ""}
+                                    {locale === "ar" && p.nameAr ? p.nameAr : p.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.description`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                dir="auto"
+                                placeholder={t.description}
+                                aria-label={formatMessage(t["forms.lineDescription"], {
+                                  n: index + 1,
+                                })}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  }
+                >
+                  <FormField
+                    control={form.control}
+                    name={`lines.${index}.quantity`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={lineLabelClass}>{t["forms.col.qty"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            name={field.name}
+                            ref={field.ref}
+                            onBlur={field.onBlur}
+                            value={field.value ?? ""}
+                            onChange={(e) =>
+                              field.onChange(e.target.value ? parseFloat(e.target.value) : "")
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name={`lines.${index}.unitPrice`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={lineLabelClass}>{t["forms.col.unitPrice"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            name={field.name}
+                            ref={field.ref}
+                            onBlur={field.onBlur}
+                            value={field.value ?? ""}
+                            onChange={(e) =>
+                              field.onChange(e.target.value ? parseFloat(e.target.value) : "")
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name={`lines.${index}.vatRate`}
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className={lineLabelClass}>{t["forms.col.vat"]}</FormLabel>
+                        <Select
+                          value={String(field.value * 100)}
+                          onValueChange={(val) => field.onChange(parseFloat(val) / 100)}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="0">0%</SelectItem>
+                            <SelectItem value="5">5%</SelectItem>
+                            <SelectItem value="10">10%</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </FormItem>
+                    )}
+                  />
+                  <LineAmount label={t["forms.col.amount"]}>
+                    <Money
+                      amount={
+                        (watchLines[index]?.quantity || 0) *
+                        (watchLines[index]?.unitPrice || 0) *
+                        (1 + (watchLines[index]?.vatRate || 0))
+                      }
+                      currency="AED"
+                    />
+                  </LineAmount>
+                </LineItem>
+              ))}
+            </LineItemList>
+            <FormTotals
+              rows={[
+                {
+                  label: <T k="pages.subtotal" />,
+                  value: <Money amount={subtotal} currency="AED" />,
+                },
+                {
+                  label: t["forms.col.vat"],
+                  value: <Money amount={vatAmount} currency="AED" />,
+                },
+              ]}
+              total={{
+                label: <T k="pages.total2" />,
+                value: <Money amount={total} currency="AED" />,
+              }}
+            />
+          </FormSection>
+
+          <FormSection title={t["forms.section.notes"]}>
+            <FormField
+              control={form.control}
+              name="notes"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="sr-only">
+                    <T k="pages.notes" />
+                  </FormLabel>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      dir="auto"
+                      placeholder={t["screens.poNotesPlaceholder"]}
+                      rows={3}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </FormSection>
+        </form>
+      </Form>
+    </EditorShell>
+  );
+
+  if (editor && editor !== "new" && !editingPO) return <PageSkeleton variant="form" />;
+  if (editorOpen || editor) return poEditor;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -438,426 +864,10 @@ export default function PurchaseOrders() {
         title={t.purchaseOrders}
         description={(t as any).purchaseOrdersSubtitle}
         actions={
-          <Dialog
-            open={dialogOpen}
-            onOpenChange={(open) => {
-              setDialogOpen(open);
-              if (!open) resetForm();
-            }}
-          >
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="w-4 h-4" />
-                <T k="pageLabels.newPurchaseOrder" />
-              </Button>
-            </DialogTrigger>
-            <DialogContent size="lg" data-testid="dialog-po-form">
-              <DialogHeader>
-                <DialogTitle>
-                  {editingPO ? t["screens.editPo"] : t["pageLabels.newPurchaseOrder"]}
-                </DialogTitle>
-                <DialogDescription>
-                  {editingPO ? t["forms.po.editDesc"] : t["forms.po.newDesc"]}
-                </DialogDescription>
-              </DialogHeader>
-              <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-6">
-                  <FormErrorSummary />
-                  <FormSection
-                    title={t["forms.section.document"]}
-                    description={t["forms.section.documentDesc"]}
-                  >
-                    <FormGrid>
-                      <FormField
-                        control={form.control}
-                        name="number"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              <T k="pageLabels.poNumber" />
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                ltr={!!editingPO}
-                                value={editingPO ? field.value : pc.numberAssigned}
-                                readOnly
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="currency"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              <T k="pages.currency" />
-                            </FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder={t["screens.selectCurrency"]} />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                <SelectItem value="AED">AED</SelectItem>
-                                <SelectItem value="USD">USD</SelectItem>
-                                <SelectItem value="EUR">EUR</SelectItem>
-                                <SelectItem value="GBP">GBP</SelectItem>
-                                <SelectItem value="SAR">SAR</SelectItem>
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      {(["date", "expectedDeliveryDate"] as const).map((name) => (
-                        <FormField
-                          key={name}
-                          control={form.control}
-                          name={name}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel required>
-                                {name === "date" ? (
-                                  t.date
-                                ) : (
-                                  <T k="pageLabels.expectedDeliveryDate" />
-                                )}
-                              </FormLabel>
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <FormControl>
-                                    <Button
-                                      variant="outline"
-                                      className={cn(
-                                        "w-full justify-start text-start font-normal",
-                                        !field.value && "text-muted-foreground"
-                                      )}
-                                    >
-                                      <CalendarIcon className="h-4 w-4" />
-                                      {field.value ? (
-                                        formatDate(field.value, locale)
-                                      ) : (
-                                        <span>
-                                          <T k="pages.pickADate" />
-                                        </span>
-                                      )}
-                                    </Button>
-                                  </FormControl>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0">
-                                  <Calendar
-                                    mode="single"
-                                    selected={field.value}
-                                    onSelect={field.onChange}
-                                    initialFocus
-                                  />
-                                </PopoverContent>
-                              </Popover>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      ))}
-                    </FormGrid>
-                  </FormSection>
-
-                  <FormSection title={t["forms.section.vendor"]}>
-                    <FormGrid>
-                      <FormField
-                        control={form.control}
-                        name="vendorName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel required>
-                              <T k="pages.vendorName" />
-                            </FormLabel>
-                            <FormControl>
-                              <Input {...field} dir="auto" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="vendorTrn"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>
-                              <T k="pages.vendorTrn" />
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
-                                ltr
-                                inputMode="numeric"
-                                placeholder={t["screens.optional"]}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </FormGrid>
-                  </FormSection>
-
-                  <FormSection
-                    title={<T k="pages.lineItems" />}
-                    actions={
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
-                        }
-                      >
-                        <Plus className="h-4 w-4" />
-                        <T k="pages.addLine" />
-                      </Button>
-                    }
-                  >
-                    <LineItemList>
-                      {fields.map((field, index) => (
-                        <LineItem
-                          key={field.id}
-                          index={index}
-                          onRemove={() => remove(index)}
-                          canRemove={fields.length > 1}
-                          gridClassName="sm:grid-cols-[6rem_8rem_7rem_minmax(0,1fr)]"
-                          main={
-                            <div className="space-y-2">
-                              <FormField
-                                control={form.control}
-                                name={`lines.${index}.productId`}
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <Select
-                                      value={field.value || "none"}
-                                      onValueChange={(val) => {
-                                        const id = val === "none" ? null : val;
-                                        field.onChange(id);
-                                        const p = stockProducts.find((x) => x.id === id);
-                                        if (p) {
-                                          if (!form.getValues(`lines.${index}.description`)) {
-                                            form.setValue(
-                                              `lines.${index}.description`,
-                                              locale === "ar" && p.nameAr ? p.nameAr : p.name
-                                            );
-                                          }
-                                          if (!Number(form.getValues(`lines.${index}.unitPrice`))) {
-                                            form.setValue(
-                                              `lines.${index}.unitPrice`,
-                                              Number(p.costPrice) || 0
-                                            );
-                                          }
-                                        }
-                                      }}
-                                    >
-                                      <FormControl>
-                                        <SelectTrigger
-                                          aria-label={formatMessage(t["purchases.poLineProduct"], {
-                                            n: index + 1,
-                                          })}
-                                          data-testid={`po-line-product-${index}`}
-                                        >
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                      </FormControl>
-                                      <SelectContent>
-                                        <SelectItem value="none">
-                                          {t["purchases.poNoProduct"]}
-                                        </SelectItem>
-                                        {stockProducts.map((p) => (
-                                          <SelectItem key={p.id} value={p.id}>
-                                            {p.sku ? `${p.sku} - ` : ""}
-                                            {locale === "ar" && p.nameAr ? p.nameAr : p.name}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </FormItem>
-                                )}
-                              />
-                              <FormField
-                                control={form.control}
-                                name={`lines.${index}.description`}
-                                render={({ field }) => (
-                                  <FormItem>
-                                    <FormControl>
-                                      <Input
-                                        {...field}
-                                        dir="auto"
-                                        placeholder={t.description}
-                                        aria-label={formatMessage(t["forms.lineDescription"], {
-                                          n: index + 1,
-                                        })}
-                                      />
-                                    </FormControl>
-                                    <FormMessage />
-                                  </FormItem>
-                                )}
-                              />
-                            </div>
-                          }
-                        >
-                          <FormField
-                            control={form.control}
-                            name={`lines.${index}.quantity`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel className={lineLabelClass}>
-                                  {t["forms.col.qty"]}
-                                </FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="number"
-                                    step="0.01"
-                                    name={field.name}
-                                    ref={field.ref}
-                                    onBlur={field.onBlur}
-                                    value={field.value ?? ""}
-                                    onChange={(e) =>
-                                      field.onChange(
-                                        e.target.value ? parseFloat(e.target.value) : ""
-                                      )
-                                    }
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name={`lines.${index}.unitPrice`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel className={lineLabelClass}>
-                                  {t["forms.col.unitPrice"]}
-                                </FormLabel>
-                                <FormControl>
-                                  <Input
-                                    type="number"
-                                    step="0.01"
-                                    name={field.name}
-                                    ref={field.ref}
-                                    onBlur={field.onBlur}
-                                    value={field.value ?? ""}
-                                    onChange={(e) =>
-                                      field.onChange(
-                                        e.target.value ? parseFloat(e.target.value) : ""
-                                      )
-                                    }
-                                  />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          <FormField
-                            control={form.control}
-                            name={`lines.${index}.vatRate`}
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel className={lineLabelClass}>
-                                  {t["forms.col.vat"]}
-                                </FormLabel>
-                                <Select
-                                  value={String(field.value * 100)}
-                                  onValueChange={(val) => field.onChange(parseFloat(val) / 100)}
-                                >
-                                  <FormControl>
-                                    <SelectTrigger>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    <SelectItem value="0">0%</SelectItem>
-                                    <SelectItem value="5">5%</SelectItem>
-                                    <SelectItem value="10">10%</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </FormItem>
-                            )}
-                          />
-                          <LineAmount label={t["forms.col.amount"]}>
-                            <Money
-                              amount={
-                                (watchLines[index]?.quantity || 0) *
-                                (watchLines[index]?.unitPrice || 0) *
-                                (1 + (watchLines[index]?.vatRate || 0))
-                              }
-                              currency="AED"
-                            />
-                          </LineAmount>
-                        </LineItem>
-                      ))}
-                    </LineItemList>
-                    <FormTotals
-                      rows={[
-                        {
-                          label: <T k="pages.subtotal" />,
-                          value: <Money amount={subtotal} currency="AED" />,
-                        },
-                        {
-                          label: t["forms.col.vat"],
-                          value: <Money amount={vatAmount} currency="AED" />,
-                        },
-                      ]}
-                      total={{
-                        label: <T k="pages.total2" />,
-                        value: <Money amount={total} currency="AED" />,
-                      }}
-                    />
-                  </FormSection>
-
-                  <FormSection title={t["forms.section.notes"]}>
-                    <FormField
-                      control={form.control}
-                      name="notes"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="sr-only">
-                            <T k="pages.notes" />
-                          </FormLabel>
-                          <FormControl>
-                            <Textarea
-                              {...field}
-                              dir="auto"
-                              placeholder={t["screens.poNotesPlaceholder"]}
-                              rows={3}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </FormSection>
-
-                  <FormActions sticky>
-                    <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                      <T k="pages.cancel" />
-                    </Button>
-                    <Button
-                      type="submit"
-                      className="sm:min-w-32"
-                      disabled={createMutation.isPending || editMutation.isPending}
-                    >
-                      {createMutation.isPending || editMutation.isPending
-                        ? t["forms.saving"]
-                        : t.save}
-                    </Button>
-                  </FormActions>
-                </form>
-              </Form>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={openNewPO}>
+            <Plus className="w-4 h-4" />
+            <T k="pageLabels.newPurchaseOrder" />
+          </Button>
         }
       />
 
@@ -875,7 +885,7 @@ export default function PurchaseOrders() {
             "Track what you've ordered from suppliers and match deliveries to bills when they arrive.",
           action: {
             label: (t as any).newPurchaseOrder ?? "New Purchase Order",
-            onClick: () => setDialogOpen(true),
+            onClick: openNewPO,
           },
           testId: "empty-purchase-orders",
         }}
@@ -935,6 +945,7 @@ export default function PurchaseOrders() {
                 </TableCell>
                 <TableCell data-cell="actions">
                   <RowActions
+                    maxInline={1}
                     collapseOnMobile
                     menu={
                       <>
@@ -1003,7 +1014,7 @@ export default function PurchaseOrders() {
                       <RowActionButton
                         label={t.edit}
                         icon={Edit}
-                        onClick={() => handleEditPO(po)}
+                        onClick={() => openPOEditor(po)}
                       />
                     )}
                     <RowActionButton

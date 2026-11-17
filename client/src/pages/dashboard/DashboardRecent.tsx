@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/format";
 import { Money } from "@/components/ui/money";
-import { FileText, BookOpen, ArrowRight, Clock } from "lucide-react";
+import { FileText, BookOpen, ArrowRight } from "lucide-react";
 import { Link } from "wouter";
 import { CompliancePanel } from "./DashboardPlanning";
 import { EmptyState } from "./EmptyState";
@@ -22,11 +22,8 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
           <CompliancePanel m={m} />
           <Card className="flex flex-col">
-            <CardHeader className="flex-row items-center justify-between gap-2 border-b border-border py-3 md:py-3">
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-muted-foreground" aria-hidden />
-                {t.recentInvoices}
-              </CardTitle>
+            <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 pb-2">
+              <CardTitle>{t["dashboard.recentSalesTitle"]}</CardTitle>
               <Button
                 asChild
                 variant="ghost"
@@ -39,7 +36,7 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
                 </Link>
               </Button>
             </CardHeader>
-            <CardContent className="pt-3">
+            <CardContent className="pt-0">
               {invoicesLoading ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map((i) => (
@@ -59,7 +56,11 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
                           <div dir="auto" className="truncate text-sm font-medium text-foreground">
                             {invoice.customerName}
                           </div>
-                          <div className="text-caption text-muted-foreground">
+                          <div className="truncate text-caption text-muted-foreground">
+                            {/* Credit notes share this list, so every row names its type. */}
+                            {invoice.invoiceType === "credit_note"
+                              ? `${t["dashboard.docTypeCreditNote"]} · `
+                              : `${t["dashboard.docTypeInvoice"]} · `}
                             <span dir="ltr" className="[unicode-bidi:isolate]">
                               {invoice.number}
                             </span>
@@ -91,9 +92,8 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
           </Card>
 
           <Card className="flex flex-col">
-            <CardHeader className="flex-row items-center justify-between gap-2 border-b border-border py-3 md:py-3">
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-muted-foreground" aria-hidden />
+            <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 pb-2">
+              <CardTitle>
                 <T k="pageLabels.recentActivity" />
               </CardTitle>
               <Button
@@ -108,7 +108,7 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
                 </Link>
               </Button>
             </CardHeader>
-            <CardContent className="pt-3">
+            <CardContent className="pt-0">
               {journalEntries && journalEntries.length > 0 ? (
                 <ul className="divide-y divide-border">
                   {journalEntries.slice(0, 4).map((entry: any) => (

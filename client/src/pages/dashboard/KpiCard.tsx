@@ -1,15 +1,12 @@
 import type { ReactNode } from "react";
-import { useMemo } from "react";
-import { ResponsiveContainer, LineChart, Line, XAxis } from "recharts";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatPercentDelta } from "@/lib/format-money";
-import { useTranslation } from "@/lib/i18n";
 
 // ─── KPI tile (dashboard) ────────────────────────────────────────────────────
 // Built on the shared StatCard: neutral figure (a <Money/>), a delta pill whose
 // arrow follows the sign of the change and whose colour says whether that change
 // is good news, an optional one-line hint, and a sparkline only when there is a
-// series (StatCard hides it below 640px, so no empty slot is reserved).
+// series (spec 2.7: the shared 32 px sparkline; a tile row either has them all or none).
 
 export interface KpiCardProps {
   label: string;
@@ -27,12 +24,9 @@ export interface KpiCardProps {
   testId?: string;
   /** Accessible context for the delta, e.g. "vs prior period". */
   deltaContext?: string;
+  /** Pre-formatted delta (e.g. percentage points); defaults to a percent change. */
+  deltaLabel?: string;
 }
-
-const SPARK_COLOR: Record<NonNullable<KpiCardProps["accent"]>, string> = {
-  brand: "hsl(var(--chart-1))",
-  neutral: "hsl(var(--chart-neutral))",
-};
 
 export function KpiCard({
   label,
@@ -46,11 +40,9 @@ export function KpiCard({
   href,
   testId,
   deltaContext,
+  deltaLabel,
 }: KpiCardProps) {
-  const { locale } = useTranslation();
-  const sparkColor = SPARK_COLOR[accent];
-  const sparkData = useMemo(() => (spark ?? []).map((v, i) => ({ i, v })), [spark]);
-  const hasSeries = sparkData.length > 1 && sparkData.some((d) => d.v !== 0);
+  const hasSeries = (spark?.length ?? 0) > 1 && spark!.some((v) => v !== 0);
 
   return (
     <StatCard
@@ -65,33 +57,14 @@ export function KpiCard({
         delta === undefined || !Number.isFinite(delta)
           ? undefined
           : {
-              label: formatPercentDelta(delta),
+              label: deltaLabel ?? formatPercentDelta(delta),
               direction: delta > 0 ? "up" : delta < 0 ? "down" : "flat",
               tone: trend === "up" ? "positive" : trend === "down" ? "negative" : "neutral",
               context: deltaContext,
             }
       }
-      visual={
-        hasSeries ? (
-          <div className="-mx-1 h-9" dir="ltr" aria-hidden>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={sparkData} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
-                {/* RTL: time runs right to left, so the series is mirrored with the axis (R2-20). */}
-                <XAxis hide reversed={locale === "ar"} />
-                {/* Linear segments: sparse monthly points never overshoot (CTO 6). */}
-                <Line
-                  type="linear"
-                  dataKey="v"
-                  stroke={sparkColor}
-                  strokeWidth={1.5}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        ) : undefined
-      }
+      sparkline={hasSeries ? spark : undefined}
+      sparklineTone={accent}
     />
   );
 }

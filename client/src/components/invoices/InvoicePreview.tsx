@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { loadNamespace, t as catalogs, useTranslation, type Locale } from "@/lib/i18n";
 import { Money } from "@/components/ui/money";
 import { formatDate } from "@/lib/format";
+import { resolveDocumentAccent } from "@shared/document-accent";
 
 /**
  * D5b — live bilingual tax-invoice preview (BENCHMARK move 7, "bilingual invoice as the
@@ -35,6 +36,11 @@ export interface InvoicePreviewProps {
   vatAmount: number;
   total: number;
   ratesLabel: string;
+  /**
+   * Document accent (spec 2.8 "Ledger"): used only for the top rule and the amount-due row,
+   * so no colour can flood the page. Defaults to Emerald ink.
+   */
+  accent?: string | null;
   className?: string;
 }
 
@@ -115,8 +121,11 @@ export function InvoicePreview(props: InvoicePreviewProps) {
     vatAmount,
     total,
     ratesLabel,
+    accent,
     className,
   } = props;
+  // Same rule as the PDFs (WP-F): legacy blue or too-light colours print as Emerald ink.
+  const accentColour = resolveDocumentAccent(accent);
   const visibleLines = lines.filter((l) => l.description || l.unitPrice || l.lineTotal);
   const placeholder = <span className="text-muted-foreground">—</span>;
 
@@ -136,7 +145,10 @@ export function InvoicePreview(props: InvoicePreviewProps) {
         </span>
       </div>
 
-      <article className="space-y-5 rounded-lg bg-card p-5 text-small text-card-foreground shadow-card-soft">
+      <article
+        className="space-y-5 rounded-lg border-t-[3px] bg-card p-5 text-small text-card-foreground shadow-card-soft"
+        style={{ borderTopColor: accentColour }}
+      >
         {/* Seller + document title */}
         <header className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 space-y-0.5">
@@ -286,7 +298,10 @@ export function InvoicePreview(props: InvoicePreviewProps) {
               <Money amount={vatAmount} currency={currency} />
             </dd>
           </div>
-          <div className="flex items-start justify-between gap-3 border-t border-border-strong pt-2 text-h4 font-semibold text-foreground">
+          <div
+            className="flex items-start justify-between gap-3 rounded-md px-2.5 py-2 text-h4 font-semibold text-white [&_*]:!text-white"
+            style={{ backgroundColor: accentColour }}
+          >
             <dt>
               <Bi k="forms.preview.total" bi={bi} />
             </dt>

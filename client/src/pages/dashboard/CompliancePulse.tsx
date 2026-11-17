@@ -1,4 +1,3 @@
-import { useCountUp } from "./useCountUp";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useTranslation } from "@/lib/i18n";
@@ -10,7 +9,6 @@ import { Link } from "wouter";
 
 export function ScoreRing({ score }: { score: number }) {
   const { t } = useTranslation();
-  const animated = useCountUp(score, 1200);
   const r = 26;
   const c = 2 * Math.PI * r;
   const color =
@@ -36,11 +34,11 @@ export function ScoreRing({ score }: { score: number }) {
           strokeWidth={5}
           strokeLinecap="round"
           strokeDasharray={c}
-          strokeDashoffset={c - (Math.min(100, Math.max(0, animated)) / 100) * c}
+          strokeDashoffset={c - (Math.min(100, Math.max(0, score)) / 100) * c}
         />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center text-[15px] font-semibold tabular-nums text-foreground">
-        {Math.round(animated)}
+        {Math.round(score)}
       </div>
     </div>
   );

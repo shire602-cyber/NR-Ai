@@ -54,7 +54,6 @@ import {
 } from "@/lib/reportCatalog";
 import { useDashboardPeriod } from "./period";
 import type { DashboardStats } from "./types";
-import { useCountUp } from "./useCountUp";
 import {
   DashboardComparisonId,
   DashboardComparisonRow,
@@ -1328,7 +1327,6 @@ export function useCustomerDashboardModel() {
               ? t["dashboard.modelYearToDate"]
               : t["dashboard.modelCustomPeriod"]
         }`;
-  const animatedProfit = useCountUp(statsLoading ? 0 : profit);
 
   // Render-side localisation of the catalog-derived report models (F14); the English source
   // objects above stay as authored for hrefs, exports and API payloads.
@@ -1403,6 +1401,7 @@ export function useCustomerDashboardModel() {
     toast,
     selectedCompanyId,
     companyName: selectedCompany?.name as string | undefined,
+    company: selectedCompany as { trnVatNumber?: string | null } | undefined,
     preferredReportPersona,
     setDashboardReportPersona,
     reportWorkflowPreferenceRevision,
@@ -1449,7 +1448,6 @@ export function useCustomerDashboardModel() {
     profit,
     margin,
     heroPeriodLabel,
-    animatedProfit,
     ...localizedReportModels,
   };
 }

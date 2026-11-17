@@ -30,6 +30,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -607,22 +608,24 @@ export default function FixedAssets() {
         eyebrow="Accounting"
         title={t["pages.fixedAssets"]}
         description={t["pageLabels.manageFixedAssetsDepreciationAndDisposals"]}
-        actions={
+        primaryAction={
+          <Button onClick={handleOpenCreateDialog}>
+            <Plus aria-hidden />
+            <T k="pageLabels.addAsset" />
+          </Button>
+        }
+        overflow={
           <>
-            <Button variant="outline" asChild>
+            <DropdownMenuItem onSelect={() => setDepRunDialogOpen(true)}>
+              <PlayCircle aria-hidden />
+              <T k="pageLabels.runDepreciation" />
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
               <a href={`/api/companies/${companyId}/fixed-assets/register?format=xlsx`}>
                 <Download aria-hidden />
                 {fa.exportRegister}
               </a>
-            </Button>
-            <Button variant="outline" onClick={() => setDepRunDialogOpen(true)}>
-              <PlayCircle aria-hidden />
-              <T k="pageLabels.runDepreciation" />
-            </Button>
-            <Button onClick={handleOpenCreateDialog}>
-              <Plus aria-hidden />
-              <T k="pageLabels.addAsset" />
-            </Button>
+            </DropdownMenuItem>
           </>
         }
       />
@@ -778,6 +781,7 @@ export default function FixedAssets() {
                     </TableCell>
                     <TableCell data-cell="actions">
                       <RowActions
+                        maxInline={1}
                         collapseOnMobile
                         menu={
                           <>
@@ -1029,7 +1033,7 @@ export default function FixedAssets() {
                       <FormItem>
                         <FormLabel required>{t["screens.faPurchaseDate"]}</FormLabel>
                         <FormControl>
-                          <Input type="date" dir="ltr" {...field} />
+                          <DatePicker value={field.value} onChange={field.onChange} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1248,7 +1252,7 @@ export default function FixedAssets() {
                       {t["screens.faDisposalDate"]} <span className="text-danger">*</span>
                     </FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <DatePicker value={field.value ?? ""} onChange={field.onChange} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

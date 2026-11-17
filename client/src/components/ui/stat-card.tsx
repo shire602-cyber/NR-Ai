@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react";
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -146,10 +147,12 @@ export function StatCard({
 
 /**
  * Sparkline — 32 px tall, full width, 1.5 px line with an 8% area fill (spec 2.7). Pure SVG
- * (no chart library), drawn once; decorative (the figure carries the meaning).
+ * (no chart library), drawn once; decorative (the figure carries the meaning). Values run oldest
+ * to newest; in Arabic the page reads right to left, so the line is mirrored (newest at the
+ * inline start, like the axis of every other chart) and callers never reverse their series.
  */
 export function Sparkline({
-  values,
+  values: series,
   tone = "brand",
   className,
 }: {
@@ -158,7 +161,9 @@ export function Sparkline({
   className?: string;
 }) {
   const gradientId = React.useId();
-  if (values.length < 2) return null;
+  const { locale } = useTranslation();
+  if (series.length < 2) return null;
+  const values = locale === "ar" ? [...series].reverse() : series;
   const w = 100;
   const h = 32;
   const pad = 2;
