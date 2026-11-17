@@ -39,15 +39,15 @@ const ROUTES = [
   "/chart-of-accounts",
   "/journal",
   "/vat-filing",
-  "/vat-autopilot",
+  // WP-D: /vat-autopilot redirects to the VAT Periods tab.
+  "/vat-filing?tab=periods",
   "/bank-reconciliation",
   "/corporate-tax",
   "/compliance-calendar",
   "/tax-return-archive",
   "/reports",
-  "/analytics?view=reports",
-  "/analytics",
-  "/analytics?view=advanced",
+  // WP-D: /analytics (all views) redirects to the Reports Insights workspace.
+  "/reports?workspace=insights",
   "/cashflow-forecast",
   "/anomaly-detection",
   "/auto-reconcile",
@@ -85,7 +85,8 @@ const ROUTES = [
   "/developer-settings",
   "/notification-preferences",
   "/subscription",
-  "/task-center",
+  // WP-D: /task-center redirects to the calendar's List view.
+  "/compliance-calendar?view=list",
   "/news-feed",
   "/admin/dashboard",
   "/admin/invitations",
@@ -1287,7 +1288,7 @@ async function main() {
     "/document-vault",
     "/tax-return-archive",
     "/compliance-calendar",
-    "/task-center",
+    "/compliance-calendar?view=list",
     "/news-feed",
     "/reports",
   ]);
