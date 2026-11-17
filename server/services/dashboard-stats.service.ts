@@ -204,44 +204,95 @@ function summarise(pl: PlTotals, from: IsoDate | null, to: IsoDate) {
 }
 
 /** Per-account bank statement balance versus the linked GL account (R13-20). */
+/**
+ * X5 (J1 D5): the statement's closing balance, chosen deterministically. Statement lines that
+ * share a date (one import) carry no reliable order, so the closing row is the one on the last
+ * statement date that no other same-day row follows in the running-balance chain
+ * (next.balance - next.amount = this.balance). When the chain does not single one out (or the
+ * file had no balance column) the balance is the opening balance plus every line on the
+ * statement. Deleted lines are not part of the statement.
+ */
+export function statementClosingFils(
+  openingFils: number,
+  lines: Array<{ date: string; amountFils: number; balanceFils: number | null }>
+): { fils: number; date: string | null } {
+  if (lines.length === 0) return { fils: openingFils, date: null };
+  const lastDate = lines.reduce((m, l) => (l.date > m ? l.date : m), lines[0].date);
+  const sameDay = lines.filter((l) => l.date === lastDate && l.balanceFils !== null);
+  const ends = sameDay.filter(
+    (r, i) =>
+      !sameDay.some((s, j) => j !== i && (s.balanceFils as number) - s.amountFils === r.balanceFils)
+  );
+  if (ends.length === 1) return { fils: ends[0].balanceFils as number, date: lastDate };
+  const sum = lines.reduce((s, l) => s + l.amountFils, 0);
+  return { fils: openingFils + sum, date: lastDate };
+}
+
 async function bankVersusGl(companyId: string, today: IsoDate) {
-  const [{ rows }, glTotals, accounts] = await Promise.all([
+  const [{ rows }, { rows: lineRows }, accounts] = await Promise.all([
     db.query(
       `SELECT ba.id, ba.name_en, ba.bank_name, ba.currency, ba.gl_account_id,
-              ROUND(COALESCE((
-                SELECT bt.balance FROM bank_transactions bt
-                 WHERE bt.bank_statement_account_id = ba.id AND bt.balance IS NOT NULL
-                 ORDER BY bt.transaction_date DESC, bt.created_at DESC LIMIT 1
-              ), (
-                SELECT SUM(bt.amount) FROM bank_transactions bt
-                 WHERE bt.bank_statement_account_id = ba.id
-              ), 0) * 100)::bigint AS statement_fils
+              ROUND(COALESCE(ba.opening_balance, 0) * 100)::bigint AS opening_fils
          FROM bank_accounts ba
         WHERE ba.company_id = $1 AND ba.is_active = true
         ORDER BY ba.created_at`,
       [companyId]
     ),
-    accountTotals(companyId, { to: today }),
+    db.query(
+      `SELECT bt.bank_statement_account_id AS account_id,
+              to_char(bt.transaction_date, 'YYYY-MM-DD') AS date,
+              ROUND(bt.amount * 100)::bigint AS amount_fils,
+              CASE WHEN bt.balance IS NULL THEN NULL ELSE ROUND(bt.balance * 100)::bigint END
+                AS balance_fils
+         FROM bank_transactions bt
+         JOIN bank_accounts ba ON ba.id = bt.bank_statement_account_id
+        WHERE ba.company_id = $1 AND ba.is_active = true AND bt.deleted_at IS NULL`,
+      [companyId]
+    ),
     loadAccounts(companyId),
   ]);
   const accountById = new Map(accounts.map((a) => [a.id, a]));
-  const items = rows.map((r) => {
+  const linesByAccount = new Map<
+    string,
+    Array<{ date: string; amountFils: number; balanceFils: number | null }>
+  >();
+  for (const l of lineRows) {
+    const list = linesByAccount.get(l.account_id) ?? [];
+    list.push({
+      date: String(l.date),
+      amountFils: Number(l.amount_fils),
+      balanceFils: l.balance_fils === null ? null : Number(l.balance_fils),
+    });
+    linesByAccount.set(l.account_id, list);
+  }
+  // Like for like: the GL is read as at the statement's closing date (today when no lines),
+  // so postings dated after the statement do not show up as a difference.
+  const totalsAt = new Map<string, Awaited<ReturnType<typeof accountTotals>>>();
+  const glAt = async (date: IsoDate) => {
+    if (!totalsAt.has(date)) totalsAt.set(date, await accountTotals(companyId, { to: date }));
+    return totalsAt.get(date)!;
+  };
+  const items = [];
+  for (const r of rows) {
+    const closing = statementClosingFils(
+      Number(r.opening_fils),
+      linesByAccount.get(r.id as string) ?? []
+    );
+    const asOf = (closing.date && closing.date < today ? closing.date : today) as IsoDate;
     const gl = r.gl_account_id ? accountById.get(r.gl_account_id) : undefined;
-    const glFils = gl ? naturalBalance("asset", glTotals.get(gl.id)) : null;
-    const statement = aed(Number(r.statement_fils));
-    const glBalance = glFils === null ? null : aed(glFils);
-    return {
+    const glFils = gl ? naturalBalance("asset", (await glAt(asOf)).get(gl.id)) : null;
+    items.push({
       bankAccountId: r.id as string,
       name: r.name_en as string,
       bankName: r.bank_name as string,
       currency: r.currency as string,
       glAccountId: (r.gl_account_id as string | null) ?? null,
-      statementBalance: statement,
-      glBalance,
-      difference:
-        glBalance === null ? null : aed(Math.round(statement * 100) - Math.round(glBalance * 100)),
-    };
-  });
+      statementDate: closing.date,
+      statementBalance: aed(closing.fils),
+      glBalance: glFils === null ? null : aed(glFils),
+      difference: glFils === null ? null : aed(closing.fils - glFils),
+    });
+  }
   return items;
 }
 

@@ -8,6 +8,7 @@ import { Switch, Route, useLocation, Link } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useIsFetching } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { PeriodLockReasonDialog } from "@/components/PeriodLockReasonDialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/AppSidebar";
@@ -843,6 +844,7 @@ export default function App() {
               <Router />
               <PWAInstallPrompt />
               <Toaster />
+              <PeriodLockReasonDialog />
             </TooltipProvider>
           </RTLProvider>
         </ActiveCompanyProvider>

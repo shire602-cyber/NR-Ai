@@ -177,7 +177,9 @@ export function applySecurityMiddleware(app: Express): void {
   // /api/csp-report. Once the logs are clean, promote these directives into the
   // enforced policy above. See buildCspReportOnlyDirectives for the runbook.
   app.use(
-    helmet.contentSecurityPolicy(buildCspReportOnlyDirectives() as Parameters<typeof helmet.contentSecurityPolicy>[0])
+    helmet.contentSecurityPolicy(
+      buildCspReportOnlyDirectives() as Parameters<typeof helmet.contentSecurityPolicy>[0]
+    )
   );
 
   // ─── CORS: Cross-Origin Resource Sharing ──────────────────
@@ -206,6 +208,7 @@ export function applySecurityMiddleware(app: Express): void {
         "X-Requested-With",
         "X-CSRF-Token",
         "X-XSRF-Token",
+        "X-Period-Lock-Reason",
       ],
       exposedHeaders: ["X-Total-Count", "X-Page", "X-Per-Page", "Retry-After", "RateLimit-Reset"],
       maxAge: 86400, // Cache preflight for 24 hours

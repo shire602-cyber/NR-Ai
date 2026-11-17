@@ -31,6 +31,7 @@ import {
   invoiceLines,
   invoices,
   journalLines,
+  products as products_,
   type CustomerCredit,
   type Invoice,
   type InvoiceLine,
@@ -394,23 +395,70 @@ export async function refreshSettlementStatus(tx: LedgerTx, invoiceId: string): 
 interface RevenueBucket {
   role: RevenueAccountRole;
   costCenterId: string | null;
+  /** X5 (J1 L1): an explicit income account for the bucket (service revenue); else by role. */
+  accountId: string | null;
   netFils: number;
 }
 
-function revenueBuckets(
-  totals: SalesDocumentTotals,
-  lines: Array<{ costCenterId?: string | null }>
-) {
+/** A sales line's posting hints: cost centre and, for a standard-rated service, its account. */
+export interface RevenueLineHint {
+  costCenterId?: string | null;
+  revenueAccountId?: string | null;
+}
+
+function revenueBuckets(totals: SalesDocumentTotals, lines: RevenueLineHint[]) {
   const map = new Map<string, RevenueBucket>();
   totals.lines.forEach((l, i) => {
     const role = l.classification.revenueAccountRole;
     const cc = lines[i]?.costCenterId ?? null;
-    const key = `${role}|${cc ?? ""}`;
-    const b = map.get(key) ?? { role, costCenterId: cc, netFils: 0 };
+    // Only standard-rated lines move to the service revenue account: the zero-rated / exempt /
+    // out-of-scope accounts carry the VAT treatment the VAT-to-GL reconciliation relies on.
+    const accountId = role === "standard_sales" ? (lines[i]?.revenueAccountId ?? null) : null;
+    const key = `${role}|${cc ?? ""}|${accountId ?? ""}`;
+    const b = map.get(key) ?? { role, costCenterId: cc, accountId, netFils: 0 };
     b.netFils += l.netFils;
     map.set(key, b);
   });
   return [...map.values()].filter((b) => b.netFils > 0);
+}
+
+/**
+ * X5 (J1 L1): income account per line by item type. A line linked to a service product posts
+ * to the chart's service revenue account (4020 "Service Revenue", when the chart has it as an
+ * active income account); goods and free-text lines post to sales revenue (4010) as before.
+ */
+export async function revenueLineHints(
+  tx: LedgerTx,
+  companyId: string,
+  lines: Array<{ costCenterId?: string | null; productId?: string | null }>
+): Promise<RevenueLineHint[]> {
+  const productIds = [...new Set(lines.map((l) => l.productId).filter(Boolean) as string[])];
+  if (productIds.length === 0) return lines.map((l) => ({ costCenterId: l.costCenterId ?? null }));
+  const products: Array<{ id: string; productType: string | null }> = await tx
+    .select({ id: products_.id, productType: products_.productType })
+    .from(products_)
+    .where(and(eq(products_.companyId, companyId), inArray(products_.id, productIds)));
+  const services = new Set(products.filter((p) => p.productType === "service").map((p) => p.id));
+  let serviceAccount: string | null = null;
+  if (services.size > 0) {
+    const [row]: Array<{ id: string }> = await tx
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.companyId, companyId),
+          eq(accounts.code, SALES_CODES.REVENUE_ALT),
+          eq(accounts.type, "income"),
+          eq(accounts.isActive, true),
+          eq(accounts.isArchived, false)
+        )
+      );
+    serviceAccount = row?.id ?? null;
+  }
+  return lines.map((l) => ({
+    costCenterId: l.costCenterId ?? null,
+    revenueAccountId: l.productId && services.has(l.productId) ? serviceAccount : null,
+  }));
 }
 
 /** Build the issue entry lines for an invoice or debit note (pure given accounts). */
@@ -418,7 +466,7 @@ export function buildRevenueLines(args: {
   invoice: Pick<Invoice, "number" | "customerName" | "currency">;
   rate: string;
   totals: SalesDocumentTotals;
-  lines: Array<{ costCenterId?: string | null }>;
+  lines: RevenueLineHint[];
   accounts: SalesAccounts;
   /** The company's functional currency (W5-C). */
   baseCurrency: string;
@@ -444,7 +492,7 @@ export function buildRevenueLines(args: {
     if (base <= 0) continue;
     creditBase += base;
     out.push({
-      accountId: acc.revenue[b.role],
+      accountId: b.accountId ?? acc.revenue[b.role],
       creditFils: base,
       costCenterId: b.costCenterId,
       description: `${roleLabel(b.role)} - ${invoice.number}`,
@@ -507,7 +555,7 @@ async function postRevenueInTx(tx: LedgerTx, invoice: Invoice, userId: string): 
     invoice,
     rate,
     totals,
-    lines,
+    lines: await revenueLineHints(tx, invoice.companyId, lines),
     accounts: acc,
     baseCurrency,
   });

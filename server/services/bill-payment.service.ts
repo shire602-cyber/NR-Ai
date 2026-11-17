@@ -32,6 +32,7 @@ import { has, provide, resolve } from "../platform/service-registry";
 import { registerJob, listJobs } from "../platform/job-registry";
 import type { FxGetRate } from "./fx";
 import { recordAudit } from "./audit.service";
+import { defaultPaymentAccountId } from "./payment-accounts.service";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { documentCurrency, isForeignCurrency, loadBaseCurrency } from "../ledger";
 import {
@@ -129,11 +130,15 @@ const usable = (a: Account | undefined): a is Account =>
 const CASH_SUBTYPES = new Set(["cash", "bank"]);
 const CASH_CODES = new Set(["1010", "1020", "1030"]);
 
-/** The cash/bank account a payment credits (R04-14): chosen, else 1020 (1010 for cash). */
+/**
+ * The cash/bank account a payment credits (R04-14): chosen, else the company's default payment
+ * account (X5 / J1 D1: the primary bank account's GL, 1010 for cash), never a header account.
+ */
 export async function resolvePaymentAccount(
   companyId: string,
   paymentAccountId: string | null | undefined,
-  method?: string | null
+  method?: string | null,
+  currency?: string | null
 ): Promise<Account> {
   const accounts = await storage.getAccountsByCompanyId(companyId);
   if (paymentAccountId) {
@@ -148,12 +153,18 @@ export async function resolvePaymentAccount(
         "Payment account must be a cash or bank account"
       );
     }
+    if (accounts.some((x) => x.parentId === a.id && x.isArchived !== true)) {
+      throw new DomainError(
+        "ACCOUNT_IS_HEADER",
+        422,
+        { paymentAccountId, code: a.code },
+        "This is a header account with sub-accounts. Choose the bank or cash account the money actually moved through."
+      );
+    }
     return a;
   }
-  const code = method === "cash" ? ACCOUNT_CODES.CASH : ACCOUNT_CODES.BANK;
-  const a =
-    accounts.find((x) => x.code === code && x.type === "asset" && usable(x)) ??
-    accounts.find((x) => x.code === ACCOUNT_CODES.BANK && x.type === "asset" && usable(x));
+  const defaultId = await defaultPaymentAccountId(companyId, { method, currency });
+  const a = defaultId ? accounts.find((x) => x.id === defaultId) : undefined;
   if (!a)
     throw new DomainError("PAYMENT_ACCOUNT_REQUIRED", 422, undefined, "No bank account found");
   return a;
@@ -738,7 +749,12 @@ export async function recordBillPayment(
       "Payment amount must be greater than zero"
     );
   }
-  const cash = await resolvePaymentAccount(companyId, args.paymentAccountId, args.method);
+  const cash = await resolvePaymentAccount(
+    companyId,
+    args.paymentAccountId,
+    args.method,
+    billPre.currency
+  );
   const ap = await requireApAccount(companyId);
   const companyBase = await loadBaseCurrency(companyId);
   const foreign = isForeign(billPre, companyBase);

@@ -151,5 +151,11 @@
   "compliance.autopilotAdjustmentLabel": "Adjustment (AED)",
   "compliance.autopilotAmountInvalid": "Amount must be a non-zero number (negatives allowed for corrections).",
   "compliance.autopilotReasonPlaceholder": "e.g. VAT correction for invoice INV-2026-00042",
-  "compliance.autopilotVatSuffix": "VAT"
+  "compliance.autopilotVatSuffix": "VAT",
+  "compliance.vatPreview.badge": "Period not ended — preview",
+  "compliance.vatPreview.endsOn": "The period ends {date}",
+  "compliance.vatPreview.netSoFar": "Net VAT so far",
+  "compliance.vatPreview.note": "Live figures from your books so far. They change as you record more, and you can generate the return once the period has ended.",
+  "compliance.vatPreview.unavailable": "The preview is not available right now.",
+  "compliance.vatPreview.generateAfter": "You can generate this return after {date}."
 }

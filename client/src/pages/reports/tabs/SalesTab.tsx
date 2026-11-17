@@ -21,6 +21,7 @@ import { evidenceSourceHref } from "@/lib/evidenceLinks";
 import { format } from "date-fns";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
+import { StatementDownloads } from "../StatementParts";
 
 export default function SalesTab() {
   const { t } = useTranslation();
@@ -40,6 +41,7 @@ export default function SalesTab() {
     salesLoading,
     salesProductServiceLoading,
     statusSummary,
+    selectedCompanyId,
   } = useReportsPageContext();
   return (
     <>
@@ -146,11 +148,19 @@ export default function SalesTab() {
                 <T k="reportCenter.salesAgingHint" />
               </CardDescription>
             </div>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/payment-chasing">
-                <T k="reportCenter.openCollections" />
-              </Link>
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <StatementDownloads
+                companyId={selectedCompanyId}
+                kind="ar-aging"
+                from={dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : undefined}
+                to={dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : undefined}
+              />
+              <Button asChild size="sm" variant="outline">
+                <Link href="/payment-chasing">
+                  <T k="reportCenter.openCollections" />
+                </Link>
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>

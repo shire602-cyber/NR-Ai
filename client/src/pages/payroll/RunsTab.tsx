@@ -62,6 +62,11 @@ import {
   type SifIssue,
 } from "./shared";
 import { StatusBadge } from "./StatusBadge";
+import {
+  defaultPaymentAccountId,
+  postablePaymentAccounts,
+  type BankAccountLike,
+} from "@/lib/payment-accounts";
 
 interface Account {
   id: string;
@@ -148,7 +153,13 @@ export function RunsTab({ companyId }: { companyId: string }) {
     }
   };
 
-  const bankAccounts = accounts.filter((a) => a.type === "asset" && !a.isArchived);
+  // X5 (J1 D1): salaries are paid from a postable cash/bank leaf; the primary bank account's
+  // GL is preselected.
+  const bankAccounts = postablePaymentAccounts(accounts);
+  const { data: managedBanks = [] } = useQuery<BankAccountLike[]>({
+    queryKey: ["/api/companies", companyId, "bank-accounts"],
+    enabled: !!companyId,
+  });
 
   if (run) {
     return (
@@ -187,7 +198,14 @@ export function RunsTab({ companyId }: { companyId: string }) {
         </Button>
       )}
       {r.status === "approved" && (
-        <Button size="sm" variant="outline" onClick={() => setPayRun(r)}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setPayAccount((cur) => cur || defaultPaymentAccountId(accounts, managedBanks));
+            setPayRun(r);
+          }}
+        >
           <Wallet className="me-1.5 h-4 w-4" aria-hidden />
           {tx("hr.recordPayment")}
         </Button>

@@ -79,8 +79,20 @@ import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { invoiceStatusTargets } from "@/lib/invoice-status";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
-import { einvoiceIssuesFromError, type EInvoiceIssueItem } from "@/lib/einvoice-issues";
+import {
+  einvoiceFieldHint,
+  einvoiceIssuesFromError,
+  type EInvoiceIssueItem,
+} from "@/lib/einvoice-issues";
 import { EInvoiceListCell } from "@/components/einvoice/EInvoiceListCell";
+import { InvoiceCurrencyFields } from "@/components/invoices/InvoiceCurrencyFields";
+import { LineItemPicker } from "@/components/invoices/LineItemPicker";
+import { rateToSend } from "@/lib/document-currency";
+import {
+  defaultPaymentAccountId,
+  postablePaymentAccounts,
+  type BankAccountLike,
+} from "@/lib/payment-accounts";
 import { EInvoiceHeaderStrip } from "@/components/einvoice/EInvoiceHeaderStrip";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -157,6 +169,8 @@ const invoiceLineSchema = z.object({
   // S8 (R07-15): profit-margin scheme (second-hand goods, standard-rated lines only).
   marginScheme: z.boolean().default(false),
   marginPurchaseCost: z.coerce.number().min(0).default(0),
+  // X5 (J1 L1): linked product / service (drives the income account on posting).
+  productId: z.string().optional(),
 });
 
 const EMPTY_LINE = {
@@ -184,6 +198,13 @@ const invoiceSchema = z.object({
   placeOfSupplyEmirate: z.string().optional(),
   date: z.date(),
   currency: z.string().default("AED"),
+  /** X5 (J1 D2): rate to the base currency for a foreign invoice; blank = company rate. */
+  exchangeRate: z
+    .string()
+    .optional()
+    .refine((v) => !v || (/^\d+(\.\d{1,6})?$/.test(v.trim()) && Number(v) > 0), {
+      message: "forms.errors.exchangeRateInvalid",
+    }),
   lines: z.array(invoiceLineSchema).min(1, "forms.errors.lineItemRequired"),
 });
 
@@ -247,6 +268,8 @@ export default function Invoices() {
   const { can: canDo, gate } = useCompanyPermission();
   // Issuing or voiding writes the ledger (PATCH /status needs ledger.post, like POST /post).
   const canChangeStatus = canDo("ledger.post");
+  const baseCurrency: string =
+    (company as { baseCurrency?: string } | undefined)?.baseCurrency || "AED";
   // Standard VAT rate of the issuing company's jurisdiction (UAE 5%, KSA 15%).
   const standardRate = STANDARD_VAT_RATES[vatJurisdictionForCountry(company?.addressCountry)];
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -287,8 +310,12 @@ export default function Invoices() {
   const [paymentReference, setPaymentReference] = useState("");
   const [paymentNotes, setPaymentNotes] = useState("");
   const [paymentAccountForAdd, setPaymentAccountForAdd] = useState("");
+  // X5 (J1 D2): payment date and payment-date FX rate (blank = company rate for the date).
+  const [paymentDate, setPaymentDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [paymentRate, setPaymentRate] = useState("");
   const [invoicePayments, setInvoicePayments] = useState<InvoicePayment[]>([]);
   const [invoicePendingDelete, setInvoicePendingDelete] = useState<Invoice | null>(null);
+  const [invoicePendingCredit, setInvoicePendingCredit] = useState<Invoice | null>(null);
 
   // R13-21: dashboard drill-through links open /invoices?status=open|overdue|<status>; the
   // filter is applied server-side so the paginated list stays correct.
@@ -371,6 +398,11 @@ export default function Invoices() {
     queryKey: ["/api/companies", selectedCompanyId, "accounts"],
     enabled: !!selectedCompanyId,
   });
+  // X5 (J1 D1): payments default to the primary bank account's GL, never a header account.
+  const { data: bankAccounts = [] } = useQuery<BankAccountLike[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "bank-accounts"],
+    enabled: !!selectedCompanyId,
+  });
 
   const form = useForm<InvoiceFormData>({
     resolver: zodResolver(invoiceSchema),
@@ -380,7 +412,7 @@ export default function Invoices() {
       customerName: "",
       customerTrn: "",
       date: new Date(),
-      currency: "AED",
+      currency: baseCurrency,
       lines: [{ ...EMPTY_LINE }],
     },
   });
@@ -460,7 +492,7 @@ export default function Invoices() {
         customerName: "",
         customerTrn: "",
         date: new Date(),
-        currency: "AED",
+        currency: baseCurrency,
         lines: [{ ...EMPTY_LINE }],
       });
     },
@@ -492,7 +524,7 @@ export default function Invoices() {
         customerName: "",
         customerTrn: "",
         date: new Date(),
-        currency: "AED",
+        currency: baseCurrency,
         lines: [{ ...EMPTY_LINE }],
       });
     },
@@ -578,11 +610,15 @@ export default function Invoices() {
       );
       return { previous, queryKey };
     },
-    onSuccess: () => {
-      toast({
-        title: t.invoiceDeleted,
-        description: t.invoiceDeletedDesc,
-      });
+    onSuccess: (result: { outcome?: string } | null) => {
+      toast(
+        result?.outcome === "cancelled"
+          ? {
+              title: t["invoices.draftCancelledTitle"],
+              description: t["invoices.draftCancelledBody"],
+            }
+          : { title: t.invoiceDeleted, description: t.invoiceDeletedDesc }
+      );
     },
     onError: (error: any, _id, context: any) => {
       if (context?.previous && context?.queryKey) {
@@ -721,10 +757,9 @@ export default function Invoices() {
     );
   };
 
-  // R03-05: only cash and bank accounts (sub-type cash | bank) can receive payments.
-  const paymentAccounts = accounts.filter(
-    (acc) => acc.type === "asset" && (acc.subType === "cash" || acc.subType === "bank")
-  );
+  // R03-05: only cash and bank accounts (sub-type cash | bank) can receive payments;
+  // X5: header accounts (with sub-accounts) never receive postings.
+  const paymentAccounts = postablePaymentAccounts(accounts);
 
   // Row actions (D2b, CTO issue 3): handlers shared by the visible buttons and the ... menu.
   const downloadInvoicePdf = async (invoice: Invoice) => {
@@ -810,7 +845,11 @@ export default function Invoices() {
   const openAddPayment = (invoice: Invoice) => {
     setInvoiceForPaymentDetail(invoice);
     setPaymentAmount("");
-    setPaymentAccountForAdd("");
+    setPaymentAccountForAdd(
+      defaultPaymentAccountId(accounts, bankAccounts, { currency: invoice.currency })
+    );
+    setPaymentDate(format(new Date(), "yyyy-MM-dd"));
+    setPaymentRate("");
     setPaymentMethod("bank");
     setPaymentReference("");
     setPaymentNotes("");
@@ -843,15 +882,8 @@ export default function Invoices() {
     setRecurringEndDate(end ? new Date(end) : undefined);
     setRecurringDialogOpen(true);
   };
-  const requestCreditNote = (invoice: Invoice) => {
-    if (
-      window.confirm(
-        `Create a credit note for Invoice ${invoice.number}? This will reverse the journal entry.`
-      )
-    ) {
-      createCreditNoteMutation.mutate(invoice.id);
-    }
-  };
+  // X5 (J1 L6): an in-app confirmation instead of the browser's confirm().
+  const requestCreditNote = (invoice: Invoice) => setInvoicePendingCredit(invoice);
 
   const handleEditInvoice = async (invoice: Invoice) => {
     try {
@@ -865,7 +897,11 @@ export default function Invoices() {
         contactId: fullInvoice.contactId || undefined,
         placeOfSupplyEmirate: fullInvoice.placeOfSupplyEmirate || undefined,
         date: new Date(fullInvoice.date),
-        currency: fullInvoice.currency,
+        currency: fullInvoice.currency || baseCurrency,
+        exchangeRate:
+          fullInvoice.currency && fullInvoice.currency !== baseCurrency
+            ? String(fullInvoice.exchangeRate ?? "")
+            : "",
         lines: fullInvoice.lines?.length
           ? fullInvoice.lines.map(
               (l: {
@@ -878,6 +914,7 @@ export default function Invoices() {
                 discountValue?: number | null;
                 marginScheme?: boolean | null;
                 marginPurchaseCost?: number | string | null;
+                productId?: string | null;
               }) => ({
                 description: l.description,
                 quantity: Number(l.quantity),
@@ -893,6 +930,7 @@ export default function Invoices() {
                 discountPercent: l.discountType === "percent" ? Number(l.discountValue) || 0 : 0,
                 marginScheme: !!l.marginScheme,
                 marginPurchaseCost: Number(l.marginPurchaseCost) || 0,
+                productId: l.productId || undefined,
               })
             )
           : [{ ...EMPTY_LINE }],
@@ -914,7 +952,8 @@ export default function Invoices() {
       customerName: "",
       customerTrn: "",
       date: new Date(),
-      currency: "AED",
+      currency: baseCurrency,
+      exchangeRate: "",
       lines: [{ ...EMPTY_LINE }],
     });
     setEditingInvoice(null);
@@ -929,7 +968,11 @@ export default function Invoices() {
         ...(data.contactId ? { contactId: data.contactId } : {}),
         ...(data.placeOfSupplyEmirate ? { placeOfSupplyEmirate: data.placeOfSupplyEmirate } : {}),
         date: format(data.date, "yyyy-MM-dd"),
-        currency: data.currency,
+        currency: data.currency || baseCurrency,
+        // Only a typed foreign rate is sent; otherwise the server resolves it for the date.
+        ...(rateToSend(data.currency, baseCurrency, data.exchangeRate)
+          ? { exchangeRate: rateToSend(data.currency, baseCurrency, data.exchangeRate) }
+          : {}),
         lines: data.lines.map((line) => ({
           description: line.description,
           quantity: Number(line.quantity),
@@ -945,6 +988,7 @@ export default function Invoices() {
                 marginPurchaseCost: Math.round(Number(line.marginPurchaseCost) * 100) / 100,
               }
             : {}),
+          ...(line.productId ? { productId: line.productId } : {}),
         })),
       };
 
@@ -970,6 +1014,7 @@ export default function Invoices() {
 
   // Calculate totals for preview
   const watchLines = form.watch("lines");
+  const watchCurrency = form.watch("currency") || baseCurrency;
   const formTotals = computeInvoiceFormTotals(watchLines, standardRate);
   const { subtotal, vatAmount, total } = formTotals;
 
@@ -1138,14 +1183,34 @@ export default function Invoices() {
             </DialogDescription>
           </DialogHeader>
           <ul className="max-h-80 space-y-2 overflow-y-auto text-sm">
-            {(einvoiceIssues?.issues ?? []).map((issue, i) => (
-              <li key={`${issue.field}-${i}`} className="rounded-md border p-2">
-                {issue.field && (
-                  <span className="block text-xs text-muted-foreground">{issue.field}</span>
-                )}
-                {issue.message}
-              </li>
-            ))}
+            {(einvoiceIssues?.issues ?? []).map((issue, i) => {
+              // X5 (J1 L3): a readable field name and where to fix it, never a raw data path.
+              const hint = einvoiceFieldHint(issue.field);
+              const label = hint.labelKey ? t[hint.labelKey] : hint.ruleLabel;
+              return (
+                <li key={`${issue.field}-${i}`} className="rounded-md border p-2">
+                  {label && (
+                    <span className="block text-xs font-medium text-muted-foreground">{label}</span>
+                  )}
+                  {issue.message}
+                  {hint.whereKey && (
+                    <span className="mt-1 block text-xs">
+                      {hint.href ? (
+                        <Link
+                          href={hint.href}
+                          className="text-accent hover:underline"
+                          data-testid={`link-einvoice-fix-${i}`}
+                        >
+                          {t[hint.whereKey]}
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground">{t[hint.whereKey]}</span>
+                      )}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </DialogContent>
       </Dialog>
@@ -1228,6 +1293,38 @@ export default function Invoices() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               <T k="hr.delete" />
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={invoicePendingCredit !== null}
+        onOpenChange={(open) => {
+          if (!open) setInvoicePendingCredit(null);
+        }}
+      >
+        <AlertDialogContent data-testid="dialog-credit-note-invoice">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {formatMessage(t["invoices.creditNoteConfirmTitle"], {
+                number: invoicePendingCredit?.number ?? "",
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t["invoices.creditNoteConfirmBody"]}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-confirm-credit-note"
+              onClick={() => {
+                if (invoicePendingCredit) createCreditNoteMutation.mutate(invoicePendingCredit.id);
+                setInvoicePendingCredit(null);
+              }}
+            >
+              {t["invoices.creditNoteConfirmAction"]}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1342,7 +1439,8 @@ export default function Invoices() {
                     customerName: "",
                     customerTrn: "",
                     date: new Date(),
-                    currency: "AED",
+                    currency: baseCurrency,
+                    exchangeRate: "",
                     lines: [{ ...EMPTY_LINE }],
                   });
                 }
@@ -1440,6 +1538,12 @@ export default function Invoices() {
                                 <FormMessage />
                               </FormItem>
                             )}
+                          />
+                          <InvoiceCurrencyFields
+                            form={form}
+                            companyId={selectedCompanyId}
+                            baseCurrency={baseCurrency}
+                            readOnly={!!editingInvoice && editingInvoice.status !== "draft"}
                           />
                         </FormGrid>
                       </FormSection>
@@ -1625,6 +1729,38 @@ export default function Invoices() {
                                     </FormItem>
                                   )}
                                 />
+                                <LineItemPicker
+                                  companyId={selectedCompanyId}
+                                  index={index}
+                                  value={watchLines[index]?.productId}
+                                  onPick={(p) => {
+                                    const opts = { shouldDirty: true, shouldValidate: true };
+                                    if (!p) {
+                                      form.setValue(`lines.${index}.productId`, undefined, opts);
+                                      return;
+                                    }
+                                    form.setValue(`lines.${index}.productId`, p.id, opts);
+                                    form.setValue(
+                                      `lines.${index}.description`,
+                                      (locale === "ar" && p.nameAr) || p.name,
+                                      opts
+                                    );
+                                    if (Number(p.unitPrice) > 0) {
+                                      form.setValue(
+                                        `lines.${index}.unitPrice`,
+                                        Number(p.unitPrice),
+                                        opts
+                                      );
+                                    }
+                                    if (p.vatRate !== undefined && p.vatRate !== null) {
+                                      form.setValue(
+                                        `lines.${index}.vatSupplyType`,
+                                        Number(p.vatRate) > 0 ? "standard_rated" : "zero_rated",
+                                        opts
+                                      );
+                                    }
+                                  }}
+                                />
                                 <Button
                                   type="button"
                                   variant="ghost"
@@ -1776,7 +1912,7 @@ export default function Invoices() {
                                           standardRate
                                         ).lineTotal
                                       }
-                                      currency="AED"
+                                      currency={watchCurrency}
                                     />
                                   </span>
                                 </div>
@@ -1857,7 +1993,7 @@ export default function Invoices() {
                               ? t[`invoices.emirate.${form.watch("placeOfSupplyEmirate")}`]
                               : null
                           }
-                          currency="AED"
+                          currency={watchCurrency}
                           lines={watchLines.map((line, i) => ({
                             description: line.description,
                             quantity: Number(line.quantity) || 0,
@@ -2167,16 +2303,22 @@ export default function Invoices() {
                                       <T k="invoices.actionCreateCreditNote" />
                                     </DropdownMenuItem>
                                   )}
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    onSelect={() => setInvoicePendingDelete(invoice)}
-                                    disabled={deleteMutation.isPending}
-                                    className="text-destructive focus:text-destructive"
-                                    data-testid={`button-delete-invoice-${invoice.id}`}
-                                  >
-                                    <Trash2 aria-hidden />
-                                    <T k="invoices.actionDelete" />
-                                  </DropdownMenuItem>
+                                  {/* X5 (J1 L4): only a never-issued draft can be removed;
+                                      issued invoices are voided or credited. */}
+                                  {invoice.status === "draft" && (
+                                    <>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        onSelect={() => setInvoicePendingDelete(invoice)}
+                                        disabled={deleteMutation.isPending}
+                                        className="text-destructive focus:text-destructive"
+                                        data-testid={`button-delete-invoice-${invoice.id}`}
+                                      >
+                                        <Trash2 aria-hidden />
+                                        <T k="invoices.actionDelete" />
+                                      </DropdownMenuItem>
+                                    </>
+                                  )}
                                 </>
                               }
                             >
@@ -2781,6 +2923,44 @@ export default function Invoices() {
             </div>
 
             <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="invoice-payment-date">
+                {t["invoices.payment.date"]}
+              </label>
+              <Input
+                id="invoice-payment-date"
+                type="date"
+                ltr
+                data-testid="input-invoice-payment-date"
+                value={paymentDate}
+                max={format(new Date(), "yyyy-MM-dd")}
+                onChange={(e) => setPaymentDate(e.target.value)}
+              />
+            </div>
+
+            {invoiceForPaymentDetail &&
+              (invoiceForPaymentDetail.currency || baseCurrency) !== baseCurrency && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium" htmlFor="invoice-payment-rate">
+                    {formatMessage(t["invoices.payment.rateLabel"], {
+                      from: invoiceForPaymentDetail.currency,
+                      to: baseCurrency,
+                    })}
+                  </label>
+                  <Input
+                    id="invoice-payment-rate"
+                    ltr
+                    inputMode="decimal"
+                    data-testid="input-invoice-payment-rate"
+                    value={paymentRate}
+                    onChange={(e) => setPaymentRate(e.target.value)}
+                  />
+                  <p className="text-caption text-muted-foreground">
+                    {t["invoices.payment.rateHint"]}
+                  </p>
+                </div>
+              )}
+
+            <div className="space-y-2">
               <label className="text-sm font-medium">
                 <T k="pages.paymentMethod" />
               </label>
@@ -2859,6 +3039,19 @@ export default function Invoices() {
             <Button
               onClick={() => {
                 if (!invoiceForPaymentDetail || !paymentAmount || !paymentAccountForAdd) return;
+                const rate = rateToSend(
+                  invoiceForPaymentDetail.currency,
+                  baseCurrency,
+                  paymentRate
+                );
+                if (rate === undefined) {
+                  toast({
+                    variant: "destructive",
+                    title: t["invoices.error"],
+                    description: t["invoices.currency.rateInvalid"],
+                  });
+                  return;
+                }
                 addPaymentMutation.mutate({
                   invoiceId: invoiceForPaymentDetail.id,
                   data: {
@@ -2867,11 +3060,17 @@ export default function Invoices() {
                     paymentAccountId: paymentAccountForAdd,
                     reference: paymentReference || undefined,
                     notes: paymentNotes || undefined,
-                    date: new Date().toISOString(),
+                    date: paymentDate || format(new Date(), "yyyy-MM-dd"),
+                    ...(rate ? { exchangeRate: rate } : {}),
                   },
                 });
               }}
-              disabled={addPaymentMutation.isPending || !paymentAmount || !paymentAccountForAdd}
+              disabled={
+                addPaymentMutation.isPending ||
+                !paymentAmount ||
+                !paymentAccountForAdd ||
+                !paymentDate
+              }
               className="flex-1"
             >
               {addPaymentMutation.isPending ? "Recording..." : t["pages.recordPayment"]}

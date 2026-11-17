@@ -34,6 +34,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import {
+  defaultPaymentAccountId,
+  postablePaymentAccounts,
+  type BankAccountLike,
+} from "@/lib/payment-accounts";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -433,6 +438,11 @@ export default function Receipts() {
     queryKey: ["/api/companies", companyId, "accounts"],
     enabled: !!companyId,
   });
+  // X5 (J1 D1): the payment account defaults to the primary bank account's GL.
+  const { data: bankAccounts = [] } = useQuery<BankAccountLike[]>({
+    queryKey: ["/api/companies", companyId, "bank-accounts"],
+    enabled: !!companyId,
+  });
 
   const form = useForm<ReceiptFormData>({
     resolver: zodResolver(receiptSchema),
@@ -638,7 +648,12 @@ export default function Receipts() {
   const handlePostExpense = (receipt: any) => {
     setPostingReceipt(receipt);
     setSelectedExpenseAccount("");
-    setSelectedPaymentAccount("");
+    const postable = postablePaymentAccounts(accounts ?? []);
+    setSelectedPaymentAccount(
+      postable.some((a) => a.id === receipt.paymentAccountId)
+        ? receipt.paymentAccountId
+        : defaultPaymentAccountId(accounts ?? [], bankAccounts)
+    );
     setPostDialogOpen(true);
   };
 
@@ -2694,13 +2709,24 @@ export default function Receipts() {
                       {postingReceipt.date ? formatDate(postingReceipt.date, locale) : "—"}
                     </p>
                   </div>
-                  <p className="font-semibold text-lg">
-                    {formatCurrency(
-                      (postingReceipt.amount || 0) + (postingReceipt.vatAmount || 0),
-                      "AED",
-                      locale
+                  <div className="text-end">
+                    <p className="font-semibold text-lg">
+                      {formatCurrency(
+                        (postingReceipt.amount || 0) + (postingReceipt.vatAmount || 0),
+                        "AED",
+                        locale
+                      )}
+                    </p>
+                    {/* X5 (J1 L6): the list shows the net amount; say how the total is made up. */}
+                    {(postingReceipt.vatAmount || 0) > 0 && (
+                      <p className="text-xs text-muted-foreground" data-testid="text-post-net-vat">
+                        {formatMessage(t["pages.receiptsNetPlusVat"], {
+                          net: formatCurrency(postingReceipt.amount || 0, "AED", locale),
+                          vat: formatCurrency(postingReceipt.vatAmount || 0, "AED", locale),
+                        })}
+                      </p>
                     )}
-                  </p>
+                  </div>
                 </div>
               </div>
             )}
@@ -2761,13 +2787,12 @@ export default function Receipts() {
                   <SelectValue placeholder={t["pages.receiptsSelectPaymentAccount"]} />
                 </SelectTrigger>
                 <SelectContent>
-                  {accounts
-                    ?.filter((acc) => acc.type === "asset")
-                    .map((account) => (
-                      <SelectItem key={account.id} value={account.id}>
-                        {locale === "ar" && account.nameAr ? account.nameAr : account.nameEn}
-                      </SelectItem>
-                    ))}
+                  {/* X5 (J1 D1): only postable cash / bank accounts (no headers, no A/R). */}
+                  {postablePaymentAccounts(accounts ?? []).map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {locale === "ar" && account.nameAr ? account.nameAr : account.nameEn}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
@@ -2784,14 +2809,14 @@ export default function Receipts() {
                     {accounts?.find((a) => a.id === selectedExpenseAccount)?.nameEn ||
                       "Expense Account"}
                   </span>
-                  <span>
-                    {formatCurrency(
-                      (postingReceipt?.amount || 0) + (postingReceipt?.vatAmount || 0),
-                      "AED",
-                      locale
-                    )}
-                  </span>
+                  <span>{formatCurrency(postingReceipt?.amount || 0, "AED", locale)}</span>
                 </div>
+                {(postingReceipt?.vatAmount || 0) > 0 && (
+                  <div className="flex justify-between" data-testid="preview-input-vat">
+                    <span>{t["pages.receiptsInputVatRecoverable"]}</span>
+                    <span>{formatCurrency(postingReceipt?.vatAmount || 0, "AED", locale)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between ps-4">
                   <span>
                     Cr.{" "}

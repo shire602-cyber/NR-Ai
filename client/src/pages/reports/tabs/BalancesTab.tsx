@@ -27,6 +27,7 @@ import { format } from "date-fns";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
+import { StatementDownloads } from "../StatementParts";
 
 export default function BalancesTab() {
   const { t } = useTranslation();
@@ -44,6 +45,8 @@ export default function BalancesTab() {
     payableAgingBuckets,
     payableAgingSummary,
     reportSectionClass,
+    dateRange,
+    selectedCompanyId,
   } = useReportsPageContext();
   return (
     <>
@@ -154,11 +157,19 @@ export default function BalancesTab() {
               <CardTitle>A/P Aging</CardTitle>
               <CardDescription>{t["balancesTab.openVendorBillsAgedFrom"]}</CardDescription>
             </div>
-            <Button asChild size="sm" variant="outline">
-              <Link href="/bill-pay?tab=summary">
-                <T k="reportCenter.openBillPay" />
-              </Link>
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <StatementDownloads
+                companyId={selectedCompanyId}
+                kind="ap-aging"
+                from={dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : undefined}
+                to={dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : undefined}
+              />
+              <Button asChild size="sm" variant="outline">
+                <Link href="/bill-pay?tab=summary">
+                  <T k="reportCenter.openBillPay" />
+                </Link>
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>

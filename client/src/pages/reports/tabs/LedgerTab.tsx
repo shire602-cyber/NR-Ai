@@ -29,6 +29,7 @@ import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import { formatReportDate, ledgerDetailPageSize } from "../shared";
 import { useReportsPageContext } from "../context";
+import { StatementDownloads } from "../StatementParts";
 
 export default function LedgerTab() {
   const { t } = useTranslation();
@@ -46,6 +47,7 @@ export default function LedgerTab() {
     locale,
     reportSectionClass,
     setLedgerDetailPage,
+    selectedCompanyId,
   } = useReportsPageContext();
   return (
     <>
@@ -287,6 +289,12 @@ export default function LedgerTab() {
                 {ledgerLines.length} rows · page {ledgerDetailCurrentPage} of{" "}
                 {ledgerDetailPageCount}
               </Badge>
+              <StatementDownloads
+                companyId={selectedCompanyId}
+                kind="general-ledger"
+                from={dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : undefined}
+                to={dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : undefined}
+              />
               <Button asChild size="sm" variant="outline">
                 <Link href="/journal">
                   <T k="reportCenter.openJournal" />

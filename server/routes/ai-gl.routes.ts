@@ -5,6 +5,7 @@ import { aiGlCorrectBody, aiGlSettingsBody } from "../../shared/validators/route
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
+import { AI_QUEUE_STILL_OPEN_SQL } from "../services/ai-gl-queue-sql";
 import { pool } from "../db";
 import {
   scanAndClassifyTransactions,
@@ -63,6 +64,8 @@ export function registerAIGLRoutes(app: Express) {
         params.push(status);
         query += ` AND q.status = $${params.length}`;
       }
+      // X5 (J1 D6): a suggestion for a bank line already reconciled is not pending review.
+      if (status === "pending_review") query += ` AND ${AI_QUEUE_STILL_OPEN_SQL}`;
 
       query += " ORDER BY q.created_at DESC";
 

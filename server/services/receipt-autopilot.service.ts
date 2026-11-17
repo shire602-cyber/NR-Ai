@@ -709,7 +709,10 @@ function pickExpenseAccountForCategory(
   return (generic || expenseAccounts[0])?.id ?? null;
 }
 
-function pickPaymentAccount(accounts: Account[]): string | null {
+function pickPaymentAccount(all: Account[]): string | null {
+  // X5 (J1 D1): header accounts (with sub-accounts) never receive postings.
+  const parents = new Set(all.filter((a) => !a.isArchived && a.parentId).map((a) => a.parentId));
+  const accounts = all.filter((a) => !parents.has(a.id));
   // Prefer cash, then bank.
   const cash = accounts.find(
     (a) => a.type === "asset" && a.isActive && !a.isArchived && /cash/i.test(a.nameEn)

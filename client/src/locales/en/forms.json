@@ -286,5 +286,9 @@
   "forms.errors.priceGreaterThanZero": "Price must be greater than 0",
   "forms.errors.emailAddressInvalid": "Invalid email address",
   "forms.errors.logoTooLarge": "Logo must be 1 MB or smaller",
-  "forms.errors.logoFormat": "Logo must be an https:// URL or a PNG/JPEG/GIF/WebP image"
+  "forms.errors.logoFormat": "Logo must be an https:// URL or a PNG/JPEG/GIF/WebP image",
+  "forms.serverErrors.PERIOD_SOFT_LOCKED": "This period is closed (soft lock). Ask the owner or your accountant to post it, or to reopen the period.",
+  "forms.serverErrors.PERIOD_LOCKED": "This period is locked. Reopen the period before posting into it.",
+  "forms.serverErrors.ACCOUNT_IS_HEADER": "This is a header account with sub-accounts. Choose the bank or cash account the money actually moved through.",
+  "forms.errors.exchangeRateInvalid": "Enter a positive rate with up to 6 decimals."
 }

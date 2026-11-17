@@ -130,7 +130,8 @@ export async function ensureClearingAccount(companyId: string): Promise<string> 
   }
   if (row) {
     // Code taken by another kind of account: fall back to the main bank account.
-    const bank = await accountIdByCode(companyId, "1020");
+    const { defaultPaymentAccountId } = await import("../payment-accounts.service");
+    const bank = await defaultPaymentAccountId(companyId);
     if (bank) return bank;
     throw new DomainError("CLEARING_ACCOUNT_UNAVAILABLE", 422);
   }

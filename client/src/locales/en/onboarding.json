@@ -152,5 +152,17 @@
   "onboarding.ownerSettingUpBody": "Only the company owner can finish the initial setup. You can open the areas your role allows in the meantime, and everything will be ready once the owner is done.",
   "onboarding.ownerSettingUpAction": "Continue to the dashboard",
   "onboarding.vatRegisteredLabel": "This business is VAT registered",
-  "onboarding.trnRequiredVatRegistered": "Enter the 15-digit TRN: a VAT-registered business must show it on tax invoices."
+  "onboarding.trnRequiredVatRegistered": "Enter the 15-digit TRN: a VAT-registered business must show it on tax invoices.",
+  "onboarding.cityLabel": "City",
+  "onboarding.cityPlaceholder": "e.g. Dubai",
+  "onboarding.legalStructureLabel": "Legal structure",
+  "onboarding.legalStructurePlaceholder": "Choose a legal structure",
+  "onboarding.legalStructureLlc": "Limited liability company (LLC)",
+  "onboarding.vatFrequencyLabel": "VAT filing frequency",
+  "onboarding.vatFrequencyPlaceholder": "As on your VAT certificate",
+  "onboarding.vatStaggerLabel": "Your first VAT quarter starts in",
+  "onboarding.vatStaggerJan": "January (Jan–Mar, Apr–Jun, Jul–Sep, Oct–Dec)",
+  "onboarding.vatStaggerFeb": "February (Feb–Apr, May–Jul, Aug–Oct, Nov–Jan)",
+  "onboarding.vatStaggerMar": "March (Mar–May, Jun–Aug, Sep–Nov, Dec–Feb)",
+  "onboarding.vatStaggerHint": "The FTA sets your tax periods (your stagger). Check the first period on your VAT registration certificate in EmaraTax."
 }

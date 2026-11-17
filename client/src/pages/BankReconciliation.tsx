@@ -435,6 +435,16 @@ export default function BankReconciliation() {
     });
   }, [transactions, showReconciled, selectedBankAccount, searchQuery]);
 
+  const allReconciledHidden =
+    !showReconciled &&
+    !searchQuery &&
+    filteredTransactions.length === 0 &&
+    (transactions ?? []).some(
+      (tx) =>
+        tx.isReconciled &&
+        (!selectedBankAccount || tx.bankStatementAccountId === selectedBankAccount)
+    );
+
   const stats = useMemo(() => {
     if (!transactions)
       return { total: 0, reconciled: 0, unreconciled: 0, suggested: 0, totalAmount: 0 };
@@ -963,18 +973,34 @@ export default function BankReconciliation() {
                 : "ready"
           }
           columnLabels={[t.date, t.description, t.amount, t.status]}
-          empty={{
-            icon: Building2,
-            title: t["banking.emptyTransactionsTitle"],
-            description: t["banking.emptyTransactionsDescription"],
-            action: {
-              label: t["banking.importStatementAction"],
-              icon: Upload,
-              variant: "outline",
-              onClick: () => setImportDialogOpen(true),
-            },
-            testId: "empty-state-bank-transactions",
-          }}
+          empty={
+            // X5 (J1 L6): lines exist but every one is reconciled (and hidden) — say so.
+            allReconciledHidden
+              ? {
+                  icon: Check,
+                  title: t["banking.allReconciledTitle"],
+                  description: t["banking.allReconciledDescription"],
+                  action: {
+                    label: t["pageLabels.showReconciled"],
+                    icon: Eye,
+                    variant: "outline",
+                    onClick: () => setShowReconciled(true),
+                  },
+                  testId: "empty-state-all-reconciled",
+                }
+              : {
+                  icon: Building2,
+                  title: t["banking.emptyTransactionsTitle"],
+                  description: t["banking.emptyTransactionsDescription"],
+                  action: {
+                    label: t["banking.importStatementAction"],
+                    icon: Upload,
+                    variant: "outline",
+                    onClick: () => setImportDialogOpen(true),
+                  },
+                  testId: "empty-state-bank-transactions",
+                }
+          }
         >
           {/* Phones: one two-line row per bank line, the next step as a single button. */}
           <div className="divide-hairline md:hidden" data-testid="mobile-bank-transaction-list">

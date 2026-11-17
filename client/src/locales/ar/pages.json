@@ -973,5 +973,7 @@
   "pages.autopilotStatsError": "تعذّر تحميل نتائج الطيار الآلي. يُرجى المحاولة مرة أخرى.",
   "pages.autopilotBelowThreshold": "دقة الطيار الآلي ({accuracy}%) أقل من الهدف {threshold}%، لذا يستخدم خدمة الذكاء الاصطناعي لكل إيصال في الوقت الحالي. أعد تفعيل تعلّم الطيار الآلي أدناه بعد أن يرى المزيد من إيصالاتك.",
   "pages.autopilotJudged": "{count} تمت مراجعتها",
-  "pages.autopilotTotal": "الإجمالي {count}"
+  "pages.autopilotTotal": "الإجمالي {count}",
+  "pages.receiptsNetPlusVat": "{net} + ضريبة {vat}",
+  "pages.receiptsInputVatRecoverable": "مدين: ضريبة المدخلات القابلة للاسترداد"
 }

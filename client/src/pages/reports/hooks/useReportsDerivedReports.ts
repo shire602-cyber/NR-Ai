@@ -18,6 +18,7 @@ import {
   expenseClaimInDateRange,
   fixedAssetAmount,
   inactiveInvoiceStatuses,
+  isUnpaidInvoice,
   inventoryAmount,
   inventoryMovementInDateRange,
   invoiceInDateRange,
@@ -168,9 +169,9 @@ export function useReportsDerivedReports({
       (invoice) => !inactiveInvoiceStatuses.has(invoice.status)
     );
     const invoiceValueAed = activeInvoices.reduce((sum, invoice) => sum + amountInAed(invoice), 0);
-    const unpaidCount = activeInvoices.filter((invoice) =>
-      ["sent", "posted", "partial"].includes(invoice.status)
-    ).length;
+    // X5 (J1 L5): a credit note is not an unpaid invoice, and an invoice whose open balance is
+    // nil (settled by a credit note) is not unpaid either.
+    const unpaidCount = activeInvoices.filter((invoice) => isUnpaidInvoice(invoice)).length;
     const overdueCurrencies = new Set(overdueRows.map((row) => row.invoice.currency || "AED"));
     const overdueCurrency =
       overdueCurrencies.size === 1 ? Array.from(overdueCurrencies)[0] : undefined;

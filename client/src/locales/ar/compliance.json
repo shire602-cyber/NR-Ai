@@ -151,5 +151,11 @@
   "compliance.autopilotAdjustmentLabel": "التسوية (درهم)",
   "compliance.autopilotAmountInvalid": "يجب أن يكون المبلغ رقمًا غير صفري (يُسمح بالقيم السالبة للتصحيحات).",
   "compliance.autopilotReasonPlaceholder": "مثال: تصحيح ضريبة القيمة المضافة للفاتورة INV-2026-00042",
-  "compliance.autopilotVatSuffix": "ضريبة"
+  "compliance.autopilotVatSuffix": "ضريبة",
+  "compliance.vatPreview.badge": "الفترة لم تنته بعد — معاينة",
+  "compliance.vatPreview.endsOn": "تنتهي الفترة في {date}",
+  "compliance.vatPreview.netSoFar": "صافي الضريبة حتى الآن",
+  "compliance.vatPreview.note": "أرقام مباشرة من دفاترك حتى الآن. تتغير كلما سجلت المزيد، ويمكنك إنشاء الإقرار بعد انتهاء الفترة.",
+  "compliance.vatPreview.unavailable": "المعاينة غير متاحة الآن.",
+  "compliance.vatPreview.generateAfter": "يمكنك إنشاء هذا الإقرار بعد {date}."
 }

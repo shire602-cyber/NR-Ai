@@ -140,15 +140,37 @@ async function nextBankGlCode(companyId: string): Promise<string> {
   throw new DomainError("BANK_GL_CODE_EXHAUSTED", 409);
 }
 
+/**
+ * X5 (J1 D1): a dedicated bank GL account sits under the generic "1020 Bank Accounts" account,
+ * which then becomes a header the kernel refuses to post to, so no payment can land on an
+ * account the bank statement cannot match. 1020 is only adopted as the header while it is
+ * unused (no bank account links to it and it carries no journal lines); otherwise the new
+ * account stays top-level and the defaults alone route payments to the real bank account.
+ */
+async function bankHeaderParentId(companyId: string): Promise<string | null> {
+  const { rows } = await pool.query(
+    `SELECT a.id FROM accounts a
+      WHERE a.company_id = $1 AND a.code = '1020' AND a.type = 'asset'
+        AND a.is_active = true AND a.is_archived = false
+        AND NOT EXISTS (SELECT 1 FROM bank_accounts ba WHERE ba.gl_account_id = a.id)
+        AND NOT EXISTS (SELECT 1 FROM journal_lines jl WHERE jl.account_id = a.id)
+      LIMIT 1`,
+    [companyId]
+  );
+  return (rows[0]?.id as string | undefined) ?? null;
+}
+
 /** Create a dedicated GL account (asset, sub_type bank) for a managed bank account. */
 export async function createBankGlAccount(
   companyId: string,
   input: { nameEn: string; currency: string }
 ): Promise<Account> {
   const code = await nextBankGlCode(companyId);
+  const parentId = await bankHeaderParentId(companyId);
   return storage.createAccount({
     companyId,
     code,
+    parentId,
     nameEn: `Bank - ${input.nameEn}`.slice(0, 200),
     nameAr: `بنك - ${input.nameEn}`.slice(0, 200),
     description: `GL account for bank account ${input.nameEn} (${input.currency})`,

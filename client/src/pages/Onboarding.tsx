@@ -185,14 +185,18 @@ function CustomerOnboardingWizard() {
   const [currentStep, setCurrentStep] = useState<Step>("welcome");
   const [direction, setDirection] = useState<1 | -1>(1);
 
-  const [companyForm, setCompanyForm] = useState({
+  const [companyForm, setCompanyForm] = useState<CompanyFormState>({
     name: "",
     trnVatNumber: "",
     registrationNumber: "",
     businessAddress: "",
+    addressCity: "",
     contactPhone: "",
     contactEmail: "",
     emirate: "dubai",
+    legalStructure: "",
+    vatFilingFrequency: "",
+    vatPeriodStartMonth: 1,
   });
 
   const [bankForm, setBankForm] = useState({
@@ -213,9 +217,13 @@ function CustomerOnboardingWizard() {
         trnVatNumber: company.trnVatNumber ?? "",
         registrationNumber: company.registrationNumber ?? "",
         businessAddress: company.businessAddress ?? "",
+        addressCity: company.addressCity ?? "",
         contactPhone: company.contactPhone ?? "",
         contactEmail: company.contactEmail ?? "",
         emirate: company.emirate ?? "dubai",
+        legalStructure: company.legalStructure ?? "",
+        vatFilingFrequency: company.vatFilingFrequency ?? "",
+        vatPeriodStartMonth: company.vatPeriodStartMonth ?? 1,
       });
 
       const saved = localStorage.getItem(STORAGE_KEY(company.id));
@@ -839,10 +847,36 @@ interface CompanyFormState {
   trnVatNumber: string;
   registrationNumber: string;
   businessAddress: string;
+  /** X5 (J1 L2/L3): city is its own field (e-invoices and the VAT 201 need it). */
+  addressCity: string;
   contactPhone: string;
   contactEmail: string;
   emirate: string;
+  /** X5 (J1 L2): collected up front so the profile never blocks a later save. */
+  legalStructure: string;
+  vatFilingFrequency: string;
+  vatPeriodStartMonth: number;
 }
+
+const LEGAL_STRUCTURE_OPTIONS = [
+  { value: "Sole Proprietorship", labelKey: "pages.soleProprietorship" },
+  { value: "LLC", labelKey: "onboarding.legalStructureLlc" },
+  { value: "Corporation", labelKey: "pages.corporation" },
+  { value: "Partnership", labelKey: "pages.partnership" },
+  { value: "Other", labelKey: "pages.other" },
+] as const;
+
+const VAT_FREQUENCY_OPTIONS = [
+  { value: "Quarterly", labelKey: "pages.quarterly" },
+  { value: "Monthly", labelKey: "pages.monthly" },
+] as const;
+
+/** Quarterly staggers: the FTA assigns periods starting in Jan, Feb or Mar (and every 3 months). */
+const VAT_STAGGER_OPTIONS = [
+  { value: 1, labelKey: "onboarding.vatStaggerJan" },
+  { value: 2, labelKey: "onboarding.vatStaggerFeb" },
+  { value: 3, labelKey: "onboarding.vatStaggerMar" },
+] as const;
 
 function CompanyStep({
   form,
@@ -977,17 +1011,106 @@ function CompanyStep({
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <Label>
-            <T k="pages.businessAddress" />
-          </Label>
-          <Input
-            value={form.businessAddress}
-            onChange={(e) => onChange({ businessAddress: e.target.value })}
-            placeholder={t["onboarding.addressPlaceholder"]}
-            data-testid="onboarding-address"
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>
+              <T k="pages.businessAddress" />
+            </Label>
+            <Input
+              value={form.businessAddress}
+              onChange={(e) => onChange({ businessAddress: e.target.value })}
+              placeholder={t["onboarding.addressPlaceholder"]}
+              data-testid="onboarding-address"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="onboarding-city">{t["onboarding.cityLabel"]}</Label>
+            <Input
+              id="onboarding-city"
+              value={form.addressCity}
+              onChange={(e) => onChange({ addressCity: e.target.value })}
+              placeholder={t["onboarding.cityPlaceholder"]}
+              data-testid="onboarding-city"
+            />
+          </div>
         </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>{t["onboarding.legalStructureLabel"]}</Label>
+            <Select
+              value={form.legalStructure || undefined}
+              onValueChange={(v) => onChange({ legalStructure: v })}
+            >
+              <SelectTrigger
+                aria-label={t["onboarding.legalStructureLabel"]}
+                data-testid="onboarding-legal-structure"
+              >
+                <SelectValue placeholder={t["onboarding.legalStructurePlaceholder"]} />
+              </SelectTrigger>
+              <SelectContent>
+                {LEGAL_STRUCTURE_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {t[o.labelKey]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {form.trnVatNumber.trim() !== "" && (
+            <div className="space-y-1.5">
+              <Label>{t["onboarding.vatFrequencyLabel"]}</Label>
+              <Select
+                value={form.vatFilingFrequency || undefined}
+                onValueChange={(v) =>
+                  onChange({
+                    vatFilingFrequency: v,
+                    ...(v === "Monthly" ? { vatPeriodStartMonth: 1 } : {}),
+                  })
+                }
+              >
+                <SelectTrigger
+                  aria-label={t["onboarding.vatFrequencyLabel"]}
+                  data-testid="onboarding-vat-frequency"
+                >
+                  <SelectValue placeholder={t["onboarding.vatFrequencyPlaceholder"]} />
+                </SelectTrigger>
+                <SelectContent>
+                  {VAT_FREQUENCY_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {t[o.labelKey]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+
+        {form.trnVatNumber.trim() !== "" && form.vatFilingFrequency === "Quarterly" && (
+          <div className="space-y-1.5">
+            <Label>{t["onboarding.vatStaggerLabel"]}</Label>
+            <Select
+              value={String(form.vatPeriodStartMonth || 1)}
+              onValueChange={(v) => onChange({ vatPeriodStartMonth: Number(v) })}
+            >
+              <SelectTrigger
+                aria-label={t["onboarding.vatStaggerLabel"]}
+                data-testid="onboarding-vat-stagger"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {VAT_STAGGER_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={String(o.value)}>
+                    {t[o.labelKey]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">{t["onboarding.vatStaggerHint"]}</p>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">

@@ -169,11 +169,14 @@ export async function assertPeriodNotLocked(
   const ctx = lockContext.getStore();
   const req = ctx?.req;
   const rawReason = req?.header?.(PERIOD_LOCK_REASON_HEADER);
-  const reason = typeof rawReason === "string" ? rawReason.trim().slice(0, 500) : "";
+  const reason = decodeLockReason(rawReason);
   const user = req?.user;
+  // X5 (J1 D3): the refusal tells the client whether this user may override with a reason,
+  // so the UI asks for one (and retries) only when it would be accepted.
+  const actor = user ? await resolveCloseActor(companyId, user) : null;
+  const canOverride = !!actor && canManageClose(actor);
   if (user && reason.length >= 3) {
-    const actor = await resolveCloseActor(companyId, user);
-    if (canManageClose(actor)) {
+    if (canOverride) {
       const { recordAudit } = await import("./audit.service");
       await recordAudit({
         userId: user.id,
@@ -189,11 +192,34 @@ export async function assertPeriodNotLocked(
     }
   }
   throw new AppError({
-    message: `Period ${label} is soft-locked. An owner or accountant may post with a reason (X-Period-Lock-Reason header).`,
+    message: canOverride
+      ? `Period ${label} is closed (soft lock). You can still post this by giving a reason, which is kept in the audit trail.`
+      : `Period ${label} is closed (soft lock). Ask the owner or your accountant to post it, or to reopen the period.`,
     statusCode: 403,
     code: "PERIOD_SOFT_LOCKED",
-    details: { lockedThrough: lock.periodEnd, lockType: lock.lockType, lockScope: lock.lockScope },
+    details: {
+      lockedThrough: lock.periodEnd,
+      lockType: lock.lockType,
+      lockScope: lock.lockScope,
+      canOverride,
+      reasonRequired: canOverride,
+    },
   });
+}
+
+/**
+ * The override reason from the request header. The client sends it URI-encoded (headers are
+ * Latin-1 only, and reasons are often Arabic); a plain ASCII value is accepted as is.
+ */
+export function decodeLockReason(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  let text = raw;
+  try {
+    text = decodeURIComponent(raw);
+  } catch {
+    text = raw;
+  }
+  return text.trim().slice(0, 500);
 }
 
 /** Throw 403 FISCAL_YEAR_HARD_CLOSED when `isoDate` sits in a hard-closed fiscal year. */

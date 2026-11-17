@@ -91,6 +91,7 @@ import {
   allocateInvoiceNumber,
   peekNextInvoiceNumber,
 } from "../services/invoice-numbering.service";
+import { removeDraftInvoice } from "../services/invoice-draft-delete.service";
 import { assertRetentionExpired } from "../services/retention.service";
 import { getRate } from "../services/fx";
 import { documentCurrency, loadBaseCurrency } from "../ledger";
@@ -700,11 +701,12 @@ export function registerInvoiceRoutes(app: Express) {
       const userId = userOf(req);
       const invoice = await findInvoiceForUser(userId, req.params.id);
       if (!invoice) return res.status(404).json({ message: "Invoice not found" });
-      assertRetentionExpired(
-        invoice as { createdAt: Date | string; retentionExpiresAt?: Date | string | null },
-        "Invoice"
-      );
       if (invoice.status !== "draft") {
+        // Issued tax invoices keep the five-year retention rule and are voided, never deleted.
+        assertRetentionExpired(
+          invoice as { createdAt: Date | string; retentionExpiresAt?: Date | string | null },
+          "Invoice"
+        );
         throw new DomainError(
           "INVOICE_HAS_POSTED_JE",
           422,
@@ -712,27 +714,30 @@ export function registerInvoiceRoutes(app: Express) {
           "An issued invoice cannot be deleted. Void it or issue a credit note instead."
         );
       }
-      try {
-        await storage.safeDeleteInvoice(invoice.id);
-      } catch (err) {
-        const e = err as { code?: string; message?: string };
-        if (e?.code === "INVOICE_HAS_POSTED_JE") {
-          return res.status(422).json({ message: e.message, code: e.code });
-        }
-        if (e?.code === "INVOICE_NOT_FOUND") return res.status(404).json({ message: e.message });
-        throw err;
-      }
+      // X5 (J1 L4): a never-issued draft is not a tax record. It is deleted when that leaves
+      // no gap in the number sequence, else cancelled (its number kept as cancelled).
+      const removal = await removeDraftInvoice({
+        invoiceId: invoice.id,
+        companyId: invoice.companyId,
+        userId,
+      });
       await recordAudit({
         userId,
         companyId: invoice.companyId,
-        action: "invoice.delete",
+        action: removal.outcome === "deleted" ? "invoice.delete" : "invoice.draft_cancelled",
         entityType: "invoice",
         entityId: invoice.id,
         before: { number: invoice.number, status: invoice.status, total: invoice.total },
-        after: null,
+        after: removal.outcome === "deleted" ? null : { status: "cancelled" },
         req,
       });
-      res.json({ message: "Invoice deleted successfully" });
+      res.json({
+        outcome: removal.outcome,
+        message:
+          removal.outcome === "deleted"
+            ? "Draft invoice deleted"
+            : "Draft invoice cancelled: later invoices already use the next numbers, so its number is kept as cancelled to avoid a gap.",
+      });
     })
   );
 
@@ -828,10 +833,14 @@ export function registerInvoiceRoutes(app: Express) {
           userId,
           companyId: invoice.companyId,
           type: "invoice_status_change",
-          ...notificationCopy("notification.invoiceVoid.title", "notification.invoiceVoid.message", {
-            number: invoice.number,
-            customer: invoice.customerName,
-          }),
+          ...notificationCopy(
+            "notification.invoiceVoid.title",
+            "notification.invoiceVoid.message",
+            {
+              number: invoice.number,
+              customer: invoice.customerName,
+            }
+          ),
           priority: "normal",
           relatedEntityType: "invoice",
           relatedEntityId: invoice.id,

@@ -737,5 +737,13 @@
   "components.srv.reportDelivery.handoff.reportsReady": "{ready}/{total} تقارير جاهزة لهذا الإرسال.",
   "components.srv.reportDelivery.handoff.readiness": "حالة جاهزية آخر إرسال: {status}.",
   "components.authLoginFailed": "فشل تسجيل الدخول",
-  "components.authInvalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة. يرجى التحقق والمحاولة مرة أخرى."
+  "components.authInvalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة. يرجى التحقق والمحاولة مرة أخرى.",
+  "components.periodLock.title": "هذه الفترة مغلقة",
+  "components.periodLock.description": "دفاتر هذا التاريخ مقفلة إقفالاً مبدئياً. يمكنك بصفتك المالك أو المحاسب الترحيل رغم ذلك إذا ذكرت السبب.",
+  "components.periodLock.descriptionThrough": "الدفاتر مقفلة إقفالاً مبدئياً حتى {date}. يمكنك بصفتك المالك أو المحاسب الترحيل رغم ذلك إذا ذكرت السبب.",
+  "components.periodLock.reasonLabel": "سبب الترحيل في الفترة المغلقة",
+  "components.periodLock.reasonPlaceholder": "مثال: وصلت فاتورة المورد متأخرة",
+  "components.periodLock.auditNote": "يُحفظ السبب في سجل التدقيق مع اسمك.",
+  "components.periodLock.cancel": "إلغاء",
+  "components.periodLock.post": "ترحيل مع هذا السبب"
 }

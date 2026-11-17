@@ -54,6 +54,14 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   reverse = `voidBillPayment`). Both reverse functions take an optional `tx` so a caller can run
   them inside its own `withLedgerTx`. Do not call `storage.recordInvoicePayment` or write
   `invoice_payments` / `bill_payments` from other modules.
+- Payment accounts (X5): a payment (bill, invoice, payroll, receipt) posts to a postable cash/bank
+  leaf. With no account chosen the default is the primary bank account's GL
+  (`server/services/payment-accounts.service.ts`: earliest active managed bank account,
+  preferring the payment currency; 1010 for cash; 1020 only while it is a leaf). A managed bank
+  account's auto-created GL (1021..) sits under 1020, which then becomes a header. The ledger
+  kernel refuses postings to any header account (`ACCOUNT_IS_HEADER`; reversals may still
+  mirror old postings). Legacy payments on 1020 or a header: `scripts/qa/repair-misposted-payments.ts`
+  (read-only finder; `--apply` reverses and re-records through the settlement seams).
 - Bank reconciliation state changes only through `server/services/bank-reconciliation.service.ts`:
   `applyMatch` (row lock, `is_reconciled` guard, period lock, idempotency key, allocations in
   `bank_transaction_matches`) and `unmatchTransaction` (reverses exactly what the match created:

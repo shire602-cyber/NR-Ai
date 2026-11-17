@@ -46,8 +46,11 @@ import { exportToExcel } from "@/lib/export";
 import { evidenceSectionHref } from "@/lib/evidenceLinks";
 import { prepareVat201ForExport, vat201ExportFilename } from "@/lib/vat201-export";
 import VAT201Form from "@/components/VAT201Form";
+import { companyAddressLine, vatStaggerLabel } from "@/lib/company-address";
 import VatReturnControls from "@/components/vat/VatReturnControls";
 import VatWorkpaperPanel from "@/components/vat/VatWorkpaperPanel";
+import { VatPeriodPreview } from "@/components/vat/VatPeriodPreview";
+import { vatPeriodEnded } from "@/lib/vat-period";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   FileText,
@@ -147,8 +150,16 @@ interface Company {
   trnVatNumber: string | null;
   vatFilingFrequency: string | null;
   emirate: string | null;
-  address: string | null;
-  phone: string | null;
+  address?: string | null;
+  phone?: string | null;
+  // X5 (J1 L2): the fields the profile actually saves.
+  legalName?: string | null;
+  businessAddress?: string | null;
+  addressStreet?: string | null;
+  addressCity?: string | null;
+  addressCountry?: string | null;
+  contactPhone?: string | null;
+  vatPeriodStartMonth?: number | null;
 }
 
 const DEFAULT_VAT_DATA = {
@@ -380,6 +391,10 @@ export default function VATFiling() {
         return <Badge variant="outline">{status}</Badge>;
     }
   };
+
+  // X5 (J1 D7): a period that has not ended is previewed, not generated.
+  const newPeriodEnded =
+    !!newPeriodEnd && vatPeriodEnded(newPeriodEnd, format(new Date(), "yyyy-MM-dd"));
 
   const handleCreateReturn = () => {
     if (!canGenerateVatReturn) {
@@ -928,6 +943,19 @@ export default function VATFiling() {
                   t["compliance.vatFilingNotYetCalculated"]
                 )}
               </p>
+              {!currentFiling.hasReturn &&
+                !vatPeriodEnded(
+                  format(currentFiling.periodEnd, "yyyy-MM-dd"),
+                  format(new Date(), "yyyy-MM-dd")
+                ) && (
+                  <div className="mt-3">
+                    <VatPeriodPreview
+                      companyId={companyId}
+                      periodStart={format(currentFiling.periodStart, "yyyy-MM-dd")}
+                      periodEnd={format(currentFiling.periodEnd, "yyyy-MM-dd")}
+                    />
+                  </div>
+                )}
               {currentFiling.hasReturn && (
                 <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-small text-muted-foreground tabular-nums">
                   <span>
@@ -1423,6 +1451,24 @@ export default function VATFiling() {
                 <T k="pageLabels.addTheCompanyTrnBeforeCreating" />
               </div>
             )}
+            {newPeriodStart && newPeriodEnd && !newPeriodEnded && (
+              <div className="space-y-2">
+                <VatPeriodPreview
+                  companyId={companyId}
+                  periodStart={newPeriodStart}
+                  periodEnd={newPeriodEnd}
+                  compact
+                />
+                <p
+                  className="text-small text-muted-foreground"
+                  data-testid="text-vat-generate-after"
+                >
+                  {formatMessage(t["compliance.vatPreview.generateAfter"], {
+                    date: newPeriodEnd,
+                  })}
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
@@ -1434,6 +1480,7 @@ export default function VATFiling() {
                 generateMutation.isPending ||
                 !newPeriodStart ||
                 !newPeriodEnd ||
+                !newPeriodEnded ||
                 !canGenerateVatReturn
               }
               data-testid="button-confirm-generate"
@@ -1465,11 +1512,11 @@ export default function VATFiling() {
               data={vatFormData}
               onChange={() => {}}
               companyInfo={{
-                nameEn: company.name,
+                nameEn: company.legalName || company.name,
                 nameAr: company.nameAr || undefined,
                 trnNumber: company.trnVatNumber || undefined,
-                address: company.address || undefined,
-                phone: company.phone || undefined,
+                address: companyAddressLine(company) || company.address || undefined,
+                phone: company.contactPhone || company.phone || undefined,
               }}
               periodInfo={{
                 periodStart: format(parseISO(selectedReturn.periodStart), "dd/MM/yyyy"),
@@ -1478,7 +1525,11 @@ export default function VATFiling() {
                 taxYearEnd: selectedReturn.taxYearEnd
                   ? format(parseISO(selectedReturn.taxYearEnd), "dd/MM/yyyy")
                   : undefined,
-                vatStagger: selectedReturn.vatStagger || "Quarterly",
+                vatStagger: vatStaggerLabel(
+                  selectedReturn.vatStagger || company.vatFilingFrequency || "Quarterly",
+                  company.vatPeriodStartMonth,
+                  (m) => format(new Date(2000, m - 1, 1), "MMM", dfOpts)
+                ),
               }}
               readOnly={true}
             />
@@ -1529,11 +1580,11 @@ export default function VATFiling() {
                 data={vatFormData}
                 onChange={setVatFormData}
                 companyInfo={{
-                  nameEn: company.name,
+                  nameEn: company.legalName || company.name,
                   nameAr: company.nameAr || undefined,
                   trnNumber: company.trnVatNumber || undefined,
-                  address: company.address || undefined,
-                  phone: company.phone || undefined,
+                  address: companyAddressLine(company) || company.address || undefined,
+                  phone: company.contactPhone || company.phone || undefined,
                 }}
                 periodInfo={{
                   periodStart: format(parseISO(selectedReturn.periodStart), "dd/MM/yyyy"),
@@ -1542,7 +1593,11 @@ export default function VATFiling() {
                   taxYearEnd: selectedReturn.taxYearEnd
                     ? format(parseISO(selectedReturn.taxYearEnd), "dd/MM/yyyy")
                     : undefined,
-                  vatStagger: selectedReturn.vatStagger || "Quarterly",
+                  vatStagger: vatStaggerLabel(
+                    selectedReturn.vatStagger || company.vatFilingFrequency || "Quarterly",
+                    company.vatPeriodStartMonth,
+                    (m) => format(new Date(2000, m - 1, 1), "MMM", dfOpts)
+                  ),
                 }}
                 readOnly={true}
               />

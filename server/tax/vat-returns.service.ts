@@ -163,11 +163,13 @@ export async function computeForReturn(input: {
   });
   const today = new Date().toISOString().slice(0, 10);
   if (period.to > today) {
+    // X5 (J1 D7): the running period can be previewed (GET /vat/compute); the return itself
+    // is generated only once the period has ended.
     throw new DomainError(
       "PERIOD_IN_FUTURE",
       422,
-      undefined,
-      "A VAT return period cannot end in the future."
+      { periodEnd: period.to, previewAvailable: true },
+      `This VAT period has not ended yet (it ends ${period.to}). Preview the figures now; generate the return after the period ends.`
     );
   }
   return computeVat201({ companyId: input.companyId, from: period.from, to: period.to });
