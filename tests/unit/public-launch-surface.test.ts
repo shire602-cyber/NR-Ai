@@ -219,9 +219,40 @@ describe("Public SaaS launch surface", () => {
       expect(trustPage).toContain(id);
     }
     expect(trustPage).toContain("support@muhasib.ai");
-    expect(en["marketing.trustOperatorBody"]).toContain("Najma Al Raeda Accounting LLC");
-    // Data residency stays a statement of what is documented, not a hosting claim.
-    expect(en["marketing.trustResidencyBody"]).toMatch(/being finalised with counsel/);
+    // Owner-confirmed facts (T1): operator name, UAE hosting, named support contact, services terms.
+    const ar = JSON.parse(readRepoFile("client/src/locales/ar/marketing.json")) as Record<
+      string,
+      string
+    >;
+    expect(en["marketing.trustOperatorBody"]).toContain(
+      "Najma Al Raeda Accounting and Bookkeeping"
+    );
+    expect(ar["marketing.trustOperatorBody"]).toContain("نجمة الرائدة للمحاسبة ومسك الدفاتر");
+    expect(JSON.stringify(en)).not.toContain("Accounting LLC");
+    expect(en["marketing.trustResidencyBody"]).toContain(
+      "Customer data is hosted in the United Arab Emirates."
+    );
+    expect(ar["marketing.trustResidencyBody"]).toContain("الإمارات العربية المتحدة");
+    expect(en["marketing.trustSupportContact"]).toContain("Sara, customer support");
+    expect(ar["marketing.trustSupportContact"]).toContain("سارة");
+    expect(en["marketing.svcFact1"]).toContain("Licensed since 2017");
+    expect(en["marketing.svcFact4"]).toMatch(/Free consultation, no commitment/);
+    expect(en["marketing.svcFact5"]).toMatch(/within 24 hours/);
+    expect(ar["marketing.svcFact4"]).toContain("مجانية");
+    expect(ar["marketing.svcFact5"]).toContain("24");
+    // The services page (positive marketing claims) carries no certification claims or invented
+    // social proof; the trust page names certifications only as "not claimed" roadmap items.
+    const svcCopy = JSON.stringify(
+      Object.fromEntries(Object.entries(en).filter(([k]) => k.startsWith("marketing.svc")))
+    );
+    for (const banned of [
+      /ISO\s?27001/i,
+      /SOC\s?2/i,
+      /FTA[- ]accredited/i,
+      /\d+\s?\+?\s?(customers|users)/i,
+    ]) {
+      expect(svcCopy).not.toMatch(banned);
+    }
     expect(en["marketing.trustAuditTitle"]).toBe("Hash-chained audit log");
     expect(en["marketing.trustControl3Title"]).toBe("Two-factor authentication");
 

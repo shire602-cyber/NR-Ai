@@ -7,8 +7,8 @@ export default function TermsOfService() {
       <p>
         These Terms of Service (<strong>"Terms"</strong>) govern your access to and use of the
         Muhasib.ai platform (the <strong>"Service"</strong>) operated by Najma Al Raeda Accounting
-        LLC (<strong>"NRA"</strong>, <strong>"we"</strong>, <strong>"us"</strong>). By creating an
-        account or using the Service, you agree to be bound by these Terms.
+        and Bookkeeping (<strong>"NRA"</strong>, <strong>"we"</strong>, <strong>"us"</strong>). By
+        creating an account or using the Service, you agree to be bound by these Terms.
       </p>
 
       <h2>1. Eligibility</h2>
@@ -127,7 +127,7 @@ export default function TermsOfService() {
       <p>
         <T k="pageLabels.questionsAboutTheseTermsEmail" />{" "}
         <a href="mailto:legal@muhasib.ai">legal@muhasib.ai</a> or write to: Najma Al Raeda
-        Accounting LLC, Dubai, United Arab Emirates.
+        Accounting and Bookkeeping, Dubai, United Arab Emirates.
       </p>
     </LegalLayout>
   );
