@@ -59,6 +59,7 @@ export default function AutomationsPanel() {
       void queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "anomaly-alerts"],
       });
+      void queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/anomalies`] });
     },
     onError: (error: Error) =>
       toast({

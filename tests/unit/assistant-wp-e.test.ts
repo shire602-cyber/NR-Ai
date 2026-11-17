@@ -43,6 +43,13 @@ beforeEach(() => {
     vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : String(input);
       if (url.includes("dashboard/stats")) return json({ outstanding: 1200 });
+      if (url.includes("/anomalies")) {
+        return json({
+          anomalies: [],
+          summary: { total: 0, critical: 0, warning: 0, info: 0 },
+          scannedAt: null,
+        });
+      }
       if (url.includes("/ai/nl-gateway")) {
         return json({
           response: "Revenue so far is AED 12,000 [F1].",
@@ -149,5 +156,39 @@ describe("Ask panel", () => {
     expect(figures?.textContent).not.toContain("Something new");
     const link = container.querySelector<HTMLAnchorElement>('[data-testid="assistant-sources"] a');
     expect(link?.getAttribute("href")).toBe("/reports?tab=pl&report=profit-loss");
+  });
+});
+
+describe("Review panel", () => {
+  it("lists bank suggestions and mounts the shared anomaly checks; config notes are hidden", async () => {
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    const { default: ReviewPanel } = await import("../../client/src/pages/assistant/ReviewPanel");
+    queryClient.clear();
+    queryClient.setQueryData(
+      ["/api/companies", "c-1", "ai-gl", "queue?status=pending_review"],
+      [
+        {
+          id: "q1",
+          description: "Bank service fee",
+          amount: "95.00",
+          transaction_date: "2026-11-13",
+          suggested_account_id: null,
+          suggested_account_name: null,
+          suggested_account_code: null,
+          ai_confidence: "0",
+          ai_reason: "OpenAI not configured — manual categorization required",
+        },
+      ]
+    );
+    await act(async () => {
+      root.render(
+        createElement(QueryClientProvider, { client: queryClient }, createElement(ReviewPanel))
+      );
+    });
+    await flush();
+    expect(container.querySelector('[data-testid="review-item-q1"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="button-choose-q1"]')).not.toBeNull();
+    expect(container.textContent).not.toMatch(/OpenAI|not configured/);
+    expect(container.querySelector('[data-testid="assistant-review-checks"]')).not.toBeNull();
   });
 });
