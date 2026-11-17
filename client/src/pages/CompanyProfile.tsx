@@ -1,3 +1,4 @@
+import { DatePicker } from "@/components/ui/date-picker";
 import { T } from "@/components/layout/T";
 import { SectionCard } from "@/components/ui/section-card";
 import { FormActions, FormErrorSummary } from "@/components/ui/form-layout";
@@ -587,7 +588,11 @@ export default function CompanyProfile() {
                         <T k="pages.taxRegistrationEffectiveDate" />
                       </FormLabel>
                       <FormControl>
-                        <Input {...field} type="date" data-testid="input-tax-registration-date" />
+                        <DatePicker
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          data-testid="input-tax-registration-date"
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

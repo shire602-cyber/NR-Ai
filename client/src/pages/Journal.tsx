@@ -1,3 +1,5 @@
+import { DatePicker } from "@/components/ui/date-picker";
+import { localizeJournalMemo } from "@/lib/journal-memo";
 import { T } from "@/components/layout/T";
 import {
   FormActions,
@@ -775,7 +777,7 @@ export default function Journal() {
                       </div>
                       {entry.memo && (
                         <div dir="auto" className="truncate text-sm font-medium text-foreground">
-                          {entry.memo}
+                          {localizeJournalMemo(t, entry.memo, locale)}
                         </div>
                       )}
                       {entry.reversedByEntry && (
@@ -909,10 +911,9 @@ export default function Journal() {
                                 <label className="text-sm font-medium">
                                   {t["journal.reversalDate"]}
                                 </label>
-                                <Input
-                                  type="date"
+                                <DatePicker
                                   value={reverseDate}
-                                  onChange={(e) => setReverseDate(e.target.value)}
+                                  onChange={setReverseDate}
                                   data-testid={`input-reversal-date-${entry.id}`}
                                 />
                                 <p className="text-xs text-muted-foreground">

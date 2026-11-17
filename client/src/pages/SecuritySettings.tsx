@@ -3,6 +3,7 @@
  * (TOTP + recovery codes), email verification status, signed-in devices, sign-in history,
  * the company MFA policy and the tamper-evident audit trail.
  */
+import { formatDate } from "@/lib/format";
 import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
@@ -123,9 +124,21 @@ function describeUserAgent(ua: string | null | undefined): string {
   return [browser, os].filter(Boolean).join(" · ");
 }
 
+/**
+ * Date and time for session / audit rows: the app's one date format plus a 24-hour time in Latin
+ * numerals, wrapped in a left-to-right isolate so the numbers keep their order inside Arabic text
+ * (J2: "17127.0.1 · م 12:06:09 ,2026/11/" came from an unisolated locale string next to an IP).
+ */
 function fmt(date: string | null | undefined, locale: string): string {
   if (!date) return "—";
-  return new Date(date).toLocaleString(locale === "ar" ? "ar-AE" : "en-AE");
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return "—";
+  const time = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
+  return `\u2066${formatDate(d, locale)} ${time}\u2069`;
 }
 
 /** Runs `action`; when the server asks for step-up, collects a code and retries once. */
@@ -503,7 +516,7 @@ export default function SecuritySettings() {
                 <li key={e.id} className="flex flex-wrap justify-between gap-2 py-2">
                   <span className="tabular-nums">{activityActionLabel(t, e.action)}</span>
                   <span className="text-muted-foreground" dir="ltr">
-                    {fmt(e.at, locale)} · {e.ipAddress ?? "—"}
+                    {fmt(e.at, locale)} · <bdi dir="ltr">{e.ipAddress ?? "—"}</bdi>
                   </span>
                 </li>
               ))}

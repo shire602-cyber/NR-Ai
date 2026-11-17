@@ -6,7 +6,6 @@
  */
 import { apiUrl } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
-import { getAuthHeaders } from "@/lib/auth";
 
 /** Same cap as the server (LOGO_MAX_BYTES). */
 export const COMPANY_LOGO_MAX_BYTES = 1024 * 1024;
@@ -52,25 +51,4 @@ export async function uploadCompanyLogo(companyId: string, file: Blob): Promise<
     logoPath: string;
   };
   return res.logoPath;
-}
-
-/**
- * The uploaded logo as a data: URL for client-side PDF libraries (jsPDF needs inline bytes).
- * Falls back to a legacy inline logo_url; null when there is no logo or it cannot be read.
- */
-export async function fetchCompanyLogoDataUrl(
-  company: CompanyLogoFields | null | undefined
-): Promise<string | null> {
-  if (!company) return null;
-  if (!company.logoPath) return company.logoUrl?.startsWith("data:") ? company.logoUrl : null;
-  try {
-    const res = await fetch(apiUrl(`/api/companies/${company.id}/logo`), {
-      credentials: "include",
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) return null;
-    return await readAsDataUrl(await res.blob());
-  } catch {
-    return null;
-  }
 }

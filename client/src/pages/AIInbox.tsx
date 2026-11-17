@@ -1,3 +1,4 @@
+import { accountDisplayName } from "@/lib/account-name";
 import { T } from "@/components/layout/T";
 import { useTranslation } from "@/lib/i18n";
 import { useState } from "react";
@@ -150,7 +151,7 @@ function getStatusBadge(status: string): {
 // =============================================
 
 export default function AIInbox() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [activeTab, setActiveTab] = useState("pending");
@@ -866,7 +867,7 @@ export default function AIInbox() {
                   <SelectContent>
                     {accounts.map((acc) => (
                       <SelectItem key={acc.id} value={acc.id}>
-                        {acc.code} — {acc.nameEn} ({acc.type})
+                        {acc.code} — {accountDisplayName(acc, locale)} ({acc.type})
                       </SelectItem>
                     ))}
                   </SelectContent>

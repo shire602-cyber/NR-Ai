@@ -83,7 +83,13 @@ import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
-import { exportToExcel, exportToGoogleSheets, prepareInvoicesForExport } from "@/lib/export";
+import {
+  downloadServerFile,
+  exportToExcel,
+  exportToGoogleSheets,
+  prepareInvoicesForExport,
+} from "@/lib/export";
+import { ShareInvoiceDialog } from "@/components/invoices/ShareInvoiceDialog";
 import { evidenceSourceHref } from "@/lib/evidenceLinks";
 import {
   Plus,
@@ -103,6 +109,7 @@ import {
   DollarSign,
   RefreshCw,
   RotateCcw,
+  Share2,
   X,
 } from "lucide-react";
 import { SiGooglesheets } from "react-icons/si";
@@ -110,14 +117,13 @@ import type { Invoice, InvoicePayment } from "@shared/schema";
 import type { InvoiceListItem } from "@shared/invoice-balance";
 import { computeInvoiceTiles } from "@/lib/invoice-tiles";
 import { cn } from "@/lib/utils";
-import { downloadInvoicePDF } from "@/lib/pdf-invoice";
 import {
   computeInvoiceFormLine,
   computeInvoiceFormTotals,
   lineVatRate,
 } from "@/lib/invoice-totals";
 import { STANDARD_VAT_RATES, vatJurisdictionForCountry } from "@shared/vat-classification";
-import { companyLogoSrc, fetchCompanyLogoDataUrl } from "@/lib/company-logo";
+import { companyLogoSrc } from "@/lib/company-logo";
 import {
   invoiceStatusQuery,
   parseInvoiceStatusFilter,
@@ -237,6 +243,11 @@ function BalanceLine({ invoice }: { invoice: InvoiceListItem }) {
   );
 }
 
+/** Only issued documents have a public link (the share endpoint refuses drafts and cancelled). */
+function isShareable(invoice: { status?: string | null }) {
+  return invoice.status !== "draft" && invoice.status !== "cancelled";
+}
+
 export default function Invoices() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -256,6 +267,7 @@ export default function Invoices() {
   const [pendingInvoiceData, setPendingInvoiceData] = useState<any>(null);
   const [dateRange, setDateRange] = useState<DateRange>({ from: undefined, to: undefined });
   const [isExporting, setIsExporting] = useState(false);
+  const [invoiceToShare, setInvoiceToShare] = useState<{ id: string; number: string } | null>(null);
 
   // Virtual scrolling for large invoice lists.
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -440,8 +452,8 @@ export default function Invoices() {
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
       toast({
-        title: "Invoice created",
-        description: "Your invoice has been created with VAT calculation.",
+        title: t["invoices.toastCreated"],
+        description: t["invoices.toastCreatedBody"],
       });
       if (created?.id && (created.status ?? "draft") === "draft") {
         setDraftNudge({ id: created.id, number: created.number ?? "" });
@@ -461,8 +473,8 @@ export default function Invoices() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create invoice",
-        description: error?.message || "Please try again.",
+        title: t["invoices.toastCreateFailed"],
+        description: error?.message || t["invoices.toastTryAgain"],
       });
     },
   });
@@ -475,8 +487,8 @@ export default function Invoices() {
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
       toast({
-        title: "Invoice updated successfully",
-        description: "Your invoice has been updated.",
+        title: t["invoices.toastUpdated"],
+        description: t["invoices.toastUpdatedBody"],
       });
       setDialogOpen(false);
       setEditingInvoice(null);
@@ -493,7 +505,7 @@ export default function Invoices() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update invoice",
+        title: t["invoices.toastUpdateFailed"],
         description: error?.message || "Please try again.",
       });
     },
@@ -522,8 +534,8 @@ export default function Invoices() {
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
       toast({
-        title: "Status updated",
-        description: "Invoice status has been updated successfully.",
+        title: t["invoices.toastStatusUpdated"],
+        description: t["invoices.toastStatusUpdatedBody"],
       });
       setPaymentDialogOpen(false);
       setInvoiceForPayment(null);
@@ -538,8 +550,8 @@ export default function Invoices() {
       }
       toast({
         variant: "destructive",
-        title: "Failed to update status",
-        description: error?.message || "Please try again.",
+        title: t["invoices.toastStatusFailed"],
+        description: error?.message || t["invoices.toastTryAgain"],
       });
     },
   });
@@ -602,7 +614,7 @@ export default function Invoices() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to save recurring settings",
+        title: t["invoices.toastRecurringFailed"],
         description: error?.message,
       });
     },
@@ -619,7 +631,12 @@ export default function Invoices() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
-      toast({ title: "Payment recorded", description: `Status updated to ${result.status}` });
+      toast({
+        title: t["invoices.toastPaymentRecorded"],
+        description: formatMessage(t["invoices.toastPaymentRecordedBody"], {
+          status: t[`invoices.statusFilter.${result.status}`] ?? String(result.status ?? ""),
+        }),
+      });
       setAddPaymentDialogOpen(false);
       setInvoiceForPaymentDetail(null);
       setPaymentAmount("");
@@ -630,7 +647,7 @@ export default function Invoices() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to record payment",
+        title: t["invoices.toastPaymentFailed"],
         description: error?.message,
       });
     },
@@ -648,14 +665,14 @@ export default function Invoices() {
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
       toast({
-        title: "Credit note created",
-        description: "A credit note has been created and the journal entry reversed.",
+        title: t["invoices.toastCreditNoteCreated"],
+        description: t["invoices.toastCreditNoteBody"],
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create credit note",
+        title: t["invoices.toastCreditNoteFailed"],
         description: error?.message,
       });
     },
@@ -713,50 +730,16 @@ export default function Invoices() {
   // Row actions (D2b, CTO issue 3): handlers shared by the visible buttons and the ... menu.
   const downloadInvoicePdf = async (invoice: Invoice) => {
     try {
-      // Fetch full invoice details with lines using apiRequest
-      const invoiceDetails = await apiRequest("GET", `/api/invoices/${invoice.id}`);
-
-      // Check if company is VAT registered
-      const isVATRegistered = !!(company?.trnVatNumber && company.trnVatNumber.length > 0);
-
-      await downloadInvoicePDF({
-        invoiceNumber: invoiceDetails.number,
-        date: invoiceDetails.date.toString(),
-        customerName: invoiceDetails.customerName,
-        customerTRN: invoiceDetails.customerTrn || undefined,
-        companyName: company?.name || "Your Company",
-        companyTRN: company?.trnVatNumber || undefined,
-        companyAddress: company?.businessAddress || undefined,
-        companyPhone: company?.contactPhone || undefined,
-        companyEmail: company?.contactEmail || undefined,
-        companyWebsite: company?.websiteUrl || undefined,
-        companyLogo: (await fetchCompanyLogoDataUrl(company)) ?? undefined,
-        lines: invoiceDetails.lines || [],
-        subtotal: invoiceDetails.subtotal,
-        vatAmount: invoiceDetails.vatAmount,
-        total: invoiceDetails.total,
-        currency: invoiceDetails.currency,
-        locale,
-        companyType: company?.companyType,
-        // Invoice customization settings
-        showLogo: company?.invoiceShowLogo !== undefined ? company.invoiceShowLogo : true,
-        showAddress: company?.invoiceShowAddress !== undefined ? company.invoiceShowAddress : true,
-        showPhone: company?.invoiceShowPhone !== undefined ? company.invoiceShowPhone : true,
-        showEmail: company?.invoiceShowEmail !== undefined ? company.invoiceShowEmail : true,
-        showWebsite: company?.invoiceShowWebsite === true ? true : undefined,
-        customTitle: company?.invoiceCustomTitle || undefined,
-        footerNote: company?.invoiceFooterNote || undefined,
-        isVATRegistered,
-      });
-
+      // The server renders the PDF (Arabic shaping, bilingual layout, company branding).
+      await downloadServerFile(`/api/invoices/${invoice.id}/pdf`, `invoice-${invoice.number}.pdf`);
       toast({
-        title: "PDF Downloaded",
-        description: "Invoice PDF has been downloaded successfully",
+        title: t["invoices.toastPdfDownloaded"],
+        description: t["invoices.toastPdfDownloadedBody"],
       });
     } catch (error: any) {
       toast({
-        title: "Error",
-        description: error?.message || "Failed to generate PDF",
+        title: t["invoices.toastPdfFailed"],
+        description: error?.message,
         variant: "destructive",
       });
     }
@@ -765,7 +748,7 @@ export default function Invoices() {
     try {
       const result = await apiRequest("POST", `/api/invoices/${invoice.id}/generate-einvoice`);
       toast({
-        title: "E-Invoice generated",
+        title: t["invoices.toastEinvoiceGenerated"],
         description: `UUID: ${result.uuid}`,
       });
       queryClient.invalidateQueries({
@@ -785,7 +768,7 @@ export default function Invoices() {
         return;
       }
       toast({
-        title: "Error",
+        title: t["invoices.error"],
         description: error?.message,
         variant: "destructive",
       });
@@ -812,7 +795,7 @@ export default function Invoices() {
     } catch (e: any) {
       toast({
         variant: "destructive",
-        title: "Error",
+        title: t["invoices.error"],
         description: e?.message,
       });
     }
@@ -885,8 +868,8 @@ export default function Invoices() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to load invoice details.",
+        title: t["invoices.error"],
+        description: error?.message || t["invoices.toastLoadFailed"],
       });
     }
   };
@@ -994,15 +977,15 @@ export default function Invoices() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: "Invoice branding updated",
-        description: "Your invoice customization settings have been saved successfully.",
+        title: t["invoices.toastBrandingUpdated"],
+        description: t["invoices.toastBrandingBody"],
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update branding",
-        description: error?.message || "Please try again.",
+        title: t["invoices.toastBrandingFailed"],
+        description: error?.message || t["invoices.toastTryAgain"],
       });
     },
   });
@@ -1043,7 +1026,7 @@ export default function Invoices() {
     if (!filteredInvoices.length) {
       toast({
         variant: "destructive",
-        title: "No data",
+        title: t["invoices.toastNoData"],
         description: t["invoices.noInvoicesToExport"],
       });
       return;
@@ -1061,8 +1044,10 @@ export default function Invoices() {
       );
     }
     toast({
-      title: "Export successful",
-      description: `${filteredInvoices.length} invoices exported to Excel`,
+      title: t["invoices.toastExportOk"],
+      description: formatMessage(t["invoices.toastExportExcelBody"], {
+        count: filteredInvoices.length,
+      }),
     });
   };
 
@@ -1070,7 +1055,7 @@ export default function Invoices() {
     if (!selectedCompanyId || !filteredInvoices.length) {
       toast({
         variant: "destructive",
-        title: "No data",
+        title: t["invoices.toastNoData"],
         description: t["invoices.noInvoicesToExport"],
       });
       return;
@@ -1092,8 +1077,10 @@ export default function Invoices() {
 
     if (result.success) {
       toast({
-        title: "Export successful",
-        description: `${filteredInvoices.length} invoices exported to Google Sheets`,
+        title: t["invoices.toastExportOk"],
+        description: formatMessage(t["invoices.toastExportSheetsBody"], {
+          count: filteredInvoices.length,
+        }),
       });
       if (result.spreadsheetUrl) {
         window.open(result.spreadsheetUrl, "_blank");
@@ -1101,7 +1088,7 @@ export default function Invoices() {
     } else {
       toast({
         variant: "destructive",
-        title: "Export failed",
+        title: t["invoices.toastExportFailed"],
         description: result.error || "Failed to export to Google Sheets",
       });
     }
@@ -1982,6 +1969,15 @@ export default function Invoices() {
                             <Download aria-hidden />
                             {t["invoices.actionDownloadPdf"]}
                           </DropdownMenuItem>
+                          {isShareable(invoice) && (
+                            <DropdownMenuItem
+                              onSelect={() => setInvoiceToShare(invoice)}
+                              data-testid={`mobile-button-share-invoice-${invoice.id}`}
+                            >
+                              <Share2 aria-hidden />
+                              {t["invoices.actionShare"]}
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem onSelect={() => openAddPayment(invoice)}>
                             <DollarSign aria-hidden />
                             <T k="invoices.actionAddPayment" />
@@ -2120,6 +2116,15 @@ export default function Invoices() {
                                       <T k="reportCenter.proof" />
                                     </Link>
                                   </DropdownMenuItem>
+                                  {isShareable(invoice) && (
+                                    <DropdownMenuItem
+                                      onSelect={() => setInvoiceToShare(invoice)}
+                                      data-testid={`button-share-invoice-${invoice.id}`}
+                                    >
+                                      <Share2 aria-hidden />
+                                      {t["invoices.actionShare"]}
+                                    </DropdownMenuItem>
+                                  )}
                                   <DropdownMenuItem
                                     onSelect={() => openAddPayment(invoice)}
                                     data-testid={`button-add-payment-${invoice.id}`}
@@ -2672,7 +2677,7 @@ export default function Invoices() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">End Date (optional)</label>
+                  <label className="text-sm font-medium">{t["invoices.endDateOptional"]}</label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button
@@ -2741,6 +2746,12 @@ export default function Invoices() {
         </DialogContent>
       </Dialog>
 
+      <ShareInvoiceDialog
+        invoice={invoiceToShare}
+        companyId={selectedCompanyId}
+        onClose={() => setInvoiceToShare(null)}
+      />
+
       {/* Add Payment Dialog */}
       <Dialog open={addPaymentDialogOpen} onOpenChange={setAddPaymentDialogOpen}>
         <DialogContent size="md">
@@ -2750,15 +2761,16 @@ export default function Invoices() {
               <T k="pages.recordPayment" />
             </DialogTitle>
             <DialogDescription>
-              Record a payment received for Invoice {invoiceForPaymentDetail?.number} (Total:{" "}
-              {invoiceForPaymentDetail
-                ? formatCurrency(
-                    invoiceForPaymentDetail.total,
-                    invoiceForPaymentDetail.currency,
-                    locale
-                  )
-                : ""}
-              )
+              {formatMessage(t["invoices.recordPaymentDesc"], {
+                number: invoiceForPaymentDetail?.number ?? "",
+                total: invoiceForPaymentDetail
+                  ? formatCurrency(
+                      invoiceForPaymentDetail.total,
+                      invoiceForPaymentDetail.currency,
+                      locale
+                    )
+                  : "",
+              })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -2787,7 +2799,7 @@ export default function Invoices() {
                   <SelectItem value="bank">
                     <T k="pages.bankTransfer" />
                   </SelectItem>
-                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="cash">{t["invoices.methodCash"]}</SelectItem>
                   <SelectItem value="cheque">
                     <T k="pages.cheque" />
                   </SelectItem>
@@ -2810,7 +2822,7 @@ export default function Invoices() {
                   <SelectContent>
                     {paymentAccounts.map((acc) => (
                       <SelectItem key={acc.id} value={acc.id}>
-                        {acc.code} — {acc.nameEn}
+                        {acc.code} — {locale === "ar" && acc.nameAr ? acc.nameAr : acc.nameEn}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -2818,24 +2830,22 @@ export default function Invoices() {
               ) : (
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    No cash/bank accounts found. Create one in Chart of Accounts.
-                  </AlertDescription>
+                  <AlertDescription>{t["invoices.noCashBankAccounts"]}</AlertDescription>
                 </Alert>
               )}
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Reference (optional)</label>
+              <label className="text-sm font-medium">{t["invoices.referenceOptional"]}</label>
               <Input
-                placeholder="e.g. Bank ref, cheque no."
+                placeholder={t["invoices.referencePlaceholder"]}
                 value={paymentReference}
                 onChange={(e) => setPaymentReference(e.target.value)}
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Notes (optional)</label>
+              <label className="text-sm font-medium">{t["invoices.notesOptional"]}</label>
               <Input
                 placeholder={t["invoices.additionalNotes"]}
                 value={paymentNotes}
@@ -2869,7 +2879,7 @@ export default function Invoices() {
               disabled={addPaymentMutation.isPending || !paymentAmount || !paymentAccountForAdd}
               className="flex-1"
             >
-              {addPaymentMutation.isPending ? "Recording..." : t["pages.recordPayment"]}
+              {addPaymentMutation.isPending ? t["invoices.recording"] : t["pages.recordPayment"]}
             </Button>
           </div>
         </DialogContent>
@@ -2879,7 +2889,11 @@ export default function Invoices() {
       <Dialog open={viewPaymentsDialogOpen} onOpenChange={setViewPaymentsDialogOpen}>
         <DialogContent size="lg">
           <DialogHeader>
-            <DialogTitle>Payment History — Invoice {invoiceForPaymentDetail?.number}</DialogTitle>
+            <DialogTitle>
+              {formatMessage(t["invoices.paymentHistoryTitle"], {
+                number: invoiceForPaymentDetail?.number ?? "",
+              })}
+            </DialogTitle>
             <DialogDescription>
               <T k="pageLabels.allPaymentsRecordedForThisInvoice" />
             </DialogDescription>
@@ -2894,7 +2908,7 @@ export default function Invoices() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Date</TableHead>
+                      <TableHead>{t["invoices.colDate"]}</TableHead>
                       <TableHead>
                         <T k="consolidation.method" />
                       </TableHead>
@@ -2956,7 +2970,9 @@ export default function Invoices() {
               <T k="pageLabels.selectPaymentAccount" />
             </DialogTitle>
             <DialogDescription>
-              Choose where the payment for invoice {invoiceForPayment?.number} was deposited
+              {formatMessage(t["invoices.chooseDepositFor"], {
+                number: invoiceForPayment?.number ?? "",
+              })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">

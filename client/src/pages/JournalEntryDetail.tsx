@@ -1,3 +1,4 @@
+import { localizeJournalMemo } from "@/lib/journal-memo";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useParams, Link } from "wouter";
@@ -422,7 +423,7 @@ export default function JournalEntryDetail() {
       {entry.memo && (
         <SectionCard title={t["screens.memo"]}>
           <p dir="auto" className="text-sm text-muted-foreground" data-testid="text-memo">
-            {entry.memo}
+            {localizeJournalMemo(t, entry.memo, locale)}
           </p>
         </SectionCard>
       )}

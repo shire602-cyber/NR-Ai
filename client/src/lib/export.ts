@@ -104,7 +104,7 @@ function filenameFromContentDisposition(disposition: string | null, fallback: st
   return match ? decodeURIComponent(match[1]) : fallback;
 }
 
-async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> {
+export async function triggerBlobDownload(blob: Blob, filename: string): Promise<void> {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -1937,4 +1937,31 @@ export function prepareBalanceSummaryReportsForExport(report: any): ExportData[]
       })),
     },
   ];
+}
+
+/**
+ * GET a server-rendered document (invoice / quote / credit-note PDF) and save it. The server PDF
+ * carries the Arabic shaping and fonts, so the UI never builds these client-side.
+ */
+export async function downloadServerFile(url: string, fallbackFilename: string): Promise<void> {
+  const res = await fetch(apiUrl(url), {
+    method: "GET",
+    credentials: "include",
+    headers: { ...getAuthHeaders() },
+  });
+  if (!res.ok) {
+    let message = `${res.status} ${res.statusText}`;
+    try {
+      const json = await res.json();
+      message = json.message || json.error || message;
+    } catch {
+      /* binary body — keep status */
+    }
+    throw new Error(message);
+  }
+  const blob = await res.blob();
+  await triggerBlobDownload(
+    blob,
+    filenameFromContentDisposition(res.headers.get("Content-Disposition"), fallbackFilename)
+  );
 }

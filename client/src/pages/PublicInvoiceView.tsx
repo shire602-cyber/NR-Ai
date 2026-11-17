@@ -1,5 +1,6 @@
 import { T } from "@/components/layout/T";
 import { useTranslation } from "@/lib/i18n";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { useParams } from "wouter";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -58,23 +59,6 @@ interface PublicInvoiceData {
   };
 }
 
-function formatCurrency(amount: number, currency: string = "AED"): string {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-}
-
-function formatDate(date: string): string {
-  return new Date(date).toLocaleDateString("en-AE", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
-
 function getStatusColor(status: string): string {
   switch (status) {
     case "paid":
@@ -91,7 +75,7 @@ function getStatusColor(status: string): string {
 }
 
 export default function PublicInvoiceView() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { token } = useParams<{ token: string }>();
 
   const { data, isLoading, error } = useQuery<PublicInvoiceData>({
@@ -129,10 +113,10 @@ export default function PublicInvoiceView() {
         body: "{}",
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok || !body.url) throw new Error(body.message || "Payment could not be started");
+      if (!res.ok || !body.url) throw new Error(t["invoices.publicPayFailed"]);
       window.location.assign(body.url);
-    } catch (err) {
-      setPayError(err instanceof Error ? err.message : "Payment could not be started");
+    } catch {
+      setPayError(t["invoices.publicPayFailed"]);
       setPaying(false);
     }
   };
@@ -170,8 +154,8 @@ export default function PublicInvoiceView() {
             </h2>
             <p className="text-muted-foreground">
               {isExpired
-                ? "This invoice link has expired. Please contact the sender for a new link."
-                : "This invoice link is invalid or has been removed."}
+                ? t["invoices.publicLinkExpiredBody"]
+                : t["invoices.publicLinkInvalidBody"]}
             </p>
           </CardContent>
         </Card>
@@ -202,7 +186,7 @@ export default function PublicInvoiceView() {
                   <p className="text-info-foreground text-sm">{company.contactEmail}</p>
                 )}
               </div>
-              <div className="text-right">
+              <div className="text-end">
                 <h2 className="text-lg font-bold uppercase" data-testid="public-invoice-title">
                   {invoice.invoiceType === "credit_note" ? (
                     <T k="invoices.publicCreditNote" />
@@ -213,7 +197,9 @@ export default function PublicInvoiceView() {
                   )}
                 </h2>
                 {isVATRegistered && company.trnVatNumber && (
-                  <p className="text-info-foreground text-sm mt-1">TRN: {company.trnVatNumber}</p>
+                  <p className="text-info-foreground text-sm mt-1">
+                    {t["invoices.publicTrn"]}: <span dir="ltr">{company.trnVatNumber}</span>
+                  </p>
                 )}
               </div>
             </div>
@@ -237,7 +223,7 @@ export default function PublicInvoiceView() {
                   <p className="text-sm text-muted-foreground">
                     <T k="invoices.publicSupplyDate" />
                   </p>
-                  <p className="font-semibold">{formatDate(invoice.supplyDate)}</p>
+                  <p className="font-semibold">{formatDate(invoice.supplyDate, locale)}</p>
                 </div>
               )}
               {invoice.dueDate && (
@@ -246,7 +232,7 @@ export default function PublicInvoiceView() {
                     <T k="invoices.publicDueDate" />
                   </p>
                   <p className="font-semibold" data-testid="public-invoice-due-date">
-                    {formatDate(invoice.dueDate)}
+                    {formatDate(invoice.dueDate, locale)}
                   </p>
                 </div>
               )}
@@ -275,20 +261,21 @@ export default function PublicInvoiceView() {
                     <T k="invoices.publicAmountDue" />
                   </p>
                   <p className="font-bold text-2xl" data-testid="public-invoice-amount-due">
-                    {formatCurrency(invoice.amountDue, invoice.currency)}
+                    {formatCurrency(invoice.amountDue, invoice.currency, locale)}
                   </p>
                 </div>
               )}
               <div>
-                <p className="text-sm text-muted-foreground">Date</p>
-                <p className="font-semibold">{formatDate(invoice.date)}</p>
+                <p className="text-sm text-muted-foreground">{t["invoices.publicDate"]}</p>
+                <p className="font-semibold">{formatDate(invoice.date, locale)}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">
                   <T k="pages.status" />
                 </p>
                 <Badge className={getStatusColor(invoice.status)}>
-                  {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                  {t[`invoices.statusFilter.${invoice.status}`] ??
+                    invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
                 </Badge>
               </div>
             </div>
@@ -300,7 +287,9 @@ export default function PublicInvoiceView() {
               </h3>
               <p className="font-semibold text-lg">{invoice.customerName}</p>
               {invoice.customerTrn && (
-                <p className="text-sm text-muted-foreground">TRN: {invoice.customerTrn}</p>
+                <p className="text-sm text-muted-foreground">
+                  {t["invoices.publicTrn"]}: <span dir="ltr">{invoice.customerTrn}</span>
+                </p>
               )}
             </div>
 
@@ -312,12 +301,16 @@ export default function PublicInvoiceView() {
                     <TableHead className="text-white font-semibold">
                       <T k="pages.description" />
                     </TableHead>
-                    <TableHead className="text-white font-semibold text-center">Qty</TableHead>
+                    <TableHead className="text-white font-semibold text-center">
+                      {t["invoices.publicQty"]}
+                    </TableHead>
                     <TableHead className="text-white font-semibold text-center">
                       <T k="pages.unitPrice" />
                     </TableHead>
-                    <TableHead className="text-white font-semibold text-center">VAT</TableHead>
-                    <TableHead className="text-white font-semibold text-right">
+                    <TableHead className="text-white font-semibold text-center">
+                      {t["invoices.publicVat"]}
+                    </TableHead>
+                    <TableHead className="text-white font-semibold text-end">
                       <T k="pages.amount" />
                     </TableHead>
                   </TableRow>
@@ -331,11 +324,11 @@ export default function PublicInvoiceView() {
                         <TableCell className="font-medium">{line.description}</TableCell>
                         <TableCell className="text-center">{line.quantity}</TableCell>
                         <TableCell className="text-center">
-                          {formatCurrency(line.unitPrice, invoice.currency)}
+                          {formatCurrency(line.unitPrice, invoice.currency, locale)}
                         </TableCell>
                         <TableCell className="text-center">{vatPercent}%</TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(lineTotal, invoice.currency)}
+                        <TableCell className="text-end">
+                          {formatCurrency(lineTotal, invoice.currency, locale)}
                         </TableCell>
                       </TableRow>
                     );
@@ -351,17 +344,17 @@ export default function PublicInvoiceView() {
                   <span className="text-muted-foreground">
                     <T k="pages.subtotal" />
                   </span>
-                  <span>{formatCurrency(invoice.subtotal, invoice.currency)}</span>
+                  <span>{formatCurrency(invoice.subtotal, invoice.currency, locale)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">VAT</span>
-                  <span>{formatCurrency(invoice.vatAmount, invoice.currency)}</span>
+                  <span className="text-muted-foreground">{t["invoices.publicVat"]}</span>
+                  <span>{formatCurrency(invoice.vatAmount, invoice.currency, locale)}</span>
                 </div>
                 <div className="flex justify-between font-bold text-lg pt-2 border-t bg-info text-white -mx-3 px-3 py-2 rounded-lg">
                   <span>
                     <T k="pages.total2" />
                   </span>
-                  <span>{formatCurrency(invoice.total, invoice.currency)}</span>
+                  <span>{formatCurrency(invoice.total, invoice.currency, locale)}</span>
                 </div>
               </div>
             </div>
@@ -384,7 +377,7 @@ export default function PublicInvoiceView() {
             {/* Download PDF / Pay now (only when a gateway is live) */}
             <div className="flex flex-wrap justify-center gap-3 pt-4 border-t">
               <Button onClick={handleDownloadPDF} className="bg-info hover:bg-info" size="lg">
-                <Download className="w-5 h-5 mr-2" />
+                <Download className="w-5 h-5 me-2" />
                 <T k="pages.downloadPdf" />
               </Button>
               {data.onlinePayment?.available && (
@@ -394,7 +387,7 @@ export default function PublicInvoiceView() {
                   size="lg"
                   data-testid="public-invoice-pay-now"
                 >
-                  <CreditCard className="w-5 h-5 mr-2" />
+                  <CreditCard className="w-5 h-5 me-2" />
                   <T k="portal.payNow" />
                   {data.onlinePayment.status === "sandbox" && (
                     <Badge variant="outline" className="ms-2">

@@ -1,3 +1,4 @@
+import { accountDisplayName } from "@/lib/account-name";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { T } from "@/components/layout/T";
 import {
@@ -1320,7 +1321,7 @@ export default function BillPay() {
                                   <SelectContent>
                                     {expenseAccounts.map((acc: any) => (
                                       <SelectItem key={acc.id} value={acc.id}>
-                                        {acc.nameEn || acc.name}
+                                        {accountDisplayName(acc, locale)}
                                       </SelectItem>
                                     ))}
                                   </SelectContent>

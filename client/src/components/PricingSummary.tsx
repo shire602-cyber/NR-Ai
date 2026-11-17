@@ -62,8 +62,18 @@ export function PricingSummary() {
       yearlyPrice: 39,
       highlights:
         locale === "en"
-          ? ["1 company, 3 users", "200 invoices/mo", "AI OCR scanning", "Inventory & bill pay"]
-          : ["شركة واحدة، 3 مستخدمين", "200 فاتورة/شهر", "مسح OCR ذكي", "مخزون ودفع فواتير"],
+          ? [
+              "1 company, 3 users",
+              "200 invoices/mo",
+              "AI receipt reading (soon)",
+              "Inventory & bill pay",
+            ]
+          : [
+              "شركة واحدة، 3 مستخدمين",
+              "200 فاتورة/شهر",
+              "قراءة الإيصالات (قريباً)",
+              "مخزون ودفع فواتير",
+            ],
       cta: locale === "en" ? "Start 14-Day Trial" : "ابدأ تجربة 14 يوم",
       variant: "default" as const,
       highlight: false,

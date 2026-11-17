@@ -52,6 +52,16 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
   const openai = deps.openai !== undefined ? deps.openai : (envClients?.openai ?? null);
   const aiLimiter = buildLimiter(limiterProfiles.ai);
 
+  // X3 (J2): lets the Receipts page say up front that automatic reading is not enabled, instead
+  // of letting a scan spin for ~90 seconds (local OCR fallback) and then fail.
+  app.get(
+    "/api/ocr/status",
+    authMiddleware,
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json({ aiConfigured: Boolean(anthropic || openai) });
+    })
+  );
+
   // ===========================
   // OCR Processing Endpoint
   // ===========================

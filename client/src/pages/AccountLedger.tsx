@@ -1,3 +1,4 @@
+import { localizeJournalMemo } from "@/lib/journal-memo";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -580,7 +581,9 @@ export default function AccountLedger() {
                   </Link>
                 </TableCell>
                 <TableCell data-truncate="" data-cell="title">
-                  <span dir="auto">{entry.description || entry.memo || "—"}</span>
+                  <span dir="auto">
+                    {localizeJournalMemo(t, entry.description || entry.memo, locale) || "—"}
+                  </span>
                 </TableCell>
                 <TableCell data-numeric="">
                   {entry.debit > 0 ? (

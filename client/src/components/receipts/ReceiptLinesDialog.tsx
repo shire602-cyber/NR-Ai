@@ -7,6 +7,7 @@
  *   mode "split"  an unposted upload that holds several receipts becomes separate receipts
  *                 (POST /api/receipts/:id/split { parts }); the parts must add up to the total.
  */
+import { accountDisplayName } from "@/lib/account-name";
 import { useState } from "react";
 import {
   Dialog,
@@ -96,7 +97,7 @@ function emptyPart(receipt: ReceiptForSplit | null): ReceiptPartDraft {
 
 export function ReceiptLinesDialog(props: ReceiptLinesDialogProps) {
   const { open, onOpenChange, mode, receipt, accounts, onSaved } = props;
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const request = props.request ?? apiRequest;
   const [lines, setLines] = useState<ReceiptLineDraft[]>(() =>
     receipt ? linesFromReceipt(receipt) : [emptyLine()]
@@ -239,7 +240,7 @@ export function ReceiptLinesDialog(props: ReceiptLinesDialogProps) {
                           <option value="">{t["purchases.chooseAccount"]}</option>
                           {expenseAccounts.map((a) => (
                             <option key={a.id} value={a.id}>
-                              {[a.code, a.nameEn || a.name].filter(Boolean).join(" · ")}
+                              {[a.code, accountDisplayName(a, locale)].filter(Boolean).join(" · ")}
                             </option>
                           ))}
                         </select>

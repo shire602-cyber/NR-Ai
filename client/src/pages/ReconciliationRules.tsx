@@ -1,3 +1,4 @@
+import { accountDisplayName } from "@/lib/account-name";
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
@@ -126,7 +127,7 @@ const matchTypeLabels: Record<string, string> = {
 };
 
 export default function ReconciliationRules() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
@@ -657,7 +658,7 @@ export default function ReconciliationRules() {
                       <SelectContent>
                         {postableAccounts.map((a) => (
                           <SelectItem key={a.id} value={a.id}>
-                            {a.code} {a.nameEn}
+                            {a.code} {accountDisplayName(a, locale)}
                           </SelectItem>
                         ))}
                       </SelectContent>

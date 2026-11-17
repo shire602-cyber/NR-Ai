@@ -1,9 +1,10 @@
 import { T } from "@/components/layout/T";
 import { LegalLayout } from "@/components/LegalLayout";
+import { PrivacyPolicyAr } from "./legal/legalAr";
 
 export default function PrivacyPolicy() {
   return (
-    <LegalLayout slug="privacy" effectiveDate="2026-04-26">
+    <LegalLayout slug="privacy" effectiveDate="2026-04-26" arabic={<PrivacyPolicyAr />}>
       <p>
         This Privacy Policy describes how Najma Al Raeda Accounting and Bookkeeping (
         <strong>"NRA"</strong>,<strong>"we"</strong>, <strong>"us"</strong>, or{" "}

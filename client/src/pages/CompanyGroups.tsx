@@ -3,6 +3,7 @@
  * manual elimination journals for the management consolidation. The server enforces access
  * (every member must be accessible; managing needs company-settings rights on the parent).
  */
+import { accountDisplayName } from "@/lib/account-name";
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -90,6 +91,7 @@ function AccountPicker(props: {
   onChange: (v: string) => void;
   placeholder: string;
 }) {
+  const { locale } = useTranslation();
   const { data } = useQuery<Account[]>({
     queryKey: [`/api/companies/${props.companyId}/accounts`],
     enabled: !!props.companyId,
@@ -102,7 +104,7 @@ function AccountPicker(props: {
       <SelectContent>
         {(data ?? []).map((a) => (
           <SelectItem key={a.id} value={a.id}>
-            {a.code} {a.nameEn}
+            {a.code} {accountDisplayName(a, locale)}
           </SelectItem>
         ))}
       </SelectContent>

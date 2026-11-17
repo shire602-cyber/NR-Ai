@@ -320,7 +320,9 @@ export async function getDashboardStats(companyId: string, input: DashboardStats
     db.query(
       `SELECT
          (SELECT COUNT(*) FROM invoices WHERE company_id = $1)::int AS invoices,
-         (SELECT COUNT(*) FROM journal_entries WHERE company_id = $1 AND status = 'posted')::int AS entries`,
+         (SELECT COUNT(*) FROM journal_entries WHERE company_id = $1 AND status = 'posted')::int AS entries,
+         EXISTS (SELECT 1 FROM bill_payments bp JOIN vendor_bills vb ON vb.id = bp.bill_id
+                  WHERE vb.company_id = $1) AS has_bill_payments`,
       [companyId]
     ),
   ]);
@@ -356,8 +358,10 @@ export async function getDashboardStats(companyId: string, input: DashboardStats
     plTrailing.revenue > 0
       ? Math.round((ar.totals.total / plTrailing.revenue) * 90 * 10) / 10
       : null;
+  // X3 (J2): days-payable is an average payment period; with no vendor payment on record it
+  // would be a number with nothing behind it, so it stays null ("—" in the UI).
   const dpo =
-    plTrailing.totalExpenses > 0
+    plTrailing.totalExpenses > 0 && counts.rows[0].has_bill_payments
       ? Math.round((ap.totals.total / plTrailing.totalExpenses) * 90 * 10) / 10
       : null;
 

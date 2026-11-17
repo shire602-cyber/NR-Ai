@@ -16,14 +16,17 @@ interface LegalLayoutProps {
   /** ISO date (yyyy-mm-dd) the document took effect. */
   effectiveDate: string;
   children: ReactNode;
+  /** Arabic reading copy shown in Arabic mode; the English `children` stay authoritative. */
+  arabic?: ReactNode;
 }
 
 /**
  * Public legal documents on the marketing shell. The documents are written in
- * English and the English text governs, so the body keeps lang="en" and the
- * Arabic interface says so above it.
+ * English and the English text governs. Arabic mode shows an Arabic reading copy (when the page
+ * supplies one) under a notice saying the English text governs; otherwise the English body keeps
+ * lang="en" under the same kind of notice.
  */
-export function LegalLayout({ slug, effectiveDate, children }: LegalLayoutProps) {
+export function LegalLayout({ slug, effectiveDate, children, arabic }: LegalLayoutProps) {
   const { t, locale } = useTranslation();
   const doc = DOCS.find((d) => d.slug === slug) ?? DOCS[0];
   const date = new Intl.DateTimeFormat(locale === "ar" ? "ar-AE" : "en-GB", {
@@ -61,15 +64,31 @@ export function LegalLayout({ slug, effectiveDate, children }: LegalLayoutProps)
           </ul>
         </nav>
         <div>
-          {locale === "ar" && <p className="mk-note">{t["marketing.legalEnglishOnly"]}</p>}
-          <article
-            className="mk-prose"
-            lang="en"
-            dir="ltr"
-            style={locale === "ar" ? { marginBlockStart: "1.5rem" } : undefined}
-          >
-            {children}
-          </article>
+          {locale === "ar" && (
+            <p className="mk-note">
+              {arabic ? t["marketing.legalArabicNotice"] : t["marketing.legalEnglishOnly"]}
+            </p>
+          )}
+          {locale === "ar" && arabic ? (
+            <article
+              className="mk-prose"
+              lang="ar"
+              dir="rtl"
+              style={{ marginBlockStart: "1.5rem" }}
+              data-testid="legal-arabic-copy"
+            >
+              {arabic}
+            </article>
+          ) : (
+            <article
+              className="mk-prose"
+              lang="en"
+              dir="ltr"
+              style={locale === "ar" ? { marginBlockStart: "1.5rem" } : undefined}
+            >
+              {children}
+            </article>
+          )}
           <div className="mk-legal__contact">
             <strong>{t["marketing.legalQuestions"]}</strong>
             {t["marketing.legalWriteTo"]}{" "}

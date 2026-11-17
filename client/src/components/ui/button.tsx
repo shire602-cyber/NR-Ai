@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Button — D2 design system.
- * Heights: sm 32 · default 36 · lg 40 · xl 48. One primary action per view;
+ * Heights: sm 32 · default 36 · lg 40 · xl 48 (every size is 44 on touch screens). One primary action per view;
  * pair it with `outline` or `ghost` secondaries. Icons inherit 16px.
  */
 const buttonVariants = cva(
@@ -32,12 +32,13 @@ const buttonVariants = cva(
         link: "border border-transparent text-accent underline-offset-4 hover:underline px-0",
       },
       size: {
-        default: "min-h-9 px-4 py-2",
-        sm: "min-h-8 px-3 text-[13px] gap-1.5",
-        lg: "min-h-10 px-5 text-sm",
+        // X3 (J2): 44px minimum hit area on touch screens (CTO rule); compact on mouse.
+        default: "min-h-9 px-4 py-2 [@media(pointer:coarse)]:min-h-11",
+        sm: "min-h-8 px-3 text-[13px] gap-1.5 [@media(pointer:coarse)]:min-h-11",
+        lg: "min-h-10 px-5 text-sm [@media(pointer:coarse)]:min-h-11",
         xl: "min-h-12 rounded-lg px-6 text-base",
-        icon: "h-9 w-9",
-        "icon-sm": "h-8 w-8",
+        icon: "h-9 w-9 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11",
+        "icon-sm": "h-8 w-8 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11",
       },
     },
     defaultVariants: {

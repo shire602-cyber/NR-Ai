@@ -1330,8 +1330,17 @@
   gap: 0.65rem;
 }
 .mk-footer ul a {
+  display: inline-flex;
+  align-items: center;
   color: var(--ink-2);
   transition: color var(--dur) var(--ease);
+}
+/* X3: 44px hit area for footer links on touch screens. */
+@media (pointer: coarse) {
+  .mk-footer ul a,
+  .mk-nav a {
+    min-block-size: 2.75rem;
+  }
 }
 .mk-footer ul a:hover {
   color: var(--ink);
