@@ -120,6 +120,42 @@ describe("R20-14 client behaviour: VAT 201 form", () => {
   });
 });
 
+describe("WP-D VAT 201 workbook (spec 3.12)", () => {
+  it("renders read-only boxes as figures (no disabled inputs) with the 12-14 summary", async () => {
+    const { default: VAT201Form } = await import("../../client/src/components/VAT201Form");
+    const data = {
+      ...emptyVat201(),
+      box1bDubaiAmount: 10_000,
+      box1bDubaiVat: 500,
+      box9ExpensesAmount: 2_000,
+      box9ExpensesVat: 100,
+    };
+    act(() => {
+      root.render(
+        createElement(VAT201Form as never, {
+          data,
+          onChange: () => undefined,
+          readOnly: true,
+          companyInfo: { nameEn: "Box Co LLC", trnNumber: "100123456700003" },
+          periodInfo: {
+            periodStart: "1 Jan 2026",
+            periodEnd: "31 Mar 2026",
+            dueDate: "28 Apr 2026",
+          },
+        })
+      );
+    });
+    expect(container.querySelectorAll("input").length).toBe(0);
+    expect(container.querySelector('[data-testid="input-box1bDubai-amount"]')?.textContent).toBe(
+      "10,000.00"
+    );
+    const summary = container.querySelector('[data-testid="vat201-summary"]')?.textContent ?? "";
+    expect(summary).toContain("500.00");
+    expect(summary).toContain("100.00");
+    expect(summary).toContain("400.00");
+  });
+});
+
 describe("R20-14 client behaviour: RTL shell", () => {
   it("[R20-14] RTLProvider mirrors <html dir/lang> with the active locale", async () => {
     const { RTLProvider, useRTL } = await import("../../client/src/components/RTLProvider");
