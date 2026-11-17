@@ -57,6 +57,7 @@ import {
   FilePen,
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
+import { CtYearEndPanel } from "./corporateTax/CtYearEndPanel";
 
 const ctTr = (locale: string, en: string, ar: string) => (locale === "ar" ? ar : en);
 
@@ -498,6 +499,24 @@ export default function CorporateTax() {
       }),
   });
   const [postProvision, setPostProvision] = useState(true);
+  // A4 (M2, IAS 12.12): accrue the computed tax at period end before the return is filed.
+  const accrueMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/corporate-tax/returns/${id}/accrue`, {}),
+    onSuccess: (data: { accrual?: { changed?: boolean } }) => {
+      invalidateReturns();
+      toast({
+        title: data?.accrual?.changed
+          ? t["corporateTax.accrued"]
+          : t["corporateTax.accrualUnchanged"],
+      });
+    },
+    onError: (error: Error) =>
+      toast({
+        variant: "destructive",
+        title: t["corporateTax.statusUpdateFailed"],
+        description: error?.message,
+      }),
+  });
   const unfileMutation = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       apiRequest("POST", `/api/corporate-tax/returns/${id}/unfile`, { reason }),
@@ -915,7 +934,7 @@ export default function CorporateTax() {
                   </div>
                   <div className="flex justify-between border-t pt-2">
                     <span className="font-semibold">
-                      <T k="pageLabels.grossProfit" />
+                      <T k="corporateTax.accountingProfit" />
                     </span>
                     <span className="font-semibold">
                       <Money
@@ -1025,6 +1044,7 @@ export default function CorporateTax() {
       </Card>
 
       <CtCompliancePanel companyId={companyId} />
+      <CtYearEndPanel companyId={companyId} />
 
       {/* Returns Table */}
       <Card>
@@ -1170,6 +1190,20 @@ export default function CorporateTax() {
                                 data-testid={`button-ct-compute-${taxReturn.id}`}
                               >
                                 <Calculator className="w-4 h-4" />
+                              </Button>
+                            )}
+                            {(taxReturn.status === "computed" ||
+                              taxReturn.status === "reviewed") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => accrueMutation.mutate(taxReturn.id)}
+                                disabled={accrueMutation.isPending}
+                                title={t["corporateTax.accrue"]}
+                                aria-label={t["corporateTax.accrue"]}
+                                data-testid={`button-ct-accrue-${taxReturn.id}`}
+                              >
+                                <BookOpen className="w-4 h-4 text-muted-foreground" aria-hidden />
                               </Button>
                             )}
                             {taxReturn.status === "computed" && (

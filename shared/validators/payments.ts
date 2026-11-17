@@ -45,3 +45,26 @@ export const refundCustomerCreditSchema = z
   })
   .strict();
 export type RefundCustomerCreditInput = z.output<typeof refundCustomerCreditSchema>;
+
+/**
+ * A4 (M1): a customer deposit / advance received before the invoice. `amount` is what the customer
+ * paid (VAT-inclusive for a standard-rated supply: VAT = amount x 5/105 is due on receipt).
+ */
+export const createCustomerDepositSchema = z
+  .object({
+    contactId: zUuid.optional().nullable(),
+    customerName: zText(255).optional().nullable(),
+    customerTrn: zText(32).optional().nullable(),
+    date: zDate,
+    amount: zPositiveFils,
+    vatTreatment: z.enum(["standard", "zero_rated", "exempt", "out_of_scope"]).default("standard"),
+    paymentAccountId: zUuid,
+    reference: zText(200).optional().nullable(),
+    description: zText(500).optional().nullable(),
+  })
+  .strict()
+  .refine((v) => !!v.contactId || !!(v.customerName ?? "").trim(), {
+    message: "Choose or name the customer",
+    path: ["customerName"],
+  });
+export type CreateCustomerDepositInput = z.output<typeof createCustomerDepositSchema>;

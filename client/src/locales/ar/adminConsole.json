@@ -385,5 +385,14 @@
   "activityLog.action.zatca.egs_created": "إنشاء وحدة إصدار فواتير لدى هيئة الزكاة والضريبة والجمارك",
   "activityLog.action.zatca.egs_onboarded": "تسجيل وحدة إصدار فواتير لدى هيئة الزكاة والضريبة والجمارك",
   "activityLog.action.zatca.invoice_submitted": "إرسال فاتورة إلى هيئة الزكاة والضريبة والجمارك",
-  "activityLog.action.payroll.settlement_pay": "سُدّدت تسوية نهاية الخدمة"
+  "activityLog.action.payroll.settlement_pay": "سُدّدت تسوية نهاية الخدمة",
+  "activityLog.action.customer_deposit.create": "سجّل دفعة مقدمة من عميل",
+  "activityLog.action.corporate_tax.deferred_tax_posted": "رحّل تسوية ضريبة مؤجلة",
+  "activityLog.action.corporate_tax.deferred_tax_reversed": "عكس تسوية ضريبة مؤجلة",
+  "activityLog.action.corporate_tax.external_return_created": "سجّل إقرار ضريبة شركات مقدمًا خارج مُحاسِب",
+  "activityLog.action.corporate_tax.external_return_updated": "حدّث إقرار ضريبة شركات مقدمًا خارج مُحاسِب",
+  "activityLog.action.corporate_tax.external_return_deleted": "حذف إقرار ضريبة شركات مقدمًا خارج مُحاسِب",
+  "activityLog.action.corporate_tax_return.accrued": "استحق ضريبة الشركات في نهاية الفترة",
+  "activityLog.action.payroll.pension_payment": "سجّل دفعة اشتراكات معاشات",
+  "activityLog.action.payroll.pension_payment_reversed": "عكس دفعة اشتراكات معاشات"
 }

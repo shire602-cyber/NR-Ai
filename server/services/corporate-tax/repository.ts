@@ -236,7 +236,8 @@ export async function getPriorCtFacts(
   excludeReturnId?: string
 ): Promise<PriorCtFacts> {
   const r = await pool.query(
-    `SELECT id, total_revenue, loss_carried_forward, interest_carried_forward
+    `SELECT id, total_revenue, loss_carried_forward, interest_carried_forward,
+            ((tax_period_end + interval '4 hours')::date)::text AS period_end_local
        FROM corporate_tax_returns
       WHERE company_id = $1
         AND status = ANY($2::text[])
@@ -245,11 +246,25 @@ export async function getPriorCtFacts(
       ORDER BY tax_period_end DESC, created_at DESC`,
     [companyId, LIVE_CT_STATUSES as unknown as string[], periodStart, excludeReturnId ?? null]
   );
-  const latest = r.rows[0];
+  // A4 (M13, FDL 47/2022 Art. 37): returns filed outside Muhasib (before go-live) carry their
+  // losses and disallowed interest forward too; the latest prior period wins, whichever source.
+  const ext = await pool.query(
+    `SELECT tax_period_end::text AS period_end, total_revenue, loss_carried_forward,
+            interest_carried_forward
+       FROM ct_external_returns
+      WHERE company_id = $1 AND tax_period_end < $2::date
+      ORDER BY tax_period_end DESC`,
+    [companyId, periodStart]
+  );
+  const latestLive = r.rows[0];
+  const latestExt = ext.rows[0];
+  const liveEnd: string | null = latestLive?.period_end_local ?? null;
+  const latest =
+    latestExt && (!liveEnd || String(latestExt.period_end) > liveEnd) ? latestExt : latestLive;
   return {
     lossBroughtForward: Number(latest?.loss_carried_forward ?? 0) || 0,
     interestCarriedForward: Number(latest?.interest_carried_forward ?? 0) || 0,
-    priorPeriodsExceededRevenueCap: r.rows.some(
+    priorPeriodsExceededRevenueCap: [...r.rows, ...ext.rows].some(
       (row: { total_revenue: string | null }) =>
         (Number(row.total_revenue) || 0) > CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP
     ),

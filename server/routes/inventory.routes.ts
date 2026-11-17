@@ -51,6 +51,7 @@ import {
   reorderList,
   transferStock,
   writeDownStock,
+  reverseWriteDown,
 } from "../services/inventory";
 import { assertAccount, assertWarehouse, defaultWarehouse, q } from "../services/inventory/store";
 
@@ -360,6 +361,34 @@ export function registerInventoryRoutes(app: Express) {
         })
       );
       res.status(201).json({ ...r, value: fromFils(r.valueFils) });
+    })
+  );
+
+  // L8 (A4, IAS 2.33): reverse an earlier NRV write-down (capped at write-downs not reversed).
+  app.post(
+    "/api/products/:id/write-down-reversal",
+    authMiddleware,
+    requireCustomer,
+    strictBody(writeDownBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const product = await loadProduct(req);
+      await assertCompanyPermission(actorFromRequest(req), product.companyId, ["ledger.post"]);
+      const body = parsedBody<WriteDownBody>(req);
+      const date = body.date ?? today();
+      await assertPeriodNotLocked(product.companyId, date);
+      const r = await withLedgerTx((tx) =>
+        reverseWriteDown(tx, {
+          companyId: product.companyId,
+          productId: product.id,
+          amountFils: body.amount,
+          date,
+          reason: body.reason,
+          actorId: req.user!.id,
+        })
+      );
+      res
+        .status(201)
+        .json({ ...r, value: fromFils(r.valueFils), reversible: fromFils(r.reversibleFils) });
     })
   );
 

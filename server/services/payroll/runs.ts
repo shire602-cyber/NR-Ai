@@ -45,6 +45,7 @@ import {
   prorateWages,
   gratuityAccrualTrueUpFils,
   gratuityEntitlement,
+  addDays,
   isoDay,
   periodBounds,
   utcDate,
@@ -57,9 +58,10 @@ import {
   payrollAccounts,
   requireAccount,
 } from "./context";
-import { pensionCountry, type PayrollLegalParams } from "./legal-params";
+import { pensionCountry, pensionRuleFor, type PayrollLegalParams } from "./legal-params";
 import { leaveDaysInRange, unpaidLeaveDaysBetween } from "./leave";
 import { dayOf, fils, num, q, q1, type Row } from "./sql";
+import { uaeToday } from "../../reporting/dates";
 import {
   attachClaimsToRun,
   markRunClaimsPaid,
@@ -144,6 +146,8 @@ interface EmployeeRow extends Row {
   transport_allowance: unknown;
   other_allowance: unknown;
   opening_gratuity_provision?: unknown;
+  opening_gratuity_as_of?: unknown;
+  pension_scheme?: string | null;
   salary_currency: string | null;
   cost_center_id: string | null;
   department: string | null;
@@ -208,6 +212,15 @@ async function accruedGratuity(
     tx
   );
   return new Map(rows.map((r) => [r.employee_id, fils(r.total)]));
+}
+
+/** An employee whose opening gratuity provision must be entered before the first run (M10). */
+export interface OpeningGratuityGap {
+  employeeId: string;
+  fullName: string;
+  joinDate: string;
+  asOf: string;
+  suggestedOpeningProvision: string;
 }
 
 export interface LineContext {
@@ -374,6 +387,11 @@ export async function calculateRun(
 
     const leave = await leaveDaysInRange(companyId, periodStart, periodEnd, tx);
     const accrued = await accruedGratuity(companyId, runId, periodIndex, tx);
+    // M10: the gratuity earned before this employee's first run in Muhasib is an opening
+    // balance (2036 at go-live), not this month's expense. Until it is entered (0 = confirmed
+    // nil) the run is refused with the suggested amount, so only the period movement is expensed.
+    const goLiveDay = isoDay(addDays(utcDate(periodStart), -1));
+    const openingMissing: OpeningGratuityGap[] = [];
 
     for (const emp of employees) {
       if (preservedIds.has(emp.id)) continue;
@@ -419,6 +437,31 @@ export async function calculateRun(
         ? await unpaidLeaveDaysBetween(companyId, emp.id, join, serviceEnd, tx)
         : 0;
       const empLeave = leave.get(emp.id) ?? { paid: 0, unpaid: 0 };
+      if (
+        !emp.has_settlement &&
+        !accrued.has(emp.id) &&
+        (emp.opening_gratuity_provision === null || emp.opening_gratuity_provision === undefined) &&
+        join &&
+        join <= goLiveDay
+      ) {
+        const unpaidBefore = await unpaidLeaveDaysBetween(companyId, emp.id, join, goLiveDay, tx);
+        const suggestedFils = gratuityAccrualFor(emp, monthlyBasicFils, {
+          params,
+          periodEnd: goLiveDay,
+          unpaidServiceDays: unpaidBefore,
+          accrued: 0,
+        });
+        if (suggestedFils > 0) {
+          openingMissing.push({
+            employeeId: emp.id,
+            fullName: emp.full_name,
+            joinDate: join,
+            asOf: goLiveDay,
+            suggestedOpeningProvision: fromFils(suggestedFils),
+          });
+          continue;
+        }
+      }
       const line = calculatePayrollLine(
         {
           basicFils,
@@ -426,6 +469,7 @@ export async function calculateRun(
           transportFils,
           otherFils,
           nationality: emp.nationality,
+          pensionScheme: emp.pension_scheme ?? null,
           unpaidLeaveDays: empLeave.unpaid,
           gratuityAccrualFils: emp.has_settlement
             ? 0
@@ -458,6 +502,7 @@ export async function calculateRun(
                     monthDays
                   ),
                   nationality: emp.nationality,
+                  pensionScheme: emp.pension_scheme ?? null,
                   unpaidLeaveDays: empLeave.unpaid,
                 },
                 params
@@ -470,9 +515,9 @@ export async function calculateRun(
            other_allowance, overtime, deductions, pension_employee, pension_employer,
            gratuity_accrual, net_salary, unpaid_leave_days, paid_leave_days, unpaid_leave_deduction,
            salary_currency, exchange_rate, net_salary_foreign, cost_center_id, department,
-           payment_mode, status, manually_edited)
+           pension_fund, payment_mode, status, manually_edited)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
-                 $19, $20, 'bank_transfer', 'pending', false)`,
+                 $19, $20, $21, 'bank_transfer', 'pending', false)`,
         [
           runId,
           emp.id,
@@ -494,8 +539,21 @@ export async function calculateRun(
           foreignNet,
           emp.cost_center_id,
           emp.department,
+          pensionRuleFor(emp.nationality, emp.pension_scheme)?.fund ?? null,
         ],
         tx
+      );
+    }
+
+    if (openingMissing.length > 0) {
+      throw new DomainError(
+        "OPENING_GRATUITY_REQUIRED",
+        422,
+        { asOf: goLiveDay, employees: openingMissing },
+        `Enter the opening gratuity provision at ${goLiveDay} for ${openingMissing.length} ` +
+          `employee(s) before their first payroll run, so this run expenses only the month's ` +
+          `movement (book the same amount in the 2036 opening balance). Enter 0 only if no provision ` +
+          `existed then: the whole catch-up is then expensed in this run.`
       );
     }
 
@@ -600,6 +658,7 @@ export async function editItem(itemId: string, companyId: string, edit: ItemEdit
         transportFils: fils(item.transport_allowance),
         otherFils: fils(item.other_allowance),
         nationality: emp?.nationality ?? null,
+        pensionScheme: (emp?.pension_scheme as string | null | undefined) ?? null,
         overtimeFils: Math.max(0, manualOvertime),
         overtimeHours,
         overtimeMultiplier: multiplier === null ? null : String(multiplier),
@@ -748,7 +807,7 @@ export function buildAccrualLines(
         accountId: requireAccount(accounts, "pensionExpense"),
         debitFils: g.pensionEmployerFils,
         costCenterId: g.costCenterId,
-        description: `Employer pension contribution (GPSSA) - payroll ${label}${dept}`,
+        description: `Employer pension contribution (GPSSA / ADPF) - payroll ${label}${dept}`,
       });
     }
     if (g.gratuityFils > 0) {
@@ -771,7 +830,7 @@ export function buildAccrualLines(
     lines.push({
       accountId: requireAccount(accounts, "pensionPayable"),
       creditFils: pensionEe + pensionEr,
-      description: `Pension payable to GPSSA (employee + employer) - payroll ${label}`,
+      description: `Pension payable (GPSSA / ADPF, employee + employer) - payroll ${label}`,
     });
   }
   if (deductions > 0) {
@@ -789,6 +848,22 @@ export function buildAccrualLines(
     });
   }
   return lines;
+}
+
+/**
+ * L6: the accrual date of a payroll run approved on `today`: period end once the month is over,
+ * today while it is running, and 422 PAYROLL_PERIOD_NOT_STARTED before it begins.
+ */
+export function payrollAccrualDate(periodStart: string, periodEnd: string, today: string): string {
+  if (today < periodStart) {
+    throw new DomainError(
+      "PAYROLL_PERIOD_NOT_STARTED",
+      422,
+      { periodStart, today },
+      `This payroll month starts on ${periodStart}; approve the run once the month has started`
+    );
+  }
+  return today < periodEnd ? today : periodEnd;
 }
 
 export async function approveRun(
@@ -838,17 +913,19 @@ export async function approveRun(
     const accounts = await payrollAccounts(companyId, tx);
     const label = periodLabel(run);
     const lines = buildAccrualLines(items, accounts, label);
-    const { end } = periodBounds(run.period_month, run.period_year);
+    const { start, end } = periodBounds(run.period_month, run.period_year);
+    // L6: no future-dated payroll journals (final settlements refuse them too). A run approved
+    // inside its month accrues today (the same month); a later approval accrues at period end;
+    // a run cannot be approved before its month starts.
+    const accrualDate = payrollAccrualDate(isoDay(start), isoDay(end), uaeToday());
     const posted = await postJournal(
       {
         companyId,
-        date: isoDay(end),
+        date: accrualDate,
         memo: `Payroll ${label} - ${items.length} employee(s)`,
         source: "payroll",
         sourceId: runId,
         status: "posted",
-        // A run may be approved before its period ends; the accrual is dated at period end.
-        allowFutureDate: true,
         lines,
       },
       { actorId, tx, req, audit: true }

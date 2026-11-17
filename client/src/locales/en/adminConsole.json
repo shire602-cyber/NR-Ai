@@ -385,5 +385,14 @@
   "activityLog.action.zatca.egs_created": "ZATCA EGS unit created",
   "activityLog.action.zatca.egs_onboarded": "ZATCA EGS unit onboarded",
   "activityLog.action.zatca.invoice_submitted": "Invoice submitted to ZATCA",
-  "activityLog.action.payroll.settlement_pay": "Final settlement paid"
+  "activityLog.action.payroll.settlement_pay": "Final settlement paid",
+  "activityLog.action.customer_deposit.create": "Recorded a customer deposit",
+  "activityLog.action.corporate_tax.deferred_tax_posted": "Posted a deferred tax adjustment",
+  "activityLog.action.corporate_tax.deferred_tax_reversed": "Reversed a deferred tax adjustment",
+  "activityLog.action.corporate_tax.external_return_created": "Recorded a corporate tax return filed outside Muhasib",
+  "activityLog.action.corporate_tax.external_return_updated": "Updated a corporate tax return filed outside Muhasib",
+  "activityLog.action.corporate_tax.external_return_deleted": "Removed a corporate tax return filed outside Muhasib",
+  "activityLog.action.corporate_tax_return.accrued": "Accrued corporate tax at period end",
+  "activityLog.action.payroll.pension_payment": "Recorded a pension contribution payment",
+  "activityLog.action.payroll.pension_payment_reversed": "Reversed a pension contribution payment"
 }

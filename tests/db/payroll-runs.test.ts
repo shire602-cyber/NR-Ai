@@ -68,6 +68,8 @@ const expat = {
   joinDate: "2018-01-01",
   basicSalary: "10000.00",
   housingAllowance: "3000.00",
+  // A4 (M10): nil opening gratuity provision confirmed (first run catches up in full).
+  openingGratuityProvision: "0.00",
   molPersonId: "10012345678902",
   routingCode: "602620101",
   iban: IBAN_2,
@@ -525,6 +527,7 @@ describe("multi-currency (R09-19)", () => {
       basicSalary: "1000.00",
       salaryCurrency: "USD",
       joinDate: "2025-01-01",
+      openingGratuityProvision: "0.00",
     });
     const run = await createRun(c, 6);
     await calculate(c, run.id);

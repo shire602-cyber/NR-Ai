@@ -179,6 +179,7 @@ describe("[X4][J3] payroll payments, final month and settlement", () => {
           nationality: "IN",
           joinDate: "2024-01-01",
           basicSalary: "5000.00",
+          openingGratuityProvision: "0.00",
         })
       ).status
     ).toBe(201);
@@ -281,7 +282,8 @@ describe("[X4][J3] payroll payments, final month and settlement", () => {
         nationality: "IN",
         joinDate: "2018-01-01",
         basicSalary: "10000.00",
-        ...(opening ? { openingGratuityProvision: opening } : {}),
+        // A4 (M10): the first run now asks for the opening provision; "0.00" = confirmed nil.
+        openingGratuityProvision: opening ?? "0.00",
       });
     const without = await mk("No Opening");
     const withOpening = await mk("With Opening", "60000.00");

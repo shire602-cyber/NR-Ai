@@ -44,6 +44,7 @@ import {
 } from "../services/invoice-state-machine";
 import { ACCOUNT_CODES } from "../constants";
 import { allocatePayment, buildPaymentJournalLines } from "../services/invoice-lifecycle";
+import { getCustomerCreditAccount } from "../services/invoice-posting.service";
 import { isForeignCurrency, loadBaseCurrency, postJournal } from "../ledger";
 import type { InvoiceSummary } from "./types";
 import { DEFAULT_LIST_LIMIT } from "./helpers";
@@ -617,24 +618,10 @@ export class SalesStorage extends LedgerStorage {
       }
       let customerCreditAccountId: string | null = null;
       if (allocation.customerCredit > 0) {
-        const advanceRows = await tx
-          .select()
-          .from(accounts)
-          .where(
-            and(
-              eq(accounts.companyId, input.companyId),
-              eq(accounts.code, ACCOUNT_CODES.DEFERRED_REVENUE)
-            )
-          );
-        customerCreditAccountId = advanceRows[0]?.id ?? null;
-        if (!customerCreditAccountId) {
-          const e: Error & { code?: string; details?: unknown } = new Error(
-            `Payment ${amountD.toFixed(2)} exceeds remaining balance ${remainingD.toFixed(2)} ` +
-              `and no customer-advance account (${ACCOUNT_CODES.DEFERRED_REVENUE}) exists to hold the overpayment`
-          );
-          e.code = "OVERPAYMENT";
-          throw e;
-        }
+        // L5: an overpayment is money owed back to the customer, not deferred revenue: it goes
+        // to 2055 Customer Credit Balances (the account credit notes use), created on demand.
+        // 2050 stays the contract liability for deposits / advances (IFRS 15.106).
+        customerCreditAccountId = await getCustomerCreditAccount(tx, input.companyId);
       }
 
       // A-B5/A-B12: compute the balanced legs via the tested pure builder. AR
@@ -726,6 +713,16 @@ export class SalesStorage extends LedgerStorage {
       // fils balance, account/period guards, in-transaction numbering). The
       // payment date is the journal date (R03-13).
       const foreignCur = isForeignInvoice ? lockedInvoice.currency.toUpperCase() : null;
+      // L4: the currency the cash account is held in: the GL account's own currency, else the
+      // bank account (bank_accounts.gl_account_id) it books, else the functional currency.
+      let cashCurrency = (input.paymentAccountCurrency ?? "").toUpperCase();
+      if (foreignCur && !cashCurrency) {
+        const ba = await tx.execute(sql`
+          SELECT upper(currency) AS c FROM bank_accounts
+           WHERE company_id = ${input.companyId} AND gl_account_id = ${input.paymentAccountId}
+           LIMIT 1`);
+        cashCurrency = String(rowsFromResult<{ c: string | null }>(ba)[0]?.c ?? companyBase);
+      }
       const { entry } = await postJournal(
         {
           companyId: input.companyId,
@@ -752,7 +749,9 @@ export class SalesStorage extends LedgerStorage {
                     exchangeRate: String(invRate),
                   }
                 : {}),
-              ...(foreignCur && isCash
+              // L4: only a bank account held in the invoice currency carries the foreign amount;
+              // an AED account receiving a USD invoice gets an AED line (converted at payRate).
+              ...(foreignCur && isCash && cashCurrency === foreignCur
                 ? {
                     foreignCurrency: foreignCur,
                     foreignDebit: amountD.toFixed(2),

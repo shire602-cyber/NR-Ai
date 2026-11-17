@@ -347,6 +347,7 @@ describe("S2 expense claims", () => {
       joinDate: "2018-01-01",
       basicSalary: "10000.00",
       housingAllowance: "3000.00",
+      openingGratuityProvision: "0.00",
       molPersonId: "10012345678902",
       routingCode: "602620101",
       iban: "AE690260001015123456701",

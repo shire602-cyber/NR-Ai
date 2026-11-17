@@ -45,6 +45,8 @@ export const EMPLOYEE_COLUMNS: Record<string, string> = {
   transportAllowance: "transport_allowance",
   otherAllowance: "other_allowance",
   openingGratuityProvision: "opening_gratuity_provision",
+  openingGratuityAsOf: "opening_gratuity_as_of",
+  pensionScheme: "pension_scheme",
   status: "status",
 };
 
@@ -59,7 +61,6 @@ const NOT_NULL_DEFAULTS: Record<string, unknown> = {
   housingAllowance: "0.00",
   transportAllowance: "0.00",
   otherAllowance: "0.00",
-  openingGratuityProvision: "0.00",
   salaryCurrency: "AED",
   noticePeriodDays: 30,
 };
@@ -154,6 +155,22 @@ function rethrowDuplicate(err: unknown): never {
   throw err;
 }
 
+/**
+ * M10: entering an opening gratuity provision (0 included) records when it was measured
+ * (`openingGratuityAsOf`, default today); clearing it (null) clears the date, so the first
+ * payroll run asks for it again.
+ */
+function withOpeningGratuityDate(values: Record<string, unknown>): void {
+  if (!("openingGratuityProvision" in values) || values.openingGratuityProvision === undefined) {
+    return;
+  }
+  if (values.openingGratuityProvision === null) {
+    values.openingGratuityAsOf = null;
+  } else if (!values.openingGratuityAsOf) {
+    values.openingGratuityAsOf = new Date(Date.now() + 4 * 3600_000).toISOString().slice(0, 10);
+  }
+}
+
 function totalSalary(values: Record<string, unknown>): string {
   return fromFils(sumFils(SALARY_KEYS.map((k) => fils(values[k] ?? "0"))));
 }
@@ -167,6 +184,7 @@ export async function createEmployee(
   await assertUniqueIdentifiers(companyId, body, null);
   const values: Record<string, unknown> = { ...NOT_NULL_DEFAULTS };
   for (const [k, v] of Object.entries(body)) if (v !== undefined) values[k] = v;
+  withOpeningGratuityDate(values);
   const keys = Object.keys(values).filter((k) => EMPLOYEE_COLUMNS[k]);
   const cols = keys.map((k) => `"${EMPLOYEE_COLUMNS[k]}"`);
   const params = keys.map((k) => values[k]);
@@ -220,7 +238,9 @@ export async function updateEmployee(
   await assertUniqueIdentifiers(companyId, body, employeeId);
   const sets: string[] = [];
   const params: unknown[] = [];
-  for (const [k, v] of Object.entries(body)) {
+  const patch: Record<string, unknown> = { ...body };
+  withOpeningGratuityDate(patch);
+  for (const [k, v] of Object.entries(patch)) {
     if (v === undefined || !EMPLOYEE_COLUMNS[k]) continue;
     // NOT NULL columns cannot be cleared; null resets them to the default.
     const value = v === null && k in NOT_NULL_DEFAULTS ? NOT_NULL_DEFAULTS[k] : v;

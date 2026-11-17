@@ -188,7 +188,8 @@ describe("W4-B fixed assets", () => {
   it("[R10-17] classes default the accounts and life; revaluation, impairment, audit trail, CSV import and register export", async () => {
     const t = await h.createTenant();
     const vehicles = await h.sql<{ id: string }>(
-      `INSERT INTO accounts (company_id, code, name_en, type, sub_type) VALUES ($1, '1250', 'Vehicles', 'asset', 'fixed_asset') RETURNING id`,
+      // L2 (A4): 1250 Motor Vehicles is in the default chart now.
+      `SELECT id FROM accounts WHERE company_id = $1 AND code = '1250'`,
       [t.company.id]
     );
     const cls = await t.as.post(`/api/companies/${t.company.id}/fixed-asset-classes`, {

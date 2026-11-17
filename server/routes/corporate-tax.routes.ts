@@ -6,6 +6,7 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { DomainError } from "../errors";
 import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
 import {
   buildCtReturnWorkbook,
   buildCtTemplateWorkbook,
@@ -32,7 +33,13 @@ import {
   type CtWorkpaperRow,
 } from "../../shared/ct-workpaper";
 import {
+  accrueCtReturnSchema,
   amendCtReturnSchema,
+  ctExternalReturnSchema,
+  deferredTaxReverseSchema,
+  deferredTaxSchema,
+  type CtExternalReturnBody,
+  type DeferredTaxBody,
   computeCtReturnSchema,
   createCtReturnSchema,
   ctAccountTagSchema,
@@ -52,6 +59,14 @@ import { normalizeCompanyRole, roleHasPermission, type Permission } from "../../
 import { ENTRY_LOCAL_DATE_SQL, NOT_CLOSING_SQL, profitAndLoss, readRange } from "../reporting";
 import type { CorporateTaxReturn } from "../../shared/schema";
 import {
+  accrueCtReturn,
+  deleteExternalReturn,
+  listDeferredTax,
+  listExternalReturns,
+  postDeferredTax,
+  previewDeferredTax,
+  reverseDeferredTax,
+  upsertExternalReturn,
   amendCtReturn,
   assertEditable,
   auditCtReturn,
@@ -441,6 +456,23 @@ export function registerCorporateTaxRoutes(app: Express) {
     })
   );
 
+  // A4 (M2, IAS 12.12): accrue the computed current tax at period end before filing.
+  app.post(
+    "/api/corporate-tax/returns/:id/accrue",
+    authMiddleware,
+    requireCustomer,
+    strictBody(accrueCtReturnSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const ctReturn = await loadReturn(req, req.params.id);
+      await assertPermission(req, ctReturn.companyId, "ledger.post");
+      const result = await accrueCtReturn(ctReturn, req.user!.id, req);
+      res.json({
+        ...withDeadline(result.return),
+        accrual: { changed: result.changed, entryId: result.entryId },
+      });
+    })
+  );
+
   // X4 (J3): undo "record as filed" (filed, unpaid) with an audited reason.
   app.post(
     "/api/corporate-tax/returns/:id/unfile",
@@ -646,6 +678,9 @@ export function registerCorporateTaxRoutes(app: Express) {
         periodEnd: `${range.to}T00:00:00.000Z`,
         totalRevenue: Math.round(totalRevenue * 100) / 100,
         totalExpenses,
+        // L3: revenue less all expenses is the accounting (net) profit before tax, not gross
+        // profit. `grossProfit` stays as a deprecated alias for existing API clients.
+        accountingProfit: Math.round((totalRevenue - totalExpenses) * 100) / 100,
         grossProfit: Math.round((totalRevenue - totalExpenses) * 100) / 100,
         totalDeductions,
         taxableIncome: liability.taxableIncome,
@@ -670,6 +705,133 @@ export function registerCorporateTaxRoutes(app: Express) {
         },
         journalEntriesProcessed: entries,
       });
+    })
+  );
+
+  // ─── Deferred tax (A4: M2, IAS 12) ──────────────────────────────────────
+  app.get(
+    "/api/companies/:companyId/corporate-tax/deferred-tax",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      res.json(await listDeferredTax(companyId));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/corporate-tax/deferred-tax/preview",
+    authMiddleware,
+    requireCustomer,
+    strictBody(deferredTaxSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      const {
+        fils: _f,
+        accounts: _a,
+        ...preview
+      } = await previewDeferredTax(companyId, parsedBody<DeferredTaxBody>(req));
+      res.json(preview);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/corporate-tax/deferred-tax",
+    authMiddleware,
+    requireCustomer,
+    strictBody(deferredTaxSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "ledger.post");
+      const body = parsedBody<DeferredTaxBody>(req);
+      res.status(201).json(await postDeferredTax(companyId, req.user!.id, body, req));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/corporate-tax/deferred-tax/:adjustmentId/reverse",
+    authMiddleware,
+    requireCustomer,
+    strictBody(deferredTaxReverseSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, adjustmentId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "ledger.post");
+      if (!zUuid.safeParse(adjustmentId).success)
+        throw new DomainError("DEFERRED_TAX_NOT_FOUND", 404);
+      res.json(
+        await reverseDeferredTax(
+          companyId,
+          adjustmentId,
+          req.user!.id,
+          parsedBody<{ reason: string }>(req).reason,
+          req
+        )
+      );
+    })
+  );
+
+  // ─── Returns filed outside Muhasib: losses brought forward (A4: M13) ─────
+  app.get(
+    "/api/companies/:companyId/corporate-tax/external-returns",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      res.json(await listExternalReturns(companyId));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/corporate-tax/external-returns",
+    authMiddleware,
+    requireCustomer,
+    strictBody(ctExternalReturnSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "tax.submit");
+      const body = parsedBody<CtExternalReturnBody>(req);
+      res
+        .status(201)
+        .json(await upsertExternalReturn(companyId, req.user!.id, body, undefined, req));
+    })
+  );
+
+  app.put(
+    "/api/companies/:companyId/corporate-tax/external-returns/:externalId",
+    authMiddleware,
+    requireCustomer,
+    strictBody(ctExternalReturnSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, externalId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "tax.submit");
+      if (!zUuid.safeParse(externalId).success) {
+        throw new DomainError("CT_EXTERNAL_RETURN_NOT_FOUND", 404);
+      }
+      const body = parsedBody<CtExternalReturnBody>(req);
+      res.json(await upsertExternalReturn(companyId, req.user!.id, body, externalId, req));
+    })
+  );
+
+  app.delete(
+    "/api/companies/:companyId/corporate-tax/external-returns/:externalId",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, externalId } = req.params;
+      await requireAccess(req, companyId);
+      await assertPermission(req, companyId, "tax.submit");
+      if (!zUuid.safeParse(externalId).success) {
+        throw new DomainError("CT_EXTERNAL_RETURN_NOT_FOUND", 404);
+      }
+      await deleteExternalReturn(companyId, req.user!.id, externalId, req);
+      res.status(204).end();
     })
   );
 

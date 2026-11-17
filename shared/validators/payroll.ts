@@ -56,6 +56,9 @@ export const CONTRACT_TYPES = [
   "job_sharing",
 ] as const;
 export const EMPLOYEE_STATUSES = ["active", "inactive"] as const;
+/** Pension fund an employee is registered with (A4, M11): GPSSA or Abu Dhabi Pension Fund. */
+export const PENSION_SCHEMES = ["gpssa", "adpf"] as const;
+export const PENSION_FUNDS = ["gpssa", "adpf"] as const;
 
 /** Salary amount: >= 0, at most 2 decimals, at most 10,000,000 per month. */
 const zSalary = zMoney.refine((v) => Number(v) <= 10_000_000, "Amount is too large");
@@ -116,6 +119,10 @@ const employeeFields = {
   otherAllowance: zSalary,
   /** X4: gratuity provision already booked before go-live (opening balance in 2036). */
   openingGratuityProvision: zSalary,
+  /** A4 (M10): the go-live date the opening gratuity provision is measured at. */
+  openingGratuityAsOf: zDateIn({ min: "1950-01-01" }),
+  /** A4 (M11): pension fund registration; blank = by nationality (GPSSA / GCC scheme). */
+  pensionScheme: z.enum(PENSION_SCHEMES),
 };
 
 type EmployeeFieldKey = keyof typeof employeeFields;
@@ -219,6 +226,20 @@ export type PayrollItemPatchBody = z.output<typeof payrollItemPatchSchema>;
 
 export const payrollApproveSchema = z.object({ notes: opt(zText(500)) }).strict();
 export const payrollPaySchema = z.object({ paymentAccountId: zUuid, paymentDate: zDate }).strict();
+
+/** A4 (M14): pay a pension fund's outstanding contributions (Dr 2032 / Cr bank). */
+export const pensionPaymentSchema = z
+  .object({
+    fund: z.enum(PENSION_FUNDS),
+    amount: zMoney.refine((v) => Number(v) > 0, "Amount must be greater than zero"),
+    paymentDate: zDate,
+    paymentAccountId: zUuid,
+    reference: opt(zText(128)),
+    periodYear: opt(zPeriodYear),
+    periodMonth: opt(zPeriodMonth),
+  })
+  .strict();
+export type PensionPaymentBody = z.output<typeof pensionPaymentSchema>;
 export type PayrollPayBody = z.output<typeof payrollPaySchema>;
 export const payrollReverseSchema = z.object({ reason: zText(500, { min: 1 }) }).strict();
 

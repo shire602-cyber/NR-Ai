@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { Banknote, CalendarDays, FileText, Landmark, LogOut, Users } from "lucide-react";
+import { Banknote, CalendarDays, FileText, Landmark, LogOut, PiggyBank, Users } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -10,6 +10,7 @@ import { LeaveTab } from "./payroll/LeaveTab";
 import { PayslipsTab } from "./payroll/PayslipsTab";
 import { SettlementTab } from "./payroll/SettlementTab";
 import { WpsTab } from "./payroll/WpsTab";
+import { PensionTab } from "./payroll/PensionTab";
 
 /**
  * Payroll & WPS (W3-D): runs, employees, leave, payslips, end-of-service
@@ -41,6 +42,7 @@ export default function Payroll() {
     { value: "payslips", label: "hr.tab.payslips", icon: FileText },
     { value: "settlement", label: "hr.tab.settlement", icon: LogOut },
     { value: "wps", label: "hr.tab.wps", icon: Landmark },
+    { value: "pension", label: "hr.tab.pension", icon: PiggyBank },
   ];
 
   return (
@@ -72,6 +74,9 @@ export default function Payroll() {
         </TabsContent>
         <TabsContent value="wps">
           <WpsTab companyId={companyId} />
+        </TabsContent>
+        <TabsContent value="pension">
+          <PensionTab companyId={companyId} />
         </TabsContent>
       </Tabs>
     </div>

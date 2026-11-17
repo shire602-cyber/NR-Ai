@@ -46,9 +46,12 @@ function addMonthsIso(iso: string, months: number): string {
   return target.toISOString().slice(0, 10);
 }
 
-/** Earliest date a bad-debt relief claim may be made: due date + 6 months (exclusive). */
-export function badDebtEligibleFrom(dueDate: string): string {
-  return addMonthsIso(dueDate, 6);
+/**
+ * Earliest date a bad-debt relief claim may be made (exclusive): six months after the DATE OF
+ * SUPPLY (FDL 8/2017 Art. 64(1)(c), L1), not after the due date.
+ */
+export function badDebtEligibleFrom(dateOfSupply: string): string {
+  return addMonthsIso(dateOfSupply, 6);
 }
 
 async function ensureBadDebtExpense(companyId: string) {
@@ -116,15 +119,18 @@ export async function createBadDebtReliefClaim(input: {
       "The customer must be notified of the write-off"
     );
   }
-  if (!inv.dueDate) throw new DomainError("INVOICE_NO_DUE_DATE", 422);
-  const due = new Date(inv.dueDate).toISOString().slice(0, 10);
-  const eligible = badDebtEligibleFrom(due);
+  // L1: the six months run from the date of supply (the supply date when recorded, else the
+  // invoice date), FDL 8/2017 Art. 64(1)(c).
+  const supplyAt = (inv as { supplyDate?: Date | string | null }).supplyDate ?? inv.date;
+  if (!supplyAt) throw new DomainError("INVOICE_NO_DATE", 422);
+  const supplied = new Date(supplyAt).toISOString().slice(0, 10);
+  const eligible = badDebtEligibleFrom(supplied);
   if (input.claimDate <= eligible) {
     throw new DomainError(
       "BAD_DEBT_TOO_EARLY",
       422,
-      { dueDate: due, eligibleAfter: eligible },
-      `Bad-debt relief needs more than six months after the due date (after ${eligible}).`
+      { dateOfSupply: supplied, eligibleAfter: eligible },
+      `Bad-debt relief needs more than six months after the date of supply (after ${eligible}).`
     );
   }
   const emirate = normaliseEmirate(inv.placeOfSupplyEmirate);

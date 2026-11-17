@@ -147,6 +147,7 @@ function LegalSettingsCard({ companyId }: { companyId: string }) {
   });
   if (!data) return null;
   const uae = data.legalParams.pension.AE;
+  const adpf = data.legalParams.pension.ADPF;
   return (
     <Card>
       <CardHeader>
@@ -168,6 +169,15 @@ function LegalSettingsCard({ companyId }: { companyId: string }) {
               base: uae.base,
             })}
           </li>
+          {adpf && (
+            <li>
+              {tx("hr.legal.adpf", {
+                employee: adpf.employeeRate,
+                employer: adpf.employerRate,
+                base: adpf.base,
+              })}
+            </li>
+          )}
           <li>
             {tx("hr.legal.gratuity", {
               first: data.legalParams.gratuity.firstTierDaysPerYear,
