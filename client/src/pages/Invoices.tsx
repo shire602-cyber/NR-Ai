@@ -2,7 +2,7 @@ import { invoiceRowActions } from "@/lib/invoice-row-actions";
 import { T } from "@/components/layout/T";
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
@@ -251,21 +251,17 @@ function isShareable(invoice: { status?: string | null }) {
 }
 
 /**
- * Invoices list and the full-page invoice editor (spec 3.7). In the app the editor has its own
- * routes, `/invoices/new` and `/invoices/:id/edit`, which render this page with `editor` set;
- * `params` is present whenever the page is mounted by the router. Rendered on its own (unit
- * tests), the editor simply opens in place.
+ * Invoices list and the full-page invoice editor (spec 3.7). The editor has its own routes,
+ * `/invoices/new` and `/invoices/:id/edit`. Rendered outside the app's router (unit tests) the
+ * page is not on an /invoices path, so the editor simply opens in place.
  */
-export default function Invoices({
-  editor,
-  params,
-}: {
-  /** "new", or the id of the invoice to edit. */
-  editor?: string;
-  params?: Record<string, string | undefined>;
-} = {}) {
-  const routed = params !== undefined;
-  const [, navigate] = useLocation();
+export default function Invoices() {
+  const [location, navigate] = useLocation();
+  const routed = location.startsWith("/invoices");
+  const [isNewRoute] = useRoute("/invoices/new");
+  const [isEditRoute, editParams] = useRoute<{ id: string }>("/invoices/:id/edit");
+  /** "new", or the id of the invoice being edited, when on an editor route. */
+  const editor = isNewRoute ? "new" : isEditRoute ? editParams?.id : undefined;
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();

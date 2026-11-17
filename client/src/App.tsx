@@ -635,10 +635,8 @@ function Router() {
             <Route path="/chart-of-accounts" component={ChartOfAccounts} />
             <Route path="/accounts/:id/ledger" component={AccountLedger} />
             {/* Spec 3.7: the invoice editor is a full page inside the shell. */}
-            <Route path="/invoices/new">{() => <Invoices editor="new" params={{}} />}</Route>
-            <Route path="/invoices/:id/edit">
-              {(params) => <Invoices editor={params.id} params={params} />}
-            </Route>
+            <Route path="/invoices/new" component={Invoices} />
+            <Route path="/invoices/:id/edit" component={Invoices} />
             <Route path="/invoices" component={Invoices} />
             <Route path="/recurring-invoices" component={RecurringInvoices} />
             <Route path="/payment-chasing" component={PaymentChasing} />
