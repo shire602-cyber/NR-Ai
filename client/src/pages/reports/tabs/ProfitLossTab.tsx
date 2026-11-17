@@ -28,7 +28,7 @@ export default function ProfitLossTab() {
             {plLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="text-2xl font-bold tabular-nums" data-testid="text-total-revenue">
+              <div className="text-kpi tabular-nums" data-testid="text-total-revenue">
                 <Money amount={profitLoss?.totalRevenue || 0} currency={"AED"} />
               </div>
             )}
@@ -48,7 +48,7 @@ export default function ProfitLossTab() {
             {plLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="text-2xl font-bold tabular-nums" data-testid="text-total-expenses">
+              <div className="text-kpi tabular-nums" data-testid="text-total-expenses">
                 <Money amount={profitLoss?.totalExpenses || 0} currency={"AED"} />
               </div>
             )}
@@ -68,7 +68,7 @@ export default function ProfitLossTab() {
             {plLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="text-2xl font-bold tabular-nums" data-testid="text-net-profit">
+              <div className="text-kpi tabular-nums" data-testid="text-net-profit">
                 <Money amount={profitLoss?.netProfit || 0} currency={"AED"} />
               </div>
             )}

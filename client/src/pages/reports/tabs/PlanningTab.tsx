@@ -1,6 +1,5 @@
 // Reports > planning tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
-import { AlertTriangle, BarChart3, CheckCircle2, FileSpreadsheet, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,15 +41,12 @@ export default function PlanningTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.budget" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {planningLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 <Money amount={planningReport.budgetTotal} currency={"AED"} />
               </div>
             )}
@@ -62,15 +58,12 @@ export default function PlanningTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.actual" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {planningLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 <Money amount={planningReport.actualTotal} currency={"AED"} />
               </div>
             )}
@@ -82,20 +75,13 @@ export default function PlanningTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.variance" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              {planningReport.variance >= 0 ? (
-                <CheckCircle2 className="h-4 w-4 text-success " />
-              ) : (
-                <AlertTriangle className="h-4 w-4 text-warning " />
-              )}
-            </div>
           </CardHeader>
           <CardContent>
             {planningLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="space-y-1">
-                <div className="tabular-nums text-2xl font-bold">
+                <div className="tabular-nums text-kpi">
                   <Money amount={planningReport.variance} currency={"AED"} />
                 </div>
                 <Badge variant={planningReport.variance >= 0 ? "success" : "warning"} dot>
@@ -113,16 +99,13 @@ export default function PlanningTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.projectedCash" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {planningLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="space-y-1">
-                <div className="tabular-nums text-2xl font-bold">
+                <div className="tabular-nums text-kpi">
                   <Money amount={planningReport.projectedEndingBalance} currency={"AED"} />
                 </div>
                 <Badge

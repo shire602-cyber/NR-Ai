@@ -1,7 +1,6 @@
 // Reports > balances tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { useTranslation } from "@/lib/i18n";
-import { AlertTriangle, Scale, TrendingDown, TrendingUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -70,15 +69,12 @@ export default function BalancesTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.customerOpenBalance" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <TrendingUp className="h-4 w-4 text-success " />
-            </div>
           </CardHeader>
           <CardContent>
             {balancesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 <Money amount={balanceReport.customerOpenAed} currency={"AED"} />
               </div>
             )}
@@ -90,16 +86,13 @@ export default function BalancesTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.customerOverdue" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <AlertTriangle className="h-4 w-4 text-warning " />
-            </div>
           </CardHeader>
           <CardContent>
             {balancesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="space-y-1">
-                <div className="tabular-nums text-2xl font-bold">
+                <div className="tabular-nums text-kpi">
                   <Money amount={balanceReport.customerOverdueAed} currency={"AED"} />
                 </div>
                 <div className="text-xs text-muted-foreground">
@@ -115,15 +108,12 @@ export default function BalancesTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.vendorOpenBalance" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <TrendingDown className="h-4 w-4 text-destructive " />
-            </div>
           </CardHeader>
           <CardContent>
             {balancesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 <Money amount={balanceReport.vendorOpenAed} currency={"AED"} />
               </div>
             )}
@@ -135,15 +125,12 @@ export default function BalancesTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.netArLessAp" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <Scale className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {balancesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 <Money amount={balanceReport.netBalanceAed} currency={"AED"} />
               </div>
             )}

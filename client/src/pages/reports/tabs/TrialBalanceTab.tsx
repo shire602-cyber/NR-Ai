@@ -1,6 +1,5 @@
 // Reports > trial tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
-import { AlertTriangle, CheckCircle2, DollarSign, Scale } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,23 +25,13 @@ export default function TrialBalanceTab() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
             <CardTitle className="text-sm font-medium">Debit / Credit Status</CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              {trialBalanceSummary.isBalanced ? (
-                <CheckCircle2 className="h-4 w-4 text-success " />
-              ) : (
-                <AlertTriangle className="h-4 w-4 text-warning " />
-              )}
-            </div>
           </CardHeader>
           <CardContent>
             {trialBalanceLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
               <div className="space-y-1">
-                <div
-                  className="tabular-nums text-2xl font-bold"
-                  data-testid="text-trial-balance-difference"
-                >
+                <div className="tabular-nums text-kpi" data-testid="text-trial-balance-difference">
                   <Money
                     amount={trialBalance?.totals?.difference ?? 0}
                     currency={trialBalance?.reportCurrency ?? "AED"}
@@ -63,17 +52,12 @@ export default function TrialBalanceTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.activeAccounts" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <Scale className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {trialBalanceLoading ? (
               <Skeleton className="h-8 w-24" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
-                {trialBalanceSummary.activeAccounts}
-              </div>
+              <div className="tabular-nums text-kpi">{trialBalanceSummary.activeAccounts}</div>
             )}
           </CardContent>
         </Card>
@@ -83,15 +67,12 @@ export default function TrialBalanceTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.fxAccounts" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {trialBalanceLoading ? (
               <Skeleton className="h-8 w-24" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 {trialBalanceSummary.foreignCurrencyAccounts}
               </div>
             )}
