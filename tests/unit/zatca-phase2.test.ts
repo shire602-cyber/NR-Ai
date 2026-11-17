@@ -156,7 +156,8 @@ describe("R07-14 CSR with the ZATCA-required subject and extensions", () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
     expect(out).toContain("secp256k1");
-    expect(out).toContain("C = SA");
+    // OpenSSL 3.0 prints "C = SA", OpenSSL 3.5+ prints "C=SA".
+    expect(out).toMatch(/\bC ?= ?SA\b/);
     expect(out).toContain("TSTZATCA-Code-Signing");
   });
 

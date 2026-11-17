@@ -13,7 +13,8 @@ concurrency:
 jobs:
   verify:
     name: Typecheck · Lint · Unit tests · Audit · Build · Bundle budget
-    runs-on: ubuntu-latest
+    # Pinned: Playwright has no Chromium build for ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     steps:
@@ -24,6 +25,9 @@ jobs:
         with:
           node-version-file: package.json
           cache: npm
+
+      - name: Install poppler-utils (pdftotext for PDF content tests)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
 
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit
@@ -85,7 +89,8 @@ jobs:
 
   db:
     name: DB harness · route matrix · concurrency · soak (real Postgres 16)
-    runs-on: ubuntu-latest
+    # Pinned: Playwright has no Chromium build for ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     services:
@@ -115,6 +120,9 @@ jobs:
           node-version-file: package.json
           cache: npm
 
+      - name: Install poppler-utils (pdftotext for PDF content tests)
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit
 
@@ -127,7 +135,8 @@ jobs:
 
   e2e:
     name: Browser E2E · full route crawl
-    runs-on: ubuntu-latest
+    # Pinned: Playwright has no Chromium build for ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     services:
@@ -198,7 +207,8 @@ jobs:
 
   boot-and-perf:
     name: Boot gate · live integration scripts · perf budget
-    runs-on: ubuntu-latest
+    # Pinned: Playwright has no Chromium build for ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     services:
@@ -219,6 +229,8 @@ jobs:
     env:
       DATABASE_URL: postgres://muhasib@127.0.0.1:5432/muhasib
       NODE_ENV: development
+      # `npm start` forces NODE_ENV=production; CI has no persistent volume.
+      ALLOW_LOCAL_STORAGE: "true"
       # The integration scripts and perf seeding read the same budgets and
       # self-throttle on 429; raised here so the job stays fast.
       RL_API_MAX: "100000"
