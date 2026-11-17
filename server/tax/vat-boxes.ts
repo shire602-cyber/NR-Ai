@@ -263,14 +263,14 @@ export function purchaseDelta(
       return {
         box3ReverseChargeAmount: netFils,
         box3ReverseChargeVat: vatFils,
-        box10ReverseChargeAmount: recoverableFils > 0 ? netFils : 0,
+        box10ReverseChargeAmount: recoverableFils !== 0 ? netFils : 0,
         box10ReverseChargeVat: recoverableFils,
       };
     case "import":
       return {
         box6ImportsAmount: netFils,
         box6ImportsVat: vatFils,
-        box10ReverseChargeAmount: recoverableFils > 0 ? netFils : 0,
+        box10ReverseChargeAmount: recoverableFils !== 0 ? netFils : 0,
         box10ReverseChargeVat: recoverableFils,
       };
     case "not_reportable":

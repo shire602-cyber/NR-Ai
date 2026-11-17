@@ -160,6 +160,8 @@ export const companyFields = {
   wpsEmployerIban: optionalText(40),
   wpsEmployerRoutingCode: optionalText(40),
   exemptSupplyRatio: fraction.optional(),
+  /** A1 (C6): partial exemption (Exec. Reg. Art. 55) on; residual input VAT is apportioned. */
+  partialExemptionEnabled: z.boolean().optional(),
   vatAutoCalculate: z.boolean().optional(),
   vatPeriodStartMonth: z.number().int().min(1).max(12).optional(),
   // Legacy no-op: old clients/tests send it; there is no such column and it is never stored.

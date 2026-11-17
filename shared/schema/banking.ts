@@ -198,6 +198,10 @@ export const bankTransactionMatches = pgTable(
     paymentId: uuid("payment_id"),
     accountId: uuid("account_id"), // contra GL account of a created entry (payee memory)
     createdJournal: boolean("created_journal").notNull().default(false),
+    /** A1 (H7/M8): VAT treatment of a created entry (standard | zero_rated | exempt). */
+    vatTreatment: text("vat_treatment"),
+    vatNetAmount: money("vat_net_amount"),
+    vatAmount: money("vat_amount"),
     status: text("status").notNull().default("active"), // pending | active | reversed
     idempotencyKey: text("idempotency_key"),
     createdBy: uuid("created_by"),

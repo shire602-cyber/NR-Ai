@@ -217,6 +217,24 @@ export async function generateVatReturn(input: {
     reconciliationOverrideAt: null,
     createdBy: input.userId,
   };
+  // A1 (C1): an amendment draft (voluntary disclosure) is regenerated after the late documents
+  // are posted into the re-opened period; refresh its box-by-box diff against the filed return.
+  if (existing?.amendsReturnId) {
+    const original = await storage.getVatReturn(existing.amendsReturnId);
+    if (original) {
+      const prior = (existing.amendmentDiff ?? {}) as { reason?: string };
+      Object.assign(data, {
+        amendmentDiff: {
+          reason: prior.reason ?? null,
+          boxes: diffReturns(original as unknown as Record<string, unknown>, computation.boxes),
+          netChange: filsToAed(
+            computation.boxesFils.box14PayableTax -
+              Math.round(Number(original.box14PayableTax) * 100)
+          ),
+        },
+      });
+    }
+  }
   const vatReturn = existing
     ? await storage.updateVatReturn(existing.id, data as never)
     : await storage.createVatReturn(data as never);
@@ -276,6 +294,24 @@ export async function assertReconciledOrOverridden(input: {
   return { overridden: true, computation };
 }
 
+/**
+ * A1 (C6): post (or true up) the period's irrecoverable input VAT under partial exemption
+ * before the VAT-to-GL gate, so the return's Box 9 / Box 10 tie to 1050. No-op when nothing
+ * is apportioned or it is already posted.
+ */
+export async function postReturnApportionment(vatReturn: VatReturn, userId: string) {
+  const from = new Date(vatReturn.periodStart).toISOString().slice(0, 10);
+  const to = new Date(vatReturn.periodEnd).toISOString().slice(0, 10);
+  const { postPartialExemptionForPeriod } = await import("./vat-partial-exemption.service");
+  return postPartialExemptionForPeriod({
+    companyId: vatReturn.companyId,
+    from,
+    to,
+    actorId: userId,
+    vatReturnId: vatReturn.id,
+  });
+}
+
 export async function markVatReturnReady(input: {
   id: string;
   userId: string;
@@ -287,6 +323,7 @@ export async function markVatReturnReady(input: {
   if (!vatReturnMachine.can(existing.status, "ready")) {
     throw new DomainError("INVALID_TRANSITION", 409, { from: existing.status, to: "ready" });
   }
+  await postReturnApportionment(existing, input.userId);
   await assertReconciledOrOverridden({ vatReturn: existing, ...input });
   const updated = await storage.updateVatReturn(existing.id, {
     status: "ready",

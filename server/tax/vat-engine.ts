@@ -50,6 +50,7 @@ import {
   type Vat201Key,
 } from "./vat-boxes";
 import { frequencyOf, vatDueDate, type VatFrequency } from "./vat-periods";
+import { computePartialExemption, type PartialExemptionResult } from "./partial-exemption";
 import {
   buildReconciliation,
   categoryForSource,
@@ -72,6 +73,7 @@ export type VatSourceType =
   | "bad_debt_relief_reversal"
   | "return_adjustment"
   | "partial_exemption"
+  | "bank_line_entry"
   | "journal";
 
 export interface VatContribution {
@@ -94,7 +96,12 @@ export interface VatContribution {
   memo?: string | null;
   /** Box deltas in the functional currency when the return was converted into AED. */
   baseBoxes?: BoxDelta;
+  /** A1 (C6): direct attribution of the input VAT (default residual). */
+  attribution?: InputVatAttribution;
 }
+
+/** Exec. Reg. Art. 55: input VAT wholly for taxable / wholly for exempt supplies, or residual. */
+export type InputVatAttribution = "taxable" | "exempt" | "residual";
 
 export interface VatIssue {
   code:
@@ -117,6 +124,8 @@ export interface VatCompanyConfig {
   frequency: VatFrequency;
   startMonth: number;
   exemptSupplyRatio: number;
+  /** A1 (C6): partial exemption switched on for the company. */
+  partialExemptionEnabled: boolean;
   /** Functional currency; the return is always filed in AED (fx.toVatFilingCurrency). */
   baseCurrency: string;
 }
@@ -150,11 +159,14 @@ export interface VatComputation {
   };
   issues: VatIssue[];
   complete: boolean;
-  partialExemption: {
+  partialExemption: Partial<PartialExemptionResult> & {
     exemptSupplyRatio: number;
     recoverableRatio: number;
     grossInputVatFils: number;
     apportionedFils: number;
+    /** Irrecoverable input VAT already posted to the GL (Dr 5160 / Cr 1050) for the period. */
+    postedFils?: number;
+    unpostedFils?: number;
   };
   counts: Record<string, number>;
   reconciliation: VatReconciliation;
@@ -180,6 +192,7 @@ export async function loadVatCompany(companyId: string): Promise<VatCompanyConfi
     `SELECT id, name, emirate, trn_vat_number, vat_filing_frequency,
             COALESCE(vat_period_start_month, 1) AS start_month,
             COALESCE(exempt_supply_ratio, 0) AS exempt_ratio, company_type,
+            COALESCE(partial_exemption_enabled, false) AS partial_exemption_enabled,
             COALESCE(NULLIF(base_currency, ''), 'AED') AS base_currency
        FROM companies WHERE id = $1`,
     [companyId]
@@ -204,7 +217,9 @@ export async function loadVatCompany(companyId: string): Promise<VatCompanyConfi
     emirate: normaliseEmirate(r.emirate),
     frequency: frequencyOf(r.vat_filing_frequency),
     startMonth,
-    exemptSupplyRatio: Math.min(1, Math.max(0, Number(r.exempt_supply_ratio) || 0)),
+    // A1: the column is selected as exempt_ratio (reading exempt_supply_ratio was always 0).
+    exemptSupplyRatio: Math.min(1, Math.max(0, Number(r.exempt_ratio) || 0)),
+    partialExemptionEnabled: r.partial_exemption_enabled === true,
     baseCurrency: String(r.base_currency || VAT_FILING_CURRENCY).toUpperCase(),
   };
 }
@@ -237,6 +252,7 @@ const DOC_SOURCES = new Set([
   "vendor_debit_note",
   "vat_bad_debt_relief",
   "fixed_asset",
+  "vat_partial_exemption",
 ]);
 
 // ─── main ────────────────────────────────────────────────────────────────
@@ -313,8 +329,17 @@ async function computeSingle(
   await collectFixedAssetAcquisitions(companyId, from, to, push, counts);
   await collectBadDebtRelief(companyId, from, to, push, counts);
   await collectReturnAdjustments(companyId, from, to, company, push, issues, counts);
+  const bankEntries = await collectBankLineEntries(
+    companyId,
+    from,
+    to,
+    company,
+    push,
+    issues,
+    counts
+  );
   const vatAccounts = await loadVatAccounts(companyId);
-  const gl = await collectLedger(companyId, from, to, vatAccounts);
+  const gl = await collectLedger(companyId, from, to, vatAccounts, bankEntries);
   for (const j of gl.manual) {
     const delta: BoxDelta = {};
     if (j.outputFils !== 0) {
@@ -350,30 +375,30 @@ async function computeSingle(
     });
   }
 
-  // Partial exemption (Art. 55): only the taxable share of input VAT is recoverable.
-  const grossInputVatFils = boxes.box9ExpensesVat + boxes.box10ReverseChargeVat;
-  let apportionedFils = 0;
-  if (company.exemptSupplyRatio > 0 && grossInputVatFils !== 0) {
-    const r = 1 - company.exemptSupplyRatio;
-    const keep9 = r <= 0 ? 0 : recoverableShare(boxes.box9ExpensesVat, r * 100);
-    const keep10 = r <= 0 ? 0 : recoverableShare(boxes.box10ReverseChargeVat, r * 100);
-    const delta: BoxDelta = {
-      box9ExpensesVat: keep9 - boxes.box9ExpensesVat,
-      box10ReverseChargeVat: keep10 - boxes.box10ReverseChargeVat,
-    };
-    apportionedFils = -(delta.box9ExpensesVat! + delta.box10ReverseChargeVat!);
+  // A1 (C6, Exec. Reg. Art. 55): direct attribution first, then the residual input VAT is
+  // apportioned by the period's standard-method ratio. The irrecoverable part is a GL cost
+  // (posted when the return is made ready / submitted), so the contribution is in the ledger.
+  const pe = computePartialExemption(boxes, contributions, {
+    enabled: company.partialExemptionEnabled || company.exemptSupplyRatio > 0,
+    fallbackExemptRatio: company.exemptSupplyRatio,
+  });
+  const grossInputVatFils = pe.grossInputVatFils;
+  const apportionedFils = pe.apportionedFils;
+  const postedPartialExemptionFils = -(gl.byCategory.get("partial_exemption")?.input ?? 0);
+  if (apportionedFils !== 0) {
     push({
       sourceType: "partial_exemption",
       sourceId: companyId,
-      reference: `Art. 55 apportionment ${(company.exemptSupplyRatio * 100).toFixed(2)}% exempt`,
+      reference: `Art. 55 ${pe.method} method: ${(pe.recoverableRatio * 100).toFixed(2)}% of residual input VAT recoverable`,
       date: to,
       counterparty: null,
       counterpartyTrn: null,
       emirate: null,
       family: "adjustment",
-      boxes: delta,
+      boxes: pe.delta,
       category: "partial_exemption",
-      inLedger: false,
+      inLedger: true,
+      ledgerSource: "vat_partial_exemption",
     });
   }
 
@@ -403,10 +428,13 @@ async function computeSingle(
     issues,
     complete: issues.length === 0,
     partialExemption: {
-      exemptSupplyRatio: company.exemptSupplyRatio,
-      recoverableRatio: 1 - company.exemptSupplyRatio,
+      ...pe,
+      exemptSupplyRatio: pe.exemptSupplyRatio,
+      recoverableRatio: pe.recoverableRatio,
       grossInputVatFils,
       apportionedFils,
+      postedFils: postedPartialExemptionFils,
+      unpostedFils: apportionedFils - postedPartialExemptionFils,
     },
     counts,
     reconciliation,
@@ -630,6 +658,35 @@ async function tableExists(name: string): Promise<boolean> {
   return !!rows[0]?.t;
 }
 
+function attributionOf(v: unknown): InputVatAttribution {
+  return v === "taxable" || v === "exempt" ? v : "residual";
+}
+
+/**
+ * Box 6 amount of an import bill (base fils): customs value + duty from the declaration when
+ * recorded; otherwise the value implied by the import VAT customs assessed (VAT / 5%); the
+ * invoice net only when neither is known.
+ */
+function importValueFils(
+  b: { customs_value?: unknown; customs_duty_amount?: unknown },
+  subtotalBase: number,
+  vatBase: number
+): number {
+  const customs = fils(b.customs_value);
+  if (customs > 0) return customs + fils(b.customs_duty_amount);
+  if (vatBase > 0) return vatBase * 20;
+  return subtotalBase;
+}
+
+async function columnExists(table: string, column: string): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
+    [table, column]
+  );
+  return rows.length > 0;
+}
+
 async function collectBills(
   companyId: string,
   from: string,
@@ -641,12 +698,15 @@ async function collectBills(
 ) {
   const baseCurrency = await loadBaseCurrency(companyId);
   if (!(await tableExists("vendor_bills"))) return;
+  const a1Columns = (await columnExists("vendor_bills", "customs_value"))
+    ? ", customs_value, customs_duty_amount, input_vat_attribution"
+    : "";
   const { rows: bills } = await pool.query(
     `SELECT id, vendor_name, vendor_trn, bill_number, bill_date, currency, exchange_rate,
             subtotal, vat_amount, reverse_charge, COALESCE(is_import, false) AS is_import,
             COALESCE(designated_zone, false) AS designated_zone,
             COALESCE(recoverable_vat_percent, 100) AS recoverable_pct,
-            recoverable_vat_base
+            recoverable_vat_base ${a1Columns}
        FROM vendor_bills
       WHERE company_id = $1
         AND bill_date::date >= $2::date AND bill_date::date <= $3::date
@@ -703,11 +763,28 @@ async function collectBills(
       family: "purchase" as const,
       category: "purchases" as const,
       inLedger: true,
+      attribution: attributionOf(b.input_vat_attribution),
     };
     const subtotalBase = toBaseFils(fils(b.subtotal), rate);
-    if (b.is_import || b.reverse_charge) {
-      const kind = b.is_import ? "import" : "reverse_charge";
-      push({ ...base, boxes: purchaseDelta(kind, subtotalBase, vatBase, recoverableTotal) });
+    if (b.is_import) {
+      // A1 (M7): Box 6 reports the value on which customs assessed import VAT (FDL 8/2017
+      // Art. 38: customs value + duty), not the supplier's invoice net.
+      push({
+        ...base,
+        boxes: purchaseDelta(
+          "import",
+          importValueFils(b, subtotalBase, vatBase),
+          vatBase,
+          recoverableTotal
+        ),
+      });
+      continue;
+    }
+    if (b.reverse_charge) {
+      push({
+        ...base,
+        boxes: purchaseDelta("reverse_charge", subtotalBase, vatBase, recoverableTotal),
+      });
       continue;
     }
     const billLines = byBill.get(b.id) ?? [];
@@ -775,17 +852,30 @@ async function collectVendorDebitNotes(
 ) {
   const baseCurrency = await loadBaseCurrency(companyId);
   if (!(await tableExists("vendor_debit_notes"))) return;
+  const hasTreatment = await columnExists("vendor_debit_notes", "vat_treatment");
   const { rows } = await pool.query(
-    `SELECT id, vendor_name, debit_note_number, note_date, currency, exchange_rate, subtotal, vat_amount
-       FROM vendor_debit_notes
-      WHERE company_id = $1 AND status <> 'void'
-        AND note_date::date >= $2::date AND note_date::date <= $3::date`,
+    `SELECT n.id, n.vendor_name, n.debit_note_number, n.note_date, n.currency, n.exchange_rate,
+            n.subtotal, n.vat_amount
+            ${hasTreatment ? ", n.vat_treatment, n.recoverable_vat_amount, b.input_vat_attribution" : ""}
+       FROM vendor_debit_notes n
+       ${hasTreatment ? "LEFT JOIN vendor_bills b ON b.id = n.bill_id AND b.company_id = n.company_id" : ""}
+      WHERE n.company_id = $1 AND n.status <> 'void'
+        AND n.note_date::date >= $2::date AND n.note_date::date <= $3::date`,
     [companyId, from, to]
   );
   for (const n of rows) {
     const rate = rateText(n.currency, n.exchange_rate, baseCurrency) ?? "1";
     const vat = toBaseFils(fils(n.vat_amount), rate);
     if (vat === 0) continue;
+    const net = toBaseFils(fils(n.subtotal), rate);
+    // A1 (C2): the note mirrors its bill. Legacy rows (no treatment) reversed the full VAT.
+    const recoverable =
+      n.recoverable_vat_amount === null || n.recoverable_vat_amount === undefined
+        ? vat
+        : Math.min(vat, toBaseFils(fils(n.recoverable_vat_amount), rate));
+    const kind = n.vat_treatment === "reverse_charge" ? "reverse_charge" : "standard";
+    const boxes = purchaseDelta(kind, -net, -vat, -recoverable);
+    if (kind === "standard" && recoverable === 0) continue; // blocked VAT: never in Box 9
     counts.vendorDebitNotes += 1;
     push({
       sourceType: "vendor_debit_note",
@@ -796,9 +886,10 @@ async function collectVendorDebitNotes(
       counterpartyTrn: null,
       emirate: null,
       family: "purchase",
-      boxes: { box9ExpensesAmount: -toBaseFils(fils(n.subtotal), rate), box9ExpensesVat: -vat },
+      boxes,
       category: "purchases",
       inLedger: true,
+      attribution: attributionOf(n.input_vat_attribution),
     });
   }
 }
@@ -1135,6 +1226,93 @@ async function collectReturnAdjustments(
   }
 }
 
+// ─── Entries created from bank lines (A1: H7, M8) ────────────────────────
+
+/**
+ * An entry created from a bank statement line with a VAT treatment is an ordinary supply or
+ * purchase, not an adjustment (FTA VAT 201 guide: the Adjustment column is for corrections and
+ * bad-debt relief). Standard-rated outflow -> Box 9 amount + VAT; standard-rated inflow -> Box 1
+ * of the company's emirate; zero-rated inflow -> Box 4; exempt inflow -> Box 5 (which also feeds
+ * the partial-exemption ratio). Returns the journal entries reported here so the ledger pass does
+ * not report them again as manual VAT journals. Unmatched (reversed) entries drop out.
+ */
+async function collectBankLineEntries(
+  companyId: string,
+  from: string,
+  to: string,
+  company: VatCompanyConfig,
+  push: (c: VatContribution) => void,
+  issues: VatIssue[],
+  counts: Record<string, number>
+): Promise<Set<string>> {
+  const reported = new Set<string>();
+  if (!(await columnExists("bank_transaction_matches", "vat_treatment"))) return reported;
+  const { rows } = await pool.query(
+    `SELECT m.journal_entry_id, m.vat_treatment, m.vat_net_amount, m.vat_amount,
+            to_char(je.date, 'YYYY-MM-DD') AS d, je.entry_number, je.memo, bt.description
+       FROM bank_transaction_matches m
+       JOIN journal_entries je ON je.id = m.journal_entry_id AND je.company_id = m.company_id
+       LEFT JOIN bank_transactions bt ON bt.id = m.bank_transaction_id
+      WHERE m.company_id = $1 AND m.vat_treatment IS NOT NULL AND m.status <> 'reversed'
+        AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL
+        AND je.date >= $2::date AND je.date <= $3::date`,
+    [companyId, from, to]
+  );
+  for (const r of rows) {
+    reported.add(r.journal_entry_id);
+    const net = fils(r.vat_net_amount);
+    const vat = fils(r.vat_amount);
+    let boxes: BoxDelta;
+    let family: VatContribution["family"] = "purchase";
+    let emirate: Emirate | null = null;
+    if (net > 0) {
+      const fam: Vat201Family | null =
+        r.vat_treatment === "standard"
+          ? "standard"
+          : r.vat_treatment === "zero_rated"
+            ? "zero_rated"
+            : r.vat_treatment === "exempt"
+              ? "exempt"
+              : null;
+      if (!fam) continue;
+      if (familyNeedsEmirate(fam) && !company.emirate) {
+        issues.push({
+          code: "COMPANY_EMIRATE_MISSING",
+          message:
+            "Set the company's emirate: standard-rated income recorded from a bank line is reported in the Box 1 row of that emirate.",
+          documentType: "bank_line_entry",
+          documentId: r.journal_entry_id,
+          reference: r.entry_number ?? null,
+        });
+        continue;
+      }
+      family = fam;
+      emirate = familyNeedsEmirate(fam) ? company.emirate : null;
+      boxes = salesDelta(fam, company.emirate, net, fam === "standard" ? vat : 0);
+    } else {
+      if (r.vat_treatment !== "standard" || vat === 0) continue; // zero-rated / exempt purchase
+      boxes = purchaseDelta("standard", -net, vat, vat);
+    }
+    counts.bankLineEntries = (counts.bankLineEntries ?? 0) + 1;
+    push({
+      sourceType: "bank_line_entry",
+      sourceId: r.journal_entry_id,
+      reference: r.entry_number ?? null,
+      date: r.d,
+      counterparty: r.description ?? null,
+      counterpartyTrn: null,
+      emirate,
+      family,
+      boxes,
+      category: categoryForSource("bank_reconciliation"),
+      inLedger: true,
+      ledgerSource: "bank_reconciliation",
+      memo: r.memo ?? null,
+    });
+  }
+  return reported;
+}
+
 // ─── Ledger ──────────────────────────────────────────────────────────────
 
 export interface VatAccount {
@@ -1175,7 +1353,9 @@ async function collectLedger(
   companyId: string,
   from: string,
   to: string,
-  vatAccounts: VatAccount[]
+  vatAccounts: VatAccount[],
+  /** Entries already reported from their document (bank-line entries with a VAT treatment). */
+  documentEntries: ReadonlySet<string> = new Set()
 ): Promise<LedgerVat> {
   const byCategory = new Map<ReconCategory, { output: number; input: number }>();
   const byCategoryDate: LedgerVat["byCategoryDate"] = [];
@@ -1227,7 +1407,7 @@ async function collectLedger(
     d.output += out;
     d.input += inp;
     dated.set(dkey, d);
-    if (!DOC_SOURCES.has(source)) {
+    if (!DOC_SOURCES.has(source) && !documentEntries.has(l.entryId)) {
       const m = manual.get(l.entryId) ?? {
         entryId: l.entryId,
         entryNumber: l.entryNumber,

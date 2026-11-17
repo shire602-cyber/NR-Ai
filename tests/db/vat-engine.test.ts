@@ -463,7 +463,10 @@ describe("W4-E purchases, adjustments and amendments", () => {
       `/api/companies/${t.company.id}/vat/compute?from=2026-07-01&to=2026-09-30`
     );
     expect(c.status, c.text).toBe(200);
-    expect(c.body.boxes.box6ImportsAmount).toBe(1000);
+    // A1 (M7): Box 6 is the value customs assessed VAT on (customs value + duty, FDL Art. 38).
+    // With no customs value recorded it is the value implied by the import VAT: 60 / 5% = 1,200
+    // (was the supplier's invoice net, 1,000).
+    expect(c.body.boxes.box6ImportsAmount).toBe(1200);
     expect(c.body.boxes.box6ImportsVat).toBe(60);
     expect(c.body.boxes.box10ReverseChargeVat).toBe(60);
     expect(c.body.boxes.box14PayableTax).toBe(0);
@@ -569,18 +572,38 @@ describe("W4-E purchases, adjustments and amendments", () => {
     const regen = await t.as.post(`/api/companies/${t.company.id}/vat-returns/generate`, Q3);
     expect(regen.status).toBe(409);
     expect(regen.body.code).toBe("VAT_RETURN_EXISTS");
-    await issuedInvoice(t, [{ description: "Late job", quantity: 1, unitPrice: 400, vatRate: 5 }], {
+    // A1 (C1): the submitted period is closed, so the late invoice cannot be issued into it
+    // until a voluntary disclosure (amendment) re-opens it.
+    const lateDraft = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
+      customerName: "Acme LLC",
       date: "2026-09-20",
+      lines: [{ description: "Late job", quantity: 1, unitPrice: 400, vatRate: 5 }],
     });
+    expect(lateDraft.status, lateDraft.text).toBe(200);
+    const blocked = await t.as.patch(`/api/invoices/${lateDraft.body.id}/status`, {
+      status: "sent",
+    });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.code).toBe("VAT_PERIOD_FILED");
     const amend = await t.as.post(`/api/vat-returns/${gen.body.id}/amend`, {
       reason: "Invoice INV for 20 Sep was missed",
     });
     expect(amend.status, amend.text).toBe(201);
     expect(amend.body.amendsReturnId).toBe(gen.body.id);
-    expect(amend.body.box1cSharjahAmount).toBe(1400);
-    const d = amend.body.diff.find((x: { box: string }) => x.box === "box1cSharjahVat");
+    expect(amend.body.box1cSharjahAmount).toBe(1000);
+    const issued = await t.as.patch(`/api/invoices/${lateDraft.body.id}/status`, {
+      status: "sent",
+    });
+    expect(issued.status, issued.text).toBe(200);
+    const refreshed = await t.as.post(`/api/companies/${t.company.id}/vat-returns/generate`, Q3);
+    expect(refreshed.status, refreshed.text).toBe(201);
+    expect(refreshed.body.id).toBe(amend.body.id);
+    expect(refreshed.body.box1cSharjahAmount).toBe(1400);
+    const d = refreshed.body.amendmentDiff.boxes.find(
+      (x: { box: string }) => x.box === "box1cSharjahVat"
+    );
     expect(d).toEqual({ box: "box1cSharjahVat", previous: 50, amended: 70, difference: 20 });
-    expect(amend.body.amendmentDiff.netChange).toBe(20);
+    expect(refreshed.body.amendmentDiff.netChange).toBe(20);
     const orig = await h.sql<{ status: string }>(`SELECT status FROM vat_returns WHERE id = $1`, [
       gen.body.id,
     ]);

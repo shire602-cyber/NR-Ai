@@ -54,6 +54,7 @@ import {
   assertReconciledOrOverridden,
   generateVatReturn,
   markVatReturnReady,
+  postReturnApportionment,
   vatReturnMachine,
 } from "../tax/vat-returns.service";
 import {
@@ -701,6 +702,8 @@ export function registerVATRoutes(app: Express) {
       }
       // Submitting the return finalises the VAT settlement against periodEnd.
       await assertPeriodNotLocked(existing.companyId, existing.periodEnd);
+      // A1 (C6): irrecoverable input VAT (partial exemption) is in the GL before the return is final.
+      if (existing.status !== "submitted") await postReturnApportionment(existing, userId);
       // The same reconciliation gate as "ready" applies when a draft is submitted directly.
       if (existing.status !== "ready" && existing.status !== "submitted") {
         await assertReconciledOrOverridden({

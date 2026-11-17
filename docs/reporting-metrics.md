@@ -479,6 +479,30 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   supplies: standard-rated in the company emirate's Box 1, zero-rated Box 4, exempt Box 5, and
   reconcile under `fixed_asset_disposals` (never as a manual adjustment).
   Verify with `tests/db/vat-engine.test.ts` and `tests/db/vat-firm-workpaper.test.ts`.
+- A1 VAT rules (`tests/db/a1-vat-accuracy.test.ts`):
+  - Filed-period lock (`server/ledger/vat-lock.ts`, called by the kernel). A submitted or filed
+    return refuses, with 409 `VAT_PERIOD_FILED`, any posting, reversal or void that affects VAT
+    (a line on 1050/2020, or a tax-document source) and is dated in its period. The details give
+    the paths: date the document in the next open period (up to AED 10,000 net, Exec. Reg.
+    Art. 70), or amend the filed return first (voluntary disclosure). Amending re-opens the
+    period, and regenerating refreshes the amendment diff.
+  - Supplier debit notes copy the bill's VAT treatment (`server/services/debit-note-vat.ts`).
+    For blocked or partly recovered VAT, only the recovered share leaves 1050. For reverse
+    charge, A/P falls by the net and Boxes 3 and 10 fall. Imports carry no VAT on the note.
+  - Entries created from bank lines record their VAT treatment on `bank_transaction_matches`.
+    They are reported as ordinary supplies or purchases (Box 1 / 4 / 5 / 9), not as adjustments.
+  - Box 6 uses `customs_value + customs_duty_amount`. When those are missing it uses import
+    VAT / 5%.
+  - A standard-rated asset disposal needs the company emirate: otherwise 422
+    `COMPANY_EMIRATE_REQUIRED`.
+  - Partial exemption (`companies.partial_exemption_enabled`, `server/tax/partial-exemption.ts`):
+    - Bills carry `input_vat_attribution` (taxable / exempt / residual). Taxable VAT is
+      recovered in full and exempt VAT is not.
+    - Residual VAT is apportioned by the period's standard-method ratio (Box 1 + 4 against
+      Box 5).
+    - On ready / submit, the irrecoverable part is posted as Dr 5160 / Cr 1050 (source
+      `vat_partial_exemption`).
+    - Follow-up: the Art. 55(6) annual adjustment and special methods.
 - Corporate tax (W4-A) lives in `server/services/corporate-tax/` (engine, repository, deadlines,
   lifecycle). Returns run draft -> computed -> reviewed -> filed -> paid (amend copies into a new
   draft; filed/paid/amended/void are immutable 409; reviewer != preparer; filing may post the CT

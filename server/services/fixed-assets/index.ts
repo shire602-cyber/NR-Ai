@@ -20,6 +20,7 @@ import { fromFils, toFils } from "../../../shared/money";
 import { isNonDepreciableCategory } from "../../../shared/validators/fixed-assets";
 import { postJournal, withLedgerTx, type LedgerTx, type PostJournalLineInput } from "../../ledger";
 import { assertAccount, ensureAccountByCode, q } from "../inventory/store";
+import { normaliseEmirate } from "../../tax/vat-boxes";
 import {
   depreciationFor,
   disposalSplit,
@@ -593,6 +594,27 @@ export interface DisposeInput {
   actorId: string;
 }
 
+/**
+ * A1 (M9): a standard-rated disposal is a supply from the company's establishment, reported in
+ * the VAT 201 Box 1 row of the company's emirate. Without one the output VAT would post to 2020
+ * and then be left out of the return, so refuse up front (as invoices refuse a missing place of
+ * supply) with a message that says where to set it.
+ */
+async function assertCompanyEmirateForDisposal(tx: LedgerTx, companyId: string): Promise<void> {
+  const rows = await q<{ emirate: string | null }>(
+    tx,
+    sql`SELECT emirate FROM companies WHERE id = ${companyId}`
+  );
+  if (!normaliseEmirate(rows[0]?.emirate ?? null)) {
+    throw new DomainError(
+      "COMPANY_EMIRATE_REQUIRED",
+      422,
+      { field: "emirate" },
+      "Set the company's emirate in company settings before recording a standard-rated disposal: the VAT return reports it in that emirate's Box 1 row."
+    );
+  }
+}
+
 export async function disposeAsset(assetId: string, companyId: string, input: DisposeInput) {
   return withLedgerTx(async (tx) => {
     let a = await loadAsset(tx, assetId, { lock: true, companyId });
@@ -635,6 +657,7 @@ export async function disposeAsset(assetId: string, companyId: string, input: Di
     const c = calcInput(a);
     const vatRate: 0 | 5 =
       input.proceedsFils > 0 && (input.vatTreatment ?? "standard") === "standard" ? 5 : 0;
+    if (vatRate === 5) await assertCompanyEmirateForDisposal(tx, a.company_id);
     const split = disposalSplit({
       proceedsFils: input.proceedsFils,
       vatRate,

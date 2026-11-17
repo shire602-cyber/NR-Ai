@@ -77,6 +77,15 @@ const billFields = {
   is_import: z.boolean().optional(),
   customs_declaration_no: zText(64).optional().nullable(),
   import_vat_amount: zMoneyFils.optional().nullable(),
+  /** A1 (M7): customs value and customs duty on the import declaration (Box 6 amount). */
+  customs_value: zMoneyFils.optional().nullable(),
+  customs_duty_amount: zMoneyFils.optional().nullable(),
+  /**
+   * A1 (C6, Exec. Reg. Art. 55): direct attribution of the bill's input VAT. taxable: wholly
+   * for taxable supplies (recovered in full); exempt: wholly for exempt supplies (not
+   * recovered); residual (default): overheads, apportioned under partial exemption.
+   */
+  input_vat_attribution: z.enum(["taxable", "exempt", "residual"]).optional().nullable(),
   designated_zone: z.boolean().optional(),
   recoverable_vat_percent: z.coerce
     .number()

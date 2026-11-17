@@ -118,7 +118,10 @@ describe("W4-B fixed assets", () => {
   });
 
   it("[R10-08] disposal to a bank account posts 5% output VAT and a balanced gain/loss entry", async () => {
-    const t = await h.createTenant();
+    // A1 (M9): a standard-rated disposal is reported in the company emirate's Box 1 row.
+    const t = await h.createTenant({
+      companyColumns: { trn_vat_number: "100000000000003", emirate: "dubai" },
+    });
     const a = await capitalised(t);
     const bank = await accountByCode(t, "1020");
     const d = await t.as.post(`/api/fixed-assets/${a.id}/dispose`, {
