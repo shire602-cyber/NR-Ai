@@ -65,7 +65,8 @@ const CLIENT_PORTAL_COMPLIANCE_ITEMS: ClientPortalItem[] = [
   { titleKey: "corporateTax", icon: FileStack, url: "/corporate-tax" },
   { titleKey: "complianceCalendar", icon: CalendarDays, url: "/compliance-calendar" },
   { titleKey: "taxReturnArchive", icon: FileStack, url: "/tax-return-archive" },
-  { titleKey: "taskCenter", icon: ListTodo, url: "/task-center" },
+  // The task centre became the calendar's List view (WP-D); /task-center only redirects.
+  { titleKey: "taskCenter", icon: ListTodo, url: "/compliance-calendar?view=list" },
 ];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
