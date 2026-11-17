@@ -72,7 +72,10 @@ export default function History() {
 
   const filteredLogs = logs.filter((log) => {
     const matchesSearch = log.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesAction = actionFilter === "all" || log.action === actionFilter;
+    // Codes are "create" or "invoice.create" / "journal.create_posted": match the verb part.
+    const verb = log.action.split(".").pop() ?? log.action;
+    const matchesAction =
+      actionFilter === "all" || verb === actionFilter || verb.startsWith(`${actionFilter}_`);
     const matchesEntity = entityFilter === "all" || log.entityType === entityFilter;
     return matchesSearch && matchesAction && matchesEntity;
   });
