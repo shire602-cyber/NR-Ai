@@ -289,3 +289,62 @@ jobs:
       - name: Server log on failure
         if: failure()
         run: tail -120 /tmp/server.log || true
+
+  selfhost:
+    name: Self-hosting go-live gate (docker compose prod, health, login smoke)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test environment (self-signed TLS on localhost, throwaway secrets)
+        run: |
+          DATA_DIR="$RUNNER_TEMP/muhasib"
+          mkdir -p "$DATA_DIR"/{pgdata,uploads,caddy-data,caddy-config,backups}
+          # The app image runs as uid/gid 1001; the bind-mounted uploads dir must be writable by it.
+          sudo chown 1001:1001 "$DATA_DIR/uploads"
+          {
+            echo "DATA_DIR=$DATA_DIR"
+            echo "DB_PASSWORD=$(openssl rand -hex 16)"
+            echo "APP_DOMAIN=localhost"
+            echo "ACME_EMAIL=ci@example.com"
+            echo "COMMIT_SHA=${GITHUB_SHA}"
+            echo "SESSION_SECRET=$(openssl rand -hex 32)"
+            echo "JWT_SECRET=$(openssl rand -hex 32)"
+            echo "TOKEN_ENCRYPTION_KEY=$(openssl rand -hex 32)"
+            echo "AUTH_PUBLIC_URL=https://localhost"
+            echo "RBAC_ENFORCE=enforce"
+          } > .env.prod
+          docker compose -f docker-compose.prod.yml --env-file .env.prod config > /dev/null
+
+      - name: Build image and boot the production stack
+        run: docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 60); do
+            if curl -ksf https://localhost/health/live > /dev/null; then echo "up"; exit 0; fi
+            sleep 3
+          done
+          echo "stack failed to become healthy"; exit 1
+
+      - name: App runs as non-root
+        run: |
+          uid=$(docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T app id -u)
+          echo "app uid: $uid"
+          test "$uid" != "0"
+
+      - name: Health, version and login smoke
+        run: CURL_OPTS=-k scripts/ops/selfhost-smoke.sh https://localhost
+
+      - name: Version matches the built commit
+        run: curl -ksf https://localhost/api/version | grep -q "${GITHUB_SHA}"
+
+      - name: Compose logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.prod.yml --env-file .env.prod logs --no-color --tail=200 || true
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.prod.yml --env-file .env.prod down -v || true
