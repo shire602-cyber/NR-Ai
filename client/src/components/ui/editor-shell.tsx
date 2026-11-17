@@ -120,7 +120,7 @@ export function EditorShell({
         </div>
       </div>
       <div
-        className="sticky bottom-[var(--mobile-nav-height)] z-20 -mx-4 mt-8 -mb-10 border-t border-border bg-card md:-mx-8 md:-mb-12"
+        className="sticky bottom-0 z-20 -mx-4 mt-8 -mb-10 border-t border-border bg-card md:-mx-8 md:-mb-12"
         data-testid="editor-shell-footer"
       >
         <div className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-8">
