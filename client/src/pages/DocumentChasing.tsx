@@ -296,38 +296,37 @@ export default function DocumentChasing() {
         title={t["documentChasing.documentChasingAutopilot"]}
         description={t["documentChasing.trackMissingUaeComplianceDocuments"]}
         actions={
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="default"
-                disabled={queue.length === 0 || bulkSendMutation.isPending}
-                data-testid="btn-bulk-send"
-              >
-                <Send className="w-4 h-4 me-2" />
-                {formatMessage(t["documentChasing.sendAllCount"], { count: queue.length })}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  Send {queue.length} chase reminder{queue.length === 1 ? "" : "s"}?
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will record a chase event for every queued requirement and may trigger
-                  outbound WhatsApp/email messages depending on your channel configuration. This
-                  action can&apos;t be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>
-                  <T k="pages.cancel" />
-                </AlertDialogCancel>
-                <AlertDialogAction onClick={() => bulkSendMutation.mutate()}>
-                  <T k="pages.sendAll" />
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          // Spec 3.17: no "Send all (0)" — the action only exists when something is queued.
+          queue.length === 0 ? undefined : (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="default"
+                  disabled={bulkSendMutation.isPending}
+                  data-testid="btn-bulk-send"
+                >
+                  <Send className="w-4 h-4 me-2" />
+                  {formatMessage(t["documentChasing.sendAllCount"], { count: queue.length })}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    {formatMessage(t["firmOps.bulkSendTitle"], { count: queue.length })}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>{t["firmOps.bulkSendBody"]}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>
+                    <T k="pages.cancel" />
+                  </AlertDialogCancel>
+                  <AlertDialogAction onClick={() => bulkSendMutation.mutate()}>
+                    <T k="pages.sendAll" />
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )
         }
       />
 
@@ -940,7 +939,7 @@ function AddComplianceEventDialog(props: {
             />
           </div>
           <div>
-            <Label htmlFor="eventDate">Date</Label>
+            <Label htmlFor="eventDate">{t["firmOps.date"]}</Label>
             <DatePicker
               id="eventDate"
               value={form.eventDate}

@@ -46,5 +46,12 @@
   "firmOps.taskMonthlyClose": "إقفال الدفاتر الشهري",
   "firmOps.taskVatReturn": "إقرار ضريبة القيمة المضافة",
   "firmOps.taskCorporateTax": "إقرار ضريبة الشركات",
-  "firmOps.taskPayrollRun": "تشغيل الرواتب ونظام حماية الأجور"
+  "firmOps.taskPayrollRun": "تشغيل الرواتب ونظام حماية الأجور",
+  "firmOps.priorityCritical": "عاجل",
+  "firmOps.priorityHigh": "مرتفع",
+  "firmOps.priorityMedium": "متوسط",
+  "firmOps.priorityLow": "منخفض",
+  "firmOps.bulkSendTitle": "إرسال {count} من التذكيرات؟",
+  "firmOps.bulkSendBody": "تُسجَّل متابعة لكل طلب في القائمة، وتُرسل الرسائل عبر القنوات المعدّة لكل عميل. لا يمكن التراجع عن ذلك.",
+  "firmOps.date": "التاريخ"
 }

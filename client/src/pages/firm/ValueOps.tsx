@@ -226,18 +226,25 @@ function formatPercent(value: number): string {
   return `${Math.round((value || 0) * 100)}%`;
 }
 
+// Spec 2.3/3.17: subtle pills, translated label (never the raw enum).
 function priorityClass(priority: Priority): string {
   switch (priority) {
     case "critical":
-      return "bg-danger-subtle text-danger-subtle-foreground border-destructive/30";
     case "high":
-      return "bg-warning-subtle text-warning-subtle-foreground border-warning/30";
+      return "border-transparent bg-danger-subtle text-danger-subtle-foreground";
     case "medium":
-      return "bg-warning-subtle text-warning-subtle-foreground border-warning/30";
-    case "low":
-      return "bg-muted text-foreground border-border";
+      return "border-transparent bg-warning-subtle text-warning-subtle-foreground";
+    default:
+      return "border-transparent bg-neutral-subtle text-neutral-subtle-foreground";
   }
 }
+
+const PRIORITY_LABEL: Record<Priority, string> = {
+  critical: "firmOps.priorityCritical",
+  high: "firmOps.priorityHigh",
+  medium: "firmOps.priorityMedium",
+  low: "firmOps.priorityLow",
+};
 
 function evidenceClass(status: ClientAuditPack["evidence"][number]["status"]): string {
   switch (status) {
@@ -478,7 +485,9 @@ export default function ValueOps() {
                     return (
                       <TableRow key={item.id}>
                         <TableCell>
-                          <Badge className={priorityClass(item.priority)}>{item.priority}</Badge>
+                          <Badge className={priorityClass(item.priority)}>
+                            <T k={PRIORITY_LABEL[item.priority] ?? PRIORITY_LABEL.low} />
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -551,7 +560,9 @@ export default function ValueOps() {
                   {data.actions.map((action) => (
                     <TableRow key={action.id}>
                       <TableCell>
-                        <Badge className={priorityClass(action.priority)}>{action.priority}</Badge>
+                        <Badge className={priorityClass(action.priority)}>
+                          <T k={PRIORITY_LABEL[action.priority] ?? PRIORITY_LABEL.low} />
+                        </Badge>
                       </TableCell>
                       <TableCell>{laneConfig[action.lane].label}</TableCell>
                       <TableCell className="font-medium">{action.companyName}</TableCell>

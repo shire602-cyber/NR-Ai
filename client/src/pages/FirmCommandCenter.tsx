@@ -5,6 +5,7 @@ import type * as React from "react";
  * Executive dashboard for firm owners with key metrics, client health table,
  * alerts feed, staff workload visualization, period comparison, and batch ops.
  */
+import { StatCard } from "@/components/ui/stat-card";
 import { chartTheme, ChartTooltipContent, formatAxisCompact } from "@/components/ui/chart-theme";
 import { T } from "@/components/layout/T";
 import { Money } from "@/components/ui/money";
@@ -14,11 +15,9 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
-  AlertTriangle,
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
-  Bell,
   CheckCircle2,
   DollarSign,
   Mail,
@@ -171,44 +170,35 @@ function severityColor(s: Severity): string {
 
 // ─── Sub-components ─────────────────────────────────────────────────────
 
+/** Spec 2.7: the one KPI tile (StatCard) — no corner icon, no coloured numbers. */
 function MetricCard({
   title,
   value,
   subtitle,
-  icon: Icon,
   trend,
 }: {
   title: string;
   value: React.ReactNode;
   subtitle?: string;
-  icon: typeof TrendingUp;
+  icon?: unknown;
   trend?: { value: number; label: string };
 }) {
-  const isUp = (trend?.value ?? 0) >= 0;
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <Icon className="w-4 h-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-lg font-bold tabular-nums sm:text-2xl">{value}</div>
-        {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
-        {trend && (
-          <div
-            className={`text-xs mt-2 flex items-center gap-1 ${
-              isUp ? "text-success" : "text-destructive"
-            }`}
-          >
-            {isUp ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-            <span>
-              {trend.value > 0 ? "+" : ""}
-              {trend.value}% {trend.label}
-            </span>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <StatCard
+      label={title}
+      value={value}
+      hint={subtitle}
+      delta={
+        trend
+          ? {
+              label: `${Math.abs(trend.value)}%`,
+              direction: trend.value > 0 ? "up" : trend.value < 0 ? "down" : "flat",
+              tone: trend.value >= 0 ? "positive" : "negative",
+              context: trend.label,
+            }
+          : undefined
+      }
+    />
   );
 }
 
@@ -496,52 +486,27 @@ export default function FirmCommandCenter() {
         />
       </div>
 
-      {/* Health summary */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">
-              <T k="pages.averageHealthScore" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-h1 font-semibold tabular-nums">
-              {summary?.averageHealthScore ?? "—"}
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t["firmCommandCenter.acrossAllManagedClients"]}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-destructive" />
-              <T k="pages.criticalAlerts" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div
-              className={`text-h1 font-semibold tabular-nums ${summary?.criticalAlertCount ? "text-danger" : "text-foreground"}`}
-            >
-              {summary?.criticalAlertCount ?? "—"}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm flex items-center gap-2">
-              <Bell className="w-4 h-4 text-warning" />
-              <T k="pages.warnings" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-h1 font-semibold tabular-nums">
-              {summary?.warningAlertCount ?? "—"}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Health summary, folded into one line (spec 3.17: no second tile row). */}
+      {summary && (
+        <p className="text-small text-muted-foreground" data-testid="command-center-health-line">
+          <T k="pages.averageHealthScore" />{" "}
+          <span className="font-medium tabular-nums text-foreground">
+            {summary.averageHealthScore}
+          </span>
+          {" · "}
+          <T k="pages.criticalAlerts" />{" "}
+          <span
+            className={`font-medium tabular-nums ${summary.criticalAlertCount ? "text-danger" : "text-foreground"}`}
+          >
+            {summary.criticalAlertCount}
+          </span>
+          {" · "}
+          <T k="pages.warnings" />{" "}
+          <span className="font-medium tabular-nums text-foreground">
+            {summary.warningAlertCount}
+          </span>
+        </p>
+      )}
 
       <Tabs defaultValue="clients" className="space-y-4">
         <TabsList>
