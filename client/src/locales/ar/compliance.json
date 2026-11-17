@@ -168,5 +168,7 @@
   "compliance.markedNotApplicable": "تم التحديد كغير منطبق",
   "compliance.cancelAction": "إلغاء",
   "compliance.periodsPrepare": "إعداد",
-  "compliance.periodsReview": "مراجعة"
+  "compliance.periodsReview": "مراجعة",
+  "compliance.filedReturnsTitle": "الإقرارات المقدمة",
+  "compliance.filedReturnsEmptyHint": "تُحفظ هنا الإقرارات التي تقدمها إلى الهيئة مع ملفاتها."
 }

@@ -1,9 +1,12 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { StatCard } from "@/components/ui/stat-card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FileDrop } from "@/components/ui/file-drop";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -46,8 +49,6 @@ import {
   Loader2,
   Plus,
   Eye,
-  Receipt,
-  Building2,
   CheckCircle2,
   Clock,
   AlertCircle,
@@ -217,9 +218,9 @@ export default function TaxReturnArchive() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Compliance"
-        title={t["compliance.taxArchiveTaxReturnArchive"]}
+        title={t["compliance.filedReturnsTitle"]}
         description={t["compliance.taxArchiveViewAllTaxReturnsFiledWith"]}
-        actions={
+        primaryAction={
           <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-return">
             <Plus className="w-4 h-4 me-2" />
             {t["compliance.taxArchiveAddReturn"]}
@@ -227,57 +228,21 @@ export default function TaxReturnArchive() {
         }
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {t["compliance.taxArchiveTotalReturns"]}
-            </CardTitle>
-            <FileText className="w-4 h-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalReturns}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "إقرارات ضريبة القيمة المضافة" : "VAT Returns"}
-            </CardTitle>
-            <Receipt className="w-4 h-4 text-info" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-info">{stats.vatReturns}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {t["compliance.taxArchiveCorporateTax"]}
-            </CardTitle>
-            <Building2 className="w-4 h-4 text-chart-5" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-chart-5">{stats.corporateTax}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {t["compliance.taxArchiveTotalTaxPaid"]}
-            </CardTitle>
-            <CheckCircle2 className="w-4 h-4 text-success" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-success">
-              <Money amount={stats.totalTaxPaid} />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Spec 3.12 / 2.6: no KPI row of zeros on an empty archive. */}
+      {stats.totalReturns > 0 ? (
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          <StatCard label={t["compliance.taxArchiveTotalReturns"]} value={stats.totalReturns} />
+          <StatCard
+            label={locale === "ar" ? "إقرارات ضريبة القيمة المضافة" : "VAT returns"}
+            value={stats.vatReturns}
+          />
+          <StatCard label={t["compliance.taxArchiveCorporateTax"]} value={stats.corporateTax} />
+          <StatCard
+            label={t["compliance.taxArchiveTotalTaxPaid"]}
+            value={<Money amount={stats.totalTaxPaid} />}
+          />
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -328,13 +293,15 @@ export default function TaxReturnArchive() {
         </CardHeader>
         <CardContent>
           {filteredReturns.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>{t["compliance.taxArchiveNoTaxReturnsFound"]}</p>
-              <Button variant="ghost" onClick={() => setAddDialogOpen(true)}>
-                {t["compliance.taxArchiveAddYourFirstReturn"]}
-              </Button>
-            </div>
+            <EmptyState
+              icon={FileText}
+              title={t["compliance.taxArchiveNoTaxReturnsFound"]}
+              description={t["compliance.filedReturnsEmptyHint"]}
+              action={{
+                label: t["compliance.taxArchiveAddYourFirstReturn"],
+                onClick: () => setAddDialogOpen(true),
+              }}
+            />
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -571,18 +538,19 @@ export default function TaxReturnArchive() {
             </div>
 
             <div className="space-y-2">
-              <Label>{locale === "ar" ? "ملف الإقرار (PDF)" : "Return File (PDF)"}</Label>
-              <Input
-                type="file"
+              <Label>{locale === "ar" ? "ملف الإقرار (PDF)" : "Return file (PDF)"}</Label>
+              <FileDrop
+                id="tax-return-file"
                 accept=".pdf"
-                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                data-testid="input-return-file"
+                onFiles={([file]) => setSelectedFile(file ?? null)}
+                value={
+                  selectedFile
+                    ? `${selectedFile.name} (${(selectedFile.size / 1024).toFixed(1)} KB)`
+                    : undefined
+                }
+                onClear={() => setSelectedFile(null)}
+                inputTestId="input-return-file"
               />
-              {selectedFile && (
-                <p className="text-sm text-muted-foreground">
-                  {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
-                </p>
-              )}
             </div>
           </div>
           <DialogFooter>

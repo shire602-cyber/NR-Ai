@@ -1,4 +1,5 @@
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
 import { accountDisplayName } from "@/lib/account-name";
 import { useState } from "react";
@@ -294,7 +295,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
       </CardHeader>
       <CardContent>
         {runs.length === 0 ? (
-          <p className="text-muted-foreground">{tx("hr.noRuns")}</p>
+          <EmptyState size="sm" title={tx("hr.noRuns")} />
         ) : (
           <>
             {/* Below 768px: stacked row-cards (line 1 period + net, line 2 employees + status, actions). */}

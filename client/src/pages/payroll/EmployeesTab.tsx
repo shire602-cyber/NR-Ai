@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Archive, Edit, Plus, Trash2, UserX } from "lucide-react";
@@ -299,7 +300,7 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
         {isLoading ? (
           <p className="text-muted-foreground">{tx("hr.loading")}</p>
         ) : filtered.length === 0 ? (
-          <p className="text-muted-foreground">{tx("hr.noEmployees")}</p>
+          <EmptyState size="sm" title={tx("hr.noEmployees")} />
         ) : (
           <div className="overflow-x-auto">
             <Table>

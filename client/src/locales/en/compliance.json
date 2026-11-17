@@ -168,5 +168,7 @@
   "compliance.markedNotApplicable": "Marked as not applicable",
   "compliance.cancelAction": "Cancel",
   "compliance.periodsPrepare": "Prepare",
-  "compliance.periodsReview": "Review"
+  "compliance.periodsReview": "Review",
+  "compliance.filedReturnsTitle": "Filed returns",
+  "compliance.filedReturnsEmptyHint": "Returns you file with the FTA are kept here with their files."
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check, Plus, X } from "lucide-react";
@@ -218,7 +219,7 @@ export function LeaveTab({ companyId }: { companyId: string }) {
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {requests.length === 0 ? (
-            <p className="text-muted-foreground">{tx("hr.noLeaveRequests")}</p>
+            <EmptyState size="sm" title={tx("hr.noLeaveRequests")} />
           ) : (
             <Table>
               <TableHeader>
