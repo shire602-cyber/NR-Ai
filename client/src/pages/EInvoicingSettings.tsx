@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { FileCheck2, Download } from "lucide-react";
@@ -425,11 +426,10 @@ export default function EInvoicingSettings() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="golive">{s.goLiveOverride}</Label>
-                <Input
+                <DatePicker
                   id="golive"
-                  type="date"
                   value={form.einvoiceGoLiveDate}
-                  onChange={(e) => set("einvoiceGoLiveDate")(e.target.value)}
+                  onChange={(value) => set("einvoiceGoLiveDate")(value)}
                 />
               </div>
               <div className="text-sm md:col-span-3">

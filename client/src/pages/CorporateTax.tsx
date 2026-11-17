@@ -1,4 +1,11 @@
 import { T } from "@/components/layout/T";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -1741,21 +1748,25 @@ export function CtCompliancePanel({ companyId }: { companyId: string }) {
           </div>
           <div className="space-y-1">
             <Label htmlFor="ct-band">{t["corporateTax.einvoicingBand"]}</Label>
-            <select
-              id="ct-band"
-              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-              value={profile?.einvoicingRevenueBand ?? ""}
-              onChange={(e) =>
+            <Select
+              value={profile?.einvoicingRevenueBand ?? "auto"}
+              onValueChange={(value) =>
                 saveProfile.mutate({
-                  einvoicingRevenueBand: (e.target.value ||
-                    null) as CtProfile["einvoicingRevenueBand"],
+                  einvoicingRevenueBand: (value === "auto"
+                    ? null
+                    : value) as CtProfile["einvoicingRevenueBand"],
                 })
               }
             >
-              <option value="">{t["corporateTax.einvoicingBandAuto"]}</option>
-              <option value="ge_50m">{t["corporateTax.einvoicingBandLarge"]}</option>
-              <option value="lt_50m">{t["corporateTax.einvoicingBandSmall"]}</option>
-            </select>
+              <SelectTrigger id="ct-band">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">{t["corporateTax.einvoicingBandAuto"]}</SelectItem>
+                <SelectItem value="ge_50m">{t["corporateTax.einvoicingBandLarge"]}</SelectItem>
+                <SelectItem value="lt_50m">{t["corporateTax.einvoicingBandSmall"]}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -1777,15 +1788,20 @@ export function CtCompliancePanel({ companyId }: { companyId: string }) {
               placeholder={t["corporateTax.partyName"]}
               aria-label={t["corporateTax.partyName"]}
             />
-            <select
-              className="h-9 rounded-md border bg-background px-3 text-sm"
+            <Select
               value={partyKind}
-              onChange={(e) => setPartyKind(e.target.value as RelatedParty["relationship"])}
-              aria-label={t["corporateTax.partyRelationship"]}
+              onValueChange={(value) => setPartyKind(value as RelatedParty["relationship"])}
             >
-              <option value="related_party">{t["corporateTax.relatedParty"]}</option>
-              <option value="connected_person">{t["corporateTax.connectedPerson"]}</option>
-            </select>
+              <SelectTrigger className="w-48" aria-label={t["corporateTax.partyRelationship"]}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="related_party">{t["corporateTax.relatedParty"]}</SelectItem>
+                <SelectItem value="connected_person">
+                  {t["corporateTax.connectedPerson"]}
+                </SelectItem>
+              </SelectContent>
+            </Select>
             <Input
               className="max-w-[180px]"
               type="number"

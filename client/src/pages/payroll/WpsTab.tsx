@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { FileDrop } from "@/components/ui/file-drop";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatDate } from "@/lib/format-date";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -227,6 +228,7 @@ export function WpsTab({ companyId }: { companyId: string }) {
     queryKey: [`/api/companies/${companyId}/payroll/expiries`],
   });
   const [content, setContent] = useState("");
+  const [sifName, setSifName] = useState<string | null>(null);
   const [result, setResult] = useState<ValidationResult | null>(null);
   const [runId, setRunId] = useState("");
   const [status, setStatus] = useState("submitted");
@@ -306,12 +308,18 @@ export function WpsTab({ companyId }: { companyId: string }) {
           <CardDescription>{tx("hr.wps.validatorHint")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Input
-            type="file"
+          <FileDrop
+            id="wps-sif-file"
             accept=".sif,.SIF,.txt,.csv"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (file) setContent(await file.text());
+            value={sifName}
+            onClear={() => {
+              setSifName(null);
+              setContent("");
+            }}
+            onFiles={async ([file]) => {
+              if (!file) return;
+              setSifName(file.name);
+              setContent(await file.text());
             }}
           />
           <Textarea

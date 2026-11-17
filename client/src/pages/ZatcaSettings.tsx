@@ -1,4 +1,11 @@
 import { useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { PageHeader } from "@/components/ui/page-header";
@@ -361,16 +368,19 @@ export default function ZatcaSettings() {
               {field("organizationUnit", s.orgUnit)}
               <div className="space-y-2">
                 <Label htmlFor="zatca-types">{s.invoiceTypes}</Label>
-                <select
-                  id="zatca-types"
-                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                <Select
                   value={form.invoiceTypes}
-                  onChange={(e) => setForm((f) => ({ ...f, invoiceTypes: e.target.value }))}
+                  onValueChange={(value) => setForm((f) => ({ ...f, invoiceTypes: value }))}
                 >
-                  <option value="1100">{s.typesBoth}</option>
-                  <option value="1000">{s.typesStandard}</option>
-                  <option value="0100">{s.typesSimplified}</option>
-                </select>
+                  <SelectTrigger id="zatca-types">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1100">{s.typesBoth}</SelectItem>
+                    <SelectItem value="1000">{s.typesStandard}</SelectItem>
+                    <SelectItem value="0100">{s.typesSimplified}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               {field("locationAddress", s.address)}
               {field("industry", s.industry)}
