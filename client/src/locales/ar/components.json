@@ -485,7 +485,7 @@
   "components.srv.monthEnd.fx.posted": "تم ترحيل {n} قيود إعادة تقييم",
   "components.srv.monthEnd.fx.missing": "{n} حسابات تحتفظ بأرصدة بعملات أجنبية؛ شغِّل إعادة التقييم",
   "components.srv.monthEnd.controls.title": "مطابقة الحسابات الرقابية",
-  "components.srv.monthEnd.controls.description": "حسابات الذمم المدينة والدائنة وضريبة القيمة المضافة والرواتب الرقابية تساوي دفاترها الفرعية",
+  "components.srv.monthEnd.controls.description": "حسابات الذمم المدينة والدائنة والمخزون وضريبة القيمة المضافة والرواتب الرقابية تساوي دفاترها الفرعية",
   "components.srv.monthEnd.controls.none": "لا توجد حركة على الحسابات الرقابية في هذه الفترة",
   "components.srv.monthEnd.controls.tied": "{n} حسابات رقابية مطابقة لدفاترها الفرعية",
   "components.srv.monthEnd.controls.differences": "{n} حسابات رقابية تختلف عن دفترها الفرعي: {list}",

@@ -1037,6 +1037,8 @@ async function collectFixedAssetDisposals(
        FROM fixed_assets fa
        JOIN journal_entries je ON je.id = fa.disposal_entry_id AND je.company_id = fa.company_id
       WHERE fa.company_id = $1 AND fa.status = 'disposed'
+        -- B1 (NH3): a disposal billed with a sales invoice is reported from the invoice.
+        AND fa.disposal_invoice_id IS NULL
         AND fa.disposal_date >= $2::date AND fa.disposal_date <= $3::date
         AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL`,
     [companyId, from, to]

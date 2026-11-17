@@ -467,7 +467,8 @@ export async function getCloseChecklist(
   });
 
   // 11. A4 (M12): control accounts tie to their sub-ledgers at period end (AR 1040, AP 2010,
-  //     VAT, pension 2032, gratuity 2036, salaries 2030). A difference keeps the step open.
+  //     inventory 1070 (B1: NM5), VAT, pension 2032, gratuity 2036, salaries 2030). A difference
+  //     keeps the step open.
   const ties = await controlAccountTies(companyId, periodStart, periodEnd);
   const applicable = ties.filter((t) => t.applicable);
   const broken = applicable.filter((t) => !t.reconciled);
@@ -478,7 +479,8 @@ export async function getCloseChecklist(
     id: 11,
     key: "control_accounts",
     title: "Control Accounts Reconciled",
-    description: "Receivables, payables, VAT and payroll control accounts equal their sub-ledgers",
+    description:
+      "Receivables, payables, inventory, VAT and payroll control accounts equal their sub-ledgers",
     status: broken.length === 0 ? "complete" : "incomplete",
     details:
       applicable.length === 0

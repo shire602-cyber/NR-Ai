@@ -136,9 +136,14 @@ export const disposeBody = z
     disposalAmount: zMoneyFils.optional().default(0),
     /** Cash / bank account receiving the money. Default 1010 Cash on Hand. */
     proceedsAccountId: zUuid.optional().nullable(),
-    /** Sold on credit: debit Accounts Receivable (1040) instead of cash. */
+    /**
+     * Sold on credit: the buyer is billed with a sales tax invoice (B1: NH3) that carries the
+     * receivable (1040), its aging and the output VAT.
+     */
     onCredit: z.boolean().optional(),
     buyerName: optText(255),
+    /** Sold on credit: the customer contact to invoice (optional; buyerName is enough). */
+    buyerContactId: zUuid.optional().nullable(),
     /** Sale of a business asset is a taxable supply (5% VAT) unless stated otherwise. */
     vatTreatment: z.enum(DISPOSAL_VAT_TREATMENTS).optional(),
     notes: optText(2000),

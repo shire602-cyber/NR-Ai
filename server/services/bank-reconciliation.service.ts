@@ -735,11 +735,13 @@ export async function buildEntryLines(
               accountId: vatAccountId,
               creditFils: vat,
               description: `Output VAT 5%: ${desc}`.slice(0, 500),
+              systemVat: true,
             }
           : {
               accountId: vatAccountId,
               debitFils: vat,
               description: `Input VAT 5%: ${desc}`.slice(0, 500),
+              systemVat: true,
             }
       );
   }
@@ -1144,6 +1146,8 @@ export async function applyMatch(input: ApplyMatchInput): Promise<ApplyMatchResu
           idempotencyKey: `bankmatch:${groupId}`,
           status: draft ? "draft" : "posted",
           lines: built.lines,
+          // B1 (NH1): the VAT return reports a treated bank line (exempt / zero-rated included).
+          reportsVat: built.vat !== null,
         },
         { actorId, tx, audit: true }
       );

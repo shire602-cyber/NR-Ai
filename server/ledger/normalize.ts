@@ -228,6 +228,7 @@ export function normalizeLine(
     foreignDebitFils: foreignDebit,
     foreignCreditFils: foreignCredit,
     exchangeRate,
+    ...(line.systemVat === true ? { systemVat: true } : {}),
   };
 }
 
@@ -324,5 +325,6 @@ export function normalizeEntry(
     lines,
     totalDebitFils: totals.debitFils,
     totalCreditFils: totals.creditFils,
+    ...(input.reportsVat === true ? { reportsVat: true } : {}),
   };
 }

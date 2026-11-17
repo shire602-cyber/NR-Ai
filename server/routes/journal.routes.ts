@@ -48,7 +48,6 @@ import {
   submitForApproval,
   updateDraftEntry,
   voidEntry,
-  withLedgerTx,
   type PostJournalLineInput,
 } from "../ledger";
 import { normalizeEntry, parseLedgerDate, todayIso } from "../ledger/normalize";
@@ -60,8 +59,8 @@ import {
 import {
   MANUAL_SOURCES,
   assertManualControlPosting,
+  assertUserReversible,
   manualEntryControlState,
-  stampControlAdjustment,
 } from "../ledger/control-accounts";
 import { recordAudit } from "../services/audit.service";
 import { createLogger } from "../config/logger";
@@ -296,12 +295,14 @@ export function registerJournalRoutes(app: Express) {
       const body: CreateJournalBody = createJournalBody.parse(req.body);
       await requireCompanyAccess(req, companyId);
 
-      // A2 (H8): control accounts take manual lines only as an explicit adjustment.
+      // A2 (H8): control accounts take manual lines only as an explicit adjustment. The kernel
+      // enforces the same rule (B1: NC1) and stamps the reason in the posting transaction.
+      const role = await companyRole(userId, companyId);
       const control = await assertManualControlPosting({
         companyId,
         accountIds: body.lines.map((l) => l.accountId),
         adjustment: body.controlAdjustment ?? null,
-        role: await companyRole(userId, companyId),
+        role,
       });
       const adjustmentReason = control.length ? (body.controlAdjustment?.reason ?? null) : null;
       const requested = body.status ?? "draft";
@@ -327,20 +328,15 @@ export function registerJournalRoutes(app: Express) {
           pendingApproval = true;
         }
       }
-      // A control-account adjustment is stamped in the posting transaction; ordinary entries
-      // keep the kernel's own transaction (no connection held across the pre-post checks).
-      const result = adjustmentReason
-        ? await withLedgerTx(async (tx) => {
-            const r = await postJournal(
-              { ...input, status },
-              { actorId: userId, req, audit: true, tx }
-            );
-            if (!r.replayed) {
-              await stampControlAdjustment(tx, r.entry.id, adjustmentReason, userId);
-            }
-            return r;
-          })
-        : await postJournal({ ...input, status }, { actorId: userId, req, audit: true });
+      const result = await postJournal(
+        { ...input, status },
+        {
+          actorId: userId,
+          req,
+          audit: true,
+          controlAdjustment: adjustmentReason ? { reason: adjustmentReason, role } : null,
+        }
+      );
       let entry = result.entry;
       if (pendingApproval && !result.replayed) {
         entry = await submitForApproval(entry.id, { actorId: userId, companyId });
@@ -481,17 +477,29 @@ export function registerJournalRoutes(app: Express) {
           "Posted journal entries cannot be edited. Reverse them instead."
         );
       }
-      const ctx = { actorId: userId, companyId: entry.companyId, req };
       const prior = await manualEntryControlState(entry.id);
+      const role = await companyRole(userId, entry.companyId);
       const control = MANUAL_SOURCES.has(String(entry.source))
         ? await assertManualControlPosting({
             companyId: entry.companyId,
             accountIds: body.lines.map((l) => l.accountId),
             adjustment: body.controlAdjustment ?? null,
             stampedReason: body.controlAdjustment === null ? null : prior.reason,
-            role: await companyRole(userId, entry.companyId),
+            role,
           })
         : [];
+      // B1 (NC1): the kernel re-checks the edited lines of every non-sub-ledger draft and stamps
+      // (or clears) the adjustment reason with the edit.
+      const reason =
+        body.controlAdjustment === null
+          ? null
+          : (body.controlAdjustment?.reason ?? (control.length ? prior.reason : null));
+      const ctx = {
+        actorId: userId,
+        companyId: entry.companyId,
+        req,
+        controlAdjustment: reason ? { reason, role } : null,
+      };
       let result = await updateDraftEntry(
         entry.id,
         {
@@ -503,10 +511,6 @@ export function registerJournalRoutes(app: Express) {
         },
         ctx
       );
-      const reason = control.length ? (body.controlAdjustment?.reason ?? prior.reason) : null;
-      if (reason !== prior.reason) {
-        await withLedgerTx((tx) => stampControlAdjustment(tx, entry.id, reason, userId));
-      }
       if (body.status === "posted") {
         result = await postDraft(entry.id, ctx, {
           approvalThresholdFils: await approvalThresholdFils(entry.companyId),
@@ -600,6 +604,8 @@ export function registerJournalRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const entry = await requireEntry(req);
       const body: ReverseJournalBody = reverseJournalBody.parse(req.body);
+      // B1 (NH2): a document's journal is undone through the document, not here.
+      assertUserReversible(entry);
       const r = await reverseEntry(
         entry.id,
         { date: body.date ?? null, reason: body.reason ?? null },
@@ -624,6 +630,7 @@ export function registerJournalRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const entry = await requireEntry(req);
       const body: VoidJournalBody = voidJournalBody.parse(req.body);
+      assertUserReversible(entry);
       const r = await voidEntry(
         entry.id,
         { reason: body.reason ?? null },

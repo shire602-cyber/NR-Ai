@@ -141,7 +141,12 @@ describe("R02-01 / R02-18 exact balance in integer fils", () => {
                 ...credits.filter((f) => f > 0).map((f) => ({ accountId: pick(), creditFils: f })),
               ],
             },
-            { actorId: tb.user.id }
+            // B1 (NC1): random accounts include control accounts; the fixture posts them as
+            // explicit control-account adjustments (the kernel refuses them otherwise).
+            {
+              actorId: tb.user.id,
+              controlAdjustment: { reason: "Random trial-balance fixture", role: null },
+            }
           );
         })
       );

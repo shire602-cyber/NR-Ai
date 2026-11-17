@@ -618,7 +618,7 @@ export const MONTH_END_TEMPLATES: readonly CopyTemplate[] = [
   T("monthEnd.controls.title", "Control Accounts Reconciled"),
   T(
     "monthEnd.controls.description",
-    "Receivables, payables, VAT and payroll control accounts equal their sub-ledgers"
+    "Receivables, payables, inventory, VAT and payroll control accounts equal their sub-ledgers"
   ),
   T("monthEnd.controls.none", "No control-account activity in this period"),
   T("monthEnd.controls.tied", "{n} control account(s) tie to their sub-ledgers"),

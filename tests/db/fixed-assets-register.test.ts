@@ -146,7 +146,8 @@ describe("W4-B fixed assets", () => {
     expect(by["2020"]).toBe(-450);
     expect(by["1240"]).toBe(509.68);
     expect(by["5130"]).toBe(2490.32);
-    expect(by["1290"]).toBe(-12000);
+    // B1 (M3): a "Computer Equipment" asset capitalises to 1230 Computers & Software.
+    expect(by["1230"]).toBe(-12000);
     const sum = lines.reduce(
       (s, l) => s + Math.round(Number(l.debit) * 100) - Math.round(Number(l.credit) * 100),
       0

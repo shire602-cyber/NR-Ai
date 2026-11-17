@@ -16,11 +16,20 @@
  * realised surplus moved to retained earnings on disposal is exactly what is left. After a
  * revaluation or impairment, depreciation follows the revised carrying amount over the
  * remaining useful life (IAS 16.50, IAS 36.63).
- *   dispose      Dr proceeds (cash/bank or 1040 A/R) incl. VAT + Dr accumulated (+ Dr loss)
+ *   dispose      Dr proceeds (cash/bank) incl. VAT + Dr accumulated (+ Dr loss)
  *                / Cr cost (+ Cr 2020 output VAT) (+ Cr 4080 gain)
+ *
+ * B1 (NH3): an asset sold on credit is billed with a sales tax invoice (FDL 8/2017 Art. 65),
+ * issued through the invoice service: Dr 1040 / Cr sales / Cr 2020. The receivable, its aging,
+ * its receipt and the output VAT are then the invoice's, and the disposal entry moves the
+ * invoiced proceeds out of revenue into the gain or loss (IAS 16.68, 16.71): Dr sales (the
+ * invoice's net) + Dr accumulated (+ Dr loss) / Cr cost (+ Cr 4080 gain), with no VAT line.
+ *
+ * B1 (M3): a new asset's cost account follows its category when no class or account is given:
+ * vehicles 1250, furniture 1220, computers / electronics 1230, equipment 1210, else 1290.
  */
 import { sql } from "drizzle-orm";
-import { pool } from "../../db";
+import { db, pool } from "../../db";
 import { DomainError } from "../../errors";
 import { createLogger } from "../../config/logger";
 import { fromFils, toFils } from "../../../shared/money";
@@ -29,6 +38,8 @@ import { postJournal, withLedgerTx, type LedgerTx, type PostJournalLineInput } f
 import { assertAccount, ensureAccountByCode, q } from "../inventory/store";
 import { defaultPaymentAccountId, isHeaderAccount } from "../payment-accounts.service";
 import { normaliseEmirate } from "../../tax/vat-boxes";
+import { createDraftInvoice } from "../connectors/draft-documents";
+import { issueInvoice, voidInvoice } from "../invoice-posting.service";
 import {
   depreciationFor,
   disposalSplit,
@@ -60,6 +71,37 @@ export const FA_CODES = {
 
 const f = (v: unknown): number =>
   v === null || v === undefined || v === "" ? 0 : toFils(String(v), { rounding: "halfUp" });
+
+/**
+ * B1 (M3): default-chart cost account per asset category (IAS 16.37 classes). The accumulated
+ * depreciation of every class stays on 1240, the chart's only accumulated-depreciation account.
+ */
+export const CATEGORY_COST_CODES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/vehicle|\bcars?\b|\bvans?\b|truck|motor/i, "1250"],
+  [/furniture|fixture|fitting/i, "1220"],
+  [/computer|software|electronic|laptop|hardware|server|\bit\b/i, "1230"],
+  [/equipment|machine|printer|tool/i, "1210"],
+];
+
+/** The cost account a new asset of `category` capitalises to, or null for 1290. */
+export async function categoryCostAccountId(
+  tx: LedgerTx,
+  companyId: string,
+  category: string | null | undefined
+): Promise<string | null> {
+  const code = CATEGORY_COST_CODES.find(([re]) => re.test(category ?? ""))?.[1];
+  if (!code) return null;
+  const rows = await q<{ id: string }>(
+    tx,
+    sql`SELECT id FROM accounts
+         WHERE company_id = ${companyId} AND code = ${code} AND type = 'asset'
+           AND is_active IS NOT FALSE AND is_archived IS NOT TRUE
+         LIMIT 1`
+  );
+  const id = rows[0]?.id ?? null;
+  if (!id || (await isHeaderAccount(companyId, id))) return null;
+  return id;
+}
 
 export interface AssetRow {
   id: string;
@@ -214,7 +256,14 @@ export async function isCapitalised(tx: LedgerTx, a: AssetRow): Promise<boolean>
 async function post(
   tx: LedgerTx,
   a: AssetRow,
-  args: { date: string; memo: string; key: string; lines: PostJournalLineInput[]; actorId: string }
+  args: {
+    date: string;
+    memo: string;
+    key: string;
+    lines: PostJournalLineInput[];
+    actorId: string;
+    reportsVat?: boolean;
+  }
 ): Promise<string> {
   const { entry } = await postJournal(
     {
@@ -226,6 +275,7 @@ async function post(
       sourceId: a.id,
       idempotencyKey: args.key,
       allowFutureDate: true,
+      reportsVat: args.reportsVat === true,
       lines: args.lines.filter((l) => (l.debitFils ?? 0) > 0 || (l.creditFils ?? 0) > 0),
     },
     { actorId: args.actorId, tx }
@@ -812,6 +862,8 @@ export interface DisposeInput {
   proceedsAccountId?: string | null;
   onCredit?: boolean;
   buyerName?: string | null;
+  /** Sold on credit: the customer contact billed (optional; buyerName alone also works). */
+  buyerContactId?: string | null;
   vatTreatment?: "standard" | "zero_rated" | "exempt" | "out_of_scope";
   notes?: string | null;
   actorId: string;
@@ -838,28 +890,125 @@ async function assertCompanyEmirateForDisposal(tx: LedgerTx, companyId: string):
   }
 }
 
+const SUPPLY_TYPE_OF: Record<string, "standard_rated" | "zero_rated" | "exempt" | "out_of_scope"> =
+  {
+    standard: "standard_rated",
+    zero_rated: "zero_rated",
+    exempt: "exempt",
+    out_of_scope: "out_of_scope",
+  };
+
+/** The checks a disposal makes before anything is written (shared by the credit path). */
+async function assertDisposable(tx: LedgerTx, a: AssetRow, input: DisposeInput): Promise<void> {
+  if (a.status === "disposed")
+    throw new DomainError("ASSET_ALREADY_DISPOSED", 409, undefined, "Asset is already disposed");
+  if (input.disposalDate < a.purchase_iso) {
+    throw new DomainError(
+      "DISPOSAL_BEFORE_PURCHASE",
+      400,
+      undefined,
+      "disposalDate cannot precede purchaseDate"
+    );
+  }
+  if (!(await isCapitalised(tx, a))) {
+    throw new DomainError(
+      "ASSET_NOT_CAPITALIZED",
+      422,
+      undefined,
+      "This asset is not on the general ledger; capitalise it before recording a disposal"
+    );
+  }
+  if (input.proceedsFils > 0 && (input.vatTreatment ?? "standard") === "standard") {
+    await assertCompanyEmirateForDisposal(tx, a.company_id);
+  }
+}
+
+/**
+ * B1 (NH3): dispose of an asset sold on credit. The buyer gets a sales tax invoice issued through
+ * the invoice service (it carries the receivable, the aging and the output VAT), then the disposal
+ * is posted against that invoice. If the disposal fails after the invoice was issued, the invoice
+ * is voided again so no orphan receivable is left.
+ */
+async function disposeOnCredit(assetId: string, companyId: string, input: DisposeInput) {
+  const pre = await withLedgerTx(async (tx) => {
+    const a = await loadAsset(tx, assetId, { companyId });
+    await assertDisposable(tx, a, input);
+    const co = await q<{ emirate: string | null }>(
+      tx,
+      sql`SELECT emirate FROM companies WHERE id = ${companyId}`
+    );
+    return { asset: a, emirate: normaliseEmirate(co[0]?.emirate ?? null) };
+  });
+  const treatment = input.vatTreatment ?? "standard";
+  const draft = await createDraftInvoice(
+    companyId,
+    {
+      contactId: input.buyerContactId ?? null,
+      customerName: input.buyerName ?? null,
+      date: input.disposalDate,
+      // Goods supplied from the company's establishment (Art. 27): its emirate's Box 1 row.
+      placeOfSupplyEmirate: pre.emirate,
+      notes: `Disposal of fixed asset ${pre.asset.asset_number ?? pre.asset.asset_name}`,
+      lines: [
+        {
+          description: `Disposal of ${pre.asset.asset_name}`.slice(0, 500),
+          quantity: 1,
+          unitPrice: input.proceedsFils,
+          vatRate: treatment === "standard" ? 0.05 : 0,
+          vatSupplyType: SUPPLY_TYPE_OF[treatment] ?? "standard_rated",
+        },
+      ],
+    },
+    input.actorId
+  );
+  try {
+    const issued = await issueInvoice(draft.id, companyId, input.actorId, "sent");
+    const out = await withLedgerTx((tx) =>
+      disposeInTx(tx, assetId, companyId, input, { id: issued.invoice.id })
+    );
+    return { ...out, invoiceId: issued.invoice.id, invoiceNumber: issued.invoice.number };
+  } catch (err) {
+    try {
+      const inv = await q<{ status: string }>(
+        db,
+        sql`SELECT status FROM invoices WHERE id = ${draft.id} AND company_id = ${companyId}`
+      );
+      if (inv[0]) {
+        await voidInvoice(
+          draft.id,
+          companyId,
+          input.actorId,
+          inv[0].status === "draft" ? "cancelled" : "void",
+          "Asset disposal failed"
+        );
+      }
+    } catch (cleanupErr) {
+      log.error(
+        { err: (cleanupErr as Error)?.message, invoiceId: draft.id },
+        "Disposal invoice could not be withdrawn after a failed disposal"
+      );
+    }
+    throw err;
+  }
+}
+
 export async function disposeAsset(assetId: string, companyId: string, input: DisposeInput) {
-  return withLedgerTx(async (tx) => {
+  if (input.onCredit && input.proceedsFils > 0) {
+    return disposeOnCredit(assetId, companyId, input);
+  }
+  return withLedgerTx((tx) => disposeInTx(tx, assetId, companyId, input, null));
+}
+
+async function disposeInTx(
+  tx: LedgerTx,
+  assetId: string,
+  companyId: string,
+  input: DisposeInput,
+  invoice: { id: string } | null
+) {
+  {
     let a = await loadAsset(tx, assetId, { lock: true, companyId });
-    if (a.status === "disposed")
-      throw new DomainError("ASSET_ALREADY_DISPOSED", 409, undefined, "Asset is already disposed");
-    if (input.disposalDate < a.purchase_iso) {
-      throw new DomainError(
-        "DISPOSAL_BEFORE_PURCHASE",
-        400,
-        undefined,
-        "disposalDate cannot precede purchaseDate"
-      );
-    }
-    const capitalised = await isCapitalised(tx, a);
-    if (!capitalised) {
-      throw new DomainError(
-        "ASSET_NOT_CAPITALIZED",
-        422,
-        undefined,
-        "This asset is not on the general ledger; capitalise it before recording a disposal"
-      );
-    }
+    await assertDisposable(tx, a, input);
     // Catch-up depreciation through the month before disposal (full-month convention).
     const [dy, dm] = input.disposalDate.split("-").map(Number);
     const endY = dm === 1 ? dy - 1 : dy;
@@ -880,7 +1029,6 @@ export async function disposeAsset(assetId: string, companyId: string, input: Di
     const c = calcInput(a);
     const vatRate: 0 | 5 =
       input.proceedsFils > 0 && (input.vatTreatment ?? "standard") === "standard" ? 5 : 0;
-    if (vatRate === 5) await assertCompanyEmirateForDisposal(tx, a.company_id);
     const split = disposalSplit({
       proceedsFils: input.proceedsFils,
       vatRate,
@@ -892,18 +1040,34 @@ export async function disposeAsset(assetId: string, companyId: string, input: Di
     const acc = await assetAccounts(tx, a);
     const lines: PostJournalLineInput[] = [];
     const grossFils = input.proceedsFils + split.vatFils;
-    if (grossFils > 0) {
-      const proceedsAccount = input.onCredit
-        ? await ensureAccountByCode(tx, a.company_id, FA_CODES.AR)
-        : input.proceedsAccountId
-          ? (await assertAccount(tx, a.company_id, input.proceedsAccountId, ["asset"])).id
-          : await defaultDisposalCashAccount(tx, a.company_id);
+    if (invoice) {
+      // B1 (NH3): the invoice credited its sales account(s) with the net proceeds; move them to
+      // the disposal. Its receivable and output VAT stay with the invoice.
+      const sales = await invoiceSalesLines(tx, a.company_id, invoice.id);
+      const salesTotal = sales.reduce((t, l) => t + l.fils, 0);
+      if (salesTotal !== input.proceedsFils) {
+        throw new DomainError(
+          "DISPOSAL_INVOICE_MISMATCH",
+          409,
+          { invoiceId: invoice.id, invoicedFils: salesTotal, proceedsFils: input.proceedsFils },
+          "The disposal invoice's net amount differs from the disposal proceeds"
+        );
+      }
+      for (const l of sales) {
+        lines.push({
+          accountId: l.accountId,
+          debitFils: l.fils,
+          description: `Invoiced proceeds moved to disposal of ${a.asset_name}`,
+        });
+      }
+    } else if (grossFils > 0) {
+      const proceedsAccount = input.proceedsAccountId
+        ? (await assertAccount(tx, a.company_id, input.proceedsAccountId, ["asset"])).id
+        : await defaultDisposalCashAccount(tx, a.company_id);
       lines.push({
         accountId: proceedsAccount,
         debitFils: grossFils,
-        description: input.onCredit
-          ? `Receivable from ${input.buyerName} - disposal of ${a.asset_name}`
-          : `Proceeds from disposal of ${a.asset_name}`,
+        description: `Proceeds from disposal of ${a.asset_name}`,
       });
     }
     const accumulated = c.accumulatedFils + (c.impairmentFils ?? 0);
@@ -928,7 +1092,7 @@ export async function disposeAsset(assetId: string, companyId: string, input: Di
       creditFils: grossCost,
       description: `Remove cost of ${a.asset_name}`,
     });
-    if (split.vatFils > 0) {
+    if (split.vatFils > 0 && !invoice) {
       const vat = await ensureAccountByCode(tx, a.company_id, FA_CODES.VAT_OUTPUT);
       lines.push({
         accountId: vat,
@@ -961,17 +1125,22 @@ export async function disposeAsset(assetId: string, companyId: string, input: Di
         description: `Realised revaluation surplus - ${a.asset_name}`,
       });
     }
+    const treatment = input.proceedsFils > 0 ? (input.vatTreatment ?? "standard") : null;
     const entryId = await post(tx, a, {
       date: input.disposalDate,
       memo: `Disposal: ${a.asset_name}${input.buyerName ? ` to ${input.buyerName}` : ""}`,
       key: `${FA_SOURCE}:${a.id}:dispose`,
       lines,
       actorId: input.actorId,
+      // B1 (NH1): a disposal for consideration is a supply the VAT return reports from the
+      // register (exempt / zero-rated too), unless its invoice reports it.
+      reportsVat: !invoice && treatment !== null && treatment !== "out_of_scope",
     });
     await tx.execute(
       sql`UPDATE fixed_assets SET status = 'disposed', disposal_date = ${input.disposalDate},
                  disposal_amount = ${fromFils(input.proceedsFils)}, net_book_value = 0,
                  disposal_entry_id = ${entryId}, buyer_name = ${input.buyerName ?? null},
+                 disposal_invoice_id = ${invoice?.id ?? null},
                  disposal_vat = ${fromFils(split.vatFils)},
                  disposal_vat_treatment = ${input.proceedsFils > 0 ? (input.vatTreatment ?? "standard") : null},
                  notes = COALESCE(${input.notes ?? null}, notes)
@@ -988,6 +1157,7 @@ export async function disposeAsset(assetId: string, companyId: string, input: Di
         gainLoss: fromFils(split.gainLossFils),
         buyerName: input.buyerName ?? null,
         onCredit: input.onCredit === true,
+        invoiceId: invoice?.id ?? null,
       },
       actorId: input.actorId,
     });
@@ -1003,7 +1173,30 @@ export async function disposeAsset(assetId: string, companyId: string, input: Di
       journalEntryId: entryId,
       catchUpDepreciation: catchUp,
     };
-  });
+  }
+}
+
+/** The income (sales) credit lines of an invoice's posted revenue entry (fils). */
+async function invoiceSalesLines(
+  tx: LedgerTx,
+  companyId: string,
+  invoiceId: string
+): Promise<Array<{ accountId: string; fils: number }>> {
+  const rows = await q<{ account_id: string; f: string }>(
+    tx,
+    sql`SELECT jl.account_id, SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100))::text AS f
+          FROM journal_lines jl
+          JOIN journal_entries je ON je.id = jl.entry_id
+          JOIN accounts ac ON ac.id = jl.account_id
+         WHERE je.company_id = ${companyId} AND je.source = 'invoice' AND je.source_id = ${invoiceId}
+           AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL
+           AND je.entry_kind <> 'reversal'
+           -- the income lines (zero-rated / exempt sales accounts carry a VAT flag too)
+           AND ac.type = 'income'
+         GROUP BY jl.account_id
+        HAVING SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100)) > 0`
+  );
+  return rows.map((r) => ({ accountId: r.account_id, fils: Number(r.f) }));
 }
 
 // ─── Register (book vs tax) ─────────────────────────────────────────────────

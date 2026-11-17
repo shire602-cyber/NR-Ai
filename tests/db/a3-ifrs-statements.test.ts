@@ -104,10 +104,11 @@ describe("A3 S7 fixed assets: revaluation, impairment, disposal and the cash flo
     });
     expect(reval.status, reval.text).toBeLessThan(300);
     // IAS 16.35(b) (A4 L7): accumulated depreciation 2,875.28 is eliminated against the gross
-    // amount, which is then restated to fair value 8,000 (net Cr 1290 2,000; surplus 875.28).
+    // amount, which is then restated to fair value 8,000 (net Cr 1220 2,000; surplus 875.28).
+    // B1 (M3): furniture sits on 1220 Furniture & Fixtures, computers on 1230.
     expect(await linesOf(reval.body.journalEntryId)).toEqual({
+      "1220": [0, 2000],
       "1240": [2875.28, 0],
-      "1290": [0, 2000],
       "3050": [0, 875.28],
     });
 
@@ -132,8 +133,8 @@ describe("A3 S7 fixed assets: revaluation, impairment, disposal and the cash flo
     expect(sale.status, sale.text).toBeLessThan(300);
     expect(await linesOf(sale.body.journalEntryId)).toEqual({
       "1020": [21000, 0],
+      "1230": [0, 36000],
       "1240": [10000, 0],
-      "1290": [0, 36000],
       "2020": [0, 1000],
       "5130": [6000, 0],
     });
@@ -160,11 +161,15 @@ describe("A3 S7 fixed assets: revaluation, impairment, disposal and the cash flo
       "balance_change:1050": -1800,
       "balance_change:2020": 1000,
     });
+    // B1 (M3): purchases and proceeds per class of PPE (IAS 7.21 gross; IAS 16.37 classes).
     expect(
-      cf.investing.breakdown.map((l: any) => [l.kind, l.accountCode, l.amount, l.accountName])
+      cf.investing.breakdown
+        .map((l: any) => [l.kind, l.accountCode, l.amount, l.accountName])
+        .sort((x: any[], y: any[]) => `${x[0]}${x[1]}`.localeCompare(`${y[0]}${y[1]}`))
     ).toEqual([
-      ["purchase", "1290", -46000, "Purchase of Fixed Assets at Cost"],
-      ["proceeds", "1290", 20000, "Proceeds from disposal of Fixed Assets at Cost"],
+      ["proceeds", "1230", 20000, "Proceeds from disposal of Computers & Software"],
+      ["purchase", "1220", -10000, "Purchase of Furniture & Fixtures"],
+      ["purchase", "1230", -36000, "Purchase of Computers & Software"],
     ]);
     expect(cf.financing.breakdown).toEqual([]);
 
@@ -201,7 +206,8 @@ describe("A3 S7 fixed assets: revaluation, impairment, disposal and the cash flo
     expect(Number(reg.gross_carrying_amount)).toBe(8000);
     expect(Number(reg.accumulated_depreciation_and_impairment)).toBe(500);
     expect(Number(reg.revaluation_reserve)).toBe(375.28);
-    expect(await glBalance(t, "1290")).toBe(8000);
+    expect(await glBalance(t, "1220")).toBe(8000);
+    expect(await glBalance(t, "1230")).toBe(0);
     expect(await glBalance(t, "1240")).toBe(-500);
     const schedule = await get(t, `/api/fixed-assets/${furniture.body.id}/schedule`);
     const nov = schedule.book.find((p: any) => p.year === 2026 && p.month === 11);

@@ -485,7 +485,7 @@
   "components.srv.monthEnd.fx.posted": "{n} revaluation entries posted",
   "components.srv.monthEnd.fx.missing": "{n} account(s) hold foreign-currency balances; run the revaluation",
   "components.srv.monthEnd.controls.title": "Control Accounts Reconciled",
-  "components.srv.monthEnd.controls.description": "Receivables, payables, VAT and payroll control accounts equal their sub-ledgers",
+  "components.srv.monthEnd.controls.description": "Receivables, payables, inventory, VAT and payroll control accounts equal their sub-ledgers",
   "components.srv.monthEnd.controls.none": "No control-account activity in this period",
   "components.srv.monthEnd.controls.tied": "{n} control account(s) tie to their sub-ledgers",
   "components.srv.monthEnd.controls.differences": "{n} control account(s) differ from their sub-ledger: {list}",

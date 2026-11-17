@@ -688,6 +688,20 @@ export async function voidInvoice(
   return withDocumentLock(invoiceId, LOCK_NS.INVOICE_POSTING, async (tx) => {
     const inv = await lockInvoice(tx, invoiceId, companyId);
     if (inv.status === target) return { invoice: inv, reversedEntryIds: [] };
+    // B1 (NH3): the invoice that billed an asset disposal carries the disposal's receivable and
+    // VAT; voiding it alone would leave the disposal moving proceeds that were never invoiced.
+    const disposal = await tx.execute(sql`
+      SELECT id FROM fixed_assets
+       WHERE company_id = ${companyId} AND disposal_invoice_id = ${invoiceId}
+         AND status = 'disposed' LIMIT 1`);
+    if ((((disposal as { rows?: unknown[] }).rows ?? disposal) as unknown[]).length > 0) {
+      throw new DomainError(
+        "INVOICE_BILLS_ASSET_DISPOSAL",
+        409,
+        { invoiceId },
+        "This invoice bills a fixed-asset disposal. Issue a credit note for a price change; the disposal itself stays in the fixed-asset register."
+      );
+    }
     if (!invoiceMachine.can(inv.status, target)) {
       throw new DomainError(
         "INVALID_TRANSITION",

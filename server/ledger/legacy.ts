@@ -71,6 +71,7 @@ export function legacyLinesToInput(lines: LegacyLine[]): PostJournalLineInput[] 
       foreignDebit: fNet > 0 ? fromFils(fNet) : null,
       foreignCredit: fNet < 0 ? fromFils(-fNet) : null,
       exchangeRate: (l.exchangeRate as number | string | null | undefined) ?? null,
+      ...((l as { systemVat?: boolean }).systemVat === true ? { systemVat: true } : {}),
     });
   });
   return out;
