@@ -112,8 +112,8 @@ Detail: [docs/testing-runtime.md](docs/testing-runtime.md).
 - `npm run test:db` runs `tests/db/**/*.test.ts` against the real app and a fresh Postgres database
   per file (`useHarness()` in `tests/db/harness.ts`; PGlite fallback). Use it for any persistence,
   posting, tenancy or concurrency regression; name tests after issue ids.
-  `tests/db/route-matrix.test.ts` is the cross-tenant route matrix; known gaps live in
-  `tests/db/route-matrix-allow/` (keep it empty).
+  `tests/db/route-matrix.test.ts` is the cross-tenant route matrix; known gaps would live in
+  `tests/db/route-matrix-allow/` (absent = empty; keep it that way).
 - Guards run at the end of `npm run check` (`scripts/run-guards.mjs`: raw body, ledger writes,
   i18n ratchet). Baselines in `scripts/guard-baselines/` may only move down.
 - Prefer behaviour tests (render, call the function, hit the route) over asserting on source

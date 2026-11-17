@@ -40,5 +40,13 @@ Scripts and notes produced during the teardowns (`teardown-evidence/`, formerly 
 earlier agent's planning artefacts (`artifacts/`, formerly at the root). Excluded from lint, tsc,
 tests and Prettier.
 
-The marketing sites that used to live at the root are now under `sites/` (also excluded from every
-tool) and are not product code.
+The static marketing site that used to live at the root is now under `sites/` (also excluded from every
+tool and from the Docker build context) and is not product code. See `docs/marketing-site-note.md`.
+
+## `2026-06/` — June living trackers and snapshots
+
+`NEXT_STEPS`, `DEVELOPMENT_STATUS`, `VERCEL_MIGRATION` (deploys are on Railway), `FIX_PLAN`,
+`PRODUCTION_HARDENING`, `LAUNCH_READINESS`, `PRODUCTION_READINESS_REPORT`, `REAUDIT_RESULTS`, `AUDIT`,
+`COMPETITIVE_ROADMAP`, `CREDIT_NOTE_CONSOLIDATION_PLAN` and `EINVOICING_PLAN` (superseded by
+`docs/einvoicing-providers.md`, `einvoicing-acube.md` and `einvoicing-complyance.md`). Moved out of
+`docs/` because nothing live links to them.

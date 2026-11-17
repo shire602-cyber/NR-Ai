@@ -49,7 +49,7 @@ Each section is delimited by marker lines:
   recoverable input VAT (Box 9 + Box 10), tax code `SR`, `RC`, `IM` or `ZR`. Purchases with no
   recoverable VAT do not enter the return and are not listed.
 - **General ledger** — every posted journal line in the period from
-  `server/reporting.generalLedger` (closing entries excluded), ordered by date then entry
+  `generalLedger` in `server/reporting/statements.ts` (closing entries excluded), ordered by date then entry
   number; Balance is the running account balance.
 
 ## Reconciliation (JSON `reconciliation`)
