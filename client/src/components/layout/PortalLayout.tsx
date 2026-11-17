@@ -9,11 +9,21 @@ import {
   MessageSquare,
   LogOut,
   Building2,
+  Languages,
+  UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { apiRequest } from "@/lib/queryClient";
 import { removeToken } from "@/lib/auth";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { useI18n, useTranslation } from "@/lib/i18n";
 
 const NAV_ITEMS = [
   { labelKey: "shell.portalDashboard", href: "/client-portal/dashboard", icon: LayoutDashboard },
@@ -25,7 +35,8 @@ const NAV_ITEMS = [
 
 export function PortalLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
+  const { setLocale } = useI18n();
 
   const { data: company } = useQuery({
     queryKey: ["portal-company"],
@@ -65,13 +76,13 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
               <p className="truncate text-small font-semibold text-foreground" dir="auto">
                 {companyName}
               </p>
-              <p className="text-caption text-muted-foreground">{t["shell.clientPortal"]}</p>
+              <p className="text-caption text-muted-foreground">{t["portal.doc.clientPortal"]}</p>
             </div>
           </div>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-0.5 px-3 py-4" aria-label={t["shell.clientPortal"]}>
+        <nav className="flex-1 space-y-0.5 px-3 py-4" aria-label={t["portal.doc.clientPortal"]}>
           {NAV_ITEMS.map(({ labelKey, href, icon: Icon }) => {
             const label = t[labelKey];
             const active = location === href || location.startsWith(href + "/");
@@ -108,7 +119,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             onClick={handleLogout}
           >
             <LogOut className="w-4 h-4 me-2 rtl:-scale-x-100" aria-hidden />
-            {t["shell.signOut"]}
+            {t["portal.doc.signOut"]}
           </Button>
         </div>
       </aside>
@@ -126,26 +137,58 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
               <span className="hidden md:inline">{title}</span>
             </h1>
           </div>
-          <span className="hidden text-caption text-muted-foreground sm:inline">
-            {company?.firmName
-              ? formatMessage(t["shell.portalFooterNamed"], { name: company.firmName })
-              : t["shell.clientPortal"]}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="text-muted-foreground md:hidden"
-            onClick={handleLogout}
-            aria-label={t["shell.signOut"]}
-          >
-            <LogOut className="rtl:-scale-x-100" aria-hidden />
-          </Button>
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="hidden max-w-[280px] truncate text-caption text-muted-foreground sm:inline">
+              {company?.firmName ? (
+                <>
+                  <span dir="auto">{company.firmName}</span> · {t["portal.doc.clientPortal"]}
+                </>
+              ) : (
+                t["portal.doc.clientPortal"]
+              )}
+            </span>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground"
+                  aria-label={t["portal.doc.account"]}
+                  data-testid="portal-account-menu"
+                >
+                  <UserRound aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[200px]">
+                {company?.customer?.name && (
+                  <>
+                    <DropdownMenuLabel className="truncate font-medium" dir="auto">
+                      {locale === "ar" && company.customer.nameAr
+                        ? company.customer.nameAr
+                        : company.customer.name}
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
+                <DropdownMenuItem onSelect={() => setLocale(locale === "en" ? "ar" : "en")}>
+                  <Languages className="h-4 w-4 me-2" aria-hidden />
+                  <span lang={locale === "en" ? "ar" : "en"}>
+                    {locale === "en" ? "العربية" : "English"}
+                  </span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={handleLogout}>
+                  <LogOut className="h-4 w-4 me-2 rtl:-scale-x-100" aria-hidden />
+                  {t["portal.doc.signOut"]}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </header>
 
         {/* Section switcher (mobile): one scrollable row of pills, 44px touch targets. */}
         <nav
           className="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-card px-3 py-1.5 [scrollbar-width:none] md:hidden"
-          aria-label={t["shell.clientPortal"]}
+          aria-label={t["portal.doc.clientPortal"]}
         >
           {NAV_ITEMS.map(({ labelKey, href, icon: Icon }) => {
             const active = location === href || location.startsWith(href + "/");
