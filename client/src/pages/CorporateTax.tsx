@@ -1460,9 +1460,7 @@ export default function CorporateTax() {
             </Button>
             <Button
               disabled={
-                transitionMutation.isPending ||
-                filingReference.trim().length < 3 ||
-                !filedOn
+                transitionMutation.isPending || filingReference.trim().length < 3 || !filedOn
               }
               onClick={() =>
                 fileTarget &&

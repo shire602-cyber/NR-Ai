@@ -35,6 +35,18 @@ vi.mock("../../client/src/hooks/useCurrentUser", () => ({
     isLoading: false,
   }),
 }));
+// X1 made onboarding follow the ACTIVE company; this test supplies it directly.
+vi.mock("../../client/src/components/ActiveCompanyProvider", () => ({
+  useActiveCompany: () => ({
+    company: {
+      id: "c0000000-0000-4000-8000-000000000001",
+      name: "J3 Trading",
+      trnVatNumber: "100000000022972",
+      emirate: "dubai",
+    },
+    isLoading: false,
+  }),
+}));
 vi.mock("../../client/src/hooks/useSubscription", () => ({
   useSubscription: () => ({
     subscription: null,

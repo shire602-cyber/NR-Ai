@@ -395,6 +395,9 @@ describe("[X4][J3] compliance obligations before the company used Muhasib", () =
         trn_vat_number: "100000000000003",
         vat_filing_frequency: "Quarterly",
         vat_period_start_month: 1,
+        // X5 (J1 D4): returns apply from the books start, so give the company older books for
+        // an earlier period to exist; "not applicable" is the explicit way out for those.
+        created_at: "2025-01-01T00:00:00Z",
       },
     });
     const url = `/api/companies/${t.company.id}/compliance-calendar`;
