@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { formatDate } from "@/lib/format-date";
+import { DateText } from "@/components/documents/DateText";
 import { apiRequest } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
@@ -150,7 +150,7 @@ export default function PortalDocuments() {
                         {doc.name}
                       </p>
                       <p className="text-caption text-muted-foreground">
-                        {doc.createdAt ? formatDate(doc.createdAt, locale) : "—"}
+                        {doc.createdAt ? <DateText value={doc.createdAt} locale={locale} /> : "—"}
                         {doc.fileSize ? <bdi> · {formatBytes(doc.fileSize)}</bdi> : null}
                       </p>
                     </div>

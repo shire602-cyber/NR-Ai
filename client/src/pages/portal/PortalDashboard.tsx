@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import { apiRequest } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
-import { formatDate } from "@/lib/format-date";
+import { DateText } from "@/components/documents/DateText";
 
 const PAY_TONE: Record<string, StatusTone> = {
   paid: "success",
@@ -138,7 +138,7 @@ export default function PortalDashboard() {
                       <bdi>{row.number}</bdi>
                     </TableCell>
                     <TableCell data-cell="meta" data-nowrap="" className="text-muted-foreground">
-                      {row.date ? formatDate(row.date, locale) : "—"}
+                      {row.date ? <DateText value={row.date} locale={locale} /> : "—"}
                     </TableCell>
                     <MoneyCell
                       amount={Number(row.amountDue ?? row.total) || 0}
@@ -187,7 +187,7 @@ export default function PortalDashboard() {
                     {d.name}
                   </span>
                   <span className="shrink-0 text-small text-muted-foreground">
-                    {d.createdAt ? formatDate(d.createdAt, locale) : "—"}
+                    {d.createdAt ? <DateText value={d.createdAt} locale={locale} /> : "—"}
                   </span>
                 </li>
               ))}

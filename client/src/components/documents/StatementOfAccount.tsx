@@ -8,7 +8,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDate } from "@/lib/format-date";
+import { DateText } from "./DateText";
 import { useTranslation } from "@/lib/i18n";
 
 export interface StatementSectionView {
@@ -80,7 +80,7 @@ export function StatementOfAccount({ section: s }: { section: StatementSectionVi
           {s.lines.map((l, i) => (
             <TableRow key={`${l.reference}-${i}`}>
               <TableCell data-cell="meta" data-nowrap="">
-                {formatDate(l.date, locale)}
+                <DateText value={l.date} locale={locale} />
               </TableCell>
               <TableCell data-cell="title">
                 <bdi>{l.reference}</bdi>

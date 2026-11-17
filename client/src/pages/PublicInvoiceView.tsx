@@ -1,6 +1,7 @@
+import { currencyLabel } from "@/lib/format-money";
 import { T } from "@/components/layout/T";
 import { useTranslation } from "@/lib/i18n";
-import { formatDate } from "@/lib/format-date";
+import { DateText } from "@/components/documents/DateText";
 import { useParams } from "wouter";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -216,17 +217,23 @@ export default function PublicInvoiceView() {
               label: isCreditNote ? t["portal.doc.creditNoteNo"] : t["portal.doc.invoiceNo"],
               value: <bdi>{invoice.number}</bdi>,
             },
-            { label: t["portal.doc.issueDate"], value: formatDate(invoice.date, locale) },
+            {
+              label: t["portal.doc.issueDate"],
+              value: <DateText value={invoice.date} locale={locale} />,
+            },
             !!invoice.supplyDate && {
               label: t["invoices.publicSupplyDate"],
-              value: formatDate(invoice.supplyDate, locale),
+              value: <DateText value={invoice.supplyDate} locale={locale} />,
             },
             !!invoice.dueDate && {
               label: t["portal.doc.dueDate"],
-              value: formatDate(invoice.dueDate, locale),
+              value: <DateText value={invoice.dueDate} locale={locale} />,
               testId: "public-invoice-due-date",
             },
-            { label: t["portal.doc.currency"], value: invoice.currency },
+            {
+              label: t["portal.doc.currency"],
+              value: <bdi>{currencyLabel(invoice.currency, locale === "ar" ? "ar" : "en")}</bdi>,
+            },
           ]}
         />
 

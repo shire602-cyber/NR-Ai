@@ -107,7 +107,7 @@ export default function PortalMessages() {
                     {msg.content}
                   </p>
                   {!msg.isRead && (
-                    <StatusBadge tone="info">
+                    <StatusBadge tone="accent">
                       <T k="portal.doc.unread" />
                     </StatusBadge>
                   )}

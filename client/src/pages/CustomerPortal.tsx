@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { AlertCircle, Clock, CreditCard, FileDown, FileText, Loader2 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
+import { DateText } from "@/components/documents/DateText";
 import { formatDate } from "@/lib/format-date";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 
@@ -387,7 +388,7 @@ function PortalHome({ token }: { token: string | null }) {
 
       <main className="mx-auto w-full max-w-content flex-1 space-y-6 px-4 py-6 sm:px-8 sm:py-8">
         {notice && (
-          <Alert tone="info" role="status">
+          <Alert tone="success" role="status">
             {notice}
           </Alert>
         )}
@@ -489,7 +490,7 @@ function PortalHome({ token }: { token: string | null }) {
                             data-nowrap=""
                             className="text-muted-foreground"
                           >
-                            {formatDate(invoice.dueDate ?? invoice.date, locale)}
+                            <DateText value={invoice.dueDate ?? invoice.date} locale={locale} />
                           </TableCell>
                           <MoneyCell
                             amount={invoice.amountDue}
@@ -612,7 +613,7 @@ function PortalHome({ token }: { token: string | null }) {
                             </p>
                             <p className="text-small text-muted-foreground">
                               <Money amount={q.total} currency={q.currency} /> ·{" "}
-                              {formatDate(q.date, locale)}
+                              <DateText value={q.date} locale={locale} />
                             </p>
                           </div>
                           {q.status === "sent" ? (
@@ -679,7 +680,7 @@ function PortalHome({ token }: { token: string | null }) {
                           {d.name}
                         </span>
                         <span className="shrink-0 text-small text-muted-foreground">
-                          {formatDate(d.createdAt, locale)}
+                          <DateText value={d.createdAt} locale={locale} />
                         </span>
                       </li>
                     ))}

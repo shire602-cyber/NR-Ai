@@ -15,7 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiRequest } from "@/lib/queryClient";
-import { formatDate } from "@/lib/format-date";
+import { DateText } from "@/components/documents/DateText";
 import { MoneyCell } from "@/components/ui/money";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { useTranslation } from "@/lib/i18n";
@@ -103,10 +103,10 @@ export default function PortalInvoices() {
                       data-keep=""
                       className="text-muted-foreground"
                     >
-                      {inv.date ? formatDate(inv.date, locale) : "—"}
+                      {inv.date ? <DateText value={inv.date} locale={locale} /> : "—"}
                     </TableCell>
                     <TableCell data-nowrap="" className="text-muted-foreground">
-                      {inv.dueDate ? formatDate(inv.dueDate, locale) : "—"}
+                      {inv.dueDate ? <DateText value={inv.dueDate} locale={locale} /> : "—"}
                     </TableCell>
                     <MoneyCell
                       amount={Number(inv.amountDue) || 0}
