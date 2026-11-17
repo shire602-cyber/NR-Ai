@@ -113,7 +113,20 @@ export function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_ad
 
   if (step === 1) {
     return (
-      <OnboardingShell step={1} total={TOTAL}>
+      <OnboardingShell
+        step={1}
+        total={TOTAL}
+        actions={
+          <StepActions
+            secondary={skip}
+            primary={
+              <Button type="button" onClick={() => setStep(2)} data-testid="onboarding-next">
+                {t["onboarding.v3Continue"]}
+              </Button>
+            }
+          />
+        }
+      >
         <StepHeading
           title={t["onboarding.firm.stepTeam"]}
           lead={isOwner ? t["onboarding.v3FirmTeamLead"] : t["onboarding.firm.teamStaffDesc"]}
@@ -123,21 +136,31 @@ export function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_ad
         ) : (
           <p className="text-small text-muted-foreground">{t["onboarding.firm.teamStaffBody"]}</p>
         )}
-        <StepActions
-          secondary={skip}
-          primary={
-            <Button type="button" onClick={() => setStep(2)} data-testid="onboarding-next">
-              {t["onboarding.v3Continue"]}
-            </Button>
-          }
-        />
       </OnboardingShell>
     );
   }
 
   if (step === 2) {
     return (
-      <OnboardingShell step={2} total={TOTAL}>
+      <OnboardingShell
+        step={2}
+        total={TOTAL}
+        actions={
+          <StepActions
+            onBack={() => setStep(1)}
+            primary={
+              <Button
+                type="button"
+                onClick={() => void toDone()}
+                disabled={complete.isPending}
+                data-testid="firm-onboarding-finish"
+              >
+                {complete.isPending ? t["onboarding.firm.finishing"] : t["onboarding.v3Continue"]}
+              </Button>
+            }
+          />
+        }
+      >
         <StepHeading
           title={t["onboarding.firm.stepClients"]}
           lead={t["onboarding.firm.clientsDesc"]}
@@ -160,19 +183,6 @@ export function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_ad
             testId="firm-onboarding-bulk"
           />
         </div>
-        <StepActions
-          onBack={() => setStep(1)}
-          primary={
-            <Button
-              type="button"
-              onClick={() => void toDone()}
-              disabled={complete.isPending}
-              data-testid="firm-onboarding-finish"
-            >
-              {complete.isPending ? t["onboarding.firm.finishing"] : t["onboarding.v3Continue"]}
-            </Button>
-          }
-        />
       </OnboardingShell>
     );
   }

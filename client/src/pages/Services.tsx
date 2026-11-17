@@ -76,7 +76,7 @@ export default function Services() {
               </Link>
             </Button>
           </div>
-          <Checklist items={[1, 2, 3, 4, 5].map((n) => t[`marketing.svcFact${n}`])} />
+          <Checklist columns={2} items={[1, 2, 3, 4, 5].map((n) => t[`marketing.svcFact${n}`])} />
         </div>
       </section>
 

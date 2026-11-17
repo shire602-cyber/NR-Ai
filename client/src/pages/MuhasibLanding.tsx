@@ -1,3 +1,4 @@
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import {
@@ -5,7 +6,6 @@ import {
   FileDown,
   FileSpreadsheet,
   FileText,
-  Info,
   Landmark,
   LineChart,
   Users,
@@ -130,10 +130,9 @@ function Product() {
             <Checklist
               items={[t["marketing.vatPoint1"], t["marketing.vatPoint2"], t["marketing.vatPoint3"]]}
             />
-            <p className="mk-note">
-              <Info aria-hidden="true" />
-              <span>{t["marketing.vatNote"]}</span>
-            </p>
+            <Alert tone="info" className="mk-spotlight__note">
+              {t["marketing.vatNote"]}
+            </Alert>
           </div>
           <VatPreview />
         </div>

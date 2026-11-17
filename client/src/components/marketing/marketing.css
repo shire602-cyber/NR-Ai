@@ -815,21 +815,8 @@
   margin-block-start: 0.2rem;
   color: var(--brand);
 }
-.mk-note {
+.mk-spotlight__note {
   margin-block-start: 1.75rem;
-  padding: 0.9rem 1rem;
-  border-radius: var(--radius-md);
-  background: var(--brand-subtle);
-  color: var(--brand-subtle-ink);
-  font-size: var(--text-small);
-  display: flex;
-  gap: 0.6rem;
-}
-.mk-note svg {
-  flex: none;
-  inline-size: 1rem;
-  block-size: 1rem;
-  margin-block-start: 0.2rem;
 }
 
 .mk-card {
@@ -1280,8 +1267,24 @@
 
 /* ── Page hero for inner public pages ──────────────────────────────────── */
 .mk-pagehead {
-  padding-block: clamp(3rem, 2rem + 4vw, 5.5rem) clamp(2rem, 1.5rem + 2vw, 3rem);
+  /* Same header band as /pricing: 96 desktop / 64 phone above, 48 below. */
+  padding-block: var(--section) 3rem;
   border-block-end: 1px solid var(--hairline);
+}
+.mk-pagehead--split .mk-container {
+  display: grid;
+  gap: 1.5rem;
+}
+@media (min-width: 960px) {
+  .mk-pagehead--split .mk-container {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    column-gap: 3rem;
+  }
+  .mk-pagehead--split .mk-actions {
+    margin-block-start: 0;
+    align-items: center;
+  }
 }
 .mk-pagehead .mk-h1 {
   margin-block-start: 1rem;

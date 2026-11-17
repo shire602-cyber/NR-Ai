@@ -31,7 +31,14 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import type { Company } from "@shared/schema";
-import { Field, OnboardingShell, StepActions, StepForm, StepHeading } from "./OnboardingShell";
+import {
+  Field,
+  OnboardingShell,
+  STEP_FORM_ID,
+  StepActions,
+  StepForm,
+  StepHeading,
+} from "./OnboardingShell";
 import { isEmail, sendTeamInvite } from "./InviteField";
 import {
   FIRST_TASK_HREF,
@@ -277,7 +284,24 @@ function Wizard({ company }: { company: Company | null }) {
   if (step === 1) {
     const companyLabel = name.trim() || company?.name;
     return (
-      <OnboardingShell step={1} total={TOTAL}>
+      <OnboardingShell
+        step={1}
+        total={TOTAL}
+        actions={
+          <StepActions
+            primary={
+              <Button
+                type="submit"
+                form={STEP_FORM_ID}
+                disabled={saving}
+                data-testid="onboarding-express"
+              >
+                {saving ? t["onboarding.v3Saving"] : t["onboarding.v3Continue"]}
+              </Button>
+            }
+          />
+        }
+      >
         <StepHeading
           title={
             companyLabel
@@ -386,13 +410,6 @@ function Wizard({ company }: { company: Company | null }) {
               </Field>
             </div>
           ) : null}
-          <StepActions
-            primary={
-              <Button type="submit" disabled={saving} data-testid="onboarding-express">
-                {saving ? t["onboarding.v3Saving"] : t["onboarding.v3Continue"]}
-              </Button>
-            }
-          />
         </StepForm>
       </OnboardingShell>
     );
@@ -420,7 +437,36 @@ function Wizard({ company }: { company: Company | null }) {
       },
     ];
     return (
-      <OnboardingShell step={2} total={TOTAL}>
+      <OnboardingShell
+        step={2}
+        total={TOTAL}
+        actions={
+          <StepActions
+            onBack={() => setStep(1)}
+            secondary={
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setStep(3)}
+                disabled={saving}
+                data-testid="onboarding-skip"
+              >
+                {t["onboarding.v3Skip"]}
+              </Button>
+            }
+            primary={
+              <Button
+                type="submit"
+                form={STEP_FORM_ID}
+                disabled={saving}
+                data-testid="onboarding-next"
+              >
+                {saving ? t["onboarding.v3Saving"] : t["onboarding.v3Continue"]}
+              </Button>
+            }
+          />
+        }
+      >
         <StepHeading title={t["onboarding.v3StartTitle"]} lead={t["onboarding.v3StartLead"]} />
         <StepForm onSubmit={() => void saveStartingPoint()}>
           <div
@@ -461,7 +507,7 @@ function Wizard({ company }: { company: Company | null }) {
                     </span>
                   </button>
                   {active && id === "migrating" ? (
-                    <div className="mt-3 space-y-2 ps-4">
+                    <div className="mb-4 mt-3 ps-4">
                       <Field
                         label={t["onboarding.v3GoLive"]}
                         htmlFor="ob-go-live"
@@ -478,7 +524,7 @@ function Wizard({ company }: { company: Company | null }) {
                     </div>
                   ) : null}
                   {active && id === "accountant" ? (
-                    <div className="mt-3 ps-4">
+                    <div className="mb-4 mt-3 ps-4">
                       <Field
                         label={t["onboarding.v3AccountantEmail"]}
                         htmlFor="ob-accountant"
@@ -524,25 +570,6 @@ function Wizard({ company }: { company: Company | null }) {
               {step2Error}
             </p>
           ) : null}
-          <StepActions
-            onBack={() => setStep(1)}
-            secondary={
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setStep(3)}
-                disabled={saving}
-                data-testid="onboarding-skip"
-              >
-                {t["onboarding.v3Skip"]}
-              </Button>
-            }
-            primary={
-              <Button type="submit" disabled={saving} data-testid="onboarding-next">
-                {saving ? t["onboarding.v3Saving"] : t["onboarding.v3Continue"]}
-              </Button>
-            }
-          />
         </StepForm>
       </OnboardingShell>
     );
@@ -575,7 +602,7 @@ function Wizard({ company }: { company: Company | null }) {
     },
   ];
   return (
-    <OnboardingShell step={3} total={TOTAL}>
+    <OnboardingShell step={3} total={TOTAL} actions={<StepActions onBack={() => setStep(2)} />}>
       <StepHeading title={t["onboarding.v3TaskTitle"]} lead={t["onboarding.v3TaskLead"]} />
       <div className="grid gap-3 sm:grid-cols-2" data-testid="onboarding-first-task">
         {tasks.map(({ id, icon: Icon, title, body }) => (
@@ -601,7 +628,6 @@ function Wizard({ company }: { company: Company | null }) {
           </button>
         ))}
       </div>
-      <StepActions onBack={() => setStep(2)} />
     </OnboardingShell>
   );
 }

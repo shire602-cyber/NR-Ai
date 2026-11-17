@@ -326,7 +326,7 @@
   "marketing.trustRoadmap2": "Complete an independent external penetration test on a stable production release (not yet performed).",
   "marketing.trustRoadmap3": "Prepare SOC 2 / ISO 27001 readiness evidence once operational controls have live history (no audit has been performed and no certification is held).",
   "marketing.trustRoadmap4": "Publish a detailed data-processing statement under UAE PDPL with counsel (a draft data map exists).",
-  "marketing.migrationTitle": "Switch from Mazeed, Wafeq, Zoho Books, or Excel without losing audit trail.",
+  "marketing.migrationTitle": "Switch from Mazeed, Wafeq, Zoho Books or Excel without losing your audit trail.",
   "marketing.migrationLead": "Start clean from a go-live date, preserve old records, and validate balances before posting live transactions in Muhasib.ai.",
   "marketing.migrationXeroTitle": "Move from Xero or QuickBooks Online",
   "marketing.migrationXero1": "Export the chart of accounts, trial balance at your cut-over date, contacts, items, aged receivables and aged payables as CSV.",
@@ -675,5 +675,7 @@
   "marketing.nfBody": "The address may be mistyped, or the page has moved. Everything else is where you left it.",
   "marketing.nfHome": "Back to home",
   "marketing.nfDashboard": "Open dashboard",
-  "marketing.nfHelp": "Visit the help centre"
+  "marketing.nfHelp": "Visit the help centre",
+  "marketing.demoEyebrow": "Sample company",
+  "marketing.demoTitle": "Open a sample company and look around."
 }

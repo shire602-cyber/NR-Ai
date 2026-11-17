@@ -15,11 +15,14 @@ export function OnboardingShell({
   step,
   total,
   children,
+  actions,
 }: {
   /** 1-based; omit for states outside the steps (e.g. "owner is still setting up"). */
   step?: number;
   total: number;
   children: ReactNode;
+  /** <StepActions/>: rendered outside the animated column so the phone bar can be fixed. */
+  actions?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -50,6 +53,7 @@ export function OnboardingShell({
         <div key={step} className="page-enter mx-auto w-full max-w-[32.5rem]">
           {children}
         </div>
+        {actions}
       </main>
     </div>
   );
@@ -65,6 +69,9 @@ export function StepHeading({ title, lead }: { title: ReactNode; lead?: ReactNod
   );
 }
 
+/** The step's form id: the primary button (in StepActions) submits it with `form=`. */
+export const STEP_FORM_ID = "onboarding-step-form";
+
 /** A step is a form: Enter submits, the primary button is the submit. */
 export function StepForm({
   onSubmit,
@@ -77,6 +84,7 @@ export function StepForm({
 }) {
   return (
     <form
+      id={STEP_FORM_ID}
       noValidate
       className={cn("space-y-6", className)}
       onSubmit={(e: FormEvent) => {
