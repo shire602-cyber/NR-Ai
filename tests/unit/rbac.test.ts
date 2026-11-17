@@ -199,6 +199,13 @@ describe("R01-02 policy resolution", () => {
     expect(resolvePermission("POST", "/period-lock/unlock")).toEqual(["period.unlock"]);
     expect(resolvePermission("POST", `${C}/journal`)).toEqual(["ledger.post"]);
     expect(resolvePermission("POST", "/invoices/x/post")).toEqual(["ledger.post"]);
+    // J4: every transition that writes the GL needs the posting permission, not just /post.
+    expect(resolvePermission("PATCH", "/invoices/x/status")).toEqual(["ledger.post"]);
+    expect(resolvePermission("POST", "/credit-notes/x/issue")).toEqual(["ledger.post"]);
+    expect(resolvePermission("POST", "/credit-notes/x/void")).toEqual(["ledger.post"]);
+    expect(resolvePermission("POST", `${C}/invoices/x/payments`)).toEqual(["ledger.post"]);
+    expect(resolvePermission("POST", `${C}/customer-credits/x/refund`)).toEqual(["ledger.post"]);
+    expect(resolvePermission("POST", `${C}/fx-revaluations/x/undo`)).toEqual(["ledger.post"]);
     expect(resolvePermission("POST", "/bills/x/approve")).toEqual(["documents.approve"]);
     expect(resolvePermission("POST", "/bills/x/payments")).toEqual(["payments.release"]);
     expect(resolvePermission("POST", "/payroll-runs/x/approve")).toEqual(["payroll.approve"]);

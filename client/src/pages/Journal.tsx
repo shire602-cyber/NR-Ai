@@ -58,6 +58,7 @@ import { CardListSkeleton } from "@/components/ui/loading-skeletons";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { formatDate, formatNumber } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { evidenceSourceHref } from "@/lib/evidenceLinks";
@@ -130,6 +131,7 @@ export default function Journal() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
+  const { gate } = useCompanyPermission();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
   const [reverseDate, setReverseDate] = useState("");
@@ -387,7 +389,11 @@ export default function Journal() {
         title={t.journal}
         description={t["journal.pageDescription"]}
         actions={
-          <Button onClick={() => setDialogOpen(true)} data-testid="button-create-entry">
+          <Button
+            onClick={() => setDialogOpen(true)}
+            data-testid="button-create-entry"
+            {...gate("ledger.post")}
+          >
             <Plus className="w-4 h-4" />
             {t.newEntry}
           </Button>
@@ -831,6 +837,7 @@ export default function Journal() {
                             onClick={() => postMutation.mutate(entry.id)}
                             disabled={postMutation.isPending}
                             data-testid={`button-post-journal-${entry.id}`}
+                            {...gate("ledger.post")}
                           >
                             <Send aria-hidden />
                             {t["screens.post"]}

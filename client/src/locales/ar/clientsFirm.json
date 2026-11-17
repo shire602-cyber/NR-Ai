@@ -114,5 +114,19 @@
   "clientProfile.notFirmClient": "هذه الشركة موجودة لكنها غير مصنّفة كعميل يديره المكتب.",
   "clientProfile.linkOutdated": "قد يكون الرابط قديماً أو أن العميل أُزيل.",
   "emailIntake.pilotDisabledBefore": "اضبط ",
-  "emailIntake.pilotDisabledAfter": " على الخادم لتشغيل النسخة التجريبية للاستلام. لا يزال بإمكانك إعداد ربط المرسلين أدناه؛ ولن يُستلم أي شيء قبل التفعيل."
+  "emailIntake.pilotDisabledAfter": " على الخادم لتشغيل النسخة التجريبية للاستلام. لا يزال بإمكانك إعداد ربط المرسلين أدناه؛ ولن يُستلم أي شيء قبل التفعيل.",
+  "customerContacts.linkValidUntil": "هذا الرابط صالح لمدة {days} يومًا (حتى {date}). يمكن للعميل عرض الفواتير وتنزيل ملفات PDF دون تسجيل الدخول. يظهر الرابط مرة واحدة فقط.",
+  "customerContacts.portalAccess": "الوصول إلى البوابة",
+  "customerContacts.portalAccessFor": "روابط البوابة النشطة والسابقة الخاصة بـ {name}.",
+  "customerContacts.portalLinksEmpty": "لا توجد روابط بوابة بعد.",
+  "customerContacts.portalLinkActive": "نشط",
+  "customerContacts.portalLinkExpired": "منتهي",
+  "customerContacts.portalLinkRevoked": "ملغى",
+  "customerContacts.portalLinkExpires": "ينتهي في {date}",
+  "customerContacts.portalLinkLastUsed": "آخر استخدام {date}",
+  "customerContacts.portalLinkNeverUsed": "لم يُستخدم بعد",
+  "customerContacts.revokeAccess": "إلغاء الوصول",
+  "customerContacts.revokeAccessConfirm": "إلغاء جميع روابط البوابة لهذا العميل؟ ستتوقف الروابط الحالية عن العمل فورًا.",
+  "customerContacts.accessRevoked": "تم إلغاء الوصول إلى البوابة",
+  "customerContacts.accessRevokeFailed": "تعذّر إلغاء الوصول إلى البوابة"
 }

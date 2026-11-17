@@ -1,3 +1,4 @@
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { useState } from "react";
 import {
   ErrorSummary,
@@ -71,6 +72,7 @@ interface Account {
 }
 
 export function RunsTab({ companyId }: { companyId: string }) {
+  const { gate } = useCompanyPermission();
   const { tx, locale } = useHr();
   const { toast } = useToast();
   const runsKey = [`/api/companies/${companyId}/payroll-runs`];
@@ -167,6 +169,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
           size="sm"
           variant="outline"
           onClick={() => action.mutate({ id: r.id, path: "calculate" })}
+          {...gate("payroll.manage")}
         >
           <Calculator className="me-1.5 h-4 w-4" aria-hidden />
           {tx("hr.calculate")}
@@ -177,6 +180,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
           size="sm"
           variant="outline"
           onClick={() => action.mutate({ id: r.id, path: "approve" })}
+          {...gate("payroll.approve")}
         >
           <CheckCircle className="me-1.5 h-4 w-4" aria-hidden />
           {tx("hr.approve")}
@@ -230,7 +234,11 @@ export function RunsTab({ companyId }: { companyId: string }) {
           <CardTitle>{tx("hr.tab.runs")}</CardTitle>
           <CardDescription>{tx("hr.runsHint")}</CardDescription>
         </div>
-        <Button onClick={() => setCreateOpen(true)} data-testid="button-new-run">
+        <Button
+          onClick={() => setCreateOpen(true)}
+          data-testid="button-new-run"
+          {...gate("payroll.manage")}
+        >
           <Plus className="me-2 h-4 w-4" />
           {tx("hr.newRun")}
         </Button>

@@ -7,6 +7,9 @@ import { zDate, zEmail, zText, zUuid } from "./primitives";
 
 // ─── Portal links / users ───────────────────────────────────────────────────
 
+/** Default lifetime of a portal link; the client dialog copy and the server both read this. */
+export const PORTAL_LINK_TTL_DAYS = 90;
+
 export const generatePortalAccessBody = z.object({
   contactId: zUuid,
   /** 1..365 days; default 90. */

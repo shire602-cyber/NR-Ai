@@ -9,6 +9,8 @@ import {
 } from "@/components/ui/form-layout";
 import { useFormGate } from "@/hooks/use-form-gate";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { PORTAL_LINK_TTL_DAYS } from "@shared/validators/portal";
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -73,6 +75,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Badge } from "@/components/ui/badge";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -336,6 +339,14 @@ function ContactForm({
   );
 }
 
+/** One row of GET /api/portal/contacts/:id/access (metadata only; the token is never returned). */
+interface PortalLinkRow {
+  id: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
+}
+
 export default function CustomerContacts() {
   const { toast } = useToast();
   const { t, locale } = useTranslation();
@@ -358,7 +369,43 @@ export default function CustomerContacts() {
     open: boolean;
     url: string;
     contactName: string;
-  }>({ open: false, url: "", contactName: "" });
+    contactId: string;
+    /** ISO expiry from POST /portal/generate-access; empty when only managing existing links. */
+    expiresAt: string;
+    /** Whole days until `expiresAt`, computed when the link was issued. */
+    ttlDays: number;
+  }>({ open: false, url: "", contactName: "", contactId: "", expiresAt: "", ttlDays: 0 });
+  const closedPortalDialog = {
+    open: false,
+    url: "",
+    contactName: "",
+    contactId: "",
+    expiresAt: "",
+    ttlDays: 0,
+  };
+  const { can: canDo, gate } = useCompanyPermission();
+  const canManagePortal = canDo("documents.write");
+  const portalAccessKey = [`/api/portal/contacts/${portalLinkDialog.contactId}/access`] as const;
+  // The state (active / expired / revoked) is derived in `select`, not during render.
+  const { data: portalAccess } = useQuery<
+    { links: PortalLinkRow[] },
+    Error,
+    { links: Array<PortalLinkRow & { state: "active" | "expired" | "revoked" }> }
+  >({
+    queryKey: portalAccessKey,
+    enabled: portalLinkDialog.open && !!portalLinkDialog.contactId,
+    select: (data) => ({
+      links: data.links.map((l) => ({
+        ...l,
+        state: l.revokedAt
+          ? "revoked"
+          : new Date(l.expiresAt).getTime() > Date.now()
+            ? "active"
+            : "expired",
+      })),
+    }),
+  });
+  const activePortalLinks = (portalAccess?.links ?? []).filter((l) => l.state === "active");
   const [contactToDelete, setContactToDelete] = useState<CustomerContact | null>(null);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
   const [clearAllConfirmation, setClearAllConfirmation] = useState("");
@@ -485,16 +532,47 @@ export default function CustomerContacts() {
   const portalLinkMutation = useMutation({
     mutationFn: async ({ contactId, contactName }: { contactId: string; contactName: string }) => {
       const result = await apiRequest("POST", "/api/portal/generate-access", { contactId });
-      return { ...result, contactName };
+      return { ...result, contactName, contactId };
     },
     onSuccess: (result: any) => {
       const fullUrl = `${window.location.origin}${result.portalUrl}`;
-      setPortalLinkDialog({ open: true, url: fullUrl, contactName: result.contactName });
+      setPortalLinkDialog({
+        open: true,
+        url: fullUrl,
+        contactName: result.contactName,
+        contactId: result.contactId,
+        expiresAt: result.expiresAt ?? "",
+        ttlDays: result.expiresAt
+          ? Math.max(
+              1,
+              Math.round((new Date(result.expiresAt).getTime() - Date.now()) / 86_400_000)
+            )
+          : PORTAL_LINK_TTL_DAYS,
+      });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/portal/contacts/${result.contactId}/access`],
+      });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
         title: "Failed to generate portal link",
+        description: error?.message,
+      });
+    },
+  });
+
+  const revokePortalMutation = useMutation({
+    mutationFn: (contactId: string) =>
+      apiRequest("POST", "/api/portal/revoke-access", { contactId }),
+    onSuccess: (_result, contactId) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/portal/contacts/${contactId}/access`] });
+      toast({ title: t["customerContacts.accessRevoked"] });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: t["customerContacts.accessRevokeFailed"],
         description: error?.message,
       });
     },
@@ -768,6 +846,20 @@ export default function CustomerContacts() {
                           <Link2 aria-hidden />
                           {t["screens.portalLink"]}
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            setPortalLinkDialog({
+                              ...closedPortalDialog,
+                              open: true,
+                              contactId: contact.id,
+                              contactName: contact.name,
+                            })
+                          }
+                          data-testid={`button-portal-access-${contact.id}`}
+                        >
+                          <Link2 aria-hidden />
+                          {t["customerContacts.portalAccess"]}
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           className="text-destructive focus:text-destructive"
@@ -883,6 +975,19 @@ export default function CustomerContacts() {
                           }
                           disabled={portalLinkMutation.isPending}
                           data-testid={`button-portal-link-${contact.id}`}
+                        />
+                        <RowActionButton
+                          label={t["customerContacts.portalAccess"]}
+                          icon={Link2}
+                          onClick={() =>
+                            setPortalLinkDialog({
+                              ...closedPortalDialog,
+                              open: true,
+                              contactId: contact.id,
+                              contactName: contact.name,
+                            })
+                          }
+                          data-testid={`button-portal-access-${contact.id}`}
                         />
                         <RowActionButton
                           label={t.edit}
@@ -1133,9 +1238,7 @@ export default function CustomerContacts() {
       {/* Portal Link Dialog */}
       <Dialog
         open={portalLinkDialog.open}
-        onOpenChange={(open) =>
-          !open && setPortalLinkDialog({ open: false, url: "", contactName: "" })
-        }
+        onOpenChange={(open) => !open && setPortalLinkDialog(closedPortalDialog)}
       >
         <DialogContent size="md">
           <DialogHeader>
@@ -1144,44 +1247,119 @@ export default function CustomerContacts() {
               <T k="pageLabels.clientPortalLink" />
             </DialogTitle>
             <DialogDescription>
-              Share this link with {portalLinkDialog.contactName} to give them access to view their
-              invoices and download PDFs.
+              {portalLinkDialog.url
+                ? `Share this link with ${portalLinkDialog.contactName} to give them access to view their invoices and download PDFs.`
+                : formatMessage(t["customerContacts.portalAccessFor"], {
+                    name: portalLinkDialog.contactName,
+                  })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Input
-                readOnly
-                value={portalLinkDialog.url}
-                className="text-sm"
-                data-testid="input-portal-link"
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => {
-                  navigator.clipboard.writeText(portalLinkDialog.url);
-                  toast({ title: t["customerContacts.linkCopiedToClipboard"] });
-                }}
-                data-testid="button-copy-portal-link"
-              >
-                <Copy className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => window.open(portalLinkDialog.url, "_blank")}
-                data-testid="button-open-portal"
-              >
-                <ExternalLink className="w-4 h-4" />
-                <T k="pageLabels.openPortal" />
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {t["customerContacts.thisLinkIsValidFor"]}
-            </p>
+            {portalLinkDialog.url && (
+              <div className="flex items-center gap-2">
+                <Input
+                  readOnly
+                  value={portalLinkDialog.url}
+                  className="text-sm"
+                  data-testid="input-portal-link"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    navigator.clipboard.writeText(portalLinkDialog.url);
+                    toast({ title: t["customerContacts.linkCopiedToClipboard"] });
+                  }}
+                  data-testid="button-copy-portal-link"
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+            {portalLinkDialog.url && (
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => window.open(portalLinkDialog.url, "_blank")}
+                  data-testid="button-open-portal"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <T k="pageLabels.openPortal" />
+                </Button>
+              </div>
+            )}
+            {portalLinkDialog.url && (
+              <p className="text-xs text-muted-foreground" data-testid="text-portal-link-validity">
+                {formatMessage(t["customerContacts.linkValidUntil"], {
+                  days: portalLinkDialog.ttlDays || PORTAL_LINK_TTL_DAYS,
+                  date: portalLinkDialog.expiresAt
+                    ? new Date(portalLinkDialog.expiresAt).toLocaleDateString(locale)
+                    : "",
+                })}
+              </p>
+            )}
+            <section aria-labelledby="portal-access-heading" className="space-y-2 border-t pt-4">
+              <h4 id="portal-access-heading" className="text-sm font-medium">
+                {t["customerContacts.portalAccess"]}
+              </h4>
+              {(portalAccess?.links ?? []).length === 0 ? (
+                <p className="text-xs text-muted-foreground" data-testid="text-portal-links-empty">
+                  {t["customerContacts.portalLinksEmpty"]}
+                </p>
+              ) : (
+                <ul className="space-y-2" data-testid="list-portal-links">
+                  {(portalAccess?.links ?? []).map((link) => {
+                    const state = link.state;
+                    return (
+                      <li
+                        key={link.id}
+                        className="flex items-center justify-between gap-3 text-xs"
+                        data-testid={`row-portal-link-${link.id}`}
+                      >
+                        <span className="min-w-0">
+                          <Badge variant={state === "active" ? "default" : "secondary"}>
+                            {state === "active"
+                              ? t["customerContacts.portalLinkActive"]
+                              : state === "expired"
+                                ? t["customerContacts.portalLinkExpired"]
+                                : t["customerContacts.portalLinkRevoked"]}
+                          </Badge>
+                          <span className="ms-2 text-muted-foreground">
+                            {formatMessage(t["customerContacts.portalLinkExpires"], {
+                              date: new Date(link.expiresAt).toLocaleDateString(locale),
+                            })}
+                            {" · "}
+                            {link.lastUsedAt
+                              ? formatMessage(t["customerContacts.portalLinkLastUsed"], {
+                                  date: new Date(link.lastUsedAt).toLocaleDateString(locale),
+                                })
+                              : t["customerContacts.portalLinkNeverUsed"]}
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {activePortalLinks.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => {
+                    if (window.confirm(t["customerContacts.revokeAccessConfirm"])) {
+                      revokePortalMutation.mutate(portalLinkDialog.contactId);
+                    }
+                  }}
+                  disabled={revokePortalMutation.isPending}
+                  data-testid="button-revoke-portal-access"
+                  {...(canManagePortal ? {} : gate("documents.write"))}
+                >
+                  {t["customerContacts.revokeAccess"]}
+                </Button>
+              )}
+            </section>
           </div>
         </DialogContent>
       </Dialog>

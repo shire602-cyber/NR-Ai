@@ -14,6 +14,7 @@
 import type { Request } from "express";
 import { eq } from "drizzle-orm";
 import { db, pool } from "../db";
+import { assertRefsOwned } from "../tenancy";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
@@ -368,11 +369,16 @@ async function prepareBill(
         costCenterId: l.cost_center_id ?? null,
       }));
     }
-    if (src)
+    if (src) {
       await assertCostCenters(
         companyId,
         src.map((l) => l.costCenterId)
       );
+      await assertRefsOwned(pool, companyId, {
+        account: src.map((l) => l.accountId),
+        product: src.map((l) => l.productId),
+      });
+    }
     const totals = computeBillTotals({
       lines: src ?? [],
       reverseCharge,

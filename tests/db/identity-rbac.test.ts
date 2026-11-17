@@ -221,3 +221,50 @@ describe("R01-02 central permission policy", () => {
     expect(r.body.grantableRoles).toEqual([]);
   });
 });
+
+describe("J4: status transitions need the posting permission", () => {
+  it("J4: an employee cannot issue an invoice via PATCH /status; a bookkeeper can and the GL is written once", async () => {
+    const a = await h.createTenant({ name: "StatusGate" });
+    const emp = await memberOf(a, "employee", "sg-emp");
+    const bk = await memberOf(a, "bookkeeper", "sg-bk");
+    const today = new Date().toISOString().slice(0, 10);
+    const created = await emp.as.post(`/api/companies/${a.company.id}/invoices`, {
+      customerName: "Gate Co",
+      date: today,
+      lines: [{ description: "x", quantity: 1, unitPrice: 100, vatRate: 5 }],
+    });
+    expect(created.status, created.text).toBe(200);
+    const id = created.body.id as string;
+
+    const denied = await emp.as.patch(`/api/invoices/${id}/status`, { status: "sent" });
+    expect(denied.status).toBe(403);
+    expect(denied.body.code).toBe("PERMISSION_DENIED");
+    const none = await h.sql(
+      `SELECT count(*)::int AS n FROM journal_entries WHERE company_id = $1`,
+      [a.company.id]
+    );
+    expect(none[0].n).toBe(0);
+
+    const ok = await bk.as.patch(`/api/invoices/${id}/status`, { status: "sent" });
+    expect(ok.status, ok.text).toBe(200);
+    const posted = await h.sql(
+      `SELECT count(*)::int AS n FROM journal_entries WHERE company_id = $1`,
+      [a.company.id]
+    );
+    expect(posted[0].n).toBe(1);
+  });
+
+  it("J4: Activity History follows the audit-log audience: viewers and employees are refused, the owner and accountants read it", async () => {
+    const a = await h.createTenant({ name: "ActGate" });
+    const viewer = await memberOf(a, "viewer", "act-v");
+    const emp = await memberOf(a, "employee", "act-e");
+    const acct = await memberOf(a, "accountant", "act-a");
+    const url = `/api/companies/${a.company.id}/activity-logs`;
+    expect((await viewer.as.get(url)).status).toBe(403);
+    expect((await emp.as.get(url)).status).toBe(403);
+    expect((await acct.as.get(url)).status).toBe(200);
+    expect((await a.as.get(url)).status).toBe(200);
+    // The audit-log API itself stays admin-only (accountants included).
+    expect((await viewer.as.get(`/api/companies/${a.company.id}/audit-log`)).status).toBe(403);
+  });
+});

@@ -71,6 +71,8 @@ import {
 import { checkoutForInvoice, paymentsAvailability, publicBaseUrl } from "../services/payments";
 import { escapeHtml, renderBilingualEmail, sendEmail } from "../services/email.service";
 import { receivableSettledSql } from "../reporting/settlement";
+import { actorFromRequest, assertCompanyPermission } from "../services/approval-rules.service";
+import type { Permission } from "../../shared/permissions";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const ISSUED_STATUSES = ["sent", "posted", "partial", "paid"] as const;
@@ -144,13 +146,20 @@ async function portalContact(req: Request, res: Response): Promise<PortalCtx | n
   return { contact: r.contact, tokenId: r.token.id, companyId: r.token.companyId };
 }
 
-async function staffContact(req: Request, contactId: string): Promise<CustomerContact> {
+async function staffContact(
+  req: Request,
+  contactId: string,
+  permission: Permission = "reports.read"
+): Promise<CustomerContact> {
   const userId = (req.user as { id: string }).id;
   const contact = UUID_RE.test(contactId) ? await storage.getCustomerContact(contactId) : undefined;
   // Another tenant's contact is answered like a missing one (no existence oracle).
   if (!contact || !(await storage.hasCompanyAccess(userId, contact.companyId))) {
     throw new DomainError("CONTACT_NOT_FOUND", 404, undefined, "Contact not found");
   }
+  // /portal is outside the central company-role policy, so the staff routes check the role here:
+  // a viewer may read link metadata but not mint or revoke links (J4).
+  await assertCompanyPermission(actorFromRequest(req), contact.companyId, [permission]);
   return contact;
 }
 
@@ -242,7 +251,7 @@ export function registerPortalPublicRoutes(app: Express) {
     strictBody(generatePortalAccessBody),
     asyncHandler(async (req: Request, res: Response) => {
       const body = parsedBody<GeneratePortalAccessBody>(req);
-      const contact = await staffContact(req, body.contactId);
+      const contact = await staffContact(req, body.contactId, "documents.write");
       const { token, expiresAt } = await issuePortalLink({
         companyId: contact.companyId,
         contactId: contact.id,
@@ -265,7 +274,7 @@ export function registerPortalPublicRoutes(app: Express) {
     strictBody(revokePortalAccessBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { contactId } = parsedBody<{ contactId: string }>(req);
-      const contact = await staffContact(req, contactId);
+      const contact = await staffContact(req, contactId, "documents.write");
       const revoked = await revokePortalLinks(contact.companyId, contact.id);
       res.json({ revoked });
     })
@@ -288,7 +297,7 @@ export function registerPortalPublicRoutes(app: Express) {
     authMiddleware,
     strictBody(bindPortalUserBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const contact = await staffContact(req, req.params.contactId);
+      const contact = await staffContact(req, req.params.contactId, "documents.write");
       const { userId } = parsedBody<{ userId: string }>(req);
       const [target] = await db
         .select({ id: users.id, userType: users.userType })
@@ -320,7 +329,7 @@ export function registerPortalPublicRoutes(app: Express) {
     "/api/portal/contacts/:contactId/portal-users/:userId",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const contact = await staffContact(req, req.params.contactId);
+      const contact = await staffContact(req, req.params.contactId, "documents.write");
       if (!UUID_RE.test(req.params.userId)) throw new DomainError("PORTAL_USER_INVALID", 400);
       res.json({ revoked: await unbindPortalUser(contact.companyId, req.params.userId) });
     })

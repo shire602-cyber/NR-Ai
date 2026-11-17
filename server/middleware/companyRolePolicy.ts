@@ -80,6 +80,11 @@ const r = (
 ): PolicyRule => ({ methods, pattern, permission });
 
 const PAYROLL_READ: readonly Permission[] = ["payroll.manage", "payroll.approve"];
+const ACTIVITY_READ: readonly Permission[] = [
+  "settings.company",
+  "documents.approve",
+  "ledger.post",
+];
 
 /**
  * Explicit entries. Order matters (first match wins), so specific actions sit
@@ -108,6 +113,12 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("MUT", "companies/*/invoice-templates/**", "settings.company"),
   r("MUT", "invoice-templates/**", "settings.company"),
 
+  // Activity History (J4): the feed merges audit rows (IP address, user agent, before/after
+  // metadata), so it is not general reporting data. Same audience as the audit log's finance
+  // readers: admins (settings.company), approvers/accountants (documents.approve) and anyone who
+  // posts to the ledger. Viewers and employees are refused, matching the denied audit-log API.
+  r("GET", "companies/*/activity-logs", ACTIVITY_READ),
+
   // Team, billing, backups
   r("*", "companies/*/team/invitations/**", "team.manage"),
   r("MUT", "companies/*/team/**", "team.manage"),
@@ -125,6 +136,20 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("MUT", "companies/*/journal/**", "ledger.post"),
   r("MUT", "journal/**", "ledger.post"),
   r("POST", "invoices/*/post", "ledger.post"),
+  // Status / transition routes that write or reverse journal entries (J4): issuing ("sent"/"posted")
+  // and voiding an invoice, issuing/voiding a credit note, debit/credit notes raised from an
+  // invoice, recording a customer payment, applying/refunding customer credit and undoing an FX
+  // revaluation all post to the GL, so they need the same permission as `invoices/*/post`.
+  r("PATCH", "invoices/*/status", "ledger.post"),
+  r("POST", "credit-notes/*/issue", "ledger.post"),
+  r("POST", "credit-notes/*/void", "ledger.post"),
+  r("POST", "companies/*/invoices/*/credit-note", "ledger.post"),
+  r("POST", "companies/*/invoices/*/debit-note", "ledger.post"),
+  r("POST", "companies/*/invoices/*/payments", "ledger.post"),
+  r("POST", "companies/*/customer-credits/*/apply", "ledger.post"),
+  r("POST", "companies/*/customer-credits/*/refund", "ledger.post"),
+  r("POST", "companies/*/debit-notes/*/apply", "ledger.post"),
+  r("POST", "companies/*/fx-revaluations/*/undo", "ledger.post"),
   r("POST", "receipts/*/post", "ledger.post"),
   r("POST", "companies/*/bills/backfill-gl", "ledger.post"),
   r("POST", "companies/*/month-end/generate-closing-entries", "ledger.post"),

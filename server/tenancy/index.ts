@@ -21,6 +21,7 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 import { and, eq, type InferSelectModel, type SQL } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 import { db } from "../db";
+import { DomainError } from "../errors";
 
 /** A Drizzle table with `id` and `companyId` columns. */
 export type TenantTable = PgTable & { id: PgColumn; companyId: PgColumn };
@@ -123,4 +124,51 @@ export function requireOwned<R>(
       })
       .catch(next);
   };
+}
+
+// ─── Referenced-id ownership ──────────────────────────────────────────────
+
+/** Tenant-owned tables a write payload may reference by id. Fixed whitelist (SQL is built from it). */
+const REF_TABLES = {
+  account: { table: "accounts", code: "ACCOUNT_NOT_FOUND" },
+  product: { table: "products", code: "PRODUCT_NOT_FOUND" },
+  contact: { table: "customer_contacts", code: "CONTACT_NOT_FOUND" },
+  costCenter: { table: "cost_centers", code: "COST_CENTER_NOT_FOUND" },
+  vendor: { table: "vendors", code: "VENDOR_NOT_FOUND" },
+} as const;
+export type OwnedRefKind = keyof typeof REF_TABLES;
+
+interface RefQueryable {
+  query: (text: string, params: unknown[]) => Promise<{ rows: Array<{ id: string }> }>;
+}
+
+/**
+ * Every id in a write payload that names another tenant-owned row (account, product, contact,
+ * cost centre, ...) must belong to `companyId`. A foreign or unknown id answers 404
+ * `<KIND>_NOT_FOUND` at write time (same answer for "other tenant" and "does not exist", so it is
+ * no existence oracle). Null/empty values are ignored; non-UUID values count as not found.
+ */
+export async function assertRefsOwned(
+  queryable: RefQueryable,
+  companyId: string,
+  refs: Partial<Record<OwnedRefKind, ReadonlyArray<string | null | undefined> | undefined>>
+): Promise<void> {
+  for (const kind of Object.keys(refs) as OwnedRefKind[]) {
+    const wanted = [...new Set((refs[kind] ?? []).filter((v): v is string => !!v))];
+    if (wanted.length === 0) continue;
+    const { table, code } = REF_TABLES[kind];
+    const valid = wanted.filter((v) => UUID_RE.test(v));
+    let found = new Set<string>();
+    if (valid.length > 0) {
+      const { rows } = await queryable.query(
+        `SELECT id FROM ${table} WHERE company_id = $1 AND id = ANY($2::uuid[])`,
+        [companyId, valid]
+      );
+      found = new Set(rows.map((r) => r.id.toLowerCase()));
+    }
+    const missing = wanted.find((id) => !found.has(id.toLowerCase()));
+    if (missing) {
+      throw new DomainError(code, 404, { id: missing }, `Referenced ${kind} not found`);
+    }
+  }
 }

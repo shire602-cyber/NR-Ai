@@ -114,5 +114,19 @@
   "clientProfile.notFirmClient": "This company exists but is not marked as a firm-managed client.",
   "clientProfile.linkOutdated": "The link may be outdated, or the client was removed.",
   "emailIntake.pilotDisabledBefore": "Set ",
-  "emailIntake.pilotDisabledAfter": " on the server to turn the intake pilot on. You can still configure sender mappings below; nothing is ingested until it's enabled."
+  "emailIntake.pilotDisabledAfter": " on the server to turn the intake pilot on. You can still configure sender mappings below; nothing is ingested until it's enabled.",
+  "customerContacts.linkValidUntil": "This link is valid for {days} days (until {date}). The client can view invoices and download PDFs without logging in. It is shown only once.",
+  "customerContacts.portalAccess": "Portal access",
+  "customerContacts.portalAccessFor": "Active and past portal links for {name}.",
+  "customerContacts.portalLinksEmpty": "No portal links yet.",
+  "customerContacts.portalLinkActive": "Active",
+  "customerContacts.portalLinkExpired": "Expired",
+  "customerContacts.portalLinkRevoked": "Revoked",
+  "customerContacts.portalLinkExpires": "Expires {date}",
+  "customerContacts.portalLinkLastUsed": "Last used {date}",
+  "customerContacts.portalLinkNeverUsed": "Never used",
+  "customerContacts.revokeAccess": "Revoke access",
+  "customerContacts.revokeAccessConfirm": "Revoke every portal link for this contact? Existing links stop working immediately.",
+  "customerContacts.accessRevoked": "Portal access revoked",
+  "customerContacts.accessRevokeFailed": "Could not revoke portal access"
 }
