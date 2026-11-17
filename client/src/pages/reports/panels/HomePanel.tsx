@@ -62,17 +62,13 @@ export default function HomePanel() {
                     <div className="text-xs text-muted-foreground">
                       <T k="reportCenter.readyReports" />
                     </div>
-                    <div className="mt-1 text-kpi tabular-nums">
-                      {reportStats.ready}
-                    </div>
+                    <div className="mt-1 text-kpi tabular-nums">{reportStats.ready}</div>
                   </div>
                   <div className="rounded-md border p-3">
                     <div className="text-xs text-muted-foreground">
                       <T k="reportCenter.liveReports" />
                     </div>
-                    <div className="mt-1 text-kpi tabular-nums">
-                      {reportStats.live}
-                    </div>
+                    <div className="mt-1 text-kpi tabular-nums">{reportStats.live}</div>
                   </div>
                   <div className="rounded-md border p-3">
                     <div className="text-xs text-muted-foreground">
@@ -86,9 +82,7 @@ export default function HomePanel() {
                     <div className="text-xs text-muted-foreground">
                       <T k="reportCenter.openQueue" />
                     </div>
-                    <div className="mt-1 text-kpi tabular-nums">
-                      {automationQueueCount}
-                    </div>
+                    <div className="mt-1 text-kpi tabular-nums">{automationQueueCount}</div>
                   </div>
                 </div>
 

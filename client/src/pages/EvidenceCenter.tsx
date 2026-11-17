@@ -57,7 +57,6 @@ import type {
   EvidenceProofLine,
 } from "@shared/evidence-center";
 
-
 const SEVERITY_BADGE: Record<string, string> = {
   critical: "destructive",
   warning: "secondary",
