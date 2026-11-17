@@ -354,14 +354,15 @@ async function main() {
   try {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
-    // Credit notes are raised against an ISSUED invoice: create and issue one here.
+    // Credit notes are raised against an ISSUED invoice: create and issue one here. 0% (out of
+    // scope) because the crawl company has no TRN yet and VAT cannot be issued without one (X6a).
     const srcRes = await page.request.post(`${BASE}/api/companies/${companyId}/invoices`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
         customerName: "Credit Note Customer LLC",
         date: new Date().toISOString().slice(0, 10),
         placeOfSupplyEmirate: "dubai",
-        lines: [{ description: "Consulting", quantity: 1, unitPrice: 400, vatRate: 5 }],
+        lines: [{ description: "Consulting", quantity: 1, unitPrice: 400, vatRate: 0 }],
       },
     });
     const sourceInvoice = srcRes.status() < 300 ? await srcRes.json() : undefined;
