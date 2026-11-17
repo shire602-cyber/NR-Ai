@@ -174,5 +174,7 @@
   "compliance.tasksDueThisWeek": "مستحقة هذا الأسبوع",
   "compliance.vatBackToReturns": "العودة إلى الإقرارات",
   "compliance.vatWorkbookTitle": "ورقة عمل الإقرار 201",
-  "compliance.periodsAction": "الإجراء"
+  "compliance.periodsAction": "الإجراء",
+  "compliance.vatView": "عرض",
+  "compliance.vatEdit": "تحرير"
 }

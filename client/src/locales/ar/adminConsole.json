@@ -388,5 +388,16 @@
   "activityLog.action.zatca.invoice_submitted": "إرسال فاتورة إلى هيئة الزكاة والضريبة والجمارك",
   "activityLog.action.payroll.settlement_pay": "سُدّدت تسوية نهاية الخدمة",
   "history.details": "التفاصيل",
-  "history.reference": "المرجع"
+  "history.reference": "المرجع",
+  "activityLog.action.corporate_tax_return.computed": "احتساب إقرار ضريبة الشركات",
+  "activityLog.action.corporate_tax_return.initial_compute": "الاحتساب الأولي لإقرار ضريبة الشركات",
+  "activityLog.action.corporate_tax_return.created": "إنشاء إقرار ضريبة الشركات",
+  "activityLog.action.bank.reconcile": "مطابقة معاملة بنكية",
+  "activityLog.action.firm_link.accept": "قبول ربط مكتب المحاسبة",
+  "activityLog.entity.company_group": "مجموعة الشركات",
+  "activityLog.entity.corporate_tax_return": "إقرار ضريبة الشركات",
+  "activityLog.entity.bank_transaction": "معاملة بنكية",
+  "activityLog.entity.payroll_run": "مسير الرواتب",
+  "activityLog.entity.vendor_bill": "فاتورة مورد",
+  "activityLog.entity.firm_client_link": "ربط مكتب المحاسبة"
 }

@@ -388,5 +388,16 @@
   "activityLog.action.zatca.invoice_submitted": "Invoice submitted to ZATCA",
   "activityLog.action.payroll.settlement_pay": "Final settlement paid",
   "history.details": "Details",
-  "history.reference": "Reference"
+  "history.reference": "Reference",
+  "activityLog.action.corporate_tax_return.computed": "Corporate tax return computed",
+  "activityLog.action.corporate_tax_return.initial_compute": "Corporate tax return first computed",
+  "activityLog.action.corporate_tax_return.created": "Corporate tax return created",
+  "activityLog.action.bank.reconcile": "Bank transaction reconciled",
+  "activityLog.action.firm_link.accept": "Accounting firm link accepted",
+  "activityLog.entity.company_group": "Company group",
+  "activityLog.entity.corporate_tax_return": "Corporate tax return",
+  "activityLog.entity.bank_transaction": "Bank transaction",
+  "activityLog.entity.payroll_run": "Payroll run",
+  "activityLog.entity.vendor_bill": "Supplier bill",
+  "activityLog.entity.firm_client_link": "Accounting firm link"
 }

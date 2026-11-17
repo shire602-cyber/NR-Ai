@@ -174,5 +174,7 @@
   "compliance.tasksDueThisWeek": "Due this week",
   "compliance.vatBackToReturns": "Back to returns",
   "compliance.vatWorkbookTitle": "VAT 201 workbook",
-  "compliance.periodsAction": "Action"
+  "compliance.periodsAction": "Action",
+  "compliance.vatView": "View",
+  "compliance.vatEdit": "Edit"
 }

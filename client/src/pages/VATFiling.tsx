@@ -1336,7 +1336,7 @@ export default function VATFiling() {
                               data-testid={`mobile-button-view-vat-${vatReturn.id}`}
                             >
                               <Eye className="w-4 h-4 me-1" />
-                              View
+                              {t["compliance.vatView"]}
                             </Button>
                             {(vatReturn.status === "draft" ||
                               vatReturn.status === "pending_review") && (
@@ -1347,7 +1347,7 @@ export default function VATFiling() {
                                 data-testid={`mobile-button-edit-vat-${vatReturn.id}`}
                               >
                                 <Edit3 className="w-4 h-4 me-1" />
-                                Edit
+                                {t["compliance.vatEdit"]}
                               </Button>
                             )}
                             <Button
