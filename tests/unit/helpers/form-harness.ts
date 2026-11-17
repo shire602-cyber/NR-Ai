@@ -180,3 +180,41 @@ export function inputByLabel(re: RegExp, scope: ParentNode = document) {
   if (id) return document.getElementById(id);
   return label.querySelector("input,textarea,select");
 }
+
+/** Open a Radix Select from the keyboard (Enter on its trigger) and choose the option by label. */
+export async function pickOption(trigger: Element | null, label: RegExp | string) {
+  if (!trigger) throw new Error("select trigger not found");
+  await act(async () => {
+    trigger.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })
+    );
+  });
+  await flush();
+  const matches = (text: string) =>
+    typeof label === "string" ? text.trim() === label : label.test(text);
+  const option = [...document.querySelectorAll('[role="option"]')].find((o) =>
+    matches(o.textContent ?? "")
+  );
+  if (!option) throw new Error(`select option not found: ${String(label)}`);
+  await click(option);
+}
+
+/**
+ * Open the shared DatePicker and pick a day of the calendar month shown `monthsBack` months
+ * before the one it opens on (the selected value's month, or the current month when empty).
+ */
+export async function pickDate(trigger: Element | null, day: number, monthsBack = 0) {
+  await click(trigger);
+  for (let i = 0; i < monthsBack; i++) {
+    await click(document.querySelector('button[name="previous-month"]'));
+  }
+  const cell = [...document.querySelectorAll<HTMLButtonElement>('button[name="day"]')].find(
+    (b) => b.textContent?.trim() === String(day) && !b.className.includes("day-outside")
+  );
+  if (!cell) throw new Error(`calendar day not found: ${day}`);
+  await click(cell);
+}
+
+/** The full-page document editor (EditorShell root: form column and sticky footer, spec 3.7). */
+export const editorPage = () =>
+  document.querySelector('[data-testid="editor-shell-footer"]')!.parentElement as HTMLElement;

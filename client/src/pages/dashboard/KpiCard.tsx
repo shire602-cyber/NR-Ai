@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 import { StatCard } from "@/components/ui/stat-card";
 import { formatPercentDelta } from "@/lib/format-money";
-import { useTranslation } from "@/lib/i18n";
 
 // ─── KPI tile (dashboard) ────────────────────────────────────────────────────
 // Built on the shared StatCard: neutral figure (a <Money/>), a delta pill whose
@@ -43,10 +42,7 @@ export function KpiCard({
   deltaContext,
   deltaLabel,
 }: KpiCardProps) {
-  const { locale } = useTranslation();
   const hasSeries = (spark?.length ?? 0) > 1 && spark!.some((v) => v !== 0);
-  // RTL: time runs right to left, so the series is reversed with the page (R2-20).
-  const series = hasSeries && locale === "ar" ? [...spark!].reverse() : spark;
 
   return (
     <StatCard
@@ -67,7 +63,7 @@ export function KpiCard({
               context: deltaContext,
             }
       }
-      sparkline={hasSeries ? series : undefined}
+      sparkline={hasSeries ? spark : undefined}
       sparklineTone={accent}
     />
   );

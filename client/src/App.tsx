@@ -658,6 +658,8 @@ function Router() {
             <Route path="/invoices/new" component={Invoices} />
             <Route path="/invoices/:id/edit" component={Invoices} />
             <Route path="/invoices" component={Invoices} />
+            <Route path="/recurring-invoices/new" component={RecurringInvoices} />
+            <Route path="/recurring-invoices/:id/edit" component={RecurringInvoices} />
             <Route path="/recurring-invoices" component={RecurringInvoices} />
             <Route path="/payment-chasing" component={PaymentChasing} />
             <Route path="/journal" component={Journal} />
@@ -671,8 +673,14 @@ function Router() {
             </Route>
             <Route path="/contacts" component={CustomerContacts} />
             <Route path="/inventory" component={Inventory} />
+            <Route path="/quotes/new" component={Quotes} />
+            <Route path="/quotes/:id/edit" component={Quotes} />
             <Route path="/quotes" component={Quotes} />
+            {/* A credit note is created against an invoice and replaced, never edited. */}
+            <Route path="/credit-notes/new" component={CreditNotes} />
             <Route path="/credit-notes" component={CreditNotes} />
+            <Route path="/purchase-orders/new" component={PurchaseOrders} />
+            <Route path="/purchase-orders/:id/edit" component={PurchaseOrders} />
             <Route path="/purchase-orders" component={PurchaseOrders} />
             <Route path="/cost-centers" component={CostCenters} />
             <Route path="/financial-statements" component={FinancialStatements} />
@@ -689,6 +697,8 @@ function Router() {
             <Route path="/company-groups" component={CompanyGroups} />
             <Route path="/consolidation" component={Consolidation} />
             <Route path="/payroll" component={Payroll} />
+            <Route path="/bill-pay/new" component={BillPay} />
+            <Route path="/bill-pay/:id/edit" component={BillPay} />
             <Route path="/bill-pay" component={BillPay} />
             <Route path="/vendors" component={Vendors} />
             <Route path="/fixed-assets" component={FixedAssets} />

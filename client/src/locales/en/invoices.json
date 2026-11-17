@@ -351,5 +351,10 @@
   "invoices.editor.saveChanges": "Save changes",
   "invoices.reminders.bulkBody": "Each invoice moves to its next reminder step.",
   "invoices.reminders.bucketOne": "1 invoice",
-  "invoices.reminders.bucketNone": "No invoices"
+  "invoices.reminders.bucketNone": "No invoices",
+  "invoices.editor.backQuotes": "All quotes",
+  "invoices.editor.backCreditNotes": "All credit notes",
+  "invoices.editor.backRecurring": "All recurring invoices",
+  "invoices.editor.backBills": "All bills",
+  "invoices.editor.backPurchaseOrders": "All purchase orders"
 }

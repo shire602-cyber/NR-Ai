@@ -20,6 +20,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Plus } from "lucide-react";
 import {
   FormActions,
@@ -82,9 +89,6 @@ const ERROR_KEY: Record<ReceiptSplitError, string> = {
   PARTS_TOTAL_MISMATCH: "purchases.receiptPartsTotalMismatch",
   REASON_REQUIRED: "purchases.receiptReasonRequired",
 };
-
-const selectClass =
-  "flex h-9 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground shadow-xs focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20";
 
 function emptyPart(receipt: ReceiptForSplit | null): ReceiptPartDraft {
   return {
@@ -231,19 +235,23 @@ export function ReceiptLinesDialog(props: ReceiptLinesDialogProps) {
                         <Label htmlFor={`rl-account-${i}`} className={lineLabelClass}>
                           {t["purchases.account"]}
                         </Label>
-                        <select
-                          id={`rl-account-${i}`}
-                          className={selectClass}
+                        <Select
                           value={l.accountId}
-                          onChange={(e) => updateLine(i, { accountId: e.target.value })}
+                          onValueChange={(value) => updateLine(i, { accountId: value })}
                         >
-                          <option value="">{t["purchases.chooseAccount"]}</option>
-                          {expenseAccounts.map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {[a.code, accountDisplayName(a, locale)].filter(Boolean).join(" · ")}
-                            </option>
-                          ))}
-                        </select>
+                          <SelectTrigger id={`rl-account-${i}`}>
+                            <SelectValue placeholder={t["purchases.chooseAccount"]} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {expenseAccounts.map((a) => (
+                              <SelectItem key={a.id} value={a.id}>
+                                {[a.code, accountDisplayName(a, locale)]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     }
                   >

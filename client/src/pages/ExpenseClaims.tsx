@@ -833,8 +833,8 @@ export default function ExpenseClaims() {
                 {showActions && (
                   <TableCell data-cell="actions">
                     <RowActions
-                      // A reviewer decides in one click: Approve and Reject stay side by side.
-                      maxInline={canReview ? 2 : 1}
+                      // One visible action (a reviewer's is Approve); Reject and View details live in ⋯.
+                      maxInline={1}
                       collapseOnMobile
                       menu={
                         canEdit || canPay ? (
@@ -902,11 +902,13 @@ export default function ExpenseClaims() {
                             label={t["pages.approve"]}
                             icon={CheckCircle}
                             onClick={() => handleOpenReviewDialog(claim.id, "approve")}
+                            data-testid={`claim-approve-${claim.id}`}
                           />
                           <RowActionButton
                             label={t["screens.reject"]}
                             icon={XCircle}
                             onClick={() => handleOpenReviewDialog(claim.id, "reject")}
+                            data-testid={`claim-reject-${claim.id}`}
                           />
                         </>
                       )}

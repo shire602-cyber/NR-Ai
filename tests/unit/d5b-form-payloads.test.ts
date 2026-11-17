@@ -10,12 +10,16 @@ import {
   COMPANY,
   COMPANY_ID,
   apiCalls,
+  editorPage,
   byTestId,
   buttonByText,
   click,
   flush,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
+  inputByLabel,
+  pickDate,
+  pickOption,
   renderPage,
   resetHarness,
   setFixtures,
@@ -206,8 +210,10 @@ describe("[D5b] invoice form payload unchanged", () => {
 });
 
 const dialog = () => document.querySelector('[role="dialog"]') as HTMLElement;
-const named = (name: string) => dialog().querySelector(`[name="${name}"]`);
-const numberInputs = () => [...dialog().querySelectorAll('input[type="number"]')];
+/** The open form surface: a dialog, or the editor page for documents with line items. */
+const surface = () => (document.querySelector('[role="dialog"]') as HTMLElement) ?? editorPage();
+const named = (name: string) => surface().querySelector(`[name="${name}"]`);
+const numberInputs = () => [...surface().querySelectorAll('input[type="number"]')];
 
 describe("[D5b] quote form payload unchanged", () => {
   it("POSTs the same quote body", async () => {
@@ -220,7 +226,7 @@ describe("[D5b] quote form payload unchanged", () => {
     await type(named("lines.0.description"), "Brand workshop");
     await type(numberInputs()[0], "3");
     await type(numberInputs()[1], "200.5");
-    await submit(dialog().querySelector('button[type="submit"]'));
+    await submit(editorPage().querySelector('button[type="submit"]'));
     expect(body("POST", `${C}/quotes`)).toEqual({
       customerName: "Harbor Design Studio",
       customerTrn: "100234567800003",
@@ -251,7 +257,7 @@ describe("[D5b] recurring invoice form payload unchanged", () => {
     await type(named("lines.0.description"), "Monthly retainer");
     await type(named("lines.0.quantity"), "1");
     await type(named("lines.0.unitPrice"), "4500");
-    await submit(dialog().querySelector('button[type="submit"]'));
+    await submit(editorPage().querySelector('button[type="submit"]'));
     expect(body("POST", `${C}/recurring-invoices`)).toEqual({
       customerName: "Noor Retail Trading",
       customerTrn: "100345678900003",
@@ -288,7 +294,7 @@ describe("[D5b] bill form payload unchanged", () => {
     await type(named("line_items.0.description"), "Printer paper");
     await type(named("line_items.0.quantity"), "10");
     await type(named("line_items.0.unit_price"), "24.5");
-    await submit(dialog().querySelector('button[type="submit"]'));
+    await submit(editorPage().querySelector('button[type="submit"]'));
     expect(body("POST", `${C}/bills`)).toEqual({
       vendor_name: "Atlas Office Supplies",
       vendor_trn: "100456789000003",
@@ -330,7 +336,7 @@ describe("[D5b] purchase order form payload unchanged", () => {
     await type(named("lines.0.description"), "Pallet racking");
     await type(numberInputs()[0], "6");
     await type(numberInputs()[1], "850");
-    await submit(dialog().querySelector('button[type="submit"]'));
+    await submit(editorPage().querySelector('button[type="submit"]'));
     expect(body("POST", `${C}/purchase-orders`)).toEqual({
       vendorName: "Blue Palm Services LLC",
       vendorTrn: "100567890100003",
@@ -392,7 +398,8 @@ describe("[D5b] contact form payload unchanged", () => {
     await type(byTestId("input-contact-email"), "ap@gulfhorizon.example");
     await type(byTestId("input-contact-phone"), "+971-4-555-0101");
     await type(byTestId("input-contact-trn"), "100123456700003");
-    await type(byTestId("select-contact-emirate"), "ajman");
+    // Place of supply is the shared Select (Radix): open it and choose Ajman.
+    await pickOption(byTestId("select-contact-emirate"), /ajman/i);
     await type(byTestId("input-contact-payment-terms"), "45");
     await type(byTestId("input-contact-address"), "Unit 4, Al Jurf");
     await type(byTestId("input-contact-city"), "Ajman");
@@ -495,7 +502,8 @@ describe("[D5b] fixed asset form payload unchanged", () => {
     await type(named("assetName"), "Delivery van");
     await type(named("assetNameAr"), "شاحنة توصيل");
     await type(named("assetNumber"), "FA-014");
-    await type(named("purchaseDate"), "2026-02-01");
+    // The purchase date is the shared DatePicker (opens on March 2026): back one month, the 1st.
+    await pickDate(inputByLabel(/purchase date/i), 1, 1);
     await type(named("purchaseCost"), "96000");
     await type(named("salvageValue"), "12000");
     await type(named("usefulLifeYears"), "6");
@@ -554,7 +562,8 @@ describe("[D5b] bank account form payload unchanged", () => {
     await type(byId("ba-number"), "1012345678901");
     await type(byId("ba-iban"), "AE070331234567890123456");
     await type(byId("ba-ob"), "25000.50");
-    await type(byId("ba-obd"), "2026-01-01");
+    // The opening date is the shared DatePicker (opens on March 2026): back two months, the 1st.
+    await pickDate(byId("ba-obd"), 1, 2);
     await submit([...dialog().querySelectorAll("button:not(.absolute)")].pop()!);
     expect(body("POST", `${C}/bank-accounts`)).toStrictEqual({
       nameEn: "Operating account",

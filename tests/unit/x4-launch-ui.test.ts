@@ -23,6 +23,7 @@ import {
   submit,
   type,
   unmountPage,
+  editorPage,
 } from "./helpers/form-harness";
 import { loadLocale } from "../../client/src/lib/i18n";
 
@@ -154,7 +155,12 @@ describe("[X4][J3] expense claims", () => {
     expect(approve).toHaveLength(1);
     expect(text()).not.toContain("Review notes are required");
 
-    await click(document.querySelector('button[aria-label="Reject"]'));
+    // Reject lives in the row's ⋯ menu (Approve is the one inline action).
+    await activate(
+      document.querySelector('[role="tabpanel"][data-state="active"] button[aria-haspopup="menu"]')
+    );
+    await click(byTestId(`claim-reject-${id}`));
+    expect(dialog()).toBeTruthy();
     await submit(dialog().querySelector('button[type="submit"]'));
     expect(apiCalls("POST").filter((c) => c.url.endsWith("/reject"))).toHaveLength(0);
   });
@@ -197,14 +203,14 @@ describe("[X4][J3] purchase order form links a product", () => {
     await renderPage(PurchaseOrders);
     await click(buttonByText(/new purchase order/i));
     expect(byTestId("po-line-product-0")).toBeTruthy();
-    const selects = [...dialog().querySelectorAll("select")];
+    const selects = [...editorPage().querySelectorAll("select")];
     const productSelect = selects.find((s) =>
       [...s.options].some((o) => o.value === productId)
     ) as HTMLSelectElement;
     expect(productSelect).toBeTruthy();
     await type(productSelect, productId);
-    await type(dialog().querySelector('[name="vendorName"]'), "Supplier LLC");
-    await submit(dialog().querySelector('button[type="submit"]'));
+    await type(editorPage().querySelector('[name="vendorName"]'), "Supplier LLC");
+    await submit(editorPage().querySelector('button[type="submit"]'));
     const post = apiCalls("POST").find((c) => c.url === `${C}/purchase-orders`);
     expect(post, JSON.stringify(apiCalls())).toBeTruthy();
     expect((post!.body as { lines: Array<Record<string, unknown>> }).lines[0]).toMatchObject({

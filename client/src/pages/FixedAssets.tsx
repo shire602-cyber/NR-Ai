@@ -1020,7 +1020,7 @@ export default function FixedAssets() {
                       <FormItem>
                         <FormLabel required>{t["screens.faPurchaseDate"]}</FormLabel>
                         <FormControl>
-                          <Input type="date" dir="ltr" {...field} />
+                          <DatePicker value={field.value} onChange={field.onChange} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

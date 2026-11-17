@@ -1,3 +1,10 @@
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { T } from "@/components/layout/T";
 import {
   ErrorSummary,
@@ -135,6 +142,9 @@ async function downloadContactTemplate(companyId: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+/** Select sentinel for "use the company emirate" (Radix items cannot carry an empty value). */
+const EMIRATE_DEFAULT = "default";
+
 const CONTACT_EMIRATES = [
   "abu_dhabi",
   "dubai",
@@ -250,19 +260,26 @@ function ContactForm({
             label={t["invoices.placeOfSupply"]}
             help={t["forms.contact.emirateHelp"]}
           >
-            <select
-              className="h-9 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground shadow-xs focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20"
-              value={formData.emirate}
-              onChange={(e) => setFormData({ ...formData, emirate: e.target.value })}
-              data-testid="select-contact-emirate"
+            <Select
+              value={formData.emirate || EMIRATE_DEFAULT}
+              onValueChange={(value) =>
+                setFormData({ ...formData, emirate: value === EMIRATE_DEFAULT ? "" : value })
+              }
             >
-              <option value="">{t["invoices.placeOfSupplyDefault"]}</option>
-              {CONTACT_EMIRATES.map((e) => (
-                <option key={e} value={e}>
-                  {t[`invoices.emirate.${e}`]}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id={`${idp}-emirate`} data-testid="select-contact-emirate">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={EMIRATE_DEFAULT}>
+                  {t["invoices.placeOfSupplyDefault"]}
+                </SelectItem>
+                {CONTACT_EMIRATES.map((e) => (
+                  <SelectItem key={e} value={e}>
+                    {t[`invoices.emirate.${e}`]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
           <Field
             id={`${idp}-terms`}

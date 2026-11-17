@@ -351,5 +351,10 @@
   "invoices.editor.saveChanges": "حفظ التغييرات",
   "invoices.reminders.bulkBody": "تنتقل كل فاتورة إلى خطوة التذكير التالية.",
   "invoices.reminders.bucketOne": "فاتورة واحدة",
-  "invoices.reminders.bucketNone": "لا توجد فواتير"
+  "invoices.reminders.bucketNone": "لا توجد فواتير",
+  "invoices.editor.backQuotes": "كل عروض الأسعار",
+  "invoices.editor.backCreditNotes": "كل الإشعارات الدائنة",
+  "invoices.editor.backRecurring": "كل الفواتير المتكررة",
+  "invoices.editor.backBills": "كل فواتير الموردين",
+  "invoices.editor.backPurchaseOrders": "كل أوامر الشراء"
 }

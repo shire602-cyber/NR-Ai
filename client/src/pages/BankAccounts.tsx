@@ -506,11 +506,9 @@ export default function BankAccounts() {
                   />
                 </Field>
                 <Field id="ba-obd" label={tr("banking.accounts.openingBalanceDate")}>
-                  <Input
-                    type="date"
-                    dir="ltr"
+                  <DatePicker
                     value={form.openingBalanceDate}
-                    onChange={(e) => setForm({ ...form, openingBalanceDate: e.target.value })}
+                    onChange={(value) => setForm({ ...form, openingBalanceDate: value })}
                   />
                 </Field>
               </FormGrid>

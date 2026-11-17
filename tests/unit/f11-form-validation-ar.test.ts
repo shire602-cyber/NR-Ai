@@ -144,7 +144,7 @@ const CASES: FormCase[] = [
     name: "quote",
     load: async () => ({ page: (await import("../../client/src/pages/Quotes")).default }),
     open: () => click(buttonByText(/new quote/i)),
-    submit: submitButton,
+    submit: () => byTestId("button-submit-quote"),
   },
   {
     name: "recurring invoice",
@@ -152,20 +152,20 @@ const CASES: FormCase[] = [
       page: (await import("../../client/src/pages/RecurringInvoices")).default,
     }),
     open: () => click(buttonByText(/new recurring invoice/i)),
-    submit: submitButton,
+    submit: () => byTestId("button-submit-recurring"),
   },
   {
     name: "bill",
     fixtures: { [`${C}/bills/summary`]: null, [`${C}/bills/aging`]: null },
     load: async () => ({ page: (await import("../../client/src/pages/BillPay")).default }),
     open: () => click(buttonByText(/new bill/i)),
-    submit: submitButton,
+    submit: () => byTestId("button-submit-bill"),
   },
   {
     name: "purchase order",
     load: async () => ({ page: (await import("../../client/src/pages/PurchaseOrders")).default }),
     open: () => click(buttonByText(/new purchase order/i)),
-    submit: submitButton,
+    submit: () => byTestId("button-submit-po"),
   },
   {
     name: "expense claim",
