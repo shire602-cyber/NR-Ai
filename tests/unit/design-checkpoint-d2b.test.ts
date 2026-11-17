@@ -26,7 +26,8 @@ describe("D2b CTO checkpoint guards", () => {
   it("2: Arabic stack keeps Latin + digits in Geist and loads only the Arabic Noto subset", () => {
     const css = read("client/src/index.css");
     expect(css).toMatch(/--font-arabic: "Geist Sans", "Noto Sans Arabic"/);
-    expect(css).toMatch(/\[dir="rtl"\] body \{\s*line-height: 1\.6;/);
+    // WP-A (Fable spec 2.1): Arabic body is 15 / 26.
+    expect(css).toMatch(/\[dir="rtl"\] body \{\s*font-size: 0\.9375rem;\s*line-height: 1\.625rem;/);
     expect(read("client/src/components/RTLProvider.tsx")).toContain(
       "@fontsource/noto-sans-arabic/arabic-400.css"
     );
@@ -113,7 +114,8 @@ describe("D2b CTO checkpoint guards", () => {
       /\.mobile-nav-more-summary::after \{[\s\S]*?border-right: 1\.5px/
     );
     const stat = read("client/src/components/ui/stat-card.tsx");
-    expect(stat).toContain("sm:text-h1");
+    // WP-A (Fable spec 2.1/2.7): the KPI figure uses the responsive `text-kpi` step.
+    expect(stat).toContain("text-kpi");
     expect(stat).not.toContain('DeltaIcon className="h-3 w-3 rtl:-scale-x-100"');
   });
 });
