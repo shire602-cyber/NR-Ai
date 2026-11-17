@@ -1488,7 +1488,8 @@ export default function Invoices() {
               <ol className="divide-y divide-border rounded-lg bg-surface-sunken/60 px-3">
                 {fields.map((field, index) => (
                   <li key={field.id} className="space-y-3 py-3">
-                    <div className="flex items-start gap-2">
+                    {/* Phones: the description takes the full row; picker and remove wrap under it. */}
+                    <div className="flex flex-wrap items-start gap-2 sm:flex-nowrap">
                       <span
                         aria-hidden
                         className="mt-2 w-5 shrink-0 text-caption tabular-nums text-muted-foreground"
@@ -1499,7 +1500,7 @@ export default function Invoices() {
                         control={form.control}
                         name={`lines.${index}.description`}
                         render={({ field }) => (
-                          <FormItem className="flex-1">
+                          <FormItem className="min-w-0 flex-1 basis-[calc(100%-1.75rem)] sm:basis-0">
                             <FormControl>
                               <Input
                                 {...field}
