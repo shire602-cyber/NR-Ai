@@ -69,7 +69,7 @@ const LABELS: Record<string, string> = {
   purchases: "Vendor bills and debit notes",
   receipts: "Posted receipts",
   bad_debt_relief: "Bad-debt relief claims",
-  fixed_asset_disposals: "Fixed-asset disposals",
+  fixed_asset_disposals: "Fixed-asset acquisitions (input VAT) and disposals",
   partial_exemption: "Partial-exemption apportionment (not posted)",
   return_adjustments: "Return adjustments: tourist refunds, imports, corrections (not posted)",
 };

@@ -83,6 +83,8 @@ import { MoneyCell, Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 
 const poLineSchema = z.object({
+  /** Stocked product received on this line (X4/J3): without one the receipt moves no stock. */
+  productId: z.string().optional().nullable(),
   description: z.string().min(1, "forms.errors.descriptionRequired"),
   quantity: z.coerce.number().min(0.01, "forms.errors.quantityPositive"),
   unitPrice: z.coerce.number().min(0, "forms.errors.pricePositive"),
@@ -111,7 +113,13 @@ type PoPayload = {
   expectedDeliveryDate: string | null;
   currency: string;
   notes: string | null;
-  lines: Array<{ description: string; quantity: number; unitPrice: number; vatRate: number }>;
+  lines: Array<{
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    vatRate: number;
+    productId?: string;
+  }>;
 };
 
 const PO_COPY = {
@@ -145,7 +153,13 @@ interface PurchaseOrder {
   expectedDeliveryDate: string;
   currency: string;
   notes?: string;
-  lines: Array<{ description: string; quantity: number; unitPrice: number; vatRate: number }>;
+  lines: Array<{
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    vatRate: number;
+    productId?: string | null;
+  }>;
   subtotal: number;
   vatAmount: number;
   total: number;
@@ -165,6 +179,21 @@ export default function PurchaseOrders() {
     queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
     enabled: !!selectedCompanyId,
   });
+  const { data: products = [] } = useQuery<
+    Array<{
+      id: string;
+      name: string;
+      nameAr?: string | null;
+      sku?: string | null;
+      costPrice?: number | string | null;
+      trackInventory?: boolean;
+      isActive?: boolean;
+    }>
+  >({
+    queryKey: [`/api/companies/${selectedCompanyId}/products`],
+    enabled: !!selectedCompanyId && dialogOpen,
+  });
+  const stockProducts = products.filter((p) => p.isActive !== false);
 
   const form = useForm<PurchaseOrderFormData>({
     resolver: zodResolver(purchaseOrderSchema),
@@ -274,11 +303,24 @@ export default function PurchaseOrders() {
       if (!action) throw new Error(`Unknown status: ${status}`);
       return apiRequest("POST", `/api/purchase-orders/${id}/${action}`, {});
     },
-    onSuccess: (_r: unknown, vars: { id: string; status: string }) => {
+    onSuccess: (r: unknown, vars: { id: string; status: string }) => {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
       });
-      if (vars.status === "billed") toast({ title: pc.converted });
+      const warnings = (r as { warnings?: Array<{ code: string }> } | null)?.warnings ?? [];
+      if (vars.status === "received") {
+        queryClient.invalidateQueries({
+          queryKey: [`/api/companies/${selectedCompanyId}/products`],
+        });
+      }
+      if (warnings.some((w) => w.code === "PO_LINES_WITHOUT_PRODUCT")) {
+        // X4 (J3): never let a receipt silently skip stock.
+        toast({
+          title: t["purchases.poReceivedNoStock"],
+          description: t["purchases.poReceivedNoStockHint"],
+          variant: "warning",
+        });
+      } else if (vars.status === "billed") toast({ title: pc.converted });
       else if (vars.status === "cancelled") toast({ title: pc.cancelled });
       else
         toast({ title: "Status updated", description: "Purchase order status has been updated." });
@@ -347,6 +389,7 @@ export default function PurchaseOrders() {
         quantity: Number(data.lines[index].quantity),
         unitPrice: Number(data.lines[index].unitPrice),
         vatRate: Number(data.lines[index].vatRate),
+        ...(data.lines[index].productId ? { productId: data.lines[index].productId! } : {}),
       })),
     };
 
@@ -585,25 +628,79 @@ export default function PurchaseOrders() {
                           canRemove={fields.length > 1}
                           gridClassName="sm:grid-cols-[6rem_8rem_7rem_minmax(0,1fr)]"
                           main={
-                            <FormField
-                              control={form.control}
-                              name={`lines.${index}.description`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Input
-                                      {...field}
-                                      dir="auto"
-                                      placeholder={t.description}
-                                      aria-label={formatMessage(t["forms.lineDescription"], {
-                                        n: index + 1,
-                                      })}
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
+                            <div className="space-y-2">
+                              <FormField
+                                control={form.control}
+                                name={`lines.${index}.productId`}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <Select
+                                      value={field.value || "none"}
+                                      onValueChange={(val) => {
+                                        const id = val === "none" ? null : val;
+                                        field.onChange(id);
+                                        const p = stockProducts.find((x) => x.id === id);
+                                        if (p) {
+                                          if (!form.getValues(`lines.${index}.description`)) {
+                                            form.setValue(
+                                              `lines.${index}.description`,
+                                              locale === "ar" && p.nameAr ? p.nameAr : p.name
+                                            );
+                                          }
+                                          if (!Number(form.getValues(`lines.${index}.unitPrice`))) {
+                                            form.setValue(
+                                              `lines.${index}.unitPrice`,
+                                              Number(p.costPrice) || 0
+                                            );
+                                          }
+                                        }
+                                      }}
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger
+                                          aria-label={formatMessage(t["purchases.poLineProduct"], {
+                                            n: index + 1,
+                                          })}
+                                          data-testid={`po-line-product-${index}`}
+                                        >
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        <SelectItem value="none">
+                                          {t["purchases.poNoProduct"]}
+                                        </SelectItem>
+                                        {stockProducts.map((p) => (
+                                          <SelectItem key={p.id} value={p.id}>
+                                            {p.sku ? `${p.sku} - ` : ""}
+                                            {locale === "ar" && p.nameAr ? p.nameAr : p.name}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </FormItem>
+                                )}
+                              />
+                              <FormField
+                                control={form.control}
+                                name={`lines.${index}.description`}
+                                render={({ field }) => (
+                                  <FormItem>
+                                    <FormControl>
+                                      <Input
+                                        {...field}
+                                        dir="auto"
+                                        placeholder={t.description}
+                                        aria-label={formatMessage(t["forms.lineDescription"], {
+                                          n: index + 1,
+                                        })}
+                                      />
+                                    </FormControl>
+                                    <FormMessage />
+                                  </FormItem>
+                                )}
+                              />
+                            </div>
                           }
                         >
                           <FormField

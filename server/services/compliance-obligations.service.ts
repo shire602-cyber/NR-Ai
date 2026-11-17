@@ -420,6 +420,8 @@ function deriveStatus(
   const derived = (DERIVED_STATUS_TYPES as readonly string[]).includes(spec.type);
   if (spec.completed === true) return "completed";
   if (!derived && (current === "completed" || current === "dismissed")) return current;
+  // X4 (J3): derived rows marked "not applicable" (e.g. before the company used Muhasib) stay so.
+  if (derived && current === "dismissed") return current;
   return spec.dueDate < today ? "overdue" : "upcoming";
 }
 

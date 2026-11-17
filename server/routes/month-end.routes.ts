@@ -9,6 +9,7 @@ import { zText, zUuid } from "../../shared/validators/primitives";
 import {
   CLOSE_STEP_KEYS,
   aiValidation,
+  assertFiscalYearEnd,
   closeFiscalYear,
   createReopenRequest,
   decideReopenRequest,
@@ -616,6 +617,7 @@ export function registerMonthEndRoutes(app: Express) {
       const fye = parseReportDate(body.fiscalYearEnd, "fiscalYearEnd");
       if (!fye) throw new DomainError("FISCAL_YEAR_END_REQUIRED", 400);
       await requireCloseRole(req, companyId);
+      await assertFiscalYearEnd(companyId, fye);
       const { checklist, overridden } = await enforceChecklist(companyId, fye, body);
       const snapshot = checklist.map((c) => ({ id: c.id, title: c.title, status: c.status }));
       const result = await closeFiscalYear(companyId, fye, req.user!.id, {

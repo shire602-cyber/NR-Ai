@@ -24,7 +24,13 @@ export show the rates as unconfirmed.
 | Notice pay in lieu     | Gross wage / 30 per day                                                                              | Art. 43                                                                                            | —                                                                                                                                   |
 | Leave encashment       | Basic wage / 30 per untaken annual-leave day                                                         | Art. 29 reading                                                                                    | Confirm basic vs gross for encashment.                                                                                              |
 | Annual leave           | 30 days/year accrued monthly                                                                         | Art. 29 (2 days/month between 6 and 12 months of service)                                          | The first-year 2-days-per-month rule is approximated by monthly accrual.                                                            |
+| Partial month          | Fixed pay (basic + allowances) x days on the payroll in the month / calendar days in the month       | Engineering reading (X4): joiners from the join date, leavers through the termination date         | Whether a 30-day month should be used instead of calendar days.                                                                     |
 | Settlement due date    | A `task.due` event 14 days after termination                                                         | Art. 53                                                                                            | —                                                                                                                                   |
+
+Final month of a leaver: the payroll run for the month of termination pays the salary for the
+days worked (once); the end-of-service settlement covers gratuity, notice pay in lieu, leave
+encashment and other items only. Once a settlement exists, that run accrues no further
+gratuity (the settlement already settled the whole entitlement against the provision).
 
 ## WPS Salary Information File (external boundary)
 
@@ -32,6 +38,8 @@ export show the rates as unconfirmed.
 employee, then one SCR) and a validator that parses it back. File name: 13-digit MOHRE
 establishment id + `YYMMDDHHMMSS` + `.SIF`. Individual banks and exchange houses (WPS agents)
 publish their own variants; confirm the agent's template before the first submission.
+The EDR "days on leave" field carries unpaid leave days only (paid annual leave is salary paid in
+full, so it does not explain a lower fixed component); confirm this reading with the WPS agent.
 Submission and the bank transfer happen outside Muhasib.ai. The WPS status on a run
 (submitted / accepted / rejected) is entered by the user and never inferred.
 

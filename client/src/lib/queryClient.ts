@@ -98,9 +98,12 @@ async function buildRequestHeaders(
 export async function apiRequest(
   method: string,
   url: string,
-  data?: unknown | undefined
+  data?: unknown | undefined,
+  /** Extra request headers, e.g. `X-Period-Lock-Reason` for an audited soft-lock override. */
+  extraHeaders?: Record<string, string>
 ): Promise<any> {
-  let headers = await buildRequestHeaders(method, data);
+  const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
+  let headers = withExtra(await buildRequestHeaders(method, data));
 
   const fullUrl = apiUrl(url);
   const upperMethod = method.toUpperCase();
@@ -124,7 +127,7 @@ export async function apiRequest(
   if (res.status === 401) {
     const refreshed = await refreshSession();
     if (refreshed) {
-      headers = await buildRequestHeaders(method, data);
+      headers = withExtra(await buildRequestHeaders(method, data));
       res = await fetch(fullUrl, {
         method,
         headers,

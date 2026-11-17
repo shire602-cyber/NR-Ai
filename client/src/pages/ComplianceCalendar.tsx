@@ -366,7 +366,7 @@ export default function ComplianceCalendar() {
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-sm truncate">{event.title}</p>
                             <p className="text-xs text-muted-foreground">
-                              {format(event.date, "MMM d, yyyy")}
+                              {format(event.date, "MMM d, yyyy", dateFnsOptions(locale))}
                             </p>
                           </div>
                           <Badge

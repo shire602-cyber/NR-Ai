@@ -156,7 +156,7 @@ async function createAssetRecord(
             purchase_date, purchase_cost, salvage_value, useful_life_years, depreciation_method,
             accumulated_depreciation, net_book_value, location, serial_number, notes, needs_capitalization_je,
             is_depreciable, cost_account_id, accumulated_account_id, expense_account_id, cost_center_id,
-            tax_useful_life_years, tax_depreciation_method)
+            tax_useful_life_years, tax_depreciation_method, acquisition_vat)
           VALUES (${companyId}, ${body.assetName}, ${body.assetNameAr ?? null}, ${body.assetNumber ?? null},
             ${body.category}, ${body.assetClassId ?? null}, ${body.purchaseDate}, ${cost},
             ${fromFils(body.salvageValue ?? 0)}, ${life},
@@ -165,7 +165,8 @@ async function createAssetRecord(
             ${body.costAccountId ?? cls?.cost_account_id ?? null},
             ${body.accumulatedAccountId ?? cls?.accumulated_account_id ?? null},
             ${body.expenseAccountId ?? cls?.expense_account_id ?? null}, ${body.costCenterId ?? null},
-            ${body.taxUsefulLifeYears ?? cls?.tax_useful_life_years ?? null}, ${body.taxDepreciationMethod ?? null})
+            ${body.taxUsefulLifeYears ?? cls?.tax_useful_life_years ?? null}, ${body.taxDepreciationMethod ?? null},
+            ${fromFils(body.paymentAccountId && body.inputVat ? body.inputVat : 0)})
           RETURNING id`
     );
     const asset = await loadAsset(tx, row.id, { lock: true });

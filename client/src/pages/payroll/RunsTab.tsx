@@ -56,18 +56,23 @@ import {
   errorMessage,
   monthName,
   useHr,
+  isCashOrBankAccount,
   type PayrollItem,
   type PayrollRun,
   type SifIssue,
 } from "./shared";
 import { StatusBadge } from "./StatusBadge";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { canPerform, companyAccessQueryKey, type CompanyAccess } from "@/lib/auth";
 
 interface Account {
   id: string;
   code: string;
   nameEn: string;
   type: string;
+  subType?: string | null;
   isArchived?: boolean;
+  isActive?: boolean;
 }
 
 export function RunsTab({ companyId }: { companyId: string }) {
@@ -78,6 +83,22 @@ export function RunsTab({ companyId }: { companyId: string }) {
   const { data: accounts = [] } = useQuery<Account[]>({
     queryKey: [`/api/companies/${companyId}/accounts`],
   });
+  // X4 (J3): hide-with-reason the approve action for users who cannot approve.
+  const { data: access } = useQuery<CompanyAccess>({
+    queryKey: companyAccessQueryKey(companyId),
+  });
+  const { data: me } = useCurrentUser();
+  const { data: payrollSettings } = useQuery<{ selfApprovalAllowed?: boolean }>({
+    queryKey: [`/api/companies/${companyId}/payroll/settings`],
+  });
+  const approveBlockedReason = (r: PayrollRun): string | null => {
+    if (access && !canPerform(access, "payroll.approve")) return tx("hr.approveNeedsPermission");
+    const preparer = r.calculated_by ?? r.created_by;
+    if (me?.id && preparer === me.id && !payrollSettings?.selfApprovalAllowed) {
+      return tx("hr.approveNeedsSecondPerson");
+    }
+    return null;
+  };
   const [viewing, setViewing] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [month, setMonth] = useState(String(new Date().getMonth() + 1));
@@ -146,7 +167,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
     }
   };
 
-  const bankAccounts = accounts.filter((a) => a.type === "asset" && !a.isArchived);
+  const bankAccounts = accounts.filter(isCashOrBankAccount);
 
   if (run) {
     return (
@@ -176,11 +197,20 @@ export function RunsTab({ companyId }: { companyId: string }) {
         <Button
           size="sm"
           variant="outline"
+          disabled={!!approveBlockedReason(r)}
+          title={approveBlockedReason(r) ?? undefined}
+          aria-describedby={approveBlockedReason(r) ? `approve-reason-${r.id}` : undefined}
+          data-testid={`button-approve-run-${r.id}`}
           onClick={() => action.mutate({ id: r.id, path: "approve" })}
         >
           <CheckCircle className="me-1.5 h-4 w-4" aria-hidden />
           {tx("hr.approve")}
         </Button>
+      )}
+      {r.status === "calculated" && approveBlockedReason(r) && (
+        <span id={`approve-reason-${r.id}`} className="sr-only">
+          {approveBlockedReason(r)}
+        </span>
       )}
       {r.status === "approved" && (
         <Button size="sm" variant="outline" onClick={() => setPayRun(r)}>

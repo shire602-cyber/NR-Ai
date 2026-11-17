@@ -255,6 +255,56 @@ async function loadPayroll(companyId: string, today: IsoDate, to: IsoDate) {
   return out;
 }
 
+/**
+ * X4 (J3): known payroll liabilities that are not a monthly run: posted-but-unpaid final
+ * settlements (Salaries Payable, due 14 days after termination — Art. 53 reading) and the
+ * GPSSA contribution balance (2032 Pension Payable, assumed due on the 15th of next month).
+ */
+async function loadPayrollLiabilities(companyId: string, today: IsoDate, to: IsoDate) {
+  const out: ForecastItem[] = [];
+  const { rows } = await db.query(
+    `SELECT s.id, s.net_amount, to_char(s.termination_date, 'YYYY-MM-DD') AS term, e.full_name
+       FROM payroll_settlements s JOIN employees e ON e.id = s.employee_id
+      WHERE s.company_id = $1 AND s.status = 'posted' AND s.net_amount > 0`,
+    [companyId]
+  );
+  for (const r of rows) {
+    const due = addDays(String(r.term), 14);
+    const date = due < today ? today : due;
+    if (date > to) continue;
+    out.push({
+      kind: "payroll",
+      date,
+      amount: -(Number(r.net_amount) || 0),
+      description: `Final settlement – ${r.full_name}`,
+      sourceId: String(r.id),
+      note: due < today ? "Past the 14-day settlement deadline; assumed paid today" : undefined,
+    });
+  }
+  const [accounts, totals] = await Promise.all([
+    loadAccounts(companyId),
+    accountTotals(companyId, { to: today }),
+  ]);
+  const pension = accounts.find((a) => a.code === "2032" && a.type === "liability");
+  if (pension) {
+    const balanceFils = naturalBalance("liability", totals.get(pension.id));
+    if (balanceFils > 0) {
+      const date = addDays(monthEnd(today), 15);
+      if (date <= to) {
+        out.push({
+          kind: "payroll",
+          date,
+          amount: -aed(balanceFils),
+          description: "GPSSA pension contributions payable",
+          sourceId: pension.id,
+          note: "Amount = 2032 Pension Payable balance; due date assumed (15th of next month)",
+        });
+      }
+    }
+  }
+  return out;
+}
+
 async function loadTaxDues(companyId: string, today: IsoDate, to: IsoDate) {
   const out: ForecastItem[] = [];
   const [accounts, totals, fy] = await Promise.all([
@@ -270,7 +320,8 @@ async function loadTaxDues(companyId: string, today: IsoDate, to: IsoDate) {
     else if (a.type === "asset") vatNet -= naturalBalance("asset", t);
   }
   const calendar = await db.query(
-    `SELECT id, event_type, description, ${localDate("event_date")} AS d, status
+    `SELECT id, event_type, description, ${localDate("event_date")} AS d, status,
+            period_start::text AS period_start, period_end::text AS period_end
        FROM compliance_calendar
       WHERE company_id = $1 AND status <> 'completed'
         AND event_date::date BETWEEN $2::date AND $3::date`,
@@ -286,7 +337,11 @@ async function loadTaxDues(companyId: string, today: IsoDate, to: IsoDate) {
         kind: "vat",
         date: String(r.d),
         amount: -aed(vatNet),
-        description: String(r.description || "VAT return payment"),
+        // X4 (J3): a template sentence (localised in the UI), never the calendar's free text.
+        description:
+          r.period_start && r.period_end
+            ? `VAT return payment ${String(r.period_start).slice(0, 10)} to ${String(r.period_end).slice(0, 10)}`
+            : "VAT return payment",
         sourceId: String(r.id),
         note: "Amount = current VAT payable balance in the ledger",
       });
@@ -328,7 +383,10 @@ async function loadTaxDues(companyId: string, today: IsoDate, to: IsoDate) {
         kind: "corporate_tax",
         date: String(r.d),
         amount: -aed(fils(ct.taxPayable)),
-        description: String(r.description || "Corporate tax payment"),
+        description:
+          r.period_start && r.period_end
+            ? `Corporate tax payment ${String(r.period_start).slice(0, 10)} to ${String(r.period_end).slice(0, 10)}`
+            : "Corporate tax payment",
         sourceId: String(r.id),
         note: "Estimate from fiscal-year-to-date ledger profit",
       });
@@ -390,15 +448,17 @@ export async function generateCashFlowForecast(
   if (delay > 0) assumptionCopy.push(cashForecastCopy("cashForecast.assumeDelay", { days: delay }));
   const assumptions = assumptionCopy.map((c) => c.text);
 
-  const [accts, ar, ap, scheduled, recurring, payroll, taxes] = await Promise.all([
-    resolveCashAccounts(companyId, today, opts.accountIds ?? []),
-    agedReceivables({ companyId, asOf: today }),
-    agedPayables({ companyId, asOf: today }),
-    loadScheduledItems(companyId, today, horizonEnd),
-    loadRecurringInvoices(companyId, today, horizonEnd),
-    loadPayroll(companyId, today, horizonEnd),
-    loadTaxDues(companyId, today, horizonEnd),
-  ]);
+  const [accts, ar, ap, scheduled, recurring, payroll, taxes, payrollLiabilities] =
+    await Promise.all([
+      resolveCashAccounts(companyId, today, opts.accountIds ?? []),
+      agedReceivables({ companyId, asOf: today }),
+      agedPayables({ companyId, asOf: today }),
+      loadScheduledItems(companyId, today, horizonEnd),
+      loadRecurringInvoices(companyId, today, horizonEnd),
+      loadPayroll(companyId, today, horizonEnd),
+      loadTaxDues(companyId, today, horizonEnd),
+      loadPayrollLiabilities(companyId, today, horizonEnd),
+    ]);
 
   const openingFils = accts.reduce((s, a) => s + fils(a.balance), 0);
   const items: ForecastItem[] = [];
@@ -442,7 +502,7 @@ export async function generateCashFlowForecast(
     const date = delay > 0 ? addDays(r.date, delay) : r.date;
     if (date <= horizonEnd) items.push({ ...r, date });
   }
-  items.push(...scheduled, ...payroll, ...taxes);
+  items.push(...scheduled, ...payroll, ...payrollLiabilities, ...taxes);
   for (const a of opts.adjustments ?? []) {
     items.push({
       kind: "what_if",

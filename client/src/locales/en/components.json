@@ -735,5 +735,11 @@
   "components.srv.reportDelivery.handoff.blocked": "The latest delivery was blocked and nothing was sent.",
   "components.srv.reportDelivery.handoff.recover": "Recover the latest failed delivery before queueing again.",
   "components.srv.reportDelivery.handoff.reportsReady": "{ready}/{total} reports are ready for this delivery.",
-  "components.srv.reportDelivery.handoff.readiness": "Latest delivery readiness is {status}."
+  "components.srv.reportDelivery.handoff.readiness": "Latest delivery readiness is {status}.",
+  "components.srv.cashForecast.item.vatPaymentPeriod": "VAT return payment {from} to {to}",
+  "components.srv.cashForecast.item.corporateTaxPaymentPeriod": "Corporate tax payment {from} to {to}",
+  "components.srv.cashForecast.item.finalSettlement": "Final settlement – {name}",
+  "components.srv.cashForecast.item.gpssa": "GPSSA pension contributions payable",
+  "components.srv.cashForecast.note.settlementOverdue": "Past the 14-day settlement deadline; assumed paid today",
+  "components.srv.cashForecast.note.gpssa": "Amount = 2032 Pension Payable balance; due date assumed (15th of next month)"
 }

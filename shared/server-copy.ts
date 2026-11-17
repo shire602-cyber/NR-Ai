@@ -336,6 +336,18 @@ export const CASH_FORECAST_ITEM_TEMPLATES: readonly CopyTemplate[] = [
   T("cashForecast.item.vatPaymentDraft", "VAT return payment (latest draft return)"),
   T("cashForecast.item.vatPayment", "VAT return payment"),
   T("cashForecast.item.corporateTaxPayment", "Corporate tax payment"),
+  T("cashForecast.item.vatPaymentPeriod", "VAT return payment {from} to {to}"),
+  T("cashForecast.item.corporateTaxPaymentPeriod", "Corporate tax payment {from} to {to}"),
+  T("cashForecast.item.finalSettlement", "Final settlement – {name}"),
+  T("cashForecast.item.gpssa", "GPSSA pension contributions payable"),
+  T(
+    "cashForecast.note.settlementOverdue",
+    "Past the 14-day settlement deadline; assumed paid today"
+  ),
+  T(
+    "cashForecast.note.gpssa",
+    "Amount = 2032 Pension Payable balance; due date assumed (15th of next month)"
+  ),
   T(
     "cashForecast.note.overdueReceivable",
     "Overdue by {days} day(s); recovery date is an assumption[; delayed {delay} day(s)]"

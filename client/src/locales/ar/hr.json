@@ -210,5 +210,17 @@
   "hr.settingsSaved": "تم حفظ الإعدادات",
   "hr.legal.pension": "المعاشات (الإمارات): الموظف {employee} وصاحب العمل {employer} من {base}",
   "hr.legal.gratuity": "المكافأة: {first} يوماً لكل سنة (1-5) ثم {later} يوماً؛ الحد {cap} شهراً من الأساسي",
-  "hr.legal.overtime": "معاملات العمل الإضافي: {normal} عادي و{night} ليلي/راحة"
+  "hr.legal.overtime": "معاملات العمل الإضافي: {normal} عادي و{night} ليلي/راحة",
+  "hr.approveNeedsPermission": "ليست لديك صلاحية اعتماد الرواتب. اطلب ذلك من المالك أو المسؤول أو المعتمِد.",
+  "hr.approveNeedsSecondPerson": "أنت من احتسب هذه الدورة، لذا يجب أن يعتمدها شخص آخر.",
+  "hr.fixFields": "تحقق من هذه الحقول: {fields}",
+  "hr.duplicate.employeeNumber": "رقم الموظف هذا مستخدم لموظف آخر",
+  "hr.duplicate.iban": "رقم الآيبان هذا مستخدم لموظف آخر",
+  "hr.duplicate.emiratesId": "رقم الهوية الإماراتية هذا مستخدم لموظف آخر",
+  "hr.settlementPayFrom": "سداد التسوية",
+  "hr.settlementPayLater": "لاحقًا (تبقى في الرواتب المستحقة)",
+  "hr.settlementPaid": "تم تسجيل سداد التسوية",
+  "hr.settlementPayHint": "سداد {amount} إلى {name} من حساب نقدي أو بنكي. يؤدي ذلك إلى تسوية الرواتب المستحقة.",
+  "hr.settlementFinalSalaryNote": "يُدفع راتب الأيام المعمول بها في {month} {year} ضمن دورة رواتب ذلك الشهر، وليس ضمن هذه التسوية.",
+  "hr.field.openingGratuityProvision": "مخصص مكافأة نهاية الخدمة الافتتاحي عند بدء الاستخدام (د.إ، مسجل في 2036)"
 }

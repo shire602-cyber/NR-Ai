@@ -151,5 +151,10 @@
   "compliance.autopilotAdjustmentLabel": "Adjustment (AED)",
   "compliance.autopilotAmountInvalid": "Amount must be a non-zero number (negatives allowed for corrections).",
   "compliance.autopilotReasonPlaceholder": "e.g. VAT correction for invoice INV-2026-00042",
-  "compliance.autopilotVatSuffix": "VAT"
+  "compliance.autopilotVatSuffix": "VAT",
+  "compliance.notApplicable": "Not applicable",
+  "compliance.notApplicableHint": "Use this for an obligation that does not apply here, for example a period before you started using Muhasib that was filed elsewhere. The note is kept in the audit trail.",
+  "compliance.notApplicableReason": "Why it does not apply",
+  "compliance.markedNotApplicable": "Marked as not applicable",
+  "compliance.cancelAction": "Cancel"
 }

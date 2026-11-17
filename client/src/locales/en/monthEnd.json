@@ -46,5 +46,6 @@
   "monthEnd.debitAed": "Debit (AED)",
   "monthEnd.creditAed": "Credit (AED)",
   "monthEnd.summaryReady": "Ready to close. All {total} checks passed. You can proceed with previewing the close and locking the period.",
-  "monthEnd.summaryNotReady": "Not ready to close: {done}/{total} checks passed. Outstanding issues:"
+  "monthEnd.summaryNotReady": "Not ready to close: {done}/{total} checks passed. Outstanding issues:",
+  "monthEnd.reasonMin3": "Enter at least 3 characters"
 }

@@ -41,6 +41,8 @@ import {
 import { fromFils, sumFils } from "../../../shared/money";
 import {
   calculatePayrollLine,
+  employedDaysInPeriod,
+  prorateWages,
   gratuityAccrualTrueUpFils,
   gratuityEntitlement,
   isoDay,
@@ -141,6 +143,7 @@ interface EmployeeRow extends Row {
   housing_allowance: unknown;
   transport_allowance: unknown;
   other_allowance: unknown;
+  opening_gratuity_provision?: unknown;
   salary_currency: string | null;
   cost_center_id: string | null;
   department: string | null;
@@ -344,12 +347,19 @@ export async function calculateRun(
       tx
     );
 
-    const employees = await q<EmployeeRow>(
-      `SELECT * FROM employees
-        WHERE company_id = $1 AND status = 'active' AND archived_at IS NULL
-          AND (join_date IS NULL OR join_date::date <= $2::date)
-          AND (termination_date IS NULL OR termination_date >= $3::date)
-        ORDER BY full_name`,
+    // X4 (J3): an employee terminated inside the period (status 'terminated' once the final
+    // settlement posts) is still paid for the days worked in that month — exactly once, here;
+    // the settlement covers gratuity, notice and leave only.
+    const employees = await q<EmployeeRow & { has_settlement: boolean }>(
+      `SELECT e.*, EXISTS (SELECT 1 FROM payroll_settlements s
+                            WHERE s.employee_id = e.id AND s.status <> 'reversed') AS has_settlement
+         FROM employees e
+        WHERE e.company_id = $1 AND e.archived_at IS NULL
+          AND (e.status = 'active'
+               OR (e.status = 'terminated' AND e.termination_date IS NOT NULL))
+          AND (e.join_date IS NULL OR e.join_date::date <= $2::date)
+          AND (e.termination_date IS NULL OR e.termination_date >= $3::date)
+        ORDER BY e.full_name`,
       [companyId, periodEnd, periodStart],
       tx
     );
@@ -381,10 +391,32 @@ export async function calculateRun(
         raw,
         periodEnd
       );
-      const [basicFils, housingFils, transportFils, otherFils] = converted;
       const join = dayOf(emp.join_date);
+      const termination = dayOf(emp.termination_date);
+      // Partial month (joiner / leaver): fixed pay x employed days / days in the month.
+      const { employedDays, monthDays } = employedDaysInPeriod(
+        periodStart,
+        periodEnd,
+        join,
+        termination
+      );
+      const monthlyBasicFils = converted[0];
+      const prorated = prorateWages(
+        {
+          basicFils: converted[0],
+          housingFils: converted[1],
+          transportFils: converted[2],
+          otherFils: converted[3],
+        },
+        employedDays,
+        monthDays
+      );
+      const { basicFils, housingFils, transportFils, otherFils } = prorated;
+      // Gratuity accrues to the last day of service; once a final settlement exists it has
+      // already settled the whole entitlement against the provision, so nothing more accrues.
+      const serviceEnd = termination && termination < periodEnd ? termination : periodEnd;
       const unpaidServiceDays = join
-        ? await unpaidLeaveDaysBetween(companyId, emp.id, join, periodEnd, tx)
+        ? await unpaidLeaveDaysBetween(companyId, emp.id, join, serviceEnd, tx)
         : 0;
       const empLeave = leave.get(emp.id) ?? { paid: 0, unpaid: 0 };
       const line = calculatePayrollLine(
@@ -395,12 +427,16 @@ export async function calculateRun(
           otherFils,
           nationality: emp.nationality,
           unpaidLeaveDays: empLeave.unpaid,
-          gratuityAccrualFils: gratuityAccrualFor(emp, basicFils, {
-            params,
-            periodEnd,
-            accrued: accrued.get(emp.id) ?? 0,
-            unpaidServiceDays,
-          }),
+          gratuityAccrualFils: emp.has_settlement
+            ? 0
+            : gratuityAccrualFor(emp, monthlyBasicFils, {
+                params,
+                periodEnd: serviceEnd,
+                unpaidServiceDays,
+                // X4 (J3): a provision booked before go-live (opening balance) counts as accrued,
+                // so the first run accrues only the month, not the whole service history.
+                accrued: (accrued.get(emp.id) ?? 0) + fils(emp.opening_gratuity_provision ?? 0),
+              }),
         },
         params
       );
@@ -411,10 +447,16 @@ export async function calculateRun(
           : fromFils(
               calculatePayrollLine(
                 {
-                  basicFils: raw[0],
-                  housingFils: raw[1],
-                  transportFils: raw[2],
-                  otherFils: raw[3],
+                  ...prorateWages(
+                    {
+                      basicFils: raw[0],
+                      housingFils: raw[1],
+                      transportFils: raw[2],
+                      otherFils: raw[3],
+                    },
+                    employedDays,
+                    monthDays
+                  ),
                   nationality: emp.nationality,
                   unpaidLeaveDays: empLeave.unpaid,
                 },

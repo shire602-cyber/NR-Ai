@@ -64,7 +64,16 @@ const assetFields = {
 };
 
 export const createFixedAssetBody = z
-  .object({ ...assetFields, paymentAccountId: zUuid.optional().nullable() })
+  .object({
+    ...assetFields,
+    paymentAccountId: zUuid.optional().nullable(),
+    /** X4: recoverable input VAT paid with the asset (fils); needs a payment account. */
+    inputVat: zMoneyFils.optional().nullable(),
+  })
+  .refine((v) => !v.inputVat || !!v.paymentAccountId, {
+    message: "Input VAT needs the account the asset was paid from",
+    path: ["inputVat"],
+  })
   .refine((v) => (v.salvageValue ?? 0) <= v.purchaseCost, {
     message: "salvageValue cannot exceed purchaseCost",
     path: ["salvageValue"],

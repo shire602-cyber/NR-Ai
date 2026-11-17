@@ -138,14 +138,29 @@ export const CT_TRANSITION_TARGETS = ["computed", "reviewed", "filed", "paid", "
 export const transitionCtReturnSchema = z
   .object({
     to: z.enum(CT_TRANSITION_TARGETS),
-    /** Filing: the reference number shown by EmaraTax after manual upload. */
+    /** Filing: the reference number shown by EmaraTax after manual upload (required to file). */
     filingReference: zText(120).optional(),
+    /** Filing: the date the return was filed in EmaraTax (default today; never in the future). */
+    filedOn: zDateIn({ min: "2023-01-01", maxDaysAhead: 0 }).optional(),
     /** Filing: post the CT provision (Dr tax expense / Cr CT payable). */
     postProvision: z.boolean().optional(),
     note: zText(1000).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    // X4 (J3): recording a return as filed needs the EmaraTax reference as evidence.
+    if (v.to === "filed" && (v.filingReference ?? "").trim().length < 3) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["filingReference"],
+        message: "Enter the EmaraTax filing reference",
+      });
+    }
+  });
 export type TransitionCtReturnBody = z.output<typeof transitionCtReturnSchema>;
+
+/** X4 (J3): undo "record as filed" (wrong click / wrong reference); reason is audited. */
+export const unfileCtReturnSchema = z.object({ reason: zText(1000, { min: 3 }) }).strict();
 
 export const amendCtReturnSchema = z.object({ reason: zText(1000, { min: 3 }) }).strict();
 

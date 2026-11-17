@@ -26,6 +26,7 @@ import { assertDifferentActor, companyHasSingleMember } from "../../middleware/c
 import type { CorporateTaxReturn } from "../../../shared/schema";
 import { computeReturnState, uaeIsoDate, type ComputeOverrides } from "./engine";
 import { ensureCtTagAccounts } from "./repository";
+import { assertPeriodNotLocked } from "../period-lock.service";
 
 export const CT_RETURN_STATES = [
   "draft",
@@ -44,7 +45,8 @@ export const ctReturnMachine = defineMachine<CtReturnStatus>({
     draft: ["computed", "void"],
     computed: ["reviewed", "void"],
     reviewed: ["computed", "filed"],
-    filed: ["paid", "amended"],
+    // filed -> reviewed is "mark not filed" (unfileCtReturn): audited, with a reason.
+    filed: ["paid", "amended", "reviewed"],
     paid: ["amended"],
   },
 });
@@ -207,6 +209,8 @@ export async function recomputeAndSave(
 export interface TransitionInput {
   to: "computed" | "reviewed" | "filed" | "paid" | "void";
   filingReference?: string;
+  /** ISO date the return was filed in EmaraTax (default: today). */
+  filedOn?: string;
   postProvision?: boolean;
   note?: string;
 }
@@ -226,6 +230,13 @@ async function postProvision(
   const payable = accounts.get("corporate_tax_payable");
   if (!expense || !payable) throw new DomainError("CT_PROVISION_ACCOUNTS_MISSING", 500);
   const periodEnd = uaeIsoDate(ctReturn.taxPeriodEnd);
+  // A return marked not filed had its provision reversed; re-filing posts a fresh one.
+  const unfiled = await pool.query(
+    `SELECT count(*)::int AS n FROM audit_logs
+      WHERE company_id = $1 AND resource_id = $2 AND action = 'corporate_tax_return.unfiled'`,
+    [ctReturn.companyId, ctReturn.id]
+  );
+  const refile = Number(unfiled.rows[0]?.n ?? 0);
   const result = await postJournal(
     {
       companyId: ctReturn.companyId,
@@ -233,7 +244,7 @@ async function postProvision(
       memo: `Corporate tax provision ${uaeIsoDate(ctReturn.taxPeriodStart)} to ${periodEnd}`,
       source: CT_PROVISION_SOURCE,
       sourceId: ctReturn.id,
-      idempotencyKey: `ct-return:${ctReturn.id}:provision`,
+      idempotencyKey: `ct-return:${ctReturn.id}:provision${refile > 0 ? `:refile-${refile}` : ""}`,
       status: "posted",
       lines: [
         { accountId: expense.id, debitFils: fils, description: "Corporate tax expense" },
@@ -283,11 +294,26 @@ export async function transitionCtReturn(
       break;
     }
     case "filed": {
+      const reference = (input.filingReference ?? "").trim();
+      if (reference.length < 3) {
+        throw new DomainError(
+          "CT_FILING_REFERENCE_REQUIRED",
+          422,
+          undefined,
+          "Enter the EmaraTax filing reference"
+        );
+      }
+      // The provision is a ledger posting dated period end: check the period lock BEFORE the
+      // status changes, so a locked period never leaves a return "filed" without its provision.
+      // A soft lock passes with an audited X-Period-Lock-Reason.
+      if (input.postProvision && (Number(ctReturn.taxPayable) || 0) > 0) {
+        await assertPeriodNotLocked(ctReturn.companyId, uaeIsoDate(ctReturn.taxPeriodEnd));
+      }
       updated = await updateIfStatus(ctReturn.id, ctReturn.companyId, from, {
         status: "filed",
-        filedAt: new Date(),
+        filedAt: input.filedOn ? new Date(`${input.filedOn}T00:00:00.000Z`) : new Date(),
         filedBy: userId,
-        filingReference: input.filingReference ?? null,
+        filingReference: reference,
       });
       if (input.postProvision) {
         const entryId = await postProvision(updated, userId, req);
@@ -312,6 +338,52 @@ export async function transitionCtReturn(
       throw new DomainError("INVALID_TRANSITION", 409);
   }
   await audit(input.to, userId, ctReturn, updated, req, extra);
+  return updated;
+}
+
+/**
+ * X4 (J3): "mark not filed" — undo a mistaken "record as filed" (filed, not yet paid).
+ * The return goes back to `reviewed`, the filing reference/date are cleared, any CT
+ * provision posted at filing is reversed, and the reason is audited.
+ */
+export async function unfileCtReturn(
+  ctReturn: CorporateTaxReturn,
+  userId: string,
+  reason: string,
+  req?: Request
+): Promise<CorporateTaxReturn> {
+  if (ctReturn.status !== "filed") {
+    throw new DomainError(
+      "CT_RETURN_NOT_FILED",
+      409,
+      { status: ctReturn.status },
+      "Only a filed (unpaid) return can be marked as not filed; amend paid returns instead"
+    );
+  }
+  assertTransition(ctReturnMachine, ctReturn.status, "reviewed");
+  let reversalId: string | null = null;
+  if (ctReturn.provisionEntryId) {
+    const reversals = await reverseBySource(
+      ctReturn.companyId,
+      CT_PROVISION_SOURCE,
+      ctReturn.id,
+      { reason: `Corporate tax return marked not filed: ${reason}` },
+      { actorId: userId, req, companyId: ctReturn.companyId }
+    );
+    reversalId = reversals[0]?.reversal.id ?? null;
+  }
+  const updated = await updateIfStatus(ctReturn.id, ctReturn.companyId, ["filed"], {
+    status: "reviewed",
+    filedAt: null,
+    filedBy: null,
+    filingReference: null,
+    provisionEntryId: null,
+  });
+  await audit("unfiled", userId, ctReturn, updated, req, {
+    reason,
+    previousFilingReference: ctReturn.filingReference ?? null,
+    provisionReversalEntryId: reversalId,
+  });
   return updated;
 }
 

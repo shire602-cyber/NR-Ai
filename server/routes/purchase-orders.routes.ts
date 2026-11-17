@@ -657,11 +657,16 @@ export function registerPurchaseOrderRoutes(app: Express) {
         // Inventory hand-off (F2): stock + GRNI post inside this receipt's transaction, so the
         // response is sent only after both commit and an inventory failure rolls the receipt back.
         let inventoryUpdated = false;
+        // X4 (J3): a line without a product is a non-stock purchase (service, expense): the
+        // receipt records quantities only and posts nothing, and the response says so.
+        const unlinkedLineIds = wanted
+          .filter((w) => !after.find((x) => x.id === w.lineId)?.productId)
+          .map((w) => w.lineId);
         if (has("inventory.onGoodsReceived")) {
-          const fn = resolve<(e: unknown, outer?: unknown) => Promise<unknown> | unknown>(
-            "inventory.onGoodsReceived"
-          );
-          await fn(
+          const fn = resolve<
+            (e: unknown, outer?: unknown) => Promise<{ entryId?: string | null } | unknown>
+          >("inventory.onGoodsReceived");
+          const posted = await fn(
             {
               companyId: po.companyId,
               purchaseOrderId: po.id,
@@ -680,9 +685,15 @@ export function registerPurchaseOrderRoutes(app: Express) {
             },
             tx
           );
-          inventoryUpdated = true;
+          inventoryUpdated = !!(posted as { entryId?: string | null } | null)?.entryId;
         }
-        return { receiptId: receipt.id, status: target, lines: after, inventoryUpdated };
+        return {
+          receiptId: receipt.id,
+          status: target,
+          lines: after,
+          inventoryUpdated,
+          unlinkedLineIds,
+        };
       });
       res.json({
         ...(await storage.getPurchaseOrder(po.id)),
@@ -690,6 +701,17 @@ export function registerPurchaseOrderRoutes(app: Express) {
         lines: result.lines,
         match: matchOf(result.lines),
         inventoryUpdated: result.inventoryUpdated,
+        warnings:
+          result.unlinkedLineIds.length > 0
+            ? [
+                {
+                  code: "PO_LINES_WITHOUT_PRODUCT",
+                  lineIds: result.unlinkedLineIds,
+                  message:
+                    "Lines without a product were received without updating stock or posting to inventory",
+                },
+              ]
+            : [],
         message:
           result.status === "received" ? "Purchase order received" : "Partial receipt recorded",
       });

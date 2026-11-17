@@ -58,5 +58,17 @@
   "corporateTax.workpaperProfitLoss": "الربح / الخسارة (الإيرادات - المصروفات)",
   "corporateTax.workpaperDisclaimer": "هذا جدول داعم لضريبة الشركات. ينشئ مسودة إقرار فقط؛ ولا يقدّم إلى الهيئة الاتحادية للضرائب ولا يرحّل قيودًا محاسبية.",
   "corporateTax.calculatorDescription": "احسب ضريبة الشركات من قيود اليومية لفترة محددة",
-  "corporateTax.workpaperYear": "سنة {year}"
+  "corporateTax.workpaperYear": "سنة {year}",
+  "corporateTax.fileDialogTitle": "تسجيل هذا الإقرار كمقدَّم؟",
+  "corporateTax.fileDialogHint": "لا يقدّم محاسب الإقرارات إلى الهيئة الاتحادية للضرائب. ارفع الإقرار في إمارات تاكس أولًا، ثم أدخل المرجع الذي حصلت عليه. لا يمكن تعديل الإقرار بعد تسجيله كمقدَّم.",
+  "corporateTax.filingReference": "مرجع التقديم في إمارات تاكس",
+  "corporateTax.filedOn": "تاريخ التقديم",
+  "corporateTax.fileDialogProvision": "سيُرحَّل مخصص ضريبة الشركات إلى دفتر الأستاذ بتاريخ نهاية الفترة.",
+  "corporateTax.periodLockedProvision": "تاريخ نهاية الفترة يقع ضمن فترة مقفلة (قفل مرن). يتطلب ترحيل المخصص فيها سببًا يُسجَّل في سجل التدقيق.",
+  "corporateTax.lockOverrideReason": "سبب الترحيل في الفترة المقفلة",
+  "corporateTax.cancelAction": "إلغاء",
+  "corporateTax.markNotFiled": "إلغاء تسجيل التقديم",
+  "corporateTax.markedNotFiled": "تم إلغاء تسجيل تقديم الإقرار",
+  "corporateTax.unfileHint": "استخدم هذا إذا سُجّل الإقرار كمقدَّم عن طريق الخطأ. سيعود إلى حالة \"تمت المراجعة\"، ويُمسح مرجع التقديم، ويُعكس أي مخصص رُحّل عند التقديم. يُحفظ السبب في سجل التدقيق.",
+  "corporateTax.unfileReason": "السبب"
 }

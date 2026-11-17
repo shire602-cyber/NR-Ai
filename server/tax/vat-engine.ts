@@ -67,6 +67,7 @@ export type VatSourceType =
   | "vendor_debit_note"
   | "receipt"
   | "fixed_asset_disposal"
+  | "fixed_asset_acquisition"
   | "bad_debt_relief"
   | "bad_debt_relief_reversal"
   | "return_adjustment"
@@ -309,6 +310,7 @@ async function computeSingle(
   await collectVendorDebitNotes(companyId, from, to, push, counts);
   await collectReceipts(companyId, from, to, eliminateTrns, push, counts);
   await collectFixedAssetDisposals(companyId, from, to, company, push, issues, counts);
+  await collectFixedAssetAcquisitions(companyId, from, to, push, counts);
   await collectBadDebtRelief(companyId, from, to, push, counts);
   await collectReturnAdjustments(companyId, from, to, company, push, issues, counts);
   const vatAccounts = await loadVatAccounts(companyId);
@@ -935,6 +937,49 @@ async function collectFixedAssetDisposals(
       emirate: familyNeedsEmirate(family) ? company.emirate : null,
       family,
       boxes: salesDelta(family, company.emirate, netFils, family === "standard" ? vatFils : 0),
+      category: "fixed_asset_disposals",
+      inLedger: true,
+      ledgerSource: "fixed_asset",
+    });
+  }
+}
+
+/**
+ * X4 (J3): recoverable input VAT paid with a capitalised fixed asset (fixed_assets.acquisition_vat,
+ * Dr 1050 on the capitalisation entry) -> Box 9 standard-rated expenses, dated on the
+ * capitalisation entry. Reversed capitalisations drop out.
+ */
+async function collectFixedAssetAcquisitions(
+  companyId: string,
+  from: string,
+  to: string,
+  push: (c: VatContribution) => void,
+  counts: Record<string, number>
+) {
+  const { rows } = await pool.query(
+    `SELECT fa.id, fa.asset_name, fa.asset_number, fa.purchase_cost, fa.acquisition_vat,
+            to_char(je.date, 'YYYY-MM-DD') AS d
+       FROM fixed_assets fa
+       JOIN journal_entries je ON je.id = fa.capitalization_entry_id AND je.company_id = fa.company_id
+      WHERE fa.company_id = $1 AND COALESCE(fa.acquisition_vat, 0) > 0
+        AND je.date >= $2::date AND je.date <= $3::date
+        AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL`,
+    [companyId, from, to]
+  );
+  for (const r of rows) {
+    const vatFils = fils(r.acquisition_vat);
+    if (vatFils <= 0) continue;
+    counts.fixedAssetAcquisitions = (counts.fixedAssetAcquisitions ?? 0) + 1;
+    push({
+      sourceType: "fixed_asset_acquisition",
+      sourceId: r.id,
+      reference: r.asset_number ?? r.asset_name ?? null,
+      date: r.d,
+      counterparty: null,
+      counterpartyTrn: null,
+      emirate: null,
+      family: "purchase",
+      boxes: { box9ExpensesAmount: fils(r.purchase_cost), box9ExpensesVat: vatFils },
       category: "fixed_asset_disposals",
       inLedger: true,
       ledgerSource: "fixed_asset",

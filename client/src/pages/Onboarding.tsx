@@ -376,7 +376,12 @@ function CustomerOnboarding() {
   async function handleExpressSetup(data: { name: string; emirate: string; trnVatNumber: string }) {
     setExpressSaving(true);
     try {
-      const payload = { ...companyForm, ...data };
+      // A blank express TRN never clears a TRN the company already has (X4/J3).
+      const payload = {
+        ...companyForm,
+        ...data,
+        trnVatNumber: data.trnVatNumber || company?.trnVatNumber || companyForm.trnVatNumber,
+      };
       let target = company;
       if (target) {
         await saveCompanyMutation.mutateAsync(payload);
@@ -518,6 +523,8 @@ function CustomerOnboarding() {
               {currentStep === "welcome" && (
                 <WelcomeStep
                   companyName={company?.name}
+                  companyTrn={company?.trnVatNumber ?? undefined}
+                  companyEmirate={company?.emirate ?? undefined}
                   onNext={goNext}
                   onExpress={handleExpressSetup}
                   expressSaving={expressSaving}
@@ -588,11 +595,15 @@ function CustomerOnboarding() {
 
 function WelcomeStep({
   companyName,
+  companyTrn,
+  companyEmirate,
   onNext,
   onExpress,
   expressSaving,
 }: {
   companyName?: string;
+  companyTrn?: string;
+  companyEmirate?: string;
   onNext: () => void;
   // i18n-ignore: TypeScript type, not UI text
   onExpress: (data: { name: string; emirate: string; trnVatNumber: string }) => Promise<void>;
@@ -601,8 +612,9 @@ function WelcomeStep({
   const { t } = useTranslation();
   const tr = t as Record<string, string>;
   const [name, setName] = useState(companyName ?? "");
-  const [emirate, setEmirate] = useState("dubai");
-  const [trn, setTrn] = useState("");
+  // X4 (J3): prefill from the company so express setup never wipes the TRN given at sign-up.
+  const [emirate, setEmirate] = useState(companyEmirate || "dubai");
+  const [trn, setTrn] = useState(companyTrn ?? "");
   const [error, setError] = useState<string | null>(null);
 
   async function handleExpress() {

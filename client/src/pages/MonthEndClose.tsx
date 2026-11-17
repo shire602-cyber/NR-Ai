@@ -40,6 +40,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { apiFieldErrors, type FieldMessages } from "@/lib/api-field-errors";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   CheckCircle2,
@@ -281,6 +282,7 @@ export default function MonthEndClose() {
   const [fiscalYearEnd, setFiscalYearEnd] = useState(`${now.getFullYear() - 1}-12-31`);
   const [hardClose, setHardClose] = useState(false);
   const [yearEndReason, setYearEndReason] = useState("");
+  const [yearEndFieldErrors, setYearEndFieldErrors] = useState<FieldMessages>({});
 
   const invalidateClose = () => {
     for (const key of ["history", "settings"]) {
@@ -380,6 +382,10 @@ export default function MonthEndClose() {
     },
   });
 
+  const yearEndReasonTooShort = yearEndReason.trim().length > 0 && yearEndReason.trim().length < 3;
+  const yearEndReasonError =
+    yearEndFieldErrors.reason ?? (yearEndReasonTooShort ? t["monthEnd.reasonMin3"] : undefined);
+
   const yearEndMutation = useMutation({
     mutationFn: async () =>
       apiRequest("POST", `/api/companies/${companyId}/month-end/year-end-close`, {
@@ -391,9 +397,12 @@ export default function MonthEndClose() {
     onSuccess: () => {
       toast({ title: t["monthEnd.yearClosed"] });
       setYearEndReason("");
+      setYearEndFieldErrors({});
       invalidateClose();
     },
     onError: (error: Error) => {
+      // X4 (J3): show the rejected field (e.g. reason too short) next to the input.
+      setYearEndFieldErrors(apiFieldErrors(error));
       toast({ title: t["monthEnd.error"], description: error?.message, variant: "destructive" });
     },
   });
@@ -1163,15 +1172,26 @@ export default function MonthEndClose() {
                 <Input
                   id="year-end-reason"
                   value={yearEndReason}
-                  onChange={(e) => setYearEndReason(e.target.value)}
+                  onChange={(e) => {
+                    setYearEndReason(e.target.value);
+                    setYearEndFieldErrors({});
+                  }}
                   placeholder={t["monthEnd.reasonPlaceholder"]}
+                  aria-invalid={yearEndReasonError ? true : undefined}
+                  aria-describedby={yearEndReasonError ? "year-end-reason-error" : undefined}
                 />
+                {yearEndReasonError && (
+                  <p id="year-end-reason-error" className="text-xs text-danger" role="alert">
+                    {yearEndReasonError}
+                  </p>
+                )}
               </div>
               <Button
                 onClick={() => yearEndMutation.mutate()}
                 disabled={
                   yearEndMutation.isPending ||
-                  (overrideChecklist && yearEndReason.trim().length < 3)
+                  (overrideChecklist && yearEndReason.trim().length < 3) ||
+                  (yearEndReason.trim().length > 0 && yearEndReason.trim().length < 3)
                 }
               >
                 <Lock className="h-4 w-4 me-2" />

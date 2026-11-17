@@ -196,15 +196,30 @@ export function registerComplianceCalendarRoutes(app: Express) {
       if (!zUuid.safeParse(eventId).success) throw new DomainError("NOT_FOUND", 404);
       const row = await getCalendarRow(companyId, eventId);
       if (!row) throw new DomainError("NOT_FOUND", 404);
-      if (row.statusDerived) {
-        throw new DomainError(
-          "STATUS_DERIVED",
-          409,
-          { obligationType: row.obligationType },
-          "This obligation's status follows the return; file the return to complete it"
-        );
-      }
       const status = req.body.status as "upcoming" | "completed" | "dismissed";
+      if (row.statusDerived) {
+        // X4 (J3): a return-derived obligation (VAT / CT) can be marked not applicable — e.g. a
+        // period before the company used Muhasib, filed elsewhere — with an audited note, and
+        // that can be undone. Completing it still needs the return itself.
+        const markNa = status === "dismissed" && row.status !== "completed";
+        const undoNa = status === "upcoming" && row.status === "dismissed";
+        if (!markNa && !undoNa) {
+          throw new DomainError(
+            "STATUS_DERIVED",
+            409,
+            { obligationType: row.obligationType },
+            "This obligation's status follows the return; file the return to complete it"
+          );
+        }
+        if (markNa && (req.body.note ?? "").trim().length < 3) {
+          throw new DomainError(
+            "NOTE_REQUIRED",
+            422,
+            { fields: { note: "Say why this obligation does not apply" } },
+            "Say why this obligation does not apply"
+          );
+        }
+      }
       await pool.query(
         `UPDATE compliance_calendar
             SET status = $3, completed_at = CASE WHEN $3 = 'completed' THEN now() END,

@@ -49,5 +49,16 @@
   "purchases.receiptPartsRequired": "A split needs at least two receipts",
   "purchases.receiptPartsTotalMismatch": "The parts must add up to the receipt amount",
   "purchases.receiptReasonRequired": "Enter the reason for the revision",
-  "purchases.poUpgradeDescription": "Create and track purchase orders to your vendors. Manage procurement workflows and match POs to invoices."
+  "purchases.poUpgradeDescription": "Create and track purchase orders to your vendors. Manage procurement workflows and match POs to invoices.",
+  "purchases.claimApproveHint": "Add optional notes and approve this expense claim.",
+  "purchases.claimRejectHint": "Please provide a reason for rejecting this expense claim.",
+  "purchases.claimApprove": "Approve",
+  "purchases.claimReject": "Reject",
+  "purchases.claimPayrollEmployee": "Employee",
+  "purchases.claimPayrollEmployeeHint": "Choose the employee whose next payroll run reimburses this claim.",
+  "purchases.claimPayrollEmployeeMatch": "Match the submitter by email",
+  "purchases.poLineProduct": "Line {n} product",
+  "purchases.poNoProduct": "No product (not stocked)",
+  "purchases.poReceivedNoStock": "Received, but stock was not updated",
+  "purchases.poReceivedNoStockHint": "Some lines have no product, so no stock moved and nothing was posted to inventory for them. Edit the order and choose a product for stocked items."
 }

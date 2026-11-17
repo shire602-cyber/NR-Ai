@@ -286,5 +286,8 @@
   "forms.errors.priceGreaterThanZero": "يجب أن يكون السعر أكبر من صفر",
   "forms.errors.emailAddressInvalid": "عنوان البريد الإلكتروني غير صالح",
   "forms.errors.logoTooLarge": "يجب ألا يتجاوز حجم الشعار 1 ميغابايت",
-  "forms.errors.logoFormat": "يجب أن يكون الشعار رابط https أو صورة بصيغة PNG أو JPEG أو GIF أو WebP"
+  "forms.errors.logoFormat": "يجب أن يكون الشعار رابط https أو صورة بصيغة PNG أو JPEG أو GIF أو WebP",
+  "forms.claim.amountExclVatAed": "المبلغ بدون الضريبة (د.إ)",
+  "forms.asset.inputVat": "ضريبة المدخلات المدفوعة (د.إ)",
+  "forms.asset.inputVatHelp": "ضريبة القيمة المضافة القابلة للاسترداد في فاتورة الشراء. تُرحَّل إلى ضريبة المدخلات المستردة وتظهر في الخانة 9 من الإقرار."
 }

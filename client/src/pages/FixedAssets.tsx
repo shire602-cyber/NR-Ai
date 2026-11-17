@@ -165,6 +165,11 @@ const assetFormSchema = z
     serialNumber: z.string().optional().nullable(),
     notes: z.string().optional().nullable(),
     paymentAccountId: z.string().optional().nullable(),
+    /** X4 (J3): recoverable input VAT paid with the asset (Dr 1050, VAT 201 Box 9). */
+    inputVat: z.preprocess(
+      (v) => (v === "" || v === null || v === undefined ? null : v),
+      z.coerce.number().min(0, "forms.errors.vatAmountNonNegative").nullable()
+    ),
   })
   .refine((v) => v.category.trim().toLowerCase() === "land" || !!v.usefulLifeYears, {
     message: "forms.errors.usefulLifeRequired",
@@ -287,9 +292,12 @@ export default function FixedAssets() {
   const createAssetMutation = useMutation({
     mutationFn: (data: AssetFormData) =>
       apiRequest("POST", `/api/companies/${companyId}/fixed-assets`, {
-        ...data,
+        ...(({ inputVat: _vat, ...rest }) => rest)(data),
         usefulLifeYears: data.usefulLifeYears || null,
         paymentAccountId: data.paymentAccountId || null,
+        ...(data.paymentAccountId && data.inputVat && data.inputVat > 0
+          ? { inputVat: data.inputVat }
+          : {}),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
@@ -310,7 +318,7 @@ export default function FixedAssets() {
 
   const updateAssetMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Partial<AssetFormData> }) => {
-      const { paymentAccountId: _p, ...rest } = data;
+      const { paymentAccountId: _p, inputVat: _v, ...rest } = data;
       return apiRequest("PATCH", `/api/fixed-assets/${id}`, rest);
     },
     onSuccess: () => {
@@ -1008,6 +1016,33 @@ export default function FixedAssets() {
                             </SelectContent>
                           </Select>
                           <FormDescription>{t["forms.asset.paidFromHelp"]}</FormDescription>
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                  {!editingAsset && assetForm.watch("paymentAccountId") && (
+                    <FormField
+                      control={assetForm.control}
+                      name="inputVat"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t["forms.asset.inputVat"]}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              inputMode="decimal"
+                              data-testid="input-asset-input-vat"
+                              name={field.name}
+                              ref={field.ref}
+                              onBlur={field.onBlur}
+                              value={field.value ?? ""}
+                              onChange={(e) => field.onChange(e.target.value)}
+                            />
+                          </FormControl>
+                          <FormDescription>{t["forms.asset.inputVatHelp"]}</FormDescription>
+                          <FormMessage />
                         </FormItem>
                       )}
                     />

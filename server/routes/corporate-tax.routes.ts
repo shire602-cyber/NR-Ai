@@ -6,7 +6,6 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { DomainError } from "../errors";
 import { strictBody } from "../http/strict-body";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
 import {
   buildCtReturnWorkbook,
   buildCtTemplateWorkbook,
@@ -42,6 +41,7 @@ import {
   ctRelatedPartySchema,
   patchCtReturnSchema,
   transitionCtReturnSchema,
+  unfileCtReturnSchema,
   type ComputeCtReturnBody,
   type CreateCtReturnBody,
   type PatchCtReturnBody,
@@ -70,6 +70,7 @@ import {
   recomputeAndSave,
   setAccountTaxTag,
   transitionCtReturn,
+  unfileCtReturn,
   uaeIsoDate,
   upsertCtProfile,
 } from "../services/corporate-tax";
@@ -267,8 +268,8 @@ export function registerCorporateTaxRoutes(app: Express) {
       await requireAccess(req, companyId);
       const body: CreateCtReturnBody = createCtReturnSchema.parse(req.body);
 
-      // The CT provision posts on period end; block creation in a locked period.
-      await assertPeriodNotLocked(companyId, body.taxPeriodEnd);
+      // X4 (J3): a draft return is a workpaper, not a ledger posting, so a closed (locked)
+      // year must not block it. Only the CT provision posting (at filing) checks the lock.
       const overlap = await findOverlappingReturn(
         companyId,
         body.taxPeriodStart,
@@ -386,7 +387,6 @@ export function registerCorporateTaxRoutes(app: Express) {
         if (!check.success) {
           throw new DomainError("CT_PERIOD_INVALID", 400, { issues: check.error.issues });
         }
-        await assertPeriodNotLocked(ctReturn.companyId, end);
         const overlap = await findOverlappingReturn(ctReturn.companyId, start, end, ctReturn.id);
         if (overlap)
           throw new DomainError("CT_RETURN_PERIOD_OVERLAP", 409, { existingReturnId: overlap });
@@ -437,6 +437,21 @@ export function registerCorporateTaxRoutes(app: Express) {
       }
       if (body.postProvision) await assertPermission(req, ctReturn.companyId, "ledger.post");
       const updated = await transitionCtReturn(ctReturn, body, req.user!.id, req);
+      res.json(withDeadline(updated));
+    })
+  );
+
+  // X4 (J3): undo "record as filed" (filed, unpaid) with an audited reason.
+  app.post(
+    "/api/corporate-tax/returns/:id/unfile",
+    authMiddleware,
+    requireCustomer,
+    strictBody(unfileCtReturnSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const ctReturn = await loadReturn(req, req.params.id);
+      await assertPermission(req, ctReturn.companyId, "tax.submit");
+      const body = unfileCtReturnSchema.parse(req.body);
+      const updated = await unfileCtReturn(ctReturn, req.user!.id, body.reason, req);
       res.json(withDeadline(updated));
     })
   );

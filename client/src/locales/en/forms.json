@@ -286,5 +286,8 @@
   "forms.errors.priceGreaterThanZero": "Price must be greater than 0",
   "forms.errors.emailAddressInvalid": "Invalid email address",
   "forms.errors.logoTooLarge": "Logo must be 1 MB or smaller",
-  "forms.errors.logoFormat": "Logo must be an https:// URL or a PNG/JPEG/GIF/WebP image"
+  "forms.errors.logoFormat": "Logo must be an https:// URL or a PNG/JPEG/GIF/WebP image",
+  "forms.claim.amountExclVatAed": "Amount excl. VAT (AED)",
+  "forms.asset.inputVat": "Input VAT paid (AED)",
+  "forms.asset.inputVatHelp": "Recoverable VAT on the purchase invoice. It is posted to VAT Receivable and reported in VAT return Box 9."
 }

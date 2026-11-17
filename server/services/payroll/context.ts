@@ -157,25 +157,33 @@ export function requireAccount(
 }
 
 /** A cash/bank account the company may pay salaries from (active asset account). */
+/** Cash / bank account rule shared with bill payments (X4/J3): asset + cash/bank sub-type
+ *  or one of the seeded cash/bank codes. */
+const CASH_SUBTYPES = new Set(["cash", "bank"]);
+const CASH_CODES = new Set(["1010", "1020", "1030"]);
+
 export async function assertPaymentAccount(
   companyId: string,
   accountId: string,
   tx?: LedgerTx
 ): Promise<void> {
-  const acct = await q1<{ type: string }>(
-    `SELECT type FROM accounts
+  const acct = await q1<{ type: string; sub_type: string | null; code: string }>(
+    `SELECT type, sub_type, code FROM accounts
       WHERE id = $1 AND company_id = $2 AND is_archived = false AND is_active = true`,
     [accountId, companyId],
     tx
   );
   if (!acct)
     throw new DomainError("ACCOUNT_NOT_FOUND", 422, { accountId }, "Payment account not found");
-  if (acct.type !== "asset") {
+  if (
+    acct.type !== "asset" ||
+    !(CASH_SUBTYPES.has(acct.sub_type ?? "") || CASH_CODES.has(acct.code))
+  ) {
     throw new DomainError(
-      "PAYMENT_ACCOUNT_NOT_ASSET",
+      "PAYMENT_ACCOUNT_REQUIRED",
       422,
       { accountId },
-      "Salaries must be paid from a cash or bank (asset) account"
+      "Salaries must be paid from a cash or bank account"
     );
   }
 }

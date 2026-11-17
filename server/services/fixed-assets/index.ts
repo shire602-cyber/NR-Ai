@@ -46,6 +46,7 @@ export const FA_CODES = {
   REVALUATION: "3050",
   IMPAIRMENT: "5150",
   OPENING: "3040",
+  VAT_INPUT: "1050",
 } as const;
 
 const f = (v: unknown): number =>
@@ -235,12 +236,28 @@ export async function capitalizeAsset(
       "Accumulated depreciation exceeds the depreciable cost"
     );
   }
+  // X4 (J3): recoverable input VAT on a purchased asset (Dr 1050); VAT 201 reads it from
+  // fixed_assets.acquisition_vat (server/tax/vat-engine.ts, collectFixedAssetAcquisitions).
+  const vatFils = args.openingBalance
+    ? 0
+    : f((a as { acquisition_vat?: unknown }).acquisition_vat ?? 0);
+  const vatAccount =
+    vatFils > 0 ? await ensureAccountByCode(tx, a.company_id, FA_CODES.VAT_INPUT) : null;
   const entryId = await post(tx, a, {
     date,
     memo: `Capitalization: ${a.asset_name}`,
     key: `${FA_SOURCE}:${a.id}:capitalize`,
     lines: [
       { accountId: acc.cost, debitFils: costFils, description: `Capitalize ${a.asset_name}` },
+      ...(vatAccount
+        ? [
+            {
+              accountId: vatAccount,
+              debitFils: vatFils,
+              description: `Input VAT - ${a.asset_name}`,
+            },
+          ]
+        : []),
       ...(opening > 0
         ? [
             {
@@ -252,7 +269,7 @@ export async function capitalizeAsset(
         : []),
       {
         accountId: credit,
-        creditFils: costFils - opening,
+        creditFils: costFils - opening + vatFils,
         description: args.openingBalance
           ? `Opening balance - ${a.asset_name}`
           : `Payment for ${a.asset_name}`,
@@ -346,7 +363,9 @@ export async function depreciateInTx(
       "Depreciation already posted for this period"
     );
   const acc = await assetAccounts(tx, a);
-  const date = `${year}-${String(month).padStart(2, "0")}-01`;
+  // X4 (J3): date the entry at month end, so it never predates an in-month capitalisation.
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const date = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
   const suffix =
     calc.prorationFactor < 1
       ? ` (${month}/${year}, prorated ${(calc.prorationFactor * 100).toFixed(1)}%${opts.catchUp ? ", catch-up" : ""})`

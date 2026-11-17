@@ -44,6 +44,7 @@ export const EMPLOYEE_COLUMNS: Record<string, string> = {
   housingAllowance: "housing_allowance",
   transportAllowance: "transport_allowance",
   otherAllowance: "other_allowance",
+  openingGratuityProvision: "opening_gratuity_provision",
   status: "status",
 };
 
@@ -58,6 +59,7 @@ const NOT_NULL_DEFAULTS: Record<string, unknown> = {
   housingAllowance: "0.00",
   transportAllowance: "0.00",
   otherAllowance: "0.00",
+  openingGratuityProvision: "0.00",
   salaryCurrency: "AED",
   noticePeriodDays: 30,
 };
@@ -71,6 +73,87 @@ async function assertCostCenter(companyId: string, costCenterId: unknown): Promi
   if (!cc) throw new DomainError("COST_CENTER_NOT_FOUND", 422, undefined, "Cost centre not found");
 }
 
+/**
+ * X4 (J3): an employee number, IBAN or Emirates ID belongs to one live employee per company
+ * (duplicates risk a duplicate WPS salary transfer). Compared normalised: employee number
+ * case-insensitive, IBAN without spaces, Emirates ID digits only. Archived employees and,
+ * for IBAN / Emirates ID, terminated employees (rehire) do not count. 0118 adds matching
+ * partial unique indexes as the race backstop.
+ */
+export const EMPLOYEE_UNIQUE_SQL = {
+  employeeNumber: {
+    expr: "lower(btrim(employee_number))",
+    value: (v: string) => v.trim().toLowerCase(),
+    scope: "archived_at IS NULL",
+  },
+  iban: {
+    expr: "upper(regexp_replace(iban, '\\s', '', 'g'))",
+    value: (v: string) => v.replace(/\s/g, "").toUpperCase(),
+    scope: "archived_at IS NULL AND status <> 'terminated'",
+  },
+  emiratesId: {
+    expr: "regexp_replace(emirates_id, '[^0-9]', '', 'g')",
+    value: (v: string) => v.replace(/[^0-9]/g, ""),
+    scope: "archived_at IS NULL AND status <> 'terminated'",
+  },
+} as const;
+
+const DUPLICATE_MESSAGES: Record<keyof typeof EMPLOYEE_UNIQUE_SQL, string> = {
+  employeeNumber: "Another employee already uses this employee number",
+  iban: "Another employee already uses this IBAN",
+  emiratesId: "Another employee already uses this Emirates ID",
+};
+
+async function assertUniqueIdentifiers(
+  companyId: string,
+  values: Partial<Record<keyof typeof EMPLOYEE_UNIQUE_SQL, unknown>>,
+  excludeId: string | null
+): Promise<void> {
+  const fields: Record<string, string> = {};
+  for (const key of Object.keys(EMPLOYEE_UNIQUE_SQL) as Array<keyof typeof EMPLOYEE_UNIQUE_SQL>) {
+    const raw = values[key];
+    if (typeof raw !== "string") continue;
+    const rule = EMPLOYEE_UNIQUE_SQL[key];
+    const v = rule.value(raw);
+    if (!v) continue;
+    const dup = await q1(
+      `SELECT id FROM employees
+        WHERE company_id = $1 AND ${rule.scope} AND ${rule.expr} = $2
+          AND ($3::uuid IS NULL OR id <> $3::uuid)
+        LIMIT 1`,
+      [companyId, v, excludeId]
+    );
+    if (dup) fields[key] = DUPLICATE_MESSAGES[key];
+  }
+  const keys = Object.keys(fields);
+  if (keys.length > 0) {
+    throw new DomainError("EMPLOYEE_DUPLICATE", 409, { fields }, fields[keys[0]]);
+  }
+}
+
+/** Map a unique-index race (23505 on the 0118 indexes) to the same 409. */
+function rethrowDuplicate(err: unknown): never {
+  const e = err as { code?: string; constraint?: string };
+  if (e?.code === "23505" && typeof e.constraint === "string") {
+    const key = e.constraint.includes("iban")
+      ? "iban"
+      : e.constraint.includes("emirates")
+        ? "emiratesId"
+        : e.constraint.includes("number")
+          ? "employeeNumber"
+          : null;
+    if (key) {
+      throw new DomainError(
+        "EMPLOYEE_DUPLICATE",
+        409,
+        { fields: { [key]: DUPLICATE_MESSAGES[key] } },
+        DUPLICATE_MESSAGES[key]
+      );
+    }
+  }
+  throw err;
+}
+
 function totalSalary(values: Record<string, unknown>): string {
   return fromFils(sumFils(SALARY_KEYS.map((k) => fils(values[k] ?? "0"))));
 }
@@ -81,6 +164,7 @@ export async function createEmployee(
   body: EmployeeCreateBody
 ): Promise<Row> {
   await assertCostCenter(companyId, body.costCenterId);
+  await assertUniqueIdentifiers(companyId, body, null);
   const values: Record<string, unknown> = { ...NOT_NULL_DEFAULTS };
   for (const [k, v] of Object.entries(body)) if (v !== undefined) values[k] = v;
   const keys = Object.keys(values).filter((k) => EMPLOYEE_COLUMNS[k]);
@@ -92,7 +176,7 @@ export async function createEmployee(
   const employee = await q1<Row & { id: string }>(
     `INSERT INTO employees (${cols.join(", ")}) VALUES (${placeholders}) RETURNING *`,
     params
-  );
+  ).catch(rethrowDuplicate);
   await q(
     `INSERT INTO employee_salary_history (company_id, employee_id, effective_date, basic_salary,
        housing_allowance, transport_allowance, other_allowance, salary_currency, reason, changed_by)
@@ -133,6 +217,7 @@ export async function updateEmployee(
     );
   }
   if (body.costCenterId) await assertCostCenter(companyId, body.costCenterId);
+  await assertUniqueIdentifiers(companyId, body, employeeId);
   const sets: string[] = [];
   const params: unknown[] = [];
   for (const [k, v] of Object.entries(body)) {
@@ -158,7 +243,7 @@ export async function updateEmployee(
   const updated = await q1<Row>(
     `UPDATE employees SET ${sets.join(", ")} WHERE id = $${params.length - 1} AND company_id = $${params.length} RETURNING *`,
     params
-  );
+  ).catch(rethrowDuplicate);
   if (salaryChanged) {
     await q(
       `INSERT INTO employee_salary_history (company_id, employee_id, effective_date, basic_salary,
