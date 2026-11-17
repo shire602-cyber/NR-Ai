@@ -111,3 +111,16 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   `npx vitest run tests/unit/document-chasing-boundary.test.ts` after related route/nav/API changes.
 - `npm run test:coverage` is a baseline ratchet, not proof of broad route coverage; raise the
   thresholds as integration and route-level tests land.
+
+## DB-backed tests and guards (moved from platform-rules.md)
+
+- `npm run test:db` runs `tests/db/**/*.test.ts` against the real app and a freshly migrated
+  Postgres database per test file (`useHarness()` in `tests/db/harness.ts`; only `harness_*`
+  databases are created/dropped, PGlite fallback when `CREATE DATABASE` is not allowed). Use it
+  for any persistence, posting, tenancy, or concurrency regression; name tests after issue ids.
+  `tests/db/route-matrix.test.ts` is the cross-tenant route matrix; known gaps live as per-issue
+  files in `tests/db/route-matrix-allow/` (the directory is absent when there are no gaps).
+- `npm run check` ends with `scripts/run-guards.mjs`: `check-raw-body.mjs` (raw `req.body` in
+  write routes), `check-ledger-writes.mjs` (direct journal writes outside the ledger service), and
+  `check-i18n-ratchet.mjs` (hard-coded JSX strings). Baselines in `scripts/guard-baselines/` may
+  only move down (`--update` after real progress).

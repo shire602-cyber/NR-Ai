@@ -22,7 +22,6 @@ export default tseslint.config(
       // They were contributing 361 lint errors that drowned real signal.
       "sites/**",
       "docs/archive/**",
-      "najma-raeda-logo/**",
       "node_modules.*/**",
       "brand/**",
       "tools/**",

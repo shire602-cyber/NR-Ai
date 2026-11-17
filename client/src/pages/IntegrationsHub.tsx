@@ -400,21 +400,9 @@ export default function IntegrationsHub() {
               // W5-B (R19-03): "connected" only after the platform accepted the credentials.
               const isConnected =
                 !!integration?.isActive && integration?.connectionStatus === "connected";
-              const isComingSoon = false;
 
               return (
-                <Card
-                  key={platform.id}
-                  className={`hover-elevate relative overflow-hidden ${isComingSoon ? "bg-muted/30" : ""}`}
-                >
-                  {isComingSoon && (
-                    <div className="absolute top-3 end-3">
-                      <Badge variant="secondary">
-                        <T k="pages.comingSoon" />
-                      </Badge>
-                    </div>
-                  )}
-
+                <Card key={platform.id} className="hover-elevate relative overflow-hidden">
                   <CardHeader>
                     <div className="flex items-start gap-4">
                       <div className={`p-3 rounded-lg ${platform.bgColor}`}>
@@ -474,49 +462,40 @@ export default function IntegrationsHub() {
                   </CardContent>
 
                   <CardFooter className="flex gap-2">
-                    {!isComingSoon && (
+                    {isConnected ? (
                       <>
-                        {isConnected ? (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1"
-                              onClick={() => syncMutation.mutate(integration!.id)}
-                              disabled={syncMutation.isPending}
-                              data-testid={`button-sync-${platform.id}`}
-                            >
-                              {syncMutation.isPending ? (
-                                <Loader2 className="w-4 h-4 me-2 animate-spin" />
-                              ) : (
-                                <RefreshCw className="w-4 h-4 me-2" />
-                              )}
-                              Sync Now
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              data-testid={`button-settings-${platform.id}`}
-                            >
-                              <Settings className="w-4 h-4" />
-                            </Button>
-                          </>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            className="w-full gap-2"
-                            onClick={() => handleConnect(platform)}
-                            data-testid={`button-connect-${platform.id}`}
-                          >
-                            <Plug className="w-4 h-4" />
-                            {formatMessage(t["pages.integrationConnect"], { name: platform.name })}
-                          </Button>
-                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                          onClick={() => syncMutation.mutate(integration!.id)}
+                          disabled={syncMutation.isPending}
+                          data-testid={`button-sync-${platform.id}`}
+                        >
+                          {syncMutation.isPending ? (
+                            <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-4 h-4 me-2" />
+                          )}
+                          Sync Now
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          data-testid={`button-settings-${platform.id}`}
+                        >
+                          <Settings className="w-4 h-4" />
+                        </Button>
                       </>
-                    )}
-                    {isComingSoon && (
-                      <Button variant="outline" className="w-full" disabled>
-                        <T k="pages.comingSoon" />
+                    ) : (
+                      <Button
+                        variant="outline"
+                        className="w-full gap-2"
+                        onClick={() => handleConnect(platform)}
+                        data-testid={`button-connect-${platform.id}`}
+                      >
+                        <Plug className="w-4 h-4" />
+                        {formatMessage(t["pages.integrationConnect"], { name: platform.name })}
                       </Button>
                     )}
                   </CardFooter>

@@ -1,7 +1,6 @@
 // Internationalization utilities for English/Arabic support
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { extendedTranslations } from "./i18n-extended";
 
 export type Locale = "en" | "ar";
 
@@ -947,16 +946,11 @@ const namespaceLoaders = {
   }),
 } as Record<Locale, Record<string, () => Promise<TranslationCatalog>>>;
 
-// Order: extended (fills gaps) < base (existing behaviour wins) < namespaces (merged in on load).
+// Order: base (legacy flat keys) < namespaces (merged in on load; the former i18n-extended flat keys
+// now live in locales/{en,ar}/shell.json).
 export const t = {
-  en: {
-    ...(extendedTranslations.en as TranslationCatalog),
-    ...baseT.en,
-  } as typeof baseT.en & TranslationCatalog,
-  ar: {
-    ...(extendedTranslations.ar as TranslationCatalog),
-    ...baseT.ar,
-  } as typeof baseT.ar & TranslationCatalog,
+  en: { ...baseT.en } as typeof baseT.en & TranslationCatalog,
+  ar: { ...baseT.ar } as typeof baseT.ar & TranslationCatalog,
 };
 
 // ── Route-scoped loading (D1b) ──────────────────────────────────────────────

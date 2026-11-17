@@ -84,7 +84,10 @@ describe("R20-07/R20-12/R20-13: repo hygiene", () => {
   it("marketing sites live under sites/ and are excluded from tooling", () => {
     expect(fs.existsSync(path.join(root, "najma-raeda-site"))).toBe(false);
     expect(fs.existsSync(path.join(root, "najma-al-raeda-website"))).toBe(false);
-    expect(fs.existsSync(path.join(root, "sites/najma-raeda-site"))).toBe(true);
+    // The stale fork of this app (sites/najma-raeda-site) was deleted; only the static marketing site remains.
+    expect(fs.existsSync(path.join(root, "sites/najma-raeda-site"))).toBe(false);
+    expect(fs.existsSync(path.join(root, "sites/najma-al-raeda-website"))).toBe(true);
+    expect(read(".dockerignore")).toMatch(/^sites$/m);
     expect(read("eslint.config.js")).toContain('"sites/**"');
     expect(read(".prettierignore")).toMatch(/^sites\/$/m);
     expect(read("vitest.config.ts")).toContain('"sites/**"');
