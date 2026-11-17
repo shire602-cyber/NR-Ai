@@ -235,9 +235,36 @@ export interface CatalogText {
   metric: <R extends { id: string; label: string; signal: string }>(row: R) => R;
 }
 
+/**
+ * Per-table memo of English -> display text. The Reports models hold thousands of strings with many
+ * repeats (ids, labels, sentences shared by suites, packs and automations); without it, `deep`
+ * re-ran every exact lookup, date parse and generated-sentence pattern for each occurrence, which
+ * took seconds of main-thread time on /reports in Arabic (WP-D). The memo is dropped whenever the
+ * table gains keys (a catalog namespace finished loading), so late catalogs still apply.
+ */
+const translationMemos = new WeakMap<object, { size: number; memo: Map<string, string> }>();
+
+function translationMemo(table: Record<string, string>): Map<string, string> {
+  const size = Object.keys(table).length;
+  const existing = translationMemos.get(table);
+  if (existing && existing.size === size) return existing.memo;
+  const memo = new Map<string, string>();
+  translationMemos.set(table, { size, memo });
+  return memo;
+}
+
 /** Build the locale-bound lookup (also used by the unit tests). */
 export function createCatalogText(table: Record<string, string>, locale: Locale): CatalogText {
-  const cx = (english: string) => catalogTextByEnglish(table, locale, english);
+  const memo = locale === "en" ? null : translationMemo(table);
+  const cx = (english: string) => {
+    if (!memo || !english) return catalogTextByEnglish(table, locale, english);
+    let out = memo.get(english);
+    if (out === undefined) {
+      out = catalogTextByEnglish(table, locale, english);
+      memo.set(english, out);
+    }
+    return out;
+  };
   const lookup = (kind: CatalogTextKind, id: string, field: string, fallback: string) =>
     catalogText(table, locale, kind, id, field, fallback);
   const deep = <T>(value: T): T => (locale === "en" ? value : (deepLocalize(value, cx, 0) as T));

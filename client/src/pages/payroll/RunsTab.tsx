@@ -456,7 +456,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
                 </Select>
               </Field>
               <Field id="pay-date" label={tx("hr.paymentDate")} required>
-                <DatePicker dir="ltr" value={payDate} onChange={(value) => setPayDate(value)} />
+                <DatePicker value={payDate} onChange={(value) => setPayDate(value)} />
               </Field>
             </FormGrid>
             <FormActions>
