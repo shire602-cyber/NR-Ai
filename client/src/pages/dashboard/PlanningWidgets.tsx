@@ -1,26 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { StatusBadge as ToneBadge } from "@/components/ui/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Money } from "@/components/ui/money";
-import { formatCurrency, formatMonthKey } from "@/lib/format";
+import { formatMonthKey } from "@/lib/format";
 import { formatDateRange } from "@/lib/format-date";
 import { formatPercentDelta } from "@/lib/format-money";
 import { apiRequest } from "@/lib/queryClient";
 import { useTranslation } from "@/lib/i18n";
-import { CHART_COLORS, CHART_TOOLTIP_STYLE } from "./chart-colors";
+import { chartTheme, ChartTooltipContent, formatAxisCompact } from "@/components/ui/chart-theme";
+import { EmptyState } from "@/components/ui/empty-state";
 import { dashboardPeriodLabel } from "./period";
 import type {
   BudgetVsActualRow,
@@ -186,56 +178,70 @@ export function CashMovement({ stats, loading, locale }: WidgetProps) {
   const accounts = stats.bankVsGl.accounts;
   return (
     <Card className="h-full" data-testid="dashboard-cash-movement">
-      <CardHeader className="pb-2">
+      <CardHeader className="flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 space-y-0 pb-2">
         <CardTitle>{tt["dashboard.cashInOutTitle"]}</CardTitle>
+        <ul className="flex items-center gap-4 text-caption text-muted-foreground">
+          <li className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-sm bg-chart-1" aria-hidden />
+            {tt["dashboard.cashIn"]}
+          </li>
+          <li className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-sm bg-chart-neutral" aria-hidden />
+            {tt["dashboard.cashOut"]}
+          </li>
+        </ul>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="h-44 w-full" dir="ltr">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} barGap={2} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 4" vertical={false} />
-              <XAxis
-                dataKey="name"
-                reversed={locale === "ar"}
-                tickFormatter={(key: string) => formatMonthKey(key, locale)}
-                fontSize={11}
-                tickLine={false}
-                axisLine={false}
-                stroke="hsl(var(--muted-foreground))"
-              />
-              <YAxis
-                orientation={locale === "ar" ? "right" : "left"}
-                fontSize={11}
-                width={44}
-                tickLine={false}
-                axisLine={false}
-                stroke="hsl(var(--muted-foreground))"
-                tickFormatter={(v: number) => `${Math.round(v / 1000)}k`}
-              />
-              <Tooltip
-                cursor={{ fill: "hsl(var(--muted))" }}
-                contentStyle={CHART_TOOLTIP_STYLE}
-                formatter={(v: number) => formatCurrency(v, "AED", locale)}
-                labelFormatter={(key: any) => formatMonthKey(String(key), locale)}
-              />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-              <Bar
-                dataKey="inflow"
-                name={tt["dashboard.cashIn"]}
-                fill={CHART_COLORS.accent}
-                radius={[3, 3, 0, 0]}
-                maxBarSize={24}
-              />
-              <Bar
-                dataKey="outflow"
-                name={tt["dashboard.cashOut"]}
-                fill={CHART_COLORS.neutral}
-                radius={[3, 3, 0, 0]}
-                maxBarSize={24}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+        {data.length >= 2 ? (
+          <div className="h-48 w-full" dir="ltr">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={data}
+                {...chartTheme.barChart}
+                margin={{ top: 4, right: 4, bottom: 0, left: 0 }}
+              >
+                <CartesianGrid {...chartTheme.grid} />
+                <XAxis
+                  dataKey="name"
+                  reversed={locale === "ar"}
+                  tickFormatter={(key: string) => formatMonthKey(key, locale)}
+                  {...chartTheme.xAxis}
+                />
+                <YAxis
+                  orientation={locale === "ar" ? "right" : "left"}
+                  tickFormatter={formatAxisCompact}
+                  {...chartTheme.yAxis}
+                />
+                <Tooltip
+                  {...chartTheme.tooltip}
+                  content={
+                    <ChartTooltipContent
+                      currency="AED"
+                      seriesLabel={(key) =>
+                        key === "inflow" ? tt["dashboard.cashIn"] : tt["dashboard.cashOut"]
+                      }
+                      labelFormatter={(key) => formatMonthKey(String(key), locale)}
+                    />
+                  }
+                />
+                <Bar
+                  dataKey="inflow"
+                  name={tt["dashboard.cashIn"]}
+                  {...chartTheme.bar("brand")}
+                  isAnimationActive={chartTheme.animate()}
+                />
+                <Bar
+                  dataKey="outflow"
+                  name={tt["dashboard.cashOut"]}
+                  {...chartTheme.bar("neutral")}
+                  isAnimationActive={chartTheme.animate()}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <EmptyState size="sm" title={tt["dashboard.chartNotEnoughData"]} />
+        )}
         <BankVsLedger accounts={accounts} />
       </CardContent>
     </Card>
@@ -455,9 +461,7 @@ export function BudgetVsActualWidget({
     <Card className="flex h-full flex-col" data-testid="dashboard-budget-vs-actual">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center justify-between gap-3">
-          <span>
-            {tt["dashboard.budgetTitle"]}
-          </span>
+          <span>{tt["dashboard.budgetTitle"]}</span>
           <Link href="/budgets" className="text-small font-medium text-accent hover:underline">
             {tt["dashboard.budgetOpen"]}
           </Link>
@@ -465,9 +469,7 @@ export function BudgetVsActualWidget({
       </CardHeader>
       <CardContent className="flex-1 pt-0">
         {rows.length === 0 ? (
-          <p className="text-caption text-muted-foreground">
-            {tt["dashboard.budgetNone"]}
-          </p>
+          <p className="text-caption text-muted-foreground">{tt["dashboard.budgetNone"]}</p>
         ) : (
           <table className="mobile-fit w-full table-fixed border-separate border-spacing-0 text-caption tabular-nums sm:text-sm">
             <thead>

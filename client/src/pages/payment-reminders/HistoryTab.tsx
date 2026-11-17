@@ -19,8 +19,13 @@ import { formatDate } from "@/lib/format-date";
 import { apiRequest } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { AutomaticEmailLog } from "../Reminders";
-import { recordStatusTone } from "./dialogs";
-import { chasingKeys, type AgingRow, type ChaseRecord, type Effectiveness } from "./types";
+import {
+  chasingKeys,
+  recordStatusTone,
+  type AgingRow,
+  type ChaseRecord,
+  type Effectiveness,
+} from "./types";
 
 /**
  * History (spec 3.7): the former Effectiveness tab becomes three figures above the list of
@@ -111,9 +116,7 @@ export function HistoryTab({ companyId, rows }: { companyId?: string; rows: Agin
                   <TableHead>{tt["invoices.reminders.colInvoice"]}</TableHead>
                   <TableHead>{tt["invoices.reminders.colStep"]}</TableHead>
                   <TableHead>{tt["invoices.reminders.colLanguage"]}</TableHead>
-                  <TableHead className="text-end">
-                    {tt["invoices.reminders.colAmount"]}
-                  </TableHead>
+                  <TableHead className="text-end">{tt["invoices.reminders.colAmount"]}</TableHead>
                   <TableHead>{tt["invoices.reminders.colStatus"]}</TableHead>
                 </TableRow>
               </TableHeader>

@@ -45,7 +45,13 @@ const FIRST_TASK_STEP: Record<string, StepId> = {
  * first-invoice banner, keeps that banner's test id and deep link, and hides itself once
  * three steps are done or the owner dismisses it.
  */
-export function GettingStarted({ m, alwaysShow = false }: { m: DashboardModel; alwaysShow?: boolean }) {
+export function GettingStarted({
+  m,
+  alwaysShow = false,
+}: {
+  m: DashboardModel;
+  alwaysShow?: boolean;
+}) {
   const { t, selectedCompanyId: companyId, recentInvoices, company } = m;
   const tt = t as Record<string, string>;
   const enabled = Boolean(companyId);

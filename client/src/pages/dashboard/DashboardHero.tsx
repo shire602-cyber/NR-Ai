@@ -113,7 +113,7 @@ export function DashboardHero({ m, empty = false }: { m: DashboardModel; empty?:
       {!empty && (
         <div className="flex flex-col gap-3">
           <PeriodSelector choice={periodChoice} onChange={setPeriodChoice} locale={locale} />
-        {/* R3 (CTO 16): linked "needs you" chips replace the one-line insight sentence. */}
+          {/* R3 (CTO 16): linked "needs you" chips replace the one-line insight sentence. */}
           <NeedsYouStrip
             companyId={m.selectedCompanyId}
             invoices={m.recentInvoices}

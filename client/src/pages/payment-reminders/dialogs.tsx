@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/format-date";
 import { apiRequest } from "@/lib/queryClient";
 import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
-import type { AgingRow, BulkSendResponse, ChaseRecord } from "./types";
+import { recordStatusTone, type AgingRow, type BulkSendResponse, type ChaseRecord } from "./types";
 
 /** A prepared reminder: the customer-facing text, ready to copy into an email. */
 export function ReminderReadyDialog({
@@ -68,10 +68,6 @@ export function ReminderReadyDialog({
       </DialogContent>
     </Dialog>
   );
-}
-
-export function recordStatusTone(status: string) {
-  return status === "failed" ? "danger" : status === "paid" ? "success" : "neutral";
 }
 
 /** Every reminder sent for one invoice, newest first, with the message as sent. */
@@ -203,7 +199,9 @@ export function BulkResultsDialog({
                     />
                   )}
                   <StatusBadge
-                    tone={r.status === "sent" ? "success" : r.status === "failed" ? "danger" : "neutral"}
+                    tone={
+                      r.status === "sent" ? "success" : r.status === "failed" ? "danger" : "neutral"
+                    }
                   >
                     {tt[`invoices.reminders.result.${r.status}`] ??
                       tt["invoices.reminders.status.pending"]}

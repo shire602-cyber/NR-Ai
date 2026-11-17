@@ -7,7 +7,8 @@ import { DashboardOverview } from "./dashboard/DashboardOverview";
 import { DashboardPlanning } from "./dashboard/DashboardPlanning";
 import { DashboardCharts } from "./dashboard/DashboardCharts";
 import { DashboardRecent } from "./dashboard/DashboardRecent";
-import { DashboardEmpty, isEmptyCompany } from "./dashboard/DashboardEmpty";
+import { DashboardEmpty } from "./dashboard/DashboardEmpty";
+import { isEmptyCompany } from "./dashboard/emptyCompany";
 import { GettingStarted } from "./dashboard/GettingStarted";
 import { EInvoiceReadinessCard } from "@/components/einvoice/EInvoiceReadinessCard";
 

@@ -1243,26 +1243,8 @@ export default function ExpenseClaims() {
                           </FormItem>
                         )}
                       />
-                      <FormField
-                        control={claimForm.control}
-                        name={`items.${index}.receipt_url`}
-                        render={({ field }) => (
-                          <FormItem className="col-span-2">
-                            <FormLabel className={lineLabelClass}>
-                              <T k="pages.receipt" />
-                            </FormLabel>
-                            <FormControl>
-                              <Input
-                                ltr
-                                placeholder={t["forms.claim.receiptUrlHint"]}
-                                {...field}
-                                value={field.value || ""}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
+                      {/* Spec 3.8: no receipt-link field until receipt upload exists; an
+                          existing link on the line is kept as it is. */}
                       <FormField
                         control={claimForm.control}
                         name={`items.${index}.has_tax_invoice`}

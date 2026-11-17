@@ -224,9 +224,7 @@ export default function PaymentChasing() {
             error={overdueQuery.isError}
             sending={sendOne.isPending}
             onSend={(id) => sendOne.mutate(id)}
-            onToggleDoNotChase={(invoiceId, value) =>
-              toggleDoNotChase.mutate({ invoiceId, value })
-            }
+            onToggleDoNotChase={(invoiceId, value) => toggleDoNotChase.mutate({ invoiceId, value })}
           />
         </TabsContent>
         <TabsContent value="schedule" className="mt-0">

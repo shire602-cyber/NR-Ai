@@ -204,7 +204,9 @@ export function AutomaticEmailRules({ companyId }: { companyId?: string }) {
                 </div>
                 <Switch
                   checked={rule.isEnabled}
-                  onCheckedChange={(checked) => updateRule.mutate({ id: rule.id, isEnabled: checked })}
+                  onCheckedChange={(checked) =>
+                    updateRule.mutate({ id: rule.id, isEnabled: checked })
+                  }
                   aria-label={tt[`invoices.reminders.type.${rule.reminderType}`]}
                   data-testid={`switch-enable-${rule.id}`}
                 />
@@ -251,7 +253,9 @@ function CreateRuleDialog({
         variant: "destructive",
       }),
   });
-  const number = (key: "daysBeforeDue" | "daysAfterDue" | "repeatIntervalDays" | "maxReminders") => ({
+  const number = (
+    key: "daysBeforeDue" | "daysAfterDue" | "repeatIntervalDays" | "maxReminders"
+  ) => ({
     type: "number" as const,
     inputMode: "numeric" as const,
     value: rule[key],
@@ -259,9 +263,24 @@ function CreateRuleDialog({
       setRule({ ...rule, [key]: parseInt(e.target.value) || 0 }),
   });
   const channels = [
-    { key: "sendInApp", icon: Bell, label: tt["invoices.reminders.channelInApp"], testId: "switch-in-app" },
-    { key: "sendEmail", icon: Mail, label: tt["invoices.reminders.channelEmail"], testId: "switch-email" },
-    { key: "sendSms", icon: MessageSquare, label: tt["invoices.reminders.channelSms"], testId: "switch-sms" },
+    {
+      key: "sendInApp",
+      icon: Bell,
+      label: tt["invoices.reminders.channelInApp"],
+      testId: "switch-in-app",
+    },
+    {
+      key: "sendEmail",
+      icon: Mail,
+      label: tt["invoices.reminders.channelEmail"],
+      testId: "switch-email",
+    },
+    {
+      key: "sendSms",
+      icon: MessageSquare,
+      label: tt["invoices.reminders.channelSms"],
+      testId: "switch-sms",
+    },
   ] as const;
 
   return (
@@ -293,7 +312,11 @@ function CreateRuleDialog({
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="rule-before">{tt["invoices.reminders.daysBefore"]}</Label>
-              <Input id="rule-before" {...number("daysBeforeDue")} data-testid="input-days-before" />
+              <Input
+                id="rule-before"
+                {...number("daysBeforeDue")}
+                data-testid="input-days-before"
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="rule-after">{tt["invoices.reminders.daysAfter"]}</Label>
@@ -467,7 +490,9 @@ export function AutomaticEmailLog({ companyId }: { companyId?: string }) {
                 <StatusBadge tone={LOG_TONE[log.status] ?? "neutral"}>
                   {logStatusLabel(log.status, tt)}
                 </StatusBadge>
-                <span className="tabular-nums">{log.sentAt ? formatDate(log.sentAt, locale) : "—"}</span>
+                <span className="tabular-nums">
+                  {log.sentAt ? formatDate(log.sentAt, locale) : "—"}
+                </span>
               </div>
             </li>
           ))}

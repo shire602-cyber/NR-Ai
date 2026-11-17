@@ -28,7 +28,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { AutomaticEmailRules } from "../Reminders";
-import { MessageWithChips, TokenEditor, splitMessage, type TokenField } from "./TokenEditor";
+import { MessageWithChips, TokenEditor, type TokenField } from "./TokenEditor";
+import { splitMessage } from "./tokens";
 import {
   CHASE_FIELDS,
   REMINDER_LEVELS,
@@ -298,7 +299,10 @@ function ReminderStep({
     <li className="relative ps-10" data-testid={`template-row-${level}-${lang}`}>
       {/* Timeline rail and step marker. */}
       {!last && (
-        <span className="absolute bottom-[-1rem] start-[0.9375rem] top-8 w-px bg-border" aria-hidden />
+        <span
+          className="absolute bottom-[-1rem] start-[0.9375rem] top-8 w-px bg-border"
+          aria-hidden
+        />
       )}
       <span
         className={cn(

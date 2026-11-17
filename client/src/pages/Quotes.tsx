@@ -78,7 +78,8 @@ const quoteLineSchema = z.object({
 
 const quoteSchema = z.object({
   companyId: z.string().guid(),
-  number: z.string().min(1, "forms.errors.quoteNumberRequired"),
+  // The server assigns the number (R03-11); the field only shows it once a quote exists.
+  number: z.string().optional(),
   customerName: z.string().min(1, "forms.errors.customerNameRequired"),
   customerTrn: z.string().optional(),
   date: z.date(),
@@ -124,7 +125,7 @@ export default function Quotes() {
     resolver: zodResolver(quoteSchema),
     defaultValues: {
       companyId: selectedCompanyId || "",
-      number: `QT-${Date.now()}`,
+      number: "",
       customerName: "",
       customerTrn: "",
       date: new Date(),
@@ -232,7 +233,7 @@ export default function Quotes() {
   const resetForm = () => {
     form.reset({
       companyId: selectedCompanyId || "",
-      number: `QT-${Date.now()}`,
+      number: "",
       customerName: "",
       customerTrn: "",
       date: new Date(),
@@ -353,11 +354,18 @@ export default function Quotes() {
                         name="number"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel required>
+                            <FormLabel>
                               <T k="pageLabels.quoteNumber" />
                             </FormLabel>
                             <FormControl>
-                              <Input {...field} ltr />
+                              <Input
+                                {...field}
+                                ltr
+                                readOnly
+                                placeholder={
+                                  editingQuote ? undefined : t["invoices.numberAssignedOnSave"]
+                                }
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>

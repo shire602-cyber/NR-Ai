@@ -602,22 +602,24 @@ export default function FixedAssets() {
         eyebrow="Accounting"
         title={t["pages.fixedAssets"]}
         description={t["pageLabels.manageFixedAssetsDepreciationAndDisposals"]}
-        actions={
+        primaryAction={
+          <Button onClick={handleOpenCreateDialog}>
+            <Plus aria-hidden />
+            <T k="pageLabels.addAsset" />
+          </Button>
+        }
+        overflow={
           <>
-            <Button variant="outline" asChild>
+            <DropdownMenuItem onSelect={() => setDepRunDialogOpen(true)}>
+              <PlayCircle aria-hidden />
+              <T k="pageLabels.runDepreciation" />
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
               <a href={`/api/companies/${companyId}/fixed-assets/register?format=xlsx`}>
                 <Download aria-hidden />
                 {fa.exportRegister}
               </a>
-            </Button>
-            <Button variant="outline" onClick={() => setDepRunDialogOpen(true)}>
-              <PlayCircle aria-hidden />
-              <T k="pageLabels.runDepreciation" />
-            </Button>
-            <Button onClick={handleOpenCreateDialog}>
-              <Plus aria-hidden />
-              <T k="pageLabels.addAsset" />
-            </Button>
+            </DropdownMenuItem>
           </>
         }
       />
@@ -1017,7 +1019,7 @@ export default function FixedAssets() {
                       <FormItem>
                         <FormLabel required>{t["screens.faPurchaseDate"]}</FormLabel>
                         <FormControl>
-                          <DatePicker value={field.value ?? ""} onChange={field.onChange} />
+                          <Input type="date" dir="ltr" {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

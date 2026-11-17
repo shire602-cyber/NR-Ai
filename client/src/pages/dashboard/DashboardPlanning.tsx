@@ -133,7 +133,10 @@ export function CompliancePanel({ m }: { m: DashboardModel }) {
             data-testid="link-raise-score"
           >
             {formatMessage(tt["dashboard.raiseScoreLink"], { count: checks.length })}
-            <ArrowRight className="h-3.5 w-3.5 text-muted-foreground rtl:-scale-x-100" aria-hidden />
+            <ArrowRight
+              className="h-3.5 w-3.5 text-muted-foreground rtl:-scale-x-100"
+              aria-hidden
+            />
           </Link>
         )}
       </CardContent>

@@ -258,7 +258,7 @@
   "invoices.reminders.defaultMessage": "الصيغة القياسية",
   "invoices.reminders.customMessage": "صيغتك",
   "invoices.reminders.noMessage": "تُنشأ الصيغة القياسية مع أول تذكير.",
-  "invoices.reminders.editTitle": "{step} · {language}",
+  "invoices.reminders.editTitle": "تعديل {step} · {language}",
   "invoices.reminders.editDescCustom": "يؤدي الحفظ إلى تحديث صيغتك لهذه الخطوة.",
   "invoices.reminders.editDescDefault": "يحتفظ الحفظ بالصيغة القياسية ويخزّن نسختك الخاصة لهذه الشركة.",
   "invoices.reminders.subjectLabel": "موضوع البريد",

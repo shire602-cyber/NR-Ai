@@ -4,24 +4,6 @@ import { GettingStarted } from "./GettingStarted";
 import type { DashboardModel } from "./useCustomerDashboardModel";
 
 /**
- * A company with nothing recorded yet: no posted figures, no invoices and no journal entries.
- * Decided only after the data has loaded, so a slow request never flashes the empty page.
- */
-export function isEmptyCompany(m: DashboardModel): boolean {
-  const { stats, statsLoading, recentInvoices, invoicesLoading, journalEntries } = m;
-  if (statsLoading || invoicesLoading || !stats || !recentInvoices || !journalEntries) return false;
-  return (
-    recentInvoices.length === 0 &&
-    journalEntries.length === 0 &&
-    stats.revenue === 0 &&
-    stats.expenses === 0 &&
-    stats.cashPosition === 0 &&
-    stats.outstanding === 0 &&
-    stats.outstandingPayables === 0
-  );
-}
-
-/**
  * First run of the dashboard (spec 3.6 / 2.6): one large empty state that says what the page
  * becomes, plus the Getting started list. No zero tiles and no empty chart axes.
  */
@@ -40,7 +22,7 @@ export function DashboardEmpty({ m }: { m: DashboardModel }) {
           href: "/bank-accounts",
           icon: Landmark,
         }}
-        preview="table"
+        previewColumns={4}
       />
       <GettingStarted m={m} alwaysShow />
     </div>

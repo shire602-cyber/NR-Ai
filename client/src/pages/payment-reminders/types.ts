@@ -116,3 +116,8 @@ export const chasingKeys = (companyId: string | undefined) => ({
   templates: ["/api/chasing/templates", companyId] as const,
   config: ["/api/chasing/config", companyId] as const,
 });
+
+/** Badge tone of a sent reminder's status. */
+export function recordStatusTone(status: string): "danger" | "success" | "neutral" {
+  return status === "failed" ? "danger" : status === "paid" ? "success" : "neutral";
+}

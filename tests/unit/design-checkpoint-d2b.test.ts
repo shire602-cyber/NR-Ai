@@ -67,12 +67,13 @@ describe("D2b CTO checkpoint guards", () => {
     expect(read("client/src/pages/dashboard/DashboardActions.tsx")).toContain("compact");
   });
 
-  it("6: charts are linear, thin, neutral for expenses", () => {
+  it("6: charts are thin, brand for revenue, neutral dashed for expenses (spec 2.7 chartTheme)", () => {
+    // WP-C: the dashboard charts spread the shared chartTheme instead of local props, so the
+    // contract is that the theme is used for each series (the theme pins 1.5 px / dashed).
     const charts = read("client/src/pages/dashboard/DashboardCharts.tsx");
-    expect(charts).not.toContain('type="monotone"');
-    expect(charts).toContain("strokeWidth={1.5}");
-    expect(charts).toContain("CHART_COLORS.neutral");
-    expect(charts).toContain('strokeDasharray="3 4"');
+    expect(charts).toContain('chartTheme.area("brand")');
+    expect(charts).toContain("chartTheme.comparisonLine");
+    expect(charts).not.toContain("PieChart");
     expect(read("client/src/index.css")).toContain("--chart-neutral: var(--neutral-400)");
   });
 

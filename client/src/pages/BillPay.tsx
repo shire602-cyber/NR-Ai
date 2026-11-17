@@ -93,7 +93,6 @@ import {
   Edit,
   CheckCircle,
   DollarSign,
-  Clock,
   AlertTriangle,
   CreditCard,
   BarChart3,
@@ -888,7 +887,7 @@ export default function BillPay() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Purchases"
-        title={t.billPay}
+        title={t["purchases.billsTitle"]}
         description={(t as any).billPaySubtitle ?? "Manage vendor bills, approvals, and payments"}
         actions={
           <Dialog
@@ -1788,44 +1787,28 @@ export default function BillPay() {
         {/* SUMMARY TAB                        */}
         {/* ================================== */}
         <TabsContent value="summary" className="space-y-6 mt-0">
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-5 mobile-keep-cols">
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4 mobile-keep-cols">
             <StatCard
               label={t["pages.pending"]}
-              icon={Clock}
               value={<Money amount={summary?.pending.total || 0} />}
               hint={formatMessage(t["screens.billsCount"], { count: summary?.pending.count || 0 })}
               loading={!summary}
             />
             <StatCard
               label={t["pages.approved"]}
-              icon={CheckCircle}
               value={<Money amount={summary?.approved.total || 0} />}
               hint={formatMessage(t["screens.billsCount"], { count: summary?.approved.count || 0 })}
               loading={!summary}
             />
             <StatCard
-              label={t["pages.partiallyPaid"]}
-              icon={DollarSign}
-              value={<Money amount={summary?.partial.total || 0} />}
-              hint={formatMessage(t["screens.billsCount"], { count: summary?.partial.count || 0 })}
-              loading={!summary}
-            />
-            <StatCard
               label={c.paidStatus}
-              icon={CheckCircle}
               value={<Money amount={summary?.paid.total || 0} />}
               hint={formatMessage(t["screens.billsCount"], { count: summary?.paid.count || 0 })}
               loading={!summary}
             />
             <StatCard
               label={t["pages.overdue"]}
-              icon={AlertTriangle}
-              value={
-                <Money
-                  amount={summary?.overdue.total || 0}
-                  className={(summary?.overdue.total || 0) > 0 ? "text-danger" : undefined}
-                />
-              }
+              value={<Money amount={summary?.overdue.total || 0} />}
               hint={formatMessage(t["screens.billsCount"], { count: summary?.overdue.count || 0 })}
               loading={!summary}
             />

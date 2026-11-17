@@ -88,7 +88,9 @@ export function OverdueTab({
         </span>
       );
     }
-    return <span className="text-small text-muted-foreground">{tt["invoices.reminders.notDue"]}</span>;
+    return (
+      <span className="text-small text-muted-foreground">{tt["invoices.reminders.notDue"]}</span>
+    );
   };
 
   const actions = (row: AgingRow) => (

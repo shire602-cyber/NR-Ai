@@ -78,7 +78,6 @@ const Reports = lazyWithReload(() => import("@/pages/Reports"));
 const PartyStatements = lazyWithReload(() => import("@/pages/reports/PartyStatements"));
 const FirmRelationship = lazyWithReload(() => import("@/pages/portal/FirmRelationship"));
 const Receipts = lazyWithReload(() => import("@/pages/Receipts"));
-const ReceiptAutopilot = lazyWithReload(() => import("@/pages/ReceiptAutopilot"));
 const CompanyProfile = lazyWithReload(() => import("@/pages/CompanyProfile"));
 const CompanySettings = lazyWithReload(() => import("@/pages/CompanySettings"));
 const SecuritySettings = lazyWithReload(() => import("@/pages/SecuritySettings"));
@@ -108,7 +107,6 @@ const CreditNotes = lazyWithReload(() => import("@/pages/CreditNotes"));
 const PurchaseOrders = lazyWithReload(() => import("@/pages/PurchaseOrders"));
 const CostCenters = lazyWithReload(() => import("@/pages/CostCenters"));
 const FinancialStatements = lazyWithReload(() => import("@/pages/FinancialStatements"));
-const ReconciliationRules = lazyWithReload(() => import("@/pages/ReconciliationRules"));
 const InvoiceTemplates = lazyWithReload(() => import("@/pages/InvoiceTemplates"));
 const DocumentVersions = lazyWithReload(() => import("@/pages/DocumentVersions"));
 const DeveloperSettings = lazyWithReload(() => import("@/pages/DeveloperSettings"));
@@ -145,7 +143,6 @@ const BackupRestore = lazyWithReload(() => import("@/pages/BackupRestore"));
 const ImportWizard = lazyWithReload(() => import("@/pages/ImportWizard"));
 const CashFlowForecast = lazyWithReload(() => import("@/pages/CashFlowForecast"));
 const AnomalyDetection = lazyWithReload(() => import("@/pages/AnomalyDetection"));
-const AutoReconcile = lazyWithReload(() => import("@/pages/AutoReconcile"));
 const MonthEndClose = lazyWithReload(() => import("@/pages/MonthEndClose"));
 
 function PageLoader({
@@ -650,7 +647,10 @@ function Router() {
             <Route path="/reports" component={Reports} />
             <Route path="/reports/statements-of-account" component={PartyStatements} />
             <Route path="/receipts" component={Receipts} />
-            <Route path="/receipt-autopilot" component={ReceiptAutopilot} />
+            {/* Spec 3.8: receipt automation is a tab of Receipts. */}
+            <Route path="/receipt-autopilot">
+              <RedirectTo to="/receipts?tab=automation" />
+            </Route>
             <Route path="/contacts" component={CustomerContacts} />
             <Route path="/inventory" component={Inventory} />
             <Route path="/quotes" component={Quotes} />
@@ -658,7 +658,10 @@ function Router() {
             <Route path="/purchase-orders" component={PurchaseOrders} />
             <Route path="/cost-centers" component={CostCenters} />
             <Route path="/financial-statements" component={FinancialStatements} />
-            <Route path="/reconciliation-rules" component={ReconciliationRules} />
+            {/* Spec 3.9: rules and suggested matches are tabs of Bank reconciliation. */}
+            <Route path="/reconciliation-rules">
+              <RedirectTo to="/bank-reconciliation?tab=rules" />
+            </Route>
             <Route path="/invoice-templates" component={InvoiceTemplates} />
             <Route path="/document-versions" component={DocumentVersions} />
             <Route path="/developer-settings" component={DeveloperSettings} />
@@ -675,7 +678,9 @@ function Router() {
             <Route path="/expense-claims" component={ExpenseClaims} />
             <Route path="/cashflow-forecast" component={CashFlowForecast} />
             <Route path="/anomaly-detection" component={AnomalyDetection} />
-            <Route path="/auto-reconcile" component={AutoReconcile} />
+            <Route path="/auto-reconcile">
+              <RedirectTo to="/bank-reconciliation?tab=suggestions" />
+            </Route>
             <Route path="/ai" component={AIHub} />
             <Route path="/ai-inbox">
               <RedirectTo to="/ai?tab=inbox" />

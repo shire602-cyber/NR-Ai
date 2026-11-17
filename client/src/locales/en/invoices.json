@@ -258,7 +258,7 @@
   "invoices.reminders.defaultMessage": "Standard wording",
   "invoices.reminders.customMessage": "Your wording",
   "invoices.reminders.noMessage": "The standard wording is created with the first reminder.",
-  "invoices.reminders.editTitle": "{step} · {language}",
+  "invoices.reminders.editTitle": "Edit {step} · {language}",
   "invoices.reminders.editDescCustom": "Saving updates your wording for this step.",
   "invoices.reminders.editDescDefault": "Saving keeps the standard wording and stores your own version for this company.",
   "invoices.reminders.subjectLabel": "Email subject",

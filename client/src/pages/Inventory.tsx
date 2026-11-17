@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   ArrowDownUp,
   Search,
+  Settings2,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,9 +46,14 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Alert } from "@/components/ui/alert";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { StatusBadge as ToneBadge } from "@/components/ui/status-badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -79,7 +85,7 @@ import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatDate } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import type { Product, InventoryMovement } from "@shared/schema";
 import { isValidGtin, RCM_GOODS_TYPES } from "@shared/vat-classification";
 
@@ -149,6 +155,8 @@ type MovementFormData = z.infer<typeof movementFormSchema>;
 // ─── Component ────────────────────────────────────────────
 
 export default function Inventory() {
+  // Spec 3.7: costing settings live behind ⋯ → Costing method, not in a sixth tab.
+  const [costingOpen, setCostingOpen] = useState(false);
   const { t, locale } = useTranslation();
   const c = INVENTORY_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
@@ -433,14 +441,20 @@ export default function Inventory() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Purchases"
-        title={(t as any).inventory || "Inventory"}
+        eyebrow={c.inventory}
+        title={c.inventory}
         description={t["pageLabels.manageYourProductsAndTrackInventoryMovements"]}
-        actions={
+        primaryAction={
           <Button onClick={handleOpenCreateDialog}>
             <Plus aria-hidden />
             <T k="pageLabels.addProduct" />
           </Button>
+        }
+        overflow={
+          <DropdownMenuItem onSelect={() => setCostingOpen(true)} data-testid="menu-costing-method">
+            <Settings2 aria-hidden />
+            {c.costingMethod}
+          </DropdownMenuItem>
         }
       />
 
@@ -458,7 +472,6 @@ export default function Inventory() {
             <TabsTrigger value="valuation">{c.valuation}</TabsTrigger>
             <TabsTrigger value="warehouses">{c.warehouses}</TabsTrigger>
             <TabsTrigger value="stocktake">{c.stocktake}</TabsTrigger>
-            <TabsTrigger value="settings">{c.settings}</TabsTrigger>
           </TabsList>
         </div>
 
@@ -467,6 +480,8 @@ export default function Inventory() {
           products={productsList}
           c={c}
           locale={locale}
+          costingOpen={costingOpen}
+          onCostingOpenChange={setCostingOpen}
         />
 
         {/* ─── Products Tab ──────────────────────────────── */}
@@ -1202,6 +1217,12 @@ const INVENTORY_COPY = {
     draft: "Draft",
     lines: "Lines",
     costingMethod: "Costing method",
+    costingHint: "How the cost of goods sold is measured for every stock item.",
+    inventory: "Inventory",
+    newCount: "New count",
+    cancel: "Cancel",
+    valuationDiffers:
+      "Stock is valued at {stock}; the inventory accounts hold {ledger}. Difference: {difference}.",
     weightedAverage: "Weighted average",
     fifo: "FIFO (first in, first out)",
     allowNegative: "Allow negative stock (with a warning)",
@@ -1255,6 +1276,11 @@ const INVENTORY_COPY = {
     draft: "مسودة",
     lines: "البنود",
     costingMethod: "طريقة التكلفة",
+    costingHint: "طريقة قياس تكلفة البضاعة المباعة لكل صنف مخزني.",
+    inventory: "المخزون",
+    newCount: "جرد جديد",
+    cancel: "إلغاء",
+    valuationDiffers: "قيمة المخزون {stock}، ورصيد حسابات المخزون {ledger}. الفرق: {difference}.",
     weightedAverage: "المتوسط المرجح",
     fifo: "الوارد أولاً صادر أولاً",
     allowNegative: "السماح بالمخزون السالب (مع تحذير)",
@@ -1312,12 +1338,18 @@ function InventoryAccountingTabs({
   products,
   c,
   locale,
+  costingOpen,
+  onCostingOpenChange,
 }: {
   companyId: string;
   products: Product[];
   c: InventoryCopy;
   locale: string;
+  costingOpen: boolean;
+  onCostingOpenChange: (open: boolean) => void;
 }) {
+  const [warehouseOpen, setWarehouseOpen] = useState(false);
+  const [countOpen, setCountOpen] = useState(false);
   const { toast } = useToast();
   const base = `/api/companies/${companyId}`;
   const valuation = useQuery<ValuationReport>({ queryKey: [`${base}/inventory/valuation`] });
@@ -1358,6 +1390,7 @@ function InventoryAccountingTabs({
       }),
     onSuccess: () => {
       setWh({ code: "", name: "", nameAr: "" });
+      setWarehouseOpen(false);
       refresh();
     },
     onError: fail,
@@ -1387,7 +1420,10 @@ function InventoryAccountingTabs({
         countDate: count.countDate,
         lines: [{ productId: count.productId, countedQty: Number(count.countedQty) }],
       }),
-    onSuccess: refresh,
+    onSuccess: () => {
+      setCountOpen(false);
+      refresh();
+    },
     onError: fail,
   });
   const postCount = useMutation({
@@ -1417,15 +1453,24 @@ function InventoryAccountingTabs({
         <Card>
           <CardHeader>
             <CardTitle>{c.valuation}</CardTitle>
-            {v && (
+            {v?.reconciled && (
               <CardDescription>
-                <Badge variant={v.reconciled ? "secondary" : "destructive"}>
-                  {v.reconciled ? c.reconciled : c.notReconciled}
-                </Badge>
+                <ToneBadge tone="success" data-ties-state="ties">
+                  {c.reconciled}
+                </ToneBadge>
               </CardDescription>
             )}
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {v && !v.reconciled && (
+              <Alert tone="danger" title={c.notReconciled} data-ties-state="differs">
+                {formatMessage(c.valuationDiffers, {
+                  stock: formatCurrency(Number(v.totalValue), "AED", locale),
+                  ledger: formatCurrency(Number(v.glBalance), "AED", locale),
+                  difference: formatCurrency(Number(v.difference), "AED", locale),
+                })}
+              </Alert>
+            )}
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1528,8 +1573,12 @@ function InventoryAccountingTabs({
 
       <TabsContent value="warehouses" className="space-y-4">
         <Card>
-          <CardHeader>
+          <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
             <CardTitle>{c.warehouses}</CardTitle>
+            <Button size="sm" variant="outline" onClick={() => setWarehouseOpen(true)}>
+              <Plus aria-hidden />
+              {c.addWarehouse}
+            </Button>
           </CardHeader>
           <CardContent className="space-y-4">
             <Table>
@@ -1552,34 +1601,6 @@ function InventoryAccountingTabs({
                 ))}
               </TableBody>
             </Table>
-            <div className="grid gap-2 md:grid-cols-4">
-              <Input
-                aria-label={c.code}
-                placeholder={c.code}
-                value={wh.code}
-                onChange={(e) => setWh({ ...wh, code: e.target.value })}
-              />
-              <Input
-                aria-label={c.name}
-                placeholder={c.name}
-                value={wh.name}
-                onChange={(e) => setWh({ ...wh, name: e.target.value })}
-              />
-              <Input
-                aria-label={c.nameAr}
-                placeholder={c.nameAr}
-                dir="rtl"
-                value={wh.nameAr}
-                onChange={(e) => setWh({ ...wh, nameAr: e.target.value })}
-              />
-              <Button
-                disabled={!wh.code || !wh.name || addWarehouse.isPending}
-                onClick={() => addWarehouse.mutate()}
-              >
-                <Plus className="w-4 h-4" />
-                {c.addWarehouse}
-              </Button>
-            </div>
           </CardContent>
         </Card>
         <Card>
@@ -1634,45 +1655,14 @@ function InventoryAccountingTabs({
 
       <TabsContent value="stocktake" className="space-y-4">
         <Card>
-          <CardHeader>
+          <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
             <CardTitle>{c.stocktake}</CardTitle>
+            <Button size="sm" variant="outline" onClick={() => setCountOpen(true)}>
+              <Plus aria-hidden />
+              {c.newCount}
+            </Button>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-2 md:grid-cols-4">
-              <Select
-                value={count.productId}
-                onValueChange={(productId) => setCount({ ...count, productId })}
-              >
-                <SelectTrigger aria-label={c.product}>
-                  <SelectValue placeholder={c.product} />
-                </SelectTrigger>
-                <SelectContent>
-                  {stocked.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {nameOf(p)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Input
-                aria-label={c.counted}
-                type="number"
-                min="0"
-                value={count.countedQty}
-                onChange={(e) => setCount({ ...count, countedQty: Number(e.target.value) })}
-              />
-              <DatePicker
-                aria-label={c.countDate}
-                value={count.countDate}
-                onChange={(value) => setCount({ ...count, countDate: value })}
-              />
-              <Button
-                disabled={!count.productId || createCount.isPending}
-                onClick={() => createCount.mutate()}
-              >
-                {c.createCount}
-              </Button>
-            </div>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1684,7 +1674,9 @@ function InventoryAccountingTabs({
               <TableBody>
                 {(stocktakesQ.data ?? []).map((s) => (
                   <TableRow key={s.id}>
-                    <TableCell>{s.count_date}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {formatDate(s.count_date, locale)}
+                    </TableCell>
                     <TableCell>{s.lineCount}</TableCell>
                     <TableCell className="text-end">
                       {s.status === "draft" ? (
@@ -1707,38 +1699,127 @@ function InventoryAccountingTabs({
         </Card>
       </TabsContent>
 
-      <TabsContent value="settings">
-        <Card>
-          <CardHeader>
-            <CardTitle>{c.settings}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 max-w-md">
-            <div className="space-y-2">
-              <p className="text-sm font-medium">{c.costingMethod}</p>
-              <Select
-                value={settingsQ.data?.costingMethod ?? "weighted_average"}
-                onValueChange={(costingMethod) => saveSettings.mutate({ costingMethod })}
-              >
-                <SelectTrigger aria-label={c.costingMethod}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="weighted_average">{c.weightedAverage}</SelectItem>
-                  <SelectItem value="fifo">{c.fifo}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={settingsQ.data?.allowNegativeStock === true}
-                onChange={(e) => saveSettings.mutate({ allowNegativeStock: e.target.checked })}
-              />
+      <Dialog open={costingOpen} onOpenChange={onCostingOpenChange}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>{c.costingMethod}</DialogTitle>
+            <DialogDescription>{c.costingHint}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Select
+              value={settingsQ.data?.costingMethod ?? "weighted_average"}
+              onValueChange={(costingMethod) => saveSettings.mutate({ costingMethod })}
+            >
+              <SelectTrigger aria-label={c.costingMethod}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="weighted_average">{c.weightedAverage}</SelectItem>
+                <SelectItem value="fifo">{c.fifo}</SelectItem>
+              </SelectContent>
+            </Select>
+            <label className="flex min-h-11 items-center justify-between gap-3 text-small">
               {c.allowNegative}
+              <Switch
+                checked={settingsQ.data?.allowNegativeStock === true}
+                onCheckedChange={(checked) => saveSettings.mutate({ allowNegativeStock: checked })}
+              />
             </label>
-          </CardContent>
-        </Card>
-      </TabsContent>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={warehouseOpen} onOpenChange={setWarehouseOpen}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>{c.addWarehouse}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <Label htmlFor="wh-code">{c.code}</Label>
+            <Input
+              id="wh-code"
+              value={wh.code}
+              onChange={(e) => setWh({ ...wh, code: e.target.value })}
+            />
+            <Label htmlFor="wh-name">{c.name}</Label>
+            <Input
+              id="wh-name"
+              value={wh.name}
+              onChange={(e) => setWh({ ...wh, name: e.target.value })}
+            />
+            <Label htmlFor="wh-name-ar">{c.nameAr}</Label>
+            <Input
+              id="wh-name-ar"
+              dir="rtl"
+              value={wh.nameAr}
+              onChange={(e) => setWh({ ...wh, nameAr: e.target.value })}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWarehouseOpen(false)}>
+              {c.cancel}
+            </Button>
+            <Button
+              disabled={!wh.code || !wh.name || addWarehouse.isPending}
+              onClick={() => addWarehouse.mutate()}
+            >
+              {c.addWarehouse}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={countOpen} onOpenChange={setCountOpen}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>{c.newCount}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <Label>{c.product}</Label>
+            <Select
+              value={count.productId}
+              onValueChange={(productId) => setCount({ ...count, productId })}
+            >
+              <SelectTrigger aria-label={c.product}>
+                <SelectValue placeholder={c.product} />
+              </SelectTrigger>
+              <SelectContent>
+                {stocked.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {nameOf(p)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Label htmlFor="count-qty">{c.counted}</Label>
+            <Input
+              id="count-qty"
+              type="number"
+              inputMode="decimal"
+              min="0"
+              value={count.countedQty}
+              onChange={(e) => setCount({ ...count, countedQty: Number(e.target.value) })}
+            />
+            <Label>{c.countDate}</Label>
+            <DatePicker
+              aria-label={c.countDate}
+              value={count.countDate}
+              onChange={(value) => setCount({ ...count, countDate: value })}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCountOpen(false)}>
+              {c.cancel}
+            </Button>
+            <Button
+              disabled={!count.productId || createCount.isPending}
+              onClick={() => createCount.mutate()}
+            >
+              {c.createCount}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
