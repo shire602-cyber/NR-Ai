@@ -8,6 +8,8 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { PageHeader } from "@/components/ui/page-header";
+import { Alert } from "@/components/ui/alert";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -34,7 +36,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { formatNumber } from "@/lib/format";
-import { AlertTriangle, Download, Save } from "lucide-react";
+import { Download, Network, Save } from "lucide-react";
 
 interface GroupSummary {
   id: string;
@@ -262,7 +264,13 @@ export default function Consolidation() {
         eyebrow={tr("eyebrow")}
         title={tr("consolidationTitle")}
         description={tr("consolidationDescription")}
-        actions={
+        primaryAction={
+          <Button onClick={() => recordRun.mutate()} disabled={!data || recordRun.isPending}>
+            <Save className="h-4 w-4 me-2" />
+            {tr("record")}
+          </Button>
+        }
+        secondaryActions={
           <>
             <Button variant="outline" asChild>
               <Link href="/company-groups">{tr("manageGroups")}</Link>
@@ -271,21 +279,17 @@ export default function Consolidation() {
               <Download className="h-4 w-4 me-2" />
               {tr("export")}
             </Button>
-            <Button onClick={() => recordRun.mutate()} disabled={!data || recordRun.isPending}>
-              <Save className="h-4 w-4 me-2" />
-              {tr("record")}
-            </Button>
           </>
         }
       />
 
-      <div
-        className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+      <Alert
+        tone="info"
+        title={tr("managementLabel")}
         data-testid="banner-management-consolidation"
       >
-        <p className="font-medium">{tr("managementLabel")}</p>
-        <p className="mt-1">{tr("ctNote")}</p>
-      </div>
+        {tr("ctNote")}
+      </Alert>
 
       <Card>
         <CardContent className="pt-6 grid gap-4 sm:grid-cols-4 items-end">
@@ -316,14 +320,22 @@ export default function Consolidation() {
             <Label htmlFor="cons-to">{tr("to")}</Label>
             <DatePicker id="cons-to" value={to} onChange={(value) => setTo(value)} />
           </div>
-          <Button onClick={() => setPeriod({ from, to })} disabled={!groupId}>
-            {tr("run")}
-          </Button>
+          <div className="flex justify-end">
+            <Button onClick={() => setPeriod({ from, to })} disabled={!groupId}>
+              {tr("run")}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
       {groups && groups.length === 0 && (
-        <p className="text-sm text-muted-foreground">{tr("noGroups")}</p>
+        <div className="rounded-xl border border-border bg-card">
+          <EmptyState
+            icon={Network}
+            title={tr("noGroups")}
+            action={{ label: tr("manageGroups"), href: "/company-groups" }}
+          />
+        </div>
       )}
       {error && (
         <p className="text-sm text-destructive" role="alert">
@@ -335,17 +347,13 @@ export default function Consolidation() {
       {data && pl && bs && (
         <>
           {data.warnings.length > 0 && (
-            <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
-              <p className="flex items-center gap-2 font-medium">
-                <AlertTriangle className="h-4 w-4" />
-                {tr("warnings")}
-              </p>
-              <ul className="mt-1 list-disc ps-5">
+            <Alert tone="warning" title={tr("warnings")}>
+              <ul className="list-disc ps-5">
                 {data.warnings.map((w) => (
                   <li key={w}>{w}</li>
                 ))}
               </ul>
-            </div>
+            </Alert>
           )}
 
           <Card>
