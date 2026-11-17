@@ -287,18 +287,20 @@ describe("B2 NM1: direct method presents the S7 flows gross, VAT in operating", 
       vatTreatment: "standard",
     });
     expect(sale.status, sale.text).toBeLessThan(300);
+    // B1 (M3): a "computers" asset is capitalised on 1230 (its class account), so the disposal
+    // credits 1230 and the investing lines sit on 1230 (were 1290 before B1 and B2 met).
     expect(await linesOf(sale.body.journalEntryId)).toEqual({
       "1020": [21000, 0],
       "1240": [1000, 0],
-      "1290": [0, 36000],
+      "1230": [0, 36000],
       "2020": [0, 1000],
       "5130": [15000, 0],
     });
     const { indirect, direct } = await bothMethods(t, "2026-01-01", "2026-02-28");
     expect(subtotals(indirect)).toEqual({ operating: -800, investing: -16000, financing: 0 });
     expect(indirect.investing.breakdown.map((l) => [l.kind, l.accountCode, l.amount])).toEqual([
-      ["purchase", "1290", -36000],
-      ["proceeds", "1290", 20000],
+      ["purchase", "1230", -36000],
+      ["proceeds", "1230", 20000],
     ]);
     expect(
       Object.fromEntries(
