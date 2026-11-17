@@ -366,6 +366,17 @@ export async function renderCashFlow(
             en: `Cash proof difference AED ${cf.cashProof.difference.toFixed(2)}.`,
             ar: `فرق إثبات النقد ${cf.cashProof.difference.toFixed(2)} درهم.`,
           },
+      // B2 (NC2): IAS 7.43 disclosure of investing / financing transactions that used no cash.
+      ...(cf.nonCashTransactions ?? []).map((n) => ({
+        en: `Non-cash transaction excluded from the statement (IAS 7.43): ${n.date} ${n.entryNumber ?? ""} ${n.memo ?? ""} AED ${n.amount.toFixed(2)}.`.replace(
+          /\s+/g,
+          " "
+        ),
+        ar: `معاملة غير نقدية مستبعدة من القائمة (معيار المحاسبة الدولي 7.43): ${n.date} ${n.entryNumber ?? ""} ${n.amount.toFixed(2)} درهم.`.replace(
+          /\s+/g,
+          " "
+        ),
+      })),
     ],
   };
 }

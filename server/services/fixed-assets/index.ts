@@ -92,10 +92,20 @@ export interface AssetRow {
   serial_number: string | null;
   disposal_iso: string | null;
   disposal_amount: string | null;
+  carrying_rebased?: boolean;
 }
 
+/**
+ * B2: events after which straight-line depreciation follows the re-based carrying amount over
+ * the remaining life (see AssetCalcInput.rebased).
+ */
+const REBASED_SQL = `EXISTS (SELECT 1 FROM fixed_asset_events ev WHERE ev.asset_id = fixed_assets.id
+      AND (ev.event_type IN ('revalued', 'impaired')
+           OR (ev.event_type = 'recosted' AND COALESCE((ev.details->>'rebased')::boolean, false))))`;
+
 const ASSET_COLUMNS = sql.raw(
-  `*, to_char(purchase_date, 'YYYY-MM-DD') AS purchase_iso, to_char(disposal_date, 'YYYY-MM-DD') AS disposal_iso`
+  `*, to_char(purchase_date, 'YYYY-MM-DD') AS purchase_iso, to_char(disposal_date, 'YYYY-MM-DD') AS disposal_iso,
+   ${REBASED_SQL} AS carrying_rebased`
 );
 
 export async function loadAsset(
@@ -127,6 +137,7 @@ export function calcInput(a: AssetRow): AssetCalcInput {
     purchaseDate: a.purchase_iso,
     accumulatedFils: f(a.accumulated_depreciation),
     isDepreciable: a.is_depreciable !== false && !isNonDepreciableCategory(a.category),
+    rebased: a.carrying_rebased === true,
   };
 }
 
@@ -416,7 +427,9 @@ export async function syncBillAssets(
     const prev = existing.find((a) => !claimed.has(a.id) && a.asset_name === name);
     if (prev) {
       claimed.add(prev.id);
-      if (f(prev.purchase_cost) !== l.costFils && (await assetHasOwnJournals(tx, prev))) {
+      // B2 (NM2): debit notes already posted against the bill keep reducing the asset's cost.
+      const cost = l.costFils + (await recostedFils(tx, prev.id));
+      if (f(prev.purchase_cost) !== cost && (await assetHasOwnJournals(tx, prev))) {
         throw new DomainError(
           "BILL_ASSET_IN_USE",
           409,
@@ -427,8 +440,8 @@ export async function syncBillAssets(
       await tx.execute(
         sql`UPDATE fixed_assets SET capitalization_entry_id = ${args.entryId},
                    source_bill_line_id = ${l.billLineId}, cost_account_id = ${l.accountId},
-                   purchase_cost = ${fromFils(l.costFils)},
-                   net_book_value = ${fromFils(l.costFils)}::numeric + revaluation_surplus
+                   purchase_cost = ${fromFils(cost)},
+                   net_book_value = ${fromFils(cost)}::numeric + revaluation_surplus
                      - COALESCE(accumulated_depreciation, 0) - impairment_loss
              WHERE id = ${prev.id}`
       );
@@ -479,6 +492,100 @@ export async function syncBillAssets(
       );
     }
     await tx.execute(sql`DELETE FROM fixed_assets WHERE id = ${a.id}`);
+  }
+  return out;
+}
+
+/** Cost reductions (fils, ≤ 0) recorded on an asset by supplier debit notes. */
+async function recostedFils(tx: LedgerTx, assetId: string): Promise<number> {
+  const rows = await q<{ f: string }>(
+    tx,
+    sql`SELECT COALESCE(SUM(ROUND(amount * 100)), 0)::bigint::text AS f FROM fixed_asset_events
+         WHERE asset_id = ${assetId} AND event_type = 'recosted'`
+  );
+  return Number(rows[0]?.f ?? 0);
+}
+
+/**
+ * B2 (NM2, IAS 16.16(a) / 16.23): a supplier debit note that credits a fixed-asset cost account
+ * of a bill reduces the cost of the asset that bill capitalised, so the register keeps tying to
+ * the GL. The credit goes to the bill's asset on that account with the line's name, else the
+ * only one, else is spread over them by cost. Once depreciation has been posted, the reduced
+ * carrying amount is depreciated over the remaining useful life (a change in estimate applied
+ * prospectively, IAS 8.36-38). A disposed asset, or a credit above the carrying amount, is
+ * refused (409).
+ */
+export async function recostBillAssetsForDebitNote(
+  tx: LedgerTx,
+  args: {
+    companyId: string;
+    billId: string | null;
+    date: string;
+    entryId: string;
+    noteId: string;
+    noteNumber: string;
+    credits: Array<{ accountId: string; creditFils: number; description: string }>;
+    actorId: string;
+  }
+): Promise<string[]> {
+  if (!args.billId) return [];
+  const costIds = await fixedAssetCostAccountIds(tx, args.companyId);
+  const credits = args.credits.filter((c) => c.creditFils > 0 && costIds.has(c.accountId));
+  if (!credits.length) return [];
+  const assets = await q<AssetRow>(
+    tx,
+    sql`SELECT ${ASSET_COLUMNS} FROM fixed_assets
+         WHERE company_id = ${args.companyId} AND source_bill_id = ${args.billId}
+         ORDER BY created_at, id FOR UPDATE`
+  );
+  const touched = new Map<string, number>();
+  for (const c of credits) {
+    const onAccount = assets.filter((a) => a.cost_account_id === c.accountId);
+    if (!onAccount.length) continue;
+    const named = onAccount.find((a) => a.asset_name === c.description.slice(0, 255));
+    const targets = named ? [named] : onAccount;
+    const totalCost = targets.reduce((s, a) => s + f(a.purchase_cost), 0);
+    let rest = c.creditFils;
+    targets.forEach((a, i) => {
+      const part =
+        i === targets.length - 1
+          ? rest
+          : totalCost > 0
+            ? Math.round((c.creditFils * f(a.purchase_cost)) / totalCost)
+            : 0;
+      rest -= part;
+      touched.set(a.id, (touched.get(a.id) ?? 0) + part);
+    });
+  }
+  const out: string[] = [];
+  for (const a of assets) {
+    const reduce = touched.get(a.id) ?? 0;
+    if (reduce <= 0) continue;
+    const calc = calcInput(a);
+    const carrying = calc.costFils + (calc.revaluationFils ?? 0) - calc.accumulatedFils;
+    if (a.status === "disposed" || reduce > carrying - (calc.impairmentFils ?? 0)) {
+      throw new DomainError(
+        "DEBIT_NOTE_EXCEEDS_ASSET",
+        409,
+        { assetId: a.id, carrying: fromFils(carrying - (calc.impairmentFils ?? 0)) },
+        "The debit note credits more than the carrying amount of the bill's asset"
+      );
+    }
+    const rebased = calc.accumulatedFils > 0;
+    await tx.execute(
+      sql`UPDATE fixed_assets SET purchase_cost = purchase_cost - ${fromFils(reduce)}::numeric,
+                 net_book_value = COALESCE(net_book_value, purchase_cost) - ${fromFils(reduce)}::numeric
+           WHERE id = ${a.id}`
+    );
+    await recordEvent(tx, a, {
+      type: "recosted",
+      date: args.date,
+      amountFils: -reduce,
+      journalEntryId: args.entryId,
+      details: { debitNoteId: args.noteId, debitNoteNumber: args.noteNumber, rebased },
+      actorId: args.actorId,
+    });
+    out.push(a.id);
   }
   return out;
 }
@@ -1008,6 +1115,18 @@ export async function disposeAsset(assetId: string, companyId: string, input: Di
 
 // ─── Register (book vs tax) ─────────────────────────────────────────────────
 
+/**
+ * B2 (INTEGRATE-A follow-up, NL9): the register as at `asOf`. The asset row holds the CURRENT
+ * state; the book columns are rolled back to asOf from the asset's own journals and events:
+ *  - gross carrying amount and accumulated depreciation + impairment: current GL effect less the
+ *    asset's fixed-asset journals dated after asOf (depreciation, revaluation, impairment,
+ *    disposal) and the debit-note re-costs dated after asOf;
+ *  - accumulated depreciation: depreciation posted on or before asOf since the last revaluation
+ *    on or before asOf (a revaluation eliminates it, IAS 16.35(b)); impairment is the rest;
+ *  - revaluation reserve: what the asset holds in 3050 at asOf (IAS 16.39-41), shown beside the
+ *    gross revaluation adjustment on the cost account.
+ * Assets bought after asOf are not on the register at asOf.
+ */
 export async function assetRegister(companyId: string, asOf: string) {
   const { rows } = await pool.query(
     `SELECT fa.*, to_char(fa.purchase_date, 'YYYY-MM-DD') AS purchase_iso,
@@ -1015,10 +1134,67 @@ export async function assetRegister(companyId: string, asOf: string) {
        FROM fixed_assets fa
        LEFT JOIN fixed_asset_classes c ON c.id = fa.asset_class_id
        LEFT JOIN cost_centers cc ON cc.id = fa.cost_center_id
-      WHERE fa.company_id = $1
+      WHERE fa.company_id = $1 AND fa.purchase_date::date <= $2::date
       ORDER BY fa.purchase_date, fa.asset_name`,
-    [companyId]
+    [companyId, asOf]
   );
+  const defaults = await pool.query(
+    `SELECT code, id FROM accounts WHERE company_id = $1 AND code IN ($2, $3, $4)`,
+    [companyId, FA_CODES.COST, FA_CODES.ACCUMULATED, FA_CODES.REVALUATION]
+  );
+  const byCode = new Map(defaults.rows.map((r) => [r.code as string, r.id as string]));
+  const LOCAL = `((je.date + interval '4 hours')::date)`;
+  const [after, deps, reserve, recost] = await Promise.all([
+    pool.query(
+      `SELECT je.source_id AS asset_id, jl.account_id,
+              SUM(ROUND(jl.debit * 100) - ROUND(jl.credit * 100))::bigint AS f
+         FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id
+        WHERE je.company_id = $1 AND je.status = 'posted' AND je.source = $3
+          AND ${LOCAL} > $2::date
+        GROUP BY 1, 2`,
+      [companyId, asOf, FA_SOURCE]
+    ),
+    pool.query(
+      `WITH r AS (
+         SELECT je.source_id AS asset_id, MAX(je.created_at) AS at
+           FROM journal_entries je
+          WHERE je.company_id = $1 AND je.status = 'posted' AND je.source = $3
+            AND je.idempotency_key LIKE '%:revalue:%' AND ${LOCAL} <= $2::date
+          GROUP BY 1
+       )
+       SELECT je.source_id AS asset_id, jl.account_id,
+              SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100))::bigint AS f
+         FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id
+         LEFT JOIN r ON r.asset_id = je.source_id
+        WHERE je.company_id = $1 AND je.status = 'posted' AND je.source = $3
+          AND ${LOCAL} <= $2::date
+          AND (je.idempotency_key LIKE '%:dep:%' OR je.idempotency_key LIKE '%:capitalize')
+          AND (r.at IS NULL OR je.created_at > r.at)
+        GROUP BY 1, 2`,
+      [companyId, asOf, FA_SOURCE]
+    ),
+    pool.query(
+      `SELECT je.source_id AS asset_id,
+              SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100))::bigint AS f
+         FROM journal_entries je JOIN journal_lines jl ON jl.entry_id = je.id
+        WHERE je.company_id = $1 AND je.status = 'posted' AND je.source = $3
+          AND ${LOCAL} <= $2::date AND jl.account_id = $4
+        GROUP BY 1`,
+      [companyId, asOf, FA_SOURCE, byCode.get(FA_CODES.REVALUATION) ?? null]
+    ),
+    pool.query(
+      `SELECT asset_id, COALESCE(SUM(ROUND(amount * 100)), 0)::bigint AS f
+         FROM fixed_asset_events
+        WHERE company_id = $1 AND event_type = 'recosted' AND event_date > $2::date
+        GROUP BY 1`,
+      [companyId, asOf]
+    ),
+  ]);
+  const key = (asset: string, account: string | null | undefined) => `${asset}:${account}`;
+  const afterBy = new Map(after.rows.map((r) => [key(r.asset_id, r.account_id), Number(r.f)]));
+  const depBy = new Map(deps.rows.map((r) => [key(r.asset_id, r.account_id), Number(r.f)]));
+  const reserveBy = new Map(reserve.rows.map((r) => [r.asset_id as string, Number(r.f)]));
+  const recostBy = new Map(recost.rows.map((r) => [r.asset_id as string, Number(r.f)]));
   const [y, m] = asOf.split("-").map(Number);
   return (
     rows as Array<AssetRow & { class_code: string | null; cost_center_code: string | null }>
@@ -1031,14 +1207,29 @@ export async function assetRegister(companyId: string, asOf: string) {
         method: a.tax_depreciation_method ?? a.depreciation_method,
         revaluationFils: 0,
         impairmentFils: 0,
+        rebased: false,
       },
       y,
       m
     );
-    const bookNbv =
-      c.costFils + (c.revaluationFils ?? 0) - c.accumulatedFils - (c.impairmentFils ?? 0);
-    const taxNbv = c.costFils - tax.accumulatedFils;
-    const disposed = a.status === "disposed";
+    const costAccount = a.cost_account_id ?? byCode.get(FA_CODES.COST);
+    const accAccount = a.accumulated_account_id ?? byCode.get(FA_CODES.ACCUMULATED);
+    const disposed = a.status === "disposed" && !!a.disposal_iso && a.disposal_iso <= asOf;
+    const disposedNow = a.status === "disposed";
+    const recostAfter = recostBy.get(a.id) ?? 0;
+    const costFils = c.costFils - recostAfter;
+    const grossNow = disposedNow ? 0 : c.costFils + (c.revaluationFils ?? 0);
+    const accNow = disposedNow ? 0 : c.accumulatedFils + (c.impairmentFils ?? 0);
+    const gross = disposed
+      ? 0
+      : grossNow - (afterBy.get(key(a.id, costAccount)) ?? 0) - recostAfter;
+    const accumulated = disposed ? 0 : accNow + (afterBy.get(key(a.id, accAccount)) ?? 0);
+    const depreciation = disposed
+      ? 0
+      : Math.min(accumulated, Math.max(0, depBy.get(key(a.id, accAccount)) ?? 0));
+    const impairment = accumulated - depreciation;
+    const bookNbv = gross - accumulated;
+    const taxNbv = costFils - tax.accumulatedFils;
     return {
       id: a.id,
       assetNumber: a.asset_number,
@@ -1047,27 +1238,27 @@ export async function assetRegister(companyId: string, asOf: string) {
       category: a.category,
       classCode: a.class_code,
       costCenter: a.cost_center_code,
-      status: a.status,
+      status: disposedNow && !disposed ? "active" : a.status,
       purchaseDate: a.purchase_iso,
-      cost: Number(fromFils(c.costFils)),
-      revaluationSurplus: Number(fromFils(c.revaluationFils ?? 0)),
-      bookAccumulatedDepreciation: Number(fromFils(c.accumulatedFils)),
-      impairment: Number(fromFils(c.impairmentFils ?? 0)),
+      cost: Number(fromFils(costFils)),
+      /** Gross revaluation adjustment on the cost account (fair value less cost). */
+      revaluationSurplus: Number(fromFils(disposed ? 0 : gross - costFils)),
+      /** NL9: the asset's revaluation reserve in equity (3050) at asOf. */
+      revaluationReserve: Number(fromFils(reserveBy.get(a.id) ?? 0)),
+      bookAccumulatedDepreciation: Number(fromFils(depreciation)),
+      impairment: Number(fromFils(impairment)),
       // A3 (H5): the figures that tie to the GL cost (1290 etc.) and accumulated
       // depreciation and impairment (1240) accounts.
-      grossCarryingAmount: disposed ? 0 : Number(fromFils(c.costFils + (c.revaluationFils ?? 0))),
-      accumulatedDepreciationAndImpairment: disposed
-        ? 0
-        : Number(fromFils(c.accumulatedFils + (c.impairmentFils ?? 0))),
-      bookNetBookValue: a.status === "disposed" ? 0 : Number(fromFils(bookNbv)),
+      grossCarryingAmount: Number(fromFils(gross)),
+      accumulatedDepreciationAndImpairment: Number(fromFils(accumulated)),
+      bookNetBookValue: Number(fromFils(bookNbv)),
       taxUsefulLifeYears: a.tax_useful_life_years ?? a.useful_life_years,
-      taxAccumulatedDepreciation:
-        a.status === "disposed" ? 0 : Number(fromFils(tax.accumulatedFils)),
-      taxWrittenDownValue: a.status === "disposed" ? 0 : Number(fromFils(taxNbv)),
-      bookTaxDifference: a.status === "disposed" ? 0 : Number(fromFils(bookNbv - taxNbv)),
+      taxAccumulatedDepreciation: disposed ? 0 : Number(fromFils(tax.accumulatedFils)),
+      taxWrittenDownValue: disposed ? 0 : Number(fromFils(taxNbv)),
+      bookTaxDifference: disposed ? 0 : Number(fromFils(bookNbv - taxNbv)),
       capitalized: !!a.capitalization_entry_id || !a.needs_capitalization_je,
-      disposalDate: a.disposal_iso,
-      disposalAmount: a.disposal_amount === null ? null : Number(a.disposal_amount),
+      disposalDate: disposed ? a.disposal_iso : null,
+      disposalAmount: disposed && a.disposal_amount !== null ? Number(a.disposal_amount) : null,
     };
   });
 }
@@ -1081,7 +1272,8 @@ export const REGISTER_COLUMNS = [
   { header: "Status", key: "status", width: 10 },
   { header: "Purchase date", key: "purchaseDate", width: 14 },
   { header: "Cost (AED)", key: "cost", width: 16 },
-  { header: "Revaluation (AED)", key: "revaluationSurplus", width: 16 },
+  { header: "Revaluation adjustment to gross (AED)", key: "revaluationSurplus", width: 18 },
+  { header: "Revaluation reserve (AED)", key: "revaluationReserve", width: 16 },
   { header: "Book acc. depreciation (AED)", key: "bookAccumulatedDepreciation", width: 20 },
   { header: "Impairment (AED)", key: "impairment", width: 14 },
   { header: "Gross carrying amount (AED)", key: "grossCarryingAmount", width: 18 },

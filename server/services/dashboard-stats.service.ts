@@ -29,6 +29,7 @@ import {
   parseReportDate,
   priorPeriod,
   priorYear,
+  plSection,
   profitAndLoss,
   reportCurrencyOf,
   uaeToday,
@@ -146,6 +147,8 @@ export interface MonthlyTrendPoint {
   key: string;
   month: string;
   revenue: number;
+  /** B2 (NM4): other income (interest, disposal and FX gains), not revenue. */
+  otherIncome: number;
   expenses: number;
   netProfit: number;
 }
@@ -158,10 +161,13 @@ export async function getMonthlyTrends(
 ): Promise<MonthlyTrendPoint[]> {
   const keys = lastMonthKeys(today, count);
   const from = `${keys[0].key}-01`;
+  // B2 (NM4): revenue is the P&L revenue section only (IFRS 15); other income (interest,
+  // disposal gains, realised and unrealised FX gains) is its own series, as on the P&L.
+  const accounts = await loadAccounts(companyId, db);
+  const sectionOf = new Map(accounts.map((a) => [a.id, plSection(a)]));
   const { rows } = await db.query(
-    `SELECT to_char(${ENTRY_LOCAL_DATE_SQL}, 'YYYY-MM') AS ym,
-            COALESCE(SUM(CASE WHEN a.type = 'income' THEN ROUND((jl.credit - jl.debit) * 100) ELSE 0 END), 0)::bigint AS rev,
-            COALESCE(SUM(CASE WHEN a.type = 'expense' THEN ROUND((jl.debit - jl.credit) * 100) ELSE 0 END), 0)::bigint AS exp
+    `SELECT to_char(${ENTRY_LOCAL_DATE_SQL}, 'YYYY-MM') AS ym, a.id AS account_id, a.type,
+            COALESCE(SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100)), 0)::bigint AS cr
        FROM journal_lines jl
        JOIN journal_entries je ON je.id = jl.entry_id
        JOIN accounts a ON a.id = jl.account_id
@@ -169,20 +175,28 @@ export async function getMonthlyTrends(
         AND ${ENTRY_LOCAL_DATE_SQL} >= $2::date AND ${ENTRY_LOCAL_DATE_SQL} <= $3::date
         AND ${NOT_CLOSING_SQL}
         AND a.type IN ('income', 'expense')
-      GROUP BY 1`,
+      GROUP BY 1, 2, 3`,
     [companyId, from, monthEnd(today)]
   );
-  const byKey = new Map(rows.map((r) => [r.ym, r]));
+  const byKey = new Map<string, { rev: number; oi: number; exp: number }>();
+  for (const r of rows) {
+    const cur = byKey.get(r.ym) ?? { rev: 0, oi: 0, exp: 0 };
+    const cr = Number(r.cr);
+    if (r.type === "income") {
+      if (sectionOf.get(r.account_id) === "other_income") cur.oi += cr;
+      else cur.rev += cr;
+    } else cur.exp -= cr;
+    byKey.set(r.ym, cur);
+  }
   return keys.map(({ key, label }) => {
-    const r = byKey.get(key);
-    const revenue = r ? aed(Number(r.rev)) : 0;
-    const expenses = r ? aed(Number(r.exp)) : 0;
+    const r = byKey.get(key) ?? { rev: 0, oi: 0, exp: 0 };
     return {
       key,
       month: label,
-      revenue,
-      expenses,
-      netProfit: aed(Math.round((revenue - expenses) * 100)),
+      revenue: aed(r.rev),
+      otherIncome: aed(r.oi),
+      expenses: aed(r.exp),
+      netProfit: aed(r.rev + r.oi - r.exp),
     };
   });
 }
@@ -193,12 +207,14 @@ function pct(current: number, previous: number): number | null {
 }
 
 function summarise(pl: PlTotals, from: IsoDate | null, to: IsoDate) {
-  const margin =
-    pl.totalIncome > 0 ? Math.round((pl.netProfit / pl.totalIncome) * 1000) / 10 : null;
+  // B2 (NM4): revenue is the P&L revenue section (IFRS 15); other income (interest, disposal
+  // and FX gains) is reported beside it, never inside it. revenue + otherIncome − expenses = net.
+  const margin = pl.revenue > 0 ? Math.round((pl.netProfit / pl.revenue) * 1000) / 10 : null;
   return {
     from,
     to,
-    revenue: pl.totalIncome,
+    revenue: pl.revenue,
+    otherIncome: pl.otherIncome,
     expenses: pl.totalExpenses,
     netProfit: pl.netProfit,
     margin,

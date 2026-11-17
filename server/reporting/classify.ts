@@ -13,10 +13,14 @@ export type PlSection =
   | "other_expenses"
   | "income_tax";
 
-/** Other income in the default chart: 4030 other income, 4040 interest, 4080 disposal gain, 4090 FX gain. */
-export const OTHER_INCOME_CODES = new Set(["4030", "4040", "4080", "4090"]);
-/** Other expenses in the default chart: 5130 disposal loss, 5140 FX loss. */
-export const OTHER_EXPENSE_CODES = new Set(["5130", "5140"]);
+/**
+ * Other income in the default chart: 4030 other income, 4040 interest, 4080 disposal gain,
+ * 4090 realised and 4091 unrealised FX gain. B2 (NM4): exchange differences are not revenue
+ * from contracts with customers (IAS 1.82(a), IFRS 15), so both FX gains sit here.
+ */
+export const OTHER_INCOME_CODES = new Set(["4030", "4040", "4080", "4090", "4091"]);
+/** Other expenses in the default chart: 5130 disposal loss, 5140 realised / 5141 unrealised FX loss. */
+export const OTHER_EXPENSE_CODES = new Set(["5130", "5140", "5141"]);
 
 const COST_OF_SALES_SUBTYPES = new Set([
   "cost_of_sales",
@@ -174,11 +178,32 @@ export function isOperatingNonCurrent(
   );
 }
 
+/**
+ * B2 (NC2): current liabilities that arise from financing activities (IAS 7.17): dividends
+ * payable (dividends paid are financing, IAS 7.34), short-term loans, borrowings, overdrafts.
+ */
+const FINANCING_LIABILITY_SUBTYPES = new Set([
+  "dividends_payable",
+  "dividend_payable",
+  "loan",
+  "borrowing",
+  "short_term_debt",
+]);
+
+export function isCurrentFinancingLiability(
+  a: Pick<ReportAccount, "type" | "subType" | "nameEn">
+): boolean {
+  if (a.type !== "liability") return false;
+  if (FINANCING_LIABILITY_SUBTYPES.has((a.subType ?? "").toLowerCase())) return true;
+  return /dividend|\bloans?\b|borrowing|overdraft/i.test(a.nameEn);
+}
+
 /** Activity for the indirect method's balance-change adjustments. */
 export function indirectActivity(a: ReportAccount): CashFlowActivity {
   if (isOperatingNonCurrent(a)) return "operating";
   if (a.type === "equity") return "financing";
-  if (a.type === "liability") return isNonCurrent(a) ? "financing" : "operating";
+  if (a.type === "liability")
+    return isNonCurrent(a) || isCurrentFinancingLiability(a) ? "financing" : "operating";
   if (a.type === "asset") return isNonCurrent(a) ? "investing" : "operating";
   return "operating";
 }

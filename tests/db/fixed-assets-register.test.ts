@@ -251,9 +251,16 @@ describe("W4-B fixed assets", () => {
     expect(reg.status).toBe(200);
     const row = reg.body.rows.find((r: { id: string }) => r.id === truck.body.id);
     expect(row.taxAccumulatedDepreciation).toBe(800);
-    // IAS 16.35(b) (A4 L7): the 1 Feb revaluation eliminated January's 1,000 against the gross
-    // amount (now the 50,000 fair value); the book columns are the asset's current state.
-    expect(row.bookAccumulatedDepreciation).toBe(0);
+    // B2: the book columns are as at asOf (31 Jan), before the 1 Feb revaluation eliminated
+    // January's 1,000 against the gross amount (IAS 16.35(b)); they used to show the current state.
+    expect(row.bookAccumulatedDepreciation).toBe(1000);
+    expect(row.grossCarryingAmount).toBe(48000);
+    const now = await t.as.get(
+      `/api/companies/${t.company.id}/fixed-assets/register?asOf=2026-02-28`
+    );
+    const feb = now.body.rows.find((r: { id: string }) => r.id === truck.body.id);
+    expect(feb.bookAccumulatedDepreciation).toBe(0);
+    expect(feb.grossCarryingAmount).toBe(50000);
     const xlsx = await t.as.get(`/api/companies/${t.company.id}/fixed-assets/register?format=xlsx`);
     expect(xlsx.status).toBe(200);
     expect(String(xlsx.headers.get("content-type"))).toContain("spreadsheetml");

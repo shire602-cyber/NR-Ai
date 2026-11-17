@@ -42,6 +42,13 @@ export const VAT_DOCUMENT_SOURCES: ReadonlySet<string> = new Set([
  */
 export const REVERSAL_REPORTED_ON_OWN_DATE: ReadonlySet<string> = new Set(["vat_bad_debt_relief"]);
 
+/**
+ * B2 (NL1): sources that touch the VAT control accounts but are not VAT transactions of any
+ * period: the payment / refund of a return (and its reversal) clears 2020 / 1050 and changes no
+ * box (the VAT engine leaves it out), so no filed period is affected by it.
+ */
+export const VAT_LOCK_EXEMPT_SOURCES: ReadonlySet<string> = new Set(["vat_return_settlement"]);
+
 /** Return statuses that close the period (an "amended" return is superseded by its draft). */
 export const VAT_LOCKING_STATUSES = ["submitted", "filed"] as const;
 
@@ -151,6 +158,7 @@ export async function assertVatPeriodOpen(
     reversedEntryId?: string | null;
   }
 ): Promise<void> {
+  if (VAT_LOCK_EXEMPT_SOURCES.has(input.source ?? "")) return;
   const candidates: Array<{ date: string; source: string | null }> = [
     { date: input.dateIso, source: input.source },
   ];
@@ -161,6 +169,7 @@ export async function assertVatPeriodOpen(
        WHERE id = ${input.reversedEntryId} AND company_id = ${input.companyId}
     `);
     const o = rowsOf<Record<string, string | null>>(res)[0];
+    if (VAT_LOCK_EXEMPT_SOURCES.has(o?.source ?? "")) return;
     if (o?.d && !REVERSAL_REPORTED_ON_OWN_DATE.has(o.source ?? "")) {
       originalSource = o.source ?? null;
       candidates.push({ date: o.d, source: originalSource });

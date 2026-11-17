@@ -115,6 +115,14 @@ interface CashFlowData {
   financing: { total: number; breakdown: AccountBreakdown[] };
   /** A3 (C5): effect of exchange-rate changes on cash (IAS 7.28). */
   fxEffect?: { total: number; breakdown: AccountBreakdown[] };
+  /** B2 (NC2): investing / financing transactions that used no cash (IAS 7.43). */
+  nonCashTransactions?: Array<{
+    entryId: string;
+    entryNumber: string | null;
+    date: string;
+    memo: string | null;
+    amount: number;
+  }>;
   netCashChange: number;
   openingCash?: number;
   closingCash?: number;
@@ -1001,6 +1009,31 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
                     <Money amount={data.fxEffect.total} currency={"AED"} />
                   </span>
                 </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {data.nonCashTransactions && data.nonCashTransactions.length > 0 ? (
+            <Card data-testid="cash-flow-non-cash">
+              <CardContent className="pt-6 space-y-2">
+                <div className="font-bold">
+                  <T k="pageLabels.nonCashTransactions" />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  <T k="pageLabels.nonCashTransactionsHint" />
+                </p>
+                <ul className="text-sm">
+                  {data.nonCashTransactions.map((n) => (
+                    <li key={n.entryId} className="flex justify-between gap-4 py-1">
+                      <span className="tabular-nums" title={n.memo ?? undefined}>
+                        {n.date}
+                      </span>
+                      <span className="tabular-nums">
+                        <Money amount={n.amount} currency={"AED"} />
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </CardContent>
             </Card>
           ) : null}
