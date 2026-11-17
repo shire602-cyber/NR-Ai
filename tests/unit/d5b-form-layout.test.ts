@@ -151,8 +151,8 @@ describe("[D5b] dialog sizes", () => {
 
   it("md/lg/xl are full-screen sheets on phones and centred panels from 640px", async () => {
     for (const [size, max] of [
-      ["md", "sm:max-w-xl"],
-      ["lg", "sm:max-w-3xl"],
+      ["md", "sm:max-w-[40rem]"], // WP-A spec 2.2: 640
+      ["lg", "sm:max-w-[55rem]"], // 880
       ["xl", "sm:max-w-6xl"],
     ] as const) {
       await open(size);
@@ -169,14 +169,14 @@ describe("[D5b] dialog sizes", () => {
     const el = document.querySelector('[role="dialog"]')!;
     expect(el.className).toContain("bottom-0");
     expect(el.className).toContain("rounded-t-2xl");
-    expect(el.className).toContain("sm:max-w-md");
+    expect(el.className).toContain("sm:max-w-[30rem]"); // WP-A spec 2.2: 480
   });
 
   it("without a size the legacy centred panel is unchanged", async () => {
     await open();
     const el = document.querySelector('[role="dialog"]')!;
     expect(el.getAttribute("data-size")).toBeNull();
-    expect(el.className).toContain("max-w-lg");
+    expect(el.className).toContain("max-w-[30rem]");
     expect(el.className).not.toContain("100dvh]");
   });
 });
