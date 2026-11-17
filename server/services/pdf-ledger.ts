@@ -36,6 +36,14 @@ import {
 
 export { ltr };
 
+/**
+ * Gap before a second-language line: Arabic glyphs reach below the Latin line box, so a line
+ * under Arabic text gets a little more room.
+ */
+function lineAdjust(above: string): number {
+  return /[\u0600-\u06FF]/.test(above) ? 1.5 : -1;
+}
+
 /** 1 mm in PDF points. */
 export const MM = 72 / 25.4;
 
@@ -149,10 +157,13 @@ export class Ledger {
     return `\u2068${a}\u2069 / \u2068${b}\u2069`;
   }
 
-  /** Both languages as one sentence pair, document language first (small print, footers). */
+  /**
+   * Both languages for small print, document language first, each on its own line so a wrapped
+   * sentence never mixes directions.
+   */
   sentence(label: Bi): string {
     const [a, b] = this.pair(label);
-    return `\u2068${a}\u2069  \u2068${b}\u2069`;
+    return `${a}\n${b}`;
   }
 
   /** Starts a new page when `height` does not fit below the cursor. */
@@ -211,7 +222,7 @@ export class Ledger {
     if (b && b !== a) {
       endY = text(this.doc, b, {
         x,
-        y: endY - 1,
+        y: endY + lineAdjust(a),
         width: w,
         size: o.secondarySize ?? size,
         color: o.secondaryColor ?? o.color ?? LEDGER_COLORS.muted,
@@ -528,7 +539,7 @@ export class Ledger {
       if (b && b !== a) {
         endY = text(this.doc, b, {
           x: lx,
-          y: endY - 1,
+          y: endY + lineAdjust(a),
           width: labelW,
           size: size - 2,
           color: opts.secondaryColor ?? LEDGER_COLORS.muted,
@@ -615,7 +626,9 @@ export class Ledger {
   smallPrint(lines: string[]): void {
     const list = lines.filter(Boolean);
     if (!list.length) return;
-    this.ensure(list.length * 11 + 6);
+    this.ensure(
+      list.reduce((h, l) => h + measureHeight(this.doc, l, { size: 7.5, width: this.width }), 6)
+    );
     for (const line of list) {
       this.y =
         text(this.doc, line, {

@@ -434,11 +434,15 @@ async function generateStandardInvoicePDF(
     ledger.note(bi("Bank details", "تفاصيل الحساب البنكي"), brand.bankDetails);
 
   ledger.smallPrint([
-    brand?.footerText || ledger.inline(bi("Thank you for your business.", "شكراً لتعاملكم معنا.")),
+    brand?.footerText ||
+      ledger.sentence(bi("Thank you for your business.", "شكراً لتعاملكم معنا.")),
     isVATRegistered
-      ? ledger.rtl
-        ? "هذه فاتورة ضريبية صادرة إلكترونياً وصالحة بدون توقيع. This is a computer-generated tax invoice and is valid without a signature."
-        : "This is a computer-generated tax invoice and is valid without a signature. هذه فاتورة ضريبية صادرة إلكترونياً وصالحة بدون توقيع."
+      ? ledger.sentence(
+          bi(
+            "This is a computer-generated tax invoice and is valid without a signature.",
+            "هذه فاتورة ضريبية صادرة إلكترونياً وصالحة بدون توقيع."
+          )
+        )
       : "",
   ]);
 
