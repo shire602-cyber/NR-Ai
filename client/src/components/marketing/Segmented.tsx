@@ -15,16 +15,19 @@ export function Segmented<V extends string>({
   optionTestId,
   className,
   disabled,
+  dense,
 }: {
   value: V | null;
   options: readonly { value: V; label: string }[];
   onChange: (v: V) => void;
-  /** Accessible name; pass `labelledBy` instead when a visible label exists. */
+  /** Accessible name of the group. */
   label?: string;
   testId?: string;
   optionTestId?: (v: V) => string;
   className?: string;
   disabled?: boolean;
+  /** Tighter labels for four options on a phone. */
+  dense?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const move = (dir: 1 | -1) => {
@@ -71,7 +74,8 @@ export function Segmented<V extends string>({
             data-testid={optionTestId?.(o.value)}
             onClick={() => onChange(o.value)}
             className={cn(
-              "truncate rounded-md px-2 text-small font-medium transition-colors duration-fast",
+              "truncate rounded-md font-medium transition-colors duration-fast",
+              dense ? "px-1 text-caption" : "px-2 text-small",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               active
                 ? "bg-card text-foreground shadow-xs ring-1 ring-border"

@@ -183,6 +183,7 @@ function CompareList() {
     <div className="mk-compare-list">
       <Segmented
         className="mk-compare-list__picker"
+        dense
         value={plan}
         onChange={setPlan}
         label={t["marketing.prPickPlan"]}
