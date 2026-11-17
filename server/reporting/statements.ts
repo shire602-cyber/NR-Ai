@@ -878,7 +878,7 @@ function cashFlowLine(
     accountId: v.kind === "non_cash" ? key : a.id,
     accountCode: a.code,
     accountName: a.nameEn,
-    accountNameAr: a.nameAr ?? null,
+    accountNameAr: a?.nameAr ?? null,
     amount: aed(v.fils),
     kind: v.kind,
   };
