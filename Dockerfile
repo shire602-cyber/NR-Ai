@@ -78,10 +78,12 @@ COPY --from=builder /app/server/assets ./server/assets
 
 RUN mkdir -p uploads/receipts && chown -R muhasib:nodejs uploads
 
-# NOTE: we intentionally do NOT `USER muhasib` here. Railway mounts the durable
-# uploads Volume owned by root, so the container must start as root to chown the
-# mount; server/index.ts then drops privileges to the muhasib user (uid 1001)
-# at startup. The app process therefore still runs unprivileged at runtime.
+# The container runs as the unprivileged `muhasib` user (uid/gid 1001). Self-hosting:
+# the host uploads directory must be owned by 1001:1001 (`chown 1001:1001 /srv/muhasib/uploads`,
+# docs/release/SELF-HOSTING.md); named volumes inherit the ownership of /app/uploads above.
+# Railway mounts volumes owned by root; there set RAILWAY_RUN_UID=0 so the app can start as
+# root, chown the mount and drop to uid 1001 itself (server/index.ts).
+USER muhasib
 
 EXPOSE ${PORT:-5000}
 

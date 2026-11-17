@@ -1,8 +1,8 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0117)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0118)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
-Owner-run. The first deploy of this branch applies 29 migrations that rewrite some production data
+Owner-run. The first deploy of this branch applies 30 migrations that rewrite some production data
 (users, roles, FX rates, reconciliation rules, portal tokens, audit chain, subscriptions). Do not
 merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived or external items
 (A-Cube, email, Stripe, WPS, GPSSA, FAF) are listed in section 9 and stay off until proven.
@@ -29,7 +29,7 @@ Restore the dump from section 1 (or a Railway snapshot) into a scratch database,
 ```
 export DATABASE_URL=postgres://.../rehearsal   # the restored copy
 \timing on                                     # in psql; or time the command below
-time npm run db:migrate                         # applies 0089-0117; record total and slowest file
+time npm run db:migrate                         # applies 0089-0118; record total and slowest file
 npm run build && PORT=<free port> npm start     # boot check: /health/ready 200, /api/version
 ```
 
@@ -117,6 +117,35 @@ reverses each unmatched payment through `bills.reversePayment` / `invoices.rever
 records it again (same date, amount, rate, reference) on the primary bank account GL. Payments
 already matched to a bank line, or dated in a locked period, are skipped and reported. Run the
 repair only after the owner has reviewed the findings, with a fresh backup.
+
+Pre-deploy SQL check (read-only, run on production or the snapshot BEFORE the deploy): parent/child
+posting accounts. Any parent (header) account that already carries posted journal lines needs an
+owner decision before a build that refuses posting to parent accounts goes live:
+
+```
+psql "$DATABASE_URL" -f scripts/qa/find-header-posting-accounts.sql
+```
+
+Zero rows means clear. Attach the output (even when empty) to the rehearsal record.
+
+### 2d. Post-migrate check: skipped `uq_employees_*` unique indexes (0118)
+
+Migration `0118_x4_payroll.sql` creates three partial unique indexes on `employees`, but each one is
+SKIPPED with only a `RAISE NOTICE` when the existing data already holds duplicates. A skipped index
+means duplicates can still be entered, so confirm all three exist after migrating:
+
+```sql
+SELECT 'uq_employees_company_employee_number' AS expected, to_regclass('uq_employees_company_employee_number') IS NOT NULL AS present
+UNION ALL SELECT 'uq_employees_company_iban', to_regclass('uq_employees_company_iban') IS NOT NULL
+UNION ALL SELECT 'uq_employees_company_emirates_id', to_regclass('uq_employees_company_emirates_id') IS NOT NULL;
+```
+
+Any `present = false` row: find the duplicates (group `employees` by `company_id` and the column
+named in the index; see the `CREATE UNIQUE INDEX` predicate in `migrations/0118_x4_payroll.sql`),
+have the owner merge or correct them, then create the missing index by running its
+`CREATE UNIQUE INDEX IF NOT EXISTS ...` statement from that file by hand with `psql` (the migrator
+will not re-apply an already-applied file). Also search the migrate log for `0118: duplicate employee`. Do not
+sign off the release while one is missing.
 
 Run them on the pre-migration snapshot as well, so the owner can compare. Rehearsal table to fill in
 and attach to the PR:
@@ -224,7 +253,7 @@ and FTA. The PR description must say so, so "394 fixed" is not read as "certifie
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
 `einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
 safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
-0089-0117, then run it a second time to confirm it is a no-op.
+0089-0118, then run it a second time to confirm it is a no-op.
 
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):
