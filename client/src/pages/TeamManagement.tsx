@@ -1,6 +1,6 @@
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -119,14 +119,16 @@ const ROLE_ICONS: Record<CompanyRole, React.ReactNode> = {
   viewer: <Eye className="w-4 h-4" />,
 };
 
+// One neutral pill for every role (spec 2.3: status/role is not carried by colour fills).
+const ROLE_PILL = "border-transparent bg-neutral-subtle text-neutral-subtle-foreground";
 const ROLE_COLORS: Record<CompanyRole, string> = {
-  owner: "bg-chart-5/10 text-chart-5",
-  admin: "bg-info-subtle text-info-subtle-foreground",
-  accountant: "bg-success-subtle text-success-subtle-foreground",
-  bookkeeper: "bg-success-subtle text-success-subtle-foreground",
-  approver: "bg-info-subtle text-info-subtle-foreground",
-  employee: "bg-muted text-foreground",
-  viewer: "bg-muted text-muted-foreground",
+  owner: ROLE_PILL,
+  admin: ROLE_PILL,
+  accountant: ROLE_PILL,
+  bookkeeper: ROLE_PILL,
+  approver: ROLE_PILL,
+  employee: ROLE_PILL,
+  viewer: ROLE_PILL,
 };
 
 /** Shown in the permissions matrix; keys come from shared/permissions.ts. */
@@ -167,8 +169,6 @@ const COPY = {
     ar: "يمكن لدورك عرض الفريق دون تعديله.",
   },
   yourRole: { en: "Your role", ar: "دورك" },
-  finance: { en: "Finance team", ar: "الفريق المالي" },
-  others: { en: "Employees and viewers", ar: "الموظفون والمشاهدون" },
   removeTitle: { en: "Remove team member?", ar: "إزالة عضو الفريق؟" },
   removeBody: {
     en: "They will lose access to this company immediately.",
@@ -179,8 +179,6 @@ const COPY = {
   removed: { en: "Member removed", ar: "تمت إزالة العضو" },
   revoked: { en: "Invitation revoked", ar: "تم إلغاء الدعوة" },
 } satisfies Record<string, Bilingual>;
-
-const FINANCE_ROLES: CompanyRole[] = ["admin", "accountant", "bookkeeper", "approver"];
 
 export default function TeamManagement() {
   const { t, locale } = useTranslation();
@@ -288,16 +286,6 @@ export default function TeamManagement() {
     onError,
   });
 
-  const stats = useMemo(() => {
-    const members = teamMembers ?? [];
-    return {
-      total: members.length,
-      owners: members.filter((m) => m.role === "owner").length,
-      finance: members.filter((m) => FINANCE_ROLES.includes(m.role)).length,
-      others: members.filter((m) => m.role === "employee" || m.role === "viewer").length,
-    };
-  }, [teamMembers]);
-
   const roleLabel = (role: CompanyRole) =>
     tr(COMPANY_ROLE_LABELS[role] ?? COMPANY_ROLE_LABELS.employee);
 
@@ -341,11 +329,6 @@ export default function TeamManagement() {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-24" />
-          ))}
-        </div>
         <Skeleton className="h-96" />
       </div>
     );
@@ -365,7 +348,7 @@ export default function TeamManagement() {
               data-testid="button-view-permissions"
             >
               <Shield className="w-4 h-4 me-2" />
-              {locale === "ar" ? "الصلاحيات" : "Permissions"}
+              {t["settingsPages.permissions"]}
             </Button>
             {canManage && (
               <Button onClick={() => setInviteDialogOpen(true)} data-testid="button-invite-member">
@@ -383,49 +366,6 @@ export default function TeamManagement() {
           {!canManage && <span className="ms-2">{tr(COPY.readOnly)}</span>}
         </p>
       )}
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {t["pages.teamTotalMembers"]}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {locale === "ar" ? "المالكين" : "Owners"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tabular-nums">{stats.owners}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {tr(COPY.finance)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tabular-nums">{stats.finance}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              {tr(COPY.others)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-semibold tabular-nums">{stats.others}</div>
-          </CardContent>
-        </Card>
-      </div>
 
       <Card>
         <CardHeader>

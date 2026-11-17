@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
@@ -28,7 +29,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
-import { Inbox, Plus, Trash2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Info, Plus, Trash2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 // ─── Types (mirror the firm email-intake API) ──────────────────────────────
 interface EmailSource {
@@ -113,36 +114,24 @@ export default function EmailIntake() {
     <div className="space-y-6">
       <PageHeader
         eyebrow={t["emailIntake.nraCenter"]}
-        icon={Inbox}
         title={t["emailIntake.emailDocumentIntake"]}
         description={t["emailIntake.clientsEmailTheirDocumentsThe"]}
       />
 
       {featureOff && (
-        <Alert>
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>
-            <T k="pages.pilotDisabled" />
-          </AlertTitle>
-          <AlertDescription>
-            {t["emailIntake.pilotDisabledBefore"]}
-            <code translate="no" dir="ltr">
-              EMAIL_INTAKE_ENABLED=true
-            </code>
-            {t["emailIntake.pilotDisabledAfter"]}
-          </AlertDescription>
+        <Alert data-testid="email-intake-off">
+          <Info className="h-4 w-4" />
+          <AlertTitle>{t["firmOps.intakeOffTitle"]}</AlertTitle>
+          <AlertDescription>{t["firmOps.intakeOffBody"]}</AlertDescription>
         </Alert>
       )}
       {mailboxOff && (
-        <Alert>
+        <Alert data-testid="email-intake-no-mailbox">
           <Mail className="h-4 w-4" />
           <AlertTitle>
             <T k="pages.noMailboxConnected" />
           </AlertTitle>
-          <AlertDescription>
-            The pilot is enabled but no mailbox is wired (<code>EMAIL_INTAKE_PROVIDER</code>).
-            Sender mappings are saved and ready; ingestion starts once a mailbox is connected.
-          </AlertDescription>
+          <AlertDescription>{t["firmOps.intakeNoMailboxBody"]}</AlertDescription>
         </Alert>
       )}
 
@@ -467,17 +456,13 @@ function CompletenessTab({
               <Label>
                 <T k="pages.periodStart2" />
               </Label>
-              <Input
-                type="date"
-                value={periodStart}
-                onChange={(e) => setPeriodStart(e.target.value)}
-              />
+              <DatePicker value={periodStart} onChange={(v) => setPeriodStart(v)} />
             </div>
             <div className="space-y-1.5">
               <Label>
                 <T k="pages.periodEnd2" />
               </Label>
-              <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+              <DatePicker value={periodEnd} onChange={(v) => setPeriodEnd(v)} />
             </div>
             <div className="flex items-end">
               <Button

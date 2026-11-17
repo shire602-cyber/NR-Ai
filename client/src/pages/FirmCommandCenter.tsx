@@ -821,11 +821,17 @@ export default function FirmCommandCenter() {
               {workloadChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={workloadChartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
+                    <CartesianGrid vertical={false} stroke="hsl(var(--border))" />
+                    <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={11} />
+                    <YAxis tickLine={false} axisLine={false} fontSize={11} allowDecimals={false} />
                     <RechartsTooltip />
-                    <Bar dataKey="clients" fill="#3b82f6" name="Clients assigned" />
+                    <Bar
+                      dataKey="clients"
+                      fill="hsl(var(--chart-1))"
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={28}
+                      name={t["firmOps.chartClientsAssigned"]}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
@@ -911,14 +917,32 @@ export default function FirmCommandCenter() {
               </div>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={comparisonChartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
+                  <CartesianGrid vertical={false} stroke="hsl(var(--border))" />
+                  <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={11} />
+                  <YAxis tickLine={false} axisLine={false} fontSize={11} />
                   <RechartsTooltip />
                   <Legend />
-                  <Bar dataKey="revenue" fill="#10b981" name="Revenue (AED)" />
-                  <Bar dataKey="invoices" fill="#3b82f6" name="Invoices" />
-                  <Bar dataKey="receipts" fill="#f59e0b" name="Receipts" />
+                  <Bar
+                    dataKey="revenue"
+                    fill="hsl(var(--chart-1))"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={28}
+                    name={t["firmOps.chartRevenue"]}
+                  />
+                  <Bar
+                    dataKey="invoices"
+                    fill="hsl(var(--chart-2))"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={28}
+                    name={t["firmOps.chartInvoices"]}
+                  />
+                  <Bar
+                    dataKey="receipts"
+                    fill="hsl(var(--chart-3))"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={28}
+                    name={t["firmOps.chartReceipts"]}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>

@@ -1,4 +1,5 @@
 // ClientPortfolio module (W5-D split of ClientPortfolio.tsx; no behaviour change).
+import { DatePicker } from "@/components/ui/date-picker";
 import { T } from "@/components/layout/T";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -921,27 +922,19 @@ export function VatWorkspaceDialog({
                 <Label>
                   <T k="pages.periodStart2" />
                 </Label>
-                <Input
-                  type="date"
-                  value={periodStart}
-                  onChange={(e) => setPeriodStart(e.target.value)}
-                />
+                <DatePicker value={periodStart} onChange={(v) => setPeriodStart(v)} />
               </div>
               <div className="grid gap-1">
                 <Label>
                   <T k="pages.periodEnd2" />
                 </Label>
-                <Input
-                  type="date"
-                  value={periodEnd}
-                  onChange={(e) => setPeriodEnd(e.target.value)}
-                />
+                <DatePicker value={periodEnd} onChange={(v) => setPeriodEnd(v)} />
               </div>
               <div className="grid gap-1">
                 <Label>
                   <T k="pages.dueDate2" />
                 </Label>
-                <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                <DatePicker value={dueDate} onChange={(v) => setDueDate(v)} />
               </div>
               <div className="grid gap-1">
                 <Label>
@@ -1148,14 +1141,13 @@ export function VatWorkspaceDialog({
                                 />
                               </TableCell>
                               <TableCell>
-                                <Input
+                                <DatePicker
                                   className="h-8 min-w-32"
-                                  type="date"
                                   value={rowForm.documentDate}
-                                  onChange={(e) =>
+                                  onChange={(v) =>
                                     setRowForm((form) => ({
                                       ...form,
-                                      documentDate: e.target.value,
+                                      documentDate: v,
                                     }))
                                   }
                                 />

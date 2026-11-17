@@ -208,7 +208,7 @@ export default function NotificationPreferences() {
                           className="text-xs text-muted-foreground"
                           data-testid="push-unavailable"
                         >
-                          <T k="portal.pushNotConfigured" />
+                          <T k="settingsPages.notAvailableYet" />
                         </span>
                       )}
                       {!pushActive && !pushUnavailable && (
@@ -253,16 +253,25 @@ export default function NotificationPreferences() {
                       </FormLabel>
                       <FormDescription>
                         <T k="pages.receiveNotificationsViaEmail" />
-                        {emailStatus === "disabled" && (
-                          <span className="block text-warning" data-testid="email-not-configured">
-                            <T k="portal.emailNotConfigured" />
-                          </span>
-                        )}
                       </FormDescription>
                     </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
+                    <div className="flex items-center gap-2">
+                      {emailStatus === "disabled" && (
+                        <span
+                          className="text-xs text-muted-foreground"
+                          data-testid="email-not-configured"
+                        >
+                          <T k="settingsPages.notAvailableYet" />
+                        </span>
+                      )}
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          disabled={emailStatus === "disabled"}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </div>
                   </FormItem>
                 )}
               />

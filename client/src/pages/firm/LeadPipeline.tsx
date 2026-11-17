@@ -2,20 +2,10 @@ import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import {
-  Plus,
-  Sparkles,
-  ChevronDown,
-  ChevronUp,
-  X,
-  UserPlus,
-  MoreHorizontal,
-  Loader2,
-} from "lucide-react";
+import { Plus, ChevronDown, ChevronUp, X, UserPlus, MoreHorizontal, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -35,6 +25,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,46 +73,43 @@ const STAGES: { key: Stage; label: string; color: string; bg: string }[] = [
   {
     key: "prospect",
     label: "leadPipeline.stage.prospect",
-    color: "text-muted-foreground",
-    bg: "bg-muted border-border",
+    color: "text-foreground",
+    bg: "bg-surface-sunken border-border",
   },
   {
     key: "contacted",
     label: "leadPipeline.stage.contacted",
-    color: "text-info",
-    bg: "bg-info-subtle border-info/30",
+    color: "text-foreground",
+    bg: "bg-surface-sunken border-border",
   },
   {
     key: "interested",
     label: "leadPipeline.stage.interested",
-    color: "text-warning",
-    bg: "bg-warning-subtle border-warning/30",
+    color: "text-foreground",
+    bg: "bg-surface-sunken border-border",
   },
   {
     key: "converted",
     label: "screens.statusConverted",
-    color: "text-success",
-    bg: "bg-success-subtle border-success/30",
+    color: "text-foreground",
+    bg: "bg-surface-sunken border-border",
   },
   {
     key: "lost",
     label: "leadPipeline.stage.lost",
-    color: "text-destructive",
-    bg: "bg-danger-subtle border-destructive/30",
+    color: "text-foreground",
+    bg: "bg-surface-sunken border-border",
   },
 ];
 
-const SCORE_COLOR = (score: number) => {
-  if (score >= 70) return "bg-success-subtle text-success-subtle-foreground border-success/30";
-  if (score >= 40) return "bg-warning-subtle text-warning-subtle-foreground border-warning/30";
-  return "bg-danger-subtle text-danger-subtle-foreground border-destructive/30";
-};
+// Spec 2.3: no traffic-light fills; the score is a neutral pill.
+const SCORE_PILL = "bg-neutral-subtle text-neutral-subtle-foreground border-transparent";
 
 const SOURCE_LABELS: Record<Source, string> = {
-  saas_signup: "SaaS",
-  referral: "Referral",
-  manual: "Manual",
-  website: "Website",
+  saas_signup: "pages.saasSignup",
+  referral: "pages.referral",
+  manual: "pages.manual",
+  website: "pages.website",
 };
 
 // ─── Lead card ────────────────────────────────────────────────────────────────
@@ -149,9 +137,7 @@ function LeadCard({
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <Badge className={`text-xs px-1.5 py-0 border ${SCORE_COLOR(lead.score)}`}>
-            {lead.score}
-          </Badge>
+          <Badge className={`text-xs px-1.5 py-0 border ${SCORE_PILL}`}>{lead.score}</Badge>
           <Button
             variant="ghost"
             size="icon"
@@ -165,7 +151,7 @@ function LeadCard({
 
       <div className="flex items-center gap-2">
         <Badge variant="outline" className="text-xs px-1.5 py-0">
-          {SOURCE_LABELS[lead.source]}
+          <T k={SOURCE_LABELS[lead.source] ?? "pages.manual"} />
         </Badge>
       </div>
 
@@ -225,8 +211,11 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
   const { toast } = useToast();
   const [userId, setUserId] = useState("");
   const [notes, setNotes] = useState("");
-  const [score, setScore] = useState("50");
   const [source, setSource] = useState<Source>("manual");
+  const { data: prospects = [] } = useQuery<SaasProspect[]>({
+    queryKey: ["/api/firm/pipeline/saas-prospects"],
+    enabled: open,
+  });
   const [stage, setStage] = useState<Stage>("prospect");
 
   const mutation = useMutation({
@@ -237,17 +226,19 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
       onClose();
       setUserId("");
       setNotes("");
-      setScore("50");
     },
     onError: () => toast({ title: translateNow("toasts.failedToAddLead"), variant: "destructive" }),
   });
 
   const handleSubmit = () => {
     if (!userId.trim()) return;
+    // The score is derived from the person's activity (the same suggestion the sign-ups
+    // list uses); there is no manual score input.
+    const suggested = prospects.find((p) => p.userId === userId)?.suggestedScore ?? 50;
     mutation.mutate({
       userId: userId.trim(),
       notes: notes || undefined,
-      score: Number(score),
+      score: suggested,
       source,
       stage,
     });
@@ -263,12 +254,23 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
         </DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <Label>User ID (UUID)</Label>
-            <Input
-              placeholder="e.g. 550e8400-e29b-41d4-..."
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-            />
+            <Label htmlFor="lead-person">{t["firmOps.leadPerson"]}</Label>
+            {/* WP-E: pick the person from the platform's sign-ups instead of typing an id. */}
+            <Select value={userId} onValueChange={setUserId}>
+              <SelectTrigger id="lead-person" data-testid="select-lead-person">
+                <SelectValue placeholder={t["firmOps.leadPersonPlaceholder"]} />
+              </SelectTrigger>
+              <SelectContent>
+                {prospects.map((p) => (
+                  <SelectItem key={p.userId} value={p.userId}>
+                    {p.name ? `${p.name} · ${p.email}` : p.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {prospects.length === 0 && (
+              <p className="text-small text-muted-foreground">{t["firmOps.leadPersonEmpty"]}</p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -314,16 +316,6 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Score (0–100)</Label>
-            <Input
-              type="number"
-              min={0}
-              max={100}
-              value={score}
-              onChange={(e) => setScore(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
             <Label>
               <T k="pages.notes" />
             </Label>
@@ -341,7 +333,7 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
           </Button>
           <Button onClick={handleSubmit} disabled={mutation.isPending || !userId.trim()}>
             {mutation.isPending ? <Loader2 className="w-4 h-4 animate-spin me-2" /> : null}
-            Add Lead
+            <T k="pages.addLead" />
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -352,10 +344,10 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
 // ─── Edit Lead dialog ─────────────────────────────────────────────────────────
 
 function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => void }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [notes, setNotes] = useState(lead?.notes ?? "");
-  const [score, setScore] = useState(String(lead?.score ?? 50));
+  const score = String(lead?.score ?? 50);
   const [stage, setStage] = useState<Stage>(lead?.stage ?? "prospect");
 
   const updateMutation = useMutation({
@@ -384,17 +376,30 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
     <Dialog open={!!lead} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit Lead — {lead.userEmail}</DialogTitle>
+          <DialogTitle>{t["firmOps.editLead"]}</DialogTitle>
+          <p className="text-small text-muted-foreground" dir="ltr">
+            {lead.userEmail}
+          </p>
         </DialogHeader>
         <div className="space-y-4 py-2">
-          <div className="text-sm text-muted-foreground space-y-0.5">
-            {lead.companyName && <p>Company: {lead.companyName}</p>}
-            <p>Source: {SOURCE_LABELS[lead.source]}</p>
-            <p>Added: {new Date(lead.createdAt).toLocaleDateString()}</p>
-            {lead.convertedAt && (
-              <p>Converted: {new Date(lead.convertedAt).toLocaleDateString()}</p>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-small">
+            {lead.companyName && (
+              <>
+                <dt className="text-muted-foreground">{t["firmOps.leadCompany"]}</dt>
+                <dd>{lead.companyName}</dd>
+              </>
             )}
-          </div>
+            <dt className="text-muted-foreground">{t["pages.source"]}</dt>
+            <dd>{t[SOURCE_LABELS[lead.source] ?? "pages.manual"]}</dd>
+            <dt className="text-muted-foreground">{t["firmOps.leadAdded"]}</dt>
+            <dd>{formatDate(lead.createdAt, locale)}</dd>
+            {lead.convertedAt && (
+              <>
+                <dt className="text-muted-foreground">{t["firmOps.leadConverted"]}</dt>
+                <dd>{formatDate(lead.convertedAt, locale)}</dd>
+              </>
+            )}
+          </dl>
           <div className="space-y-1.5">
             <Label>
               <T k="pages.stage" />
@@ -413,16 +418,6 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Score (0–100)</Label>
-            <Input
-              type="number"
-              min={0}
-              max={100}
-              value={score}
-              onChange={(e) => setScore(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
             <Label>
               <T k="pages.notes" />
             </Label>
@@ -437,7 +432,7 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
             disabled={deleteMutation.isPending}
           >
             {deleteMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin me-1" /> : null}
-            Delete
+            {t["firmOps.delete"]}
           </Button>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>
@@ -450,7 +445,7 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
               disabled={updateMutation.isPending}
             >
               {updateMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin me-1" /> : null}
-              Save
+              {t["firmOps.save"]}
             </Button>
           </div>
         </DialogFooter>
@@ -486,25 +481,22 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
   });
 
   return (
-    <Card className="border-warning/30 bg-warning-subtle/40 ">
+    <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm flex items-center gap-2 text-warning">
-            <Sparkles className="w-4 h-4" />
+          <CardTitle className="text-sm">
             <T k="pages.autoDiscoveredSaasProspects" />
           </CardTitle>
           <Button variant="ghost" size="icon" className="w-7 h-7" onClick={onClose}>
             <X className="w-4 h-4" />
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Active SaaS users with 30+ transactions in the last 30 days — potential NRA clients.
-        </p>
+        <p className="text-xs text-muted-foreground">{t["firmOps.prospectsHelp"]}</p>
       </CardHeader>
       <CardContent>
         {isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="w-4 h-4 animate-spin" /> Scanning…
+            <Loader2 className="w-4 h-4 animate-spin" /> {t["firmOps.scanning"]}
           </div>
         ) : prospects.length === 0 ? (
           <p className="text-sm text-muted-foreground">
@@ -520,8 +512,11 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{p.email}</p>
                   <p className="text-xs text-muted-foreground">
-                    {p.transactionCount} txns · {p.companyCount} companies · score{" "}
-                    {p.suggestedScore}
+                    {formatMessage(t["firmOps.prospectStats"], {
+                      transactions: p.transactionCount,
+                      companies: p.companyCount,
+                      score: p.suggestedScore,
+                    })}
                   </p>
                 </div>
                 <Button
@@ -532,7 +527,7 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
                   disabled={addMutation.isPending}
                 >
                   <UserPlus className="w-3.5 h-3.5 me-1" />
-                  Add
+                  {t["firmOps.add"]}
                 </Button>
               </div>
             ))}
@@ -610,7 +605,7 @@ export default function LeadPipeline() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Firm"
-        title={(t as any).leadPipeline || "Lead Pipeline"}
+        title={t["firmOps.pipelineTitle"]}
         description={
           <>
             {formatMessage(t["leadPipeline.leadsLeadsRateConversion"], {
@@ -624,7 +619,6 @@ export default function LeadPipeline() {
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => setShowDiscover((v) => !v)}>
-              <Sparkles className="w-4 h-4 me-1.5 text-warning" />
               {t["leadPipeline.autoDiscover"]}
               {showDiscover ? (
                 <ChevronUp className="w-3.5 h-3.5 ms-1" />

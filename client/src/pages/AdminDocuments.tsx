@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
@@ -600,11 +601,10 @@ export default function AdminDocuments() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="expiryDate">Expiry Date (if applicable)</Label>
-                <Input
+                <DatePicker
                   id="expiryDate"
-                  type="date"
                   value={newDocument.expiryDate}
-                  onChange={(e) => setNewDocument({ ...newDocument, expiryDate: e.target.value })}
+                  onChange={(v) => setNewDocument({ ...newDocument, expiryDate: v })}
                   data-testid="input-expiry-date"
                 />
               </div>

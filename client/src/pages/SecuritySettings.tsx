@@ -5,6 +5,7 @@
  */
 import { formatDate } from "@/lib/format";
 import { useCallback, useMemo, useState } from "react";
+import { collapseSessions, VISIBLE_DEVICE_ROWS } from "@/pages/settings/sessions";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -207,6 +208,12 @@ export default function SecuritySettings() {
       title: t["security.error"],
       description: err instanceof Error ? err.message : undefined,
     });
+  const [showAllDevices, setShowAllDevices] = useState(false);
+  const deviceGroups = useMemo(
+    () => collapseSessions(sessions.data?.sessions ?? [], describeUserAgent),
+    [sessions.data]
+  );
+
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["/api/auth/security/overview"] });
     void qc.invalidateQueries({ queryKey: ["/api/auth/login-history"] });
@@ -275,7 +282,7 @@ export default function SecuritySettings() {
   const resend = async () => {
     try {
       const r = await securityFetch<{ sent: boolean }>("POST", "/api/auth/verify-email/resend", {});
-      toast({ title: r.sent ? t["security.emailSent"] : t["security.emailQueued"] });
+      toast({ title: r.sent ? t["security.emailSent"] : t["settingsPages.emailNotSentYet"] });
     } catch (err) {
       fail(err);
     }
@@ -452,15 +459,17 @@ export default function SecuritySettings() {
         <CardContent className="space-y-3 text-sm">
           {ov && !ov.emailVerification.verified && (
             <>
-              <p>
-                {!ov.emailVerification.enforced
-                  ? t["security.emailNotEnforced"]
-                  : ov.emailVerification.restricted
+              {/* WP-E: when verification is not enforced there is nothing to tell the customer
+                  (the old sentence described server configuration); only the action remains. */}
+              {ov.emailVerification.enforced && (
+                <p>
+                  {ov.emailVerification.restricted
                     ? t["security.emailRestricted"]
                     : formatMessage(t["security.emailGrace"], {
                         date: fmt(ov.emailVerification.graceEndsAt, locale),
                       })}
-              </p>
+                </p>
+              )}
               <Button variant="outline" onClick={resend}>
                 {t["security.emailResend"]}
               </Button>
@@ -501,32 +510,62 @@ export default function SecuritySettings() {
           </Dialog>
         </CardHeader>
         <CardContent>
-          <ul className="divide-y text-sm">
-            {(sessions.data?.sessions ?? []).map((s) => (
-              <li key={s.id} className="flex items-center justify-between gap-2 py-2">
-                <div className="min-w-0">
-                  <p className="truncate font-medium" dir="ltr" title={s.userAgent ?? undefined}>
-                    {describeUserAgent(s.userAgent)}
-                  </p>
-                  <p className="text-caption text-muted-foreground">
-                    <bdi dir="ltr">{s.ipAddress ?? "—"}</bdi> ·{" "}
-                    {formatMessage(t["security.sessionLastUsed"], {
-                      date: fmt(s.lastUsedAt ?? s.createdAt, locale),
-                    })}
-                  </p>
-                </div>
-                {s.current ? (
-                  <Badge variant="success" dot>
-                    {t["security.sessionCurrent"]}
-                  </Badge>
-                ) : (
-                  <Button size="sm" variant="ghost" onClick={() => revoke(s.id)}>
-                    {t["security.sessionRevoke"]}
-                  </Button>
-                )}
-              </li>
-            ))}
+          <ul className="divide-y text-sm" data-testid="security-devices">
+            {(showAllDevices ? deviceGroups : deviceGroups.slice(0, VISIBLE_DEVICE_ROWS)).map(
+              (g) => (
+                <li key={g.key} className="flex items-center justify-between gap-2 py-2">
+                  <div className="min-w-0">
+                    <p
+                      className="truncate font-medium"
+                      dir="ltr"
+                      title={g.lead.userAgent ?? undefined}
+                    >
+                      {describeUserAgent(g.lead.userAgent)}
+                    </p>
+                    <p className="text-caption text-muted-foreground">
+                      <bdi dir="ltr">{g.lead.ipAddress ?? "—"}</bdi> ·{" "}
+                      {formatMessage(t["security.sessionLastUsed"], {
+                        date: fmt(g.lead.lastUsedAt ?? g.lead.createdAt, locale),
+                      })}
+                      {g.count > 1 && (
+                        <>
+                          {" · "}
+                          {formatMessage(t["settingsPages.sessionCount"], { count: g.count })}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  {g.current ? (
+                    <Badge variant="success" dot>
+                      {t["security.sessionCurrent"]}
+                    </Badge>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void Promise.all(g.ids.map((id) => revoke(id)))}
+                    >
+                      {t["security.sessionRevoke"]}
+                    </Button>
+                  )}
+                </li>
+              )
+            )}
           </ul>
+          {deviceGroups.length > VISIBLE_DEVICE_ROWS && (
+            <Button
+              variant="link"
+              className="mt-1 h-auto px-0"
+              onClick={() => setShowAllDevices((v) => !v)}
+              data-testid="button-devices-show-all"
+            >
+              {showAllDevices
+                ? t["settingsPages.showFewer"]
+                : formatMessage(t["settingsPages.showAllDevices"], {
+                    count: deviceGroups.length,
+                  })}
+            </Button>
+          )}
         </CardContent>
       </Card>
 

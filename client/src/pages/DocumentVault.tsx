@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, differenceInDays, parseISO } from "date-fns";
@@ -631,10 +632,9 @@ export default function DocumentVault() {
                 <Label>
                   {locale === "ar" ? "تاريخ الانتهاء (اختياري)" : "Expiry Date (Optional)"}
                 </Label>
-                <Input
-                  type="date"
+                <DatePicker
                   value={newDocument.expiryDate}
-                  onChange={(e) => setNewDocument({ ...newDocument, expiryDate: e.target.value })}
+                  onChange={(v) => setNewDocument({ ...newDocument, expiryDate: v })}
                   data-testid="input-expiry-date"
                 />
               </div>

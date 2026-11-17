@@ -60,20 +60,18 @@ function redirectTargetFor(path: string): string | null {
 }
 
 describe("consolidated navigation redirects (App source)", () => {
-  it("R18-09: the five AI pages redirect into one /ai hub with tabs", () => {
-    expect(redirectTargetFor("/ai-cfo")).toBe("/ai?tab=cfo");
-    expect(redirectTargetFor("/ai-features")).toBe("/ai?tab=features");
-    expect(redirectTargetFor("/smart-assistant")).toBe("/ai?tab=assistant");
-    expect(redirectTargetFor("/ai-chat")).toBe("/ai?tab=chat");
-    expect(redirectTargetFor("/ai-inbox")).toBe("/ai?tab=inbox");
-    expect(app).toContain('<Route path="/ai" component={AIHub} />');
+  it("R18-09 / WP-E: the former AI pages redirect into one /assistant route with three tabs", () => {
+    expect(redirectTargetFor("/ai")).toBe("/assistant");
+    expect(redirectTargetFor("/ai-cfo")).toBe("/assistant?tab=ask");
+    expect(redirectTargetFor("/ai-features")).toBe("/assistant?tab=automations");
+    expect(redirectTargetFor("/smart-assistant")).toBe("/assistant?tab=ask");
+    expect(redirectTargetFor("/ai-chat")).toBe("/assistant?tab=ask");
+    expect(redirectTargetFor("/ai-inbox")).toBe("/assistant?tab=review");
+    expect(app).toContain('<Route path="/assistant" component={AIHub} />');
 
     const hub = read("client/src/pages/AIHub.tsx");
-    for (const id of ["cfo", "features", "assistant", "chat", "inbox"]) {
-      expect(hub).toContain(`id: "${id}"`);
-    }
-    for (const page of ["AICFO", "AIFeatures", "SmartAssistant", "AIChat", "AIInbox"]) {
-      expect(hub).toContain(`import("@/pages/${page}")`);
+    for (const panel of ["AskPanel", "ReviewPanel", "AutomationsPanel"]) {
+      expect(hub).toContain(`import("@/pages/assistant/${panel}")`);
     }
   });
 

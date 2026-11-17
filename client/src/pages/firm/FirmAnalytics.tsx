@@ -1,29 +1,11 @@
-import { formatAedText } from "@/lib/format";
-import { PageHeader } from "@/components/ui/page-header";
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  TrendingUp,
-  TrendingDown,
-  Users,
-  DollarSign,
-  BarChart2,
-  AlertTriangle,
-} from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { useTranslation, formatMessage } from "@/lib/i18n";
+import { PageHeader } from "@/components/ui/page-header";
+import { SectionCard } from "@/components/ui/section-card";
+import { StatCard } from "@/components/ui/stat-card";
+import { Money } from "@/components/ui/money";
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,299 +28,204 @@ interface HealthSummaryData {
   topIssues: { type: string; count: number; affectedClients: number }[];
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+const ISSUE_LABEL: Record<string, string> = {
+  overdue_invoices: "firmOps.issueOverdueInvoices",
+  overdue_vat: "firmOps.issueOverdueVat",
+};
 
-function formatAed(amount: number) {
-  return formatAedText(amount);
+// Opacity steps for one-hue ranked bars (spec 2.7).
+const BAR_OPACITY = [1, 0.7, 0.5, 0.35, 0.25];
+
+interface RankedRow {
+  key: string;
+  label: string;
+  value: number;
+  display: ReactNode;
 }
 
-const HEALTH_COLORS = {
-  healthy: "#22c55e",
-  attention: "#f59e0b",
-  critical: "#ef4444",
-};
-
-const ISSUE_LABELS: Record<string, string> = {
-  overdue_invoices: "Overdue Invoices",
-  overdue_vat: "Overdue VAT Returns",
-};
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function MetricCard({
-  title,
-  value,
-  subtitle,
-  icon: Icon,
-  trend,
-}: {
-  title: string;
-  value: string;
-  subtitle?: string;
-  icon: React.ComponentType<{ className?: string }>;
-  trend?: number;
-}) {
-  const { t } = useTranslation();
+/** Ranked horizontal bars: label, thin bar in the brand hue, value at the end. */
+function RankedList({ rows, testId }: { rows: RankedRow[]; testId?: string }) {
+  const max = Math.max(1, ...rows.map((r) => r.value));
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <Icon className="w-4 h-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        {trend !== undefined && (
-          <div
-            className={`flex items-center gap-1 text-xs mt-1 ${trend >= 0 ? "text-success" : "text-destructive"}`}
-          >
-            {trend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-            <span>
-              {formatMessage(t["firmAnalytics.percentVsLastMonth"], { percent: Math.abs(trend) })}
+    <ul className="space-y-3" data-testid={testId}>
+      {rows.map((row, i) => (
+        <li key={row.key} className="space-y-1.5">
+          <div className="flex items-baseline justify-between gap-3 text-small">
+            <span className="min-w-0 truncate text-foreground" dir="auto">
+              {row.label}
             </span>
+            <span className="shrink-0 tabular-nums text-foreground">{row.display}</span>
           </div>
-        )}
-        {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
-      </CardContent>
-    </Card>
+          <div className="h-1.5 w-full rounded-full bg-surface-sunken" aria-hidden="true">
+            <div
+              className="h-1.5 rounded-full bg-[hsl(var(--chart-1))]"
+              style={{
+                width: `${Math.max(2, (row.value / max) * 100)}%`,
+                opacity: BAR_OPACITY[Math.min(i, BAR_OPACITY.length - 1)],
+              }}
+            />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
-
+/** Firm analytics (NR-only, spec 3.17): revenue, utilisation and client health. */
 export default function FirmAnalytics() {
   const { t } = useTranslation();
 
   const { data: revenue, isLoading: revLoading } = useQuery<RevenueData>({
     queryKey: ["/api/firm/analytics/revenue"],
   });
-
   const { data: utilization, isLoading: utilLoading } = useQuery<UtilizationData>({
     queryKey: ["/api/firm/analytics/utilization"],
   });
-
   const { data: health, isLoading: healthLoading } = useQuery<HealthSummaryData>({
     queryKey: ["/api/firm/analytics/client-health-summary"],
   });
 
-  const isLoading = revLoading || utilLoading || healthLoading;
+  const header = (
+    <PageHeader
+      eyebrow="Firm"
+      title={t["firmOps.analyticsTitle"]}
+      description={t["firmOps.analyticsDescription"]}
+    />
+  );
 
-  const healthPieData = health
-    ? [
-        {
-          name: (t as any).healthyClients || "Healthy",
-          value: health.healthDistribution.healthy,
-          color: HEALTH_COLORS.healthy,
-        },
-        {
-          name: (t as any).attentionClients || "Needs Attention",
-          value: health.healthDistribution.attention,
-          color: HEALTH_COLORS.attention,
-        },
-        {
-          name: (t as any).criticalClients || "Critical",
-          value: health.healthDistribution.critical,
-          color: HEALTH_COLORS.critical,
-        },
-      ].filter((d) => d.value > 0)
-    : [];
-
-  if (isLoading) {
+  if (revLoading || utilLoading || healthLoading) {
     return (
-      <div className="p-6 space-y-4 animate-pulse">
-        {[...Array(4)].map((_, i) => (
-          <div key={i} className="h-32 rounded-xl bg-muted" />
-        ))}
+      <div className="space-y-6">
+        {header}
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-28" />
+          ))}
+        </div>
+        <Skeleton className="h-72" />
       </div>
     );
   }
 
+  const growth = revenue?.revenueGrowthPercent ?? 0;
+  const byClient = (revenue?.revenueByClient ?? []).slice(0, 10);
+  const dist = health?.healthDistribution;
+  const healthRows: RankedRow[] = dist
+    ? [
+        { key: "healthy", label: t["firmOps.healthHealthy"], value: dist.healthy },
+        { key: "attention", label: t["firmOps.healthAttention"], value: dist.attention },
+        { key: "critical", label: t["firmOps.healthCritical"], value: dist.critical },
+      ]
+        .filter((r) => r.value > 0)
+        .map((r) => ({ ...r, display: r.value }))
+    : [];
+
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Firm"
-        title={(t as any).firmAnalytics || "Firm Analytics"}
-        description={
-          (t as any).firmAnalyticsDesc || "Revenue, utilization, and client health overview"
-        }
-      />
+      {header}
 
-      {/* Revenue cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <MetricCard
-          title={(t as any).totalMRR || "Total MRR"}
-          value={formatAed(revenue?.totalMRR ?? 0)}
-          icon={DollarSign}
-          trend={revenue?.revenueGrowthPercent}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label={t["firmOps.statMrr"]}
+          value={<Money amount={revenue?.totalMRR ?? 0} currency="AED" />}
+          delta={
+            growth !== 0
+              ? {
+                  label: `${Math.abs(growth)}%`,
+                  direction: growth > 0 ? "up" : "down",
+                  tone: growth > 0 ? "positive" : "negative",
+                  context: t["firmOps.vsLast30Days"],
+                }
+              : undefined
+          }
+          hint={t["firmOps.vsLast30Days"]}
         />
-        <MetricCard
-          title={(t as any).revenueGrowth || "Revenue Growth"}
-          value={`${revenue?.revenueGrowthPercent ?? 0}%`}
-          subtitle={(t as any).vsLastMonth || "vs. last 30 days"}
-          icon={TrendingUp}
+        <StatCard
+          label={t["firmOps.statAvgPerClient"]}
+          value={<Money amount={revenue?.avgRevenuePerClient ?? 0} currency="AED" />}
         />
-        <MetricCard
-          title={(t as any).avgRevenuePerClient || "Avg Revenue / Client"}
-          value={formatAed(revenue?.avgRevenuePerClient ?? 0)}
-          icon={BarChart2}
+        <StatCard
+          label={t["firmOps.statClients"]}
+          value={utilization?.totalClients ?? 0}
+          hint={formatMessage(t["firmOps.staffCount"], { count: utilization?.staffCount ?? 0 })}
         />
-        <MetricCard
-          title={(t as any).totalClients || "Total Clients"}
-          value={String(utilization?.totalClients ?? 0)}
-          subtitle={`${utilization?.staffCount ?? 0} ${(t as any).staffMembers || "staff members"}`}
-          icon={Users}
+        <StatCard
+          label={t["firmOps.statClientsPerStaff"]}
+          value={utilization?.clientsPerStaff ?? 0}
         />
       </div>
 
-      {/* Revenue by client + Health donut */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Bar chart: revenue by client */}
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">
-              {(t as any).revenueByClient || "Revenue by Client (Top 10)"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {(revenue?.revenueByClient?.length ?? 0) === 0 ? (
-              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
-                {t.noData}
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart
-                  data={revenue!.revenueByClient.map((r) => ({
-                    name:
-                      r.companyName.length > 14 ? r.companyName.slice(0, 14) + "…" : r.companyName,
-                    revenue: r.totalRevenue,
-                  }))}
-                  margin={{ top: 4, right: 16, left: 0, bottom: 24 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-                  <XAxis
-                    dataKey="name"
-                    tick={{ fontSize: 11 }}
-                    angle={-30}
-                    textAnchor="end"
-                    interval={0}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 11 }}
-                    tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
-                  />
-                  <Tooltip formatter={(v: number) => formatAed(v)} />
-                  <Bar dataKey="revenue" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
+      <div className="grid items-start gap-6 xl:grid-cols-3">
+        <SectionCard className="xl:col-span-2" title={t["firmOps.revenueByClient"]}>
+          {byClient.length === 0 ? (
+            <p className="text-small text-muted-foreground">{t["firmOps.revenueByClientEmpty"]}</p>
+          ) : (
+            <RankedList
+              testId="firm-revenue-by-client"
+              rows={byClient.map((r) => ({
+                key: r.companyId,
+                label: r.companyName,
+                value: r.totalRevenue,
+                display: <Money amount={r.totalRevenue} currency="AED" />,
+              }))}
+            />
+          )}
+        </SectionCard>
 
-        {/* Donut: client health */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {(t as any).clientHealthSummary || "Client Health"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col items-center gap-4">
-            {healthPieData.length === 0 ? (
-              <div className="h-48 flex items-center justify-center text-muted-foreground text-sm">
-                {t.noData}
-              </div>
-            ) : (
-              <>
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
-                    <Pie
-                      data={healthPieData}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={56}
-                      outerRadius={88}
-                      paddingAngle={3}
-                      dataKey="value"
-                    >
-                      {healthPieData.map((entry, i) => (
-                        <Cell key={i} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="flex flex-col gap-1 w-full">
-                  {healthPieData.map((d) => (
-                    <div key={d.name} className="flex items-center justify-between text-sm">
-                      <span className="flex items-center gap-2">
-                        <span
-                          className="inline-block w-2.5 h-2.5 rounded-full"
-                          style={{ background: d.color }}
-                        />
-                        {d.name}
-                      </span>
-                      <Badge variant="outline">{d.value}</Badge>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {/* Top issues */}
-            {(health?.topIssues?.length ?? 0) > 0 && (
-              <div className="w-full border-t pt-3 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  {(t as any).topIssues || "Top Issues"}
-                </p>
+        <SectionCard title={t["firmOps.clientHealth"]}>
+          {healthRows.length === 0 ? (
+            <p className="text-small text-muted-foreground">{t["firmOps.clientHealthEmpty"]}</p>
+          ) : (
+            <RankedList rows={healthRows} testId="firm-client-health" />
+          )}
+          {(health?.topIssues?.length ?? 0) > 0 && (
+            <div className="mt-5 space-y-2 border-t border-border pt-4">
+              <p className="text-caption font-medium text-muted-foreground">
+                {t["firmOps.topIssues"]}
+              </p>
+              <ul className="space-y-1.5">
                 {health!.topIssues.map((issue) => (
-                  <div key={issue.type} className="flex items-start gap-2 text-xs">
-                    <AlertTriangle className="w-3.5 h-3.5 text-warning mt-0.5 shrink-0" />
-                    <span>
-                      <span className="font-medium">{ISSUE_LABELS[issue.type] ?? issue.type}</span>
-                      <span className="text-muted-foreground ms-1">
-                        — {issue.count} total, {issue.affectedClients} clients
-                      </span>
+                  <li key={issue.type} className="text-small text-foreground">
+                    {ISSUE_LABEL[issue.type] ? t[ISSUE_LABEL[issue.type]] : t["firmOps.issueOther"]}
+                    <span className="text-muted-foreground">
+                      {" · "}
+                      {formatMessage(t["firmOps.issueCounts"], {
+                        count: issue.count,
+                        clients: issue.affectedClients,
+                      })}
                     </span>
-                  </div>
+                  </li>
                 ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+              </ul>
+            </div>
+          )}
+        </SectionCard>
       </div>
 
-      {/* Staff utilization */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            {(t as any).staffUtilization || "Staff Utilization"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            <div className="text-center">
-              <div className="text-3xl font-bold text-warning">{utilization?.staffCount ?? 0}</div>
-              <div className="text-sm text-muted-foreground mt-1">
-                {(t as any).totalStaff || "Total Staff"}
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-warning">
-                {utilization?.clientsPerStaff ?? 0}
-              </div>
-              <div className="text-sm text-muted-foreground mt-1">
-                {(t as any).clientsPerStaff || "Clients / Staff"}
-              </div>
-            </div>
-            <div className="text-center">
-              <div className="text-3xl font-bold text-warning">
-                {utilization?.avgClientsPerAdmin ?? 0}
-              </div>
-              <div className="text-sm text-muted-foreground mt-1">
-                {(t as any).avgClientsPerAdmin || "Avg Clients / Admin"}
-              </div>
-            </div>
+      <SectionCard title={t["firmOps.staffUtilization"]}>
+        <dl className="grid gap-4 sm:grid-cols-3">
+          <div>
+            <dt className="text-caption text-muted-foreground">{t["firmOps.totalStaff"]}</dt>
+            <dd className="text-h2 font-semibold tabular-nums">{utilization?.staffCount ?? 0}</dd>
           </div>
-        </CardContent>
-      </Card>
+          <div>
+            <dt className="text-caption text-muted-foreground">
+              {t["firmOps.statClientsPerStaff"]}
+            </dt>
+            <dd className="text-h2 font-semibold tabular-nums">
+              {utilization?.clientsPerStaff ?? 0}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-caption text-muted-foreground">
+              {t["firmOps.avgClientsPerAdmin"]}
+            </dt>
+            <dd className="text-h2 font-semibold tabular-nums">
+              {utilization?.avgClientsPerAdmin ?? 0}
+            </dd>
+          </div>
+        </dl>
+      </SectionCard>
     </div>
   );
 }

@@ -5,9 +5,9 @@
  * Nothing here claims an email, e-signature or FTA submission that did not
  * happen — the API reports those as in-app / requires_external / manual.
  */
+import { DatePicker } from "@/components/ui/date-picker";
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Briefcase } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
+import { displayTaskTitle } from "./task-title";
 
 type Dict = Record<string, string>;
 
@@ -150,7 +152,7 @@ function useNotify(t: Dict) {
   };
 }
 
-function TasksTab({ t, canWrite }: { t: Dict; canWrite: boolean }) {
+function TasksTab({ t, canWrite, locale }: { t: Dict; canWrite: boolean; locale: string }) {
   const notify = useNotify(t);
   const { data } = useQuery<{ tasks: FirmTaskRow[] }>({ queryKey: ["/api/firm/tasks"] });
   const generate = useMutation({
@@ -195,8 +197,10 @@ function TasksTab({ t, canWrite }: { t: Dict; canWrite: boolean }) {
               {tasks.map((task) => (
                 <TableRow key={task.id}>
                   <TableCell>{task.companyName}</TableCell>
-                  <TableCell>{task.title}</TableCell>
-                  <TableCell>{task.dueDate}</TableCell>
+                  <TableCell>{displayTaskTitle(task.title, t, locale)}</TableCell>
+                  <TableCell className="whitespace-nowrap tabular-nums">
+                    {formatDate(task.dueDate, locale)}
+                  </TableCell>
                   <TableCell>
                     <Select
                       value={task.status}
@@ -275,7 +279,7 @@ function TimeTab({ t, clients, canWrite }: { t: Dict; clients: FirmClient[]; can
             <ClientPicker clients={clients} value={companyId} onChange={setCompanyId} t={t} />
             <div className="space-y-1">
               <Label>{t["firm.entryDate"]}</Label>
-              <Input type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} />
+              <DatePicker value={entryDate} onChange={(v) => setEntryDate(v)} />
             </div>
             <div className="space-y-1">
               <Label>{t["firm.minutes"]}</Label>
@@ -548,15 +552,11 @@ function FilingTab({
           </div>
           <div className="space-y-1">
             <Label>{t["firm.periodStart"]}</Label>
-            <Input
-              type="date"
-              value={periodStart}
-              onChange={(e) => setPeriodStart(e.target.value)}
-            />
+            <DatePicker value={periodStart} onChange={(v) => setPeriodStart(v)} />
           </div>
           <div className="space-y-1">
             <Label>{t["firm.periodEnd"]}</Label>
-            <Input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} />
+            <DatePicker value={periodEnd} onChange={(v) => setPeriodEnd(v)} />
           </div>
           <Button
             onClick={() => load.mutate()}
@@ -615,11 +615,7 @@ function FilingTab({
                 <div className="flex flex-wrap items-end gap-3">
                   <div className="space-y-1">
                     <Label>{t["firm.filedOn"]}</Label>
-                    <Input
-                      type="date"
-                      value={filedOn}
-                      onChange={(e) => setFiledOn(e.target.value)}
-                    />
+                    <DatePicker value={filedOn} onChange={(v) => setFiledOn(v)} />
                   </div>
                   <div className="space-y-1">
                     <Label>{t["firm.referenceNumber"]}</Label>
@@ -722,7 +718,7 @@ export default function PracticeWorkspace() {
   return (
     <div className="space-y-6">
       <PageHeader
-        icon={Briefcase}
+        eyebrow="Firm"
         title={dict["firm.practiceWorkspace"]}
         description={dict["firm.practiceSubtitle"]}
       />
@@ -746,7 +742,7 @@ export default function PracticeWorkspace() {
           <TabsTrigger value="links">{dict["firm.tabLinks"]}</TabsTrigger>
         </TabsList>
         <TabsContent value="tasks">
-          <TasksTab t={dict} canWrite={canWrite} />
+          <TasksTab t={dict} canWrite={canWrite} locale={locale} />
         </TabsContent>
         <TabsContent value="time">
           <TimeTab t={dict} clients={clients} canWrite={canWrite} />

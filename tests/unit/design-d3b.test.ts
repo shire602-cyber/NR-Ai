@@ -35,7 +35,7 @@ describe("D3b design pass: screens", () => {
     "client/src/pages/IntegrationsHub.tsx",
     "client/src/pages/MonthEndClose.tsx",
     "client/src/pages/SecuritySettings.tsx",
-    "client/src/pages/AICFO.tsx",
+    "client/src/pages/AIHub.tsx",
     "client/src/pages/firm/FirmHealth.tsx",
   ])("%s starts with the shared PageHeader (no ad-hoc h1)", (file) => {
     const src = read(file);

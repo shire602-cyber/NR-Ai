@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
@@ -806,11 +807,10 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
             <Label htmlFor="docDueDate">
               <T k="pages.dueDate2" />
             </Label>
-            <Input
+            <DatePicker
               id="docDueDate"
-              type="date"
               value={form.dueDate}
-              onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
+              onChange={(v) => setForm((f) => ({ ...f, dueDate: v }))}
             />
           </div>
           <div className="flex items-center gap-2">
@@ -941,11 +941,10 @@ function AddComplianceEventDialog(props: {
           </div>
           <div>
             <Label htmlFor="eventDate">Date</Label>
-            <Input
+            <DatePicker
               id="eventDate"
-              type="date"
               value={form.eventDate}
-              onChange={(e) => setForm((f) => ({ ...f, eventDate: e.target.value }))}
+              onChange={(v) => setForm((f) => ({ ...f, eventDate: v }))}
             />
           </div>
         </div>

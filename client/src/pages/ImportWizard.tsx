@@ -3,6 +3,7 @@
  * CSV exports from Xero, QuickBooks Online, Zoho Books and Wafeq.
  * Server: /api/companies/:companyId/imports (server/routes/import.routes.ts).
  */
+import { DatePicker } from "@/components/ui/date-picker";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Download, FileUp, Upload, XCircle } from "lucide-react";
@@ -323,12 +324,7 @@ export default function ImportWizard() {
           {needsCutOver(kind) && (
             <div className="space-y-2">
               <Label htmlFor="cut-over">{c.cutOver}</Label>
-              <Input
-                id="cut-over"
-                type="date"
-                value={cutOver}
-                onChange={(e) => setCutOver(e.target.value)}
-              />
+              <DatePicker id="cut-over" value={cutOver} onChange={(v) => setCutOver(v)} />
             </div>
           )}
           {kind === "trial_balance" && (

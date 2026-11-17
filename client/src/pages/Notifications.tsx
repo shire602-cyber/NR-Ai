@@ -1,6 +1,6 @@
 import { T } from "@/components/layout/T";
 import { Link } from "wouter";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { localizeNotification } from "@/lib/notification-display";
 import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/ui/page-header";
@@ -18,7 +18,6 @@ import { ar as arLocale } from "date-fns/locale";
 import {
   Bell,
   CheckCircle,
-  X,
   AlertTriangle,
   Clock,
   Newspaper,
@@ -111,6 +110,8 @@ export default function Notifications() {
     }
   };
 
+  const hasNews = !newsLoading && (regulatoryNews?.length ?? 0) > 0;
+
   const getNewsBadge = (category: string) => {
     // Categories are topics, not statuses: one neutral outline pill.
     const label = category.replace("_", " ");
@@ -141,13 +142,14 @@ export default function Notifications() {
         }
       />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+      <Tabs value={hasNews ? activeTab : "notifications"} onValueChange={setActiveTab}>
+        {/* WP-E (spec 3.15): the Regulatory news tab only exists when there is news. */}
+        <TabsList className={hasNews ? undefined : "hidden"}>
           <TabsTrigger value="notifications" data-testid="tab-notifications">
             <Bell aria-hidden />
             <T k="pageLabels.notificationsTab" />
             {notificationsData?.unreadCount ? (
-              <Badge variant="danger" className="ms-1 px-1.5 py-0 tabular-nums">
+              <Badge variant="secondary" className="ms-1 px-1.5 py-0 tabular-nums">
                 {notificationsData.unreadCount}
               </Badge>
             ) : null}
@@ -211,7 +213,7 @@ export default function Notifications() {
                             {notification.actionUrl ? (
                               <a
                                 href={notification.actionUrl}
-                                className="after:absolute after:inset-0 after:content-[''] sm:after:hidden"
+                                className="after:absolute after:inset-0 after:content-['']"
                               >
                                 {copy.title}
                               </a>
@@ -249,7 +251,7 @@ export default function Notifications() {
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            className="relative z-10 -me-2 shrink-0 text-muted-foreground hover:text-foreground sm:hidden"
+                            className="relative z-10 -me-2 shrink-0 text-muted-foreground hover:text-foreground"
                             aria-label={t["components.notificationMore"]}
                             data-testid={`button-more-${notification.id}`}
                           >
@@ -278,48 +280,6 @@ export default function Notifications() {
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
-                      <div className="hidden shrink-0 items-center gap-0.5 sm:flex">
-                        {notification.actionUrl && (
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            className="text-muted-foreground hover:text-foreground"
-                            asChild
-                          >
-                            <a
-                              href={notification.actionUrl}
-                              aria-label={t["pageLabels.notificationOpen"]}
-                              title={t["pageLabels.notificationOpen"]}
-                            >
-                              <ChevronRight className="rtl:-scale-x-100" aria-hidden />
-                            </a>
-                          </Button>
-                        )}
-                        {unread && (
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            className="text-muted-foreground hover:text-foreground"
-                            onClick={() => markAsReadMutation.mutate(notification.id)}
-                            aria-label={t["pageLabels.notificationMarkRead"]}
-                            title={t["pageLabels.notificationMarkRead"]}
-                            data-testid={`button-read-${notification.id}`}
-                          >
-                            <Check aria-hidden />
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          className="text-muted-foreground hover:text-foreground"
-                          onClick={() => dismissMutation.mutate(notification.id)}
-                          aria-label={t["pageLabels.notificationDismiss"]}
-                          title={t["pageLabels.notificationDismiss"]}
-                          data-testid={`button-dismiss-${notification.id}`}
-                        >
-                          <X aria-hidden />
-                        </Button>
-                      </div>
                     </li>
                   );
                 })}
@@ -368,7 +328,11 @@ export default function Notifications() {
                           )}
                         </div>
                         <CardTitle>{news.title}</CardTitle>
-                        {news.source && <CardDescription>Source: {news.source}</CardDescription>}
+                        {news.source && (
+                          <CardDescription>
+                            {formatMessage(t["settingsPages.newsSource"], { source: news.source })}
+                          </CardDescription>
+                        )}
                       </div>
                       <span className="text-sm text-muted-foreground">
                         {formatDistanceToNow(new Date(news.publishedAt), {
@@ -382,7 +346,9 @@ export default function Notifications() {
                     <p className="text-muted-foreground">{news.summary}</p>
                     {news.effectiveDate && (
                       <p className="text-sm mt-2">
-                        <strong>Effective:</strong> {formatDate(news.effectiveDate, locale)}
+                        {formatMessage(t["settingsPages.newsEffective"], {
+                          date: formatDate(news.effectiveDate, locale),
+                        })}
                       </p>
                     )}
                     {news.sourceUrl && (
