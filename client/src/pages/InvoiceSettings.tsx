@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { companyLogoSrc } from "@/lib/company-logo";
 import { PageHeader } from "@/components/ui/page-header";
 import { useEffect } from "react";
@@ -93,15 +93,15 @@ export default function InvoiceSettings() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: "Invoice settings updated",
-        description: "Your invoice customization settings have been saved successfully.",
+        title: translateNow("toasts.invoiceSettingsUpdated"),
+        description: translateNow("toasts.yourInvoiceCustomizationSettingsHaveBeenSaved"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update settings",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToUpdateSettings"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });

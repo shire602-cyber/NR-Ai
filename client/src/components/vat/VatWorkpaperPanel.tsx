@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { addDays, format, parseISO } from "date-fns";
 import { Link } from "wouter";
@@ -258,12 +258,12 @@ export default function VatWorkpaperPanel({
     onSuccess: (workpaper: VatWorkpaperSummary) => {
       setSelectedWorkpaperId(workpaper.id);
       invalidateWorkpapers();
-      toast({ title: "VAT workpaper ready" });
+      toast({ title: translateNow("toasts.vatWorkpaperReady") });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not create VAT workpaper",
+        title: translateNow("toasts.couldNotCreateVatWorkpaper"),
         description: error?.message,
       }),
   });
@@ -298,7 +298,7 @@ export default function VatWorkpaperPanel({
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not add VAT row",
+        title: translateNow("toasts.couldNotAddVatRow"),
         description: error?.message,
       }),
   });
@@ -312,12 +312,14 @@ export default function VatWorkpaperPanel({
       ),
     onSuccess: (result: { updated: number }) => {
       invalidateWorkpapers();
-      toast({ title: `${result.updated} draft rows approved` });
+      toast({
+        title: formatMessage(translateNow("toasts.draftRowsApproved"), { updated: result.updated }),
+      });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not approve draft rows",
+        title: translateNow("toasts.couldNotApproveDraftRows"),
         description: error?.message,
       }),
   });
@@ -331,17 +333,20 @@ export default function VatWorkpaperPanel({
     onSuccess: (result: { created: number }) => {
       invalidateWorkpapers();
       toast({
-        title: result.created > 0 ? `${result.created} rows pulled from books` : "Books up to date",
+        title:
+          result.created > 0
+            ? formatMessage(translateNow("toasts.rowsPulledFromBooks"), { created: result.created })
+            : translateNow("toasts.booksUpToDate"),
         description:
           result.created > 0
-            ? "Review and approve draft invoice/receipt rows before generating the VAT return."
-            : "Every document in this period is already on the workpaper.",
+            ? translateNow("toasts.reviewDraftRowsBeforeVat")
+            : translateNow("toasts.everyDocumentOnWorkpaper"),
       });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not pull from books",
+        title: translateNow("toasts.couldNotPullFromBooks"),
         description: error?.message,
       }),
   });
@@ -379,12 +384,14 @@ export default function VatWorkpaperPanel({
     onSuccess: (result: { created: number }) => {
       invalidateWorkpapers();
       setPastedRows("");
-      toast({ title: `${result.created} VAT rows imported` });
+      toast({
+        title: formatMessage(translateNow("toasts.vatRowsImported"), { created: result.created }),
+      });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not import pasted rows",
+        title: translateNow("toasts.couldNotImportPastedRows"),
         description: error?.message,
       }),
   });
@@ -399,12 +406,12 @@ export default function VatWorkpaperPanel({
     },
     onSuccess: () => {
       invalidateWorkpapers();
-      toast({ title: "VAT row posted to ledger" });
+      toast({ title: translateNow("toasts.vatRowPostedToLedger") });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not post VAT row",
+        title: translateNow("toasts.couldNotPostVatRow"),
         description: error?.message,
       }),
   });
@@ -419,12 +426,12 @@ export default function VatWorkpaperPanel({
     },
     onSuccess: () => {
       invalidateWorkpapers();
-      toast({ title: "VAT row removed" });
+      toast({ title: translateNow("toasts.vatRowRemoved") });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not remove VAT row",
+        title: translateNow("toasts.couldNotRemoveVatRow"),
         description: error?.message,
       }),
   });
@@ -440,14 +447,14 @@ export default function VatWorkpaperPanel({
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vat-returns"] });
       onVatReturnGenerated?.();
       toast({
-        title: "VAT return generated",
-        description: "The VAT 201 draft now uses approved workpaper row totals.",
+        title: translateNow("toasts.vatReturnGenerated"),
+        description: translateNow("toasts.theVat201DraftNowUsesApproved"),
       });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not generate VAT return",
+        title: translateNow("toasts.couldNotGenerateVatReturn"),
         description: error?.message,
       }),
   });
@@ -476,7 +483,7 @@ export default function VatWorkpaperPanel({
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Could not export VAT workpaper",
+        title: translateNow("toasts.couldNotExportVatWorkpaper"),
         description: error?.message,
       });
     } finally {

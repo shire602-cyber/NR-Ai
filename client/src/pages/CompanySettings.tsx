@@ -1,7 +1,7 @@
 import { T } from "@/components/layout/T";
 import { SectionCard } from "@/components/ui/section-card";
 import { FormActions, FormErrorSummary } from "@/components/ui/form-layout";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -189,7 +189,7 @@ export default function CompanySettings() {
       toast({
         variant: "destructive",
         title: t["pageLabels.companySettings.saveFailed"],
-        description: error?.message || "Please try again.",
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -221,7 +221,7 @@ export default function CompanySettings() {
       toast({
         variant: "destructive",
         title: t["pageLabels.companySettings.logoUploadFailed"],
-        description: error?.message || "Please try again.",
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     }
   };

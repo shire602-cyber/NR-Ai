@@ -27,7 +27,7 @@ import {
   ComposedChart,
 } from "recharts";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation, formatMessage } from "@/lib/i18n";
+import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
@@ -166,15 +166,15 @@ export default function AdvancedAnalytics() {
         queryKey: ["/api/analytics/forecasts", companyId, forecastPeriod],
       });
       toast({
-        title: "Forecast Generated",
-        description: "Cash flow projected from open invoices, vendor bills and scheduled items",
+        title: translateNow("toasts.forecastGenerated"),
+        description: translateNow("toasts.cashFlowProjectedFromOpenInvoicesVendor"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to generate forecast",
+        title: translateNow("toasts.error"),
+        description: error?.message || translateNow("toasts.failedToGenerateForecast"),
       });
     },
   });

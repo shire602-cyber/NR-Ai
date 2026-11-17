@@ -1,10 +1,9 @@
 import { formatMoneyText } from "@/lib/format-money";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Link } from "wouter";
 import { ArrowRight, Check, Minus, Plus, Mail, Zap, Crown, Rocket, Building2 } from "lucide-react";
 import { Fragment, useState } from "react";
-import { useI18n, useTranslation } from "@/lib/i18n";
+import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 
 // ── Pricing Data ───────────────────────────────────────────────────────
@@ -13,6 +12,8 @@ interface PricingTier {
   id: string;
   icon: React.ElementType;
   monthlyPrice: number;
+  /** Per-month price when billed every 3 months (between monthly and yearly). */
+  quarterlyPrice: number;
   yearlyPrice: number;
   companies: string;
   users: string;
@@ -28,6 +29,7 @@ const tiers: PricingTier[] = [
     id: "free",
     icon: Zap,
     monthlyPrice: 0,
+    quarterlyPrice: 0,
     yearlyPrice: 0,
     companies: "1",
     users: "1",
@@ -39,6 +41,7 @@ const tiers: PricingTier[] = [
     id: "starter",
     icon: Rocket,
     monthlyPrice: 49,
+    quarterlyPrice: 44,
     yearlyPrice: 39,
     companies: "1",
     users: "3",
@@ -50,6 +53,7 @@ const tiers: PricingTier[] = [
     id: "professional",
     icon: Crown,
     monthlyPrice: 149,
+    quarterlyPrice: 134,
     yearlyPrice: 119,
     companies: "3",
     users: "10",
@@ -63,6 +67,7 @@ const tiers: PricingTier[] = [
     id: "enterprise",
     icon: Building2,
     monthlyPrice: 299,
+    quarterlyPrice: 269,
     yearlyPrice: 239,
     companies: "unlimited",
     users: "unlimited",
@@ -278,7 +283,10 @@ const featureMatrix: FeatureCategory[] = [
 export default function Pricing() {
   const { locale } = useI18n();
   const { t: tr } = useTranslation();
-  const [isYearly, setIsYearly] = useState(false);
+  const [cycle, setCycle] = useState<"monthly" | "quarterly" | "yearly">("monthly");
+  const isYearly = cycle === "yearly";
+  const freeInvoices = tr["marketing.pricingFreeInvoicesAfterOffer"];
+  const freeReceipts = tr["marketing.pricingFreeReceiptsAfterOffer"];
 
   // ── Translations ────────────────────────────────────────────────────
 
@@ -300,17 +308,17 @@ export default function Pricing() {
       free: {
         name: locale === "en" ? "Free" : "مجاني",
         description: tr["marketing.pricingForFreelancersGettingStarted"],
-        cta: tr["marketing.pricingGetStartedFree"],
+        cta: tr["marketing.startFreeTrial"],
       },
       starter: {
         name: locale === "en" ? "Starter" : "المبتدئ",
         description: tr["marketing.pricingForSmallBusinessesScalingUp"],
-        cta: locale === "en" ? "Start 14-Day Trial" : "ابدأ تجربة 14 يوم",
+        cta: tr["marketing.startFreeTrial"],
       },
       professional: {
         name: locale === "en" ? "Professional" : "الاحترافي",
         description: tr["marketing.pricingForGrowingCompaniesWithTeams"],
-        cta: locale === "en" ? "Start 14-Day Trial" : "ابدأ تجربة 14 يوم",
+        cta: tr["marketing.startFreeTrial"],
       },
       enterprise: {
         name: locale === "en" ? "Enterprise" : "المؤسسات",
@@ -320,7 +328,7 @@ export default function Pricing() {
     },
     badges: {
       recommended: locale === "en" ? "Recommended" : "موصى به",
-      mostPopular: tr["marketing.pricingBestForGrowingTeams"],
+      mostPopular: tr["marketing.pricingMostPopular"],
     },
     limits: {
       companies: locale === "en" ? "company" : "شركة",
@@ -336,17 +344,19 @@ export default function Pricing() {
         features:
           locale === "en"
             ? [
-                "1 company, 1 user",
-                "20 invoices/month",
-                "20 receipts/month",
+                tr["marketing.pricingFreeOneCompany"],
+                tr["marketing.pricingFreeUserAfterOffer"],
+                freeInvoices,
+                freeReceipts,
                 "Basic AI categorization",
                 "VAT filing",
                 "Bank reconciliation (manual)",
               ]
             : [
-                "شركة واحدة، مستخدم واحد",
-                "20 فاتورة/شهر",
-                "20 إيصال/شهر",
+                tr["marketing.pricingFreeOneCompany"],
+                tr["marketing.pricingFreeUserAfterOffer"],
+                freeInvoices,
+                freeReceipts,
                 "تصنيف ذكي أساسي",
                 "تقديم ضريبة القيمة المضافة",
                 "تسوية بنكية (يدوية)",
@@ -358,7 +368,7 @@ export default function Pricing() {
             ? [
                 "1 company, 3 users",
                 "200 invoices/month",
-                "100 receipts/month",
+                "200 receipts/month",
                 "AI receipt reading (coming soon)",
                 "AI categorization",
                 "Recurring invoices",
@@ -368,7 +378,7 @@ export default function Pricing() {
             : [
                 "شركة واحدة، 3 مستخدمين",
                 "200 فاتورة/شهر",
-                "100 إيصال/شهر",
+                "200 إيصال/شهر",
                 "قراءة الإيصالات بالذكاء الاصطناعي (قريباً)",
                 "تصنيف ذكي",
                 "فواتير متكررة",
@@ -518,10 +528,7 @@ export default function Pricing() {
         },
         {
           q: locale === "en" ? "Is there a free trial?" : "هل توجد فترة تجريبية مجانية؟",
-          a:
-            locale === "en"
-              ? "Yes. Your first paid subscription starts with a 14-day free trial; your card is charged only when the trial ends, and you can cancel before then. You can also use the Free plan indefinitely."
-              : "نعم. يبدأ أول اشتراك مدفوع بفترة تجريبية مجانية لمدة 14 يوماً؛ لا تُخصم البطاقة إلا عند انتهاء الفترة التجريبية ويمكنك الإلغاء قبل ذلك. كما يمكنك استخدام الخطة المجانية بدون قيود زمنية.",
+          a: tr["marketing.pricingTrialFaqAnswer"],
         },
         {
           q: locale === "en" ? "What payment methods do you accept?" : "ما طرق الدفع المقبولة؟",
@@ -545,12 +552,9 @@ export default function Pricing() {
         locale === "en"
           ? "Set up your company in minutes, or talk to us about migration and the plan that fits."
           : "أعدّ شركتك في دقائق، أو تحدث إلينا عن نقل بياناتك والخطة المناسبة لك.",
-      startFree: tr["marketing.pricingStartFree"],
+      startFree: tr["marketing.startFreeTrial"],
       bookDemo: tr["marketing.pricingTalkToUs"],
-      guarantee:
-        locale === "en"
-          ? "Free plan available · 14-day trial on your first paid plan · Prices in AED"
-          : "خطة مجانية متاحة · تجربة 14 يوماً لأول خطة مدفوعة · الأسعار بالدرهم",
+      guarantee: tr["marketing.pricingFooterNote"],
     },
     nav: {
       home: locale === "en" ? "Home" : "الرئيسية",
@@ -568,7 +572,11 @@ export default function Pricing() {
   };
 
   const getPrice = (tier: PricingTier) => {
-    return isYearly ? tier.yearlyPrice : tier.monthlyPrice;
+    return cycle === "yearly"
+      ? tier.yearlyPrice
+      : cycle === "quarterly"
+        ? tier.quarterlyPrice
+        : tier.monthlyPrice;
   };
 
   const renderCheckOrDash = (included: boolean) =>
@@ -602,16 +610,35 @@ export default function Pricing() {
             {t.header.subtitle}
           </p>
 
-          {/* Monthly / Yearly toggle */}
-          <div className="mk-billing" role="group" aria-label={t.header.billingLabel}>
-            <span data-active={!isYearly}>{t.header.monthly}</span>
-            <Switch
-              checked={isYearly}
-              onCheckedChange={setIsYearly}
-              aria-label={t.header.yearly}
-              data-testid="switch-billing-period"
-            />
-            <span data-active={isYearly}>{t.header.yearly}</span>
+          <p className="mk-small" style={{ marginBlockStart: "1rem" }} data-testid="trial-claim">
+            {tr["marketing.trialClaim"]}
+          </p>
+
+          {/* Monthly / quarterly / yearly toggle */}
+          <div
+            className="mk-billing"
+            role="radiogroup"
+            aria-label={t.header.billingLabel}
+            data-testid="billing-cycle"
+          >
+            {(["monthly", "quarterly", "yearly"] as const).map((c) => (
+              <button
+                key={c}
+                type="button"
+                role="radio"
+                aria-checked={cycle === c}
+                data-active={cycle === c}
+                data-testid={`billing-cycle-${c}`}
+                onClick={() => setCycle(c)}
+                className="mk-billing__option"
+              >
+                {c === "monthly"
+                  ? t.header.monthly
+                  : c === "quarterly"
+                    ? tr["marketing.pricingQuarterly"]
+                    : t.header.yearly}
+              </button>
+            ))}
             <span className="mk-badge" data-tone="success" data-visible={isYearly}>
               {t.header.save20}
             </span>
@@ -648,11 +675,23 @@ export default function Pricing() {
                   {price > 0 && <span>{t.header.perMonth}</span>}
                 </p>
                 <p className="mk-small mk-tier__billed">
-                  {price > 0 && isYearly
-                    ? locale === "en"
-                      ? `Billed ${formatMoneyText(price * 12, "AED", locale, { fractionDigits: 0 })} a year`
-                      : `يُفوتر ${formatMoneyText(price * 12, "AED", locale, { fractionDigits: 0 })} سنوياً`
-                    : " "}
+                  {price > 0 && cycle !== "monthly"
+                    ? formatMessage(
+                        tr[
+                          cycle === "yearly"
+                            ? "marketing.pricingBilledYearly"
+                            : "marketing.pricingBilledQuarterly"
+                        ],
+                        {
+                          amount: formatMoneyText(
+                            price * (cycle === "yearly" ? 12 : 3),
+                            "AED",
+                            locale,
+                            { fractionDigits: 0 }
+                          ),
+                        }
+                      )
+                    : "\u00a0"}
                 </p>
                 {tier.id === "enterprise" ? (
                   <Button asChild variant="outline" size="lg">

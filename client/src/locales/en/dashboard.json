@@ -71,7 +71,7 @@
   "dashboard.marginHint": "Net profit ÷ revenue",
   "dashboard.cashRunwayHint": "Runway {months} months",
   "dashboard.cashFromLedger": "From the ledger",
-  "dashboard.receivablesHint": "{open} invoices · {overdue} overdue",
+  "dashboard.receivablesHint": "{open, plural, one {# invoice} other {# invoices}} · {overdue} overdue",
   "dashboard.receivablesHintNone": "No open invoices",
   "dashboard.payablesHint": "DPO {days} days",
   "dashboard.payablesHintNone": "Approved bills not yet paid",

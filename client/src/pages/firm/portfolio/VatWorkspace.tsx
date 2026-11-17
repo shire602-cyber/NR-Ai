@@ -83,6 +83,7 @@ import {
   readFileAsBase64,
   todayInput,
 } from "./helpers";
+import { translateNow, formatMessage } from "@/lib/i18n";
 
 const VX_AR: Record<string, string> = {
   "VAT workpaper ready": "ورقة عمل الضريبة جاهزة",
@@ -535,7 +536,7 @@ export function VatWorkspaceDialog({
     onSuccess: () => {
       invalidateWorkspace();
       resetRowForm();
-      toast({ title: "VAT row updated" });
+      toast({ title: translateNow("toasts.vatRowUpdated") });
     },
     onError: (e: any) =>
       toast({
@@ -564,14 +565,14 @@ export function VatWorkspaceDialog({
       invalidateWorkspace();
       setPastedVatRows("");
       toast({
-        title: "VAT rows imported",
-        description: `${count} row${count === 1 ? "" : "s"} added as approved import rows.`,
+        title: translateNow("toasts.vatRowsImported2"),
+        description: formatMessage(translateNow("toasts.rowsAddedAsApproved"), { count }),
       });
     },
     onError: (e: any) =>
       toast({
         variant: "destructive",
-        title: "Could not import VAT rows",
+        title: translateNow("toasts.couldNotImportVatRows"),
         description: e?.message,
       }),
   });
@@ -612,7 +613,7 @@ export function VatWorkspaceDialog({
       resetRowForm();
       setEvidenceFile(null);
       setEvidenceInputKey((key) => key + 1);
-      toast({ title: "OCR draft row logged for review" });
+      toast({ title: translateNow("toasts.ocrDraftRowLoggedForReview") });
     },
     onError: (e: any) =>
       toast({
@@ -642,7 +643,7 @@ export function VatWorkspaceDialog({
     onSuccess: (_data, rowId) => {
       invalidateWorkspace();
       if (editingRowId === rowId) resetRowForm();
-      toast({ title: "VAT row deleted" });
+      toast({ title: translateNow("toasts.vatRowDeleted") });
     },
     onError: (e: any) =>
       toast({
@@ -688,7 +689,7 @@ export function VatWorkspaceDialog({
     onSuccess: () => {
       invalidateWorkspace();
       toast({
-        title: "VAT return generated for review",
+        title: translateNow("toasts.vatReturnGeneratedForReview"),
         description: vx("No FTA submission was performed."),
       });
     },
@@ -764,7 +765,9 @@ export function VatWorkspaceDialog({
       invalidateWorkspace();
       toast({
         title:
-          result.updated > 0 ? `${result.updated} draft rows approved` : "No draft rows to approve",
+          result.updated > 0
+            ? formatMessage(translateNow("toasts.draftRowsApproved"), { updated: result.updated })
+            : translateNow("toasts.noDraftRowsToApprove"),
         description:
           result.updated > 0
             ? vx("Totals recalculated — approved rows now flow into the VAT 201.")
@@ -823,12 +826,16 @@ export function VatWorkspaceDialog({
     },
     onSuccess: (result: { created: number }) => {
       invalidateWorkspace();
-      toast({ title: `${result.created} rows imported from Excel` });
+      toast({
+        title: formatMessage(translateNow("toasts.rowsImportedFromExcel"), {
+          created: result.created,
+        }),
+      });
     },
     onError: (e: any) =>
       toast({
         variant: "destructive",
-        title: "Could not import workbook",
+        title: translateNow("toasts.couldNotImportWorkbook"),
         description: e?.message,
       }),
   });

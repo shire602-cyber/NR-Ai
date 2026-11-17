@@ -78,8 +78,8 @@
   "invoices.actionCreateCreditNote": "إنشاء إشعار دائن",
   "invoices.actionDelete": "حذف الفاتورة",
   "invoices.actionDownloadPdf": "تنزيل PDF",
-  "invoices.deleteTitle": "حذف الفاتورة {number}؟",
-  "invoices.deleteBody": "سيؤدي هذا إلى حذف الفاتورة نهائيًا. لا يمكن التراجع عن ذلك.",
+  "invoices.deleteTitle": "حذف مسودة الفاتورة {number}؟",
+  "invoices.deleteBody": "إذا كان هذا آخر رقم فاتورة لديك، تُحذف المسودة ويُعاد استخدام رقمها. وإلا تُلغى المسودة ويبقى رقمها محفوظاً في السجل حتى لا تظهر فجوات في الترقيم. لا يمكن حذف الفواتير الصادرة.",
   "invoices.einvoiceShort": "إلكترونية",
   "invoices.exporting": "جارٍ التصدير…",
   "invoices.colDue": "الاستحقاق",
@@ -202,5 +202,7 @@
   "invoices.publicTrn": "الرقم الضريبي",
   "invoices.publicLinkExpiredBody": "انتهت صلاحية رابط الفاتورة. يرجى التواصل مع المرسل للحصول على رابط جديد.",
   "invoices.publicLinkInvalidBody": "رابط الفاتورة غير صالح أو تمت إزالته.",
-  "invoices.publicPayFailed": "تعذّر بدء عملية الدفع"
+  "invoices.publicPayFailed": "تعذّر بدء عملية الدفع",
+  "invoices.currency.pegBadge": "ربط ثابت",
+  "invoices.currency.pegNote": "الدرهم مربوط بالدولار الأمريكي بسعر ثابت 3.6725. يمكنك تغييره لهذه الفاتورة."
 }

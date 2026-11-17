@@ -1,7 +1,7 @@
 // Report delivery mutations: save settings, queue (with handoff guard) and retry runs.
 // Stage of the Reports page state; useReportsPage composes the stages in order (R20-09).
 import { SaveReportDeliverySubscriptionSettingsInput } from "../shared";
-import { translateNow } from "@/lib/i18n";
+import { translateNow, formatMessage } from "@/lib/i18n";
 import { apiRequest } from "@/lib/queryClient";
 import { useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -67,13 +67,15 @@ export function useReportsDeliveryActions({
             ? translateNow("reportCenter.deliveryEnabledToast")
             : translateNow("reportCenter.deliveryPausedToast")
           : "Report delivery settings saved",
-        description: `${subscriptionTitle} now uses company delivery settings.`,
+        description: formatMessage(translateNow("toasts.nowUsesCompanyDeliverySettings"), {
+          subscriptionTitle,
+        }),
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Could not update report delivery",
-        description: error?.message || "Failed to update report delivery settings",
+        title: translateNow("toasts.couldNotUpdateReportDelivery"),
+        description: error?.message || translateNow("toasts.failedToUpdateReportDeliverySettings"),
         variant: "destructive",
       });
     },
@@ -100,18 +102,21 @@ export function useReportsDeliveryActions({
       const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
       const nextRunLabel = result?.subscription?.nextRunLabel;
       toast({
-        title: "Report delivery queued",
+        title: translateNow("toasts.reportDeliveryQueued"),
         description: nextRunLabel
-          ? `${subscriptionTitle} queued for ${nextRunLabel}.`
-          : `${subscriptionTitle} queued as an in-app reminder.`,
+          ? formatMessage(translateNow("toasts.queuedForRun"), {
+              title: subscriptionTitle,
+              when: nextRunLabel,
+            })
+          : formatMessage(translateNow("toasts.queuedAsReminder"), { title: subscriptionTitle }),
       });
     },
     onError: (error: any) => {
       reportDeliveryRunsQuery.refetch();
       reportDeliverySchedulerHealthQuery.refetch();
       toast({
-        title: "Could not queue report delivery",
-        description: error?.message || "Failed to queue report delivery",
+        title: translateNow("toasts.couldNotQueueReportDelivery"),
+        description: error?.message || translateNow("toasts.failedToQueueReportDelivery"),
         variant: "destructive",
       });
     },
@@ -130,7 +135,7 @@ export function useReportsDeliveryActions({
           [subscriptionId]: true,
         }));
         toast({
-          title: "Handoff gaps acknowledged",
+          title: translateNow("toasts.handoffGapsAcknowledged"),
           description: `${
             subscription?.title ?? translateNow("reportCenter.thisReportDelivery")
           } has review gaps in the accountant handoff. Click queue again to send with those gaps acknowledged.`,
@@ -175,14 +180,16 @@ export function useReportsDeliveryActions({
       reportDeliverySchedulerHealthQuery.refetch();
       const subscriptionTitle = result?.subscription?.title ?? "Report delivery";
       toast({
-        title: "Report delivery retry queued",
-        description: `${subscriptionTitle} was requeued after recovery.`,
+        title: translateNow("toasts.reportDeliveryRetryQueued"),
+        description: formatMessage(translateNow("toasts.wasRequeuedAfterRecovery"), {
+          subscriptionTitle,
+        }),
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Could not retry report delivery",
-        description: error?.message || "Failed to retry report delivery",
+        title: translateNow("toasts.couldNotRetryReportDelivery"),
+        description: error?.message || translateNow("toasts.failedToRetryReportDelivery"),
         variant: "destructive",
       });
     },

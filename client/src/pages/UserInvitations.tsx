@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -99,7 +99,7 @@ export default function UserInvitations() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to send invitation",
+        title: translateNow("toasts.failedToSendInvitation"),
         description: error?.message,
       });
     },
@@ -116,7 +116,7 @@ export default function UserInvitations() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to revoke invitation",
+        title: translateNow("toasts.failedToRevokeInvitation"),
         description: error?.message,
       });
     },
@@ -133,7 +133,7 @@ export default function UserInvitations() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to resend invitation",
+        title: translateNow("toasts.failedToResendInvitation"),
         description: error?.message,
       });
     },
@@ -150,7 +150,7 @@ export default function UserInvitations() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete invitation",
+        title: translateNow("toasts.failedToDeleteInvitation"),
         description: error?.message,
       });
     },

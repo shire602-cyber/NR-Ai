@@ -423,6 +423,17 @@ export function toBase(fils: number, rate: string, foreign: boolean): number {
   return mulRate(fils, rate);
 }
 
+/**
+ * The reference a bill carries in journal memos and line descriptions: the supplier's bill number,
+ * or the bill date when none was entered. Never a fragment of the internal id (X6b).
+ */
+export function billReference(bill: {
+  bill_number?: string | null;
+  bill_date: string | Date;
+}): string {
+  return bill.bill_number?.trim() || isoDateOf(bill.bill_date);
+}
+
 export function isoDateOf(value: string | Date): string {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   const s = String(value);
@@ -484,7 +495,7 @@ export async function planBillJournal(
   const foreign = isForeign(bill, baseCurrency);
   const rate = rateTextOf(bill, baseCurrency);
   const currency = documentCurrency(bill.currency, baseCurrency);
-  const billRef = bill.bill_number || bill.id.slice(0, 8);
+  const billRef = billReference(bill);
 
   const nets = lineItems.map((l) => filsOf(l.amount));
   if (nets.some((n) => n < 0)) throw new DomainError("NEGATIVE_AMOUNT", 400);

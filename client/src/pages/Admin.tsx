@@ -1,6 +1,6 @@
 import { T } from "@/components/layout/T";
 import { activityActionLabel, activityEntityLabel } from "@/lib/activity-log-labels";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
@@ -224,8 +224,8 @@ export default function Admin() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to save settings",
-        description: error?.message || "Please try again",
+        title: translateNow("toasts.failedToSaveSettings"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain2"),
       });
     },
   });
@@ -514,13 +514,13 @@ export default function Admin() {
                   data-testid="button-backup-db"
                   onClick={() => {
                     toast({
-                      title: "Backup Started",
-                      description: "Database backup is in progress...",
+                      title: translateNow("toasts.backupStarted"),
+                      description: translateNow("toasts.databaseBackupIsInProgress"),
                     });
                     setTimeout(() => {
                       toast({
-                        title: "Backup Complete",
-                        description: "Database has been backed up successfully.",
+                        title: translateNow("toasts.backupComplete"),
+                        description: translateNow("toasts.databaseHasBeenBackedUpSuccessfully"),
                       });
                     }, 2000);
                   }}
@@ -534,9 +534,10 @@ export default function Admin() {
                   data-testid="button-send-newsletter"
                   onClick={() => {
                     toast({
-                      title: "Newsletter",
-                      description:
-                        "Newsletter feature will be available soon. Configure email settings first.",
+                      title: translateNow("toasts.newsletter"),
+                      description: translateNow(
+                        "toasts.newsletterFeatureWillBeAvailableSoonConfigure"
+                      ),
                     });
                   }}
                 >
@@ -549,8 +550,8 @@ export default function Admin() {
                   data-testid="button-generate-report"
                   onClick={() => {
                     toast({
-                      title: "Generating Report",
-                      description: "Usage report is being generated...",
+                      title: translateNow("toasts.generatingReport"),
+                      description: translateNow("toasts.usageReportIsBeingGenerated"),
                     });
                     setTimeout(() => {
                       const reportData = {
@@ -573,8 +574,8 @@ export default function Admin() {
                       a.click();
                       URL.revokeObjectURL(url);
                       toast({
-                        title: "Report Generated",
-                        description: "Usage report has been downloaded.",
+                        title: translateNow("toasts.reportGenerated"),
+                        description: translateNow("toasts.usageReportHasBeenDownloaded"),
                       });
                     }, 1500);
                   }}
@@ -588,13 +589,13 @@ export default function Admin() {
                   data-testid="button-sync-integrations"
                   onClick={() => {
                     toast({
-                      title: "Syncing Integrations",
-                      description: "Checking all integration connections...",
+                      title: translateNow("toasts.syncingIntegrations"),
+                      description: translateNow("toasts.checkingAllIntegrationConnections"),
                     });
                     setTimeout(() => {
                       toast({
-                        title: "Sync Complete",
-                        description: "All integrations are up to date.",
+                        title: translateNow("toasts.syncComplete"),
+                        description: translateNow("toasts.allIntegrationsAreUpToDate"),
                       });
                     }, 2000);
                   }}

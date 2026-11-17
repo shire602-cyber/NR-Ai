@@ -219,6 +219,20 @@ export function billingEnforced(): boolean {
   return false;
 }
 
+/**
+ * Cost / abuse caps (X6b launch offer): AI credits, storage and companies per user stay hard caps
+ * even while the launch offer leaves every other plan limit (invoices, receipts, seats) unenforced.
+ * They follow billing enforcement, and are otherwise ON in production and OFF in development/test
+ * unless COST_CAPS_ENFORCEMENT=true|false says so.
+ */
+export function costCapsEnforced(): boolean {
+  if (billingEnforced()) return true;
+  const flag = process.env.COST_CAPS_ENFORCEMENT;
+  if (flag === "true") return true;
+  if (flag === "false") return false;
+  return process.env.NODE_ENV === "production";
+}
+
 /** Test hook: clear the memoized Stripe-configured probe. */
 export function __resetBillingEnforcementCacheForTests(): void {
   stripeConfiguredCache = null;
@@ -621,8 +635,10 @@ export async function usageLimitPolicy(
     const companyId = await gateCompany(req);
     if (!companyId) return next();
     const metric = rule.metric;
-    const plan =
-      billingEnforced() && !(await isExemptCaller(req)) ? await companyPlanId(companyId) : null;
+    // The launch offer leaves invoices, receipts and seats unmetered-by-limit; AI credits are a cost
+    // cap and stay enforced (costCapsEnforced).
+    const limitsOn = billingEnforced() || (metric === "ai_calls" && costCapsEnforced());
+    const plan = limitsOn && !(await isExemptCaller(req)) ? await companyPlanId(companyId) : null;
     const enforced = plan !== null;
     const planId = plan ?? "free";
     const limit = (TIER_LIMITS[planId] || TIER_LIMITS.free)[METRIC_LIMIT_KEY[metric]];
@@ -666,6 +682,52 @@ export async function usageLimitPolicy(
         );
       }
     });
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Uploads that add stored bytes to a company (storage cap, X6b). */
+export const STORAGE_LIMIT_RULES: readonly GateRule[] = [
+  { methods: "POST", pattern: "companies/*/receipts" },
+  { methods: "POST", pattern: "journal/*/attachments" },
+];
+
+/**
+ * Storage cap (402 STORAGE_LIMIT_REACHED). Refuses an upload that would take the company past its
+ * plan's storage allowance, measured as stored receipt images plus journal attachments.
+ */
+export async function storageLimitPolicy(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    if (!costCapsEnforced()) return next();
+    const rule = matchGateRule(STORAGE_LIMIT_RULES, req.method, req.originalUrl || req.path, req);
+    if (!rule) return next();
+    const companyId = await gateCompany(req);
+    if (!companyId) return next();
+    if (await isExemptCaller(req)) return next();
+    const planId = await companyPlanId(companyId);
+    if (planId === null) return next();
+    const limitMb = (TIER_LIMITS[planId] || TIER_LIMITS.free).maxStorageMb;
+    if (limitMb === -1) return next();
+    const { companyStorageBytes } = await import("../services/storage-usage");
+    const used = await companyStorageBytes(companyId);
+    const incoming = Number(req.headers["content-length"] ?? 0) || 0;
+    if (used + incoming > limitMb * 1024 * 1024) {
+      res.status(402).json({
+        message: `Storage limit reached on the ${planId} plan (${limitMb} MB). Delete files or contact us to upgrade.`,
+        code: "STORAGE_LIMIT_REACHED",
+        resource: "storage",
+        currentUsageBytes: used,
+        limitMb,
+        currentTier: planId,
+      });
+      return;
+    }
     next();
   } catch (err) {
     next(err);
@@ -728,7 +790,7 @@ export function checkUsageLimit(resource: "invoices" | "receipts" | "aiCredits")
  */
 export function checkCompanyQuota() {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    if (!billingEnforced()) {
+    if (!costCapsEnforced()) {
       next();
       return;
     }
@@ -766,7 +828,7 @@ export function checkCompanyQuota() {
       }
 
       res.status(403).json({
-        message: `Your ${planId} plan allows ${limit} ${limit === 1 ? "company" : "companies"}. You already have ${owned.length}. Upgrade to add more.`,
+        message: `Your ${planId} plan allows ${limit} ${limit === 1 ? "company" : "companies"}. You already have ${owned.length}. Contact us to add more.`,
         code: "COMPANY_LIMIT_REACHED",
         details: { planId, limit, current: owned.length },
       });

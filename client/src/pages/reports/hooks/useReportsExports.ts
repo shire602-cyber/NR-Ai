@@ -1,7 +1,7 @@
 // Excel / Google Sheets export handlers and workspace panel layout helpers.
 // Stage of the Reports page state; useReportsPage composes the stages in order (R20-09).
 import { ReportWorkspaceTab, reportsWorkspaceHref } from "../shared";
-import { translateNow } from "@/lib/i18n";
+import { translateNow, formatMessage } from "@/lib/i18n";
 import {
   exportToExcel,
   exportToGoogleSheets,
@@ -107,14 +107,16 @@ export function useReportsExports({
         `${workspace.persona}_report_pack${exportDateRangeSuffix}`
       );
       toast({
-        title: "Report pack exported",
-        description: `${workspace.title} exported to Excel.`,
+        title: translateNow("toasts.reportPackExported"),
+        description: formatMessage(translateNow("toasts.exportedToExcel"), {
+          title: workspace.title,
+        }),
       });
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: error?.message || "Failed to export report pack",
+        title: translateNow("toasts.exportFailed"),
+        description: error?.message || translateNow("toasts.failedToExportReportPack"),
       });
     } finally {
       setIsExporting(false);
@@ -141,8 +143,10 @@ export function useReportsExports({
 
     if (result?.success) {
       toast({
-        title: "Report pack exported",
-        description: `${workspace.title} exported to Google Sheets. Opening...`,
+        title: translateNow("toasts.reportPackExported"),
+        description: formatMessage(translateNow("toasts.exportedToGoogleSheetsOpening"), {
+          title: workspace.title,
+        }),
       });
       if (result.spreadsheetUrl) {
         window.open(result.spreadsheetUrl, "_blank");
@@ -150,8 +154,8 @@ export function useReportsExports({
     } else {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: result?.error || "Failed to export report pack to Google Sheets",
+        title: translateNow("toasts.exportFailed"),
+        description: result?.error || translateNow("toasts.failedToExportReportPackToGoogle"),
       });
     }
   };
@@ -163,56 +167,68 @@ export function useReportsExports({
 
     if (activeTab === "pl" && profitLoss) {
       exportToExcel([prepareProfitLossForExport(profitLoss)], `profit_loss${dateRangeStr}`);
-      toast({ title: "Export successful", description: "Profit & Loss exported to Excel" });
+      toast({
+        title: translateNow("toasts.exportSuccessful"),
+        description: translateNow("toasts.profitLossExportedToExcel"),
+      });
     } else if (activeTab === "bs" && balanceSheet) {
       exportToExcel([prepareBalanceSheetForExport(balanceSheet)], `balance_sheet${dateRangeStr}`);
       toast({
-        title: "Export successful",
+        title: translateNow("toasts.exportSuccessful"),
         description: translateNow("reportCenter.exportedBalanceSheet"),
       });
     } else if (activeTab === "vat" && vatSummary) {
       exportToExcel([prepareVATSummaryForExport(vatSummary)], `vat_summary${dateRangeStr}`);
-      toast({ title: "Export successful", description: "VAT Summary exported to Excel" });
+      toast({
+        title: translateNow("toasts.exportSuccessful"),
+        description: translateNow("toasts.vatSummaryExportedToExcel"),
+      });
     } else if (activeTab === "tax" && corporateTaxEstimate) {
       exportToExcel(
         prepareCorporateTaxEstimateForExport(corporateTaxEstimate),
         `corporate_tax_estimate${dateRangeStr}`
       );
       toast({
-        title: "Export successful",
-        description: "Corporate Tax Estimate exported to Excel",
+        title: translateNow("toasts.exportSuccessful"),
+        description: translateNow("toasts.corporateTaxEstimateExportedToExcel"),
       });
     } else if (activeTab === "trial" && trialBalance) {
       exportToExcel([prepareTrialBalanceForExport(trialBalance)], `trial_balance${dateRangeStr}`);
       toast({
-        title: "Export successful",
+        title: translateNow("toasts.exportSuccessful"),
         description: translateNow("reportCenter.exportedTrialBalance"),
       });
     } else if (activeTab === "sales") {
       if (selectedReportId === "ar-aging") {
         exportToExcel(receivableAgingExportSheets, `ar_aging${dateRangeStr}`);
-        toast({ title: "Export successful", description: "A/R Aging exported to Excel" });
+        toast({
+          title: translateNow("toasts.exportSuccessful"),
+          description: translateNow("toasts.aRAgingExportedToExcel"),
+        });
       } else {
         exportToExcel(
           prepareInvoiceStatusForExport(invoiceStatusReport),
           `invoice_status${dateRangeStr}`
         );
         toast({
-          title: "Export successful",
+          title: translateNow("toasts.exportSuccessful"),
           description: translateNow("reportCenter.exportedInvoiceStatus"),
         });
       }
     } else if (activeTab === "balances") {
       if (selectedReportId === "ap-aging") {
         exportToExcel(payableAgingExportSheets, `ap_aging${dateRangeStr}`);
-        toast({ title: "Export successful", description: "A/P Aging exported to Excel" });
+        toast({
+          title: translateNow("toasts.exportSuccessful"),
+          description: translateNow("toasts.aPAgingExportedToExcel"),
+        });
       } else {
         exportToExcel(
           prepareBalanceSummaryReportsForExport(balanceReport),
           `balance_reports${dateRangeStr}`
         );
         toast({
-          title: "Export successful",
+          title: translateNow("toasts.exportSuccessful"),
           description: translateNow("reportCenter.exportedBalanceReports"),
         });
       }
@@ -222,7 +238,7 @@ export function useReportsExports({
         `expense_reports${dateRangeStr}`
       );
       toast({
-        title: "Export successful",
+        title: translateNow("toasts.exportSuccessful"),
         description: translateNow("reportCenter.exportedExpenseReports"),
       });
     } else if (activeTab === "payroll") {
@@ -231,13 +247,13 @@ export function useReportsExports({
         `payroll_reports${dateRangeStr}`
       );
       toast({
-        title: "Export successful",
+        title: translateNow("toasts.exportSuccessful"),
         description: translateNow("reportCenter.exportedPayrollReports"),
       });
     } else if (activeTab === "ledger") {
       exportToExcel(prepareLedgerReportsForExport(ledgerReport), `general_ledger${dateRangeStr}`);
       toast({
-        title: "Export successful",
+        title: translateNow("toasts.exportSuccessful"),
         description: translateNow("reportCenter.exportedGeneralLedger"),
       });
     } else if (activeTab === "close") {
@@ -250,8 +266,8 @@ export function useReportsExports({
         `close_reports_${monthEndPeriod}${dateRangeStr}`
       );
       toast({
-        title: "Export successful",
-        description: "Close reports exported to Excel",
+        title: translateNow("toasts.exportSuccessful"),
+        description: translateNow("toasts.closeReportsExportedToExcel"),
       });
     } else if (activeTab === "planning") {
       exportToExcel(
@@ -259,7 +275,7 @@ export function useReportsExports({
         `planning_reports${dateRangeStr}`
       );
       toast({
-        title: "Export successful",
+        title: translateNow("toasts.exportSuccessful"),
         description: translateNow("reportCenter.exportedPlanningReports"),
       });
     }
@@ -362,8 +378,8 @@ export function useReportsExports({
 
     if (result?.success) {
       toast({
-        title: "Export successful",
-        description: "Report exported to Google Sheets. Opening...",
+        title: translateNow("toasts.exportSuccessful"),
+        description: translateNow("toasts.reportExportedToGoogleSheetsOpening"),
       });
       if (result.spreadsheetUrl) {
         window.open(result.spreadsheetUrl, "_blank");
@@ -371,8 +387,8 @@ export function useReportsExports({
     } else {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: result?.error || "Failed to export to Google Sheets",
+        title: translateNow("toasts.exportFailed"),
+        description: result?.error || translateNow("toasts.failedToExportToGoogleSheets"),
       });
     }
   };

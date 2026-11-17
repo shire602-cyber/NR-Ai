@@ -5,7 +5,7 @@ import { AuthLayout } from "@/components/auth/AuthLayout";
 import { fetchCurrentUser } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import { establishAuthenticatedSession } from "@/lib/authSession";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -147,8 +147,8 @@ export default function Login() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("oauth_error") === "1") {
       toast({
-        title: "Login failed",
-        description: "We could not complete social login. Please try again.",
+        title: translateNow("shell.toastLoginFailed"),
+        description: translateNow("shell.toastWeCouldNotCompleteSocialLoginPlease"),
         variant: "destructive",
       });
       window.history.replaceState({}, "", "/login");

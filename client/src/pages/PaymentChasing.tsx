@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { formatCurrency } from "@/lib/format";
 import {
   Send,
@@ -290,7 +290,7 @@ export default function PaymentChasing() {
       }),
     onSuccess: (data: any) => {
       toast({
-        title: "Reminder ready",
+        title: translateNow("toasts.reminderReady"),
         description: t["pages.chasingPreviewDescription"],
       });
       setPreviewBody(data.message);
@@ -304,7 +304,7 @@ export default function PaymentChasing() {
     },
     onError: (e: any) =>
       toast({
-        title: "Could not send",
+        title: translateNow("toasts.couldNotSend"),
         description: e?.message ?? t["pages.chasingUnknownError"],
         variant: "destructive",
       }),
@@ -320,7 +320,11 @@ export default function PaymentChasing() {
       const failed = data.failed ?? 0;
       toast({
         title: failed > 0 ? t["pages.chasingBulkErrors"] : t["pages.chasingBulkQueued"],
-        description: `Sent ${data.sent} • Skipped ${data.skipped} • Failed ${failed}`,
+        description: formatMessage(translateNow("toasts.sentSkippedFailed"), {
+          sent: data.sent,
+          skipped: data.skipped,
+          failed,
+        }),
         variant: failed > 0 ? "destructive" : "default",
       });
       setBulkResults(data);
@@ -329,7 +333,11 @@ export default function PaymentChasing() {
       queryClient.invalidateQueries({ queryKey: ["/api/chasing/history", companyId] });
     },
     onError: (e) =>
-      toast({ title: "Bulk send failed", description: e?.message ?? "—", variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.bulkSendFailed"),
+        description: e?.message ?? "—",
+        variant: "destructive",
+      }),
   });
 
   const toggleDoNotChase = useMutation({
@@ -376,7 +384,7 @@ export default function PaymentChasing() {
     },
     onError: (e: any) =>
       toast({
-        title: "Could not save template",
+        title: translateNow("toasts.couldNotSaveTemplate"),
         description: e?.message ?? t["pages.chasingUnknownError"],
         variant: "destructive",
       }),
@@ -1088,8 +1096,8 @@ export default function PaymentChasing() {
                           // so the user gets immediate feedback rather than a 400.
                           if (!Number.isFinite(n) || n < 1 || n > 365) {
                             toast({
-                              title: "Invalid frequency",
-                              description: "Pick a value between 1 and 365 days.",
+                              title: translateNow("toasts.invalidFrequency"),
+                              description: translateNow("toasts.pickAValueBetween1And365"),
                               variant: "destructive",
                             });
                             e.target.value = String(configQuery.data?.chaseFrequencyDays ?? 7);
@@ -1184,9 +1192,11 @@ export default function PaymentChasing() {
                   toast({ title: t["pages.chasingCopied"] });
                 } catch (err) {
                   toast({
-                    title: "Could not copy",
+                    title: translateNow("toasts.couldNotCopy"),
                     description:
-                      err instanceof Error ? err.message : "Select the text and copy manually.",
+                      err instanceof Error
+                        ? err.message
+                        : translateNow("toasts.selectTextCopyManually"),
                     variant: "destructive",
                   });
                 }

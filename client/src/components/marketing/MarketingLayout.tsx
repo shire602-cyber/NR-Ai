@@ -54,7 +54,7 @@ type NavItem = { href: string; key: string; anchor?: boolean };
 
 const NAV: NavItem[] = [
   { href: "/#product", key: "marketing.navProduct", anchor: true },
-  { href: "/#firms", key: "marketing.navFirms", anchor: true },
+  { href: "/services", key: "marketing.navFirms" },
   { href: "/pricing", key: "marketing.navPricing" },
   { href: "/demo", key: "marketing.navDemo" },
   { href: "/help", key: "marketing.navHelp" },
@@ -134,7 +134,7 @@ export function MarketingHeader() {
           </Button>
           <Button asChild size="sm">
             <Link href="/register" data-testid="button-get-started">
-              {t["marketing.startFree"]}
+              {t["marketing.startFreeTrial"]}
             </Link>
           </Button>
           <Button
@@ -163,7 +163,7 @@ export function MarketingHeader() {
                 <Link href="/login">{t["marketing.signIn"]}</Link>
               </Button>
               <Button asChild size="lg">
-                <Link href="/register">{t["marketing.startFree"]}</Link>
+                <Link href="/register">{t["marketing.startFreeTrial"]}</Link>
               </Button>
             </div>
             <div style={{ marginBlockStart: "0.75rem" }}>

@@ -243,11 +243,22 @@ export function registerFirmPracticeRoutes(app: Express): void {
     })
   );
 
+  // X6b: accounting-firm features are NR-internal (the owner's firm runs them). There is no public
+  // firm sign-up: this endpoint stays closed unless FIRM_SELF_SIGNUP=true is set for a deliberate,
+  // supervised onboarding; platform admins then approve each application.
   router.post(
     "/firms/apply",
     authMiddleware,
     strictBody(applySchema),
     asyncHandler(async (req: Request, res: Response) => {
+      if (process.env.FIRM_SELF_SIGNUP !== "true") {
+        throw new DomainError(
+          "FIRM_SIGNUP_CLOSED",
+          403,
+          undefined,
+          "Firm accounts are created by the platform team. There is no public firm sign-up."
+        );
+      }
       const user = authUser(req);
       const firm = await applyForFirm(user, parsedBody<z.output<typeof applySchema>>(req));
       res.status(201).json({ firm, status: firm.status });

@@ -58,7 +58,7 @@ import {
 } from "@/components/ui/table";
 import { CardListSkeleton } from "@/components/ui/loading-skeletons";
 import { useToast } from "@/hooks/use-toast";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { formatDate, formatNumber } from "@/lib/format";
@@ -91,6 +91,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { VirtualList } from "@/components/VirtualList";
+import { accountDisplayName } from "@/lib/account-name";
 
 /** Integer fils: balance is compared exactly, never with a 0.01 tolerance. */
 const toFils = (v: unknown) => Math.round((Number(v) || 0) * 100);
@@ -199,8 +200,8 @@ export default function Journal() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to post entry",
-        description: error?.message || "Please check that debits equal credits.",
+        title: translateNow("toasts.failedToPostEntry"),
+        description: error?.message || translateNow("toasts.pleaseCheckThatDebitsEqualCredits"),
       });
     },
   });
@@ -211,8 +212,8 @@ export default function Journal() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
       toast({
-        title: "Draft entry updated",
-        description: "Your journal entry has been updated.",
+        title: translateNow("toasts.draftEntryUpdated"),
+        description: translateNow("toasts.yourJournalEntryHasBeenUpdated"),
       });
       setDialogOpen(false);
       setEditingEntry(null);
@@ -229,8 +230,8 @@ export default function Journal() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update entry",
-        description: error?.message || "Please check that debits equal credits.",
+        title: translateNow("toasts.failedToUpdateEntry"),
+        description: error?.message || translateNow("toasts.pleaseCheckThatDebitsEqualCredits"),
       });
     },
   });
@@ -251,7 +252,7 @@ export default function Journal() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to post entry",
+        title: translateNow("toasts.failedToPostEntry"),
         description: error?.message,
       });
     },
@@ -305,14 +306,14 @@ export default function Journal() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "journal"] });
       toast({
-        title: "Draft entry deleted",
-        description: "The draft journal entry has been deleted.",
+        title: translateNow("toasts.draftEntryDeleted"),
+        description: translateNow("toasts.theDraftJournalEntryHasBeenDeleted"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete entry",
+        title: translateNow("toasts.failedToDeleteEntry"),
         description: error?.message,
       });
     },
@@ -339,8 +340,8 @@ export default function Journal() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to load journal entry details.",
+        title: translateNow("toasts.error"),
+        description: error?.message || translateNow("toasts.failedToLoadJournalEntryDetails"),
       });
     }
   };
@@ -349,8 +350,8 @@ export default function Journal() {
     if (!selectedCompanyId) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "Company not found. Please refresh the page.",
+        title: translateNow("toasts.error"),
+        description: translateNow("toasts.companyNotFoundPleaseRefreshThePage"),
       });
       return;
     }
@@ -553,7 +554,7 @@ export default function Journal() {
                                       <span className="me-2 inline-block tabular-nums text-muted-foreground">
                                         {acc.code}
                                       </span>
-                                      {locale === "ar" && acc.nameAr ? acc.nameAr : acc.nameEn}
+                                      {accountDisplayName(acc, locale)}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
@@ -1064,9 +1065,7 @@ function JournalLinesTable({
                   {line.account?.code}
                 </span>
                 <span dir="auto" className="[unicode-bidi:isolate]">
-                  {locale === "ar" && line.account?.nameAr
-                    ? line.account.nameAr
-                    : line.account?.nameEn}
+                  {accountDisplayName(line.account, locale)}
                 </span>
               </TableCell>
               <TableCell data-numeric="">

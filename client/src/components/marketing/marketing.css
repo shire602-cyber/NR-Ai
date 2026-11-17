@@ -1684,6 +1684,23 @@
   font-size: var(--text-small);
   font-weight: 500;
 }
+.mk-billing__option {
+  padding: 0.25rem 0.75rem;
+  min-block-size: 2rem;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.mk-billing__option[data-active="true"] {
+  color: var(--ink);
+  background: var(--surface-sunken, rgba(127, 127, 127, 0.14));
+}
 .mk-billing > span[data-active] {
   color: var(--ink-3);
   transition: color var(--dur) var(--ease);

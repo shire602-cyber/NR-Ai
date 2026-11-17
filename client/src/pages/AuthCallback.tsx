@@ -6,6 +6,7 @@ import { probeCurrentUser } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { T } from "@/components/layout/T";
+import { translateNow } from "@/lib/i18n";
 
 function safeNextPath(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
@@ -45,8 +46,8 @@ export default function AuthCallback() {
         if (cancelled) return;
         toast({
           variant: "destructive",
-          title: "Login failed",
-          description: "We could not complete social login. Please try again.",
+          title: translateNow("shell.toastLoginFailed"),
+          description: translateNow("shell.toastWeCouldNotCompleteSocialLoginPlease"),
         });
         setLocation("/login?oauth_error=1");
       }

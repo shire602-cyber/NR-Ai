@@ -68,7 +68,7 @@ import {
 } from "@/components/ui/select";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useSearch } from "wouter";
 import { InboundCreditNotesCard } from "@/components/bills/InboundCreditNotesCard";
 import { EInvoiceOriginTag } from "@/components/einvoice/EInvoiceListCell";
@@ -578,15 +578,18 @@ export default function BillPay() {
     },
     onSuccess: () => {
       invalidateBills();
-      toast({ title: "Bill created", description: "Vendor bill has been created successfully." });
+      toast({
+        title: translateNow("toasts.billCreated"),
+        description: translateNow("toasts.vendorBillHasBeenCreatedSuccessfully"),
+      });
       setBillDialogOpen(false);
       resetBillForm();
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create bill",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToCreateBill"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -600,7 +603,10 @@ export default function BillPay() {
     },
     onSuccess: () => {
       invalidateBills();
-      toast({ title: "Bill updated", description: "Vendor bill has been updated successfully." });
+      toast({
+        title: translateNow("toasts.billUpdated"),
+        description: translateNow("toasts.vendorBillHasBeenUpdatedSuccessfully"),
+      });
       setBillDialogOpen(false);
       setEditingBill(null);
       resetBillForm();
@@ -608,8 +614,8 @@ export default function BillPay() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update bill",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToUpdateBill"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -618,13 +624,16 @@ export default function BillPay() {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/bills/${id}`),
     onSuccess: () => {
       invalidateBills();
-      toast({ title: "Bill deleted", description: "Vendor bill has been deleted." });
+      toast({
+        title: translateNow("toasts.billDeleted"),
+        description: translateNow("toasts.vendorBillHasBeenDeleted"),
+      });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete bill",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToDeleteBill"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -633,13 +642,16 @@ export default function BillPay() {
     mutationFn: (id: string) => apiRequest("POST", `/api/bills/${id}/approve`),
     onSuccess: () => {
       invalidateBills();
-      toast({ title: "Bill approved", description: "The bill has been approved." });
+      toast({
+        title: translateNow("toasts.billApproved"),
+        description: translateNow("toasts.theBillHasBeenApproved"),
+      });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to approve bill",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToApproveBill"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -656,7 +668,7 @@ export default function BillPay() {
       });
     },
     onError: (error: Error) => {
-      toast({ variant: "destructive", title: error?.message || "Error" });
+      toast({ variant: "destructive", title: error?.message || translateNow("toasts.error") });
     },
   });
 
@@ -676,8 +688,11 @@ export default function BillPay() {
     onSuccess: (result: any) => {
       invalidateBills();
       toast({
-        title: "Payment recorded",
-        description: `Payment recorded. Bill status: ${result.bill_status}. Remaining: ${formatCurrency(result.remaining, "AED")}`,
+        title: translateNow("toasts.paymentRecorded"),
+        description: formatMessage(translateNow("toasts.paymentRecordedBillStatus"), {
+          status: result.bill_status,
+          remaining: formatCurrency(result.remaining, "AED"),
+        }),
       });
       setPaymentDialogOpen(false);
       setPayingBill(null);
@@ -692,8 +707,8 @@ export default function BillPay() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to record payment",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToRecordPayment"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -784,8 +799,8 @@ export default function BillPay() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to load bill details.",
+        title: translateNow("toasts.error"),
+        description: error?.message || translateNow("toasts.failedToLoadBillDetails"),
       });
     }
   };
@@ -2044,7 +2059,7 @@ export default function BillPay() {
                         {cashAccounts.map(
                           (a: { id: string; code: string; nameEn: string; nameAr?: string }) => (
                             <SelectItem key={a.id} value={a.id}>
-                              {a.code} - {locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}
+                              {a.code} - {accountDisplayName(a, locale)}
                             </SelectItem>
                           )
                         )}

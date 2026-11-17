@@ -294,5 +294,9 @@
   "forms.errors.exchangeRateInvalid": "Enter a positive rate with up to 6 decimals.",
   "forms.claim.amountExclVatAed": "Amount excl. VAT (AED)",
   "forms.asset.inputVat": "Input VAT paid (AED)",
-  "forms.asset.inputVatHelp": "Recoverable VAT on the purchase invoice. It is posted to VAT Receivable and reported in VAT return Box 9."
+  "forms.asset.inputVatHelp": "Recoverable VAT on the purchase invoice. It is posted to VAT Receivable and reported in VAT return Box 9.",
+  "forms.serverErrors.STRIPE_NOT_CONFIGURED": "Online payment is not available yet. Contact us to upgrade.",
+  "forms.serverErrors.STORAGE_LIMIT_REACHED": "Your storage limit has been reached. Delete files or contact us to upgrade.",
+  "forms.serverErrors.COMPANY_LIMIT_REACHED": "Your plan allows no more companies. Contact us to add more.",
+  "forms.serverErrors.AI_NOT_CONFIGURED": "Automatic receipt reading is not switched on yet. Enter the details yourself."
 }

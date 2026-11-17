@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import type { UseFormReturn } from "react-hook-form";
 import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -14,6 +15,12 @@ import {
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { apiRequest } from "@/lib/queryClient";
 import { currencyChoices, type CompanyRateLike } from "@/lib/document-currency";
+
+/** The dirham is pegged to the US dollar at a fixed rate (1 USD = 3.6725 AED). */
+const AED_USD_PEG = "3.6725";
+
+/** Same rule as the form schema: a positive rate with up to 6 decimals. */
+const isValidRate = (v: string) => /^\d+(\.\d{1,6})?$/.test(v.trim()) && Number(v) > 0;
 
 interface CurrencyFormShape {
   currency: string;
@@ -75,9 +82,15 @@ export function InvoiceCurrencyFields<T extends CurrencyFormShape>({
   });
   // The server uses the latest company rate on file for the date (even an older one), so it is
   // prefilled either way; an older rate is flagged so the user can confirm or override it.
-  const suggested =
-    lookup && lookup.rate !== undefined ? String(lookup.rateText ?? lookup.rate) : "";
-  const staleDate = lookup?.stale ? (lookup.date ?? "") : "";
+  const pegged = baseCurrency === "AED" && currency === "USD";
+  const suggested = pegged
+    ? AED_USD_PEG
+    : lookup && lookup.rate !== undefined
+      ? String(lookup.rateText ?? lookup.rate)
+      : "";
+  const rateValue = String(f.watch("exchangeRate") ?? "");
+  const rateError = foreign && rateValue.trim() !== "" && !isValidRate(rateValue);
+  const staleDate = !pegged && lookup?.stale ? (lookup.date ?? "") : "";
 
   // Prefill (never overwrite a rate the user typed) when the currency or date changes.
   useEffect(() => {
@@ -126,11 +139,16 @@ export function InvoiceCurrencyFields<T extends CurrencyFormShape>({
           name="exchangeRate"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>
+              <FormLabel className="flex items-center gap-2">
                 {formatMessage(t["invoices.currency.rateLabel"], {
                   from: currency,
                   to: baseCurrency,
                 })}
+                {pegged && String(field.value ?? "").trim() === AED_USD_PEG && (
+                  <Badge variant="secondary" data-testid="badge-rate-peg">
+                    {t["invoices.currency.pegBadge"]}
+                  </Badge>
+                )}
               </FormLabel>
               <FormControl>
                 <Input
@@ -139,19 +157,33 @@ export function InvoiceCurrencyFields<T extends CurrencyFormShape>({
                   ltr
                   inputMode="decimal"
                   readOnly={readOnly}
+                  aria-invalid={rateError ? true : undefined}
+                  aria-describedby={rateError ? "invoice-rate-error" : undefined}
                   data-testid="input-invoice-exchange-rate"
                   placeholder={t["invoices.currency.rateHint"]}
                 />
               </FormControl>
+              {rateError && (
+                <p
+                  id="invoice-rate-error"
+                  role="alert"
+                  className="text-caption text-destructive"
+                  data-testid="error-invoice-exchange-rate"
+                >
+                  {t["invoices.currency.rateInvalid"]}
+                </p>
+              )}
               <p className="text-caption text-muted-foreground">
-                {suggested && staleDate
-                  ? formatMessage(t["invoices.currency.rateStale"], {
-                      rate: suggested,
-                      date: staleDate,
-                    })
-                  : suggested
-                    ? formatMessage(t["invoices.currency.rateSuggested"], { rate: suggested })
-                    : t["invoices.currency.rateMissing"]}
+                {pegged
+                  ? t["invoices.currency.pegNote"]
+                  : suggested && staleDate
+                    ? formatMessage(t["invoices.currency.rateStale"], {
+                        rate: suggested,
+                        date: staleDate,
+                      })
+                    : suggested
+                      ? formatMessage(t["invoices.currency.rateSuggested"], { rate: suggested })
+                      : t["invoices.currency.rateMissing"]}
               </p>
               <FormMessage />
             </FormItem>

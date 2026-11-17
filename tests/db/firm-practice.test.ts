@@ -10,6 +10,9 @@ import { unzipSync, strFromU8 } from "fflate";
 import { describe, expect, it } from "vitest";
 import { ledgerTotals, useHarness, type Tenant } from "./harness";
 
+// X6b: firm sign-up is closed by default (NR-internal); these tests onboard a second firm on purpose.
+process.env.FIRM_SELF_SIGNUP = "true";
+
 const h = useHarness();
 const TRN = "100000000000003";
 
@@ -768,5 +771,22 @@ describe("W5-D firm practice management", () => {
       `/api/firm/clients/${c.id}/filing-pack?filingType=vat201&periodStart=2026-07-01&periodEnd=2026-09-30`
     );
     expect(again.body.filed).toMatchObject({ referenceNumber: "FTA-REF-1", filedOn: "2026-10-20" });
+  });
+});
+
+describe("X6b accounting-firm features are NR-internal", () => {
+  it("[X6b-firm-signup-closed] a signed-in user cannot apply for a firm account unless sign-up is opened on purpose", async () => {
+    const previous = process.env.FIRM_SELF_SIGNUP;
+    delete process.env.FIRM_SELF_SIGNUP;
+    try {
+      const user = await h.createTenant({ name: "X6bWouldBeFirm" });
+      const res = await user.as.post("/api/firms/apply", { name: "Public Firm LLC" });
+      expect(res.status, res.text).toBe(403);
+      expect(res.body.code ?? res.body.error).toBe("FIRM_SIGNUP_CLOSED");
+      const me = await user.as.get("/api/firms/me");
+      expect(me.body.membership).toBeNull();
+    } finally {
+      process.env.FIRM_SELF_SIGNUP = previous ?? "true";
+    }
   });
 });

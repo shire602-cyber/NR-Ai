@@ -60,7 +60,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Switch } from "@/components/ui/switch";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
@@ -195,14 +195,18 @@ export default function CostCenters() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cost-centers`] });
       toast({
-        title: "Cost Center Created",
-        description: "Cost center has been added successfully.",
+        title: translateNow("toasts.costCenterCreated"),
+        description: translateNow("toasts.costCenterHasBeenAddedSuccessfully"),
       });
       setDialogOpen(false);
       form.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -215,15 +219,19 @@ export default function CostCenters() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/cost-centers`] });
       toast({
-        title: "Cost Center Updated",
-        description: "Cost center details have been updated.",
+        title: translateNow("toasts.costCenterUpdated"),
+        description: translateNow("toasts.costCenterDetailsHaveBeenUpdated"),
       });
       setDialogOpen(false);
       setEditingCostCenter(null);
       form.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -234,10 +242,17 @@ export default function CostCenters() {
       if (selectedCostCenterId) {
         setSelectedCostCenterId(null);
       }
-      toast({ title: "Cost Center Deleted", description: "Cost center has been removed." });
+      toast({
+        title: translateNow("toasts.costCenterDeleted"),
+        description: translateNow("toasts.costCenterHasBeenRemoved"),
+      });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -282,8 +297,8 @@ export default function CostCenters() {
   const handleExportCostCenterProfitability = async () => {
     if (!profitabilityReport) {
       toast({
-        title: "No report data",
-        description: "Cost Center P&L is still loading or has no rows to export.",
+        title: translateNow("toasts.noReportData"),
+        description: translateNow("toasts.costCenterPLIsStillLoading"),
         variant: "destructive",
       });
       return;
@@ -295,13 +310,14 @@ export default function CostCenters() {
         `cost_center_pnl_${new Date().toISOString().slice(0, 10)}`
       );
       toast({
-        title: "Report exported",
-        description: "Cost Center P&L has been downloaded.",
+        title: translateNow("toasts.reportExported2"),
+        description: translateNow("toasts.costCenterPLHasBeenDownloaded"),
       });
     } catch (error) {
       toast({
-        title: "Export failed",
-        description: error instanceof Error ? error.message : "Unable to export Cost Center P&L.",
+        title: translateNow("toasts.exportFailed"),
+        description:
+          error instanceof Error ? error.message : translateNow("toasts.unableExportCostCenterPl"),
         variant: "destructive",
       });
     }

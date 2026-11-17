@@ -81,7 +81,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
@@ -94,6 +94,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { postablePaymentAccounts } from "@/lib/payment-accounts";
+import { accountDisplayName } from "@/lib/account-name";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -349,14 +350,18 @@ export default function ExpenseClaims() {
         queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
       });
       toast({
-        title: "Claim Created",
-        description: "Your expense claim has been created as a draft.",
+        title: translateNow("toasts.claimCreated"),
+        description: translateNow("toasts.yourExpenseClaimHasBeenCreatedAs"),
       });
       setClaimDialogOpen(false);
       claimForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -368,13 +373,20 @@ export default function ExpenseClaims() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
       });
-      toast({ title: "Claim Updated", description: "Your expense claim has been updated." });
+      toast({
+        title: translateNow("toasts.claimUpdated"),
+        description: translateNow("toasts.yourExpenseClaimHasBeenUpdated"),
+      });
       setClaimDialogOpen(false);
       setEditingClaim(null);
       claimForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -385,10 +397,17 @@ export default function ExpenseClaims() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
       });
-      toast({ title: "Claim Deleted", description: "The expense claim has been deleted." });
+      toast({
+        title: translateNow("toasts.claimDeleted"),
+        description: translateNow("toasts.theExpenseClaimHasBeenDeleted"),
+      });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -400,12 +419,16 @@ export default function ExpenseClaims() {
         queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
       });
       toast({
-        title: "Claim Submitted",
-        description: "Your expense claim has been submitted for review.",
+        title: translateNow("toasts.claimSubmitted"),
+        description: translateNow("toasts.yourExpenseClaimHasBeenSubmittedFor"),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -417,12 +440,19 @@ export default function ExpenseClaims() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
       });
-      toast({ title: "Claim Approved", description: "The expense claim has been approved." });
+      toast({
+        title: translateNow("toasts.claimApproved"),
+        description: translateNow("toasts.theExpenseClaimHasBeenApproved"),
+      });
       setReviewDialogOpen(false);
       reviewForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -434,12 +464,19 @@ export default function ExpenseClaims() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
       });
-      toast({ title: "Claim Rejected", description: "The expense claim has been rejected." });
+      toast({
+        title: translateNow("toasts.claimRejected"),
+        description: translateNow("toasts.theExpenseClaimHasBeenRejected"),
+      });
       setReviewDialogOpen(false);
       reviewForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -462,12 +499,19 @@ export default function ExpenseClaims() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/expense-claims/summary`],
       });
-      toast({ title: "Claim Paid", description: "The expense claim has been marked as paid." });
+      toast({
+        title: translateNow("toasts.claimPaid"),
+        description: translateNow("toasts.theExpenseClaimHasBeenMarkedAs"),
+      });
       setPaymentDialogOpen(false);
       paymentForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -560,7 +604,11 @@ export default function ExpenseClaims() {
       });
       setClaimDialogOpen(true);
     } catch (error: any) {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -570,7 +618,11 @@ export default function ExpenseClaims() {
       setViewingClaim(fullClaim);
       setViewDialogOpen(true);
     } catch (error: any) {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -1526,7 +1578,7 @@ export default function ExpenseClaims() {
                       <SelectContent>
                         {cashAccounts.map((a) => (
                           <SelectItem key={a.id} value={a.id}>
-                            {a.code} - {locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}
+                            {a.code} - {accountDisplayName(a, locale)}
                           </SelectItem>
                         ))}
                       </SelectContent>

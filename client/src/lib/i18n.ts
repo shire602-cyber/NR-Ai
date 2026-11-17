@@ -1133,9 +1133,47 @@ export function loadLocaleForCurrentRoute(locale: Locale): Promise<void> {
  * (e.g. "{done}/{total} completed" instead of "{done}/{total}" + " completed").
  */
 export function formatMessage(template: string, values: Record<string, string | number>): string {
-  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
+  const withPlurals = template.includes(", plural,") ? expandPlurals(template, values) : template;
+  return withPlurals.replace(/\{(\w+)\}/g, (match, key: string) =>
     key in values ? String(values[key]) : match
   );
+}
+
+/**
+ * ICU-style plurals for counted nouns: `{count, plural, one {# invoice} other {# invoices}}`.
+ * Categories follow CLDR for the active locale (Arabic has zero, one, two, few, many and other,
+ * so "1 فواتير" cannot happen); `#` is the formatted number. A missing category falls back to
+ * `other`.
+ */
+function expandPlurals(template: string, values: Record<string, string | number>): string {
+  const { locale } = useI18n.getState();
+  const rules = new Intl.PluralRules(locale === "ar" ? "ar" : "en");
+  const head = /\{(\w+),\s*plural,\s*/g;
+  let out = "";
+  let last = 0;
+  for (let m = head.exec(template); m; m = head.exec(template)) {
+    // Walk the balanced braces of the whole plural block.
+    let depth = 1;
+    let i = m.index + m[0].length;
+    const bodyStart = i;
+    while (i < template.length && depth > 0) {
+      if (template[i] === "{") depth++;
+      else if (template[i] === "}") depth--;
+      i++;
+    }
+    if (depth !== 0) break;
+    const body = template.slice(bodyStart, i - 1);
+    const forms: Record<string, string> = {};
+    const formRe = /(\w+)\s*\{([^{}]*)\}/g;
+    for (let f = formRe.exec(body); f; f = formRe.exec(body)) forms[f[1]] = f[2];
+    const n = Number(values[m[1]]);
+    const category = Number.isFinite(n) ? rules.select(n) : "other";
+    const chosen = (n === 0 && forms.zero) || forms[category] || forms.other || "";
+    out += template.slice(last, m.index) + chosen.replace(/#/g, String(values[m[1]] ?? ""));
+    last = i;
+    head.lastIndex = i;
+  }
+  return out + template.slice(last);
 }
 
 /**

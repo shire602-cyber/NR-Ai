@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation, formatMessage } from "@/lib/i18n";
+import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -53,10 +53,10 @@ export default function Referrals() {
     try {
       await navigator.clipboard.writeText(referralLink);
       setCopied(true);
-      toast({ title: "Link copied to clipboard!" });
+      toast({ title: translateNow("toasts.linkCopiedToClipboard") });
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast({ title: "Failed to copy", variant: "destructive" });
+      toast({ title: translateNow("toasts.failedToCopy"), variant: "destructive" });
     }
   };
 

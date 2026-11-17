@@ -20,7 +20,7 @@ import {
   Legend,
 } from "recharts";
 import { useToast } from "@/hooks/use-toast";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
@@ -151,8 +151,8 @@ export default function AICFO() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "AI CFO Error",
-        description: error?.message || "Failed to get advice",
+        title: translateNow("toasts.aiCfoError"),
+        description: error?.message || translateNow("toasts.failedToGetAdvice"),
       });
     },
   });
@@ -173,8 +173,8 @@ export default function AICFO() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "AI CFO Error",
-        description: error?.message || "Failed to generate insights",
+        title: translateNow("toasts.aiCfoError"),
+        description: error?.message || translateNow("toasts.failedToGenerateInsights"),
       });
     },
   });

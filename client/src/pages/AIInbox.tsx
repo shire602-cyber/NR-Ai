@@ -1,6 +1,6 @@
 import { accountDisplayName } from "@/lib/account-name";
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
@@ -194,14 +194,14 @@ export default function AIInbox() {
     },
     onSuccess: (data: ScanResult) => {
       toast({
-        title: "Scan Complete",
+        title: translateNow("toasts.scanComplete2"),
         description: data.message,
       });
       invalidateAll();
     },
     onError: (error: Error) => {
       toast({
-        title: "Scan Failed",
+        title: translateNow("toasts.scanFailed2"),
         description: error?.message,
         variant: "destructive",
       });
@@ -213,12 +213,15 @@ export default function AIInbox() {
       return apiRequest("POST", `/api/companies/${companyId}/ai-gl/queue/${itemId}/accept`);
     },
     onSuccess: (_data: any, _itemId: string) => {
-      toast({ title: "Accepted", description: "Transaction posted to GL." });
+      toast({
+        title: translateNow("toasts.accepted"),
+        description: translateNow("toasts.transactionPostedToGl"),
+      });
       invalidateAll();
     },
     onError: (error: Error) => {
       toast({
-        title: "Accept Failed",
+        title: translateNow("toasts.acceptFailed"),
         description: error?.message,
         variant: "destructive",
       });
@@ -230,12 +233,15 @@ export default function AIInbox() {
       return apiRequest("POST", `/api/companies/${companyId}/ai-gl/queue/${itemId}/reject`);
     },
     onSuccess: () => {
-      toast({ title: "Rejected", description: "Transaction rejected." });
+      toast({
+        title: translateNow("toasts.rejected"),
+        description: translateNow("toasts.transactionRejected"),
+      });
       invalidateAll();
     },
     onError: (error: Error) => {
       toast({
-        title: "Reject Failed",
+        title: translateNow("toasts.rejectFailed"),
         description: error?.message,
         variant: "destructive",
       });
@@ -250,8 +256,8 @@ export default function AIInbox() {
     },
     onSuccess: () => {
       toast({
-        title: "Corrected",
-        description: "Transaction corrected and posted to GL.",
+        title: translateNow("toasts.corrected"),
+        description: translateNow("toasts.transactionCorrectedAndPostedToGl"),
       });
       setCorrectDialogOpen(false);
       setCorrectingItem(null);
@@ -260,7 +266,7 @@ export default function AIInbox() {
     },
     onError: (error: Error) => {
       toast({
-        title: "Correction Failed",
+        title: translateNow("toasts.correctionFailed"),
         description: error?.message,
         variant: "destructive",
       });
@@ -284,14 +290,20 @@ export default function AIInbox() {
       const successCount = results.filter((r) => r.success).length;
       const failCount = results.filter((r) => !r.success).length;
       toast({
-        title: "Bulk Accept Complete",
-        description: `${successCount} accepted${failCount > 0 ? `, ${failCount} failed` : ""}.`,
+        title: translateNow("toasts.bulkAcceptComplete"),
+        description:
+          failCount > 0
+            ? formatMessage(translateNow("toasts.acceptedAndFailed"), {
+                accepted: successCount,
+                failed: failCount,
+              })
+            : formatMessage(translateNow("toasts.acceptedCount"), { accepted: successCount }),
       });
       invalidateAll();
     },
     onError: (error: Error) => {
       toast({
-        title: "Bulk Accept Failed",
+        title: translateNow("toasts.bulkAcceptFailed"),
         description: error?.message,
         variant: "destructive",
       });

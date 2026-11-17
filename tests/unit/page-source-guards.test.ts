@@ -242,7 +242,15 @@ describe("Mobile launch UX guards", () => {
 
     it("keeps duplicate import feedback visible to users", () => {
       expect(source).toContain("skippedDuplicates");
-      expect(source).toContain("Matching suggestions are being prepared");
+      // X6b: the copy moved into the toast catalogs (English and Arabic).
+      for (const loc of ["en", "ar"]) {
+        const catalog = JSON.parse(
+          readFileSync(`client/src/locales/${loc}/toasts.json`, "utf8")
+        ) as Record<string, string>;
+        expect(catalog["toasts.importedMatchingPrepared"]).toBeTruthy();
+        expect(catalog["toasts.importedSkippedDuplicates"]).toBeTruthy();
+      }
+      expect(source).toContain("toasts.importedMatchingPrepared");
     });
   });
 

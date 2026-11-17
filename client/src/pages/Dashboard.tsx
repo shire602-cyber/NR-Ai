@@ -1,3 +1,4 @@
+import { TrialBanner } from "@/components/TrialBanner";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import ClientDashboard from "./ClientDashboard";
 import { useCustomerDashboardModel } from "./dashboard/useCustomerDashboardModel";
@@ -25,6 +26,7 @@ function CustomerDashboard() {
   return (
     // Rhythm (CTO 4): 40px between sections, 16px inside them.
     <div className="space-y-8 md:space-y-10">
+      <TrialBanner />
       <DashboardHero m={m} />
       <DashboardOverview m={m} />
       <DashboardCharts m={m} />

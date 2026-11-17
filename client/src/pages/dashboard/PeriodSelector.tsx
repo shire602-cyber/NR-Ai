@@ -52,13 +52,16 @@ export function PeriodSelector({ choice, onChange, locale }: PeriodSelectorProps
         })}
       </div>
       {choice.preset === "custom" && (
-        <div className="flex items-center gap-2" data-testid="dashboard-period-custom">
+        <div
+          className="flex w-full flex-wrap items-center gap-2 sm:w-auto"
+          data-testid="dashboard-period-custom"
+        >
           <Input
             type="date"
             aria-label={ar ? "من" : "From"}
             value={choice.from ?? ""}
             onChange={(e) => onChange({ ...choice, from: e.target.value })}
-            className="h-9 w-[10.5rem]"
+            className="h-9 min-w-0 flex-1 sm:w-[10.5rem] sm:flex-none"
           />
           <span className="text-muted-foreground text-xs">{ar ? "إلى" : "to"}</span>
           <Input
@@ -66,10 +69,10 @@ export function PeriodSelector({ choice, onChange, locale }: PeriodSelectorProps
             aria-label={ar ? "إلى" : "To"}
             value={choice.to ?? ""}
             onChange={(e) => onChange({ ...choice, to: e.target.value })}
-            className="h-9 w-[10.5rem]"
+            className="h-9 min-w-0 flex-1 sm:w-[10.5rem] sm:flex-none"
           />
           {!isCompleteChoice(choice) && (
-            <span className="text-xs text-muted-foreground">
+            <span className="w-full text-xs text-muted-foreground">
               {t["dashboard.periodPickValidDates"]}
             </span>
           )}

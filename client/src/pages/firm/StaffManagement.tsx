@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -133,11 +133,11 @@ export default function StaffManagement() {
     queryClient.invalidateQueries({ queryKey: ["/api/firm/clients"] });
 
     if (failed === 0) {
-      toast({ title: `${success} assignment${success !== 1 ? "s" : ""} saved` });
+      toast({ title: formatMessage(translateNow("toasts.assignmentsSaved"), { success }) });
     } else {
       toast({
         variant: "destructive",
-        title: `${success} saved, ${failed} failed`,
+        title: formatMessage(translateNow("toasts.savedFailed"), { success, failed }),
       });
     }
   };

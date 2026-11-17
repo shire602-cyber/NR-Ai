@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { translateNow } from "@/lib/i18n";
 
 interface Props {
   allowedTypes: string[];
@@ -20,8 +21,8 @@ export function RequireUserType({ allowedTypes, children, redirectTo = "/dashboa
   useEffect(() => {
     if (!isLoading && !isAllowed) {
       toast({
-        title: "Access Restricted",
-        description: "You do not have access to this page.",
+        title: translateNow("toasts.accessRestricted"),
+        description: translateNow("toasts.youDoNotHaveAccessToThis"),
         variant: "destructive",
       });
       setLocation(redirectTo);

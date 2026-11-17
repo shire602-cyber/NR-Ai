@@ -1,3 +1,4 @@
+import { TRIAL_DAYS } from "../../shared/trial";
 import Stripe from "stripe";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
@@ -96,8 +97,8 @@ const PLAN_LIMITS: Record<string, PlanLimits> = {
 
 /** Trial length for a company's first paid subscription (STRIPE_TRIAL_DAYS, default 14; 0 = none). */
 export function trialDays(): number {
-  const n = Number(process.env.STRIPE_TRIAL_DAYS ?? 14);
-  return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), 90) : 14;
+  const n = Number(process.env.STRIPE_TRIAL_DAYS ?? TRIAL_DAYS);
+  return Number.isFinite(n) && n >= 0 ? Math.min(Math.floor(n), 90) : TRIAL_DAYS;
 }
 
 /** Seats billed: company members (min 1). Plans priced per seat set STRIPE_PER_SEAT=true. */

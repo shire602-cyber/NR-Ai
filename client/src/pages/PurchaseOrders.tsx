@@ -57,7 +57,7 @@ import {
 } from "@/components/ui/select";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation, formatMessage } from "@/lib/i18n";
+import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
@@ -229,8 +229,8 @@ export default function PurchaseOrders() {
         queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
       });
       toast({
-        title: "Purchase order created",
-        description: "Your purchase order has been created successfully.",
+        title: translateNow("toasts.purchaseOrderCreated"),
+        description: translateNow("toasts.yourPurchaseOrderHasBeenCreatedSuccessfully"),
       });
       setDialogOpen(false);
       setEditingPO(null);
@@ -239,8 +239,8 @@ export default function PurchaseOrders() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create purchase order",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToCreatePurchaseOrder"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -253,8 +253,8 @@ export default function PurchaseOrders() {
         queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
       });
       toast({
-        title: "Purchase order updated",
-        description: "Your purchase order has been updated successfully.",
+        title: translateNow("toasts.purchaseOrderUpdated"),
+        description: translateNow("toasts.yourPurchaseOrderHasBeenUpdatedSuccessfully"),
       });
       setDialogOpen(false);
       setEditingPO(null);
@@ -263,8 +263,8 @@ export default function PurchaseOrders() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update purchase order",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToUpdatePurchaseOrder"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -276,15 +276,15 @@ export default function PurchaseOrders() {
         queryKey: ["/api/companies", selectedCompanyId, "purchase-orders"],
       });
       toast({
-        title: "Purchase order deleted",
-        description: "The purchase order has been deleted.",
+        title: translateNow("toasts.purchaseOrderDeleted"),
+        description: translateNow("toasts.thePurchaseOrderHasBeenDeleted"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete purchase order",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToDeletePurchaseOrder"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -323,13 +323,16 @@ export default function PurchaseOrders() {
       } else if (vars.status === "billed") toast({ title: pc.converted });
       else if (vars.status === "cancelled") toast({ title: pc.cancelled });
       else
-        toast({ title: "Status updated", description: "Purchase order status has been updated." });
+        toast({
+          title: translateNow("toasts.statusUpdated"),
+          description: translateNow("toasts.purchaseOrderStatusHasBeenUpdated"),
+        });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update status",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToUpdateStatus"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -368,8 +371,8 @@ export default function PurchaseOrders() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to load purchase order details.",
+        title: translateNow("toasts.error"),
+        description: error?.message || translateNow("toasts.failedToLoadPurchaseOrderDetails"),
       });
     }
   };

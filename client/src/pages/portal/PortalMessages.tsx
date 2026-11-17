@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { T } from "@/components/layout/T";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Send, MessageSquare, Loader2 } from "lucide-react";
@@ -29,10 +29,17 @@ export default function PortalMessages() {
       qc.invalidateQueries({ queryKey: ["portal-messages"] });
       setSubject("");
       setContent("");
-      toast({ title: "Message sent", description: "NR Accounting will respond shortly." });
+      toast({
+        title: translateNow("toasts.messageSent"),
+        description: translateNow("toasts.nrAccountingWillRespondShortly"),
+      });
     },
     onError: (e: any) =>
-      toast({ title: "Failed to send", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.failedToSend"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   function handleSend() {

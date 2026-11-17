@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation, formatMessage } from "@/lib/i18n";
+import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { useState, type ComponentType } from "react";
 import { useHasMounted } from "@/hooks/use-has-mounted";
 import { useLocation } from "wouter";
@@ -167,14 +167,16 @@ export default function AIFeatures() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "anomaly-alerts"] });
       toast({
-        title: "Scan Complete",
-        description: `Found ${data?.summary?.totalAnomalies || 0} potential issues`,
+        title: translateNow("toasts.scanComplete2"),
+        description: formatMessage(translateNow("toasts.foundPotentialIssues"), {
+          count: data?.summary?.totalAnomalies || 0,
+        }),
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Error",
-        description: error?.message || "Failed to scan for anomalies",
+        title: translateNow("toasts.error"),
+        description: error?.message || translateNow("toasts.failedToScanForAnomalies"),
         variant: "destructive",
       });
     },
@@ -187,14 +189,14 @@ export default function AIFeatures() {
     onSuccess: (_data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "forecasts"] });
       toast({
-        title: "Forecast Generated",
-        description: "Cash flow predictions have been updated",
+        title: translateNow("toasts.forecastGenerated"),
+        description: translateNow("toasts.cashFlowPredictionsHaveBeenUpdated"),
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Error",
-        description: error?.message || "Failed to generate forecast",
+        title: translateNow("toasts.error"),
+        description: error?.message || translateNow("toasts.failedToGenerateForecast"),
         variant: "destructive",
       });
     },
@@ -210,14 +212,14 @@ export default function AIFeatures() {
       setSelectedAlert(null);
       setResolutionNote("");
       toast({
-        title: "Alert Resolved",
-        description: "The anomaly has been marked as resolved",
+        title: translateNow("toasts.alertResolved"),
+        description: translateNow("toasts.theAnomalyHasBeenMarkedAsResolved"),
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Error",
-        description: error?.message || "Failed to resolve alert",
+        title: translateNow("toasts.error"),
+        description: error?.message || translateNow("toasts.failedToResolveAlert"),
         variant: "destructive",
       });
     },
@@ -1033,8 +1035,8 @@ export default function AIFeatures() {
               onClick={() => {
                 setCategorizationOpen(false);
                 toast({
-                  title: "Settings Saved",
-                  description: "Smart categorization is active and learning from your corrections",
+                  title: translateNow("toasts.settingsSaved2"),
+                  description: translateNow("toasts.smartCategorizationIsActiveAndLearningFrom"),
                 });
               }}
               data-testid="button-save-categorization"

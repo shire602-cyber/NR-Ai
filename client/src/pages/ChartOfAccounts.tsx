@@ -55,6 +55,7 @@ import {
   Upload,
   GitBranch,
 } from "lucide-react";
+import { accountDisplayName } from "@/lib/account-name";
 
 interface AccountWithBalance {
   account: Account;
@@ -393,9 +394,7 @@ export default function ChartOfAccounts() {
                         }
                       >
                         <span dir="auto" className="font-medium">
-                          {locale === "ar" && item.account.nameAr
-                            ? item.account.nameAr
-                            : item.account.nameEn}
+                          {accountDisplayName(item.account, locale)}
                         </span>
                         {!item.account.isActive && (
                           <Badge variant="neutral" className="ms-2">
@@ -462,7 +461,7 @@ export default function ChartOfAccounts() {
               </SelectItem>
               {candidates.map((a) => (
                 <SelectItem key={a.id} value={a.id}>
-                  {a.code} · {locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}
+                  {a.code} · {accountDisplayName(a, locale)}
                 </SelectItem>
               ))}
             </SelectContent>

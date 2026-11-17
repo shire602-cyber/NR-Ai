@@ -51,6 +51,18 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
   const anthropic = deps.anthropic !== undefined ? deps.anthropic : (envClients?.anthropic ?? null);
   const openai = deps.openai !== undefined ? deps.openai : (envClients?.openai ?? null);
   const aiLimiter = buildLimiter(limiterProfiles.ai);
+  // X6b: one budget per company (not per user) so a company's scans cannot starve the platform
+  // however many users it adds. Applied once the caller's access to the company is proven.
+  const companyLimiter = buildLimiter({
+    ...limiterProfiles.ocrCompany,
+    keyGenerator: (req) => `ocr:${(req as Request & { ocrCompanyId?: string }).ocrCompanyId}`,
+  });
+  const applyCompanyLimit = (req: Request, res: Response, companyId: string) =>
+    new Promise<boolean>((resolve) => {
+      (req as Request & { ocrCompanyId?: string }).ocrCompanyId = companyId;
+      companyLimiter(req, res, () => resolve(true));
+      res.once("finish", () => resolve(false));
+    });
 
   // X3 (J2): lets the Receipts page say up front that automatic reading is not enabled, instead
   // of letting a scan spin for ~90 seconds (local OCR fallback) and then fail.
@@ -116,6 +128,18 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
         }
         companyId = companies[0].id;
       }
+
+      // X6b (J2): with no AI provider an image cannot be read, so answer at once instead of
+      // spinning the local Tesseract fallback for ~90 seconds before the same 503. Pasted text
+      // still goes through the instant deterministic parser below.
+      if (!anthropic && !openai && imageData && !content) {
+        return res.status(503).json({
+          message: "Automatic receipt reading is not enabled on this server.",
+          code: "AI_NOT_CONFIGURED",
+        });
+      }
+
+      if (!(await applyCompanyLimit(req, res, companyId))) return;
 
       const sanitizedContent = content ? String(content).slice(0, 10000) : "";
       const sanitizedMessageId = messageId ? String(messageId).slice(0, 100) : null;
@@ -249,10 +273,8 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       };
 
       if (!anthropic && !openai) {
-        log.warn("OCR called with no AI key configured; trying local OCR fallback");
-        const fallback =
-          (await tryLocalImageFallback("no configured AI provider")) ||
-          parseTextFallback("no configured AI provider");
+        log.warn("OCR called with no AI key configured; using the text parser only");
+        const fallback = parseTextFallback("no configured AI provider");
         if (fallback) {
           return respondWithResult(
             fallback,

@@ -3,6 +3,8 @@ import { Banknote, CalendarDays, FileText, Landmark, LogOut, Users } from "lucid
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { useTranslation } from "@/lib/i18n";
 import { useHr } from "./payroll/shared";
 import { EmployeesTab } from "./payroll/EmployeesTab";
 import { RunsTab } from "./payroll/RunsTab";
@@ -18,6 +20,8 @@ import { WpsTab } from "./payroll/WpsTab";
 export default function Payroll() {
   const { tx } = useHr();
   const { companyId, isLoading } = useDefaultCompany();
+  const { can, known } = useCompanyPermission();
+  const { t } = useTranslation();
 
   if (isLoading) {
     return (
@@ -30,6 +34,23 @@ export default function Payroll() {
     return (
       <div className="flex h-64 items-center justify-center text-muted-foreground">
         <T k="pages.pleaseCreateACompanyFirst" />
+      </div>
+    );
+  }
+
+  // X6b: payroll data needs payroll.manage or payroll.approve; a viewer gets a notice, not 403s.
+  if (known && !can("payroll.manage") && !can("payroll.approve")) {
+    return (
+      <div className="space-y-6">
+        <PageHeader eyebrow="HR & Payroll" title={tx("hr.title")} description={tx("hr.subtitle")} />
+        <div
+          role="note"
+          data-testid="payroll-no-access"
+          className="rounded-lg border bg-muted/40 p-4 text-sm"
+        >
+          <p className="font-medium">{t["pages.payrollNoAccessTitle"]}</p>
+          <p className="mt-1 text-muted-foreground">{t["pages.payrollNoAccessBody"]}</p>
+        </div>
       </div>
     );
   }

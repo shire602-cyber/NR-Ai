@@ -160,6 +160,19 @@ async function bankHeaderParentId(companyId: string): Promise<string | null> {
   return (rows[0]?.id as string | undefined) ?? null;
 }
 
+/**
+ * GL account names for a managed bank account. A name that already starts with "Bank" / "بنك"
+ * ("Bank - Emirates NBD", "Bank of Sharjah") is kept as typed instead of becoming "Bank - Bank - …".
+ */
+export function bankGlAccountNames(name: string): { nameEn: string; nameAr: string } {
+  const clean = name.trim();
+  const hasBankWord = /^bank\b/i.test(clean) || /^بنك(?![\u0621-\u064A])/.test(clean);
+  return {
+    nameEn: (hasBankWord ? clean : `Bank - ${clean}`).slice(0, 200),
+    nameAr: (hasBankWord ? clean : `بنك - ${clean}`).slice(0, 200),
+  };
+}
+
 /** Create a dedicated GL account (asset, sub_type bank) for a managed bank account. */
 export async function createBankGlAccount(
   companyId: string,
@@ -171,8 +184,7 @@ export async function createBankGlAccount(
     companyId,
     code,
     parentId,
-    nameEn: `Bank - ${input.nameEn}`.slice(0, 200),
-    nameAr: `بنك - ${input.nameEn}`.slice(0, 200),
+    ...bankGlAccountNames(input.nameEn),
     description: `GL account for bank account ${input.nameEn} (${input.currency})`,
     type: "asset",
     subType: "bank",

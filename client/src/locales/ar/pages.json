@@ -975,5 +975,21 @@
   "pages.autopilotJudged": "{count} تمت مراجعتها",
   "pages.autopilotTotal": "الإجمالي {count}",
   "pages.receiptsNetPlusVat": "{net} + ضريبة {vat}",
-  "pages.receiptsInputVatRecoverable": "مدين: ضريبة المدخلات القابلة للاسترداد"
+  "pages.receiptsInputVatRecoverable": "مدين: ضريبة المدخلات القابلة للاسترداد",
+  "pages.subscriptionContactToUpgrade": "تواصل معنا للترقية",
+  "pages.subscriptionContactUs": "تواصل معنا",
+  "pages.subscriptionCheckoutFailed": "تعذّر بدء الدفع",
+  "pages.subscriptionCheckoutUnavailable": "الدفع الإلكتروني غير متاح بعد. استخدم «تواصل معنا» للترقية.",
+  "pages.subscriptionPortalFailed": "تعذّر فتح صفحة الفوترة",
+  "pages.subscriptionNoLimitDuringOffer": "غير مطبَّق بعد (حد الخطة: {limit})",
+  "pages.subscription20ReceiptsMonth": "20 إيصالاً/شهر",
+  "pages.subscription200ReceiptsMonth": "200 إيصال/شهر",
+  "pages.subscriptionOcrComingSoon": "قراءة الإيصالات بالذكاء الاصطناعي (قريباً)",
+  "pages.subscriptionEInvoicingWithProvider": "الفوترة الإلكترونية (PINT AE)، تُفعَّل عند ربط مزوّدك المعتمد",
+  "pages.subscriptionComingSoon": "قريباً",
+  "pages.subscriptionWithProvider": "مع المزوّد",
+  "pages.receiptsEmptyBodyManual": "ارفع صورة أو ملف PDF وأدخل التفاصيل بنفسك. القراءة التلقائية غير مفعّلة بعد.",
+  "pages.receiptsReadyToAttach": "جاهز. أدخل التفاصيل بنفسك واحتفظ بهذا الملف كإثبات.",
+  "pages.payrollNoAccessTitle": "كشوف الرواتب غير متاحة لدورك",
+  "pages.payrollNoAccessBody": "تظهر الرواتب وأجور الموظفين للمالكين والمسؤولين والمحاسبين والمعتمِدين. اطلب من مالك الشركة إذا كنت بحاجة إلى صلاحية الوصول."
 }

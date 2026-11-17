@@ -41,6 +41,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { StatusBadge } from "./StatusBadge";
+import { accountDisplayName } from "@/lib/account-name";
 
 interface Preview {
   employeeName: string;
@@ -92,7 +93,7 @@ export function SettlementTab({ companyId }: { companyId: string }) {
   >({ queryKey: [`/api/companies/${companyId}/accounts`] });
   const cashAccounts = accounts.filter(isCashOrBankAccount);
   const accountLabel = (a: (typeof accounts)[number]) =>
-    `${a.code} · ${locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}`;
+    `${a.code} · ${accountDisplayName(a, locale)}`;
   const [payNowAccount, setPayNowAccount] = useState("");
   const [paying, setPaying] = useState<SettlementRow | null>(null);
   const [payAccount, setPayAccount] = useState("");

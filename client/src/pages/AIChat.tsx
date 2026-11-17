@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -227,16 +227,16 @@ export default function AIChat() {
     onError: (error: any) => {
       if (error.name === "AbortError") {
         toast({
-          title: "Request cancelled",
-          description: "The request was cancelled.",
+          title: translateNow("toasts.requestCancelled"),
+          description: translateNow("toasts.theRequestWasCancelled"),
         });
         // For cancelled requests, remove the streaming message
         setMessages((prev) => prev.filter((msg) => msg.streaming !== true));
       } else {
         toast({
           variant: "destructive",
-          title: "Error",
-          description: error?.message || "Failed to get response",
+          title: translateNow("toasts.error"),
+          description: error?.message || translateNow("toasts.failedToGetResponse"),
         });
         // Preserve partial content but mark message as error and stop streaming
         setMessages((prev) =>
@@ -285,8 +285,8 @@ export default function AIChat() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to get response",
+        title: translateNow("toasts.error"),
+        description: error?.message || translateNow("toasts.failedToGetResponse"),
       });
     },
   });

@@ -34,7 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useTranslation, formatMessage } from "@/lib/i18n";
+import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -239,7 +239,7 @@ function AddLeadDialog({ open, onClose }: { open: boolean; onClose: () => void }
       setNotes("");
       setScore("50");
     },
-    onError: () => toast({ title: "Failed to add lead", variant: "destructive" }),
+    onError: () => toast({ title: translateNow("toasts.failedToAddLead"), variant: "destructive" }),
   });
 
   const handleSubmit = () => {
@@ -365,7 +365,7 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
       toast({ title: t["leadPipeline.leadUpdated"] });
       onClose();
     },
-    onError: () => toast({ title: "Failed to update", variant: "destructive" }),
+    onError: () => toast({ title: translateNow("toasts.failedToUpdate"), variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -375,7 +375,7 @@ function EditLeadDialog({ lead, onClose }: { lead: Lead | null; onClose: () => v
       toast({ title: t["leadPipeline.leadRemoved"] });
       onClose();
     },
-    onError: () => toast({ title: "Failed to delete", variant: "destructive" }),
+    onError: () => toast({ title: translateNow("toasts.failedToDelete"), variant: "destructive" }),
   });
 
   if (!lead) return null;
@@ -482,7 +482,7 @@ function AutoDiscoverPanel({ onClose }: { onClose: () => void }) {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/pipeline"] });
       toast({ title: t["leadPipeline.prospectAddedToPipeline"] });
     },
-    onError: () => toast({ title: "Failed to add", variant: "destructive" }),
+    onError: () => toast({ title: translateNow("toasts.failedToAdd"), variant: "destructive" }),
   });
 
   return (
@@ -563,7 +563,8 @@ export default function LeadPipeline() {
     mutationFn: ({ id, stage }: { id: string; stage: Stage }) =>
       apiRequest("PUT", `/api/firm/pipeline/leads/${id}`, { stage }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/firm/pipeline"] }),
-    onError: () => toast({ title: "Failed to move lead", variant: "destructive" }),
+    onError: () =>
+      toast({ title: translateNow("toasts.failedToMoveLead"), variant: "destructive" }),
   });
 
   const handleDragStart = (e: React.DragEvent, leadId: string) => {

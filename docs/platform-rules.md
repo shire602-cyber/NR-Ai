@@ -112,3 +112,29 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   one company; on multi-company databases they are flagged `legacy_unscoped` and ignored by
   lookups (re-enter them per company), and inverted manual rows are rewritten to (foreign, AED)
   with `legacy_inverted = true` (`scripts/qa/find-inverted-rates.mjs` lists them).
+- Accounting-firm features are NR-internal (the owner's own firm runs them). There is no public
+  firm sign-up: the landing page has no "for accounting firms" section or anchor, and
+  `POST /api/firms/apply` answers 403 `FIRM_SIGNUP_CLOSED` unless `FIRM_SELF_SIGNUP=true` is set for
+  a supervised onboarding (tests that onboard a second firm set it explicitly; platform admins still
+  approve each application). Firm users get `firm_role` from platform staff, never from `/register`.
+- Free trial (owner decision): every new company gets a `TRIAL_DAYS` (14) free trial of all
+  features, no card required (`shared/trial.ts`, with the end behaviour constant). The trial start
+  is the company's subscription row `created_at` (existing companies count from their row), and
+  `/billing/subscription` returns `trial { daysLeft, ended, ... }` for the free plan. Nothing is
+  locked when it ends: the dashboard and subscription page show a trial banner ("X days left" /
+  "Your trial has ended - contact us to choose a plan", mailto support@muhasib.ai), and monthly
+  invoice/receipt/seat figures stay unenforced until the owner decides. The public "14-day free
+  trial, no card required" claim must equal `TRIAL_DAYS` (tests/unit/trial-pricing.test.ts). Cost/abuse
+  caps stay hard whatever `BILLING_ENFORCEMENT` says:
+  AI credits (402 `USAGE_LIMIT_REACHED`), storage (402 `STORAGE_LIMIT_REACHED`, receipts images plus
+  journal attachments) and companies per user (403 `COMPANY_LIMIT_REACHED`). They apply when
+  `costCapsEnforced()` is true (`BILLING_ENFORCEMENT=true`, or production, or
+  `COST_CAPS_ENFORCEMENT=true`); `COST_CAPS_ENFORCEMENT=false` switches them off for a dev database.
+  Each code has Arabic copy in `forms.serverErrors.<CODE>`. While Stripe is not configured
+  `/billing/subscription` returns `checkoutAvailable: false` and the app shows "Contact us to
+  upgrade" (mailto support@muhasib.ai); checkout itself answers 503 `STRIPE_NOT_CONFIGURED`.
+- Toasts: never pass an English literal to `toast({ title, description })`; use
+  `translateNow("toasts.<key>")` (catalog `locales/{en,ar}/toasts.json`, or `shell.toast*` on public
+  auth pages) and `formatMessage` for values. `tests/unit/x6b-first-hour-ux.test.ts` fails on a
+  literal. Counted nouns use the ICU-style `{count, plural, one {# bill} other {# bills}}` form that
+  `formatMessage` understands (Arabic has zero/one/two/few/many).

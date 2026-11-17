@@ -22,7 +22,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { apiUrl } from "@/lib/api";
 import { LogIn } from "lucide-react";
 import { OAuthButtons } from "./OAuthButtons";
@@ -113,8 +113,8 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
       if (result?.mfaRequired) return; // the page asks for the second factor
 
       toast({
-        title: "Welcome back!",
-        description: "You have successfully logged in.",
+        title: translateNow("shell.toastWelcomeBack"),
+        description: translateNow("shell.toastYouHaveSuccessfullyLoggedIn"),
       });
     } catch (error: any) {
       toast({

@@ -1,6 +1,6 @@
 import { formatAedText } from "@/lib/format";
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -394,7 +394,11 @@ function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
     try {
       const data = await apiRequest("POST", "/api/firm/bulk/vat-queue", {});
       setQueue(data);
-      toast({ title: `Prepared VAT queue for ${data.length} client(s)` });
+      toast({
+        title: formatMessage(translateNow("toasts.preparedVatQueueForClientS"), {
+          count: data.length,
+        }),
+      });
     } catch {
       toast({ variant: "destructive", title: t["bulkOperations.failedToPrepareVatQueue"] });
     } finally {
@@ -582,7 +586,7 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
       });
       setResults(data.results ?? []);
       const success = (data.results ?? []).filter((r: BulkInvoiceResult) => r.success).length;
-      toast({ title: `Generated ${success} invoice(s)` });
+      toast({ title: formatMessage(translateNow("toasts.generatedInvoiceS"), { success }) });
     } catch {
       toast({ variant: "destructive", title: t["bulkOperations.failedToGenerateInvoices"] });
     } finally {
@@ -819,7 +823,12 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
       });
       setStatuses(data);
       const readyCount = data.filter((s: PeriodCloseStatus) => s.readyToClose).length;
-      toast({ title: `${readyCount}/${data.length} clients ready to close` });
+      toast({
+        title: formatMessage(translateNow("toasts.clientsReadyToClose"), {
+          readyCount,
+          count: data.length,
+        }),
+      });
     } catch {
       toast({ variant: "destructive", title: t["bulkOperations.periodCloseCheckFailed"] });
     } finally {

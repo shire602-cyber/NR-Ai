@@ -8,7 +8,7 @@ import type * as React from "react";
 import { T } from "@/components/layout/T";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -268,7 +268,11 @@ export default function FirmCommandCenter() {
       toast({ title: t["firmCommandCenter.alertsRefreshed"] });
     },
     onError: (e: Error) =>
-      toast({ title: "Refresh failed", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.refreshFailed"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const markRead = useMutation({
@@ -288,13 +292,19 @@ export default function FirmCommandCenter() {
       apiRequest("POST", "/api/firm/command-center/batch/vat-calculate", { companyIds }),
     onSuccess: (data: { results?: unknown[] }) => {
       toast({
-        title: "Batch VAT calc complete",
-        description: `${data.results?.length ?? 0} clients calculated.`,
+        title: translateNow("toasts.batchVatCalcComplete"),
+        description: formatMessage(translateNow("toasts.clientsCalculated"), {
+          count: data.results?.length ?? 0,
+        }),
       });
       setSelectedClients(new Set());
     },
     onError: (e: Error) =>
-      toast({ title: "Batch VAT failed", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.batchVatFailed"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const batchChasePayments = useMutation({
@@ -302,13 +312,19 @@ export default function FirmCommandCenter() {
       apiRequest("POST", "/api/firm/command-center/batch/chase-payments", { companyIds }),
     onSuccess: (data: { chasedInvoiceCount?: number }) => {
       toast({
-        title: "Payment chase queued",
-        description: `${data.chasedInvoiceCount ?? 0} invoices queued.`,
+        title: translateNow("toasts.paymentChaseQueued"),
+        description: formatMessage(translateNow("toasts.invoicesQueued"), {
+          chasedInvoiceCount: data.chasedInvoiceCount ?? 0,
+        }),
       });
       setSelectedClients(new Set());
     },
     onError: (e: Error) =>
-      toast({ title: "Chase failed", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.chaseFailed"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const batchChaseDocuments = useMutation({
@@ -317,13 +333,19 @@ export default function FirmCommandCenter() {
     onSuccess: (data: { chasedClientCount?: number }) => {
       qc.invalidateQueries({ queryKey: ["/api/firm/command-center/alerts"] });
       toast({
-        title: "Document chase queued",
-        description: `${data.chasedClientCount ?? 0} clients notified.`,
+        title: translateNow("toasts.documentChaseQueued"),
+        description: formatMessage(translateNow("toasts.clientsNotified"), {
+          chasedClientCount: data.chasedClientCount ?? 0,
+        }),
       });
       setSelectedClients(new Set());
     },
     onError: (e: Error) =>
-      toast({ title: "Chase failed", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.chaseFailed"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   // ─── Derived data ──────────────────────────────────────────────────
