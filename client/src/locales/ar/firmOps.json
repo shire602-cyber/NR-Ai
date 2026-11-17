@@ -53,5 +53,6 @@
   "firmOps.priorityLow": "منخفض",
   "firmOps.bulkSendTitle": "إرسال {count} من التذكيرات؟",
   "firmOps.bulkSendBody": "تُسجَّل متابعة لكل طلب في القائمة، وتُرسل الرسائل عبر القنوات المعدّة لكل عميل. لا يمكن التراجع عن ذلك.",
-  "firmOps.date": "التاريخ"
+  "firmOps.date": "التاريخ",
+  "firmOps.stageConverted": "أصبح عميلًا"
 }

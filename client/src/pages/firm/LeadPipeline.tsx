@@ -90,7 +90,7 @@ const STAGES: { key: Stage; label: string; color: string; bg: string }[] = [
   },
   {
     key: "converted",
-    label: "screens.statusConverted",
+    label: "firmOps.stageConverted",
     color: "text-foreground",
     bg: "bg-surface-sunken border-border",
   },
@@ -184,7 +184,7 @@ function KanbanColumn({
   const { t } = useTranslation();
   return (
     <div
-      className={`flex flex-col min-w-[220px] flex-1 rounded-xl border ${stage.bg} transition-colors ${isDragOver ? "ring-2 ring-primary ring-offset-1" : ""}`}
+      className={`flex flex-col min-w-[200px] flex-1 rounded-xl border ${stage.bg} transition-colors ${isDragOver ? "ring-2 ring-primary ring-offset-1" : ""}`}
       onDragOver={onDragOver}
       onDrop={(e) => onDrop(e, stage.key)}
       onDragLeave={onDragLeave}
