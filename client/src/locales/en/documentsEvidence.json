@@ -164,5 +164,7 @@
   "evidenceCenter.status.esr_report": "ESR report",
   "evidenceCenter.status.audited_financials": "audited financials",
   "evidenceCenter.status.payslip": "payslip",
-  "evidenceCenter.status.tax_certificate": "tax certificate"
+  "evidenceCenter.status.tax_certificate": "tax certificate",
+  "evidenceCenter.downloadEvidencePack": "Download evidence pack",
+  "evidenceCenter.checklistTitle": "Readiness checklist"
 }

@@ -7,7 +7,6 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
-  MoreHorizontal,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -96,65 +95,50 @@ export default function ReportsHeader() {
           (t as any).financialReportsSubtitle ??
           "Financial statements, tax reports and comparisons from your books"
         }
-        actions={
-          <div className="flex flex-wrap gap-2">
-            {/* Spec 3.11: one primary (Export); audit evidence sits in the overflow menu. */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button disabled={isExporting} data-testid="button-export">
-                  <Download className="w-4 h-4 me-2" />
-                  {isExporting ? t["reportCenter.exportingEllipsis"] : t.export}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {/* X5 (J1): server-rendered PDF (en/ar) for the focused statement, aging or GL. */}
-                {pdfKind && selectedCompanyId && (
-                  <DropdownMenuItem asChild data-testid="menu-export-pdf">
-                    <a
-                      href={apiUrl(
-                        `/api/companies/${selectedCompanyId}/reports/statements/${pdfKind}?format=pdf${pdfRange}`
-                      )}
-                      download
-                    >
-                      <FileText className="w-4 h-4 me-2" />
-                      <T k="reportCenter.downloadPdf" />
-                    </a>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
-                  <FileSpreadsheet className="w-4 h-4 me-2" />
-                  <T k="reportCenter.exportToExcel" />
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={handleExportGoogleSheets}
-                  data-testid="menu-export-sheets"
-                >
-                  <SiGooglesheets className="w-4 h-4 me-2" aria-hidden />
-                  <T k="reportCenter.exportToGoogleSheets" />
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label={t["reportCenter.moreActions"]}
-                  data-testid="button-reports-more"
-                >
-                  <MoreHorizontal className="h-4 w-4" aria-hidden />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem asChild data-testid="button-report-proof-trail">
-                  <Link href={evidenceSectionHref("proof-drilldown")}>
+        // Spec 3.11: one primary (Export); audit evidence sits in the overflow menu.
+        primaryAction={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button disabled={isExporting} data-testid="button-export">
+                <Download className="w-4 h-4 me-2" />
+                {isExporting ? t["reportCenter.exportingEllipsis"] : t.export}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {/* X5 (J1): server-rendered PDF (en/ar) for the focused statement, aging or GL. */}
+              {pdfKind && selectedCompanyId && (
+                <DropdownMenuItem asChild data-testid="menu-export-pdf">
+                  <a
+                    href={apiUrl(
+                      `/api/companies/${selectedCompanyId}/reports/statements/${pdfKind}?format=pdf${pdfRange}`
+                    )}
+                    download
+                  >
                     <FileText className="w-4 h-4 me-2" />
-                    {(t as any).viewProof}
-                  </Link>
+                    <T k="reportCenter.downloadPdf" />
+                  </a>
                 </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+              )}
+              <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
+                <FileSpreadsheet className="w-4 h-4 me-2" />
+                <T k="reportCenter.exportToExcel" />
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportGoogleSheets} data-testid="menu-export-sheets">
+                <SiGooglesheets className="w-4 h-4 me-2" aria-hidden />
+                <T k="reportCenter.exportToGoogleSheets" />
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+        overflowLabel={t["reportCenter.moreActions"]}
+        overflowTestId="button-reports-more"
+        overflow={
+          <DropdownMenuItem asChild data-testid="button-report-proof-trail">
+            <Link href={evidenceSectionHref("proof-drilldown")}>
+              <FileText className="w-4 h-4 me-2" />
+              {(t as any).viewProof}
+            </Link>
+          </DropdownMenuItem>
         }
       />
       {activeReportWorkspaceTab === "reports" && !hasFocusedReportSelection ? (

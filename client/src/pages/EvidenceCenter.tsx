@@ -7,26 +7,19 @@ import {
   AlertTriangle,
   Archive,
   ArrowRight,
-  CalendarDays,
   CheckCircle2,
-  ClipboardCheck,
-  ClipboardList,
   Download,
   Eye,
   FileDown,
-  FileSpreadsheet,
-  FileText,
-  FolderSearch,
   History,
-  Mail,
-  SearchCheck,
   Send,
-  ShieldCheck,
-  Target,
 } from "lucide-react";
 
 import { apiUrl } from "@/lib/api";
 import { PageHeader } from "@/components/ui/page-header";
+import { StatCard } from "@/components/ui/stat-card";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,21 +55,8 @@ import type {
   EvidenceIssue,
   EvidenceOwnerAction,
   EvidenceProofLine,
-  EvidenceWorkflowId,
 } from "@shared/evidence-center";
 
-const WORKFLOW_ICONS: Record<EvidenceWorkflowId, any> = {
-  refund_pack: FolderSearch,
-  proof_drilldown: SearchCheck,
-  corporate_tax_workpaper: FileText,
-  missing_evidence: ClipboardList,
-  client_request_autopilot: Mail,
-  month_end_cockpit: ClipboardCheck,
-  filing_risk_scan: ShieldCheck,
-  smart_excel_import: FileSpreadsheet,
-  filing_timeline: CalendarDays,
-  owner_actions: Target,
-};
 
 const SEVERITY_BADGE: Record<string, string> = {
   critical: "destructive",
@@ -391,44 +371,47 @@ export default function EvidenceCenter() {
   }
 
   return (
-    <div className="space-y-6 p-6" data-testid="evidence-center-page">
+    <div className="space-y-6" data-testid="evidence-center-page">
       <PageHeader
         eyebrow={t["evidenceCenter.eyebrow"]}
         title={t["evidenceCenter.proofTrail"]}
         description={t["evidenceCenter.contextualEvidenceBehindVatInvoices"]}
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline">
-              <Link href="/vat-filing">
-                <T k="pageLabels.openVATWorkpaper" />
-              </Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link href="/corporate-tax">
-                <T k="pageLabels.openCorporateTax" />
-              </Link>
-            </Button>
-            <Button asChild>
+        primaryAction={
+          <Button
+            onClick={() =>
+              void downloadEvidenceArtifact(
+                data.refundPack.bundleHref,
+                data.refundPack.bundleFilename,
+                "zip"
+              )
+            }
+            disabled={exportingPack !== null}
+            data-testid="button-download-refund-bundle"
+          >
+            <Archive className="me-2 h-4 w-4" aria-hidden />
+            {t["evidenceCenter.downloadEvidencePack"]}
+          </Button>
+        }
+        overflowLabel={t["reportCenter.moreActions"]}
+        overflowTestId="button-evidence-more"
+        overflow={
+          <>
+            <DropdownMenuItem asChild>
               <Link href="#owner-actions">
                 <T k="pageLabels.whatShouldIDo" />
               </Link>
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() =>
-                void downloadEvidenceArtifact(
-                  data.refundPack.bundleHref,
-                  data.refundPack.bundleFilename,
-                  "zip"
-                )
-              }
-              disabled={exportingPack !== null}
-              data-testid="button-download-refund-bundle"
-            >
-              <Archive className="mr-2 h-4 w-4" />
-              <T k="pageLabels.zIPBundle" />
-            </Button>
-          </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/vat-filing">
+                <T k="pageLabels.openVATWorkpaper" />
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/corporate-tax">
+                <T k="pageLabels.openCorporateTax" />
+              </Link>
+            </DropdownMenuItem>
+          </>
         }
       />
 
@@ -527,74 +510,67 @@ export default function EvidenceCenter() {
         </Card>
       ) : null}
 
-      <section className="grid gap-3 md:grid-cols-4" data-testid="evidence-center-summary">
+      <section
+        className="grid grid-cols-2 gap-4 xl:grid-cols-4"
+        data-testid="evidence-center-summary"
+      >
         {topMetrics.map((metric) => (
-          <div key={metric.id} className="rounded-md border bg-card p-4">
-            <p className="text-xs text-muted-foreground">{metric.label}</p>
-            <p
-              className={`mt-1 text-2xl font-semibold ${
-                metric.id === "readiness" ? scoreTone(data.readinessScore) : ""
-              }`}
-            >
-              {metric.value}
-            </p>
-            <p className="mt-1 text-xs text-muted-foreground">{metric.detail}</p>
-          </div>
+          <StatCard
+            key={metric.id}
+            label={metric.label}
+            value={metric.value}
+            hint={metric.detail}
+            testId={`evidence-metric-${metric.id}`}
+          />
         ))}
       </section>
 
-      <section className="grid gap-3 lg:grid-cols-2 xl:grid-cols-5">
-        {data.workflows.map((workflow) => {
-          const Icon = WORKFLOW_ICONS[workflow.id];
-          return (
-            <Card key={workflow.id} data-testid={`evidence-workflow-${workflow.id}`}>
-              <CardHeader className="space-y-2 pb-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-md bg-muted">
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <CardTitle className="text-base">
-                      {ev(workflow.title, workflow.copy?.title)}
-                    </CardTitle>
-                  </div>
-                  <Badge variant={workflow.status === "ready" ? "default" : "secondary"}>
-                    {st(workflow.status)}
-                  </Badge>
-                </div>
-                <CardDescription>
-                  {ev(workflow.description, workflow.copy?.description)}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-end justify-between gap-2">
-                  <div>
-                    <p className="text-xs text-muted-foreground">
-                      <T k="reportCenter.score" />
-                    </p>
-                    <p className={`text-2xl font-semibold ${scoreTone(workflow.score)}`}>
-                      {workflow.score}%
-                    </p>
-                  </div>
-                  <p className="max-w-40 text-end text-sm font-medium">
-                    {ev(workflow.metric, workflow.copy?.metric)}
-                  </p>
-                </div>
-                <ul className="space-y-1 text-sm text-muted-foreground">
-                  {workflow.bullets.slice(0, 3).map((bullet, index) => (
-                    <li key={bullet}>{ev(bullet, workflow.copy?.bullets[index])}</li>
-                  ))}
-                </ul>
-                <Button asChild variant="outline" size="sm" className="w-full">
+      <section
+        className="overflow-hidden rounded-xl border border-border bg-card shadow-card-soft"
+        aria-labelledby="evidence-checklist-title"
+      >
+        <div className="border-b border-border px-5 py-4">
+          <h2 id="evidence-checklist-title" className="text-h3 font-semibold text-foreground">
+            {t["evidenceCenter.checklistTitle"]}
+          </h2>
+        </div>
+        <ul className="divide-y divide-border/70">
+          {data.workflows.map((workflow) => (
+            <li
+              key={workflow.id}
+              className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(14rem,1.2fr)_8rem_minmax(14rem,2fr)_auto] md:items-center"
+              data-testid={`evidence-workflow-${workflow.id}`}
+            >
+              <div className="min-w-0">
+                <p className="font-medium text-foreground">
+                  {ev(workflow.title, workflow.copy?.title)}
+                </p>
+                <p className="mt-0.5 text-caption text-muted-foreground">
+                  {ev(workflow.metric, workflow.copy?.metric)} ·{" "}
+                  <span className="tabular-nums">{workflow.score}%</span>
+                </p>
+              </div>
+              <div>
+                <StatusBadge tone={workflow.status === "ready" ? "success" : "warning"}>
+                  {st(workflow.status)}
+                </StatusBadge>
+              </div>
+              <p className="min-w-0 text-small text-muted-foreground">
+                {workflow.bullets.length
+                  ? ev(workflow.bullets[0], workflow.copy?.bullets[0])
+                  : ev(workflow.description, workflow.copy?.description)}
+              </p>
+              <div className="md:justify-self-end">
+                <Button asChild variant="outline" size="sm">
                   <Link href={workflow.primaryHref}>
                     {ev(workflow.primaryAction, workflow.copy?.primaryAction)}
-                    <ArrowRight className="ms-2 h-3.5 w-3.5 rtl:rotate-180" />
+                    <ArrowRight className="ms-2 h-3.5 w-3.5 rtl:rotate-180" aria-hidden />
                   </Link>
                 </Button>
-              </CardContent>
-            </Card>
-          );
-        })}
+              </div>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section

@@ -386,5 +386,7 @@
   "activityLog.action.zatca.egs_created": "إنشاء وحدة إصدار فواتير لدى هيئة الزكاة والضريبة والجمارك",
   "activityLog.action.zatca.egs_onboarded": "تسجيل وحدة إصدار فواتير لدى هيئة الزكاة والضريبة والجمارك",
   "activityLog.action.zatca.invoice_submitted": "إرسال فاتورة إلى هيئة الزكاة والضريبة والجمارك",
-  "activityLog.action.payroll.settlement_pay": "سُدّدت تسوية نهاية الخدمة"
+  "activityLog.action.payroll.settlement_pay": "سُدّدت تسوية نهاية الخدمة",
+  "history.details": "التفاصيل",
+  "history.reference": "المرجع"
 }

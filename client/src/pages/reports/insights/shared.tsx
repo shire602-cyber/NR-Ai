@@ -17,6 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiUrl } from "@/lib/api";
 import { ChartTooltipContent, type ChartTooltipContentProps } from "@/components/ui/chart-theme";
@@ -157,12 +158,8 @@ export function ChartCard({
 }
 
 /** One-line empty state inside a card (spec 2.6 `sm`). */
-export function SmallEmpty({ text, action }: { text: string; action?: ReactNode }) {
-  return (
-    <p className="text-small text-muted-foreground" data-testid="insights-empty-sm">
-      {text} {action}
-    </p>
-  );
+export function SmallEmpty({ text }: { text: string }) {
+  return <EmptyState size="sm" title={text} testId="insights-empty-sm" />;
 }
 
 /** Skeleton that matches the view: four tiles, one chart, three table rows. */

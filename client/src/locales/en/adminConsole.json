@@ -386,5 +386,7 @@
   "activityLog.action.zatca.egs_created": "ZATCA EGS unit created",
   "activityLog.action.zatca.egs_onboarded": "ZATCA EGS unit onboarded",
   "activityLog.action.zatca.invoice_submitted": "Invoice submitted to ZATCA",
-  "activityLog.action.payroll.settlement_pay": "Final settlement paid"
+  "activityLog.action.payroll.settlement_pay": "Final settlement paid",
+  "history.details": "Details",
+  "history.reference": "Reference"
 }
