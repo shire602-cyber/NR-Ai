@@ -1,4 +1,7 @@
 import { T } from "@/components/layout/T";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
@@ -123,6 +126,14 @@ function normalizeSeverity(severity: RawAnomalySeverity | null | undefined): Ano
 }
 
 export default function AnomalyDetection() {
+  return <AnomalyChecks />;
+}
+
+/**
+ * The checks list as a component (spec 3.11): the /anomaly-detection page renders it with its
+ * header; WP-E mounts it inside Assistant > Review with `embedded` (no page header).
+ */
+export function AnomalyChecks({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation();
   const { t: _t, locale } = useTranslation();
   const { toast } = useToast();
@@ -216,59 +227,52 @@ export default function AnomalyDetection() {
       const date = new Date(dateStr);
       if (Number.isNaN(date.getTime())) return dateStr;
 
-      return date.toLocaleDateString("en-AE", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
+      return formatDisplayDate(date, locale);
     } catch {
       return dateStr;
     }
   };
 
+  const scanButton = (
+    <Button
+      onClick={() => scanMutation.mutate()}
+      disabled={isFetching}
+      data-testid="button-run-scan"
+    >
+      {isFetching ? (
+        <RefreshCw className="h-4 w-4 me-2 animate-spin" />
+      ) : (
+        <Scan className="h-4 w-4 me-2" />
+      )}
+      {t["aiInbox.runScan"]}
+    </Button>
+  );
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-danger-subtle rounded-lg">
-            <ShieldAlert className="h-6 w-6 text-destructive" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              {locale === "ar"
-                ? "كشف الشذوذ المحاسبي"
-                : t["anomalyDetection.accountingAnomalyChecks"]}
-            </h1>
-            <p className="text-muted-foreground text-sm">
-              {locale === "ar"
-                ? "فحوصات قائمة على القواعد: التكرار والمبالغ غير المعتادة وضريبة القيمة المضافة والأرقام الضريبية والمقارنة بالأشهر السابقة. تُجرى يومياً أو عند الطلب."
-                : "Rule-based checks: duplicates, unusual amounts, VAT rate, TRNs and comparison with trailing months. They run daily or on demand."}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {result?.scannedAt && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              {locale === "ar" ? "آخر تنبيه مسجّل: " : "Latest alert recorded: "}
-              {new Date(result.scannedAt).toLocaleString()}
-            </span>
-          )}
-          <Button
-            onClick={() => scanMutation.mutate()}
-            disabled={isFetching}
-            data-testid="button-run-scan"
-          >
-            {isFetching ? (
-              <RefreshCw className="h-4 w-4 me-2 animate-spin" />
-            ) : (
-              <Scan className="h-4 w-4 me-2" />
-            )}
-            {isFetching ? "Scanning..." : t["aiInbox.runScan"]}
-          </Button>
-        </div>
-      </div>
+      {embedded ? (
+        <div className="flex justify-end">{scanButton}</div>
+      ) : (
+        <PageHeader
+          eyebrow="Insights"
+          title={
+            locale === "ar" ? "كشف الشذوذ المحاسبي" : t["anomalyDetection.accountingAnomalyChecks"]
+          }
+          description={
+            locale === "ar"
+              ? "فحوصات قائمة على القواعد: التكرار والمبالغ غير المعتادة وضريبة القيمة المضافة والأرقام الضريبية."
+              : "Rule-based checks: duplicates, unusual amounts, VAT rates and TRNs."
+          }
+          primaryAction={scanButton}
+        />
+      )}
+      {result?.scannedAt ? (
+        <p className="flex items-center gap-1 text-caption text-muted-foreground">
+          <Clock className="h-3 w-3" aria-hidden />
+          {locale === "ar" ? "آخر تنبيه مسجّل: " : "Latest alert recorded: "}
+          {formatDisplayDate(result.scannedAt, locale)}
+        </p>
+      ) : null}
 
       {/* Summary Cards */}
       {isLoading ? (
@@ -280,7 +284,7 @@ export default function AnomalyDetection() {
       ) : result ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card
-            className="cursor-pointer hover:shadow-md transition-shadow"
+            className="cursor-pointer transition-shadow hover:shadow-card-hover"
             onClick={() => setSeverityFilter("all")}
           >
             <CardHeader className="pb-1 pt-4 px-4">
@@ -289,49 +293,49 @@ export default function AnomalyDetection() {
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold">{result.summary.total}</div>
+              <div className="text-kpi">{result.summary.total}</div>
             </CardContent>
           </Card>
           <Card
-            className="cursor-pointer hover:shadow-md transition-shadow border-destructive/30"
+            className="cursor-pointer transition-shadow hover:shadow-card-hover"
             onClick={() => setSeverityFilter("critical")}
           >
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <AlertCircle className="h-3 w-3 text-destructive" />
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-danger" />
                 <T k="pages.critical" />
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-destructive">{result.summary.critical}</div>
+              <div className="text-kpi">{result.summary.critical}</div>
             </CardContent>
           </Card>
           <Card
-            className="cursor-pointer hover:shadow-md transition-shadow border-warning/30"
+            className="cursor-pointer transition-shadow hover:shadow-card-hover"
             onClick={() => setSeverityFilter("warning")}
           >
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3 text-warning" />
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-warning" />
                 <T k="pages.warning" />
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-warning">{result.summary.warning}</div>
+              <div className="text-kpi">{result.summary.warning}</div>
             </CardContent>
           </Card>
           <Card
-            className="cursor-pointer hover:shadow-md transition-shadow border-info/30"
+            className="cursor-pointer transition-shadow hover:shadow-card-hover"
             onClick={() => setSeverityFilter("info")}
           >
             <CardHeader className="pb-1 pt-4 px-4">
               <CardDescription className="text-xs flex items-center gap-1">
-                <Info className="h-3 w-3 text-info" />
+                <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-info" />
                 {t["anomalyDetection.info"]}
               </CardDescription>
             </CardHeader>
             <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-info">{result.summary.info}</div>
+              <div className="text-kpi">{result.summary.info}</div>
             </CardContent>
           </Card>
         </div>
@@ -381,7 +385,7 @@ export default function AnomalyDetection() {
             const TypeIcon = typeIcons[anomalyType] || Info;
 
             return (
-              <Card key={anomaly.id} className={`${config.bg} border`}>
+              <Card key={anomaly.id}>
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3 flex-1">
@@ -390,12 +394,18 @@ export default function AnomalyDetection() {
                       </div>
                       <div className="flex-1 space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Badge
-                            variant={severity === "critical" ? "destructive" : "secondary"}
+                          <StatusBadge
+                            tone={
+                              severity === "critical"
+                                ? "danger"
+                                : severity === "warning"
+                                  ? "warning"
+                                  : "info"
+                            }
                             className="text-xs"
                           >
                             {config.label}
-                          </Badge>
+                          </StatusBadge>
                           <Badge variant="outline" className="text-xs flex items-center gap-1">
                             <TypeIcon className="h-3 w-3" />
                             {RULE_LABELS[anomalyType]

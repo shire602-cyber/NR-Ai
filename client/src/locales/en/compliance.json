@@ -65,8 +65,8 @@
   "compliance.vatFilingPeriodEnd": "Period End",
   "compliance.vatFilingCreateDraft": "Create draft",
   "compliance.vatFilingDownloadPdf": "Download PDF",
-  "compliance.vatFilingSaveDraft": "Save Draft",
-  "compliance.vatFilingSubmitForFiling": "Submit for Filing",
+  "compliance.vatFilingSaveDraft": "Save draft",
+  "compliance.vatFilingSubmitForFiling": "Submit for filing",
   "compliance.vatFilingDownloadExcel": "Download Excel workbook",
   "compliance.autopilotChoosePeriodHint": "Choose the VAT return period first. The calculation will only use transactions inside that selected period.",
   "compliance.autopilotAdjustHint": "Adjustments are appended to the audit trail and applied on top of auto-calculated boxes.",
@@ -166,5 +166,15 @@
   "compliance.notApplicableHint": "Use this for an obligation that does not apply here, for example a period before you started using Muhasib that was filed elsewhere. The note is kept in the audit trail.",
   "compliance.notApplicableReason": "Why it does not apply",
   "compliance.markedNotApplicable": "Marked as not applicable",
-  "compliance.cancelAction": "Cancel"
+  "compliance.cancelAction": "Cancel",
+  "compliance.periodsPrepare": "Prepare",
+  "compliance.periodsReview": "Review",
+  "compliance.filedReturnsTitle": "Filed returns",
+  "compliance.filedReturnsEmptyHint": "Returns you file with the FTA are kept here with their files.",
+  "compliance.tasksDueThisWeek": "Due this week",
+  "compliance.vatBackToReturns": "Back to returns",
+  "compliance.vatWorkbookTitle": "VAT 201 workbook",
+  "compliance.periodsAction": "Action",
+  "compliance.vatView": "View",
+  "compliance.vatEdit": "Edit"
 }

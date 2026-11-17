@@ -1,4 +1,5 @@
 import { localizeJournalMemo } from "@/lib/journal-memo";
+import { DatePicker } from "@/components/ui/date-picker";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useParams, Link } from "wouter";
@@ -81,6 +82,8 @@ interface JournalEntry {
 function fils(v: string | number | null | undefined): number {
   return Math.round(Number(v || 0) * 100);
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default function JournalEntryDetail() {
   const { id } = useParams<{ id: string }>();
@@ -204,12 +207,21 @@ export default function JournalEntryDetail() {
       payment: t["journal.sourcePayment"],
       reversal: t["journal.sourceReversal"],
       journal_template: t["journal.sourceTemplate"],
+      payroll: t["journal.sourcePayroll"],
+      bill: t["journal.sourceBill"],
+      bill_payment: t["journal.sourceBillPayment"],
+      credit_note: t["journal.sourceCreditNote"],
+      depreciation: t["journal.sourceDepreciation"],
+      fx_revaluation: t["journal.sourceFxRevaluation"],
+      inventory: t["journal.sourceInventory"],
+      opening_balance: t["journal.sourceOpeningBalance"],
     };
 
+    // G8: never the raw source code; unknown codes read as "System entry".
     return (
       <Badge variant="outline">
         <FileText className="w-3 h-3 me-1" />
-        {sourceLabels[source] || source}
+        {sourceLabels[source] || t["journal.sourceSystem"]}
       </Badge>
     );
   };
@@ -344,11 +356,10 @@ export default function JournalEntryDetail() {
                   <div className="space-y-3">
                     <div className="space-y-1">
                       <Label htmlFor="reversal-date">{t["journal.reversalDate"]}</Label>
-                      <Input
+                      <DatePicker
                         id="reversal-date"
-                        type="date"
                         value={reverseDate}
-                        onChange={(e) => setReverseDate(e.target.value)}
+                        onChange={(value) => setReverseDate(value)}
                         data-testid="input-reversal-date"
                       />
                       <p className="text-xs text-muted-foreground">
@@ -563,7 +574,8 @@ export default function JournalEntryDetail() {
               <dd>{getSourceBadge(entry.source)}</dd>
             </div>
           )}
-          {entry.sourceId && (
+          {/* G8: internal ids are not shown; the proof link opens the source document. */}
+          {entry.sourceId && !UUID_RE.test(entry.sourceId) && (
             <div className="min-w-0">
               <dt className="text-caption text-muted-foreground">{t["screens.sourceId"]}</dt>
               <dd dir="ltr" className="truncate tabular-nums [unicode-bidi:isolate]">

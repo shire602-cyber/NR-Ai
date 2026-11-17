@@ -3,8 +3,19 @@
  * manual elimination journals for the management consolidation. The server enforces access
  * (every member must be accessible; managing needs company-settings rights on the parent).
  */
+import { DatePicker } from "@/components/ui/date-picker";
 import { accountDisplayName } from "@/lib/account-name";
 import { useState } from "react";
+import { Alert } from "@/components/ui/alert";
+import { EmptyState } from "@/components/ui/empty-state";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { PageHeader } from "@/components/ui/page-header";
@@ -32,7 +43,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, Trash2 } from "lucide-react";
+import { Network, Plus, Trash2 } from "lucide-react";
 
 type ApiCall = Promise<unknown>;
 
@@ -143,6 +154,7 @@ export default function CompanyGroups() {
       );
 
   // New group
+  const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCurrency, setNewCurrency] = useState("AED");
   const create = useMutation({
@@ -153,6 +165,7 @@ export default function CompanyGroups() {
       }),
     onSuccess: (g: { id: string }) => {
       setNewName("");
+      setCreateOpen(false);
       setSelected(g.id);
       refresh();
       toast({ title: tr("saved") });
@@ -208,54 +221,86 @@ export default function CompanyGroups() {
         eyebrow={tr("eyebrow")}
         title={tr("groupsTitle")}
         description={tr("groupsDescription")}
-        actions={
+        primaryAction={
           selected ? (
-            <Button variant="outline" asChild>
+            <Button asChild>
               <Link href={`/consolidation?group=${selected}`}>{tr("openConsolidation")}</Link>
+            </Button>
+          ) : groups && groups.length > 0 ? (
+            <Button onClick={() => setCreateOpen(true)} data-testid="button-new-group">
+              <Plus className="h-4 w-4 me-2" />
+              {tr("newGroup")}
+            </Button>
+          ) : undefined
+        }
+        secondaryActions={
+          selected ? (
+            <Button
+              variant="outline"
+              onClick={() => setCreateOpen(true)}
+              data-testid="button-new-group"
+            >
+              <Plus className="h-4 w-4 me-2" />
+              {tr("newGroup")}
             </Button>
           ) : undefined
         }
       />
-      <p className="text-sm text-muted-foreground">{tr("managementLabel")}</p>
+      {/* Spec 3.10: the management-only caveat is one info Alert under the header. */}
+      <Alert tone="info">{tr("managementLabel")}</Alert>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{tr("newGroup")}</CardTitle>
-          <CardDescription>{tr("parentCompany")}</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-3 items-end">
-          <div className="space-y-1">
-            <Label htmlFor="group-name">{tr("groupName")}</Label>
-            <Input id="group-name" value={newName} onChange={(e) => setNewName(e.target.value)} />
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>{tr("newGroup")}</DialogTitle>
+            <DialogDescription>{tr("parentCompany")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="group-name">{tr("groupName")}</Label>
+              <Input id="group-name" value={newName} onChange={(e) => setNewName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{tr("reportingCurrency")}</Label>
+              <Select value={newCurrency} onValueChange={setNewCurrency}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CURRENCIES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="space-y-1">
-            <Label>{tr("reportingCurrency")}</Label>
-            <Select value={newCurrency} onValueChange={setNewCurrency}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {CURRENCIES.map((c) => (
-                  <SelectItem key={c} value={c}>
-                    {c}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button
-            onClick={() => create.mutate()}
-            disabled={!newName.trim() || !companyId || create.isPending}
-            data-testid="button-create-group"
-          >
-            <Plus className="h-4 w-4 me-2" />
-            {tr("create")}
-          </Button>
-        </CardContent>
-      </Card>
+          <DialogFooter>
+            <Button
+              onClick={() => create.mutate()}
+              disabled={!newName.trim() || !companyId || create.isPending}
+              data-testid="button-create-group"
+            >
+              {tr("create")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {groups && groups.length === 0 && (
-        <p className="text-sm text-muted-foreground">{tr("noGroups")}</p>
+        <div className="rounded-xl border border-border bg-card">
+          <EmptyState
+            icon={Network}
+            title={tr("noGroups")}
+            description={tr("groupsDescription")}
+            action={{
+              label: tr("newGroup"),
+              onClick: () => setCreateOpen(true),
+              testId: "button-empty-new-group",
+            }}
+          />
+        </div>
       )}
       {groups && groups.length > 0 && (
         <div className="max-w-sm space-y-1">
@@ -559,12 +604,7 @@ export default function CompanyGroups() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-1">
                   <Label htmlFor="el-date">{tr("date")}</Label>
-                  <Input
-                    id="el-date"
-                    type="date"
-                    value={elDate}
-                    onChange={(e) => setElDate(e.target.value)}
-                  />
+                  <DatePicker id="el-date" value={elDate} onChange={(value) => setElDate(value)} />
                   <Label htmlFor="el-memo">{tr("memo")}</Label>
                   <Input id="el-memo" value={elMemo} onChange={(e) => setElMemo(e.target.value)} />
                   <Label htmlFor="el-amount">{tr("debit")}</Label>

@@ -1,7 +1,6 @@
 // Reports > expenses tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { useTranslation } from "@/lib/i18n";
-import { AlertTriangle, DollarSign, FileSpreadsheet, TrendingDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,15 +54,12 @@ export default function ExpensesTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.postedExpenses" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <TrendingDown className="h-4 w-4 text-destructive " />
-            </div>
           </CardHeader>
           <CardContent>
             {expensesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 <Money amount={expenseReport.totalAed} currency={"AED"} />
               </div>
             )}
@@ -75,15 +71,12 @@ export default function ExpensesTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.grossExpenseDebits" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {expensesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 <Money amount={expenseReport.subtotalAed} currency={"AED"} />
               </div>
             )}
@@ -95,15 +88,12 @@ export default function ExpensesTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.receiptVatCaptured" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {expensesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 <Money amount={expenseReport.vatAed} currency={"AED"} />
               </div>
             )}
@@ -115,18 +105,13 @@ export default function ExpensesTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.postingQueue" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <AlertTriangle className="h-4 w-4 text-warning " />
-            </div>
           </CardHeader>
           <CardContent>
             {expensesLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
               <div className="space-y-1">
-                <div className="tabular-nums text-2xl font-bold">
-                  {expenseReport.unpostedReceipts}
-                </div>
+                <div className="tabular-nums text-kpi">{expenseReport.unpostedReceipts}</div>
                 <div className="text-xs text-muted-foreground">
                   {expenseReport.autoPostedReceipts} auto-posted
                 </div>

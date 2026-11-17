@@ -1,7 +1,6 @@
 // Reports > tax tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { Badge } from "@/components/ui/badge";
-import { BarChart3, ClipboardCheck, DollarSign, Scale } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Link } from "wouter";
@@ -35,18 +34,12 @@ export default function CorporateTaxTab() {
             <CardTitle className="text-sm font-medium">
               <T k="pages.taxPayable" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <Scale className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {corporateTaxLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div
-                className="tabular-nums text-2xl font-bold"
-                data-testid="text-corporate-tax-payable"
-              >
+              <div className="tabular-nums text-kpi" data-testid="text-corporate-tax-payable">
                 <Money amount={corporateTaxEstimate?.taxPayable ?? 0} currency={"AED"} />
               </div>
             )}
@@ -58,15 +51,12 @@ export default function CorporateTaxTab() {
             <CardTitle className="text-sm font-medium">
               <T k="pages.taxableIncome" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {corporateTaxLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 <Money amount={corporateTaxEstimate?.taxableIncome ?? 0} currency={"AED"} />
               </div>
             )}
@@ -78,16 +68,13 @@ export default function CorporateTaxTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.aboveBand" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {corporateTaxLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
               <>
-                <div className="tabular-nums text-2xl font-bold">
+                <div className="tabular-nums text-kpi">
                   <Money amount={corporateTaxEstimate?.taxableAmount ?? 0} currency={"AED"} />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
@@ -103,15 +90,12 @@ export default function CorporateTaxTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.postedJournals" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {corporateTaxLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 {corporateTaxEstimate?.journalEntriesProcessed ?? 0}
               </div>
             )}

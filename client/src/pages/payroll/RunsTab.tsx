@@ -1,4 +1,6 @@
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { EmptyState } from "@/components/ui/empty-state";
+import { DatePicker } from "@/components/ui/date-picker";
 import { accountDisplayName } from "@/lib/account-name";
 import { useState } from "react";
 import {
@@ -293,7 +295,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
       </CardHeader>
       <CardContent>
         {runs.length === 0 ? (
-          <p className="text-muted-foreground">{tx("hr.noRuns")}</p>
+          <EmptyState size="sm" title={tx("hr.noRuns")} />
         ) : (
           <>
             {/* Below 768px: stacked row-cards (line 1 period + net, line 2 employees + status, actions). */}
@@ -455,12 +457,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
                 </Select>
               </Field>
               <Field id="pay-date" label={tx("hr.paymentDate")} required>
-                <Input
-                  type="date"
-                  dir="ltr"
-                  value={payDate}
-                  onChange={(e) => setPayDate(e.target.value)}
-                />
+                <DatePicker value={payDate} onChange={(value) => setPayDate(value)} />
               </Field>
             </FormGrid>
             <FormActions>

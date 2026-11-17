@@ -1,13 +1,19 @@
 import { useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ShieldAlert, ShieldCheck, Landmark } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import {
   Table,
   TableBody,
@@ -31,10 +37,10 @@ const COPY = {
     eyebrow: "Settings",
     title: "KSA e-invoicing (ZATCA)",
     description:
-      "Phase 2 (integration): each e-invoice generation solution (EGS) is onboarded with a Fatoora OTP, then standard invoices are cleared and simplified invoices reported.",
-    notOnboarded: "Not onboarded — requires Fatoora OTP",
-    notConfigured: "ZATCA is not configured for this deployment",
-    onboarded: "Onboarded",
+      "Register each invoicing unit with ZATCA; standard invoices are then cleared and simplified invoices reported.",
+    notOnboarded: "Not connected",
+    notConfigured: "Connecting to ZATCA is not available yet",
+    onboarded: "Connected",
     environment: "Environment",
     egsTitle: "EGS units",
     newEgs: "Register an EGS unit",
@@ -56,7 +62,7 @@ const COPY = {
     city: "City",
     postal: "Postal code (5 digits)",
     create: "Generate keys and CSR",
-    otp: "Fatoora OTP",
+    otp: "One-time code from ZATCA",
     onboard: "Onboard",
     status: "Status",
     icv: "Invoice counter",
@@ -71,10 +77,10 @@ const COPY = {
     eyebrow: "الإعدادات",
     title: "الفوترة الإلكترونية في السعودية (هيئة الزكاة)",
     description:
-      "المرحلة الثانية (الربط والتكامل): تُسجَّل كل وحدة لإصدار الفواتير الإلكترونية برمز OTP من منصة فاتورة، ثم تُعتمد الفواتير الضريبية وتُبلَّغ الفواتير المبسطة.",
-    notOnboarded: "غير مسجّل — يتطلب رمز OTP من منصة فاتورة",
-    notConfigured: "لم يتم إعداد هيئة الزكاة لهذا النشر",
-    onboarded: "مسجّل",
+      "سجّل كل وحدة لإصدار الفواتير لدى هيئة الزكاة؛ ثم تُعتمد الفواتير الضريبية وتُبلَّغ الفواتير المبسطة.",
+    notOnboarded: "غير متصل",
+    notConfigured: "الربط مع هيئة الزكاة غير متاح بعد",
+    onboarded: "متصل",
     environment: "البيئة",
     egsTitle: "وحدات إصدار الفواتير",
     newEgs: "تسجيل وحدة إصدار فواتير",
@@ -96,7 +102,7 @@ const COPY = {
     city: "المدينة",
     postal: "الرمز البريدي (5 أرقام)",
     create: "إنشاء المفاتيح وطلب الشهادة",
-    otp: "رمز OTP من فاتورة",
+    otp: "رمز التحقق من هيئة الزكاة",
     onboard: "تسجيل",
     status: "الحالة",
     icv: "عداد الفواتير",
@@ -154,6 +160,23 @@ const EMPTY = {
   city: "",
   postalZone: "",
 };
+
+/** G8: ZATCA environment / unit status as a label, never the raw value. */
+const ENVIRONMENT_LABELS: Record<string, { en: string; ar: string }> = {
+  sandbox: { en: "Test", ar: "تجريبي" },
+  developer: { en: "Test", ar: "تجريبي" },
+  simulation: { en: "Simulation", ar: "محاكاة" },
+  production: { en: "Production", ar: "إنتاج" },
+  pending: { en: "Pending", ar: "قيد الانتظار" },
+  compliance: { en: "Compliance checks", ar: "فحوص الامتثال" },
+  onboarded: { en: "Connected", ar: "متصل" },
+};
+
+function environmentLabel(value: string | null | undefined, lang: "en" | "ar"): string {
+  if (!value) return "—";
+  const label = ENVIRONMENT_LABELS[value.toLowerCase()];
+  return label ? label[lang] : value;
+}
 
 export default function ZatcaSettings() {
   const { locale } = useTranslation();
@@ -236,8 +259,7 @@ export default function ZatcaSettings() {
         eyebrow={s.eyebrow}
         title={s.title}
         description={s.description}
-        icon={Landmark}
-        actions={
+        secondaryActions={
           <Button asChild variant="outline">
             <Link href="/settings/einvoicing">{s.einvoicingLink}</Link>
           </Button>
@@ -249,23 +271,21 @@ export default function ZatcaSettings() {
           <CardTitle className="flex flex-wrap items-center gap-3">
             {s.title}
             {status.isLoading ? null : onboarded ? (
-              <Badge className="gap-1" data-testid="zatca-status">
-                <ShieldCheck className="h-3.5 w-3.5" />
+              <StatusBadge tone="success" data-testid="zatca-status">
                 {s.onboarded}
-              </Badge>
+              </StatusBadge>
             ) : (
-              <Badge className="gap-1" variant="destructive" data-testid="zatca-status">
-                <ShieldAlert className="h-3.5 w-3.5" />
+              <StatusBadge tone="neutral" data-testid="zatca-status">
                 {s.notOnboarded}
-              </Badge>
+              </StatusBadge>
             )}
           </CardTitle>
           <CardDescription>
             {status.isLoading
               ? s.loading
               : configured
-                ? `${s.environment}: ${status.data?.environment ?? "—"}`
-                : `${s.notConfigured}. ${status.data?.capability?.externalAction[lang] ?? ""}`}
+                ? `${s.environment}: ${environmentLabel(status.data?.environment, lang)}`
+                : `${s.notConfigured}.`}
           </CardDescription>
         </CardHeader>
       </Card>
@@ -298,9 +318,9 @@ export default function ZatcaSettings() {
                       <TableRow key={u.id}>
                         <TableCell>{u.name}</TableCell>
                         <TableCell>
-                          <Badge variant={u.status === "production" ? "default" : "outline"}>
-                            {u.status}
-                          </Badge>
+                          <StatusBadge tone={u.status === "production" ? "success" : "neutral"}>
+                            {environmentLabel(u.status, lang)}
+                          </StatusBadge>
                           {u.statusDetail ? (
                             <div className="text-xs text-muted-foreground">{u.statusDetail}</div>
                           ) : null}
@@ -348,16 +368,19 @@ export default function ZatcaSettings() {
               {field("organizationUnit", s.orgUnit)}
               <div className="space-y-2">
                 <Label htmlFor="zatca-types">{s.invoiceTypes}</Label>
-                <select
-                  id="zatca-types"
-                  className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                <Select
                   value={form.invoiceTypes}
-                  onChange={(e) => setForm((f) => ({ ...f, invoiceTypes: e.target.value }))}
+                  onValueChange={(value) => setForm((f) => ({ ...f, invoiceTypes: value }))}
                 >
-                  <option value="1100">{s.typesBoth}</option>
-                  <option value="1000">{s.typesStandard}</option>
-                  <option value="0100">{s.typesSimplified}</option>
-                </select>
+                  <SelectTrigger id="zatca-types">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1100">{s.typesBoth}</SelectItem>
+                    <SelectItem value="1000">{s.typesStandard}</SelectItem>
+                    <SelectItem value="0100">{s.typesSimplified}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               {field("locationAddress", s.address)}
               {field("industry", s.industry)}

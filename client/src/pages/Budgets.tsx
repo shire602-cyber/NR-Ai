@@ -1,3 +1,6 @@
+import { DatePicker } from "@/components/ui/date-picker";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PiggyBank } from "lucide-react";
 import { T } from "@/components/layout/T";
 import { monthName } from "@/pages/payroll/shared";
 import {
@@ -906,9 +909,11 @@ export default function Budgets() {
                   {t.loading || "Loading..."}
                 </div>
               ) : budgetPlans.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <T k="pages.noBudgetPlansYetCreateYourFirstBudgetToGetStarte" />
-                </div>
+                <EmptyState
+                  icon={PiggyBank}
+                  title={t["pages.noBudgetPlansYetCreateYourFirstBudgetToGetStarte"]}
+                  testId="budgets-empty"
+                />
               ) : (
                 <>
                   {/* Below 768px: stacked row-cards (line 1 name + total, line 2 year/period + status, actions). */}
@@ -1075,9 +1080,10 @@ export default function Budgets() {
                     {t.loading || "Loading..."}
                   </div>
                 ) : budgetLines.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <T k="pages.noBudgetLinesYetAddCategoriesAndMonthlyAllocatio" />
-                  </div>
+                  <EmptyState
+                    size="sm"
+                    title={t["pages.noBudgetLinesYetAddCategoriesAndMonthlyAllocatio"]}
+                  />
                 ) : (
                   <div className="overflow-x-auto">
                     <Table>
@@ -1395,7 +1401,11 @@ export default function Budgets() {
                       <FormItem>
                         <FormLabel required>{t["forms.budget.startDate"]}</FormLabel>
                         <FormControl>
-                          <Input type="date" dir="ltr" {...field} />
+                          <DatePicker
+                            value={field.value ?? ""}
+                            onChange={field.onChange}
+                            data-testid="input-budget-start-date"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1408,7 +1418,11 @@ export default function Budgets() {
                       <FormItem>
                         <FormLabel required>{t["forms.budget.endDate"]}</FormLabel>
                         <FormControl>
-                          <Input type="date" dir="ltr" {...field} />
+                          <DatePicker
+                            value={field.value ?? ""}
+                            onChange={field.onChange}
+                            data-testid="input-budget-end-date"
+                          />
                         </FormControl>
                         <FormDescription>{t["forms.budget.periodHelp"]}</FormDescription>
                         <FormMessage />

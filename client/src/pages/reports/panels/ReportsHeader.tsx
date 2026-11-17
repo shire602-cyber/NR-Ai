@@ -34,6 +34,7 @@ import { T } from "@/components/layout/T";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { evidenceSectionHref } from "@/lib/evidenceLinks";
 import { useReportsPageContext } from "../context";
+import ReportsModeTabs from "./ReportsModeTabs";
 import { apiUrl } from "@/lib/api";
 import { format } from "date-fns";
 
@@ -89,156 +90,175 @@ export default function ReportsHeader() {
     <>
       <PageHeader
         eyebrow="Insights"
-        title={t.reports}
+        title={t["analytics.modeReports"]}
         description={
           (t as any).financialReportsSubtitle ??
           "Financial statements, tax reports and comparisons from your books"
         }
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Button asChild variant="outline" data-testid="button-report-proof-trail">
-              <Link href={evidenceSectionHref("proof-drilldown")}>
-                <FileText className="w-4 h-4 me-2" />
-                {(t as any).viewProof}
-              </Link>
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" disabled={isExporting} data-testid="button-export">
-                  <Download className="w-4 h-4 me-2" />
-                  {isExporting ? t["reportCenter.exportingEllipsis"] : t.export}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {/* X5 (J1): server-rendered PDF (en/ar) for the focused statement, aging or GL. */}
-                {pdfKind && selectedCompanyId && (
-                  <DropdownMenuItem asChild data-testid="menu-export-pdf">
-                    <a
-                      href={apiUrl(
-                        `/api/companies/${selectedCompanyId}/reports/statements/${pdfKind}?format=pdf${pdfRange}`
-                      )}
-                      download
-                    >
-                      <FileText className="w-4 h-4 me-2" />
-                      <T k="reportCenter.downloadPdf" />
-                    </a>
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
-                  <FileSpreadsheet className="w-4 h-4 me-2" />
-                  <T k="reportCenter.exportToExcel" />
+        // Spec 3.11: one primary (Export); audit evidence sits in the overflow menu.
+        primaryAction={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button disabled={isExporting} data-testid="button-export">
+                <Download className="w-4 h-4 me-2" />
+                {isExporting ? t["reportCenter.exportingEllipsis"] : t.export}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {/* X5 (J1): server-rendered PDF (en/ar) for the focused statement, aging or GL. */}
+              {pdfKind && selectedCompanyId && (
+                <DropdownMenuItem asChild data-testid="menu-export-pdf">
+                  <a
+                    href={apiUrl(
+                      `/api/companies/${selectedCompanyId}/reports/statements/${pdfKind}?format=pdf${pdfRange}`
+                    )}
+                    download
+                  >
+                    <FileText className="w-4 h-4 me-2" />
+                    <T k="reportCenter.downloadPdf" />
+                  </a>
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={handleExportGoogleSheets}
-                  data-testid="menu-export-sheets"
-                >
-                  <SiGooglesheets className="w-4 h-4 me-2" aria-hidden />
-                  <T k="reportCenter.exportToGoogleSheets" />
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+              )}
+              <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
+                <FileSpreadsheet className="w-4 h-4 me-2" />
+                <T k="reportCenter.exportToExcel" />
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportGoogleSheets} data-testid="menu-export-sheets">
+                <SiGooglesheets className="w-4 h-4 me-2" aria-hidden />
+                <T k="reportCenter.exportToGoogleSheets" />
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+        overflowLabel={t["reportCenter.moreActions"]}
+        overflowTestId="button-reports-more"
+        overflow={
+          <DropdownMenuItem asChild data-testid="button-report-proof-trail">
+            <Link href={evidenceSectionHref("proof-drilldown")}>
+              <FileText className="w-4 h-4 me-2" />
+              {(t as any).viewProof}
+            </Link>
+          </DropdownMenuItem>
         }
       />
+      {activeReportWorkspaceTab === "reports" && !hasFocusedReportSelection ? (
+        <ReportsModeTabs mode="reports" />
+      ) : null}
       {/* R3 (CTO 23): books-balanced / period-lock status on the report screen. */}
       <BooksStatusStrip companyId={selectedCompanyId} />
       {activeReportWorkspaceTab === "reports" ? (
-        <section className="space-y-4" aria-labelledby="report-viewer-title">
-          <div className="flex flex-col gap-4">
-            <div className="min-w-0 space-y-2">
-              <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground">
-                {hasFocusedReportSelection ? (
-                  <Button
-                    asChild
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 gap-1.5 px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
-                    data-testid="button-back-to-report-center"
-                  >
-                    <Link href={backToReportsHref}>
-                      <ArrowLeft className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
-                      <T k="reportCenter.backToReports" />
-                    </Link>
-                  </Button>
-                ) : null}
-                {hasFocusedReportSelection && activeReportViewerOption?.categoryLabel ? (
-                  <span>{activeReportViewerOption.categoryLabel}</span>
-                ) : null}
-              </div>
-              <div>
-                <h2 id="report-viewer-title" className="text-h2 font-semibold text-foreground">
-                  {reportViewerTitle}
-                </h2>
-                <p className="mt-1 max-w-3xl text-small text-muted-foreground">
-                  {reportViewerDescription}
-                </p>
+        <section
+          className="space-y-4"
+          aria-labelledby={hasFocusedReportSelection ? "report-viewer-title" : undefined}
+          aria-label={hasFocusedReportSelection ? undefined : (t as any).period}
+        >
+          {/* Spec 3.11: the catalogue below is the picker; the title and the report menu only
+              appear once a report is open. */}
+          {hasFocusedReportSelection ? (
+            <div className="flex flex-col gap-4">
+              <div className="min-w-0 space-y-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground">
+                  {hasFocusedReportSelection ? (
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 gap-1.5 px-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+                      data-testid="button-back-to-report-center"
+                    >
+                      <Link href={backToReportsHref}>
+                        <ArrowLeft className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
+                        <T k="reportCenter.backToReports" />
+                      </Link>
+                    </Button>
+                  ) : null}
+                  {hasFocusedReportSelection && activeReportViewerOption?.categoryLabel ? (
+                    <span>{activeReportViewerOption.categoryLabel}</span>
+                  ) : null}
+                </div>
+                <div>
+                  <h2 id="report-viewer-title" className="text-h2 font-semibold text-foreground">
+                    {reportViewerTitle}
+                  </h2>
+                  <p className="mt-1 max-w-3xl text-small text-muted-foreground">
+                    {reportViewerDescription}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
+          ) : null}
 
-          <div className="grid items-start gap-3 lg:grid-cols-[minmax(16rem,24rem)_minmax(20rem,1fr)]">
-            <div className="space-y-1.5">
-              {/* R3 (CTO 21): the section title already says "Report Center"; the field is the report. */}
-              <Label>
-                <T k="reportCenter.reportFieldLabel" />
-              </Label>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-auto min-h-11 w-full justify-between gap-3 bg-card px-3 py-1.5 text-start"
-                    data-testid="button-report-viewer-menu"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">
-                        {reportViewerMenuLabel}
-                      </span>
-                      <span className="block truncate text-xs font-normal text-muted-foreground">
-                        {reportViewerMenuDescription}
-                      </span>
-                    </span>
-                    <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  className="w-72"
-                  data-testid="menu-report-viewer"
-                >
-                  <DropdownMenuLabel>{(t as any).reportCenter}</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {reportViewerGroups.map((group) => (
-                    <DropdownMenuSub key={group.category}>
-                      <DropdownMenuSubTrigger>
-                        <span className="min-w-0 flex-1 truncate">{group.label}</span>
-                        <span className="me-2 text-xs font-normal text-muted-foreground">
-                          {group.options.length}
+          <div
+            className={
+              hasFocusedReportSelection
+                ? "grid items-start gap-3 lg:grid-cols-[minmax(16rem,24rem)_minmax(20rem,1fr)]"
+                : "grid items-start gap-3 lg:max-w-xl"
+            }
+          >
+            {hasFocusedReportSelection ? (
+              <div className="space-y-1.5">
+                {/* R3 (CTO 21): the section title already says "Report Center"; the field is the report. */}
+                <Label>
+                  <T k="reportCenter.reportFieldLabel" />
+                </Label>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-auto min-h-11 w-full justify-between gap-3 bg-card px-3 py-1.5 text-start"
+                      data-testid="button-report-viewer-menu"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-medium">
+                          {reportViewerMenuLabel}
                         </span>
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] w-80 overflow-y-auto">
-                        {group.options.map((option) => (
-                          <DropdownMenuItem
-                            key={option.id}
-                            disabled={!option.href && !option.tab}
-                            onSelect={() => openReportViewerOption(option.id)}
-                            className="items-start py-2"
-                            data-testid={`menu-report-viewer-${option.id}`}
-                          >
-                            <span className="min-w-0">
-                              <span className="block truncate font-medium">{option.label}</span>
-                              <span className="block line-clamp-2 text-xs leading-snug text-muted-foreground">
-                                {option.description}
+                        <span className="block truncate text-xs font-normal text-muted-foreground">
+                          {reportViewerMenuDescription}
+                        </span>
+                      </span>
+                      <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="w-72"
+                    data-testid="menu-report-viewer"
+                  >
+                    <DropdownMenuLabel>{(t as any).reportCenter}</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {reportViewerGroups.map((group) => (
+                      <DropdownMenuSub key={group.category}>
+                        <DropdownMenuSubTrigger>
+                          <span className="min-w-0 flex-1 truncate">{group.label}</span>
+                          <span className="me-2 text-xs font-normal text-muted-foreground">
+                            {group.options.length}
+                          </span>
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] w-80 overflow-y-auto">
+                          {group.options.map((option) => (
+                            <DropdownMenuItem
+                              key={option.id}
+                              disabled={!option.href && !option.tab}
+                              onSelect={() => openReportViewerOption(option.id)}
+                              className="items-start py-2"
+                              data-testid={`menu-report-viewer-${option.id}`}
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate font-medium">{option.label}</span>
+                                <span className="block line-clamp-2 text-xs leading-snug text-muted-foreground">
+                                  {option.description}
+                                </span>
                               </span>
-                            </span>
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+                            </DropdownMenuItem>
+                          ))}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label>{(t as any).period ?? "Period"}</Label>
               <DateRangeFilter dateRange={dateRange} onDateRangeChange={setDateRange} />

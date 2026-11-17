@@ -1,11 +1,21 @@
 import { useState } from "react";
+import { ChevronsUpDown } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { useTranslation } from "@/lib/i18n";
 import { useQuery } from "@tanstack/react-query";
 import { History, FileText, Search, ChevronDown, ChevronRight, Clock, User } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -36,12 +46,51 @@ const DOCUMENT_TYPES = [
   { value: "receipt", labelKey: "pages.receipt" },
 ] as const;
 
+/** List endpoint per document type: the picker searches documents by number (never an id). */
+const LIST_SEGMENT: Record<string, string> = {
+  invoice: "invoices",
+  quote: "quotes",
+  credit_note: "credit-notes",
+  purchase_order: "purchase-orders",
+  receipt: "receipts",
+};
+
+interface PickableDocument {
+  id: string;
+  number?: string | null;
+  invoiceNumber?: string | null;
+  receiptNumber?: string | null;
+  customerName?: string | null;
+  vendorName?: string | null;
+  merchant?: string | null;
+  date?: string | null;
+}
+
+function documentLabel(doc: PickableDocument): string {
+  return doc.number || doc.invoiceNumber || doc.receiptNumber || doc.merchant || "—";
+}
+
 export default function DocumentVersions() {
   const { t } = useTranslation();
   const { companyId: selectedCompanyId } = useDefaultCompany();
-  const [documentType, setDocumentType] = useState<string>("");
-  const [documentId, setDocumentId] = useState("");
-  const [searchTriggered, setSearchTriggered] = useState(false);
+  const initial = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
+  const [documentType, setDocumentType] = useState<string>(initial.get("type") ?? "");
+  const [documentId, setDocumentId] = useState(initial.get("id") ?? "");
+  const [searchTriggered, setSearchTriggered] = useState(
+    Boolean(initial.get("type") && initial.get("id"))
+  );
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const listSegment = LIST_SEGMENT[documentType];
+  const { data: documentsRaw, isLoading: documentsLoading } = useQuery<
+    PickableDocument[] | { items?: PickableDocument[]; data?: PickableDocument[] }
+  >({
+    queryKey: ["/api/companies", selectedCompanyId, listSegment],
+    enabled: Boolean(selectedCompanyId && listSegment),
+  });
+  const documents: PickableDocument[] = Array.isArray(documentsRaw)
+    ? documentsRaw
+    : (documentsRaw?.items ?? documentsRaw?.data ?? []);
+  const pickedDocument = documents.find((d) => d.id === documentId);
   const [expandedVersionId, setExpandedVersionId] = useState<string | null>(null);
 
   const canSearch = !!selectedCompanyId && !!documentType && !!documentId.trim();
@@ -72,12 +121,6 @@ export default function DocumentVersions() {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleSearch();
-    }
-  };
-
   const toggleExpand = (versionId: string) => {
     setExpandedVersionId((prev) => (prev === versionId ? null : versionId));
   };
@@ -92,18 +135,12 @@ export default function DocumentVersions() {
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center gap-3">
-        <History className="h-8 w-8 text-primary" />
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">
-            <T k="pageLabels.documentVersions" />
-          </h1>
-          <p className="text-muted-foreground">
-            <T k="pageLabels.viewTheFullVersionHistoryAndAuditTrailForAnyDocument" />
-          </p>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Accounting"
+        title={t["pageLabels.documentVersions"]}
+        description={t["pageLabels.viewTheFullVersionHistoryAndAuditTrailForAnyDocument"]}
+      />
 
       {/* Search Controls */}
       <Card>
@@ -124,6 +161,7 @@ export default function DocumentVersions() {
                 value={documentType}
                 onValueChange={(value) => {
                   setDocumentType(value);
+                  setDocumentId("");
                   setSearchTriggered(false);
                 }}
               >
@@ -141,23 +179,62 @@ export default function DocumentVersions() {
             </div>
 
             <div className="flex-1 space-y-2">
-              <Label htmlFor="documentId">
-                <T k="pageLabels.documentID" />
-              </Label>
-              <Input
-                id="documentId"
-                placeholder={t["documentVersions.enterDocumentId"]}
-                value={documentId}
-                onChange={(e) => {
-                  setDocumentId(e.target.value);
-                  setSearchTriggered(false);
-                }}
-                onKeyDown={handleKeyDown}
-              />
+              <Label htmlFor="documentId">{t["documentVersions.document"]}</Label>
+              <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="documentId"
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={pickerOpen}
+                    disabled={!documentType}
+                    className="w-full justify-between font-normal"
+                    data-testid="button-pick-document"
+                  >
+                    <span className="truncate">
+                      {pickedDocument
+                        ? documentLabel(pickedDocument)
+                        : t["documentVersions.searchByNumber"]}
+                    </span>
+                    <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" aria-hidden />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder={t["documentVersions.searchByNumber"]} />
+                    <CommandList>
+                      <CommandEmpty>
+                        {documentsLoading
+                          ? t["documentVersions.loadingDocuments"]
+                          : t["documentVersions.noDocumentsFound"]}
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {documents.slice(0, 200).map((doc) => (
+                          <CommandItem
+                            key={doc.id}
+                            value={`${documentLabel(doc)} ${doc.customerName ?? doc.vendorName ?? ""}`}
+                            onSelect={() => {
+                              setDocumentId(doc.id);
+                              setPickerOpen(false);
+                              setSearchTriggered(true);
+                            }}
+                          >
+                            <span className="font-medium tabular-nums">{documentLabel(doc)}</span>
+                            <span className="ms-2 truncate text-muted-foreground">
+                              {doc.customerName ?? doc.vendorName ?? ""}
+                            </span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <Button onClick={handleSearch} disabled={!canSearch}>
-              <Search className="h-4 w-4 mr-2" />
+              <Search className="h-4 w-4 me-2" />
               <T k="shell.search" />
             </Button>
           </div>
@@ -170,7 +247,7 @@ export default function DocumentVersions() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Version History
+              {t["documentVersions.versionHistory"]}
               {versions.length > 0 && (
                 <Badge variant="secondary" className="ml-2">
                   {versions.length} version{versions.length !== 1 ? "s" : ""}

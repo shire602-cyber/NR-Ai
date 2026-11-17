@@ -164,5 +164,12 @@
   "evidenceCenter.status.esr_report": "تقرير الجوهر الاقتصادي",
   "evidenceCenter.status.audited_financials": "القوائم المالية المدققة",
   "evidenceCenter.status.payslip": "قسيمة الراتب",
-  "evidenceCenter.status.tax_certificate": "شهادة ضريبية"
+  "evidenceCenter.status.tax_certificate": "شهادة ضريبية",
+  "evidenceCenter.downloadEvidencePack": "تنزيل حزمة الأدلة",
+  "evidenceCenter.checklistTitle": "قائمة الجاهزية",
+  "documentVersions.document": "المستند",
+  "documentVersions.searchByNumber": "ابحث بالرقم",
+  "documentVersions.loadingDocuments": "جارٍ تحميل المستندات…",
+  "documentVersions.noDocumentsFound": "لا توجد مستندات مطابقة.",
+  "documentVersions.versionHistory": "سجل الإصدارات"
 }

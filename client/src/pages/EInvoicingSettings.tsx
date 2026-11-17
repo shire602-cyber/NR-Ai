@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { FileCheck2, Download } from "lucide-react";
@@ -79,7 +80,7 @@ const COPY = {
     schematron: "PINT AE schematron",
     rules: "PINT AE rule list",
     available: "Available",
-    unavailable: "Not available in this deployment",
+    unavailable: "Not available yet",
     documentsTitle: "Invoice e-documents",
     invoice: "Invoice",
     status: "Status",
@@ -96,9 +97,12 @@ const COPY = {
     hash: "SHA-256",
     download: "Download",
     inboundTitle: "Received supplier e-invoices",
-    inboundEnabled: "Inbound webhook enabled",
-    inboundDisabled: "Inbound disabled: webhook secret not configured",
+    inboundEnabled: "Receiving supplier e-invoices",
+    inboundDisabled: "Receiving supplier e-invoices is not available yet",
     endpoint: "Endpoint",
+    developerDetails: "Developer details",
+    copy: "Copy",
+    copied: "Copied",
     supplier: "Supplier",
     bill: "Draft bill",
     zatcaLink: "KSA (ZATCA) settings",
@@ -147,7 +151,7 @@ const COPY = {
     schematron: "قواعد PINT AE الرسمية",
     rules: "قائمة قواعد PINT AE",
     available: "متاح",
-    unavailable: "غير متاح في هذا النشر",
+    unavailable: "غير متاح بعد",
     documentsTitle: "المستندات الإلكترونية للفواتير",
     invoice: "الفاتورة",
     status: "الحالة",
@@ -165,8 +169,11 @@ const COPY = {
     download: "تنزيل",
     inboundTitle: "فواتير الموردين الإلكترونية المستلمة",
     inboundEnabled: "استقبال الفواتير مفعّل",
-    inboundDisabled: "الاستقبال معطّل: لم يتم إعداد سر الربط",
+    inboundDisabled: "استقبال فواتير الموردين الإلكترونية غير متاح بعد",
     endpoint: "نقطة الاستقبال",
+    developerDetails: "تفاصيل للمطورين",
+    copy: "نسخ",
+    copied: "تم النسخ",
     supplier: "المورد",
     bill: "فاتورة مورد مسودة",
     zatcaLink: "إعدادات السعودية (هيئة الزكاة)",
@@ -425,11 +432,10 @@ export default function EInvoicingSettings() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="golive">{s.goLiveOverride}</Label>
-                <Input
+                <DatePicker
                   id="golive"
-                  type="date"
                   value={form.einvoiceGoLiveDate}
-                  onChange={(e) => set("einvoiceGoLiveDate")(e.target.value)}
+                  onChange={(value) => set("einvoiceGoLiveDate")(value)}
                 />
               </div>
               <div className="text-sm md:col-span-3">
@@ -674,12 +680,33 @@ export default function EInvoicingSettings() {
           <CardTitle>{s.inboundTitle}</CardTitle>
           <CardDescription>
             {view?.inbound.enabled ? s.inboundEnabled : s.inboundDisabled}
-            {view ? (
-              <span className="ms-2 font-mono text-xs" dir="ltr">
-                {s.endpoint}: <span translate="no">{view.inbound.endpoint}</span>
-              </span>
-            ) : null}
           </CardDescription>
+          {/* Spec 3.12: the inbound endpoint is developer detail, collapsed by default. */}
+          {view ? (
+            <details className="mt-2 text-small" data-testid="einvoice-developer-details">
+              <summary className="cursor-pointer text-muted-foreground">
+                {s.developerDetails}
+              </summary>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="text-muted-foreground">{s.endpoint}</span>
+                <bdi className="break-all font-mono text-xs" translate="no">
+                  {view.inbound.endpoint}
+                </bdi>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(view.inbound.endpoint);
+                    toast({ title: s.copied });
+                  }}
+                >
+                  {s.copy}
+                </Button>
+              </div>
+            </details>
+          ) : null}
         </CardHeader>
         <CardContent className="overflow-x-auto">
           <Table>

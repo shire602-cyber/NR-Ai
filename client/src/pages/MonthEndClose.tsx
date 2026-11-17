@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { DatePicker } from "@/components/ui/date-picker";
 import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatDate as formatDisplayDate, formatMonthYear } from "@/lib/format-date";
@@ -45,7 +46,7 @@ import { apiFieldErrors, type FieldMessages } from "@/lib/api-field-errors";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   CheckCircle2,
-  XCircle,
+  Circle,
   Lock,
   Unlock,
   Sparkles,
@@ -615,15 +616,14 @@ export default function MonthEndClose() {
               {checklistData.checklist.map((item) => (
                 <div
                   key={item.id}
-                  className={`flex items-center justify-between p-3 rounded-lg border ${
-                    stepDone(item) ? "border-border bg-card" : "border-border bg-card"
-                  }`}
+                  className="flex items-center justify-between rounded-lg border border-border bg-card p-3"
                 >
                   <div className="flex items-center gap-3">
                     {stepDone(item) ? (
                       <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
                     ) : (
-                      <XCircle className="h-5 w-5 text-destructive shrink-0" />
+                      // Spec 3.10: not yet done is neutral; red is reserved for failed checks.
+                      <Circle className="h-5 w-5 text-muted-foreground shrink-0" aria-hidden />
                     )}
                     <div>
                       <p className="text-sm font-medium">
@@ -1159,11 +1159,10 @@ export default function MonthEndClose() {
                 <Label htmlFor="fiscal-year-end">
                   <T k="monthEnd.fiscalYearEnd" />
                 </Label>
-                <Input
+                <DatePicker
                   id="fiscal-year-end"
-                  type="date"
                   value={fiscalYearEnd}
-                  onChange={(e) => setFiscalYearEnd(e.target.value)}
+                  onChange={(value) => setFiscalYearEnd(value)}
                 />
               </div>
               <div className="space-y-1">

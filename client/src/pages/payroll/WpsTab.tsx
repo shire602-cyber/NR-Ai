@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { FileDrop } from "@/components/ui/file-drop";
+import { EmptyState } from "@/components/ui/empty-state";
+import { formatDate } from "@/lib/format-date";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { FileSearch, Save, ShieldAlert } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -225,6 +228,7 @@ export function WpsTab({ companyId }: { companyId: string }) {
     queryKey: [`/api/companies/${companyId}/payroll/expiries`],
   });
   const [content, setContent] = useState("");
+  const [sifName, setSifName] = useState<string | null>(null);
   const [result, setResult] = useState<ValidationResult | null>(null);
   const [runId, setRunId] = useState("");
   const [status, setStatus] = useState("submitted");
@@ -254,7 +258,7 @@ export function WpsTab({ companyId }: { companyId: string }) {
   });
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-narrow space-y-6">
       <WpsSettingsCard companyId={companyId} />
 
       <Card>
@@ -304,12 +308,18 @@ export function WpsTab({ companyId }: { companyId: string }) {
           <CardDescription>{tx("hr.wps.validatorHint")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Input
-            type="file"
+          <FileDrop
+            id="wps-sif-file"
             accept=".sif,.SIF,.txt,.csv"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (file) setContent(await file.text());
+            value={sifName}
+            onClear={() => {
+              setSifName(null);
+              setContent("");
+            }}
+            onFiles={async ([file]) => {
+              if (!file) return;
+              setSifName(file.name);
+              setContent(await file.text());
             }}
           />
           <Textarea
@@ -347,13 +357,13 @@ export function WpsTab({ companyId }: { companyId: string }) {
         </CardHeader>
         <CardContent>
           {expiries.length === 0 ? (
-            <p className="text-muted-foreground">{tx("hr.noExpiries")}</p>
+            <EmptyState size="sm" title={tx("hr.noExpiries")} />
           ) : (
             <ul className="space-y-1 text-sm">
               {expiries.map((x, i) => (
                 <li key={i}>
-                  {x.employeeName} · {tx(`hr.doc.${x.document}`)} · {x.expiryDate} ·{" "}
-                  {tx("hr.daysLeft", { days: x.daysLeft })}
+                  {x.employeeName} · {tx(`hr.doc.${x.document}`)} ·{" "}
+                  {formatDate(x.expiryDate, locale)} · {tx("hr.daysLeft", { days: x.daysLeft })}
                 </li>
               ))}
             </ul>

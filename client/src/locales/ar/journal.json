@@ -92,5 +92,14 @@
   "journal.memo.billPaymentTo": "دفعة إلى {party} - فاتورة مورّد {ref}",
   "journal.memo.billFxLoss": "خسارة صرف محققة - فاتورة مورّد {ref}",
   "journal.memo.billFxGain": "ربح صرف محقق - فاتورة مورّد {ref}",
-  "journal.memo.billLine": "فاتورة مورّد {ref} - {party}"
+  "journal.memo.billLine": "فاتورة مورّد {ref} - {party}",
+  "journal.sourcePayroll": "الرواتب",
+  "journal.sourceBill": "فاتورة مورد",
+  "journal.sourceBillPayment": "سداد فاتورة مورد",
+  "journal.sourceCreditNote": "إشعار دائن",
+  "journal.sourceDepreciation": "الإهلاك",
+  "journal.sourceFxRevaluation": "إعادة تقييم العملات",
+  "journal.sourceInventory": "المخزون",
+  "journal.sourceOpeningBalance": "الرصيد الافتتاحي",
+  "journal.sourceSystem": "قيد النظام"
 }

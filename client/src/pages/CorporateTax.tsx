@@ -1,5 +1,12 @@
 import { T } from "@/components/layout/T";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -36,6 +43,12 @@ import { fiscalYearContaining } from "@/lib/fiscal-year";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { formatDate as formatDisplayDate, formatDateRange } from "@/lib/format-date";
 import {
   FileCheck,
@@ -48,6 +61,8 @@ import {
   Trash2,
   Plus,
   RotateCcw,
+  MessageSquare,
+  MoreHorizontal,
   Download,
   BookOpen,
   AlertTriangle,
@@ -319,6 +334,7 @@ export default function CorporateTax() {
   const [deductions, setDeductions] = useState(0);
   const [calculation, setCalculation] = useState<CalculationResult | null>(null);
   const [notes, setNotes] = useState("");
+  const [openNotes, setOpenNotes] = useState<Set<string>>(() => new Set());
   const [workpaperRows, setWorkpaperRows] = useState<CorporateTaxWorkpaperRow[]>(() =>
     defaultWorkpaperRows(locale)
   );
@@ -567,7 +583,7 @@ export default function CorporateTax() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Compliance"
-        title={(t as any).corporateTax || "Corporate Tax (9%)"}
+        title={(t as any).corporateTax || "Corporate tax (9%)"}
         description={t["corporateTax.pageSubtitle"]}
       />
 
@@ -613,13 +629,25 @@ export default function CorporateTax() {
                 <Plus className="w-4 h-4 me-2" />
                 <T k="pageLabels.expenseRow" />
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setWorkpaperRows(defaultWorkpaperRows(locale))}
-              >
-                <RotateCcw className="w-4 h-4 me-2" /> <T k="pages.reset" />
-              </Button>
+              {/* Spec 3.12: Reset lives in the overflow menu. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t["reportCenter.moreActions"]}
+                    data-testid="button-workpaper-more"
+                  >
+                    <MoreHorizontal className="h-4 w-4" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setWorkpaperRows(defaultWorkpaperRows(locale))}>
+                    <RotateCcw className="w-4 h-4 me-2" /> <T k="pages.reset" />
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
@@ -709,102 +737,142 @@ export default function CorporateTax() {
           </div>
 
           <div className="hidden overflow-x-auto rounded-md border md:block">
-            <Table>
+            <Table density="compact">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[260px] text-base font-bold">
+                  <TableHead className="min-w-[260px]">
                     {formatMessage(t["corporateTax.workpaperYear"], {
                       year:
                         new Date(periodEnd || periodStart).getFullYear() || defaultFy.fiscalYear,
                     })}
                   </TableHead>
-                  <TableHead data-numeric className="min-w-[180px] text-base font-bold">
+                  <TableHead data-numeric className="min-w-[180px]">
                     <T k="pages.expense" />
                   </TableHead>
-                  <TableHead data-numeric className="min-w-[180px] text-base font-bold">
+                  <TableHead data-numeric className="min-w-[180px]">
                     <T k="pages.revenue" />
                   </TableHead>
-                  <TableHead className="min-w-[220px]">
-                    <T k="pages.notes" />
+                  <TableHead className="w-[56px]">
+                    <span className="sr-only">
+                      <T k="pages.notes" />
+                    </span>
                   </TableHead>
                   <TableHead className="w-[56px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {workpaperRows.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell>
-                      <Input
-                        value={row.label}
-                        onChange={(e) => updateWorkpaperRow(row.id, { label: e.target.value })}
-                        className="font-medium"
-                        aria-label={`${ctTr(locale, "Workpaper line description", "وصف بند ورقة العمل")}: ${row.label}`}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {row.type === "expense" ? (
+                  <Fragment key={row.id}>
+                    <TableRow>
+                      <TableCell>
                         <Input
-                          type="number"
-                          inputMode="decimal"
-                          min={0}
-                          step="0.01"
-                          value={moneyInputValue(row.amount)}
-                          onChange={(e) =>
-                            updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
-                          }
-                          aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
-                          className="text-end"
-                          placeholder="0.00"
+                          value={row.label}
+                          onChange={(e) => updateWorkpaperRow(row.id, { label: e.target.value })}
+                          className="h-8 font-medium"
+                          aria-label={`${ctTr(locale, "Workpaper line description", "وصف بند ورقة العمل")}: ${row.label}`}
                         />
-                      ) : (
-                        <div className="h-10 rounded-md border bg-muted/30" />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {row.type === "revenue" ? (
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          min={0}
-                          step="0.01"
-                          value={moneyInputValue(row.amount)}
-                          onChange={(e) =>
-                            updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
-                          }
-                          aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
-                          className="text-end"
-                          placeholder="0.00"
-                        />
-                      ) : (
-                        <div className="h-10 rounded-md border bg-muted/30" />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={row.notes ?? ""}
-                        onChange={(e) => updateWorkpaperRow(row.id, { notes: e.target.value })}
-                        placeholder={ctTr(
-                          locale,
-                          "Evidence or adjustment note",
-                          "ملاحظة الدليل أو التسوية"
+                      </TableCell>
+                      <TableCell>
+                        {row.type === "expense" ? (
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            step="0.01"
+                            value={moneyInputValue(row.amount)}
+                            onChange={(e) =>
+                              updateWorkpaperRow(row.id, {
+                                amount: parseMoneyInput(e.target.value),
+                              })
+                            }
+                            aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
+                            className="h-8 text-end"
+                            placeholder="0.00"
+                          />
+                        ) : (
+                          <span className="block pe-3 text-end text-muted-foreground" aria-hidden>
+                            –
+                          </span>
                         )}
-                        aria-label={`${row.label} ${ctTr(locale, "note", "ملاحظة")}`}
-                      />
-                    </TableCell>
-                    <TableCell data-numeric>
-                      {workpaperRows.length > 1 && (
+                      </TableCell>
+                      <TableCell>
+                        {row.type === "revenue" ? (
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            step="0.01"
+                            value={moneyInputValue(row.amount)}
+                            onChange={(e) =>
+                              updateWorkpaperRow(row.id, {
+                                amount: parseMoneyInput(e.target.value),
+                              })
+                            }
+                            aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
+                            className="h-8 text-end"
+                            placeholder="0.00"
+                          />
+                        ) : (
+                          <span className="block pe-3 text-end text-muted-foreground" aria-hidden>
+                            –
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {/* Spec 3.12: the note opens as a row under the line (expander). */}
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          onClick={() => removeWorkpaperRow(row.id)}
-                          aria-label={`${ctTr(locale, "Remove", "إزالة")} ${row.label}`}
+                          aria-expanded={openNotes.has(row.id) || Boolean(row.notes)}
+                          aria-label={`${row.label} ${ctTr(locale, "note", "ملاحظة")}`}
+                          onClick={() =>
+                            setOpenNotes((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(row.id)) next.delete(row.id);
+                              else next.add(row.id);
+                              return next;
+                            })
+                          }
                         >
-                          <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
+                          <MessageSquare
+                            className={`h-4 w-4 ${row.notes ? "text-foreground" : "text-muted-foreground"}`}
+                            aria-hidden
+                          />
                         </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
+                      </TableCell>
+                      <TableCell data-numeric>
+                        {workpaperRows.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeWorkpaperRow(row.id)}
+                            aria-label={`${ctTr(locale, "Remove", "إزالة")} ${row.label}`}
+                          >
+                            <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                    {openNotes.has(row.id) || row.notes ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="pt-0">
+                          <Input
+                            value={row.notes ?? ""}
+                            onChange={(e) => updateWorkpaperRow(row.id, { notes: e.target.value })}
+                            placeholder={ctTr(
+                              locale,
+                              "Evidence or adjustment note",
+                              "ملاحظة الدليل أو التسوية"
+                            )}
+                            aria-label={`${row.label} ${ctTr(locale, "note", "ملاحظة")}`}
+                            className="h-8"
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </Fragment>
                 ))}
                 <TableRow className="bg-muted/40">
                   <TableCell className="font-bold">
@@ -1722,21 +1790,25 @@ export function CtCompliancePanel({ companyId }: { companyId: string }) {
           </div>
           <div className="space-y-1">
             <Label htmlFor="ct-band">{t["corporateTax.einvoicingBand"]}</Label>
-            <select
-              id="ct-band"
-              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-              value={profile?.einvoicingRevenueBand ?? ""}
-              onChange={(e) =>
+            <Select
+              value={profile?.einvoicingRevenueBand ?? "auto"}
+              onValueChange={(value) =>
                 saveProfile.mutate({
-                  einvoicingRevenueBand: (e.target.value ||
-                    null) as CtProfile["einvoicingRevenueBand"],
+                  einvoicingRevenueBand: (value === "auto"
+                    ? null
+                    : value) as CtProfile["einvoicingRevenueBand"],
                 })
               }
             >
-              <option value="">{t["corporateTax.einvoicingBandAuto"]}</option>
-              <option value="ge_50m">{t["corporateTax.einvoicingBandLarge"]}</option>
-              <option value="lt_50m">{t["corporateTax.einvoicingBandSmall"]}</option>
-            </select>
+              <SelectTrigger id="ct-band">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">{t["corporateTax.einvoicingBandAuto"]}</SelectItem>
+                <SelectItem value="ge_50m">{t["corporateTax.einvoicingBandLarge"]}</SelectItem>
+                <SelectItem value="lt_50m">{t["corporateTax.einvoicingBandSmall"]}</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -1758,15 +1830,20 @@ export function CtCompliancePanel({ companyId }: { companyId: string }) {
               placeholder={t["corporateTax.partyName"]}
               aria-label={t["corporateTax.partyName"]}
             />
-            <select
-              className="h-9 rounded-md border bg-background px-3 text-sm"
+            <Select
               value={partyKind}
-              onChange={(e) => setPartyKind(e.target.value as RelatedParty["relationship"])}
-              aria-label={t["corporateTax.partyRelationship"]}
+              onValueChange={(value) => setPartyKind(value as RelatedParty["relationship"])}
             >
-              <option value="related_party">{t["corporateTax.relatedParty"]}</option>
-              <option value="connected_person">{t["corporateTax.connectedPerson"]}</option>
-            </select>
+              <SelectTrigger className="w-48" aria-label={t["corporateTax.partyRelationship"]}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="related_party">{t["corporateTax.relatedParty"]}</SelectItem>
+                <SelectItem value="connected_person">
+                  {t["corporateTax.connectedPerson"]}
+                </SelectItem>
+              </SelectContent>
+            </Select>
             <Input
               className="max-w-[180px]"
               type="number"

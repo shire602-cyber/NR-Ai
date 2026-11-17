@@ -206,17 +206,36 @@ export function catalogTextByEnglish(
 
 const DEEP_MAX_DEPTH = 14;
 
-function deepLocalize(value: unknown, cx: (english: string) => string, depth: number): unknown {
+/** Localized copies of model objects already walked, with the depth they were walked from. */
+type DeepCache = WeakMap<object, { depth: number; out: unknown }>;
+
+function deepLocalize(
+  value: unknown,
+  cx: (english: string) => string,
+  depth: number,
+  cache: DeepCache
+): unknown {
   if (typeof value === "string") return cx(value);
   if (depth > DEEP_MAX_DEPTH || value === null || typeof value !== "object") return value;
-  if (Array.isArray(value)) return value.map((item) => deepLocalize(item, cx, depth + 1));
-  const proto = Object.getPrototypeOf(value);
-  if (proto !== Object.prototype && proto !== null) return value;
-  if ("$$typeof" in (value as Record<string, unknown>)) return value;
-  const out: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    out[key] = deepLocalize(item, cx, depth + 1);
+  // The Reports models share sub-objects (the same report, suite or rule appears under many
+  // parents); walk each object once. A copy made from a shallower depth saw at least as much of
+  // the subtree, so it can be reused deeper down.
+  const cached = cache.get(value);
+  if (cached && cached.depth <= depth) return cached.out;
+  let out: unknown;
+  if (Array.isArray(value)) {
+    out = value.map((item) => deepLocalize(item, cx, depth + 1, cache));
+  } else {
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) return value;
+    if ("$$typeof" in (value as Record<string, unknown>)) return value;
+    const copy: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      copy[key] = deepLocalize(item, cx, depth + 1, cache);
+    }
+    out = copy;
   }
+  cache.set(value, { depth, out });
   return out;
 }
 
@@ -235,12 +254,42 @@ export interface CatalogText {
   metric: <R extends { id: string; label: string; signal: string }>(row: R) => R;
 }
 
+/**
+ * Per-table memo of English -> display text. The Reports models hold thousands of strings with many
+ * repeats (ids, labels, sentences shared by suites, packs and automations); without it, `deep`
+ * re-ran every exact lookup, date parse and generated-sentence pattern for each occurrence, which
+ * took seconds of main-thread time on /reports in Arabic (WP-D). The memo is dropped whenever the
+ * table gains keys (a catalog namespace finished loading), so late catalogs still apply.
+ */
+const translationMemos = new WeakMap<object, { size: number; memo: Map<string, string> }>();
+
+function translationMemo(table: Record<string, string>): Map<string, string> {
+  const size = Object.keys(table).length;
+  const existing = translationMemos.get(table);
+  if (existing && existing.size === size) return existing.memo;
+  const memo = new Map<string, string>();
+  translationMemos.set(table, { size, memo });
+  return memo;
+}
+
 /** Build the locale-bound lookup (also used by the unit tests). */
 export function createCatalogText(table: Record<string, string>, locale: Locale): CatalogText {
-  const cx = (english: string) => catalogTextByEnglish(table, locale, english);
+  const memo = locale === "en" ? null : translationMemo(table);
+  const cx = (english: string) => {
+    if (!memo || !english) return catalogTextByEnglish(table, locale, english);
+    let out = memo.get(english);
+    if (out === undefined) {
+      out = catalogTextByEnglish(table, locale, english);
+      memo.set(english, out);
+    }
+    return out;
+  };
   const lookup = (kind: CatalogTextKind, id: string, field: string, fallback: string) =>
     catalogText(table, locale, kind, id, field, fallback);
-  const deep = <T>(value: T): T => (locale === "en" ? value : (deepLocalize(value, cx, 0) as T));
+  // One object cache per lookup (it lives with the memoized table, like the string memo).
+  const deepCache: DeepCache = new WeakMap();
+  const deep = <T>(value: T): T =>
+    locale === "en" ? value : (deepLocalize(value, cx, 0, deepCache) as T);
   const metric = <R extends { id: string; label: string; signal: string }>(row: R): R => {
     if (locale === "en") return row;
     const rollup = row.id.startsWith("consolidated-") && row.label.startsWith("Roll-up ");

@@ -3,7 +3,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ClipboardCheck, DollarSign, FileSpreadsheet, FileText } from "lucide-react";
 import { Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
@@ -39,15 +38,12 @@ export default function PayrollTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.netPayroll" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {payrollLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 <Money amount={payrollReport.totalNet} currency={"AED"} />
               </div>
             )}
@@ -59,15 +55,12 @@ export default function PayrollTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.payrollRuns" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {payrollLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">{payrollReport.runCount}</div>
+              <div className="tabular-nums text-kpi">{payrollReport.runCount}</div>
             )}
           </CardContent>
         </Card>
@@ -77,17 +70,12 @@ export default function PayrollTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.needsApproval" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {payrollLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
-                {payrollReport.approvalQueueCount}
-              </div>
+              <div className="tabular-nums text-kpi">{payrollReport.approvalQueueCount}</div>
             )}
           </CardContent>
         </Card>
@@ -97,15 +85,12 @@ export default function PayrollTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.needsSif" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {payrollLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">{payrollReport.wpsMissingCount}</div>
+              <div className="tabular-nums text-kpi">{payrollReport.wpsMissingCount}</div>
             )}
           </CardContent>
         </Card>

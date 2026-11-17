@@ -92,5 +92,14 @@
   "journal.memo.billPaymentTo": "Payment to {party} - Bill {ref}",
   "journal.memo.billFxLoss": "Realised FX loss - Bill {ref}",
   "journal.memo.billFxGain": "Realised FX gain - Bill {ref}",
-  "journal.memo.billLine": "Bill {ref} - {party}"
+  "journal.memo.billLine": "Bill {ref} - {party}",
+  "journal.sourcePayroll": "Payroll",
+  "journal.sourceBill": "Supplier bill",
+  "journal.sourceBillPayment": "Bill payment",
+  "journal.sourceCreditNote": "Credit note",
+  "journal.sourceDepreciation": "Depreciation",
+  "journal.sourceFxRevaluation": "FX revaluation",
+  "journal.sourceInventory": "Inventory",
+  "journal.sourceOpeningBalance": "Opening balance",
+  "journal.sourceSystem": "System entry"
 }

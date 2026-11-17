@@ -1,6 +1,5 @@
 // Reports > sales tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
-import { AlertTriangle, BarChart3, FileText, TrendingDown } from "lucide-react";
 import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,15 +56,12 @@ export default function SalesTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.invoiceValue" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {salesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 <Money amount={invoiceStatusReport.invoiceValueAed} currency={"AED"} />
               </div>
             )}
@@ -77,17 +73,12 @@ export default function SalesTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.activeInvoices" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {salesLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
-                {invoiceStatusReport.activeInvoiceCount}
-              </div>
+              <div className="tabular-nums text-kpi">{invoiceStatusReport.activeInvoiceCount}</div>
             )}
           </CardContent>
         </Card>
@@ -97,17 +88,12 @@ export default function SalesTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.unpaidInvoices" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <AlertTriangle className="h-4 w-4 text-warning " />
-            </div>
           </CardHeader>
           <CardContent>
             {salesLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">
-                {invoiceStatusReport.unpaidCount}
-              </div>
+              <div className="tabular-nums text-kpi">{invoiceStatusReport.unpaidCount}</div>
             )}
           </CardContent>
         </Card>
@@ -117,15 +103,12 @@ export default function SalesTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.overdueOutstanding" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <TrendingDown className="h-4 w-4 text-destructive " />
-            </div>
           </CardHeader>
           <CardContent>
             {salesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : invoiceStatusReport.overdueCurrency ? (
-              <div className="tabular-nums text-2xl font-bold">
+              <div className="tabular-nums text-kpi">
                 <Money
                   amount={invoiceStatusReport.overdueOutstanding}
                   currency={invoiceStatusReport.overdueCurrency}
@@ -144,7 +127,7 @@ export default function SalesTab() {
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <CardTitle>A/R Aging</CardTitle>
+              <CardTitle>{t["reportCenter.arAgingTitle"]}</CardTitle>
               <CardDescription>
                 <T k="reportCenter.salesAgingHint" />
               </CardDescription>
