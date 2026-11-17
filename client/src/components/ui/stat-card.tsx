@@ -23,8 +23,19 @@ export interface StatCardProps {
   delta?: StatDelta;
   /** One line under the value, e.g. "12 invoices · 3 overdue". */
   hint?: React.ReactNode;
+  /**
+   * @deprecated Spec 2.7: StatCard has no icon. Accepted so existing screens compile; not
+   * rendered.
+   */
   icon?: LucideIcon;
-  /** Optional chart/sparkline rendered under the figure. */
+  /**
+   * Spec 2.7: a 32 px full-width sparkline at the bottom. Pass the series values (oldest
+   * first); fewer than 2 points renders nothing. In a row, either every tile has one or none.
+   */
+  sparkline?: number[];
+  /** Sparkline colour: `brand` (money in, default) or `neutral` (money out / comparison). */
+  sparklineTone?: "brand" | "neutral";
+  /** Optional custom visual rendered under the figure (prefer `sparkline`). */
   visual?: React.ReactNode;
   /** Pin the visual to the card bottom edge so it adds no height (tiles in a row stay equal). */
   visualOverlay?: boolean;
@@ -50,7 +61,8 @@ export function StatCard({
   value,
   delta,
   hint,
-  icon: Icon,
+  sparkline,
+  sparklineTone = "brand",
   visual,
   visualOverlay,
   href,
@@ -62,15 +74,12 @@ export function StatCard({
     delta?.direction === "up" ? ArrowUpRight : delta?.direction === "down" ? ArrowDownRight : Minus;
   const body = (
     <>
-      <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
-        <div className="flex min-w-0 items-center gap-2 text-small font-medium text-muted-foreground">
-          {Icon && <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />}
-          <span className="truncate">{label}</span>
-        </div>
+      <div className="flex items-start justify-between gap-2">
+        <span className="min-w-0 truncate text-caption text-muted-foreground">{label}</span>
         {delta && !loading && (
           <span
             className={cn(
-              "inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-xs font-medium",
+              "inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-caption",
               DELTA_TONE[delta.tone]
             )}
             title={delta.context}
@@ -84,14 +93,17 @@ export function StatCard({
           </span>
         )}
       </div>
-      {/* KPI figure: 28px / 600 / -0.02em on desktop, 20px in the mobile 2x2 grid (CTO 4, 12). */}
-      <div className="figure-display mt-2 text-xl leading-7 text-foreground sm:mt-3 sm:text-h1">
+      {/* KPI figure: text-kpi (28/32 desktop, 22/28 mobile), tabular, no count-up (spec 2.5). */}
+      <div className="mt-2 text-kpi text-foreground tabular-nums">
         {loading ? <Skeleton className="h-8 w-36" /> : value}
       </div>
       {hint && !loading && (
-        <div className="mt-1 truncate text-caption text-muted-foreground sm:text-small">{hint}</div>
+        <div className="mt-1 truncate text-small text-muted-foreground">{hint}</div>
       )}
-      {/* The sparkline slot exists only when there is a series, and only from 640px up. */}
+      {sparkline && sparkline.length >= 2 && !loading && (
+        <Sparkline values={sparkline} tone={sparklineTone} className="mt-4" />
+      )}
+      {/* Legacy visual slot: only when there is a series, and only from 640px up. */}
       {visual && !loading && visualOverlay && (
         <div className="absolute inset-x-5 bottom-3 hidden sm:block">{visual}</div>
       )}
@@ -124,5 +136,62 @@ export function StatCard({
     >
       {body}
     </Card>
+  );
+}
+
+/**
+ * Sparkline — 32 px tall, full width, 1.5 px line with an 8% area fill (spec 2.7). Pure SVG
+ * (no chart library), drawn once; decorative (the figure carries the meaning).
+ */
+export function Sparkline({
+  values,
+  tone = "brand",
+  className,
+}: {
+  values: number[];
+  tone?: "brand" | "neutral";
+  className?: string;
+}) {
+  const gradientId = React.useId();
+  if (values.length < 2) return null;
+  const w = 100;
+  const h = 32;
+  const pad = 2;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  const pts = values.map((v, i) => {
+    const x = (i / (values.length - 1)) * w;
+    const y = pad + (1 - (v - min) / span) * (h - pad * 2);
+    return [x, y] as const;
+  });
+  const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`).join(" ");
+  const area = `${line} L${w} ${h} L0 ${h} Z`;
+  const colour = tone === "neutral" ? "hsl(var(--chart-neutral))" : "hsl(var(--chart-1))";
+  return (
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      preserveAspectRatio="none"
+      className={cn("block h-8 w-full overflow-visible", className)}
+      aria-hidden
+      data-testid="stat-sparkline"
+    >
+      <defs>
+        <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor={colour} stopOpacity={0.08} />
+          <stop offset="100%" stopColor={colour} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#${gradientId})`} />
+      <path
+        d={line}
+        fill="none"
+        stroke={colour}
+        strokeWidth={1.5}
+        vectorEffect="non-scaling-stroke"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }

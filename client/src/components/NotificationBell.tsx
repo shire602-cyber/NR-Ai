@@ -38,6 +38,10 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
 
   const recent = notifications.slice(0, 10);
+  // Spec 3.5: the count is neutral; it turns red only when something unread is overdue/urgent.
+  const hasOverdue = notifications.some(
+    (n) => !n.isRead && (n.priority === "urgent" || /overdue/i.test(n.type ?? ""))
+  );
 
   function handleClick(n: AppNotification) {
     if (!n.isRead) markAsRead(n.id);
@@ -69,7 +73,11 @@ export function NotificationBell() {
             <span
               aria-hidden="true"
               dir="ltr"
-              className="money absolute -top-0.5 -end-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold leading-none text-danger-foreground ring-2 ring-background"
+              data-tone={hasOverdue ? "danger" : "neutral"}
+              className={cn(
+                "money absolute -top-1 -end-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-caption font-semibold leading-none ring-2 ring-background",
+                hasOverdue ? "bg-danger text-danger-foreground" : "bg-foreground text-background"
+              )}
             >
               {unreadCount > 9 ? "9+" : unreadCount}
             </span>

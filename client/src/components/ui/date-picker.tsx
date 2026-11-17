@@ -16,7 +16,15 @@ export interface DatePickerProps {
   id?: string;
   className?: string;
   disabled?: boolean;
+  /** Shown when there is no value (defaults to "Pick a date"). */
+  placeholder?: string;
+  /** Earliest / latest selectable day, `YYYY-MM-DD` (same as a native input's min / max). */
+  min?: string;
+  max?: string;
+  /** Marks the trigger invalid (red border), e.g. from a form error. */
+  invalid?: boolean;
   "aria-label"?: string;
+  "aria-describedby"?: string;
   "data-testid"?: string;
 }
 
@@ -38,12 +46,23 @@ export function DatePicker({
   id,
   className,
   disabled,
+  placeholder,
+  min,
+  max,
+  invalid,
   "aria-label": ariaLabel,
+  "aria-describedby": ariaDescribedBy,
   "data-testid": testId,
 }: DatePickerProps) {
   const { t, locale } = useTranslation();
   const [open, setOpen] = React.useState(false);
   const selected = toCalendarDate(value) ?? undefined;
+  const minDate = min ? (toCalendarDate(min) ?? undefined) : undefined;
+  const maxDate = max ? (toCalendarDate(max) ?? undefined) : undefined;
+  const disabledDays = [
+    ...(minDate ? [{ before: minDate }] : []),
+    ...(maxDate ? [{ after: maxDate }] : []),
+  ];
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -53,15 +72,18 @@ export function DatePicker({
           variant="outline"
           disabled={disabled}
           aria-label={ariaLabel}
+          aria-describedby={ariaDescribedBy}
+          aria-invalid={invalid || undefined}
           data-testid={testId}
           className={cn(
             "w-full justify-start text-start font-normal tabular-nums",
             !value && "text-muted-foreground",
+            invalid && "border-destructive",
             className
           )}
         >
           <CalendarIcon className="h-4 w-4" aria-hidden />
-          <span>{value ? formatDate(value, locale) : t["pages.pickADate"]}</span>
+          <span>{value ? formatDate(value, locale) : (placeholder ?? t["pages.pickADate"])}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
@@ -69,6 +91,7 @@ export function DatePicker({
           mode="single"
           selected={selected}
           defaultMonth={selected}
+          disabled={disabledDays.length ? disabledDays : undefined}
           locale={locale === "ar" ? arLocale : undefined}
           dir={locale === "ar" ? "rtl" : "ltr"}
           onSelect={(d) => {
