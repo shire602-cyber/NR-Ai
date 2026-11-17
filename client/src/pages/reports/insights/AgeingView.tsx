@@ -49,15 +49,20 @@ interface AgingReport {
 
 const TABLE_LIMIT = 10;
 
+/** Settlement-based aged receivables / payables (reports.routes registers aged-${kind}). */
+function agedReportUrl(companyId: string, kind: "receivables" | "payables", asOf: string) {
+  return `/api/companies/${companyId}/reports/aged-${kind}?asOf=${asOf}`;
+}
+
 export default function AgeingView({ companyId }: { companyId: string }) {
   const { t, locale } = useTranslation();
   const [asOf, setAsOf] = useState(todayIso);
   const [side, setSide] = useState<"receivables" | "payables">("receivables");
   const receivables = useQuery<AgingReport>({
-    queryKey: [`/api/companies/${companyId}/reports/aged-receivables?asOf=${asOf}`],
+    queryKey: [agedReportUrl(companyId, "receivables", asOf)],
   });
   const payables = useQuery<AgingReport>({
-    queryKey: [`/api/companies/${companyId}/reports/aged-payables?asOf=${asOf}`],
+    queryKey: [agedReportUrl(companyId, "payables", asOf)],
   });
   if (receivables.isLoading && payables.isLoading) return <InsightsSkeleton />;
 
@@ -113,12 +118,12 @@ export default function AgeingView({ companyId }: { companyId: string }) {
               {
                 label: t["analytics.exportReceivablesExcel"],
                 format: "xlsx",
-                href: `/api/companies/${companyId}/reports/aged-receivables?format=xlsx&asOf=${asOf}`,
+                href: `/api/companies/${companyId}/reports/statements/ar-aging?format=xlsx&to=${asOf}`,
               },
               {
                 label: t["analytics.exportPayablesExcel"],
                 format: "xlsx",
-                href: `/api/companies/${companyId}/reports/aged-payables?format=xlsx&asOf=${asOf}`,
+                href: `/api/companies/${companyId}/reports/statements/ap-aging?format=xlsx&to=${asOf}`,
               },
             ]}
           />
