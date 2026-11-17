@@ -10,6 +10,7 @@ import { assertPeriodNotLocked } from "./period-lock.service";
 import { recordAudit } from "./audit.service";
 import { deleteDraft, postDraft, postJournal } from "../ledger";
 import { AI_QUEUE_STILL_OPEN_SQL } from "./ai-gl-queue-sql";
+import { categorisationReasonCopy } from "../../shared/server-copy";
 import { DomainError, errorCode, errorMessage } from "../errors";
 import {
   applyMatch,
@@ -175,6 +176,11 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
   );
   const fewShotExamples: FewShotExample[] = _fewShotResult.rows;
 
+  // The model writes its reason in the company language, so Arabic companies read Arabic.
+  const companyLocale: string =
+    (await pool.query(`SELECT locale FROM companies WHERE id = $1`, [companyId])).rows[0]?.locale ??
+    "en";
+
   let ruleMatched = 0;
   let aiClassified = 0;
 
@@ -218,7 +224,11 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
           matchedRule.account_id,
           matchedAccount?.type || "expense",
           matchedRule.confidence,
-          `Matched rule: ${matchedRule.merchant_pattern || matchedRule.description_pattern} (applied ${matchedRule.times_applied} times, ${matchedRule.times_accepted} accepted)`,
+          categorisationReasonCopy("categorise.matchedRule", {
+            pattern: matchedRule.merchant_pattern || matchedRule.description_pattern || "",
+            applied: matchedRule.times_applied,
+            accepted: matchedRule.times_accepted,
+          }).text,
           0,
           "pending_review",
         ]
@@ -249,7 +259,7 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
           Math.abs(txn.amount),
           txn.transaction_date,
           0,
-          "OpenAI not configured — manual categorization required",
+          categorisationReasonCopy("categorise.operator.notConfigured").text,
           0,
           "pending_review",
         ]
@@ -258,7 +268,13 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
     }
 
     try {
-      const result = await classifyWithOpenAI(openai, txn, accounts, fewShotExamples);
+      const result = await classifyWithOpenAI(
+        openai,
+        txn,
+        accounts,
+        fewShotExamples,
+        companyLocale
+      );
 
       await pool.query(
         `INSERT INTO ai_gl_queue
@@ -300,7 +316,9 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
           Math.abs(txn.amount),
           txn.transaction_date,
           0,
-          `AI classification error: ${errorMessage(err) || "Unknown error"}`,
+          categorisationReasonCopy("categorise.operator.error", {
+            error: errorMessage(err) || "Unknown error",
+          }).text,
           0,
           "pending_review",
         ]
@@ -316,6 +334,11 @@ export async function scanAndClassifyTransactions(companyId: string): Promise<{
   };
 }
 
+/** Language the model is asked to write the customer-facing reason in. */
+export function reasonLanguage(locale: string | null | undefined): string {
+  return locale === "ar" ? "written in Arabic" : "written in English";
+}
+
 /**
  * Classify a bank transaction using OpenAI with the company's chart of accounts
  * and few-shot examples.
@@ -324,7 +347,8 @@ async function classifyWithOpenAI(
   openai: OpenAI,
   txn: BankTransactionRow,
   accounts: ChartOfAccountRow[],
-  fewShotExamples: FewShotExample[]
+  fewShotExamples: FewShotExample[],
+  locale = "en"
 ): Promise<AICategorizationResult> {
   const AI_MODEL = resolveModel("categorize");
 
@@ -369,7 +393,7 @@ Return a JSON object with exactly these fields:
   "accountName": "<English name of the chosen account>",
   "category": "<account type: expense, income, asset, liability, equity>",
   "confidence": <number between 0.0 and 1.0>,
-  "reason": "<brief 1-2 sentence explanation of why this account was chosen>"
+  "reason": "<brief 1-2 sentence explanation of why this account was chosen, ${reasonLanguage(locale)}>"
 }`;
 
   const userPrompt = `Categorize this bank transaction:

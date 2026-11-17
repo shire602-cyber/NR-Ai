@@ -8,6 +8,7 @@
  * z-score baseline.
  */
 import { pool } from "../db";
+import { anomalyCopy, type CopyDescriptor } from "../../shared/server-copy";
 import {
   ENTRY_LOCAL_DATE_SQL,
   NOT_CLOSING_SQL,
@@ -39,7 +40,10 @@ export interface Anomaly {
   type: AnomalyRule;
   rule: AnomalyRule;
   severity: AnomalySeverity;
+  /** English sentence (stored on the alert and kept in the API for compatibility). */
   description: string;
+  /** The same sentence as a message key + params; the client renders it from its catalogs. */
+  message: CopyDescriptor;
   /** Real transaction amount in AED. */
   amount: number;
   /** Real transaction date (UAE calendar date, YYYY-MM-DD). */
@@ -80,6 +84,12 @@ export const THRESHOLDS = {
   VAT_TOLERANCE: 0.02,
 } as const;
 
+/** `{ description, message }` for one anomaly: the English sentence and its key + params. */
+const copy = (key: string, params: Record<string, string | number>) => {
+  const { text, message } = anomalyCopy(key, params);
+  return { description: text, message };
+};
+
 const money = (n: number) =>
   n.toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const ds = (v: unknown) => String(v).slice(0, 10);
@@ -115,7 +125,12 @@ async function duplicateAmounts(companyId: string, out: Anomaly[]) {
       type: "duplicate_amount",
       rule: "duplicate_amount",
       severity: "warning",
-      description: `${r.n} receipts with the same amount (AED ${money(Number(r.amount))}) on ${ds(r.d)}. Possible duplicate entries from ${r.merchants}.`,
+      ...copy("anomaly.duplicateReceipts", {
+        n: r.n,
+        amount: money(Number(r.amount)),
+        date: ds(r.d),
+        merchants: r.merchants,
+      }),
       amount: Number(r.amount),
       date: ds(r.d),
       relatedId: r.first_id,
@@ -138,7 +153,12 @@ async function duplicateAmounts(companyId: string, out: Anomaly[]) {
       type: "duplicate_amount",
       rule: "duplicate_amount",
       severity: "warning",
-      description: `${r.n} invoices with the same total (AED ${money(Number(r.total))}) on ${ds(r.d)}. Customers: ${r.customers}.`,
+      ...copy("anomaly.duplicateInvoices", {
+        n: r.n,
+        amount: money(Number(r.total)),
+        date: ds(r.d),
+        customers: r.customers,
+      }),
       amount: Number(r.total),
       date: ds(r.d),
       relatedId: r.first_id,
@@ -169,7 +189,12 @@ async function unusualAmounts(companyId: string, out: Anomaly[]) {
       type: "unusual_amount",
       rule: "unusual_amount",
       severity: "critical",
-      description: `Receipt from ${r.merchant || "Unknown"} for AED ${money(Number(r.amount))} is ${(Number(r.amount) / Number(r.avg_amt)).toFixed(1)}x the average receipt (AED ${money(Number(r.avg_amt))}).`,
+      ...copy("anomaly.unusualReceipt", {
+        merchant: r.merchant || "Unknown",
+        amount: money(Number(r.amount)),
+        ratio: (Number(r.amount) / Number(r.avg_amt)).toFixed(1),
+        average: money(Number(r.avg_amt)),
+      }),
       amount: Number(r.amount),
       date: r.d ? ds(r.d) : uaeToday(),
       relatedId: r.id,
@@ -199,7 +224,12 @@ async function unusualAmounts(companyId: string, out: Anomaly[]) {
       type: "unusual_amount",
       rule: "unusual_amount",
       severity: "warning",
-      description: `Invoice #${r.number} for ${r.customer_name} (AED ${money(Number(r.total))}) is ${(Number(r.total) / Number(r.avg_amt)).toFixed(1)}x the average invoice amount.`,
+      ...copy("anomaly.unusualInvoice", {
+        number: r.number,
+        customer: r.customer_name,
+        amount: money(Number(r.total)),
+        ratio: (Number(r.total) / Number(r.avg_amt)).toFixed(1),
+      }),
       amount: Number(r.total),
       date: ds(r.d),
       relatedId: r.id,
@@ -228,7 +258,11 @@ async function weekendEntries(companyId: string, out: Anomaly[]) {
       type: "weekend_transaction",
       rule: "weekend_transaction",
       severity: "info",
-      description: `Journal entry ${r.entry_number} dated ${r.dow === 6 ? "Saturday" : "Sunday"} ${ds(r.d)} for AED ${money(Number(r.total_debit))}. UAE businesses typically don't transact on weekends.`,
+      ...copy(r.dow === 6 ? "anomaly.weekendSaturday" : "anomaly.weekendSunday", {
+        number: r.entry_number,
+        date: ds(r.d),
+        amount: money(Number(r.total_debit)),
+      }),
       amount: Number(r.total_debit),
       date: ds(r.d),
       relatedId: r.id,
@@ -250,7 +284,10 @@ async function roundNumbers(companyId: string, out: Anomaly[]) {
       type: "round_number",
       rule: "round_number",
       severity: "info",
-      description: `Receipt from ${r.merchant || "Unknown"} has a perfectly round amount of AED ${money(Number(r.amount))}. Round amounts may indicate estimates rather than actual transactions.`,
+      ...copy("anomaly.roundReceipt", {
+        merchant: r.merchant || "Unknown",
+        amount: money(Number(r.amount)),
+      }),
       amount: Number(r.amount),
       date: r.d ? ds(r.d) : uaeToday(),
       relatedId: r.id,
@@ -277,7 +314,11 @@ async function duplicateVendors(companyId: string, out: Anomaly[]) {
       type: "duplicate_vendor",
       rule: "duplicate_vendor",
       severity: "warning",
-      description: `${r.merchant} billed AED ${money(Number(r.amount))} twice within ${Math.ceil(Math.abs(Number(r.gap)))} day(s). This may be a duplicate charge.`,
+      ...copy("anomaly.duplicateCharge", {
+        merchant: r.merchant,
+        amount: money(Number(r.amount)),
+        days: Math.ceil(Math.abs(Number(r.gap))),
+      }),
       amount: Number(r.amount),
       date: ds(r.d),
       relatedId: r.id,
@@ -304,7 +345,11 @@ async function duplicateSupplierInvoices(companyId: string, out: Anomaly[]) {
       type: "duplicate_supplier_invoice",
       rule: "duplicate_supplier_invoice",
       severity: "critical",
-      description: `Supplier invoice number ${r.bill_number} from ${r.vendor_name} was entered more than once (AED ${money(Number(r.total_amount))}). Check for a duplicate payment.`,
+      ...copy("anomaly.duplicateSupplierInvoice", {
+        number: r.bill_number,
+        vendor: r.vendor_name,
+        amount: money(Number(r.total_amount)),
+      }),
       amount: Number(r.total_amount),
       date: ds(r.d),
       relatedId: r.id,
@@ -331,7 +376,13 @@ async function vatAndTrn(companyId: string, out: Anomaly[]) {
       type: "vat_rate_mismatch",
       rule: "vat_rate_mismatch",
       severity: "warning",
-      description: `Invoice #${r.number} for ${r.customer_name}: VAT AED ${money(Number(r.vat_amount))} is not 5% of the net AED ${money(Number(r.subtotal))} (expected AED ${money(Math.round(Number(r.subtotal) * 5) / 100)}).`,
+      ...copy("anomaly.vatMismatchInvoice", {
+        number: r.number,
+        customer: r.customer_name,
+        vat: money(Number(r.vat_amount)),
+        net: money(Number(r.subtotal)),
+        expected: money(Math.round(Number(r.subtotal) * 5) / 100),
+      }),
       amount: Number(r.vat_amount),
       date: ds(r.d),
       relatedId: r.id,
@@ -351,7 +402,11 @@ async function vatAndTrn(companyId: string, out: Anomaly[]) {
       type: "vat_rate_mismatch",
       rule: "vat_rate_mismatch",
       severity: "warning",
-      description: `Receipt from ${r.merchant || "Unknown"}: VAT AED ${money(Number(r.vat_amount))} is not 5% of the net AED ${money(Number(r.amount))}.`,
+      ...copy("anomaly.vatMismatchReceipt", {
+        merchant: r.merchant || "Unknown",
+        vat: money(Number(r.vat_amount)),
+        net: money(Number(r.amount)),
+      }),
       amount: Number(r.vat_amount),
       date: r.d ? ds(r.d) : uaeToday(),
       relatedId: r.id,
@@ -374,7 +429,11 @@ async function vatAndTrn(companyId: string, out: Anomaly[]) {
       type: "vat_rate_mismatch",
       rule: "vat_rate_mismatch",
       severity: "warning",
-      description: `Vendor bill from ${r.vendor_name}: VAT AED ${money(Number(r.vat_amount))} is not 5% of the net AED ${money(Number(r.subtotal))}.`,
+      ...copy("anomaly.vatMismatchBill", {
+        vendor: r.vendor_name,
+        vat: money(Number(r.vat_amount)),
+        net: money(Number(r.subtotal)),
+      }),
       amount: Number(r.vat_amount),
       date: ds(r.d),
       relatedId: r.id,
@@ -402,9 +461,12 @@ async function vatAndTrn(companyId: string, out: Anomaly[]) {
       type: rule,
       rule,
       severity: missing ? "warning" : "warning",
-      description: missing
-        ? `Vendor bill from ${r.vendor_name} carries AED ${money(Number(r.vat_amount))} input VAT but no supplier TRN. Input VAT is not recoverable without a valid TRN.`
-        : `Vendor bill from ${r.vendor_name} has a malformed TRN "${r.vendor_trn}" (a UAE TRN is 15 digits).`,
+      ...(missing
+        ? copy("anomaly.trnMissingBill", {
+            vendor: r.vendor_name,
+            vat: money(Number(r.vat_amount)),
+          })
+        : copy("anomaly.trnMalformedBill", { vendor: r.vendor_name, trn: r.vendor_trn })),
       amount: Number(r.total_amount ?? 0),
       date: ds(r.d),
       relatedId: r.id,
@@ -425,7 +487,11 @@ async function vatAndTrn(companyId: string, out: Anomaly[]) {
       type: "trn_malformed",
       rule: "trn_malformed",
       severity: "warning",
-      description: `Invoice #${r.number} for ${r.customer_name} has a malformed customer TRN "${r.customer_trn}" (a UAE TRN is 15 digits).`,
+      ...copy("anomaly.trnMalformedInvoice", {
+        number: r.number,
+        customer: r.customer_name,
+        trn: r.customer_trn,
+      }),
       amount: Number(r.total),
       date: ds(r.d),
       relatedId: r.id,
@@ -475,7 +541,13 @@ async function crossPeriodBaseline(companyId: string, out: Anomaly[]) {
       type: "cross_period_baseline",
       rule: "cross_period_baseline",
       severity: z.z >= 3 ? "critical" : "warning",
-      description: `${e.name} this month (AED ${money(current)}) is ${z.z.toFixed(1)} standard deviations above its trailing ${baseline.length}-month average (months with activity) (AED ${money(z.mean)}).`,
+      ...copy("anomaly.baselineSpike", {
+        account: e.name,
+        amount: money(current),
+        z: z.z.toFixed(1),
+        months: baseline.length,
+        mean: money(z.mean),
+      }),
       amount: current,
       date: today,
       relatedId: accountId,

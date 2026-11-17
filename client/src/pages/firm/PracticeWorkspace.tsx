@@ -124,7 +124,7 @@ function ClientPicker({
     <div className="space-y-1">
       <Label>{t["firm.client"]}</Label>
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="w-64">
+        <SelectTrigger className="w-64" aria-label={t["firm.client"]}>
           <SelectValue placeholder={t["firm.selectClient"]} />
         </SelectTrigger>
         <SelectContent>
@@ -207,7 +207,7 @@ function TasksTab({ t, canWrite, locale }: { t: Dict; canWrite: boolean; locale:
                       disabled={!canWrite}
                       onValueChange={(status) => setStatus.mutate({ id: task.id, status })}
                     >
-                      <SelectTrigger className="w-36">
+                      <SelectTrigger className="w-36" aria-label={t["firm.status"]}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -425,7 +425,7 @@ function LettersTab({
             <div className="space-y-1">
               <Label>{t["firm.letterKind"]}</Label>
               <Select value={kind} onValueChange={setKind}>
-                <SelectTrigger className="w-44">
+                <SelectTrigger className="w-44" aria-label={t["firm.letterKind"]}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -441,7 +441,7 @@ function LettersTab({
             <div className="space-y-1">
               <Label>{t["firm.billingCycle"]}</Label>
               <Select value={cycle} onValueChange={setCycle}>
-                <SelectTrigger className="w-36">
+                <SelectTrigger className="w-36" aria-label={t["firm.billingCycle"]}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -540,7 +540,7 @@ function FilingTab({
           <div className="space-y-1">
             <Label>{t["firm.filingType"]}</Label>
             <Select value={filingType} onValueChange={setFilingType}>
-              <SelectTrigger className="w-56">
+              <SelectTrigger className="w-56" aria-label={t["firm.filingType"]}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

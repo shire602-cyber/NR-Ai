@@ -757,10 +757,10 @@ function Router() {
               <RedirectTo to="/firm/clients" />
             </Route>
             <Route path="/admin/clients/:id/documents">
-              {(params) => <RedirectTo to={`/firm/clients/${params.id}`} />}
+              {(params) => <RedirectTo to={`/firm/clients/${params.id}?tab=documents`} />}
             </Route>
             <Route path="/admin/clients/:id/tasks">
-              {(params) => <RedirectTo to={`/firm/clients/${params.id}`} />}
+              {(params) => <RedirectTo to={`/firm/clients/${params.id}?tab=tasks`} />}
             </Route>
             <Route path="/admin/clients/:id">
               {(params) => <RedirectTo to={`/firm/clients/${params.id}`} />}

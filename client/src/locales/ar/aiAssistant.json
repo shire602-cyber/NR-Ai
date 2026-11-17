@@ -36,5 +36,17 @@
   "autoReconcile.clickRunAutoReconcileTo": "اضغط «تشغيل المطابقة التلقائية» لفحص معاملاتك البنكية غير المطابقة وإيجاد قيود اليومية والفواتير والإيصالات المطابقة تلقائياً.",
   "autoReconcile.runAutoReconcile": "تشغيل المطابقة التلقائية",
   "anomalyDetection.info": "معلومة",
-  "anomalyDetection.filter": "تصفية:"
+  "anomalyDetection.filter": "تصفية:",
+  "anomalyChecks.eyebrow": "التحليلات",
+  "anomalyChecks.pageDescription": "فحوصات قائمة على القواعد: التكرار والمبالغ غير المعتادة وضريبة القيمة المضافة والأرقام الضريبية.",
+  "anomalyChecks.scanComplete": "اكتمل الفحص",
+  "anomalyChecks.newAlerts": "تنبيهات جديدة: {count}",
+  "anomalyChecks.latestAlert": "آخر تنبيه مسجّل: {date}",
+  "anomalyChecks.emptyBody": "لا توجد تنبيهات مفتوحة. شغّل الفحص للتحقق من أحدث المعاملات.",
+  "anomalyChecks.noneForSeverity": "لا توجد تنبيهات بدرجة {severity}. جرّب تغيير التصفية.",
+  "anomalyChecks.typeJournalEntry": "قيد يومية",
+  "anomalyChecks.typeReceipt": "إيصال",
+  "anomalyChecks.typeInvoice": "فاتورة",
+  "anomalyChecks.typeVendorBill": "فاتورة مورد",
+  "anomalyChecks.typeAccount": "حساب"
 }

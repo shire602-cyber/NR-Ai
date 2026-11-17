@@ -11,6 +11,7 @@ import { createLogger } from "../config/logger";
 import { listJobs, registerJob } from "../platform/job-registry";
 import { assertReportAccess } from "../reporting/http";
 import { detectAnomalies, type Anomaly } from "../services/anomaly-detection.service";
+import { describeAnomalyText } from "../../shared/server-copy";
 import { zText, zUuid } from "../../shared/validators/primitives";
 
 const log = createLogger("anomalies");
@@ -129,6 +130,8 @@ async function listUnresolved(companyId: string) {
     rule: alert.rule ?? null,
     severity: toUiSeverity(alert.severity),
     description: alert.description,
+    // Same sentence as key + params (rows stored before D4 are mapped back on read).
+    message: describeAnomalyText(alert.description),
     // Real transaction facts; alerts raised before W3-E have no amount/date on record.
     amount: alert.amount ?? null,
     date: alert.transactionDate ?? alert.createdAt.toISOString(),

@@ -17,6 +17,7 @@ import { createLogger } from "../config/logger";
 import { buildLimiter, limiterProfiles } from "../middleware/rateLimit";
 import { aiErrorBody } from "../services/ai/usage-meter";
 import { errorCode, errorMessage } from "../errors";
+import { describeCategorisationReason } from "../../shared/server-copy";
 
 const log = createLogger("ai-gl-routes");
 
@@ -70,7 +71,14 @@ export function registerAIGLRoutes(app: Express) {
       query += " ORDER BY q.created_at DESC";
 
       const { rows } = await pool.query(query, params);
-      res.json(rows);
+      // `ai_reason` keeps the stored English sentence; `ai_reason_message` is the same sentence as
+      // key + params for the rule-matched and operator notes (null for the model's own text).
+      res.json(
+        rows.map((row: { ai_reason: string | null }) => ({
+          ...row,
+          ai_reason_message: describeCategorisationReason(row.ai_reason),
+        }))
+      );
     })
   );
 

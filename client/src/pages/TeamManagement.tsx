@@ -69,7 +69,6 @@ import {
   User,
   Mail,
   Trash2,
-  Edit,
   Check,
   X,
   Loader2,
@@ -187,12 +186,9 @@ export default function TeamManagement() {
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
-  const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<CompanyRole>("accountant");
-  const [newRole, setNewRole] = useState<CompanyRole | "">("");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
 
@@ -271,8 +267,6 @@ export default function TeamManagement() {
     onSuccess: () => {
       invalidateTeam();
       toast({ title: tr(COPY.updated) });
-      setEditDialogOpen(false);
-      setSelectedMember(null);
     },
     onError,
   });
@@ -304,17 +298,6 @@ export default function TeamManagement() {
       .join("")
       .toUpperCase()
       .slice(0, 2);
-
-  const handleEditMember = (member: TeamMember) => {
-    setSelectedMember(member);
-    setNewRole(member.role);
-    setEditDialogOpen(true);
-  };
-
-  const handleUpdateRole = () => {
-    if (!selectedMember || !newRole) return;
-    updateRoleMutation.mutate({ memberId: selectedMember.id, role: newRole });
-  };
 
   const copyInviteLink = async () => {
     if (!inviteLink) return;
@@ -423,16 +406,41 @@ export default function TeamManagement() {
                         </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-3">
-                        {getRoleBadge(member.role)}
+                        {canManage && !ownerLocked ? (
+                          <Select
+                            value={member.role}
+                            onValueChange={(role) =>
+                              updateRoleMutation.mutate({
+                                memberId: member.id,
+                                role: role as CompanyRole,
+                              })
+                            }
+                            disabled={updateRoleMutation.isPending}
+                          >
+                            <SelectTrigger
+                              className="h-9 w-44"
+                              aria-label={`${t["pages.teamEditRole"]}: ${member.user.name}`}
+                              data-testid={`select-role-${member.id}`}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {/* A member's current role stays listed even when it cannot be granted. */}
+                              {(grantable.includes(member.role)
+                                ? grantable
+                                : [member.role, ...grantable]
+                              ).map((role) => (
+                                <SelectItem key={role} value={role}>
+                                  {roleLabel(role)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          getRoleBadge(member.role)
+                        )}
                         {canManage && (
                           <RowActions>
-                            <RowActionButton
-                              icon={Edit}
-                              label={t["pages.teamEditRole"]}
-                              onClick={() => handleEditMember(member)}
-                              disabled={ownerLocked}
-                              data-testid={`button-edit-${member.id}`}
-                            />
                             <RowActionButton
                               icon={Trash2}
                               label={t["pages.teamRemoveMember"]}
@@ -591,54 +599,6 @@ export default function TeamManagement() {
               <Button onClick={copyInviteLink} data-testid="button-copy-invite-link">
                 <Copy className="w-4 h-4 me-2" />
                 {tr(COPY.copy)}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>{t["pages.teamEditRole2"]}</DialogTitle>
-              <DialogDescription>
-                {selectedMember && (
-                  <span>
-                    {t["pages.teamChangeRoleFor"]} {selectedMember.user.name}
-                  </span>
-                )}
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>{t["pages.teamNewRole"]}</Label>
-                <Select value={newRole} onValueChange={(v) => setNewRole(v as CompanyRole)}>
-                  <SelectTrigger data-testid="select-new-role">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {grantable.map((role) => (
-                      <SelectItem key={role} value={role}>
-                        <div className="flex items-center gap-2">
-                          {ROLE_ICONS[role]}
-                          <span>{roleLabel(role)}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-                {locale === "ar" ? "إلغاء" : "Cancel"}
-              </Button>
-              <Button
-                onClick={handleUpdateRole}
-                disabled={updateRoleMutation.isPending}
-                data-testid="button-confirm-update"
-              >
-                {updateRoleMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
-                {t["pages.teamUpdateRole"]}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -97,8 +97,13 @@ describe("consolidated navigation redirects (App source)", () => {
   it("R15-09: legacy /admin/clients pages redirect to /firm/clients and the admin entry is deduplicated", () => {
     expect(redirectTargetFor("/admin/clients")).toBe("/firm/clients");
     expect(redirectTargetFor("/admin/clients/:id")).toBe("/firm/clients/${params.id}");
-    expect(redirectTargetFor("/admin/clients/:id/documents")).toBe("/firm/clients/${params.id}");
-    expect(redirectTargetFor("/admin/clients/:id/tasks")).toBe("/firm/clients/${params.id}");
+    // WP-E2: documents and tasks are real tabs of the client profile.
+    expect(redirectTargetFor("/admin/clients/:id/documents")).toBe(
+      "/firm/clients/${params.id}?tab=documents"
+    );
+    expect(redirectTargetFor("/admin/clients/:id/tasks")).toBe(
+      "/firm/clients/${params.id}?tab=tasks"
+    );
     expect(redirectTargetFor("/admin")).toBe("/admin/users");
     expect(app.match(/<Route path="\/admin"/g)?.length).toBe(1);
     expect(app.match(/<Route path="\/admin\/users"/g)?.length).toBe(1);

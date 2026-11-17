@@ -1,19 +1,14 @@
 import { T } from "@/components/layout/T";
 import { DatePicker } from "@/components/ui/date-picker";
+import { StatCard } from "@/components/ui/stat-card";
 import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format, parseISO, differenceInDays } from "date-fns";
-import {
-  AlertTriangle,
-  CalendarDays,
-  CheckCircle2,
-  FileText,
-  Plus,
-  Send,
-  Sparkles,
-} from "lucide-react";
+import { localizeServerText } from "@shared/server-copy";
+import { formatDate } from "@/lib/format-date";
+import { CheckCircle2, Plus, Send } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -81,6 +76,8 @@ interface ChaseQueueItem {
 interface ComplianceEvent {
   id: string;
   eventType: string;
+  title?: string;
+  titleAr?: string | null;
   description: string;
   eventDate: string;
   reminderDays: string;
@@ -94,8 +91,13 @@ interface Effectiveness {
   avgDaysToUpload: number | null;
 }
 
-function humanize(s: string) {
-  return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+/** Catalog label of a document type, calendar event type or chase level (the API sends the id). */
+function enumLabel(
+  t: Record<string, string>,
+  kind: "docType" | "eventType" | "chaseLevel",
+  value: string
+): string {
+  return t[`firmOps.${kind}_${value}`] ?? value.replace(/_/g, " ");
 }
 
 function levelBadgeColor(level: string) {
@@ -114,7 +116,7 @@ function levelBadgeColor(level: string) {
 }
 
 export default function DocumentChasing() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: companyLoading } = useDefaultCompany();
   const [showAddRequirement, setShowAddRequirement] = useState(false);
@@ -332,31 +334,16 @@ export default function DocumentChasing() {
 
       {/* Top stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <StatCard label={t["pages.missingDocuments"]} value={stats.total} />
+        <StatCard label={t["components.statusOverdue"]} value={stats.overdue} />
+        <StatCard label={t["documentChasing.dueIn14Days"]} value={stats.dueSoon} />
         <StatCard
-          title={t["pages.missingDocuments"]}
-          value={stats.total}
-          icon={<FileText className="w-5 h-5 text-info" />}
-        />
-        <StatCard
-          title={t["components.statusOverdue"]}
-          value={stats.overdue}
-          icon={<AlertTriangle className="w-5 h-5 text-destructive" />}
-          tone={stats.overdue > 0 ? "danger" : "normal"}
-        />
-        <StatCard
-          title={t["documentChasing.dueIn14Days"]}
-          value={stats.dueSoon}
-          icon={<CalendarDays className="w-5 h-5 text-warning" />}
-          tone={stats.dueSoon > 0 ? "warning" : "normal"}
-        />
-        <StatCard
-          title={t["documentChasing.responseRate"]}
+          label={t["documentChasing.responseRate2"]}
           value={
             effectivenessQuery.data
               ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
               : "—"
           }
-          icon={<Sparkles className="w-5 h-5 text-success" />}
         />
       </div>
 
@@ -412,18 +399,26 @@ export default function DocumentChasing() {
                         data-testid="row-missing-doc"
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium">{humanize(r.documentType)}</div>
+                          <div className="font-medium">
+                            {enumLabel(t, "docType", r.documentType)}
+                          </div>
                           {r.description && (
                             <div className="text-sm text-muted-foreground line-clamp-1">
                               {r.description}
                             </div>
                           )}
                         </div>
-                        <div className="text-sm text-muted-foreground">Due {format(due, "PP")}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {formatMessage(t["firmOps.chaseDue"], { date: formatDate(due, locale) })}
+                        </div>
                         {isOverdue ? (
-                          <Badge variant="destructive">{daysFromDue}d overdue</Badge>
+                          <Badge variant="destructive">
+                            {formatMessage(t["firmOps.chaseDaysOverdue"], { n: daysFromDue })}
+                          </Badge>
                         ) : (
-                          <Badge variant="secondary">in {Math.abs(daysFromDue)}d</Badge>
+                          <Badge variant="secondary">
+                            {formatMessage(t["firmOps.chaseInDays"], { n: Math.abs(daysFromDue) })}
+                          </Badge>
                         )}
                         <Button
                           variant="outline"
@@ -467,14 +462,21 @@ export default function DocumentChasing() {
                       data-testid="row-queue-item"
                     >
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium">{humanize(item.requirement.documentType)}</div>
+                        <div className="font-medium">
+                          {enumLabel(t, "docType", item.requirement.documentType)}
+                        </div>
                         <div className="text-sm text-muted-foreground">
-                          Due {format(parseISO(item.requirement.dueDate), "PP")} ·{" "}
-                          {item.daysOverdue > 0 ? `${item.daysOverdue}d overdue` : "due now"}
+                          {formatMessage(t["firmOps.chaseDue"], {
+                            date: formatDate(item.requirement.dueDate, locale),
+                          })}{" "}
+                          ·{" "}
+                          {item.daysOverdue > 0
+                            ? formatMessage(t["firmOps.chaseDaysOverdue"], { n: item.daysOverdue })
+                            : t["firmOps.chaseDueNow"]}
                         </div>
                       </div>
                       <Badge className={levelBadgeColor(item.nextLevel)}>
-                        {humanize(item.nextLevel)}
+                        {enumLabel(t, "chaseLevel", item.nextLevel)}
                       </Badge>
                       <Button
                         variant="outline"
@@ -513,9 +515,7 @@ export default function DocumentChasing() {
                 <CardTitle>
                   <T k="pages.complianceCalendar2" />
                 </CardTitle>
-                <CardDescription>
-                  UAE deadlines (trade licence, visas, FTA filings, ESR).
-                </CardDescription>
+                <CardDescription>{t["firmOps.chaseCalendarDescription"]}</CardDescription>
               </div>
               <Button onClick={() => setShowAddEvent(true)} data-testid="btn-add-event">
                 <Plus className="w-4 h-4 me-2" /> <T k="pages.addDeadline" />
@@ -540,20 +540,30 @@ export default function DocumentChasing() {
                         data-testid="row-event"
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium">{humanize(e.eventType)}</div>
+                          <div className="font-medium">
+                            {enumLabel(t, "eventType", e.eventType)}
+                          </div>
                           <div className="text-sm text-muted-foreground line-clamp-1">
-                            {e.description}
+                            {locale === "ar" && e.titleAr
+                              ? e.titleAr
+                              : localizeServerText(e.description, t)}
                           </div>
                         </div>
-                        <div className="text-sm text-muted-foreground">{format(ed, "PP")}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {formatDate(ed, locale)}
+                        </div>
                         {dUntil < 0 ? (
-                          <Badge variant="destructive">{Math.abs(dUntil)}d overdue</Badge>
+                          <Badge variant="destructive">
+                            {formatMessage(t["firmOps.chaseDaysOverdue"], { n: Math.abs(dUntil) })}
+                          </Badge>
                         ) : dUntil <= 30 ? (
                           <Badge className="bg-warning-subtle text-warning-subtle-foreground">
-                            in {dUntil}d
+                            {formatMessage(t["firmOps.chaseInDays"], { n: dUntil })}
                           </Badge>
                         ) : (
-                          <Badge variant="secondary">in {dUntil}d</Badge>
+                          <Badge variant="secondary">
+                            {formatMessage(t["firmOps.chaseInDays"], { n: dUntil })}
+                          </Badge>
                         )}
                       </div>
                     );
@@ -653,33 +663,6 @@ export default function DocumentChasing() {
   );
 }
 
-function StatCard(props: {
-  title: string;
-  value: number | string;
-  icon: React.ReactNode;
-  tone?: "normal" | "warning" | "danger";
-}) {
-  const ringClass =
-    props.tone === "danger"
-      ? "border-destructive/30 "
-      : props.tone === "warning"
-        ? "border-warning/30 "
-        : "";
-  return (
-    <Card className={ringClass}>
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-sm text-muted-foreground">{props.title}</div>
-            <div className="text-2xl font-bold">{props.value}</div>
-          </div>
-          {props.icon}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
 function Metric({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="border rounded-md p-4">
@@ -695,16 +678,19 @@ function PreviewBody(props: {
   onSend: (msg: string) => void;
   sending: boolean;
 }) {
+  const { t, locale } = useTranslation();
   const [draft, setDraft] = useState(props.item.message);
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <Badge className={levelBadgeColor(props.item.nextLevel)}>
-          {humanize(props.item.nextLevel)}
+          {enumLabel(t, "chaseLevel", props.item.nextLevel)}
         </Badge>
         <span className="text-sm text-muted-foreground">
-          {humanize(props.item.requirement.documentType)} · due{" "}
-          {format(parseISO(props.item.requirement.dueDate), "PP")}
+          {formatMessage(t["firmOps.chaseDueLine"], {
+            doc: enumLabel(t, "docType", props.item.requirement.documentType),
+            date: formatDate(props.item.requirement.dueDate, locale),
+          })}
         </span>
       </div>
       <Label>
@@ -785,16 +771,16 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {DOCUMENT_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {humanize(t)}
+                {DOCUMENT_TYPES.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {enumLabel(t, "docType", type)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
-            <Label htmlFor="docDescription">Description (optional)</Label>
+            <Label htmlFor="docDescription">{t["firmOps.docDescriptionOptional"]}</Label>
             <Input
               id="docDescription"
               value={form.description}
@@ -851,7 +837,7 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
             onClick={() => mutation.mutate(form)}
             disabled={mutation.isPending || !form.dueDate}
           >
-            Add
+            {t["firmOps.add"]}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -919,9 +905,9 @@ function AddComplianceEventDialog(props: {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {COMPLIANCE_EVENT_TYPES.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {humanize(t)}
+                {COMPLIANCE_EVENT_TYPES.map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {enumLabel(t, "eventType", type)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -955,7 +941,7 @@ function AddComplianceEventDialog(props: {
             onClick={() => mutation.mutate(form)}
             disabled={mutation.isPending || !form.description.trim() || !form.eventDate}
           >
-            Add
+            {t["firmOps.add"]}
           </Button>
         </DialogFooter>
       </DialogContent>

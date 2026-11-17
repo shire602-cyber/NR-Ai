@@ -19,13 +19,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { BookkeeperClient } from "./types";
-import {
-  formatAed,
-  formatDays,
-  formatPeriod,
-  hasClientService,
-  ownerPreview,
-} from "./helpers";
+import { formatAed, formatDays, formatPeriod, hasClientService, ownerPreview } from "./helpers";
 import { PriorityBadge, ServiceScopeBadges } from "./badges";
 import { useFirmText } from "./text";
 
@@ -113,7 +107,7 @@ export function OperationsBriefDialog({
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>
-            {client?.companyName ?? b("Client Operations Brief", "ملخص عمليات العميل")}
+            {client?.companyName ?? b("Client operations brief", "ملخص عمليات العميل")}
           </DialogTitle>
           <DialogDescription>
             {client

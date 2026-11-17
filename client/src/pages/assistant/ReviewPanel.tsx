@@ -26,10 +26,12 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import type { CopyDescriptor } from "@shared/server-copy";
 import { accountDisplayName } from "@/lib/account-name";
 import { formatDate } from "@/lib/format-date";
 import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { categorisationReason } from "@/lib/server-message";
 import { cn } from "@/lib/utils";
 import { confidenceWord, type ConfidenceWord } from "./model";
 
@@ -43,6 +45,8 @@ interface QueueItem {
   suggested_account_code: string | null;
   ai_confidence: string;
   ai_reason: string | null;
+  /** The same sentence as key + params for rule-matched and operator notes. */
+  ai_reason_message?: CopyDescriptor | null;
 }
 
 interface AccountOption {
@@ -56,9 +60,16 @@ interface AccountOption {
 type Filter = "all" | "bank" | "checks";
 
 // The classifier's reason is shown only when it explains a suggestion; server notes about
-// configuration (e.g. a provider not being set up) are operator copy and never shown.
+// configuration (e.g. a provider not being set up) are operator copy and never shown. Known
+// sentences render from the catalogs; older operator notes are matched by wording.
 const OPERATOR_NOTE = /openai|not configured|api key|provider|model/i;
-function customerReason(reason: string | null, hasSuggestion: boolean): string | null {
+function customerReason(
+  item: QueueItem,
+  hasSuggestion: boolean,
+  t: Record<string, string | undefined>,
+  locale: string
+): string | null {
+  const reason = categorisationReason(item, t, locale);
   if (!reason || !hasSuggestion || OPERATOR_NOTE.test(reason)) return null;
   return reason;
 }
@@ -221,7 +232,7 @@ export default function ReviewPanel() {
           {bankItems.map((item) => {
             const word = confidenceWord(item.ai_confidence);
             const hasSuggestion = !!item.suggested_account_id;
-            const reason = customerReason(item.ai_reason, hasSuggestion);
+            const reason = customerReason(item, hasSuggestion, t, locale);
             return (
               <li
                 key={item.id}

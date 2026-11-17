@@ -19,6 +19,7 @@ import {
   taxReturnArchive,
   vatReturns,
 } from "../../shared/schema";
+import { describeAnomalyText, type CopyDescriptor } from "../../shared/server-copy";
 
 type Priority = "critical" | "high" | "medium" | "low";
 type ValueLane =
@@ -212,6 +213,9 @@ export interface FirmReviewItem {
   title: string;
   explanation: string;
   suggestedAction: string;
+  /** Anomaly items: the check that raised it and its sentence as key + params (client catalogs). */
+  rule?: string | null;
+  message?: CopyDescriptor | null;
   confidence: number;
   amountAed: number;
   dueDate: Date | null;
@@ -1592,6 +1596,7 @@ export async function buildFirmReviewQueue(
     severity: string;
     title: string;
     description: string;
+    rule: string | null;
     relatedEntityType: string | null;
     relatedEntityId: string | null;
     aiConfidence: number | null;
@@ -1604,6 +1609,7 @@ export async function buildFirmReviewQueue(
       severity: anomalyAlerts.severity,
       title: anomalyAlerts.title,
       description: anomalyAlerts.description,
+      rule: anomalyAlerts.rule,
       relatedEntityType: anomalyAlerts.relatedEntityType,
       relatedEntityId: anomalyAlerts.relatedEntityId,
       aiConfidence: anomalyAlerts.aiConfidence,
@@ -1755,6 +1761,8 @@ export async function buildFirmReviewQueue(
       entityType: row.relatedEntityType ?? "anomaly",
       title: row.title,
       explanation: row.description,
+      rule: row.rule ?? null,
+      message: describeAnomalyText(row.description),
       suggestedAction: "Review the source transaction and resolve or document the exception.",
       confidence: row.aiConfidence ?? 0.55,
       amountAed: 0,

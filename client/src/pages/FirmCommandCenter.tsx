@@ -6,6 +6,7 @@ import type * as React from "react";
  * alerts feed, staff workload visualization, period comparison, and batch ops.
  */
 import { PracticeNav } from "@/components/firm/PracticeNav";
+import { PracticePlanTab } from "@/pages/firm/PracticePlanTab";
 import { StatCard } from "@/components/ui/stat-card";
 import { chartTheme, ChartTooltipContent, formatAxisCompact } from "@/components/ui/chart-theme";
 import { T } from "@/components/layout/T";
@@ -384,19 +385,19 @@ export default function FirmCommandCenter() {
     if (!c) return [];
     return [
       {
-        name: "Previous",
+        name: t["firmOps.periodPrevious"],
         revenue: c.previous.revenue,
         invoices: c.previous.invoices,
         receipts: c.previous.receipts,
       },
       {
-        name: "Current",
+        name: t["firmOps.periodCurrent"],
         revenue: c.current.revenue,
         invoices: c.current.invoices,
         receipts: c.current.receipts,
       },
     ];
-  }, [comparisonQuery.data]);
+  }, [comparisonQuery.data, t]);
 
   // ─── Render ────────────────────────────────────────────────────────
   if (dashboardQuery.isError) {
@@ -524,6 +525,9 @@ export default function FirmCommandCenter() {
           <TabsTrigger value="comparison">
             <T k="pages.periodComparison" />
           </TabsTrigger>
+          <TabsTrigger value="plan" data-testid="command-center-tab-plan">
+            {t["firmOps.tabPlan"]}
+          </TabsTrigger>
         </TabsList>
 
         {/* ─── Client health tab ─── */}
@@ -541,7 +545,11 @@ export default function FirmCommandCenter() {
                   />
                 </div>
                 <Select value={rankBy} onValueChange={(v) => setRankBy(v as RankBy)}>
-                  <SelectTrigger className="w-[200px]" data-testid="select-rank-by">
+                  <SelectTrigger
+                    className="w-[200px]"
+                    aria-label={t["firmOps.ariaRankBy"]}
+                    data-testid="select-rank-by"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -571,21 +579,27 @@ export default function FirmCommandCenter() {
                       icon={Calculator}
                       onConfirm={() => batchVat.mutate(selectedIds)}
                       pending={batchVat.isPending}
-                      description={`Run VAT calculation for ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
+                      description={formatMessage(t["firmOps.batchVatDescription"], {
+                        count: selectedCount,
+                      })}
                     />
                     <BatchActionButton
                       label={t["firmCommandCenter.chasePayments"]}
                       icon={Mail}
                       onConfirm={() => batchChasePayments.mutate(selectedIds)}
                       pending={batchChasePayments.isPending}
-                      description={`Queue payment chase for overdue invoices across ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
+                      description={formatMessage(t["firmOps.batchChasePaymentsDescription"], {
+                        count: selectedCount,
+                      })}
                     />
                     <BatchActionButton
                       label={t["firmCommandCenter.chaseDocuments"]}
                       icon={FileSearch}
                       onConfirm={() => batchChaseDocuments.mutate(selectedIds)}
                       pending={batchChaseDocuments.isPending}
-                      description={`Queue document chase for ${selectedCount} client${selectedCount === 1 ? "" : "s"}.`}
+                      description={formatMessage(t["firmOps.batchChaseDocumentsDescription"], {
+                        count: selectedCount,
+                      })}
                     />
                   </div>
                 </div>
@@ -633,7 +647,9 @@ export default function FirmCommandCenter() {
                         <Checkbox
                           checked={selectedClients.has(c.companyId)}
                           onCheckedChange={() => toggleClient(c.companyId)}
-                          aria-label={`Select ${c.companyName}`}
+                          aria-label={formatMessage(t["firmOps.selectClient"], {
+                            name: c.companyName,
+                          })}
                         />
                       </TableCell>
                       <TableCell className="font-medium">{c.companyName}</TableCell>
@@ -709,7 +725,11 @@ export default function FirmCommandCenter() {
                   value={severityFilter}
                   onValueChange={(v) => setSeverityFilter(v as Severity | "all")}
                 >
-                  <SelectTrigger className="w-[180px]" data-testid="select-severity-filter">
+                  <SelectTrigger
+                    className="w-[180px]"
+                    aria-label={t["firmOps.ariaSeverityFilter"]}
+                    data-testid="select-severity-filter"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -722,7 +742,7 @@ export default function FirmCommandCenter() {
                     <SelectItem value="warning">
                       <T k="pages.warning" />
                     </SelectItem>
-                    <SelectItem value="info">Info</SelectItem>
+                    <SelectItem value="info">{t["anomalyDetection.info"]}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -852,7 +872,11 @@ export default function FirmCommandCenter() {
                   <T k="pages.periodComparison" />
                 </CardTitle>
                 <Select value={granularity} onValueChange={(v) => setGranularity(v as Granularity)}>
-                  <SelectTrigger className="w-[160px]" data-testid="select-granularity">
+                  <SelectTrigger
+                    className="w-[160px]"
+                    aria-label={t["firmOps.ariaGranularity"]}
+                    data-testid="select-granularity"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -907,6 +931,11 @@ export default function FirmCommandCenter() {
               </ResponsiveContainer>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ─── Service plan tab (matrix, planner, VAT workspace; moved off /firm/clients) ─── */}
+        <TabsContent value="plan">
+          <PracticePlanTab />
         </TabsContent>
       </Tabs>
     </div>

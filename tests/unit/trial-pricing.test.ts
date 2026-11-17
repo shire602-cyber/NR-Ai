@@ -237,7 +237,7 @@ describe("/subscription", () => {
     // comparison table carries the AI-credit figure.
     expect(container.querySelector("[data-testid=card-plan-free]")).not.toBeNull();
     const row = [...container.querySelectorAll("tr")].find((r) =>
-      r.querySelector("td")?.textContent?.startsWith("AI Credits/month")
+      r.querySelector("td")?.textContent?.startsWith("AI credits/month")
     );
     expect(row?.querySelectorAll("td")[1]?.textContent).toBe("10");
     expect(getTierLimits("free").aiCreditsPerMonth).toBe(10);

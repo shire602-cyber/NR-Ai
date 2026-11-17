@@ -294,7 +294,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                 ) : (
                   <Play className="w-4 h-4 me-2" />
                 )}
-                Process All
+                {t["firmOps.bulkProcessAll"]}
               </Button>
             </div>
           </CardHeader>
@@ -303,7 +303,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>File</TableHead>
+                    <TableHead>{t["firmOps.bulkColFile"]}</TableHead>
                     <TableHead>
                       <T k="pages.client" />
                     </TableHead>
@@ -352,7 +352,7 @@ function BatchOCRTab({ clients }: { clients: ClientWithStats[] }) {
                         {item.status === "success" && (
                           <Badge className="bg-success-subtle text-success">
                             <CheckCircle2 className="w-3 h-3 me-1" />
-                            Done
+                            {t["firmOps.bulkDone"]}
                           </Badge>
                         )}
                         {item.status === "error" && (
@@ -425,7 +425,7 @@ function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
           ) : (
             <RefreshCw className="w-4 h-4 me-2" />
           )}
-          Prepare All
+          {t["firmOps.bulkPrepareAll"]}
         </Button>
       </div>
 
@@ -517,9 +517,7 @@ function VatQueueTab({ clients: _clients }: { clients: ClientWithStats[] }) {
         <Card className="border-dashed">
           <CardContent className="py-12 text-center">
             <FileText className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
-            <p className="text-muted-foreground">
-              Click "Prepare All" to load VAT period data across all clients.
-            </p>
+            <p className="text-muted-foreground">{t["firmOps.bulkPrepareHint"]}</p>
           </CardContent>
         </Card>
       )}
@@ -622,14 +620,14 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
               </Label>
               <Input
                 className="mt-1"
-                placeholder="e.g. Monthly accounting services — April 2026"
+                placeholder={t["firmOps.bulkServicePlaceholder"]}
                 value={serviceDescription}
                 onChange={(e) => setServiceDescription(e.target.value)}
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Amount (AED excl. VAT)</Label>
+                <Label>{t["firmOps.bulkAmountExcl"]}</Label>
                 <Input
                   className="mt-1"
                   type="number"
@@ -649,8 +647,8 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="0.05">5% (Standard)</SelectItem>
-                    <SelectItem value="0">0% (Zero-rated)</SelectItem>
+                    <SelectItem value="0.05">{t["firmOps.bulkVat5"]}</SelectItem>
+                    <SelectItem value="0">{t["firmOps.bulkVat0"]}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -732,10 +730,9 @@ function BulkInvoicingTab({ clients }: { clients: ClientWithStats[] }) {
           ) : (
             <Play className="w-4 h-4 me-2" />
           )}
-          Generate{" "}
           {selectedIds.size > 0
-            ? `${selectedIds.size} Invoice${selectedIds.size !== 1 ? "s" : ""}`
-            : "Invoices"}
+            ? formatMessage(t["firmOps.bulkGenerate"], { count: selectedIds.size })
+            : t["firmOps.bulkGenerateEmpty"]}
         </Button>
       </div>
 
@@ -882,7 +879,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
           ) : (
             <CheckCircle2 className="w-4 h-4 me-2" />
           )}
-          Run Checklist
+          {t["firmOps.bulkRunChecklist"]}
         </Button>
       </div>
 
@@ -892,7 +889,10 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base">
-                Clients ({selectedIds.size}/{clients.length})
+                {formatMessage(t["firmOps.bulkClientsCount"], {
+                  selected: selectedIds.size,
+                  total: clients.length,
+                })}
               </CardTitle>
               <Button
                 variant="ghost"
@@ -1019,9 +1019,7 @@ function PeriodCloseTab({ clients }: { clients: ClientWithStats[] }) {
         <Card className="border-dashed">
           <CardContent className="py-12 text-center">
             <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
-            <p className="text-muted-foreground">
-              Select clients and click "Run Checklist" to begin the period-close review.
-            </p>
+            <p className="text-muted-foreground">{t["firmOps.bulkCloseHint"]}</p>
           </CardContent>
         </Card>
       )}

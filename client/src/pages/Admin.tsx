@@ -1,7 +1,7 @@
 import { T } from "@/components/layout/T";
 import { StatCard } from "@/components/ui/stat-card";
 import { activityActionLabel, activityEntityLabel } from "@/lib/activity-log-labels";
-import { useTranslation, translateNow } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { Fragment, useState, useEffect } from "react";
@@ -519,10 +519,12 @@ export default function Admin() {
                         <span className="text-muted-foreground">
                           <T k="pageLabels.maxUsers" />
                         </span>
-                        <span>{plan.maxUsers || "Unlimited"}</span>
+                        <span>{plan.maxUsers || t["adminConsole.unlimited"]}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">AI Credits/Month</span>
+                        <span className="text-muted-foreground">
+                          {t["adminConsole.aiCreditsPerMonth"]}
+                        </span>
                         <span>{plan.aiCreditsPerMonth}</span>
                       </div>
                     </div>
@@ -536,7 +538,7 @@ export default function Admin() {
                       data-testid={`button-edit-plan-${plan.id}`}
                     >
                       <Edit2 className="w-4 h-4 me-2" />
-                      Edit
+                      {t["firmOps.edit"]}
                     </Button>
                     <Button
                       variant="outline"
@@ -610,7 +612,7 @@ export default function Admin() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>User</TableHead>
+                    <TableHead>{t["adminConsole.colUser"]}</TableHead>
                     <TableHead>
                       <T k="hr.field.email" />
                     </TableHead>
@@ -648,7 +650,9 @@ export default function Admin() {
                         <TableCell>{user.email}</TableCell>
                         <TableCell>
                           <Badge variant="outline">
-                            {companies.filter((c) => c.id).length} companies
+                            {formatMessage(t["adminConsole.companiesCount"], {
+                              count: companies.filter((c) => c.id).length,
+                            })}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -703,7 +707,7 @@ export default function Admin() {
                 >
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="edit-user-name">Name</Label>
+                      <Label htmlFor="edit-user-name">{t["adminConsole.fieldName"]}</Label>
                       <Input
                         id="edit-user-name"
                         name="name"
@@ -759,7 +763,7 @@ export default function Admin() {
                     <TableHead>
                       <T k="pages.companyName" />
                     </TableHead>
-                    <TableHead>TRN/VAT Number</TableHead>
+                    <TableHead>{t["adminConsole.trnVat"]}</TableHead>
                     <TableHead>
                       <T k="banking.accounts.currency" />
                     </TableHead>
@@ -848,7 +852,7 @@ export default function Admin() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="edit-company-trn">TRN/VAT Number</Label>
+                      <Label htmlFor="edit-company-trn">{t["adminConsole.trnVat"]}</Label>
                       <Input
                         id="edit-company-trn"
                         name="trnVatNumber"
@@ -1016,16 +1020,16 @@ export default function Admin() {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="AED">AED (UAE Dirham)</SelectItem>
-                          <SelectItem value="USD">USD (US Dollar)</SelectItem>
-                          <SelectItem value="EUR">EUR (Euro)</SelectItem>
-                          <SelectItem value="GBP">GBP (British Pound)</SelectItem>
-                          <SelectItem value="SAR">SAR (Saudi Riyal)</SelectItem>
+                          <SelectItem value="AED">{t["adminConsole.curAED"]}</SelectItem>
+                          <SelectItem value="USD">{t["adminConsole.curUSD"]}</SelectItem>
+                          <SelectItem value="EUR">{t["adminConsole.curEUR"]}</SelectItem>
+                          <SelectItem value="GBP">{t["adminConsole.curGBP"]}</SelectItem>
+                          <SelectItem value="SAR">{t["adminConsole.curSAR"]}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label>Default VAT Rate (%)</Label>
+                      <Label>{t["adminConsole.defaultVatRate"]}</Label>
                       <Input
                         type="number"
                         value={systemSettings.defaultVatRate}
@@ -1049,7 +1053,7 @@ export default function Admin() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Trial Period (Days)</Label>
+                      <Label>{t["adminConsole.trialPeriodDays"]}</Label>
                       <Input
                         type="number"
                         value={systemSettings.trialPeriod}
@@ -1107,7 +1111,7 @@ export default function Admin() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>From Email (Notifications)</Label>
+                    <Label>{t["adminConsole.fromEmail"]}</Label>
                     <Input
                       type="email"
                       placeholder="noreply@muhasib.ai"
@@ -1262,9 +1266,13 @@ export default function Admin() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="gpt-4o">GPT-4o (Recommended)</SelectItem>
-                      <SelectItem value="gpt-4-turbo">GPT-4 Turbo</SelectItem>
-                      <SelectItem value="gpt-3.5-turbo">GPT-3.5 Turbo</SelectItem>
+                      <SelectItem value="gpt-4o">{t["adminConsole.modelRecommended"]}</SelectItem>
+                      <SelectItem value="gpt-4-turbo">
+                        <span translate="no">GPT-4 Turbo</span>
+                      </SelectItem>
+                      <SelectItem value="gpt-3.5-turbo">
+                        <span translate="no">GPT-3.5 Turbo</span>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -1476,6 +1484,7 @@ function PlanForm({
   onSubmit: (data: Partial<SubscriptionPlan>) => void;
   isPending: boolean;
 }) {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState<Partial<SubscriptionPlan>>(
     initialData || {
       name: "",
@@ -1599,7 +1608,7 @@ function PlanForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="aiCredits">AI Credits/Month</Label>
+          <Label htmlFor="aiCredits">{t["adminConsole.aiCreditsPerMonth"]}</Label>
           <Input
             id="aiCredits"
             type="number"
@@ -1652,7 +1661,7 @@ function PlanForm({
           ) : (
             <Save className="w-4 h-4 me-2" />
           )}
-          Save Plan
+          {t["adminConsole.savePlan"]}
         </Button>
       </DialogFooter>
     </form>

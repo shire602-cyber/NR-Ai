@@ -24,8 +24,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { format } from "date-fns";
-import { useTranslation } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -107,7 +107,7 @@ function TrafficDot({ status }: { status: HealthStatus | VatStatus | DeadlineSta
   return (
     <span
       className={`inline-block w-2.5 h-2.5 rounded-full ${colorMap[status] ?? "bg-muted-foreground/30"}`}
-      title={status}
+      aria-hidden
     />
   );
 }
@@ -138,21 +138,23 @@ function HealthBadge({ status }: { status: HealthStatus }) {
 }
 
 function DeadlineBadge({ status, daysTilDue }: { status: DeadlineStatus; daysTilDue: number }) {
+  const { t } = useTranslation();
+  const n = Math.abs(daysTilDue);
   if (status === "overdue") {
     return (
       <Badge className="bg-danger-subtle text-danger-subtle-foreground border-destructive/30">
-        {Math.abs(daysTilDue)}d overdue
+        {formatMessage(t["firmOps.healthDaysOverdue"], { n })}
       </Badge>
     );
   }
   if (status === "due-soon") {
     return (
       <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30">
-        Due in {daysTilDue}d
+        {formatMessage(t["firmOps.healthDueInDays"], { n })}
       </Badge>
     );
   }
-  return <Badge variant="outline">In {daysTilDue}d</Badge>;
+  return <Badge variant="outline">{formatMessage(t["firmOps.healthInDays"], { n })}</Badge>;
 }
 
 function SortIcon({
@@ -179,7 +181,7 @@ const VAT_ORDER: Record<VatStatus, number> = { overdue: 0, "due-soon": 1, "on-tr
 
 export default function FirmHealth() {
   const [, navigate] = useLocation();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [sortField, setSortField] = useState<SortField>("health");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
@@ -228,7 +230,11 @@ export default function FirmHealth() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <PageHeader eyebrow="Firm" title={t.healthDashboard} description={t.healthDashboardDesc} />
+      <PageHeader
+        eyebrow={t["firm.firmLabel"]}
+        title={t.healthDashboard}
+        description={t.healthDashboardDesc}
+      />
       <PracticeNav />
 
       {/* Summary cards */}
@@ -352,7 +358,9 @@ export default function FirmHealth() {
                         <div>
                           <p className="font-medium">{client.companyName}</p>
                           {client.trn && (
-                            <p className="text-xs text-muted-foreground">TRN: {client.trn}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatMessage(t["firmOps.healthTrn"], { trn: client.trn })}
+                            </p>
                           )}
                         </div>
                       </TableCell>
@@ -361,7 +369,7 @@ export default function FirmHealth() {
                           <TrafficDot status={client.vatStatus.status} />
                           <span className="text-sm">
                             {client.vatStatus.nextDueDate
-                              ? format(new Date(client.vatStatus.nextDueDate), "MMM d")
+                              ? formatDate(client.vatStatus.nextDueDate, locale)
                               : "—"}
                           </span>
                         </div>
@@ -371,8 +379,10 @@ export default function FirmHealth() {
                           <TrafficDot status={client.arHealth.status} />
                           <span className="text-sm">
                             {client.arHealth.overdueCount > 0
-                              ? `${client.arHealth.overdueCount} overdue`
-                              : "Clear"}
+                              ? formatMessage(t["firmOps.healthOverdueCount"], {
+                                  n: client.arHealth.overdueCount,
+                                })
+                              : t["firmOps.healthClear"]}
                           </span>
                         </div>
                       </TableCell>
@@ -381,8 +391,10 @@ export default function FirmHealth() {
                           <TrafficDot status={client.bankRecStatus.status} />
                           <span className="text-sm">
                             {client.bankRecStatus.unreconciledCount > 0
-                              ? `${client.bankRecStatus.unreconciledCount} unmatched`
-                              : "Clear"}
+                              ? formatMessage(t["firmOps.healthUnmatchedCount"], {
+                                  n: client.bankRecStatus.unreconciledCount,
+                                })
+                              : t["firmOps.healthClear"]}
                           </span>
                         </div>
                       </TableCell>
@@ -390,14 +402,14 @@ export default function FirmHealth() {
                         <div className="flex items-center gap-2">
                           <TrafficDot status={client.trialBalanceStatus.status} />
                           <span className="text-sm">
-                            {client.trialBalanceStatus.balanced ? "Balanced" : "Off"}
+                            {client.trialBalanceStatus.balanced
+                              ? t["firmOps.healthBalanced"]
+                              : t["firmOps.healthOff"]}
                           </span>
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {client.lastActivity
-                          ? format(new Date(client.lastActivity), "MMM d, yyyy")
-                          : "—"}
+                        {client.lastActivity ? formatDate(client.lastActivity, locale) : "—"}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -434,12 +446,14 @@ export default function FirmHealth() {
                     <TrafficDot status={dl.status} />
                     <div>
                       <p className="font-medium text-sm">{dl.companyName}</p>
-                      <p className="text-xs text-muted-foreground">{dl.type}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t["firmOps.healthDeadlineVat"]}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground">
-                      {format(new Date(dl.dueDate), "MMM d, yyyy")}
+                      {formatDate(dl.dueDate, locale)}
                     </span>
                     <DeadlineBadge status={dl.status} daysTilDue={dl.daysTilDue} />
                   </div>

@@ -243,7 +243,7 @@ function SendersTab({
                 <T k="pages.client" />
               </Label>
               <Select value={companyId} onValueChange={setCompanyId}>
-                <SelectTrigger data-testid="select-client">
+                <SelectTrigger aria-label={t["pages.client"]} data-testid="select-client">
                   <SelectValue placeholder={t["bulkOperations.selectClient"]} />
                 </SelectTrigger>
                 <SelectContent>
@@ -270,7 +270,7 @@ function SendersTab({
             <div className="space-y-1.5">
               <Label>{t["emailIntake.labelOptional"]}</Label>
               <Input
-                placeholder="e.g. Accounts payable"
+                placeholder={t["firmOps.intakeLabelPlaceholder"]}
                 value={label}
                 onChange={(e) => setLabel(e.target.value)}
               />
@@ -435,7 +435,10 @@ function CompletenessTab({
                 <T k="pages.client" />
               </Label>
               <Select value={companyId} onValueChange={setCompanyId}>
-                <SelectTrigger data-testid="select-completeness-client">
+                <SelectTrigger
+                  aria-label={t["pages.client"]}
+                  data-testid="select-completeness-client"
+                >
                   <SelectValue placeholder={t["bulkOperations.selectClient"]} />
                 </SelectTrigger>
                 <SelectContent>
@@ -518,11 +521,11 @@ function CompletenessTab({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
+                    <TableHead>{t["firmOps.colDate"]}</TableHead>
                     <TableHead>
                       <T k="pages.description" />
                     </TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>{t["firmOps.colType"]}</TableHead>
                     <TableHead data-numeric>
                       <T k="pages.amount" />
                     </TableHead>
@@ -593,7 +596,6 @@ function EmailTasksTab({
       toast({ title: t["firm.emailTaskFailed"], description: e.message, variant: "destructive" }),
   });
   const messages = data?.messages ?? [];
-  const note = status ? (locale === "ar" ? status.note.ar : status.note.en) : null;
 
   return (
     <div className="space-y-4">
@@ -606,7 +608,9 @@ function EmailTasksTab({
             <T k="firm.emailTasksMailboxExternal" />
           )}
         </AlertTitle>
-        <AlertDescription>{note ?? <T k="firm.emailTasksHint" />}</AlertDescription>
+        <AlertDescription>
+          <T k="firm.emailTasksHint" />
+        </AlertDescription>
       </Alert>
       <Card>
         <CardHeader>
@@ -620,7 +624,7 @@ function EmailTasksTab({
               <T k="pages.client" />
             </Label>
             <Select value={companyId} onValueChange={setCompanyId}>
-              <SelectTrigger data-testid="select-email-task-client">
+              <SelectTrigger aria-label={t["pages.client"]} data-testid="select-email-task-client">
                 <SelectValue placeholder={t["firm.selectClient"]} />
               </SelectTrigger>
               <SelectContent>
