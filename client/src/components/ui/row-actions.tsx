@@ -12,12 +12,17 @@ import {
 import { useTranslation } from "@/lib/i18n";
 
 /**
- * Row actions (CTO issue 3): at most two visible quiet icon buttons, everything else in
- * one ⋯ menu. Icons are muted (never coloured); destructive items live in the menu.
+ * Row actions (spec 2.4): at most ONE visible quiet icon button plus one ⋯ menu. Icons are
+ * muted (never coloured); destructive items live in the menu.
  *
- *   <RowActions menu={<><DropdownMenuItem …/>…</>}>
+ *   <RowActions maxInline={1} menu={<><DropdownMenuItem …/>…</>}>
  *     <RowActionButton label={t.edit} icon={Pencil} onClick={…} />
+ *     <RowActionButton label={t.download} icon={Download} onClick={…} />  // → moves into ⋯
  *   </RowActions>
+ *
+ * `maxInline` moves the RowActionButtons after the first N into the top of the menu (they keep
+ * their `data-testid`). New code passes `maxInline={1}`; without it every child stays inline
+ * (legacy screens, until their package converts them).
  */
 type RowActionButtonElement = React.ReactElement<{
   label: string;
@@ -47,6 +52,7 @@ export function RowActions({
   className,
   menuTestId,
   collapseOnMobile = false,
+  maxInline,
 }: {
   /** Up to two RowActionButton elements. */
   children?: React.ReactNode;
@@ -60,16 +66,23 @@ export function RowActions({
    * menu instead (row-card tables keep one 44px action target per row).
    */
   collapseOnMobile?: boolean;
+  /** Spec 2.4: how many RowActionButtons stay visible (use 1); the rest move into the menu. */
+  maxInline?: number;
 }) {
   const { t } = useTranslation();
-  const mobileItems = collapseOnMobile ? rowActionButtons(children) : [];
-  const hasMenu = Boolean(menu) || mobileItems.length > 0;
+  const buttons = rowActionButtons(children);
+  const limited = maxInline !== undefined && buttons.length > maxInline;
+  const inline = limited ? buttons.slice(0, maxInline) : null;
+  const moved = limited ? buttons.slice(maxInline) : [];
+  const visibleChildren = inline ?? children;
+  const mobileItems = collapseOnMobile ? (inline ?? buttons) : [];
+  const hasMenu = Boolean(menu) || mobileItems.length > 0 || moved.length > 0;
   return (
     <div className={cn("flex items-center justify-end gap-0.5", className)}>
       {collapseOnMobile ? (
-        <div className="hidden items-center gap-0.5 md:flex">{children}</div>
+        <div className="hidden items-center gap-0.5 md:flex">{visibleChildren}</div>
       ) : (
-        children
+        visibleChildren
       )}
       {hasMenu ? (
         <DropdownMenu>
@@ -102,9 +115,27 @@ export function RowActions({
                 </DropdownMenuItem>
               );
             })}
-            {mobileItems.length > 0 && menu ? (
+            {mobileItems.length > 0 && (menu || moved.length > 0) ? (
               <DropdownMenuSeparator className="md:hidden" />
             ) : null}
+            {moved.map((item, index) => {
+              const Icon = item.props.icon;
+              const testId = (item.props as { "data-testid"?: string })["data-testid"];
+              return (
+                <DropdownMenuItem
+                  key={`row-action-moved-${index}`}
+                  disabled={item.props.disabled}
+                  data-testid={testId}
+                  onSelect={() =>
+                    item.props.onClick?.({} as React.MouseEvent<HTMLButtonElement, MouseEvent>)
+                  }
+                >
+                  <Icon aria-hidden />
+                  {item.props.label}
+                </DropdownMenuItem>
+              );
+            })}
+            {moved.length > 0 && menu ? <DropdownMenuSeparator /> : null}
             {menu}
           </DropdownMenuContent>
         </DropdownMenu>

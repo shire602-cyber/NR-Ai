@@ -3,6 +3,7 @@ import * as TabsPrimitive from "@radix-ui/react-tabs";
 
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
+import { useActiveIntoView, useEdgeFade } from "@/components/ui/use-scroll-fade";
 
 /**
  * D3a: Radix Tabs stamps `dir="ltr"` on its root unless told otherwise (there is no
@@ -19,46 +20,17 @@ const Tabs = React.forwardRef<
 Tabs.displayName = TabsPrimitive.Root.displayName;
 
 /**
- * R2-15: segmented tabs scroll sideways on narrow screens; a soft edge fade (only on the sides
- * that still hide tabs) and scroll-snap show that more tabs exist instead of clipping a label.
+ * R2-15 / WP-A G4: segmented tabs scroll sideways on narrow screens; a 24 px edge fade (only on
+ * the sides that still hide tabs), scroll-snap and the active tab kept in view show that more
+ * tabs exist instead of clipping a label. `ScrollTabs` adds the line variant and a More menu.
  */
 const TabsList = React.forwardRef<
   React.ElementRef<typeof TabsPrimitive.List>,
   React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
 >(({ className, style, ...props }, ref) => {
   const inner = React.useRef<HTMLDivElement | null>(null);
-  const [fade, setFade] = React.useState({ left: false, right: false });
-  const update = React.useCallback(() => {
-    const el = inner.current;
-    if (!el) return;
-    const max = el.scrollWidth - el.clientWidth;
-    if (max <= 1) {
-      setFade((f) => (f.left || f.right ? { left: false, right: false } : f));
-      return;
-    }
-    const rtl = getComputedStyle(el).direction === "rtl";
-    const x = el.scrollLeft;
-    const next = rtl ? { left: -x < max - 1, right: x < -1 } : { left: x > 1, right: x < max - 1 };
-    setFade((f) => (f.left === next.left && f.right === next.right ? f : next));
-  }, []);
-  React.useEffect(() => {
-    const el = inner.current;
-    if (!el) return;
-    update();
-    el.addEventListener("scroll", update, { passive: true });
-    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(update) : null;
-    ro?.observe(el);
-    return () => {
-      el.removeEventListener("scroll", update);
-      ro?.disconnect();
-    };
-  }, [update]);
-  const mask =
-    fade.left || fade.right
-      ? `linear-gradient(to right, ${fade.left ? "transparent 0, #000 20px" : "#000 0"}, ${
-          fade.right ? "#000 calc(100% - 20px), transparent 100%" : "#000 100%"
-        })`
-      : undefined;
+  const fade = useEdgeFade(inner);
+  useActiveIntoView(inner);
   return (
     <TabsPrimitive.List
       ref={(node) => {
@@ -70,7 +42,7 @@ const TabsList = React.forwardRef<
         "inline-flex h-9 max-w-full snap-x snap-proximity items-center justify-start overflow-x-auto rounded-lg bg-muted p-1 text-muted-foreground [scrollbar-width:none]",
         className
       )}
-      style={{ ...style, ...(mask ? { maskImage: mask, WebkitMaskImage: mask } : null) }}
+      style={{ ...style, ...fade }}
       {...props}
     />
   );

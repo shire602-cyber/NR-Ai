@@ -60,8 +60,10 @@ describe("R2 final-round fixes", () => {
   });
 
   it("segmented tabs fade at the clipped edge and snap (item 15)", () => {
+    // WP-A: the fade lives in the shared useEdgeFade hook that TabsList and ScrollTabs use.
     const src = read("client/src/components/ui/tabs.tsx");
-    expect(src).toContain("maskImage");
+    expect(src).toContain("useEdgeFade");
+    expect(read("client/src/components/ui/use-scroll-fade.ts")).toContain("maskImage");
     expect(src).toContain("snap-x");
   });
 
