@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -80,12 +81,7 @@ function WriteOffInvoiceDialogBody({
         <div className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="write-off-date">{t["invoices.writeOffDate"]}</Label>
-            <Input
-              id="write-off-date"
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
+            <DatePicker id="write-off-date" value={date} onChange={setDate} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="write-off-reason">{t["invoices.writeOffReason"]}</Label>

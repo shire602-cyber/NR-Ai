@@ -215,7 +215,7 @@ export default function DeliveryPanel() {
                         <div className="text-xs font-medium text-muted-foreground">
                           <T k="reportCenter.automationHealth" />
                         </div>
-                        <div className="mt-1 tabular-nums text-2xl font-semibold">
+                        <div className="mt-1 text-kpi tabular-nums">
                           {item.automationHealth.score}
                           <span className="text-xs font-normal text-muted-foreground">/100</span>
                         </div>

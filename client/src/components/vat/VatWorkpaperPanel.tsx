@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { addDays, format, parseISO } from "date-fns";
@@ -600,22 +601,20 @@ export default function VatWorkpaperPanel({
               <Label htmlFor="vatWorkpaperPeriodStart">
                 <T k="components.vwPeriodStart" />
               </Label>
-              <Input
+              <DatePicker
                 id="vatWorkpaperPeriodStart"
-                type="date"
                 value={periodStart}
-                onChange={(event) => setPeriodStart(event.target.value)}
+                onChange={(value) => setPeriodStart(value)}
               />
             </div>
             <div className="space-y-1">
               <Label htmlFor="vatWorkpaperPeriodEnd">
                 <T k="components.vwPeriodEnd" />
               </Label>
-              <Input
+              <DatePicker
                 id="vatWorkpaperPeriodEnd"
-                type="date"
                 value={periodEnd}
-                onChange={(event) => setPeriodEnd(event.target.value)}
+                onChange={(value) => setPeriodEnd(value)}
               />
             </div>
             <div className="space-y-1">
@@ -770,13 +769,10 @@ export default function VatWorkpaperPanel({
               <TableBody>
                 <TableRow className="bg-background">
                   <TableCell>
-                    <Input
-                      type="date"
+                    <DatePicker
                       className="h-8 min-w-32"
                       value={rowForm.documentDate}
-                      onChange={(event) =>
-                        setRowForm((form) => ({ ...form, documentDate: event.target.value }))
-                      }
+                      onChange={(value) => setRowForm((form) => ({ ...form, documentDate: value }))}
                       data-testid="input-vat-row-document-date"
                     />
                   </TableCell>

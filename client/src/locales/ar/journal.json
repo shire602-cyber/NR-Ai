@@ -94,5 +94,14 @@
   "journal.memo.billFxGain": "ربح صرف محقق - فاتورة مورّد {ref}",
   "journal.memo.billLine": "فاتورة مورّد {ref} - {party}",
   "journal.controlAdjustmentReason": "تسوية حساب مراقبة: السبب",
-  "journal.controlAdjustmentHint": "تُرحَّل بنود الذمم المدينة والدائنة والمخزون وضريبة القيمة المضافة والبضائع المستلمة غير المفوترة ومستحقات الرواتب عادةً من وحداتها الخاصة. رحّلها هنا كتسوية فقط مع ذكر السبب، وستظهر في التسوية."
+  "journal.controlAdjustmentHint": "تُرحَّل بنود الذمم المدينة والدائنة والمخزون وضريبة القيمة المضافة والبضائع المستلمة غير المفوترة ومستحقات الرواتب عادةً من وحداتها الخاصة. رحّلها هنا كتسوية فقط مع ذكر السبب، وستظهر في التسوية.",
+  "journal.sourcePayroll": "الرواتب",
+  "journal.sourceBill": "فاتورة مورد",
+  "journal.sourceBillPayment": "سداد فاتورة مورد",
+  "journal.sourceCreditNote": "إشعار دائن",
+  "journal.sourceDepreciation": "الإهلاك",
+  "journal.sourceFxRevaluation": "إعادة تقييم العملات",
+  "journal.sourceInventory": "المخزون",
+  "journal.sourceOpeningBalance": "الرصيد الافتتاحي",
+  "journal.sourceSystem": "قيد النظام"
 }

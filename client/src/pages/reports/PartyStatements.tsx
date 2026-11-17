@@ -5,14 +5,15 @@
  *   GET /api/companies/:companyId/supplier-statements/:vendorId?from&asOf[&format=pdf]
  *   POST /api/companies/:companyId/customer-statements/:contactId/email
  */
+import { DatePicker } from "@/components/ui/date-picker";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Download, Mail, ScrollText } from "lucide-react";
+import { Download, Mail } from "lucide-react";
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -103,7 +104,7 @@ export default function PartyStatements() {
   return (
     <div className="space-y-6">
       <PageHeader
-        icon={ScrollText}
+        eyebrow="Reports"
         backHref="/reports"
         backLabel={t["reportCenter.backToReportCenter"]}
         title={<T k="reportCenter.partyStatementsTitle" />}
@@ -156,23 +157,13 @@ export default function PartyStatements() {
             <Label htmlFor="statement-from">
               <T k="reportCenter.partyStatementFrom" />
             </Label>
-            <Input
-              id="statement-from"
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            />
+            <DatePicker id="statement-from" value={from} onChange={(value) => setFrom(value)} />
           </div>
           <div className="space-y-1">
             <Label htmlFor="statement-asof">
               <T k="reportCenter.partyStatementAsOf" />
             </Label>
-            <Input
-              id="statement-asof"
-              type="date"
-              value={asOf}
-              onChange={(e) => setAsOf(e.target.value)}
-            />
+            <DatePicker id="statement-asof" value={asOf} onChange={(value) => setAsOf(value)} />
           </div>
         </CardContent>
       </Card>
@@ -215,9 +206,7 @@ export default function PartyStatements() {
           </CardHeader>
           <CardContent className="space-y-6">
             {statement.sections.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                <T k="reportCenter.partyStatementEmpty" />
-              </p>
+              <EmptyState size="sm" title={t["reportCenter.partyStatementEmpty"]} />
             ) : (
               statement.sections.map((section) => (
                 <div key={section.currency} className="space-y-2">

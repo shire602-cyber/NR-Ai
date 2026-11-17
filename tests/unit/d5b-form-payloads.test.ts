@@ -336,8 +336,8 @@ describe("[D5b] purchase order form payload unchanged", () => {
 });
 
 /** Radix Select keeps a hidden native <select> inside forms; change it to pick a value. */
-async function pickNative(index: number, value: string) {
-  const selects = [...dialog().querySelectorAll("select")];
+async function pickNative(index: number, value: string, scope: ParentNode | null = dialog()) {
+  const selects = [...scope!.querySelectorAll("select")];
   await type(selects[index], value);
 }
 
@@ -525,8 +525,9 @@ describe("[D5b] journal entry form payload unchanged", () => {
     await renderPage(Journal);
     await click(byTestId("button-create-entry"));
     await type(byTestId("input-memo"), "March office rent");
-    await pickNative(0, "a0000000-0000-4000-8000-000000000510");
-    await pickNative(1, "a0000000-0000-4000-8000-000000000102");
+    // WP-D (spec 3.10): the journal entry is a full-page editor, not a dialog.
+    await pickNative(0, "a0000000-0000-4000-8000-000000000510", document);
+    await pickNative(1, "a0000000-0000-4000-8000-000000000102", document);
     await type(byTestId("input-debit-0"), "7500");
     await type(byTestId("input-credit-1"), "7500");
     await submit(byTestId("button-submit-entry"));
@@ -598,6 +599,19 @@ describe("[D5b] payroll run form payload unchanged", () => {
   });
 });
 
+/** Open a DatePicker, move `months` from the open month and pick a day (react-day-picker v8). */
+async function pickDay(testId: string, months: number, day: string) {
+  await click(byTestId(testId));
+  const nav = months < 0 ? "previous-month" : "next-month";
+  for (let i = 0; i < Math.abs(months); i++) {
+    await click(document.querySelector<HTMLButtonElement>(`button[name="${nav}"]`)!);
+  }
+  const target = [...document.querySelectorAll<HTMLButtonElement>('button[name="day"]')].find(
+    (b) => b.textContent?.trim() === day && !b.className.includes("day_outside")
+  );
+  await click(target!);
+}
+
 describe("[D5b] budget plan form payload unchanged", () => {
   it("POSTs the same budget plan body", async () => {
     const { default: Budgets } = await import("../../client/src/pages/Budgets");
@@ -605,8 +619,9 @@ describe("[D5b] budget plan form payload unchanged", () => {
     await click(buttonByText(/new budget/i));
     await type(named("name"), "FY 2026 operating budget");
     await type(named("fiscalYear"), "2026");
-    await type(named("startDate"), "2026-01-01");
-    await type(named("endDate"), "2026-12-31");
+    // WP-D (G1): start and end are the shared DatePicker, opening on the fiscal-year defaults.
+    await pickDay("input-budget-start-date", 0, "1");
+    await pickDay("input-budget-end-date", 0, "31");
     await type(named("notes"), "Board approved draft");
     await submit(dialog().querySelector('button[type="submit"]'));
     expect(body("POST", `${C}/budget-plans`)).toStrictEqual(BUDGET_BODY);

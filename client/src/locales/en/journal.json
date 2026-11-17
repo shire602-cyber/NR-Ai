@@ -94,5 +94,14 @@
   "journal.memo.billFxGain": "Realised FX gain - Bill {ref}",
   "journal.memo.billLine": "Bill {ref} - {party}",
   "journal.controlAdjustmentReason": "Control-account adjustment: reason",
-  "journal.controlAdjustmentHint": "A line on receivables, payables, inventory, VAT, goods received not invoiced or payroll payables is normally posted by its own module. Post it here only as an adjustment and say why; it is shown on the reconciliation."
+  "journal.controlAdjustmentHint": "A line on receivables, payables, inventory, VAT, goods received not invoiced or payroll payables is normally posted by its own module. Post it here only as an adjustment and say why; it is shown on the reconciliation.",
+  "journal.sourcePayroll": "Payroll",
+  "journal.sourceBill": "Supplier bill",
+  "journal.sourceBillPayment": "Bill payment",
+  "journal.sourceCreditNote": "Credit note",
+  "journal.sourceDepreciation": "Depreciation",
+  "journal.sourceFxRevaluation": "FX revaluation",
+  "journal.sourceInventory": "Inventory",
+  "journal.sourceOpeningBalance": "Opening balance",
+  "journal.sourceSystem": "System entry"
 }

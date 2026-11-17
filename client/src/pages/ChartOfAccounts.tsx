@@ -2,7 +2,6 @@ import { T } from "@/components/layout/T";
 import { useState, useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
@@ -267,26 +266,7 @@ export default function ChartOfAccounts() {
         }
       />
 
-      {/* Balance summary: one strip, hairline-divided (no tinted per-type cards). */}
-      <Card className="overflow-hidden">
-        <div className="mobile-keep-cols grid grid-cols-2 divide-border md:grid-cols-5 md:divide-x md:rtl:divide-x-reverse">
-          {ACCOUNT_TYPE_ORDER.map((type) => {
-            const config = ACCOUNT_TYPE_CONFIG[type];
-            const total = typeTotals[type] || 0;
-            return (
-              <div key={type} className="px-4 py-3 md:px-5" data-testid={`summary-${type}`}>
-                <p className="text-caption text-muted-foreground">
-                  {locale === "ar" ? config.labelAr : config.label}
-                </p>
-                <Money
-                  amount={Math.abs(total)}
-                  className={cn("mt-1 flex text-h4 font-semibold", total < 0 && "text-negative")}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </Card>
+      {/* Spec 3.10: the per-type balance strip is gone (the balance sheet says the same). */}
 
       <div className="relative w-full sm:max-w-sm">
         <Search

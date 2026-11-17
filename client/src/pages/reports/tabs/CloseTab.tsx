@@ -1,7 +1,6 @@
 // Reports > close tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { useTranslation } from "@/lib/i18n";
-import { AlertTriangle, CheckCircle2, ClipboardCheck, FileSpreadsheet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -55,15 +54,12 @@ export default function CloseTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.closeReadiness" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
             {monthEndCloseLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">{monthEndReadinessPercent}%</div>
+              <div className="tabular-nums text-kpi">{monthEndReadinessPercent}%</div>
             )}
           </CardContent>
         </Card>
@@ -73,15 +69,12 @@ export default function CloseTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.completed" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <CheckCircle2 className="h-4 w-4 text-success " />
-            </div>
           </CardHeader>
           <CardContent>
             {monthEndCloseLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">{monthEndCompletedChecks}</div>
+              <div className="tabular-nums text-kpi">{monthEndCompletedChecks}</div>
             )}
           </CardContent>
         </Card>
@@ -91,15 +84,12 @@ export default function CloseTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.needsReview2" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <AlertTriangle className="h-4 w-4 text-warning " />
-            </div>
           </CardHeader>
           <CardContent>
             {monthEndCloseLoading ? (
               <Skeleton className="h-8 w-20" />
             ) : (
-              <div className="tabular-nums text-2xl font-bold">{monthEndReviewChecks}</div>
+              <div className="tabular-nums text-kpi">{monthEndReviewChecks}</div>
             )}
           </CardContent>
         </Card>
@@ -109,12 +99,9 @@ export default function CloseTab() {
             <CardTitle className="text-sm font-medium">
               <T k="reportCenter.closePeriod" />
             </CardTitle>
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary">
-              <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
-            </div>
           </CardHeader>
           <CardContent>
-            <div className="tabular-nums text-2xl font-bold">{monthEndPeriod}</div>
+            <div className="tabular-nums text-kpi">{monthEndPeriod}</div>
             <p className="mt-1 text-xs text-muted-foreground">{monthEndPeriodLabel}</p>
           </CardContent>
         </Card>

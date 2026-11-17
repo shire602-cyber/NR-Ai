@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import {
   Dialog,
   DialogContent,
@@ -180,12 +181,7 @@ export function CustomerDepositsDialog({
               />
             </Field>
             <Field id="dep-date" label={t["invoices.deposits.date"]} required>
-              <Input
-                type="date"
-                dir="ltr"
-                value={form.date}
-                onChange={(e) => setForm({ ...form, date: e.target.value })}
-              />
+              <DatePicker value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
             </Field>
             <Field id="dep-amount" label={t["invoices.deposits.amount"]} required>
               <Input

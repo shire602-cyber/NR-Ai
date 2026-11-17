@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Field, FormGrid } from "@/components/ui/form-layout";
 import {
   Table,
@@ -110,20 +111,10 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
           >
             <FormGrid>
               <Field id="ct-ext-start" label={t["corporateTax.periodStart"]} required>
-                <Input
-                  type="date"
-                  dir="ltr"
-                  value={ext.start}
-                  onChange={(e) => setExt({ ...ext, start: e.target.value })}
-                />
+                <DatePicker value={ext.start} onChange={(v) => setExt({ ...ext, start: v })} />
               </Field>
               <Field id="ct-ext-end" label={t["corporateTax.periodEnd"]} required>
-                <Input
-                  type="date"
-                  dir="ltr"
-                  value={ext.end}
-                  onChange={(e) => setExt({ ...ext, end: e.target.value })}
-                />
+                <DatePicker value={ext.end} onChange={(v) => setExt({ ...ext, end: v })} />
               </Field>
               <Field id="ct-ext-loss" label={t["corporateTax.externalLoss"]} required>
                 <Input
@@ -202,12 +193,7 @@ export function CtYearEndPanel({ companyId }: { companyId: string }) {
           >
             <FormGrid>
               <Field id="ct-dt-asof" label={t["corporateTax.deferredAsOf"]} required>
-                <Input
-                  type="date"
-                  dir="ltr"
-                  value={dt.asOf}
-                  onChange={(e) => setDt({ ...dt, asOf: e.target.value })}
-                />
+                <DatePicker value={dt.asOf} onChange={(v) => setDt({ ...dt, asOf: v })} />
               </Field>
               <Field id="ct-dt-asset" label={t["corporateTax.deferredAsset"]}>
                 <Input

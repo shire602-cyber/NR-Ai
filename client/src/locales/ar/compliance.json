@@ -166,5 +166,15 @@
   "compliance.notApplicableHint": "استخدم هذا لالتزام لا ينطبق هنا، مثل فترة سابقة لبدء استخدامك محاسب وقُدّمت في مكان آخر. تُحفظ الملاحظة في سجل التدقيق.",
   "compliance.notApplicableReason": "سبب عدم الانطباق",
   "compliance.markedNotApplicable": "تم التحديد كغير منطبق",
-  "compliance.cancelAction": "إلغاء"
+  "compliance.cancelAction": "إلغاء",
+  "compliance.periodsPrepare": "إعداد",
+  "compliance.periodsReview": "مراجعة",
+  "compliance.filedReturnsTitle": "الإقرارات المقدمة",
+  "compliance.filedReturnsEmptyHint": "تُحفظ هنا الإقرارات التي تقدمها إلى الهيئة مع ملفاتها.",
+  "compliance.tasksDueThisWeek": "مستحقة هذا الأسبوع",
+  "compliance.vatBackToReturns": "العودة إلى الإقرارات",
+  "compliance.vatWorkbookTitle": "ورقة عمل الإقرار 201",
+  "compliance.periodsAction": "الإجراء",
+  "compliance.vatView": "عرض",
+  "compliance.vatEdit": "تحرير"
 }

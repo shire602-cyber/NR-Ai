@@ -316,19 +316,10 @@ export function DataBasisBadge({ basis }: { basis: ReportDataBasis | undefined }
   );
 }
 
-const QUICK_STATEMENTS: Array<{ kind: string; labelKey: string }> = [
-  { kind: "profit-loss", labelKey: "reportCenter.profitAndLossShort" },
-  { kind: "balance-sheet", labelKey: "reportCenter.balanceSheetShort" },
-  { kind: "cash-flow", labelKey: "reportCenter.cashFlowShort" },
-  { kind: "trial-balance", labelKey: "reportCenter.trialBalanceShort" },
-  { kind: "changes-in-equity", labelKey: "reportCenter.changesInEquity" },
-  { kind: "vat-summary", labelKey: "reportCenter.vatSummaryShort" },
-  { kind: "executive-summary", labelKey: "reportCenter.executiveSummary" },
-];
-
 /**
- * R18-10: the default Report Center starts with statements and tax (server PDF/Excel), the
- * accountant pack and the FTA Audit File; role/automation tooling is behind "Advanced".
+ * R18-10 / spec 3.11: files and packs above the catalogue (the per-statement PDF / Excel rows moved
+ * into the catalogue itself): accountant pack, FTA Audit File, statements of account, and the
+ * advanced reporting tools.
  */
 export function StatementsQuickPanel({
   companyId,
@@ -346,50 +337,20 @@ export function StatementsQuickPanel({
   const range = toQuery({ from, to }).replace(/^&/, "");
   return (
     <section
-      className="overflow-hidden rounded-xl border border-border bg-card shadow-card-soft"
+      className="rounded-xl border border-border bg-card px-5 py-4 shadow-card-soft"
       aria-labelledby="statements-quick-title"
       data-testid="statements-quick-panel"
     >
-      <div className="flex flex-col gap-2 px-5 pt-5 sm:flex-row sm:items-start sm:justify-between md:px-6">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <h2 id="statements-quick-title" className="text-h3 font-semibold text-foreground">
-            <T k="reportCenter.statementsAndTax" />
+            <T k="reportCenter.filesAndPacks" />
           </h2>
           <p className="mt-0.5 text-small text-muted-foreground">
-            <T k="reportCenter.statementsAndTaxHint" />
+            <T k="reportCenter.ftaAuditFileHint" />
           </p>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="self-start"
-          onClick={onShowAdvanced}
-          data-testid="button-reports-advanced-tools"
-        >
-          <T k="reportCenter.advancedTools" />
-        </Button>
-      </div>
-      {/* One hairline row per statement: name at the start, PDF / Excel at the end. */}
-      <ul className="mt-3 grid grid-cols-1 gap-x-10 px-5 md:px-6 lg:grid-cols-2">
-        {QUICK_STATEMENTS.map((s) => (
-          <li
-            key={s.kind}
-            className="flex min-h-12 items-center justify-between gap-3 border-b border-border/70 py-1.5"
-          >
-            <span className="flex min-w-0 items-center gap-2.5 text-body font-medium text-foreground">
-              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
-              {/* R3 (CTO 21): two-line wrap instead of mid-word truncation on narrow Arabic. */}
-              <span className="line-clamp-2 break-words leading-snug">
-                <T k={s.labelKey} />
-              </span>
-            </span>
-            <StatementDownloads companyId={companyId} kind={s.kind} from={from} to={to} compact />
-          </li>
-        ))}
-      </ul>
-      <div className="mt-4 space-y-3 border-t border-border bg-surface-sunken/60 px-5 py-4 md:px-6">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button asChild size="sm" variant="outline">
             <a
               href={apiUrl(
@@ -398,7 +359,7 @@ export function StatementsQuickPanel({
               download
               data-testid="link-accountant-share-pack"
             >
-              <Download className="w-4 h-4 me-2" />
+              <Download className="h-4 w-4" aria-hidden />
               <T k="reportCenter.accountantPack" />
             </a>
           </Button>
@@ -410,26 +371,31 @@ export function StatementsQuickPanel({
                 title={t["reportCenter.ftaAuditFileHint"]}
                 data-testid="link-fta-audit-file"
               >
-                <FileText className="w-4 h-4 me-2" />
+                <FileText className="h-4 w-4" aria-hidden />
                 <T k="reportCenter.ftaAuditFile" />
               </a>
             </Button>
           ) : null}
-          <span className="text-caption text-muted-foreground">
-            <T k="reportCenter.ftaAuditFileHint" />
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           {/* S4 (R12-09): statements of account per customer / supplier (W4-D service). */}
           <Button asChild size="sm" variant="outline">
-            <Link href="/reports/statements-of-account" data-testid="link-party-statements">
-              <ScrollText className="w-4 h-4 me-2" />
+            <Link
+              href="/reports/statements-of-account"
+              title={t["reportCenter.partyStatementsHint"]}
+              data-testid="link-party-statements"
+            >
+              <ScrollText className="h-4 w-4" aria-hidden />
               <T k="reportCenter.partyStatementsTitle" />
             </Link>
           </Button>
-          <span className="text-caption text-muted-foreground">
-            <T k="reportCenter.partyStatementsHint" />
-          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={onShowAdvanced}
+            data-testid="button-reports-advanced-tools"
+          >
+            <T k="reportCenter.advancedTools" />
+          </Button>
         </div>
       </div>
     </section>

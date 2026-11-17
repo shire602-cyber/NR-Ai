@@ -124,7 +124,7 @@ describe("catalog restraint (R12-14, R18-10)", () => {
     const panel = read("client/src/pages/reports/panels/ReportsPanel.tsx");
     expect(panel.indexOf("<StatementsQuickPanel")).toBeGreaterThan(-1);
     expect(panel.indexOf("<StatementsQuickPanel")).toBeLessThan(
-      panel.indexOf('aria-label={t["reportCenter.reportCenter"]}')
+      panel.indexOf('ariaLabel={t["reportCenter.reportCenter"]}')
     );
     const parts = read("client/src/pages/reports/StatementParts.tsx");
     expect(parts).toContain('data-testid="button-reports-advanced-tools"');
@@ -193,7 +193,8 @@ describe("data basis (R12-13, R12-15, R20-10)", () => {
   });
 
   it("[R20-10] the Report Center badges indicator reports and indicator comparison rows", () => {
-    const panel = read("client/src/pages/reports/panels/ReportsPanel.tsx");
+    // Spec 3.11: the Report Center rows render in the catalogue module.
+    const panel = read("client/src/pages/reports/panels/ReportCatalogue.tsx");
     expect(panel).toContain("<DataBasisBadge");
     expect(panel).toContain("reportCatalogDataBasis(option.reportId)");
     const comparisons = read("client/src/pages/reports/panels/ComparisonsPanel.tsx");

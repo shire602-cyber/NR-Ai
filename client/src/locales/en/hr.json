@@ -233,6 +233,7 @@
   "hr.legal.adpf": "Abu Dhabi Pension Fund (ADPF members): employee {employee}, employer {employer} of {base} — confirm with adviser",
   "hr.pension.title": "Pension contributions",
   "hr.pension.hint": "Contributions accrued by approved payroll runs (account 2032) per fund, and the payments that clear them. Pay the fund in its own portal, then record the payment here.",
+  "hr.pension.empty": "No pension contributions accrued yet. Approved payroll runs add them here.",
   "hr.pension.fund": "Fund",
   "hr.pension.fund.gpssa": "GPSSA",
   "hr.pension.fund.adpf": "Abu Dhabi Pension Fund",

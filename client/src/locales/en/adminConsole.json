@@ -68,7 +68,7 @@
   "feedback.briefSummaryOfYourFeedback": "Brief summary of your feedback",
   "feedback.pleaseProvideAsMuchDetail": "Please provide as much detail as possible...",
   "history.activityWillAppearHereAs": "Activity will appear here as you create invoices, journal entries, and other records.",
-  "history.activityHistory": "Activity History",
+  "history.activityHistory": "Activity history",
   "history.trackAllChangesMadeTo": "Track all changes made to your financial records",
   "integrations.connectYourFavoriteAppsAnd": "Connect your favorite apps and services to sync your financial data",
   "integrations.notConnected": "Not Connected",
@@ -400,5 +400,18 @@
   "activityLog.action.corporate_tax.external_return_deleted": "Removed a corporate tax return filed outside Muhasib",
   "activityLog.action.corporate_tax_return.accrued": "Accrued corporate tax at period end",
   "activityLog.action.payroll.pension_payment": "Recorded a pension contribution payment",
-  "activityLog.action.payroll.pension_payment_reversed": "Reversed a pension contribution payment"
+  "activityLog.action.payroll.pension_payment_reversed": "Reversed a pension contribution payment",
+  "history.details": "Details",
+  "history.reference": "Reference",
+  "activityLog.action.corporate_tax_return.computed": "Corporate tax return computed",
+  "activityLog.action.corporate_tax_return.initial_compute": "Corporate tax return first computed",
+  "activityLog.action.corporate_tax_return.created": "Corporate tax return created",
+  "activityLog.action.bank.reconcile": "Bank transaction reconciled",
+  "activityLog.action.firm_link.accept": "Accounting firm link accepted",
+  "activityLog.entity.company_group": "Company group",
+  "activityLog.entity.corporate_tax_return": "Corporate tax return",
+  "activityLog.entity.bank_transaction": "Bank transaction",
+  "activityLog.entity.payroll_run": "Payroll run",
+  "activityLog.entity.vendor_bill": "Supplier bill",
+  "activityLog.entity.firm_client_link": "Accounting firm link"
 }

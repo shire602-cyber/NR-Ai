@@ -164,5 +164,12 @@
   "evidenceCenter.status.esr_report": "ESR report",
   "evidenceCenter.status.audited_financials": "audited financials",
   "evidenceCenter.status.payslip": "payslip",
-  "evidenceCenter.status.tax_certificate": "tax certificate"
+  "evidenceCenter.status.tax_certificate": "tax certificate",
+  "evidenceCenter.downloadEvidencePack": "Download evidence pack",
+  "evidenceCenter.checklistTitle": "Readiness checklist",
+  "documentVersions.document": "Document",
+  "documentVersions.searchByNumber": "Search by number",
+  "documentVersions.loadingDocuments": "Loading documents…",
+  "documentVersions.noDocumentsFound": "No documents match.",
+  "documentVersions.versionHistory": "Version history"
 }

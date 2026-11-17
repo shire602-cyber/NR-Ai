@@ -83,14 +83,16 @@ describe("consolidated navigation redirects (App source)", () => {
     expect(app).toContain('<Route path="/accounts/:id/ledger" component={AccountLedger} />');
   });
 
-  it("R20-08: analytics pages are tabs of one /analytics route", () => {
+  it("R20-08 / spec 3.11: the analytics routes stay and forward to Reports > Insights", () => {
     expect(app).toContain('<Route path="/analytics" component={AnalyticsHub} />');
     expect(redirectTargetFor("/advanced-analytics")).toBe("/analytics?view=advanced");
     expect(redirectTargetFor("/advanced-reports")).toBe("/analytics?view=reports");
+    // The hub forwards (behaviour covered in reports-insights.test.ts); the three old pages,
+    // including the product-telemetry "Usage Analytics" page, are gone.
     const hub = read("client/src/pages/AnalyticsHub.tsx");
-    expect(hub).toContain('param="view"');
+    expect(hub).toContain("analyticsRedirectTarget(search)");
     for (const page of ["Analytics", "AdvancedAnalytics", "AdvancedReports"]) {
-      expect(hub).toContain(`import("@/pages/${page}")`);
+      expect(hub).not.toContain(`import("@/pages/${page}")`);
     }
   });
 

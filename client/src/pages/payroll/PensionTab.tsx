@@ -4,6 +4,9 @@ import { Wallet } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { EmptyState } from "@/components/ui/empty-state";
+import { formatDate } from "@/lib/format-date";
 import {
   Dialog,
   DialogContent,
@@ -130,45 +133,49 @@ export function PensionTab({ companyId }: { companyId: string }) {
         <CardDescription>{tx("hr.pension.hint")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{tx("hr.pension.fund")}</TableHead>
-                <TableHead data-numeric>{tx("hr.pension.accrued")}</TableHead>
-                <TableHead data-numeric>{tx("hr.pension.paidCol")}</TableHead>
-                <TableHead data-numeric>{tx("hr.pension.outstanding")}</TableHead>
-                <TableHead data-numeric>{tx("hr.actions")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(liability?.funds ?? []).map((f) => (
-                <TableRow key={f.fund}>
-                  <TableCell className="font-medium">{tx(`hr.pension.fund.${f.fund}`)}</TableCell>
-                  <MoneyCell amount={Number(f.accrued)} currency="AED" />
-                  <MoneyCell amount={Number(f.paid)} currency="AED" />
-                  <MoneyCell amount={Number(f.outstanding)} currency="AED" />
-                  <TableCell data-numeric>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!(Number(f.outstanding) > 0)}
-                      onClick={() => {
-                        setPaying(f);
-                        setAmount(f.outstanding);
-                        setReference("");
-                      }}
-                      data-testid={`button-pay-pension-${f.fund}`}
-                    >
-                      <Wallet className="me-2 h-4 w-4" />
-                      {tx("hr.pension.pay")}
-                    </Button>
-                  </TableCell>
+        {(liability?.funds ?? []).length === 0 ? (
+          <EmptyState size="sm" title={tx("hr.pension.empty")} />
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{tx("hr.pension.fund")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.pension.accrued")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.pension.paidCol")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.pension.outstanding")}</TableHead>
+                  <TableHead data-numeric>{tx("hr.actions")}</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {(liability?.funds ?? []).map((f) => (
+                  <TableRow key={f.fund}>
+                    <TableCell className="font-medium">{tx(`hr.pension.fund.${f.fund}`)}</TableCell>
+                    <MoneyCell amount={Number(f.accrued)} currency="AED" />
+                    <MoneyCell amount={Number(f.paid)} currency="AED" />
+                    <MoneyCell amount={Number(f.outstanding)} currency="AED" />
+                    <TableCell data-numeric>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!(Number(f.outstanding) > 0)}
+                        onClick={() => {
+                          setPaying(f);
+                          setAmount(f.outstanding);
+                          setReference("");
+                        }}
+                        data-testid={`button-pay-pension-${f.fund}`}
+                      >
+                        <Wallet className="me-2 h-4 w-4" />
+                        {tx("hr.pension.pay")}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
 
         {payments.length > 0 && (
           <div className="overflow-x-auto">
@@ -186,9 +193,7 @@ export function PensionTab({ companyId }: { companyId: string }) {
               <TableBody>
                 {payments.map((p) => (
                   <TableRow key={p.id}>
-                    <TableCell dir="ltr" data-nowrap>
-                      {String(p.payment_date).slice(0, 10)}
-                    </TableCell>
+                    <TableCell data-nowrap>{formatDate(p.payment_date, locale)}</TableCell>
                     <TableCell>{tx(`hr.pension.fund.${p.fund}`)}</TableCell>
                     <TableCell dir="auto">{p.reference ?? p.entry_number ?? "—"}</TableCell>
                     <MoneyCell amount={Number(p.amount)} currency="AED" />
@@ -257,12 +262,7 @@ export function PensionTab({ companyId }: { companyId: string }) {
                 </Select>
               </Field>
               <Field id="pension-date" label={tx("hr.paymentDate")} required>
-                <Input
-                  type="date"
-                  dir="ltr"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                />
+                <DatePicker value={date} onChange={setDate} />
               </Field>
               <Field id="pension-ref" label={tx("hr.pension.reference")}>
                 <Input

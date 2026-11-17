@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Calculator, FileCheck, Wallet } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -298,7 +300,7 @@ export function SettlementTab({ companyId }: { companyId: string }) {
         </CardHeader>
         <CardContent className="overflow-x-auto">
           {settlements.length === 0 ? (
-            <p className="text-muted-foreground">{tx("hr.noSettlements")}</p>
+            <EmptyState size="sm" title={tx("hr.noSettlements")} />
           ) : (
             <Table>
               <TableHeader>
@@ -383,11 +385,10 @@ export function SettlementTab({ companyId }: { companyId: string }) {
             </div>
             <div className="space-y-1">
               <Label htmlFor="settle-pay-date">{tx("hr.paymentDate")}</Label>
-              <Input
+              <DatePicker
                 id="settle-pay-date"
-                type="date"
                 value={payDate}
-                onChange={(e) => setPayDate(e.target.value)}
+                onChange={(value) => setPayDate(value)}
               />
             </div>
           </div>
