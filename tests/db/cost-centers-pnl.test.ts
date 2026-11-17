@@ -33,6 +33,22 @@ describe("W4-B cost centres", () => {
     expect(cycle.body.code).toBe("COST_CENTER_CYCLE");
   });
 
+  it("[CI-C1] GET /cost-centers/:id/report answers 200 (an id array was bound as a tuple, giving 400 INVALID_IDENTIFIER)", async () => {
+    const t = await h.createTenant({ planId: "enterprise" });
+    const parent = await center(t, { code: "HQ", name: "Head office" });
+    const child = await center(t, { code: "HQ-1", name: "Branch", parentId: parent.id });
+    const single = await t.as.get(
+      `/api/companies/${t.company.id}/cost-centers/${parent.id}/report`
+    );
+    expect(single.status, single.text).toBe(200);
+    expect(single.body.includedCostCenterIds).toEqual([parent.id]);
+    const rolled = await t.as.get(
+      `/api/companies/${t.company.id}/cost-centers/${parent.id}/report?includeChildren=true`
+    );
+    expect(rolled.status, rolled.text).toBe(200);
+    expect(rolled.body.includedCostCenterIds).toEqual([parent.id, child.id]);
+  });
+
   it("[R10-11] invoice lines and tagged bill lines carry their cost centre into the journal", async () => {
     const t = await h.createTenant({ planId: "enterprise" });
     const cc = await center(t, { code: "AUH", name: "Abu Dhabi" });

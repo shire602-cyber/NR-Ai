@@ -115,6 +115,21 @@ const FAIL_TEXT = /something went wrong|an error occurred|failed to load|unexpec
 const NOT_FOUND = (t) =>
   /not found/i.test(t) && t.trim().length < 300 && !/no [a-z ]*found/i.test(t);
 
+/** Poll the page's <main> until it shows `text` (client render after a fetch is not instant). */
+async function mainShows(page, text, timeoutMs = 20000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    const body = await page
+      .locator("main")
+      .innerText()
+      .catch(() => "");
+    // Long document numbers wrap across lines in table cells, so compare without whitespace.
+    if (body.replace(/\s+/g, "").includes(text.replace(/\s+/g, ""))) return true;
+    await page.waitForTimeout(500);
+  }
+  return false;
+}
+
 async function resolveExecutablePath() {
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
   try {
@@ -131,6 +146,10 @@ async function main() {
     args: ["--no-sandbox"],
   });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await ctx.addInitScript(() => {
+    // The client only probes the cookie session when this non-secret sign-in hint is set (R18-04).
+    localStorage.setItem("muhasib_auth_hint", "1");
+  });
   const page = await ctx.newPage();
 
   let routeErrors = [];
@@ -275,12 +294,7 @@ async function main() {
       routeErrors = [];
       apiFailures = [];
       await page.goto(`${BASE}/journal`);
-      await page.waitForTimeout(2500);
-      const journalText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
-      if (!journalText.includes(memo)) {
+      if (!(await mainShows(page, memo))) {
         await fail("journal-flow render", { detail: "posted entry not visible in journal UI" });
       }
     }
@@ -313,12 +327,7 @@ async function main() {
       routeErrors = [];
       apiFailures = [];
       await page.goto(`${BASE}/quotes`);
-      await page.waitForTimeout(2500);
-      const quotesText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
-      if (!quotesText.includes(quoteNumber)) {
+      if (!(await mainShows(page, quoteNumber))) {
         await fail("quote-flow render", { detail: "created quote not visible in quotes UI" });
       }
       const convertRes = await page.request.post(
@@ -383,12 +392,7 @@ async function main() {
         routeErrors = [];
         apiFailures = [];
         await page.goto(`${BASE}/credit-notes`);
-        await page.waitForTimeout(2500);
-        const cnText = await page
-          .locator("main")
-          .innerText()
-          .catch(() => "");
-        if (!cnText.includes(cnNumber)) {
+        if (!(await mainShows(page, cnNumber))) {
           await fail("credit-note-flow render", {
             detail: "created credit note not visible in UI",
           });
@@ -430,12 +434,7 @@ async function main() {
       routeErrors = [];
       apiFailures = [];
       await page.goto(`${BASE}/purchase-orders`);
-      await page.waitForTimeout(2500);
-      const poText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
-      if (!poText.includes(poNumber)) {
+      if (!(await mainShows(page, poNumber))) {
         await fail("po-flow render", { detail: "created purchase order not visible in UI" });
       }
       for (const step of ["send", "approve", "receive"]) {
@@ -477,12 +476,7 @@ async function main() {
       routeErrors = [];
       apiFailures = [];
       await page.goto(`${BASE}/cost-centers`);
-      await page.waitForTimeout(2500);
-      const ccText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
-      if (!ccText.includes(ccCode) && !ccText.includes("Dubai Branch")) {
+      if (!(await mainShows(page, "Dubai Branch"))) {
         await fail("cost-center-flow render", { detail: "created cost center not visible in UI" });
       }
       const summaryRes = await page.request.get(
@@ -614,11 +608,19 @@ async function main() {
   try {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
+    // Rules post through the bank account's GL account, so the statement connection must be
+    // linked to a managed bank account (BANK_ACCOUNT_NOT_LINKED otherwise).
+    const baRes = await page.request.post(`${BASE}/api/companies/${companyId}/bank-accounts`, {
+      headers: { "x-csrf-token": csrfToken ?? "" },
+      data: { nameEn: "E2E Current AED", bankName: "Emirates NBD", currency: "AED" },
+    });
+    const bankAccount = await baRes.json().catch(() => ({}));
     const connRes = await page.request.post(`${BASE}/api/companies/${companyId}/bank-connections`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
         bankName: "Emirates NBD",
         accountName: "Current AED",
+        bankAccountId: bankAccount?.id,
       },
     });
     if (connRes.status() !== 201) {
@@ -863,12 +865,12 @@ async function main() {
         } else {
           const restoreRes = await page.request.post(`${BASE}/api/backups/${backup.id}/restore`, {
             headers: { "x-csrf-token": csrfToken ?? "" },
-            data: { confirmRestore: true },
+            data: { mode: "merge", confirmRestore: true },
           });
           const restore = await restoreRes.json().catch(() => ({}));
-          if (restoreRes.status() >= 300 || (restore?.totalRestored ?? 0) < 1) {
+          if (restoreRes.status() >= 300 || (restore?.totals?.insert ?? 0) < 1) {
             await fail("backup-flow restore", {
-              detail: `status ${restoreRes.status()}, restored ${restore?.totalRestored}: ${JSON.stringify(restore?.restored ?? {}).slice(0, 150)}`,
+              detail: `status ${restoreRes.status()}, restored ${restore?.totals?.insert}: ${JSON.stringify(restore).slice(0, 150)}`,
             });
           } else {
             const accountsAfter = await (
@@ -894,10 +896,28 @@ async function main() {
   try {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
+    // PINT AE needs a complete buyer (TRN endpoint, street, city, emirate): use a real contact.
+    const buyerRes = await page.request.post(
+      `${BASE}/api/companies/${companyId}/customer-contacts`,
+      {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: {
+          name: "EInvoice Customer LLC",
+          trnNumber: "100765432100003",
+          address: "Building 7, Dubai Internet City",
+          city: "Dubai",
+          emirate: "dubai",
+          country: "AE",
+        },
+      }
+    );
+    const buyer = await buyerRes.json().catch(() => ({}));
     const invRes = await page.request.post(`${BASE}/api/companies/${companyId}/invoices`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
         customerName: "EInvoice Customer LLC",
+        customerTrn: "100765432100003",
+        contactId: buyer?.id,
         date: new Date().toISOString().slice(0, 10),
         currency: "AED",
         placeOfSupplyEmirate: "dubai",
@@ -945,7 +965,17 @@ async function main() {
 
       await page.request.patch(`${BASE}/api/companies/${companyId}`, {
         headers: { "x-csrf-token": csrfToken ?? "" },
-        data: { trnVatNumber: "100123456700003" },
+        data: {
+          trnVatNumber: "100123456700003",
+          addressStreet: "Sheikh Zayed Road",
+          addressCity: "Dubai",
+          emirate: "dubai",
+        },
+      });
+      // PINT AE also needs the supplier's trade licence (ibr-150-ae).
+      await page.request.put(`${BASE}/api/companies/${companyId}/einvoicing/settings`, {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: { tradeLicenceNo: "TL-E2E-12345" },
       });
 
       const check = await (
@@ -999,8 +1029,7 @@ async function main() {
           data: {
             documentType: "invoice",
             documentId: targetInvoice.id,
-            changeDescription: "E2E snapshot before edits",
-            snapshotData: { total: targetInvoice.total },
+            changeDescription: "E2E snapshot before edits", // the server takes the snapshot
           },
         }
       );
@@ -1111,6 +1140,10 @@ async function main() {
   // (b) 'client_portal' userType: the separate portal layout.
   async function crawlAs(label, userType, matrixRoutes) {
     const mCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    await mCtx.addInitScript(() => {
+      // The client only probes the cookie session when this non-secret sign-in hint is set (R18-04).
+      localStorage.setItem("muhasib_auth_hint", "1");
+    });
     const mPage = await mCtx.newPage();
     let mErrors = [];
     let mApi = [];
@@ -1257,11 +1290,22 @@ async function main() {
       apiFailures = [];
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
       await page.waitForTimeout(1700);
+      // The document direction flips once the locale store hydrates; wait for it (and for the
+      // route to render) instead of racing a fixed delay.
+      await page
+        .waitForFunction(() => document.documentElement.getAttribute("dir") === "rtl", null, {
+          timeout: 15000,
+        })
+        .catch(() => {});
       const dir = await page.evaluate(() => document.documentElement.getAttribute("dir"));
-      const mainText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
+      let mainText = "";
+      for (let i = 0; i < 30 && mainText.trim().length < 40; i++) {
+        mainText = await page
+          .locator("main")
+          .innerText()
+          .catch(() => "");
+        if (mainText.trim().length < 40) await page.waitForTimeout(500);
+      }
       const blank = mainText.trim().length < 40;
       if (dir !== "rtl" || routeErrors.length || blank) {
         await fail(`rtl route ${route}`, {

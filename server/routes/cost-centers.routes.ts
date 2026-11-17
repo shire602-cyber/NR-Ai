@@ -5,7 +5,7 @@ import { requireFeature } from "../middleware/featureGate";
 import { storage } from "../storage";
 import { db, pool } from "../db";
 import { journalLines, journalEntries, accounts, costCenters } from "../../shared/schema";
-import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { eq, and, gte, lte, inArray, sql } from "drizzle-orm";
 import { uaeDayEnd, uaeDayStart } from "../utils/date";
 import { createLogger } from "../config/logger";
 import { strictBody } from "../http/strict-body";
@@ -540,7 +540,7 @@ export function registerCostCenterRoutes(app: Express) {
         .innerJoin(accounts, eq(journalLines.accountId, accounts.id))
         .where(
           and(
-            sql`${journalLines.costCenterId} = ANY(${ids}::uuid[])`,
+            inArray(journalLines.costCenterId, ids),
             eq(journalEntries.companyId, companyId),
             eq(journalEntries.status, "posted"),
             fromDate ? gte(journalEntries.date, fromDate) : undefined,
