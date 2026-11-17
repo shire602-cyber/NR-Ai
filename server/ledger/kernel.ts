@@ -3,6 +3,7 @@
  * Public surface is re-exported from ./index.ts and documented in README.md.
  */
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { alias as aliasTable } from "drizzle-orm/pg-core";
 import {
   accounts,
   auditLogs,
@@ -107,6 +108,9 @@ async function writeAudit(
   });
 }
 
+/** Sub-types whose accounts become non-postable headers once they have sub-accounts. */
+export const HEADER_SUB_TYPES = ["cash", "bank"] as const;
+
 /** Accounts must exist in the company; unless allowed, be active and not archived. */
 async function assertAccountsUsable(
   tx: LedgerTx,
@@ -146,27 +150,36 @@ async function assertAccountsUsable(
     }
   }
   if (!allowInactive) {
-    // X5 (J1 D1): a header account (one with sub-accounts) summarises its children and never
-    // receives postings, so money always lands on the leaf the bank statement can match.
+    // X5 (J1 D1) / X6a: a cash or bank header account (a cash/bank account with sub-accounts)
+    // summarises its children and never receives postings, so money always lands on the leaf
+    // the bank statement can match. The rule is deliberately limited to cash/bank sub-types:
+    // users may add sub-accounts under revenue, receivables, VAT or expense accounts for
+    // reporting, and the system posting codes (4010, 1040, 2020, ...) must keep working.
     // Reversals (allowInactive) may still mirror an old posting to it.
-    const headers: Array<{ parentId: string | null }> = await tx
-      .select({ parentId: accounts.parentId })
-      .from(accounts)
+    const parent = aliasTable(accounts, "parent_account");
+    const headers: Array<{ id: string }> = await tx
+      .select({ id: parent.id })
+      .from(parent)
+      .innerJoin(
+        accounts,
+        and(eq(accounts.parentId, parent.id), eq(accounts.companyId, parent.companyId))
+      )
       .where(
         and(
-          eq(accounts.companyId, companyId),
-          inArray(accounts.parentId, ids),
+          eq(parent.companyId, companyId),
+          inArray(parent.id, ids),
+          inArray(parent.subType, [...HEADER_SUB_TYPES]),
           eq(accounts.isArchived, false)
         )
       )
       .limit(1);
-    const header = headers[0]?.parentId;
+    const header = headers[0]?.id;
     if (header) {
       throw new DomainError(
         "ACCOUNT_IS_HEADER",
         422,
         { accountId: header },
-        "Cannot post to a header account that has sub-accounts; choose one of its sub-accounts"
+        "Cannot post to a bank or cash header account that has sub-accounts; choose one of its sub-accounts"
       );
     }
   }

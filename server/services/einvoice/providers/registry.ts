@@ -1,8 +1,10 @@
 /**
  * The accredited e-invoicing providers this build knows (E2).
  *
- * One line per provider. To drop a provider after the commercial decision, delete its line here
- * and its files (docs/einvoicing-providers.md lists them); nothing else imports a provider by name.
+ * One line per provider. To drop a provider after the commercial decision, delete its line here,
+ * its files, and the touch points outside them (route registration, webhook prefix, CSRF
+ * exemption, error codes, settings card, locale keys) that docs/einvoicing-providers.md lists;
+ * tests/unit/einvoice-provider-discard.test.ts keeps that list complete.
  *
  * Selection is explicit: EINVOICE_PROVIDER names one provider, and it is only exposed once its
  * credentials are configured. Credentials of a provider that is not selected are never used.

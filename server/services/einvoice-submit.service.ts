@@ -87,6 +87,65 @@ type SubmitErr = {
   validation?: EInvoiceValidationSummary;
 };
 
+/** Generate a fresh PINT AE document from the current data (no rule checks, nothing stored). */
+function generateFreshDocument(
+  invoice: Invoice,
+  lines: InvoiceLine[],
+  company: Company,
+  ctx: EInvoiceContext,
+  uuid: string | undefined
+) {
+  const customer =
+    ctx.customer ??
+    (invoice.customerName
+      ? { name: invoice.customerName, trn: invoice.customerTrn || undefined }
+      : undefined);
+  return generateEInvoiceXML(invoice, lines, company, customer, {
+    ...(ctx.options ?? {}),
+    uuid,
+    originalInvoice: ctx.originalInvoice ?? ctx.options?.originalInvoice ?? null,
+    lineExtras: ctx.lineExtras ?? ctx.options?.lineExtras,
+  });
+}
+
+export interface EInvoicePreflight {
+  /** Data-level issues (the fix-it list). Non-empty means no document was built. */
+  issues: EInvoiceIssue[];
+  /** The document built from the current data, when there were no data-level issues. */
+  built: { xml: string; uuid: string; hash: string; documentType: string | null } | null;
+  /** XSD / PINT AE schematron / rule validation of `built`. */
+  validation: EInvoiceValidationSummary | null;
+  /** True exactly when generate-einvoice would accept and store this document. */
+  valid: boolean;
+}
+
+/**
+ * X6a (FIX_QUEUE G7, before e-invoicing goes on item 5): the ONE rule set behind both the
+ * pre-flight check (GET /api/invoices/:id/einvoice/validate) and generate-einvoice: the data
+ * rules (validateForEInvoicing), then a fresh document validated against the UBL 2.1 XSD, the
+ * PINT AE schematron and the rule list. The submit path runs the same two steps.
+ */
+export async function preflightEInvoice(
+  invoice: Invoice,
+  lines: InvoiceLine[],
+  company: Company,
+  ctx: EInvoiceContext = {},
+  opts: { uuid?: string; now?: Date } = {}
+): Promise<EInvoicePreflight> {
+  const issues = validateForEInvoicing(invoice, lines, company, ctx);
+  if (issues.length > 0) return { issues, built: null, validation: null, valid: false };
+  const g = generateFreshDocument(invoice, lines, company, ctx, opts.uuid);
+  const validation = summariseValidation(
+    await validateEInvoiceXml(g.xml, opts.now ? { now: opts.now } : undefined)
+  );
+  return {
+    issues,
+    built: { xml: g.xml, uuid: g.uuid, hash: g.hash, documentType: g.documentType },
+    validation,
+    valid: validation.valid,
+  };
+}
+
 /** Produce a valid PINT-AE document, reusing the stored one if already generated. */
 export function buildEInvoiceDocument(
   invoice: Invoice,
@@ -110,17 +169,7 @@ export function buildEInvoiceDocument(
       documentType: null,
     };
   }
-  const customer =
-    ctx.customer ??
-    (invoice.customerName
-      ? { name: invoice.customerName, trn: invoice.customerTrn || undefined }
-      : undefined);
-  const generated = generateEInvoiceXML(invoice, lines, company, customer, {
-    ...(ctx.options ?? {}),
-    uuid,
-    originalInvoice: ctx.originalInvoice ?? ctx.options?.originalInvoice ?? null,
-    lineExtras: ctx.lineExtras ?? ctx.options?.lineExtras,
-  });
+  const generated = generateFreshDocument(invoice, lines, company, ctx, uuid);
   return {
     ok: true,
     xml: generated.xml,

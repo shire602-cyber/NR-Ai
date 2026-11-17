@@ -64,6 +64,7 @@
   "forms.preview.ariaLabel": "Invoice preview in English and Arabic",
   "forms.preview.draftBadge": "Draft",
   "forms.preview.taxInvoice": "Tax invoice",
+  "forms.preview.plainInvoice": "Invoice",
   "forms.preview.invoiceNo": "Invoice no.",
   "forms.preview.issueDate": "Issue date",
   "forms.preview.placeOfSupply": "Place of supply",

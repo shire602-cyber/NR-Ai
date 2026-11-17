@@ -105,6 +105,33 @@ function withLookup(provider: EInvoiceProvider): EInvoiceProvider {
   return wrapped;
 }
 
+/** Last outcomes after which the ASP may hold the document without us knowing its id. */
+const AMBIGUOUS_CODES: ReadonlySet<string> = new Set(["TRANSPORT_ERROR", "EINVOICE_NEEDS_LINK"]);
+
+/**
+ * X6a (before e-invoicing goes on, item 3): after an ambiguous transport error, an ASP that
+ * answers "this number is already used" without naming the document most likely holds THIS
+ * invoice (it may have delivered and reported it). Record "needs link", never "rejected", and do
+ * not schedule another send: a person links the provider's document.
+ */
+function withAmbiguityGuard(provider: EInvoiceProvider): EInvoiceProvider {
+  const wrapped = Object.create(provider) as EInvoiceProvider;
+  wrapped.submit = async (s: EInvoiceSubmission) => {
+    const r = await provider.submit(s);
+    if (!r.numberAlreadyHeld) return r;
+    log.warn({ invoiceId: s.invoiceId }, "e-invoice number already held after a lost response");
+    return {
+      ...r,
+      providerMessageId: "",
+      status: legacyFromTracks("needs_link", r.reporting ?? "pending"),
+      delivery: "needs_link",
+      reporting: r.reporting ?? "pending",
+      errorCode: "EINVOICE_NEEDS_LINK",
+    };
+  };
+  return wrapped;
+}
+
 export async function submitAndPersist(args: {
   invoice: Invoice;
   company: Company;
@@ -145,12 +172,12 @@ export async function submitAndPersist(args: {
     const existing = await getEInvoiceDocument(company.id, invoice.id);
     // A transport failure is ambiguous: A-Cube may have created the document before the
     // connection dropped. Look it up before posting it again (never double-submit).
-    const ambiguous = existing?.lastErrorCode === "TRANSPORT_ERROR";
+    const ambiguous = AMBIGUOUS_CODES.has(existing?.lastErrorCode ?? "");
     const result = await submitEInvoice({
       invoice,
       lines,
       company,
-      provider: ambiguous ? withLookup(provider) : provider,
+      provider: ambiguous ? withAmbiguityGuard(withLookup(provider)) : provider,
       ctx,
       attempts: existing?.attempts ?? 0,
       now,
@@ -186,6 +213,7 @@ export async function submitAndPersist(args: {
           ? "reported"
           : "pending";
     const failed = delivery === "delivery_failed" || delivery === "rejected";
+    const needsLink = delivery === "needs_link";
     const doc = await applyTracks(
       company.id,
       invoice.id,
@@ -193,10 +221,12 @@ export async function submitAndPersist(args: {
         delivery,
         reporting,
         providerStatus: r.providerStatus ?? null,
-        errorCode: failed
-          ? (r.errorCode ?? (delivery === "rejected" ? "ACUBE_VALIDATION" : "TRANSPORT_ERROR"))
-          : null,
-        errorMessage: failed ? (r.detail ?? null) : null,
+        errorCode: needsLink
+          ? "EINVOICE_NEEDS_LINK"
+          : failed
+            ? (r.errorCode ?? (delivery === "rejected" ? "EINVOICE_VALIDATION" : "TRANSPORT_ERROR"))
+            : null,
+        errorMessage: failed || needsLink ? (r.detail ?? null) : null,
         reportBy,
       },
       {
@@ -294,7 +324,7 @@ export async function refreshAndPersist(args: {
       delivery,
       reporting,
       providerStatus: r.providerStatus ?? null,
-      errorCode: failed ? (r.errorCode ?? "ACUBE_DELIVERY_FAILED") : null,
+      errorCode: failed ? (r.errorCode ?? "EINVOICE_DELIVERY_FAILED") : null,
       errorMessage: failed ? (r.detail ?? null) : null,
     },
     {

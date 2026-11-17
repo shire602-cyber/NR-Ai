@@ -31,6 +31,7 @@ import {
   COMPLYANCE_PROVIDER_MODULE,
   COMPLYANCE_PROVIDER_NAME,
   ComplyanceEInvoiceProvider,
+  complyanceDocumentBelongsTo,
   complyanceEnvironment,
 } from "../services/einvoice/providers/complyance";
 import {
@@ -136,6 +137,16 @@ const connectBody = z
 type ConnectBody = z.output<typeof connectBody>;
 
 const emptyBody = z.object({}).strict();
+
+/**
+ * Outcomes after which a person may link the document Complyance holds: a plain duplicate number
+ * (GETS-HEAD-010) and the X6a "needs link" state (the same answer after an ambiguous transport
+ * error, when Complyance probably holds this very invoice).
+ */
+const LINKABLE_CODES: ReadonlySet<string> = new Set([
+  "COMPLYANCE_DUPLICATE_NUMBER",
+  "EINVOICE_NEEDS_LINK",
+]);
 
 const linkBody = z
   .object({
@@ -250,11 +261,14 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
 
   // After an ambiguous transport failure Complyance answers GETS-HEAD-010 without the document
   // id and offers no sales listing: a person finds the id in the Complyance Invoice Portal and
-  // links it here. We confirm it is this invoice (same number) before tracking it.
+  // links it here. We confirm it is this invoice (same number) AND this company's document (its
+  // source, Connect company or seller TIN: one platform key serves every tenant and invoice
+  // numbers repeat across tenants) before tracking it. Linking changes what the invoice reports
+  // to the FTA, so it needs the posting permission (POLICY_RULES has the same rule).
   app.post(
     "/api/companies/:companyId/einvoicing/complyance/link",
     authMiddleware,
-    requirePermission("documents.write"),
+    requirePermission("ledger.post"),
     strictBody(linkBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
@@ -264,10 +278,7 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
       const invoice = await storage.getInvoice(body.invoiceId, company.id);
       if (!invoice) throw new DomainError("NOT_FOUND", 404, undefined, "Invoice not found");
       const doc = await getEInvoiceDocument(company.id, invoice.id);
-      if (
-        doc?.lastErrorCode !== "COMPLYANCE_DUPLICATE_NUMBER" ||
-        invoice.einvoiceProviderMessageId
-      ) {
+      if (!LINKABLE_CODES.has(doc?.lastErrorCode ?? "") || invoice.einvoiceProviderMessageId) {
         throw new DomainError(
           "EINVOICE_LINK_NOT_NEEDED",
           409,
@@ -289,6 +300,32 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
           422,
           { documentId: body.documentId },
           "That Complyance document is not this invoice (its number differs or it was not found)."
+        );
+      }
+      const le = await getLegalEntity(
+        company.id,
+        COMPLYANCE_PROVIDER_NAME,
+        complyanceEnvironment()
+      );
+      const leDetails = (le?.providerDetails ?? {}) as Record<string, unknown>;
+      const owner = complyanceDocumentBelongsTo(data, {
+        tin: le?.tin ?? companyTin(company),
+        trn: company.trnVatNumber ?? le?.vatTrn ?? null,
+        connectCompanyId: le?.legalEntityId ?? null,
+        sourceName: typeof leDetails.sourceName === "string" ? leDetails.sourceName : null,
+      });
+      if (!owner.ok) {
+        log.warn(
+          { companyId: company.id, invoiceId: invoice.id, ...owner },
+          "Complyance link refused: the document is not provably this company's"
+        );
+        throw new DomainError(
+          "EINVOICE_LINK_MISMATCH",
+          422,
+          { documentId: body.documentId, checked: owner.checked, mismatched: owner.mismatched },
+          owner.checked.length === 0
+            ? "That Complyance document does not name its seller, so it cannot be confirmed as this company's."
+            : "That Complyance document belongs to another seller."
         );
       }
       await storage.updateInvoice(invoice.id, company.id, {

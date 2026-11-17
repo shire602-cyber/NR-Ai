@@ -744,8 +744,8 @@ export async function renderVatSummary(
             ar: "محسوب بواسطة محرك الضريبة من المستندات المرحّلة.",
           }
         : {
-            en: `Incomplete: ${vat.issues.length} document issue(s) must be fixed before filing.`,
-            ar: `غير مكتمل: يجب معالجة ${vat.issues.length} مشكلة في المستندات قبل التقديم.`,
+            en: `Incomplete: ${vat.issues.filter((i) => i.severity !== "warning").length} document issue(s) must be fixed before filing.`,
+            ar: `غير مكتمل: يجب معالجة ${vat.issues.filter((i) => i.severity !== "warning").length} مشكلة في المستندات قبل التقديم.`,
           },
       {
         en: "Not filed with the FTA from this report.",

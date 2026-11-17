@@ -8,6 +8,7 @@ import { apiUrl } from "@/lib/api";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useTranslation } from "@/lib/i18n";
 import { getAuthHeaders } from "@/lib/auth";
+import { VatInputTrnWarnings, type VatIssueLike } from "./VatInputTrnWarnings";
 
 /**
  * W4-E controls for one VAT 201 return: VAT-to-GL reconciliation status (R12-08b), the
@@ -55,6 +56,8 @@ const COPY = {
 interface ReconSnapshot {
   hasUnexplainedDifference?: boolean;
   aed?: { unexplainedOutput?: number; unexplainedInput?: number };
+  /** Issues listed with the return when it was generated (X6a: TRN warnings). */
+  issues?: VatIssueLike[];
 }
 
 export interface VatReturnControlsProps {
@@ -158,6 +161,7 @@ export default function VatReturnControls({
           )}
         </div>
       </div>
+      <VatInputTrnWarnings issues={snap?.issues} />
       {canReady && (needsOverride || diff) && (
         <div className="space-y-1">
           <label className="text-xs font-medium" htmlFor={`override-${vatReturn.id}`}>

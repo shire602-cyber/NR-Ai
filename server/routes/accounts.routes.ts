@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
+import { pool } from "../db";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import type { Account } from "../../shared/schema";
@@ -15,6 +16,14 @@ import {
   type CreateAccountBody,
   type UpdateAccountBody,
 } from "../../shared/validators/accounts";
+
+async function isManagedBankGlAccount(companyId: string, accountId: string): Promise<boolean> {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM bank_accounts WHERE company_id = $1 AND gl_account_id = $2 LIMIT 1`,
+    [companyId, accountId]
+  );
+  return rows.length > 0;
+}
 
 /**
  * A parent must be in the same company, of the same account type, and must not be the account
@@ -45,6 +54,17 @@ async function assertValidParent(
       400,
       undefined,
       "A parent account must have the same account type"
+    );
+  }
+  // X6a: a cash/bank account with sub-accounts becomes a header the ledger never posts to. The
+  // GL account behind a managed bank account must stay postable (statement matching, payments
+  // and transfers post to it), so it cannot become a parent.
+  if (await isManagedBankGlAccount(companyId, parent.id)) {
+    throw new DomainError(
+      "ACCOUNT_PARENT_POSTING",
+      400,
+      { parentId: parent.id, code: parent.code },
+      "This account is linked to a bank account and receives its postings, so it cannot have sub-accounts. Choose its parent bank account instead."
     );
   }
   const seen = new Set<string>();

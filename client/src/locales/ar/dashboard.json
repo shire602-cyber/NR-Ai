@@ -5,6 +5,7 @@
   "dashboard.actionPostEntry": "ترحيل قيد",
   "dashboard.actionPostReceipts": "ترحيل الإيصالات",
   "dashboard.actionReconcileBank": "تسوية البنك",
+  "dashboard.bankNoStatement": "لم يتم استيراد كشف حساب",
   "dashboard.actionReviewDrafts": "مراجعة المسودات",
   "dashboard.auditCheck.bank_reconciliation.none": "لا توجد معاملات بنكية خلال آخر 90 يومًا.",
   "dashboard.auditCheck.bank_reconciliation.ratio": "تمت تسوية {done} من أصل {total} معاملة بنكية خلال آخر 90 يومًا.",

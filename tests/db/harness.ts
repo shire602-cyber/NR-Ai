@@ -63,6 +63,9 @@ export interface ApiClient {
 
 export type CompanyRole = "owner" | "admin" | "accountant" | "cfo" | "employee" | "viewer" | string;
 
+/** X6a: the TRN a harness company gets by default (valid format: 15 digits, starts 1, ends 03). */
+export const HARNESS_DEFAULT_TRN = "100000000000003";
+
 export interface CreateTenantOptions {
   /** company_users.role for the user in their own company (default owner). */
   role?: CompanyRole;
@@ -76,6 +79,12 @@ export interface CreateTenantOptions {
   planId?: string;
   /** Company fields to set directly after registration (snake_case columns). */
   companyColumns?: Record<string, unknown>;
+  /**
+   * X6a: the company is VAT registered (has a TRN) unless this is false. Only a company with a
+   * TRN may issue a document that charges VAT (SUPPLIER_TRN_REQUIRED), and most fixtures model a
+   * VAT-registered UAE business. `companyColumns.trn_vat_number` overrides the default TRN.
+   */
+  vatRegistered?: boolean;
 }
 
 export interface Tenant {
@@ -399,6 +408,16 @@ export async function startHarness(): Promise<Harness> {
         company.id,
         opts.planId,
       ]);
+    }
+    if (
+      opts.vatRegistered !== false &&
+      !(opts.companyColumns && "trn_vat_number" in opts.companyColumns)
+    ) {
+      // A VAT-registered UAE company also has a place of supply for standard-rated sales.
+      await sql(
+        `UPDATE companies SET trn_vat_number = $2, emirate = COALESCE(emirate, 'dubai') WHERE id = $1`,
+        [company.id, HARNESS_DEFAULT_TRN]
+      );
     }
     if (opts.companyColumns && Object.keys(opts.companyColumns).length) {
       const cols = Object.keys(opts.companyColumns);

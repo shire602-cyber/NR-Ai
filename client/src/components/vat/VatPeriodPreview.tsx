@@ -4,6 +4,7 @@ import { Money } from "@/components/ui/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { apiRequest } from "@/lib/queryClient";
+import { VatInputTrnWarnings, type VatIssueLike } from "./VatInputTrnWarnings";
 
 export interface VatPreviewBoxes {
   box12TotalDueTax?: number;
@@ -28,7 +29,10 @@ export function VatPeriodPreview({
   compact?: boolean;
 }) {
   const { t } = useTranslation();
-  const { data, isLoading, isError } = useQuery<{ boxes?: VatPreviewBoxes }>({
+  const { data, isLoading, isError } = useQuery<{
+    boxes?: VatPreviewBoxes;
+    issues?: VatIssueLike[];
+  }>({
     queryKey: ["/api/companies", companyId, "vat", "compute", periodStart, periodEnd],
     queryFn: () =>
       apiRequest(
@@ -86,6 +90,7 @@ export function VatPeriodPreview({
           </div>
         </dl>
       )}
+      <VatInputTrnWarnings issues={data?.issues} />
       <p className="text-caption text-muted-foreground">{t["compliance.vatPreview.note"]}</p>
     </div>
   );

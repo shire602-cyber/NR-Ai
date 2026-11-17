@@ -53,7 +53,7 @@ function NotConnectedCard({ info }: { info: ProviderInfoView | undefined }) {
       description={t["einvoicing.providerCardDescription"]}
       actions={
         <StatusBadge tone="neutral" data-testid="einvoice-provider-status">
-          {t["einvoicing.acubeNotConnected"]}
+          {t["einvoicing.notConnected"]}
         </StatusBadge>
       }
     >

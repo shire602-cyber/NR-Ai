@@ -58,7 +58,11 @@ export interface DashboardStats {
     accounts: Array<{
       bankAccountId: string;
       name: string;
-      statementBalance: number;
+      /** X6a: amounts are in the bank account's own currency. */
+      currency?: string;
+      /** X6a: false when no statement is imported (no statement balance, no difference). */
+      hasStatement?: boolean;
+      statementBalance: number | null;
       glBalance: number | null;
       difference: number | null;
     }>;

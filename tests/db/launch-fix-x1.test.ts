@@ -100,14 +100,17 @@ describe("X1 J2 supplier TRN on tax invoices", () => {
     expect(ok.status, ok.text).toBe(200);
   });
 
-  it("a company that is not VAT registered is unaffected", async () => {
+  // X6a (council REQUIRED 2) replaces the X1 rule "no filing frequency = unaffected": a company
+  // without a TRN is not VAT registered and may not charge VAT whatever its filing frequency.
+  it("a company without a TRN and no filing frequency cannot charge VAT either", async () => {
     const t = await h.createTenant({ name: "NoVatReg" });
     await h.sql(
       `UPDATE companies SET vat_filing_frequency = NULL, trn_vat_number = NULL WHERE id = $1`,
       [t.company.id]
     );
     const id = await draft(t);
-    const ok = await t.as.patch(`/api/invoices/${id}/status`, { status: "sent" });
-    expect(ok.status, ok.text).toBe(200);
+    const blocked = await t.as.patch(`/api/invoices/${id}/status`, { status: "sent" });
+    expect(blocked.status, blocked.text).toBe(422);
+    expect(blocked.body.code).toBe("SUPPLIER_TRN_REQUIRED");
   });
 });

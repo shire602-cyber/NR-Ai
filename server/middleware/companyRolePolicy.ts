@@ -136,6 +136,9 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("MUT", "companies/*/journal/**", "ledger.post"),
   r("MUT", "journal/**", "ledger.post"),
   r("POST", "invoices/*/post", "ledger.post"),
+  // X6a: linking an e-invoice the provider already holds changes what the invoice reports to the
+  // FTA (Complyance manual link after GETS-HEAD-010).
+  r("POST", "companies/*/einvoicing/complyance/link", "ledger.post"),
   // Status / transition routes that write or reverse journal entries (J4): issuing ("sent"/"posted")
   // and voiding an invoice, issuing/voiding a credit note, debit/credit notes raised from an
   // invoice, recording a customer payment, applying/refunding customer credit and undoing an FX

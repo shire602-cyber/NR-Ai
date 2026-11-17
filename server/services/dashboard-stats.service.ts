@@ -10,6 +10,7 @@ import { pool } from "../db";
 import type { Queryable } from "../reporting";
 import { DomainError } from "../errors";
 import {
+  accountBalanceInCurrency,
   accountTotals,
   addDays,
   addMonths,
@@ -29,6 +30,7 @@ import {
   priorPeriod,
   priorYear,
   profitAndLoss,
+  reportCurrencyOf,
   uaeToday,
   ENTRY_LOCAL_DATE_SQL,
   NOT_CLOSING_SQL,
@@ -228,7 +230,23 @@ export function statementClosingFils(
   return { fils: openingFils + sum, date: lastDate };
 }
 
-async function bankVersusGl(companyId: string, today: IsoDate) {
+/** One bank account on the dashboard's bank-vs-GL card. Amounts are in `currency`. */
+export interface BankVsGlItem {
+  bankAccountId: string;
+  name: string;
+  bankName: string;
+  currency: string;
+  isForeign: boolean;
+  glAccountId: string | null;
+  /** False when no statement line was imported: nothing to compare, no difference. */
+  hasStatement: boolean;
+  statementDate: string | null;
+  statementBalance: number | null;
+  glBalance: number | null;
+  difference: number | null;
+}
+
+async function bankVersusGl(companyId: string, today: IsoDate): Promise<BankVsGlItem[]> {
   const [{ rows }, { rows: lineRows }, accounts] = await Promise.all([
     db.query(
       `SELECT ba.id, ba.name_en, ba.bank_name, ba.currency, ba.gl_account_id,
@@ -265,32 +283,43 @@ async function bankVersusGl(companyId: string, today: IsoDate) {
     });
     linesByAccount.set(l.account_id, list);
   }
-  // Like for like: the GL is read as at the statement's closing date (today when no lines),
-  // so postings dated after the statement do not show up as a difference.
+  // Like for like: the GL is read as at the statement's closing date, in the bank account's own
+  // currency (a USD account compares USD statement lines with the USD amounts on its GL lines).
+  // X6a (council REQUIRED 7): with no statement imported there is nothing to compare, so no
+  // statement balance and no difference are reported ("no statement imported").
+  const baseCurrency = (await reportCurrencyOf(companyId)).toUpperCase();
   const totalsAt = new Map<string, Awaited<ReturnType<typeof accountTotals>>>();
   const glAt = async (date: IsoDate) => {
     if (!totalsAt.has(date)) totalsAt.set(date, await accountTotals(companyId, { to: date }));
     return totalsAt.get(date)!;
   };
-  const items = [];
+  const items: BankVsGlItem[] = [];
   for (const r of rows) {
-    const closing = statementClosingFils(
-      Number(r.opening_fils),
-      linesByAccount.get(r.id as string) ?? []
-    );
+    const statementLines = linesByAccount.get(r.id as string) ?? [];
+    const currency = String(r.currency || baseCurrency).toUpperCase();
+    const isForeign = currency !== baseCurrency;
+    const closing = statementClosingFils(Number(r.opening_fils), statementLines);
+    const hasStatement = statementLines.length > 0;
     const asOf = (closing.date && closing.date < today ? closing.date : today) as IsoDate;
     const gl = r.gl_account_id ? accountById.get(r.gl_account_id) : undefined;
-    const glFils = gl ? naturalBalance("asset", (await glAt(asOf)).get(gl.id)) : null;
+    let glFils: number | null = null;
+    if (gl) {
+      glFils = isForeign
+        ? await accountBalanceInCurrency({ companyId, accountId: gl.id, currency, to: asOf })
+        : naturalBalance("asset", (await glAt(asOf)).get(gl.id));
+    }
     items.push({
       bankAccountId: r.id as string,
       name: r.name_en as string,
       bankName: r.bank_name as string,
-      currency: r.currency as string,
+      currency,
+      isForeign,
       glAccountId: (r.gl_account_id as string | null) ?? null,
-      statementDate: closing.date,
-      statementBalance: aed(closing.fils),
+      hasStatement,
+      statementDate: hasStatement ? closing.date : null,
+      statementBalance: hasStatement ? aed(closing.fils) : null,
       glBalance: glFils === null ? null : aed(glFils),
-      difference: glFils === null ? null : aed(closing.fils - glFils),
+      difference: hasStatement && glFils !== null ? aed(closing.fils - glFils) : null,
     });
   }
   return items;
@@ -503,7 +532,17 @@ export async function getDashboardStats(companyId: string, input: DashboardStats
     bankVsGl: {
       accounts: bank,
       glCashTotal: cashPosition,
-      statementTotal: aed(bank.reduce((s, b) => s + Math.round(b.statementBalance * 100), 0)),
+      // Base-currency accounts with an imported statement only (amounts in other currencies
+      // do not add up with the base currency).
+      statementTotal: aed(
+        bank.reduce(
+          (s, b) =>
+            !b.isForeign && b.statementBalance !== null
+              ? s + Math.round(b.statementBalance * 100)
+              : s,
+          0
+        )
+      ),
     },
     dso,
     dpo,

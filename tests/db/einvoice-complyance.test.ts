@@ -237,6 +237,10 @@ async function complyance(url: URL, init: RequestInit): Promise<Response> {
       data: {
         documentId: d.id,
         documentNumber: d.number,
+        // X6a: the seller's source ("name:version" as submitted). ASSUMPTION to confirm in the
+        // live sandbox (docs/einvoicing-complyance.md); the link route refuses a document that
+        // names no seller.
+        source: d.source,
         country: "AE",
         environment: "sandbox",
         state: d.state,
@@ -667,7 +671,7 @@ describe("E2 submit, two tracks and history", () => {
     expect(fake.posts).toBe(2);
   });
 
-  it("a lost response is never sent twice: GETS-HEAD-010, then a person links the document", async () => {
+  it("a lost response is never sent twice: GETS-HEAD-010 reads 'needs link' (not rejected), then a person links the document", async () => {
     const t = await readyTenant();
     const inv = await issuedInvoice(t);
     fake.nextSubmit = ["network"];
@@ -677,16 +681,21 @@ describe("E2 submit, two tracks and history", () => {
     await runEInvoiceRetries(new Date(Date.now() + 2 * 60_000));
     expect(fake.docs.size).toBe(1); // the retry was refused as a duplicate, nothing new stored
     let s = await statusOf(t, inv.id);
-    expect(s.tracks.delivery.status).toBe("rejected");
-    expect(s.rejection).toMatchObject({
-      code: "COMPLYANCE_DUPLICATE_NUMBER",
-      resubmittable: false,
+    // X6a: Complyance may have delivered and reported it: a distinct state, never "rejected".
+    expect(s.tracks.delivery.status).toBe("needs_link");
+    expect(s.rejection).toBeNull();
+    expect(s.checklist.find((c: any) => c.key === "sent")).toMatchObject({
+      state: "in_progress",
+      code: "EINVOICE_NEEDS_LINK",
     });
-    // Not retried again.
+    // Not retried again, and a manual resend is refused.
     expect(await runEInvoiceRetries(new Date(Date.now() + 60 * 60_000))).toEqual({
       attempted: 0,
       submitted: 0,
     });
+    const resend = await t.as.post(`/api/invoices/${inv.id}/einvoice/resubmit`, {});
+    expect(resend.status).toBe(409);
+    expect(fake.posts).toBe(2);
 
     const stored = docOf(t, inv.number)!;
     const wrong = await t.as.post(`/api/companies/${t.company.id}/einvoicing/complyance/link`, {
@@ -694,6 +703,37 @@ describe("E2 submit, two tracks and history", () => {
       documentId: "01KNOTTHISONE000000",
     });
     expect(wrong.status).toBe(422);
+    // X6a: same invoice number, another tenant's source (one platform key serves every tenant).
+    fake.docs.set("01KOTHERTENANT000000", {
+      ...stored,
+      id: "01KOTHERTENANT000000",
+      source: "muhasib-someoneelse:v1",
+    });
+    const foreign = await t.as.post(`/api/companies/${t.company.id}/einvoicing/complyance/link`, {
+      invoiceId: inv.id,
+      documentId: "01KOTHERTENANT000000",
+    });
+    expect(foreign.status).toBe(422);
+    expect(foreign.body.code).toBe("EINVOICE_LINK_MISMATCH");
+    expect(foreign.body.details?.mismatched).toEqual(["source"]);
+    // A document that names no seller cannot be proven to be this company's.
+    fake.docs.set("01KNOSELLER000000000", { ...stored, id: "01KNOSELLER000000000", source: "" });
+    const anonymous = await t.as.post(`/api/companies/${t.company.id}/einvoicing/complyance/link`, {
+      invoiceId: inv.id,
+      documentId: "01KNOSELLER000000000",
+    });
+    expect(anonymous.status).toBe(422);
+    // Linking needs the posting permission: an employee (documents.write only) is refused.
+    const employee = await h.createTenant({ name: "CmpEmployee" });
+    await h.sql(
+      `INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'employee')`,
+      [t.company.id, employee.user.id]
+    );
+    const denied = await employee.as.post(
+      `/api/companies/${t.company.id}/einvoicing/complyance/link`,
+      { invoiceId: inv.id, documentId: stored.id }
+    );
+    expect(denied.status).toBe(403);
     const link = await t.as.post(`/api/companies/${t.company.id}/einvoicing/complyance/link`, {
       invoiceId: inv.id,
       documentId: stored.id,

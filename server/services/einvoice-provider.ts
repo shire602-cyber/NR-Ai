@@ -47,6 +47,12 @@ export interface EInvoiceProviderResult {
   providerStatus?: string | null;
   /** Stable error code (tracks.ts EINVOICE_ERROR_CODES) for the UI to localise. */
   errorCode?: string | null;
+  /**
+   * X6a: the ASP refused the submission because it already holds a document with this number,
+   * without saying which one. After an ambiguous transport error that document is probably this
+   * invoice, so the workflow records "needs link" instead of a rejection.
+   */
+  numberAlreadyHeld?: boolean;
 }
 
 /** Options for a status/source call: credit notes live under a separate resource at some ASPs. */

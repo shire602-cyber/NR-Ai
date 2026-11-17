@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
@@ -140,6 +140,11 @@ import {
 import { STANDARD_VAT_RATES, vatJurisdictionForCountry } from "@shared/vat-classification";
 import { companyLogoSrc } from "@/lib/company-logo";
 import {
+  blankInvoiceLine,
+  isUntouchedBlankLine,
+  isVatRegisteredCompany,
+} from "@/lib/invoice-defaults";
+import {
   invoiceStatusQuery,
   parseInvoiceStatusFilter,
   type InvoiceStatusFilter,
@@ -178,17 +183,6 @@ const invoiceLineSchema = z.object({
   // X5 (J1 L1): linked product / service (drives the income account on posting).
   productId: z.string().optional(),
 });
-
-const EMPTY_LINE = {
-  description: "",
-  quantity: 1,
-  unitPrice: 0,
-  vatRate: 0.05,
-  vatSupplyType: "standard_rated" as SupplyTypeOption,
-  discountPercent: 0,
-  marginScheme: false,
-  marginPurchaseCost: 0,
-};
 
 // S1 (W5-E): form totals come from the pure, tested client/src/lib/invoice-totals.ts, which
 // follows the server engine (fils, half-up, VAT rounded once per document).
@@ -283,6 +277,9 @@ export default function Invoices() {
     (company as { baseCurrency?: string } | undefined)?.baseCurrency || "AED";
   // Standard VAT rate of the issuing company's jurisdiction (UAE 5%, KSA 15%).
   const standardRate = STANDARD_VAT_RATES[vatJurisdictionForCountry(company?.addressCountry)];
+  // X6a: a company without a TRN is not VAT registered; its new lines start at 0% out of scope.
+  const vatRegistered = isVatRegisteredCompany(company);
+  const blankLine = useCallback(() => blankInvoiceLine(vatRegistered), [vatRegistered]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   // R18-07: a freshly saved invoice is a draft; offer to issue it right away.
@@ -425,9 +422,19 @@ export default function Invoices() {
       customerTrn: "",
       date: new Date(),
       currency: baseCurrency,
-      lines: [{ ...EMPTY_LINE }],
+      lines: [blankLine()],
     },
   });
+
+  // X6a: the company (and so its TRN) can load after the form is created. A new invoice whose
+  // only line is still untouched follows the company's VAT registration once it is known.
+  useEffect(() => {
+    if (editingInvoice) return;
+    const current = form.getValues("lines");
+    if (current.length === 1 && isUntouchedBlankLine(current[0])) {
+      form.setValue("lines", [blankLine()]);
+    }
+  }, [blankLine, editingInvoice, form]);
 
   // R18-12: the dashboard's guided first-invoice entry point links to
   // /invoices?new=1, which opens the New Invoice dialog straight away. The
@@ -505,7 +512,7 @@ export default function Invoices() {
         customerTrn: "",
         date: new Date(),
         currency: baseCurrency,
-        lines: [{ ...EMPTY_LINE }],
+        lines: [blankLine()],
       });
     },
     onError: (error: any) => {
@@ -537,7 +544,7 @@ export default function Invoices() {
         customerTrn: "",
         date: new Date(),
         currency: baseCurrency,
-        lines: [{ ...EMPTY_LINE }],
+        lines: [blankLine()],
       });
     },
     onError: (error: any) => {
@@ -587,11 +594,11 @@ export default function Invoices() {
         );
       }
       if (error?.body?.code === "SUPPLIER_TRN_REQUIRED") {
-        // The company is VAT registered but has no TRN: say so and link to the fix.
+        // X6a: the company has no TRN, so it may not charge VAT: say so and link to the fix.
         toast({
           variant: "destructive",
-          title: t["invoices.supplierTrnRequiredTitle"],
-          description: t["invoices.supplierTrnRequiredBody"],
+          title: t["invoices.noTrnVatTitle"],
+          description: t["invoices.noTrnVatBody"],
           action: (
             <ToastAction altText={t["invoices.supplierTrnRequiredLink"]} asChild>
               <Link href="/company-profile" data-testid="link-company-settings-trn">
@@ -916,7 +923,7 @@ export default function Invoices() {
                 productId: l.productId || undefined,
               })
             )
-          : [{ ...EMPTY_LINE }],
+          : [blankLine()],
       });
       setDialogOpen(true);
     } catch (error: any) {
@@ -937,7 +944,7 @@ export default function Invoices() {
       date: new Date(),
       currency: baseCurrency,
       exchangeRate: "",
-      lines: [{ ...EMPTY_LINE }],
+      lines: [blankLine()],
     });
     setEditingInvoice(null);
   };
@@ -1428,7 +1435,7 @@ export default function Invoices() {
                     date: new Date(),
                     currency: baseCurrency,
                     exchangeRate: "",
-                    lines: [{ ...EMPTY_LINE }],
+                    lines: [blankLine()],
                   });
                 }
               }}
@@ -1678,7 +1685,7 @@ export default function Invoices() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => append({ ...EMPTY_LINE })}
+                            onClick={() => append(blankLine())}
                             data-testid="button-add-line"
                           >
                             <Plus className="h-4 w-4" />
@@ -1895,7 +1902,7 @@ export default function Invoices() {
                                     <Money
                                       amount={
                                         computeInvoiceFormLine(
-                                          watchLines[index] ?? EMPTY_LINE,
+                                          watchLines[index] ?? blankLine(),
                                           standardRate
                                         ).lineTotal
                                       }

@@ -155,8 +155,9 @@ export function InvoicePreview(props: InvoicePreviewProps) {
               </p>
             )}
           </div>
+          {/* X6a: only a supplier with a TRN issues a "Tax invoice"; otherwise it is an "Invoice". */}
           <Bi
-            k="forms.preview.taxInvoice"
+            k={sellerTrn?.trim() ? "forms.preview.taxInvoice" : "forms.preview.plainInvoice"}
             bi={bi}
             align="end"
             className="text-h3 font-semibold text-foreground"

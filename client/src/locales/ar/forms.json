@@ -64,6 +64,7 @@
   "forms.preview.ariaLabel": "معاينة الفاتورة بالعربية والإنجليزية",
   "forms.preview.draftBadge": "مسودة",
   "forms.preview.taxInvoice": "فاتورة ضريبية",
+  "forms.preview.plainInvoice": "فاتورة",
   "forms.preview.invoiceNo": "رقم الفاتورة",
   "forms.preview.issueDate": "تاريخ الإصدار",
   "forms.preview.placeOfSupply": "مكان التوريد",

@@ -3,9 +3,11 @@
  *
  * Muhasib is built against two MoF-accredited ASPs (A-Cube, Complyance) and will switch on the
  * one it signs with. Each provider is one module (its adapter, its webhook route, its fixtures and
- * its docs) that exports one of these descriptors; `registry.ts` lists them. Nothing outside the
- * provider's own files names a provider, so removing one is: delete its files and its registry
- * line (docs/einvoicing-providers.md has the exact list).
+ * its docs) that exports one of these descriptors; `registry.ts` lists them. Removing one is more
+ * than deleting its files: a short list of touch points outside them also names it (route
+ * registration, webhook raw-body prefix and CSRF exemption, env detection, error-code lists, the
+ * settings-card entry, marketing copy, locale keys). docs/einvoicing-providers.md lists every one,
+ * and tests/unit/einvoice-provider-discard.test.ts fails when that list goes out of date.
  */
 import type { EInvoiceProvider } from "../../einvoice-provider";
 

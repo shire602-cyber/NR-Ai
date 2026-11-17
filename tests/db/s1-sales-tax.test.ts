@@ -180,7 +180,9 @@ describe("S1 companies: TRN uses the shared zUaeTrn rule", () => {
 
 describe("S1 logo: stored file, served endpoint, used by PDFs", () => {
   it("[R14-13] a logo over 1 MB of JSON reaches the upload route; invoice and quote PDFs embed the stored logo", async () => {
-    const t = await h.createTenant();
+    // Not VAT registered (X6a harness default is a TRN): a tax invoice's FTA QR code is also an
+    // image, and this test counts images to prove the logo is (not) embedded.
+    const t = await h.createTenant({ vatRegistered: false });
     // ~900 KB image: base64 is ~1.2 MB, above the 1 MB default JSON cap.
     const big = Buffer.concat([
       Buffer.from(PNG_1X1, "base64").subarray(0, 33), // signature + IHDR (1x1)

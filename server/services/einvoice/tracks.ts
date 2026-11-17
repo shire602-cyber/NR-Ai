@@ -21,7 +21,11 @@ export type DeliveryStatus =
   | "sending"
   | "delivered"
   | "delivery_failed"
-  | "rejected";
+  | "rejected"
+  // X6a: an ambiguous transport error, then the ASP said it already holds this number without
+  // naming the document. It may well have been delivered and reported: never shown as rejected,
+  // never sent again; a person links the provider's document.
+  | "needs_link";
 
 export type ReportingStatus = "not_required" | "pending" | "reported" | "report_failed";
 
@@ -33,6 +37,7 @@ export const DELIVERY_STATUSES: DeliveryStatus[] = [
   "delivered",
   "delivery_failed",
   "rejected",
+  "needs_link",
 ];
 export const REPORTING_STATUSES: ReportingStatus[] = [
   "not_required",
@@ -48,7 +53,7 @@ export const isReportingStatus = (s: unknown): s is ReportingStatus =>
 
 /** Delivery states in which the ASP holds the document (no new submission). */
 export function isDeliveryInFlight(s: string | null | undefined): boolean {
-  return s === "queued" || s === "sending" || s === "delivered";
+  return s === "queued" || s === "sending" || s === "delivered" || s === "needs_link";
 }
 
 export function deliveryFromLegacy(status: string | null | undefined): DeliveryStatus {
@@ -97,6 +102,9 @@ export function legacyFromTracks(
       return "failed";
     case "rejected":
       return "rejected";
+    case "needs_link":
+      // Possibly held by the ASP: in flight for legacy readers (not retried, not resubmitted).
+      return "submitted";
   }
 }
 
@@ -194,6 +202,10 @@ export const EINVOICE_ERROR_CODES = [
   "EINVOICE_LEGAL_ENTITY_NOT_ACTIVE",
   "EINVOICE_LEGAL_ENTITY_DELINKED",
   "EINVOICE_SUPPLIER_ENDPOINT_MISMATCH",
+  // X6a: provider-neutral fallbacks when a provider gives no code of its own.
+  "EINVOICE_VALIDATION",
+  "EINVOICE_DELIVERY_FAILED",
+  "EINVOICE_NEEDS_LINK",
   "ACUBE_VALIDATION",
   "ACUBE_BAD_REQUEST",
   "ACUBE_LEGAL_ENTITY_NOT_FOUND",

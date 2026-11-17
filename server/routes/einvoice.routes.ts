@@ -11,7 +11,7 @@ import { DomainError } from "../errors";
 import { companies, type Company, type Invoice } from "../../shared/schema";
 import { getCapability } from "../../shared/capabilities";
 import { zDate, zIbanAE, zText, zUuid } from "../../shared/validators/primitives";
-import { generateEInvoiceXML, validateForEInvoicing } from "../services/einvoice.service";
+import { preflightEInvoice } from "../services/einvoice-submit.service";
 import {
   EInvoiceProviderError,
   aspConfigured,
@@ -242,16 +242,15 @@ export function registerEInvoiceRoutes(app: Express) {
       const { invoice, company } = await loadInvoiceAndCompany(req);
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
       const ctx = await loadEInvoiceContext(invoice, company, lines);
-      const issues: Array<{ field: string; message: string; ruleId?: string; layer?: string }> =
-        validateForEInvoicing(invoice, lines, company, ctx);
-      let document: ReturnType<typeof summariseValidation> | null = null;
-      if (issues.length === 0) {
-        const { xml } = generateEInvoiceXML(invoice, lines, company, ctx.customer, {
-          ...(ctx.options ?? {}),
-          originalInvoice: ctx.originalInvoice,
-          lineExtras: ctx.lineExtras,
-        });
-        document = summariseValidation(await validateEInvoiceXml(xml));
+      // X6a: the same preflight generate-einvoice runs (one rule set, see preflightEInvoice).
+      const pre = await preflightEInvoice(invoice, lines, company, ctx, {
+        uuid: invoice.einvoiceUuid ?? undefined,
+      });
+      const issues: Array<{ field: string; message: string; ruleId?: string; layer?: string }> = [
+        ...pre.issues,
+      ];
+      const document = pre.validation;
+      if (document) {
         for (const layer of ["xsd", "schematron", "rules"] as const) {
           for (const e of document[layer].errors) {
             issues.push({
@@ -267,7 +266,7 @@ export function registerEInvoiceRoutes(app: Express) {
         ? summariseValidation(await validateEInvoiceXml(invoice.einvoiceXml))
         : null;
       res.json({
-        valid: issues.length === 0 && (document?.valid ?? false),
+        valid: pre.valid && issues.length === 0,
         issues,
         document,
         stored,
@@ -293,31 +292,21 @@ export function registerEInvoiceRoutes(app: Express) {
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
       const ctx = await loadEInvoiceContext(invoice, company, lines);
 
-      // A payload an ASP/FTA would reject must never be generated and stored.
-      const issues = validateForEInvoicing(invoice, lines, company, ctx);
-      if (issues.length > 0) {
+      // A payload an ASP/FTA would reject must never be generated and stored. X6a: the same
+      // preflight GET …/einvoice/validate runs (one rule set, see preflightEInvoice).
+      // E1: regenerating keeps the e-invoice UUID (the ASP's idempotency key).
+      const pre = await preflightEInvoice(invoice, lines, company, ctx, {
+        uuid: invoice.einvoiceUuid ?? undefined,
+      });
+      if (pre.issues.length > 0 || !pre.built || !pre.validation) {
         return res.status(422).json({
           message: "Invoice is not e-invoicing ready",
           code: "EINVOICE_VALIDATION_FAILED",
-          issues,
+          issues: pre.issues,
         });
       }
-
-      const { xml, uuid, hash, documentType } = generateEInvoiceXML(
-        invoice,
-        lines,
-        company,
-        ctx.customer,
-        // S1: product GTIN / reverse-charge goods type per line, margin-scheme flag.
-        {
-          ...(ctx.options ?? {}),
-          // E1: regenerating keeps the e-invoice UUID (the ASP's idempotency key).
-          uuid: invoice.einvoiceUuid ?? undefined,
-          originalInvoice: ctx.originalInvoice,
-          lineExtras: ctx.lineExtras,
-        }
-      );
-      const validation = summariseValidation(await validateEInvoiceXml(xml));
+      const { xml, uuid, hash, documentType } = pre.built;
+      const validation = pre.validation;
       if (!validation.valid) {
         log.warn({ id: invoice.id, validation }, "Generated e-invoice failed validation");
         return res.status(422).json({

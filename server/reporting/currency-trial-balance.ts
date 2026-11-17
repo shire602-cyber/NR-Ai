@@ -136,3 +136,35 @@ export async function trialBalanceByCurrency(
     isBalanced: baseD === baseC,
   };
 }
+
+/**
+ * X6a (council REQUIRED 7): the debit-normal balance of one account in a given currency as at
+ * `to`, in fils of that currency (same rule as server/services/fx/bank-balances.ts):
+ *  - `currency` is the report currency: debit - credit of every line (the GL figure);
+ *  - a foreign currency: foreign_debit - foreign_credit of lines tagged with that currency
+ *    (lines without a foreign amount, e.g. a revaluation adjustment, change the base only).
+ */
+export async function accountBalanceInCurrency(
+  args: { companyId: string; accountId: string; currency: string; to: IsoDate },
+  q: Queryable = pool
+): Promise<number> {
+  const base = (await reportCurrencyOf(args.companyId, q)).toUpperCase();
+  const cur = args.currency.toUpperCase();
+  const { rows } = await q.query(
+    `SELECT COALESCE(SUM(CASE WHEN $4 = $5
+                              THEN ROUND(jl.debit * 100) - ROUND(jl.credit * 100)
+                              WHEN UPPER(COALESCE(jl.foreign_currency, '')) = $4
+                              THEN ROUND(COALESCE(jl.foreign_debit, 0) * 100)
+                                 - ROUND(COALESCE(jl.foreign_credit, 0) * 100)
+                              ELSE 0 END), 0)::bigint AS fils
+       FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.entry_id
+      WHERE je.company_id = $1
+        AND jl.account_id = $2
+        AND je.status = 'posted'
+        AND ${NOT_CLOSING_SQL}
+        AND ${ENTRY_LOCAL_DATE_SQL} <= $3::date`,
+    [args.companyId, args.accountId, args.to, cur, base]
+  );
+  return Number(rows[0]?.fils ?? 0);
+}
