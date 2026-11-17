@@ -20,6 +20,7 @@ import { fromFils, toFils } from "../../../shared/money";
 import { isNonDepreciableCategory } from "../../../shared/validators/fixed-assets";
 import { postJournal, withLedgerTx, type LedgerTx, type PostJournalLineInput } from "../../ledger";
 import { assertAccount, ensureAccountByCode, q } from "../inventory/store";
+import { defaultPaymentAccountId, isHeaderAccount } from "../payment-accounts.service";
 import {
   depreciationFor,
   disposalSplit,
@@ -119,6 +120,17 @@ export function calcInput(a: AssetRow): AssetCalcInput {
     accumulatedFils: f(a.accumulated_depreciation),
     isDepreciable: a.is_depreciable !== false && !isNonDepreciableCategory(a.category),
   };
+}
+
+/**
+ * X6a: cash proceeds with no account chosen land on 1010 Cash, or, when 1010 has become a cash
+ * header (it has sub-accounts, which the ledger refuses to post to), on the company's default
+ * postable cash/bank leaf.
+ */
+async function defaultDisposalCashAccount(tx: LedgerTx, companyId: string): Promise<string> {
+  const cashId = await ensureAccountByCode(tx, companyId, FA_CODES.CASH);
+  if (!(await isHeaderAccount(companyId, cashId))) return cashId;
+  return (await defaultPaymentAccountId(companyId, { method: "cash" })) ?? cashId;
 }
 
 export async function assetAccounts(tx: LedgerTx, a: AssetRow) {
@@ -651,7 +663,7 @@ export async function disposeAsset(assetId: string, companyId: string, input: Di
         ? await ensureAccountByCode(tx, a.company_id, FA_CODES.AR)
         : input.proceedsAccountId
           ? (await assertAccount(tx, a.company_id, input.proceedsAccountId, ["asset"])).id
-          : await ensureAccountByCode(tx, a.company_id, FA_CODES.CASH);
+          : await defaultDisposalCashAccount(tx, a.company_id);
       lines.push({
         accountId: proceedsAccount,
         debitFils: grossFils,

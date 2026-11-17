@@ -378,9 +378,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
   const { delivery, reporting } = view.tracks;
   const handedOver = !!view.transmission.providerDocumentId;
   const failedDelivery = delivery.status === "rejected" || delivery.status === "delivery_failed";
-  const providerName =
-    view.transmission.providerDisplayName ??
-    (view.transmission.provider === "acube" ? "A-Cube" : (view.transmission.provider ?? ""));
+  const providerName = view.transmission.providerDisplayName ?? view.transmission.provider ?? "";
   const actionError = (send.error ?? resubmit.error) as
     | (Error & { body?: { code?: string } })
     | null;
@@ -534,6 +532,22 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
             </Button>
           </div>
         )
+      )}
+
+      {/* X6a: a lost response the provider may already hold: not a rejection, never resent. */}
+      {delivery.status === "needs_link" && (
+        <div
+          className="rounded-lg border border-warning/40 bg-warning-subtle p-4"
+          data-testid="einvoice-needs-link"
+          role="status"
+        >
+          <p className="text-small font-semibold text-foreground">
+            {formatMessage(t["einvoicing.needsLinkTitle"], { provider: providerName || "ASP" })}
+          </p>
+          <p className="mt-1 text-small text-foreground">
+            {formatMessage(t["einvoicing.needsLinkBody"], { provider: providerName || "ASP" })}
+          </p>
+        </div>
       )}
 
       {/* Rejection / delivery failure: the reason, where, and the way back. */}
@@ -698,7 +712,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
           <History aria-hidden className="h-3.5 w-3.5" />
           {formatMessage(t["einvoicing.historyButton"], { count: view.events.length })}
         </Button>
-        {view.transmission.provider === "acube" && view.transmission.environment === "sandbox" && (
+        {!!view.transmission.provider && view.transmission.environment === "sandbox" && (
           <span className="ms-auto inline-flex items-center gap-1 text-caption text-muted-foreground">
             <CircleDashed aria-hidden className="h-3.5 w-3.5" />
             {t["einvoicing.sandboxNote"]}

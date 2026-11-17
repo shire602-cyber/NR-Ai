@@ -13,7 +13,9 @@ export type DeliveryStatus =
   | "sending"
   | "delivered"
   | "delivery_failed"
-  | "rejected";
+  | "rejected"
+  /** X6a: the provider may hold it after a lost response; a person links it (never resent). */
+  | "needs_link";
 export type ReportingStatus = "not_required" | "pending" | "reported" | "report_failed";
 export type ChecklistState =
   | "done"
@@ -106,6 +108,7 @@ export const DELIVERY_TONE: Record<DeliveryStatus, StatusTone> = {
   delivered: "success",
   delivery_failed: "danger",
   rejected: "danger",
+  needs_link: "warning",
 };
 
 export const REPORTING_TONE: Record<ReportingStatus, StatusTone> = {
@@ -129,6 +132,10 @@ const KNOWN_ERRORS = new Set([
   "EINVOICE_SUPPLIER_ENDPOINT_MISMATCH",
   "EINVOICE_VALIDATION_FAILED",
   "EINVOICE_CANCELLED",
+  // X6a: provider-neutral fallbacks when a provider gives no code of its own.
+  "EINVOICE_VALIDATION",
+  "EINVOICE_DELIVERY_FAILED",
+  "EINVOICE_NEEDS_LINK",
   "ACUBE_VALIDATION",
   "ACUBE_BAD_REQUEST",
   "ACUBE_LEGAL_ENTITY_NOT_FOUND",

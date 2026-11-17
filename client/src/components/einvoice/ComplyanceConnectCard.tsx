@@ -102,7 +102,7 @@ export function ComplyanceConnectCard({ companyId }: { companyId: string }) {
   const le = v?.legalEntity ?? null;
   const name = v?.displayName ?? "Complyance";
   const statusLabel = !v?.configured
-    ? t["einvoicing.acubeNotConnected"]
+    ? t["einvoicing.notConnected"]
     : le
       ? t[`einvoicing.leStatus_${le.status}`]
       : t["einvoicing.leStatus_none"];

@@ -160,6 +160,73 @@ interface RawResponse {
 const str = (v: unknown): string | null =>
   v === undefined || v === null || v === "" ? null : String(v);
 
+// ─── Link verification (manual link after GETS-HEAD-010) ───────────────────
+
+/** Who a company is at Complyance, as recorded at onboarding. */
+export interface ComplyanceSellerIdentity {
+  /** 10-digit UAE TIN (Peppol 0235 scheme). */
+  tin: string | null;
+  /** 15-digit VAT TRN. */
+  trn: string | null;
+  /** The Connect company id (einvoice_legal_entities.legal_entity_id). */
+  connectCompanyId: string | null;
+  /** The company's invoice source name (provider_details.sourceName). */
+  sourceName: string | null;
+}
+
+const digits = (v: unknown) => (str(v) ?? "").replace(/^0235:/, "").replace(/\D/g, "");
+
+/**
+ * X6a (before e-invoicing goes on, item 2): one Complyance platform key serves every tenant and
+ * invoice numbers repeat across tenants, so a document id typed by a user must be proven to be
+ * THIS company's document before we track it: its source, Connect company or seller TIN/TRN must
+ * match what onboarding recorded. Every identity the document carries must match, and it must
+ * carry at least one; a document that names no seller cannot be linked (confirm the field names
+ * in the live sandbox: docs/einvoicing-complyance.md).
+ */
+export function complyanceDocumentBelongsTo(
+  data: Record<string, unknown>,
+  me: ComplyanceSellerIdentity
+): { ok: boolean; checked: string[]; mismatched: string[] } {
+  const checked: string[] = [];
+  const mismatched: string[] = [];
+  const check = (label: string, theirs: string | null, ours: string | null) => {
+    if (!theirs) return;
+    checked.push(label);
+    if (!ours || theirs !== ours) mismatched.push(label);
+  };
+  const obj = (v: unknown) =>
+    v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+
+  // Source: "name:version" (as we submit it) or { name }.
+  const rawSource = typeof data.source === "string" ? data.source : str(obj(data.source).name);
+  const sourceName = rawSource ? rawSource.split(":")[0] : str(data.sourceName);
+  check("source", sourceName, me.sourceName);
+
+  const attribution = obj(data.attribution);
+  check("connectCompanyId", str(attribution.companyId) ?? str(data.companyId), me.connectCompanyId);
+
+  // Seller tax ids, in GETS (invoice/payload.parties.seller) or a flat seller block.
+  const seller = {
+    ...obj(data.seller),
+    ...obj(obj(obj(data.invoice).parties).seller),
+    ...obj(obj(obj(data.payload).parties).seller),
+  };
+  const ids: string[] = [];
+  for (const v of [seller.tin, seller.trn, seller.taxId, seller.vatNumber, seller.peppolId])
+    if (str(v)) ids.push(digits(v));
+  if (Array.isArray(seller.taxIds)) {
+    for (const t of seller.taxIds)
+      ids.push(digits(typeof t === "object" ? (obj(t).value ?? obj(t).id) : t));
+  }
+  for (const id of ids.filter(Boolean)) {
+    checked.push("sellerTaxId");
+    const ours = [digits(me.tin), digits(me.trn)].filter(Boolean);
+    if (!ours.includes(id)) mismatched.push("sellerTaxId");
+  }
+  return { ok: checked.length > 0 && mismatched.length === 0, checked, mismatched };
+}
+
 // ─── Status mapping (two tracks) ─────────────────────────────────────────
 
 export interface ComplyanceTrackOutcome {
@@ -512,6 +579,7 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
             str(body.message) ??
             "Complyance already holds a document with this number. Link it from the Complyance Invoice Portal.",
           errorCode: "COMPLYANCE_DUPLICATE_NUMBER",
+          numberAlreadyHeld: true,
           reasons,
           raw: r.json,
         });

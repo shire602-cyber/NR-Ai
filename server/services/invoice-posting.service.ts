@@ -592,9 +592,11 @@ async function hasPostedRevenue(tx: LedgerTx, companyId: string, invoiceId: stri
  * post exactly once; the losers see the issued state (no-op).
  */
 /**
- * FTA tax-invoice rule: a VAT-registered supplier (a company with a VAT filing frequency)
- * must show its own TRN on a standard-rated tax invoice. Refuse to issue one while the
- * company TRN is missing, with a pointer to the company settings.
+ * FTA rule (X6a): only a VAT-registered supplier may charge VAT, and its tax invoice must show
+ * its own TRN. A company without a TRN is treated as not VAT registered whatever its filing
+ * frequency setting: issuing any document that charges VAT above zero is refused, with a
+ * pointer to the company settings. Zero-rated / out-of-scope documents ("Invoice") are fine.
+ * Only the issue path checks this; invoices already issued keep their data.
  */
 export async function assertSupplierTrnForTaxInvoice(
   tx: LedgerTx,
@@ -602,17 +604,16 @@ export async function assertSupplierTrnForTaxInvoice(
 ): Promise<void> {
   if (!(Number(inv.vatAmount) > 0)) return;
   const [co] = await tx
-    .select({ trn: companies.trnVatNumber, freq: companies.vatFilingFrequency })
+    .select({ trn: companies.trnVatNumber })
     .from(companies)
     .where(eq(companies.id, inv.companyId));
   if (!co) return;
-  const registered = Boolean((co.freq ?? "").trim());
-  if (registered && !(co.trn ?? "").trim()) {
+  if (!(co.trn ?? "").trim()) {
     throw new DomainError(
       "SUPPLIER_TRN_REQUIRED",
       422,
       { settingsPath: "/company-profile", fields: { trnVatNumber: ["Company TRN is required"] } },
-      "Your company is VAT registered but has no Tax Registration Number (TRN). Add the 15-digit TRN in Company settings before issuing a tax invoice with VAT."
+      "Your company has no Tax Registration Number (TRN), so it cannot charge VAT. Set the VAT on each line to 0% (out of scope), or add your 15-digit TRN in Company settings before issuing a tax invoice with VAT."
     );
   }
 }

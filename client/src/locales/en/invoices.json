@@ -94,6 +94,8 @@
   "invoices.supplierTrnRequiredTitle": "Company TRN required",
   "invoices.supplierTrnRequiredBody": "Your company is VAT registered but has no TRN. Add it in Company settings before issuing a tax invoice with VAT.",
   "invoices.supplierTrnRequiredLink": "Open Company settings",
+  "invoices.noTrnVatTitle": "VAT needs a company TRN",
+  "invoices.noTrnVatBody": "Your company has no Tax Registration Number (TRN), so it cannot charge VAT. Set the VAT on each line to 0% (out of scope), or add your TRN in Company settings to issue a tax invoice.",
   "invoices.currency.label": "Currency",
   "invoices.currency.rateLabel": "Exchange rate (1 {from} = ? {to})",
   "invoices.currency.rateHint": "Leave blank to use the company rate for the date",

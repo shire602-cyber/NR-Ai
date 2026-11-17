@@ -102,8 +102,14 @@ export interface VatIssue {
     | "NO_EXCHANGE_RATE"
     | "COMPANY_EMIRATE_MISSING"
     | "INVALID_TRN"
-    | "NO_TRN";
+    | "NO_TRN"
+    | "INPUT_VAT_NO_SUPPLIER_TRN";
   message: string;
+  /**
+   * X6a: "warning" issues are listed with the return but do not make it incomplete or block
+   * generation; every other issue is blocking ("error", the default when absent).
+   */
+  severity?: "error" | "warning";
   documentType?: string;
   documentId?: string;
   reference?: string | null;
@@ -248,8 +254,44 @@ export async function computeVat201(input: ComputeVatInput): Promise<VatComputat
     return computeGroup(input, company, group);
   }
   const single = await computeSingle(input, company, new Set());
-  if (!input.allowIncomplete && single.issues.length > 0) throwBlocking(single.issues);
+  if (!input.allowIncomplete && blockingIssues(single.issues).length > 0)
+    throwBlocking(blockingIssues(single.issues));
   return single;
+}
+
+/** Issues that make a return incomplete (warnings are listed but never block). */
+export function blockingIssues(issues: VatIssue[]): VatIssue[] {
+  return issues.filter((i) => i.severity !== "warning");
+}
+
+const TRN_PATTERN = /^\d{15}$/;
+
+/**
+ * X6a (beat item 6): input VAT recovered on a purchase whose supplier has no valid TRN. Art. 55
+ * of the VAT Law only allows recovery against a tax invoice, which carries the supplier's TRN, so
+ * the return lists these for review (a warning: the user may hold a valid tax invoice and only
+ * the TRN field is missing in Muhasib).
+ */
+export function inputVatWithoutSupplierTrn(contributions: VatContribution[]): VatIssue[] {
+  const seen = new Set<string>();
+  const out: VatIssue[] = [];
+  for (const c of contributions) {
+    if (c.sourceType !== "bill" && c.sourceType !== "receipt") continue;
+    if (!((c.boxes.box9ExpensesVat ?? 0) > 0)) continue;
+    if (TRN_PATTERN.test(String(c.counterpartyTrn ?? "").replace(/\s/g, ""))) continue;
+    const key = `${c.sourceType}:${c.sourceId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      code: "INPUT_VAT_NO_SUPPLIER_TRN",
+      severity: "warning",
+      message: `Input VAT is claimed on ${c.sourceType === "bill" ? "bill" : "receipt"} ${c.reference ?? c.sourceId}${c.counterparty ? ` from ${c.counterparty}` : ""}, but the supplier has no valid TRN. Input VAT is only recoverable against a tax invoice that shows the supplier's TRN: add the TRN, or stop claiming the VAT.`,
+      documentType: c.sourceType,
+      documentId: c.sourceId,
+      reference: c.reference,
+    });
+  }
+  return out;
 }
 
 function throwBlocking(issues: VatIssue[]): never {
@@ -377,6 +419,8 @@ async function computeSingle(
     });
   }
 
+  issues.push(...inputVatWithoutSupplierTrn(contributions));
+
   // The VAT-to-GL reconciliation compares like with like: functional currency.
   const reconciliation = buildReconciliation({
     boxes: deriveTotals(boxes),
@@ -401,7 +445,7 @@ async function computeSingle(
     contributions,
     excluded,
     issues,
-    complete: issues.length === 0,
+    complete: blockingIssues(issues).length === 0,
     partialExemption: {
       exemptSupplyRatio: company.exemptSupplyRatio,
       recoverableRatio: 1 - company.exemptSupplyRatio,
@@ -1331,7 +1375,8 @@ async function computeGroup(
   // AED the same way (fx.toVatFilingCurrency at the entry date) before the group reconciliation.
   const ledgers: Array<Map<ReconCategory, { output: number; input: number }>> = [];
   for (const p of parts) ledgers.push(await groupMemberLedgerInAed(p, issues));
-  if (!input.allowIncomplete && issues.length > 0) throwBlocking(issues);
+  if (!input.allowIncomplete && blockingIssues(issues).length > 0)
+    throwBlocking(blockingIssues(issues));
   const boxesFils = deriveTotals(boxes);
   const recon = parts.map((p) => p.reconciliation);
   const reconciliation = buildReconciliation({
@@ -1348,7 +1393,7 @@ async function computeGroup(
     contributions,
     excluded,
     issues,
-    complete: issues.length === 0,
+    complete: blockingIssues(issues).length === 0,
     counts,
     reconciliation,
     partialExemption: {

@@ -94,6 +94,8 @@
   "invoices.supplierTrnRequiredTitle": "رقم التسجيل الضريبي للشركة مطلوب",
   "invoices.supplierTrnRequiredBody": "شركتك مسجّلة في ضريبة القيمة المضافة لكن لا يوجد لها رقم تسجيل ضريبي. أضفه في إعدادات الشركة قبل إصدار فاتورة ضريبية تتضمن الضريبة.",
   "invoices.supplierTrnRequiredLink": "فتح إعدادات الشركة",
+  "invoices.noTrnVatTitle": "ضريبة القيمة المضافة تتطلب رقم التسجيل الضريبي للشركة",
+  "invoices.noTrnVatBody": "لا يوجد لشركتك رقم تسجيل ضريبي، لذلك لا يمكنها احتساب ضريبة القيمة المضافة. اجعل الضريبة على كل بند 0٪ (خارج النطاق)، أو أضف رقم التسجيل الضريبي في إعدادات الشركة لإصدار فاتورة ضريبية.",
   "invoices.currency.label": "العملة",
   "invoices.currency.rateLabel": "سعر الصرف (1 {from} = ? {to})",
   "invoices.currency.rateHint": "اتركه فارغًا لاستخدام سعر الشركة لهذا التاريخ",

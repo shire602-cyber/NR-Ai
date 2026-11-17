@@ -5,6 +5,7 @@
   "dashboard.actionPostEntry": "Post an entry",
   "dashboard.actionPostReceipts": "Post receipts",
   "dashboard.actionReconcileBank": "Reconcile bank",
+  "dashboard.bankNoStatement": "No statement imported",
   "dashboard.actionReviewDrafts": "Review drafts",
   "dashboard.auditCheck.bank_reconciliation.none": "No bank transactions in the last 90 days.",
   "dashboard.auditCheck.bank_reconciliation.ratio": "{done} of {total} bank transactions in the last 90 days are reconciled.",

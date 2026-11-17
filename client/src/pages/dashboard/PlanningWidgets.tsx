@@ -176,6 +176,8 @@ export function PeriodComparison({ stats, loading, locale }: WidgetProps) {
 
 /** Monthly cash in and out from the bank and cash accounts, with bank balance against the GL. */
 export function CashMovement({ stats, loading, locale }: WidgetProps) {
+  const { t } = useTranslation();
+  const tt = t as Record<string, string>;
   if (loading || !stats) return <Skeleton className="h-72 w-full" />;
   const data = stats.cashInOut.map((m) => ({
     name: m.period,
@@ -262,15 +264,29 @@ export function CashMovement({ stats, loading, locale }: WidgetProps) {
                     {a.name}
                   </span>
                   <span className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-                    <Money amount={a.statementBalance} />
+                    {/* X6a: no statement imported means nothing to compare and no difference. */}
+                    {a.hasStatement === false || a.statementBalance === null ? (
+                      <span
+                        className="text-caption text-muted-foreground"
+                        data-testid={`bank-vs-gl-no-statement-${a.bankAccountId}`}
+                      >
+                        {tt["dashboard.bankNoStatement"]}
+                      </span>
+                    ) : (
+                      <Money amount={a.statementBalance} currency={a.currency} />
+                    )}
                     {a.glBalance === null ? (
                       <span className="text-muted-foreground">–</span>
                     ) : (
-                      <Money amount={a.glBalance} className="text-muted-foreground" />
+                      <Money
+                        amount={a.glBalance}
+                        currency={a.currency}
+                        className="text-muted-foreground"
+                      />
                     )}
                     {a.difference !== null && a.difference !== 0 && (
                       <Badge variant="warning">
-                        <Money amount={a.difference} signDisplay="always" />
+                        <Money amount={a.difference} currency={a.currency} signDisplay="always" />
                       </Badge>
                     )}
                   </span>

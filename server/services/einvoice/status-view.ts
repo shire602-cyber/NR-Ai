@@ -142,7 +142,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       state:
         delivery === "delivered"
           ? "done"
-          : delivery === "queued" || delivery === "sending"
+          : delivery === "queued" || delivery === "sending" || delivery === "needs_link"
             ? "in_progress"
             : delivery === "delivery_failed" || delivery === "rejected"
               ? "failed"
@@ -151,7 +151,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
                 : "todo",
       at: delivery === "delivered" ? iso(doc?.deliveredAt) : iso(doc?.submittedAt),
       code:
-        delivery === "delivery_failed" || delivery === "rejected"
+        delivery === "delivery_failed" || delivery === "rejected" || delivery === "needs_link"
           ? (doc?.lastErrorCode ?? null)
           : block,
     },
