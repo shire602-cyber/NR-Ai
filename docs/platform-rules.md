@@ -82,6 +82,20 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   addressing another tenant's row id get 404. Add a rule for new sensitive routes and add new
   row-id path prefixes to `RESOURCES`. `RBAC_ENFORCE=enforce` (default) | `report` | `off`; fix
   test fixtures by giving users the right `company_users.role`, never by turning enforcement off.
+- Status and transition routes need the permission of what they do, not just `documents.write`:
+  anything that writes or reverses journal entries (`PATCH /invoices/:id/status` issue/void,
+  credit-note issue/void, invoice credit/debit notes, customer payments, customer-credit apply/
+  refund, FX revaluation undo) is `ledger.post`, the same as `POST /invoices/:id/post`.
+  Foreign ids in write payloads (account, product, contact, cost centre, vendor) are checked with
+  `assertRefsOwned` (`server/tenancy`) at write time and answer 404 `<KIND>_NOT_FOUND`.
+  `/portal/*` staff routes are outside the central policy and check the role themselves (viewers
+  may list link metadata, `documents.write` mints/revokes). `GET /companies/:id/activity-logs`
+  merges audit rows (IP, user agent, before/after), so it needs `settings.company`,
+  `documents.approve` or `ledger.post`; viewers and employees get 403 like the audit-log API.
+- UI gating: `useCompanyPermission()` (`client/src/hooks/useCompanyPermission.ts`) reads
+  `GET /companies/:id/team/me` (built from `shared/permissions.ts`) and `gate(permission)` returns
+  `disabled` + a tooltip for controls the role cannot use. Unknown access never hides a control
+  (the server still refuses). A 403 list must render as "no access", never as empty data.
 - `TRUST_PROXY_HOPS` (default 1, warning in production when unset) sets Express `trust proxy` for
   `req.ip` and per-IP rate limits; `true` is refused.
 - FX rate convention: a row (X, Y, r) means 1 X = r Y; company rates are stored as (foreign, base)

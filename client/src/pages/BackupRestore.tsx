@@ -54,6 +54,9 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { format } from "date-fns";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 import type { Backup } from "@shared/schema";
 import { useI18n, useTranslation } from "@/lib/i18n";
 
@@ -168,6 +171,8 @@ export default function BackupRestore() {
   const { t } = useTranslation();
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
+  const { can, known: accessKnown } = useCompanyPermission();
+  const canManageBackups = can("backups.manage");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newBackupName, setNewBackupName] = useState("");
   const [newBackupDescription, setNewBackupDescription] = useState("");
@@ -179,7 +184,12 @@ export default function BackupRestore() {
   const [selectedBackupForRestore, setSelectedBackupForRestore] =
     useState<BackupWithoutData | null>(null);
 
-  const { data: backups = [], isLoading } = useQuery<BackupWithoutData[]>({
+  const {
+    data: backups = [],
+    isLoading,
+    isError: backupsFailed,
+    refetch: refetchBackups,
+  } = useQuery<BackupWithoutData[]>({
     queryKey: ["/api/companies", selectedCompanyId, "backups"],
     queryFn: async () => {
       if (!selectedCompanyId) return [];
@@ -189,7 +199,9 @@ export default function BackupRestore() {
       if (!res.ok) throw new Error("Failed to fetch backups");
       return res.json();
     },
-    enabled: !!selectedCompanyId,
+    // A role without backups.manage gets 403: show "no access", never an empty list.
+    enabled: !!selectedCompanyId && canManageBackups,
+    retry: false,
   });
 
   const createBackupMutation = useMutation({
@@ -382,6 +394,20 @@ export default function BackupRestore() {
     );
   }
 
+  if (accessKnown && !canManageBackups) {
+    return (
+      <div className="space-y-6">
+        <PageHeader eyebrow="Settings" title={t["backupRestore.backupRestore"]} />
+        <EmptyState
+          icon={Database}
+          title={t["common.noAccessTitle"]}
+          description={t["common.noAccessBody"]}
+          testId="state-backups-no-access"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -527,6 +553,12 @@ export default function BackupRestore() {
             <div className="flex items-center justify-center h-32">
               <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
+          ) : backupsFailed ? (
+            <ErrorState
+              compact
+              onRetry={() => void refetchBackups()}
+              testId="state-backups-error"
+            />
           ) : backups.length === 0 ? (
             <div className="text-center py-8">
               <Database className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
@@ -609,6 +641,7 @@ export default function BackupRestore() {
                           size="sm"
                           onClick={() => handleDownload(backup)}
                           disabled={backup.status !== "completed"}
+                          aria-label={t["common.downloadBackup"]}
                           data-testid={`button-download-${backup.id}`}
                         >
                           <Download className="h-4 w-4" />
@@ -622,6 +655,7 @@ export default function BackupRestore() {
                             getRestorePreviewMutation.mutate({ id: backup.id, mode: "merge" });
                           }}
                           disabled={backup.status !== "completed"}
+                          aria-label={t["common.restoreBackup"]}
                           data-testid={`button-restore-${backup.id}`}
                         >
                           <Upload className="h-4 w-4" />
@@ -632,6 +666,7 @@ export default function BackupRestore() {
                               variant="outline"
                               size="sm"
                               className="text-destructive hover:text-destructive"
+                              aria-label={t["common.deleteBackup"]}
                               data-testid={`button-delete-${backup.id}`}
                             >
                               <Trash2 className="h-4 w-4" />

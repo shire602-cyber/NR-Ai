@@ -20,7 +20,8 @@ import { requireFeature } from "../middleware/featureGate";
 import { strictBody } from "../http/strict-body";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
-import { db } from "../db";
+import { db, pool } from "../db";
+import { assertRefsOwned } from "../tenancy";
 import {
   invoices as invoicesTable,
   invoiceLines as invoiceLinesTable,
@@ -126,6 +127,10 @@ async function prepareQuote(companyId: string, body: CreateQuoteInput) {
     },
     { dueDateFromTerms, termsFromDays }
   );
+  await assertRefsOwned(pool, companyId, {
+    product: body.lines.map((l) => l.productId),
+    costCenter: body.lines.map((l) => l.costCenterId),
+  });
   const { rows, totals } = prepareSalesLines(draftsOf(body.lines), {
     discountType: body.discountType,
     discountValue: body.discountValue,

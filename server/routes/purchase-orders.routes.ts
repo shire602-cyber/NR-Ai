@@ -48,6 +48,7 @@ import { fromFils, mulRate, sumFils, toFils } from "../../shared/money";
 import { nextDocNumber, createBill, resolveDocRate } from "../services/bill-payment.service";
 import { txRows } from "../services/bill-posting.service";
 import { resolveVendor } from "../services/vendor.service";
+import { assertRefsOwned } from "../tenancy";
 import {
   actorFromRequest,
   assertCompanyPermission,
@@ -244,6 +245,10 @@ export function registerPurchaseOrderRoutes(app: Express) {
         vendor_name: body.vendorName,
         vendor_trn: body.vendorTrn ?? null,
       });
+      await assertRefsOwned(pool, companyId, {
+        account: body.lines.map((l) => l.accountId),
+        product: body.lines.map((l) => l.productId),
+      });
       const totals = poTotals(body.lines.map((l) => ({ ...l, vatRate: l.vatRate ?? 5 })));
       const po = await withLedgerTx(async (tx) => {
         const number = await allocatePoNumber(tx, companyId);
@@ -317,6 +322,10 @@ export function registerPurchaseOrderRoutes(app: Express) {
       if (body.currency) patch.currency = body.currency;
       if (body.notes !== undefined) patch.notes = body.notes;
       if (body.lines) {
+        await assertRefsOwned(pool, po.companyId, {
+          account: body.lines.map((l) => l.accountId),
+          product: body.lines.map((l) => l.productId),
+        });
         const t = poTotals(body.lines.map((l) => ({ ...l, vatRate: l.vatRate ?? 5 })));
         patch.subtotal = Number(t.subtotal);
         patch.vatAmount = Number(t.vatAmount);

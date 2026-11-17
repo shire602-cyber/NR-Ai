@@ -78,6 +78,7 @@ import {
   type BillPayTab,
 } from "@/lib/bill-filters";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -363,6 +364,7 @@ export default function BillPay() {
     )[method] ?? method.replace(/_/g, " ");
   const { toast } = useToast();
   const { company: _company, companyId } = useDefaultCompany();
+  const { gate } = useCompanyPermission();
 
   const search = useSearch();
   const [activeTab, setActiveTab] = useState<BillPayTab>(() => billPayTabFromSearch(search));
@@ -874,7 +876,7 @@ export default function BillPay() {
             }}
           >
             <DialogTrigger asChild>
-              <Button>
+              <Button data-testid="button-new-bill" {...gate("documents.write")}>
                 <Plus className="w-4 h-4" />
                 <T k="pages.newBill" />
               </Button>

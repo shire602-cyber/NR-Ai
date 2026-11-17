@@ -75,6 +75,8 @@ import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { invoiceStatusTargets } from "@/lib/invoice-status";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import { einvoiceIssuesFromError, type EInvoiceIssueItem } from "@/lib/einvoice-issues";
@@ -242,6 +244,9 @@ export default function Invoices() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
+  const { can: canDo, gate } = useCompanyPermission();
+  // Issuing or voiding writes the ledger (PATCH /status needs ledger.post, like POST /post).
+  const canChangeStatus = canDo("ledger.post");
   // Standard VAT rate of the issuing company's jurisdiction (UAE 5%, KSA 15%).
   const standardRate = STANDARD_VAT_RATES[vatJurisdictionForCountry(company?.addressCountry)];
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -679,14 +684,8 @@ export default function Invoices() {
   });
 
   const handleStatusChange = (invoice: Invoice, newStatus: string) => {
-    if (newStatus === "paid" && invoice.status !== "paid") {
-      // Show payment account selection dialog
-      setInvoiceForPayment(invoice);
-      setPaymentDialogOpen(true);
-    } else {
-      // For other status changes, proceed directly
-      updateStatusMutation.mutate({ id: invoice.id, status: newStatus });
-    }
+    // paid / partial are never set here: they come from recording a payment (row menu).
+    updateStatusMutation.mutate({ id: invoice.id, status: newStatus });
   };
 
   // R03-13: "mark as paid" records a payment of the amount due against the
@@ -1188,7 +1187,11 @@ export default function Invoices() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button onClick={() => setDialogOpen(true)} data-testid="button-create-invoice">
+            <Button
+              onClick={() => setDialogOpen(true)}
+              data-testid="button-create-invoice"
+              {...gate("documents.write")}
+            >
               <Plus className="h-4 w-4" aria-hidden />
               {t.newInvoice}
             </Button>
@@ -1936,7 +1939,11 @@ export default function Invoices() {
                         <Select
                           value={invoice.status}
                           onValueChange={(newStatus) => handleStatusChange(invoice, newStatus)}
-                          disabled={updateStatusMutation.isPending}
+                          disabled={
+                            updateStatusMutation.isPending ||
+                            !canChangeStatus ||
+                            invoiceStatusTargets(invoice).length === 0
+                          }
                         >
                           <SelectTrigger
                             className={cn(
@@ -1955,13 +1962,11 @@ export default function Invoices() {
                             <SelectValue>{t[invoice.status as keyof typeof t]}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="draft">{t.draft}</SelectItem>
-                            <SelectItem value="sent">{t.sent}</SelectItem>
-                            <SelectItem value="paid">{t.paid}</SelectItem>
-                            <SelectItem value="partial">
-                              <T k="pages.partial" />
-                            </SelectItem>
-                            <SelectItem value="void">{t.void}</SelectItem>
+                            {invoiceStatusTargets(invoice).map((target) => (
+                              <SelectItem key={target} value={target}>
+                                {t[target]}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
@@ -2063,7 +2068,11 @@ export default function Invoices() {
                             <Select
                               value={invoice.status}
                               onValueChange={(newStatus) => handleStatusChange(invoice, newStatus)}
-                              disabled={updateStatusMutation.isPending}
+                              disabled={
+                                updateStatusMutation.isPending ||
+                                !canChangeStatus ||
+                                invoiceStatusTargets(invoice).length === 0
+                              }
                             >
                               {/* Editable status: the StatusBadge is the dropdown trigger (CTO 3). */}
                               <SelectTrigger
@@ -2083,36 +2092,15 @@ export default function Invoices() {
                                 <SelectValue>{t[invoice.status as keyof typeof t]}</SelectValue>
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem
-                                  value="draft"
-                                  data-testid={`status-option-draft-${invoice.id}`}
-                                >
-                                  {t.draft}
-                                </SelectItem>
-                                <SelectItem
-                                  value="sent"
-                                  data-testid={`status-option-sent-${invoice.id}`}
-                                >
-                                  {t.sent}
-                                </SelectItem>
-                                <SelectItem
-                                  value="paid"
-                                  data-testid={`status-option-paid-${invoice.id}`}
-                                >
-                                  {t.paid}
-                                </SelectItem>
-                                <SelectItem
-                                  value="partial"
-                                  data-testid={`status-option-partial-${invoice.id}`}
-                                >
-                                  <T k="pages.partial" />
-                                </SelectItem>
-                                <SelectItem
-                                  value="void"
-                                  data-testid={`status-option-void-${invoice.id}`}
-                                >
-                                  {t.void}
-                                </SelectItem>
+                                {invoiceStatusTargets(invoice).map((target) => (
+                                  <SelectItem
+                                    key={target}
+                                    value={target}
+                                    data-testid={`status-option-${target}-${invoice.id}`}
+                                  >
+                                    {t[target]}
+                                  </SelectItem>
+                                ))}
                               </SelectContent>
                             </Select>
                             <OverdueBadge invoice={invoice} />

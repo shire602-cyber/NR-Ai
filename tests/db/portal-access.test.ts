@@ -421,3 +421,28 @@ describe("W4-D customer self-service", () => {
     expect(xml.text).toContain("ubl:schema");
   });
 });
+
+describe("J4 portal link management follows the company role", () => {
+  it("J4: a viewer can list link metadata but cannot mint or revoke links; the owner can", async () => {
+    const t = await h.createTenant({ name: "PortalRole" });
+    const cid = await contact(t, "Role Customer");
+    const v = await h.createTenant({ name: "PortalViewer" });
+    await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')`, [
+      t.company.id,
+      v.user.id,
+    ]);
+    const gen = await v.as.post("/api/portal/generate-access", { contactId: cid });
+    expect(gen.status).toBe(403);
+    const rev = await v.as.post("/api/portal/revoke-access", { contactId: cid });
+    expect(rev.status).toBe(403);
+    const list = await v.as.get(`/api/portal/contacts/${cid}/access`);
+    expect(list.status).toBe(200);
+
+    const { token, expiresAt } = await portalLink(t, cid);
+    const { PORTAL_LINK_TTL_DAYS } = await import("../../shared/validators/portal");
+    const days = Math.round((new Date(expiresAt).getTime() - Date.now()) / DAY);
+    expect(days).toBe(PORTAL_LINK_TTL_DAYS);
+    expect((await t.as.post("/api/portal/revoke-access", { contactId: cid })).status).toBe(200);
+    expect((await h.anon.get(`/api/portal/${token}/invoices`)).status).toBe(410);
+  });
+});

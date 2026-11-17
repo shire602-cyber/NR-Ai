@@ -45,17 +45,29 @@ import {
 } from "@/components/ui/table";
 import { format } from "date-fns";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 import { apiUrl } from "@/lib/api";
 import type { ActivityLog } from "@shared/schema";
 
 export default function History() {
   const { t, locale } = useTranslation();
   const { companyId } = useDefaultCompany();
+  const { can, known } = useCompanyPermission();
+  // Mirrors the server rule for GET /activity-logs (companyRolePolicy ACTIVITY_READ).
+  const canReadActivity =
+    !known || can("settings.company") || can("documents.approve") || can("ledger.post");
   const [searchTerm, setSearchTerm] = useState("");
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [entityFilter, setEntityFilter] = useState<string>("all");
 
-  const { data: logs = [], isLoading } = useQuery<ActivityLog[]>({
+  const {
+    data: logs = [],
+    isLoading,
+    isError: logsFailed,
+    refetch: refetchLogs,
+  } = useQuery<ActivityLog[]>({
     queryKey: ["/api/companies", companyId, "activity-logs"],
     queryFn: async () => {
       if (!companyId) return [];
@@ -65,7 +77,8 @@ export default function History() {
       if (!res.ok) throw new Error("Failed to fetch activity logs");
       return res.json();
     },
-    enabled: !!companyId,
+    enabled: !!companyId && canReadActivity,
+    retry: false,
   });
 
   const filteredLogs = logs.filter((log) => {
@@ -158,6 +171,24 @@ export default function History() {
     );
   }
 
+  if (!canReadActivity) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Workspace"
+          title={t["history.activityHistory"]}
+          testId="text-history-title"
+        />
+        <EmptyState
+          icon={HistoryIcon}
+          title={t["common.noAccessTitle"]}
+          description={t["common.noAccessBody"]}
+          testId="state-history-no-access"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -236,7 +267,9 @@ export default function History() {
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[600px]">
-            {filteredLogs.length === 0 ? (
+            {logsFailed ? (
+              <ErrorState compact onRetry={() => void refetchLogs()} testId="state-history-error" />
+            ) : filteredLogs.length === 0 ? (
               <div className="text-center py-12">
                 <HistoryIcon className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium mb-2">

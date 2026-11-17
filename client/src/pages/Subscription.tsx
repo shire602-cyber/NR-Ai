@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -217,6 +218,7 @@ export default function Subscription() {
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
   const { subscription, usage, tierName, isLoading } = useSubscription();
   const { companyId } = useDefaultCompany();
+  const { gate } = useCompanyPermission();
 
   const checkoutMutation = useMutation({
     mutationFn: (planId: string) => {
@@ -501,6 +503,7 @@ export default function Subscription() {
                       variant={plan.popular ? "default" : "outline"}
                       onClick={() => checkoutMutation.mutate(plan.id)}
                       disabled={checkoutMutation.isPending}
+                      {...gate("billing.manage")}
                     >
                       {checkoutMutation.isPending ? (
                         <Loader2 className="w-4 h-4 me-2 animate-spin" />

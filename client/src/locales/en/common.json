@@ -2,5 +2,13 @@
   "common.cancel": "Cancel",
   "common.close": "Close",
   "common.loading": "Loading…",
-  "common.save": "Save"
+  "common.save": "Save",
+  "common.noPermission": "Your role does not allow this action.",
+  "common.noAccessTitle": "You don't have access",
+  "common.noAccessBody": "Your role in this company cannot view this page. Ask an owner or admin if you need access.",
+  "common.loadFailedTitle": "Could not load this data",
+  "common.loadFailedBody": "Something went wrong. Refresh the page or try again in a moment.",
+  "common.downloadBackup": "Download backup",
+  "common.restoreBackup": "Restore backup",
+  "common.deleteBackup": "Delete backup"
 }

@@ -2,5 +2,13 @@
   "common.cancel": "إلغاء",
   "common.close": "إغلاق",
   "common.loading": "جارٍ التحميل…",
-  "common.save": "حفظ"
+  "common.save": "حفظ",
+  "common.noPermission": "دورك الحالي لا يتيح لك تنفيذ هذا الإجراء.",
+  "common.noAccessTitle": "ليس لديك صلاحية الوصول",
+  "common.noAccessBody": "لا يتيح دورك في هذه الشركة عرض هذه الصفحة. اطلب من المالك أو المسؤول منحك الصلاحية إذا لزم الأمر.",
+  "common.loadFailedTitle": "تعذّر تحميل هذه البيانات",
+  "common.loadFailedBody": "حدث خطأ ما. حدّث الصفحة أو حاول مرة أخرى بعد قليل.",
+  "common.downloadBackup": "تنزيل النسخة الاحتياطية",
+  "common.restoreBackup": "استعادة النسخة الاحتياطية",
+  "common.deleteBackup": "حذف النسخة الاحتياطية"
 }

@@ -1,5 +1,7 @@
 import type { ComponentType } from "react";
 import { createRoot } from "react-dom/client";
+// Keep first: zod must be configured (jitless, no eval) before any schema is built.
+import "@/lib/zod-config";
 // Self-hosted fonts (Fontsource) — no external Google Fonts dependency, so the
 // app never blocks on, nor leaks the user's IP to, a third-party CDN. One Latin
 // family (Geist Sans; display is the same family) plus Geist Mono for code/IDs;

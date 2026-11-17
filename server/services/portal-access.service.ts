@@ -26,7 +26,8 @@ import { createLogger } from "../config/logger";
 
 const log = createLogger("portal-access");
 
-export const PORTAL_LINK_TTL_DAYS = 90;
+import { PORTAL_LINK_TTL_DAYS } from "../../shared/validators/portal";
+export { PORTAL_LINK_TTL_DAYS };
 export const PORTAL_SESSION_TTL_HOURS = 12;
 export const LOGIN_CODE_TTL_MINUTES = 10;
 export const LOGIN_CODE_MAX_ATTEMPTS = 5;
