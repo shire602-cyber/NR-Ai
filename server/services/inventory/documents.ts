@@ -4,7 +4,8 @@
  *
  *   bill approval        product lines: Dr Inventory instead of expense, stock in at cost.
  *                        PO-linked lines first clear Goods Received Not Invoiced (2015);
- *                        the price difference goes to COGS (purchase price variance).
+ *                        the price difference is capitalised into inventory for received
+ *                        units still on hand and goes to COGS for the sold part (IAS 2.10).
  *   bill void / revise   stock taken back at its own value (true-up to COGS when it changed).
  *   invoice issue        product lines: stock out at cost, Dr COGS / Cr Inventory ('invoice_cogs').
  *   invoice void         COGS entry mirrored, stock put back at the cost it left at.
@@ -27,6 +28,7 @@ import { has, resolve } from "../../platform/service-registry";
 import { prorate } from "./costing";
 import {
   postInventoryJournal,
+  revalueStock,
   reverseMovement,
   stockIn,
   stockOut,
@@ -43,6 +45,7 @@ import {
   insertMovement,
   isStocked,
   linkMovementsToEntry,
+  loadState,
   lockProduct,
   movementExists,
   q,
@@ -317,11 +320,48 @@ export async function planBillStock(
           fils: clearFils,
           description: `${label} - clear goods received not invoiced`,
         });
+        // A2 (H2, IAS 2.10-11): the invoiced price is the cost of purchase. The difference to
+        // the receipt value is capitalised for the received units still on hand and expensed
+        // to COGS only for the part already sold.
+        const variance = lineK - clearFils;
+        let capitalised = 0;
+        if (variance !== 0) {
+          const state = await loadState(tx, product);
+          const onHand = Math.min(k, Math.max(0, Number(state.qty)));
+          let share = onHand > 0 ? prorate(variance, onHand, k) : 0;
+          if (share < 0 && state.valueFils + share < 0) share = -Math.max(0, state.valueFils);
+          if (share !== 0) {
+            const r = await revalueStock(
+              tx,
+              product.id,
+              share,
+              {
+                companyId,
+                actorId: input.actorId,
+                date: input.date,
+                sourceType: "bill",
+                sourceId: bill.id,
+                sourceLineId: row.id,
+                reference: `${label} - purchase price variance`,
+                idempotencyKey: `${revKey}:${row.id}:ppv`,
+                meta: { poLineId: row.purchase_order_line_id, ppv: true, onHandQty: onHand },
+              },
+              "cost_adjustment"
+            );
+            movementIds.push(r.movementId);
+            capitalised = r.stockDeltaFils;
+            draft.push({
+              accountId: r.accounts.inventory,
+              fils: capitalised,
+              description: `${label} - purchase price variance on stock on hand`,
+            });
+          }
+        }
         draft.push({
           accountId: cogs,
-          fils: lineK - clearFils,
+          fils: variance - capitalised,
           costCenterId: cc,
-          description: `${label} - purchase price variance`,
+          description: `${label} - purchase price variance on stock sold`,
         });
         await tx.execute(
           sql`UPDATE inventory_grni SET cleared_qty = cleared_qty + ${k}, cleared_value = cleared_value + ${fromFils(clearFils)}
@@ -405,6 +445,77 @@ export async function reverseBillStock(
     actorId,
     label: `Bill ${bill.bill_number || bill.id.slice(0, 8)}`,
   });
+}
+
+// ─── Purchase returns (vendor debit notes) ─────────────────────────────────
+
+export interface PurchaseReturnLine {
+  /** Index of the debit-note line (echoed back in `handled`). */
+  index: number;
+  productId: string;
+  quantity: number;
+  /** Net credit of the line in base fils (what the vendor credits for the goods). */
+  creditFils: number;
+  description: string;
+}
+
+/**
+ * A2 (M4, IAS 2): goods returned to the vendor leave stock at their carrying cost (the costing
+ * method's cost: weighted average or FIFO layers), Cr Inventory. Any difference between the
+ * credit the vendor gives and that cost is a purchase price variance to COGS. Runs on the debit
+ * note's transaction; returns the credit lines that replace the expense credit of each product
+ * line, and the movement ids to link to the debit-note journal.
+ */
+export async function planPurchaseReturnStock(
+  tx: LedgerTx,
+  args: {
+    companyId: string;
+    noteId: string;
+    number: string;
+    date: string;
+    lines: PurchaseReturnLine[];
+    actorId: string;
+  }
+): Promise<{ lines: PostJournalLineInput[]; movementIds: string[]; handled: number[] }> {
+  const label = `Debit note ${args.number}`;
+  const draft: DraftLine[] = [];
+  const movementIds: string[] = [];
+  const handled: number[] = [];
+  for (const l of args.lines) {
+    const product = await productOrNull(tx, args.companyId, l.productId);
+    if (!product || !isStocked(product)) continue;
+    const qty = wholeQty(l.quantity, { debitNoteLine: l.index });
+    const r = await stockOut(
+      tx,
+      product.id,
+      qty,
+      {
+        companyId: args.companyId,
+        actorId: args.actorId,
+        date: args.date,
+        sourceType: "vendor_debit_note",
+        sourceId: args.noteId,
+        reference: label,
+        idempotencyKey: `vendor_debit_note:${args.noteId}:${l.index}`,
+        meta: { creditFils: l.creditFils },
+      },
+      "purchase_return"
+    );
+    movementIds.push(r.movementId);
+    handled.push(l.index);
+    // stockDeltaFils is negative: the value that left stock.
+    draft.push({
+      accountId: r.accounts.inventory,
+      fils: r.stockDeltaFils,
+      description: `${label} - returned ${product.sku ?? product.name}`,
+    });
+    draft.push({
+      accountId: r.accounts.cogs,
+      fils: -(l.creditFils + r.stockDeltaFils),
+      description: `${label} - purchase return price difference`,
+    });
+  }
+  return { lines: toKernelLines(draft), movementIds, handled };
 }
 
 // ─── Invoices ───────────────────────────────────────────────────────────────

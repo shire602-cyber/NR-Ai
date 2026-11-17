@@ -92,5 +92,7 @@
   "journal.memo.billPaymentTo": "Payment to {party} - Bill {ref}",
   "journal.memo.billFxLoss": "Realised FX loss - Bill {ref}",
   "journal.memo.billFxGain": "Realised FX gain - Bill {ref}",
-  "journal.memo.billLine": "Bill {ref} - {party}"
+  "journal.memo.billLine": "Bill {ref} - {party}",
+  "journal.controlAdjustmentReason": "Control-account adjustment: reason",
+  "journal.controlAdjustmentHint": "A line on receivables, payables, inventory, VAT, goods received not invoiced or payroll payables is normally posted by its own module. Post it here only as an adjustment and say why; it is shown on the reconciliation."
 }

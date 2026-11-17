@@ -338,6 +338,150 @@ export async function capitalizeAsset(
   return entryId;
 }
 
+// ─── Assets bought on a bill (A2: H9) ───────────────────────────────────────
+
+/** A bill line debited to a fixed-asset cost account (base fils, incl. blocked VAT). */
+export interface BillAssetLine {
+  billLineId: string | null;
+  accountId: string;
+  description: string;
+  costFils: number;
+}
+
+/**
+ * Fixed-asset cost accounts of a company: sub_type fixed_asset, excluding accumulated
+ * depreciation (1240, any class's accumulated account, contra names).
+ */
+export async function fixedAssetCostAccountIds(
+  tx: LedgerTx,
+  companyId: string
+): Promise<Set<string>> {
+  const rows = await q<{ id: string }>(
+    tx,
+    sql`SELECT a.id FROM accounts a
+         WHERE a.company_id = ${companyId} AND a.type = 'asset' AND a.sub_type = 'fixed_asset'
+           AND a.code <> ${FA_CODES.ACCUMULATED}
+           AND COALESCE(a.name_en, '') NOT ILIKE '%accumulated%'
+           AND NOT EXISTS (SELECT 1 FROM fixed_asset_classes c
+                            WHERE c.company_id = a.company_id AND c.accumulated_account_id = a.id)`
+  );
+  return new Set(rows.map((r) => r.id));
+}
+
+async function assetHasOwnJournals(tx: LedgerTx, a: { id: string; company_id: string }) {
+  const rows = await q(
+    tx,
+    sql`SELECT 1 FROM journal_entries WHERE company_id = ${a.company_id} AND source = ${FA_SOURCE}
+          AND source_id = ${a.id} AND status = 'posted' LIMIT 1`
+  );
+  return rows.length > 0;
+}
+
+/**
+ * A2 (H9, IAS 16.7 / 16.43 / 16.73): a bill line coded to a fixed-asset account is capitalised by
+ * the bill's own journal, so it must also be on the register or it is never depreciated. Each such
+ * line opens a DRAFT register entry (cost = the line's base debit, capitalisation entry = the
+ * bill's journal, no useful life yet); the user completes it (useful life) on the asset, which
+ * makes it active for depreciation. Called after every bill posting: a revision re-links the
+ * existing entries (same line description), re-costs them and removes entries whose line went
+ * away. `entryId` null (a void) releases all of the bill's entries. An entry that already has
+ * its own journals (depreciation, revaluation, disposal) is never removed or re-costed silently:
+ * 409 BILL_ASSET_IN_USE.
+ */
+export async function syncBillAssets(
+  tx: LedgerTx,
+  args: {
+    companyId: string;
+    billId: string;
+    billNumber: string | null;
+    date: string;
+    entryId: string | null;
+    lines: BillAssetLine[];
+    actorId: string;
+  }
+): Promise<string[]> {
+  const existing = await q<AssetRow>(
+    tx,
+    sql`SELECT ${ASSET_COLUMNS} FROM fixed_assets
+         WHERE company_id = ${args.companyId} AND source_bill_id = ${args.billId}
+         ORDER BY created_at, id FOR UPDATE`
+  );
+  const ref = args.billNumber || args.billId.slice(0, 8);
+  const claimed = new Set<string>();
+  const out: string[] = [];
+  for (const l of args.entryId ? args.lines : []) {
+    if (l.costFils <= 0) continue;
+    const name = l.description.slice(0, 255);
+    const prev = existing.find((a) => !claimed.has(a.id) && a.asset_name === name);
+    if (prev) {
+      claimed.add(prev.id);
+      if (f(prev.purchase_cost) !== l.costFils && (await assetHasOwnJournals(tx, prev))) {
+        throw new DomainError(
+          "BILL_ASSET_IN_USE",
+          409,
+          { assetId: prev.id },
+          "This bill's asset has been depreciated or revalued; its cost cannot change with the bill"
+        );
+      }
+      await tx.execute(
+        sql`UPDATE fixed_assets SET capitalization_entry_id = ${args.entryId},
+                   source_bill_line_id = ${l.billLineId}, cost_account_id = ${l.accountId},
+                   purchase_cost = ${fromFils(l.costFils)},
+                   net_book_value = ${fromFils(l.costFils)}::numeric + revaluation_surplus
+                     - COALESCE(accumulated_depreciation, 0) - impairment_loss
+             WHERE id = ${prev.id}`
+      );
+      out.push(prev.id);
+      continue;
+    }
+    const account = (
+      await q<{ name_en: string | null; code: string }>(
+        tx,
+        sql`SELECT name_en, code FROM accounts WHERE id = ${l.accountId}`
+      )
+    )[0];
+    const cost = fromFils(l.costFils);
+    const [row] = await q<{ id: string }>(
+      tx,
+      sql`INSERT INTO fixed_assets (company_id, asset_name, category, purchase_date, purchase_cost,
+            salvage_value, useful_life_years, depreciation_method, accumulated_depreciation,
+            net_book_value, status, is_depreciable, needs_capitalization_je, cost_account_id,
+            capitalization_entry_id, acquisition_vat, source_bill_id, source_bill_line_id, notes)
+          VALUES (${args.companyId}, ${name}, ${account?.name_en || account?.code || "Fixed asset"},
+            ${args.date}, ${cost}, 0, NULL, 'straight_line', 0, ${cost}, 'draft', true, false,
+            ${l.accountId}, ${args.entryId}, 0, ${args.billId}, ${l.billLineId},
+            ${`From bill ${ref}`})
+          RETURNING id`
+    );
+    await recordEvent(
+      tx,
+      { id: row.id, company_id: args.companyId },
+      {
+        type: "created_from_bill",
+        date: args.date,
+        amountFils: l.costFils,
+        journalEntryId: args.entryId,
+        details: { billId: args.billId, billLineId: l.billLineId },
+        actorId: args.actorId,
+      }
+    );
+    out.push(row.id);
+  }
+  for (const a of existing) {
+    if (claimed.has(a.id)) continue;
+    if (a.status === "disposed" || (await assetHasOwnJournals(tx, a))) {
+      throw new DomainError(
+        "BILL_ASSET_IN_USE",
+        409,
+        { assetId: a.id },
+        "This bill's asset has been depreciated, revalued or disposed of; reverse those first"
+      );
+    }
+    await tx.execute(sql`DELETE FROM fixed_assets WHERE id = ${a.id}`);
+  }
+  return out;
+}
+
 // ─── Depreciation ───────────────────────────────────────────────────────────
 
 export interface DepreciationOutcome {
@@ -360,6 +504,7 @@ const SKIP_TEXT: Record<string, string> = {
   ASSET_NOT_CAPITALIZED: "Asset is not on the general ledger (capitalise it first)",
   ALREADY_DEPRECIATED: "Already depreciated for this period",
   NOT_ACTIVE: "Asset is not active",
+  ASSET_DRAFT: "Asset bought on a bill: set its useful life to start depreciation",
 };
 
 /** Depreciate one asset for one month inside `tx` (asset row should be locked by the caller). */
@@ -380,6 +525,7 @@ export async function depreciateInTx(
     reason: SKIP_TEXT[code] ?? code,
     ...extra,
   });
+  if (a.status === "draft") return out("ASSET_DRAFT");
   if (a.status !== "active") return out("NOT_ACTIVE");
   if (!(await isCapitalised(tx, a))) return out("ASSET_NOT_CAPITALIZED");
   const already = await q<{ id: string }>(
@@ -468,7 +614,7 @@ export async function runDepreciation(
   return withLedgerTx(async (tx) => {
     const ids = await q<{ id: string }>(
       tx,
-      sql`SELECT id FROM fixed_assets WHERE company_id = ${companyId} AND status = 'active' ORDER BY created_at, id`
+      sql`SELECT id FROM fixed_assets WHERE company_id = ${companyId} AND status IN ('active', 'draft') ORDER BY created_at, id`
     );
     const results: DepreciationOutcome[] = [];
     for (const { id } of ids) {

@@ -38,6 +38,7 @@ import {
 } from "../ledger";
 import type { Account } from "../../shared/schema";
 import { afterBillPosted, planBillStock, reverseBillStock } from "./inventory/documents";
+import { fixedAssetCostAccountIds, syncBillAssets, type BillAssetLine } from "./fixed-assets/index";
 import { loadRecoveryRules, resolveRecovery } from "../tax/vat-recovery";
 
 const log = createLogger("bill-posting");
@@ -667,6 +668,53 @@ export async function planBillJournal(
   };
 }
 
+/** A2 (H9): the planned bill lines debited to a fixed-asset cost account (not stock items). */
+async function billAssetLines(
+  tx: LedgerTx,
+  bill: BillRow,
+  plan: BillJournalPlan
+): Promise<BillAssetLine[]> {
+  const sources = plan.lineSources ?? [];
+  const items = plan.lineItems ?? [];
+  if (!sources.some((s) => s !== null)) return [];
+  const faAccounts = await fixedAssetCostAccountIds(tx, bill.company_id);
+  if (faAccounts.size === 0) return [];
+  const rows = await txRows<{
+    id: string;
+    description: string;
+    amount: string;
+    product_id: string | null;
+  }>(
+    tx,
+    `SELECT id, description, amount::text AS amount, product_id FROM bill_line_items
+      WHERE bill_id = $1 ORDER BY created_at, id`,
+    [bill.id]
+  );
+  const used = new Set<string>();
+  const out: BillAssetLine[] = [];
+  plan.lines.forEach((line, i) => {
+    const src = sources[i];
+    if (src === null || src === undefined || !line.debitFils) return;
+    if (!faAccounts.has(line.accountId)) return;
+    const item = items[src];
+    const row = rows.find(
+      (r) =>
+        !used.has(r.id) &&
+        r.description === item?.description &&
+        filsOf(r.amount) === filsOf(item?.amount)
+    );
+    if (row) used.add(row.id);
+    if (row?.product_id) return;
+    out.push({
+      billLineId: row?.id ?? null,
+      accountId: line.accountId,
+      description: item?.description ?? `Bill ${bill.bill_number ?? ""}`.trim(),
+      costFils: line.debitFils,
+    });
+  });
+  return out;
+}
+
 /** Post the bill's A/P journal inside `tx`. Idempotent per bill revision. */
 export async function postBillJournal(
   tx: LedgerTx,
@@ -700,6 +748,18 @@ export async function postBillJournal(
     { actorId, tx }
   );
   await afterBillPosted(tx, stock.movementIds, result.entry.id);
+  // A2 (H9): lines capitalised to a fixed-asset account open (or re-link) draft register entries.
+  if (!result.replayed) {
+    await syncBillAssets(tx, {
+      companyId: bill.company_id,
+      billId: bill.id,
+      billNumber: bill.bill_number,
+      date: plan.date,
+      entryId: result.entry.id,
+      lines: await billAssetLines(tx, bill, plan),
+      actorId,
+    });
+  }
   // R05-28: the VAT engine reads the rule-blocked recoverable amount so Box 9/10 ties to 1050.
   if (!result.replayed) {
     await txRows(tx, `UPDATE vendor_bills SET recoverable_vat_base = $2 WHERE id = $1`, [
@@ -727,6 +787,18 @@ export async function reverseBillJournal(
   );
   // W4-B: take the bill's stock back (mirrored inventory value; any drift trued up to COGS).
   await reverseBillStock(tx, bill, actorId);
+  // A2 (H9): a void releases the bill's draft register entries (a revision re-links them).
+  if (opts.void) {
+    await syncBillAssets(tx, {
+      companyId: bill.company_id,
+      billId: bill.id,
+      billNumber: null,
+      date: "",
+      entryId: null,
+      lines: [],
+      actorId,
+    });
+  }
   return reversals;
 }
 

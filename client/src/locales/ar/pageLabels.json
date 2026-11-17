@@ -362,6 +362,7 @@
   "pageLabels.frequency": "التكرار",
   "pageLabels.fromTheDesk": "من مكتب المحاسب.",
   "pageLabels.fullyDepreciated": "مُهلك بالكامل",
+  "pageLabels.assetDraftFromBill": "بحاجة إلى استكمال البيانات (من فاتورة مورد)",
   "pageLabels.functional": "وظيفي",
   "pageLabels.gBPBritishPound": "GBP - الجنيه الإسترليني",
   "pageLabels.generateAIPoweredCashFlowPredictions": "إنشاء توقعات للتدفق النقدي بالذكاء الاصطناعي",

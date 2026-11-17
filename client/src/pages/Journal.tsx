@@ -79,6 +79,7 @@ import {
   Ban,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isControlAccount } from "@shared/control-accounts";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -128,6 +129,8 @@ interface JournalPayload {
   date: string;
   memo: string | null;
   lines: Array<{ accountId: string; debit: number; credit: number }>;
+  /** A2 (H8): required when a line hits a control account (A/R, A/P, inventory, VAT …). */
+  controlAdjustment?: { reason: string };
 }
 
 export default function Journal() {
@@ -139,6 +142,7 @@ export default function Journal() {
   const [editingEntry, setEditingEntry] = useState<any>(null);
   const [reverseDate, setReverseDate] = useState("");
   const [reverseReason, setReverseReason] = useState("");
+  const [controlReason, setControlReason] = useState("");
 
   const { data: accounts } = useQuery<any[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts"],
@@ -368,6 +372,9 @@ export default function Journal() {
           debit: Number(line.debit) || 0,
           credit: Number(line.credit) || 0,
         })),
+      ...(touchesControl && controlReason.trim()
+        ? { controlAdjustment: { reason: controlReason.trim() } }
+        : {}),
     };
 
     if (editingEntry) {
@@ -379,6 +386,11 @@ export default function Journal() {
 
   // Calculate balance
   const watchLines = form.watch("lines");
+  // A2 (H8): control accounts take manual lines only as an adjustment with a reason.
+  const touchesControl = (watchLines ?? []).some((l) => {
+    const a = accounts?.find((x) => x.id === l.accountId);
+    return !!a && isControlAccount(a);
+  });
   const totalDebitFils = watchLines.reduce((sum, line) => sum + toFils(line.debit), 0);
   const totalCreditFils = watchLines.reduce((sum, line) => sum + toFils(line.credit), 0);
   const totalDebit = totalDebitFils / 100;
@@ -496,6 +508,24 @@ export default function Journal() {
                       </FormItem>
                     )}
                   />
+                  {touchesControl && (
+                    <div className="space-y-2 sm:col-span-2">
+                      <label htmlFor="control-adjustment-reason" className="text-sm font-medium">
+                        <T k="journal.controlAdjustmentReason" />
+                      </label>
+                      <Input
+                        id="control-adjustment-reason"
+                        dir="auto"
+                        value={controlReason}
+                        onChange={(e) => setControlReason(e.target.value)}
+                        aria-describedby="control-adjustment-hint"
+                        data-testid="input-control-adjustment-reason"
+                      />
+                      <p id="control-adjustment-hint" className="text-xs text-muted-foreground">
+                        <T k="journal.controlAdjustmentHint" />
+                      </p>
+                    </div>
+                  )}
                 </FormGrid>
               </FormSection>
 

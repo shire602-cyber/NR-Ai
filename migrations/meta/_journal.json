@@ -834,6 +834,13 @@
    "when": 1781430340000,
    "tag": "0119_a3_chart",
    "breakpoints": false
+  },
+  {
+   "idx": 119,
+   "version": "7",
+   "when": 1781430350000,
+   "tag": "0120_a2_purchases",
+   "breakpoints": false
   }
  ]
 }

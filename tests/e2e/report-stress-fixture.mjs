@@ -344,6 +344,8 @@ async function seedOpeningBalances(companyId, account, dates) {
       status: "posted",
       memo: "Synthetic opening balance for Najma Raida report stress test",
       source: "report-stress-fixture",
+      // A2 (H8): opening inventory is a control account, accepted only as a reasoned adjustment.
+      controlAdjustment: { reason: "QA fixture: synthetic opening balance" },
       lines: [
         { accountId: account.bank.id, debit: 1250000, credit: 0, description: "Opening bank" },
         { accountId: account.cash.id, debit: 45000, credit: 0, description: "Opening cash" },
@@ -644,6 +646,7 @@ async function seedManualJournals(companyId, account, dates, costCenters) {
           status: "posted",
           memo: `Synthetic accrual expense allocation ${i + 1}`,
           source: "report-stress-fixture",
+          controlAdjustment: { reason: "QA fixture: synthetic accrued payable" },
           lines: [
             {
               accountId: expense.id,

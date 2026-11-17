@@ -37,7 +37,7 @@ import {
   type LedgerTx,
   type PostJournalLineInput,
 } from "../ledger";
-import { fromFils, mulRate, toFils } from "../../shared/money";
+import { fromFils, toFils } from "../../shared/money";
 import { emitDomainEvent } from "../platform/domain-events";
 import { has, provide } from "../platform/service-registry";
 import {
@@ -55,6 +55,7 @@ import {
   ALLOWANCE_FOR_DOUBTFUL_DEBTS_CODE,
   allowanceForDoubtfulDebtsFils,
 } from "../reporting/ifrs-adjustments";
+import { bankCurrencyOf, bankRateOn, cashLegFor } from "./fx/bank-currency";
 
 export const PAYMENT_ACCOUNT_SUB_TYPES = ["cash", "bank"] as const;
 
@@ -189,6 +190,24 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
     }
   }
   const receivableAccountId = await getArAccount(db, input.companyId);
+  // A2 (C4, IAS 21): a bank account holds only its own currency. Receipts into a base-currency
+  // account carry no foreign tag; into a third-currency account they are converted explicitly.
+  const bankCur = (await bankCurrencyOf(input.companyId, input.paymentAccountId)) ?? baseCurrency;
+  const cashLeg =
+    bankCur === baseCurrency
+      ? { currency: null, rate: null }
+      : bankCur === currency
+        ? { currency: bankCur, rate: null }
+        : {
+            currency: bankCur,
+            rate: await bankRateOn(
+              input.companyId,
+              bankCur,
+              baseCurrency,
+              input.date.toISOString().slice(0, 10),
+              currency
+            ),
+          };
   let result;
   try {
     result = await storage.recordInvoicePayment({
@@ -202,6 +221,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
       paymentAccountId: input.paymentAccountId,
       paymentAccountCurrency: (acct as { currency?: string | null }).currency ?? null,
       paymentExchangeRate,
+      cashLeg,
       receivableAccountId,
       createdBy: input.createdBy,
       allowCredit: input.allowCredit === true,
@@ -528,7 +548,18 @@ export async function refundCustomerCredit(args: {
       ? String(args.exchangeRate && args.exchangeRate > 0 ? args.exchangeRate : credit.exchangeRate)
       : "1";
     const liabBase = toBase(args.amountFils, creditRate);
-    const cashBase = foreign ? mulRate(args.amountFils, refundRate) : args.amountFils;
+    // A2 (C4): the bank line is measured in the bank account's own currency.
+    const base = await loadBaseCurrency(args.companyId, tx);
+    const leg = await cashLegFor({
+      companyId: args.companyId,
+      base,
+      bankCurrency: await bankCurrencyOf(args.companyId, args.paymentAccountId),
+      docCurrency: foreign ? credit.currency : base,
+      docAmountFils: args.amountFils,
+      docRate: refundRate,
+      date: args.date,
+    });
+    const cashBase = leg.cashBaseFils;
     const fxAcc = liabBase !== cashBase ? await getFxAccounts(tx, args.companyId) : null;
     const label = `Refund of customer credit (${credit.customerName})`;
     const lines: PostJournalLineInput[] = [
@@ -544,7 +575,18 @@ export async function refundCustomerCredit(args: {
             }
           : {}),
       },
-      { accountId: args.paymentAccountId, creditFils: cashBase, description: label },
+      {
+        accountId: args.paymentAccountId,
+        creditFils: cashBase,
+        description: label,
+        ...(leg.tag
+          ? {
+              foreignCurrency: leg.tag.foreignCurrency,
+              foreignCredit: leg.tag.amount,
+              exchangeRate: leg.tag.exchangeRate,
+            }
+          : {}),
+      },
       // Paying out more base than the liability carried is a loss, less a gain.
       ...(fxAcc ? fxLine(liabBase - cashBase, fxAcc, label) : []),
     ];

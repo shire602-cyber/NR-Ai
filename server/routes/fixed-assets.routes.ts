@@ -595,7 +595,9 @@ export function registerFixedAssetRoutes(app: Express) {
         const depreciable = !isNonDepreciableCategory(category) && a.is_depreciable !== false;
         let life = body.usefulLifeYears === undefined ? a.useful_life_years : body.usefulLifeYears;
         if (!depreciable) life = null;
-        if (depreciable && !life) throw new DomainError("USEFUL_LIFE_REQUIRED", 400);
+        // A2 (H9): a draft from a bill may be saved without a life; it stays a draft until set.
+        if (depreciable && !life && a.status !== "draft")
+          throw new DomainError("USEFUL_LIFE_REQUIRED", 400);
         if (life && booked[0].n >= life * 12 && body.usefulLifeYears !== undefined) {
           throw new DomainError(
             "USEFUL_LIFE_TOO_SHORT",
@@ -633,7 +635,9 @@ export function registerFixedAssetRoutes(app: Express) {
                 cost_center_id = COALESCE(${body.costCenterId ?? null}, cost_center_id),
                 location = COALESCE(${body.location ?? null}, location),
                 serial_number = COALESCE(${body.serialNumber ?? null}, serial_number),
-                notes = COALESCE(${body.notes ?? null}, notes)
+                notes = COALESCE(${body.notes ?? null}, notes),
+                status = CASE WHEN status = 'draft' AND (${life}::int IS NOT NULL OR NOT ${depreciable})
+                              THEN 'active' ELSE status END
               WHERE id = ${a.id}`
         );
         await tx.execute(
@@ -663,6 +667,20 @@ export function registerFixedAssetRoutes(app: Express) {
             AND status = 'posted' LIMIT 1`,
         [companyId, FA_SOURCE, req.params.id]
       );
+      // A2 (H9): an asset bought on a bill is capitalised by the bill's journal; deleting the
+      // register entry would leave it on the GL undepreciated. Void or revise the bill instead.
+      const fromBill = await pool.query(
+        `SELECT 1 FROM fixed_assets WHERE id = $1 AND source_bill_id IS NOT NULL`,
+        [req.params.id]
+      );
+      if (fromBill.rows.length) {
+        throw new DomainError(
+          "ASSET_FROM_BILL",
+          409,
+          undefined,
+          "This asset was capitalised by a supplier bill. Void or revise the bill to remove it."
+        );
+      }
       if (posted.rows.length) {
         return res.status(409).json({
           message:

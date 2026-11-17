@@ -92,5 +92,7 @@
   "journal.memo.billPaymentTo": "دفعة إلى {party} - فاتورة مورّد {ref}",
   "journal.memo.billFxLoss": "خسارة صرف محققة - فاتورة مورّد {ref}",
   "journal.memo.billFxGain": "ربح صرف محقق - فاتورة مورّد {ref}",
-  "journal.memo.billLine": "فاتورة مورّد {ref} - {party}"
+  "journal.memo.billLine": "فاتورة مورّد {ref} - {party}",
+  "journal.controlAdjustmentReason": "تسوية حساب مراقبة: السبب",
+  "journal.controlAdjustmentHint": "تُرحَّل بنود الذمم المدينة والدائنة والمخزون وضريبة القيمة المضافة والبضائع المستلمة غير المفوترة ومستحقات الرواتب عادةً من وحداتها الخاصة. رحّلها هنا كتسوية فقط مع ذكر السبب، وستظهر في التسوية."
 }

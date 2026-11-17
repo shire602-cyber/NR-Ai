@@ -362,6 +362,7 @@
   "pageLabels.frequency": "Frequency",
   "pageLabels.fromTheDesk": "From the desk.",
   "pageLabels.fullyDepreciated": "Fully Depreciated",
+  "pageLabels.assetDraftFromBill": "Needs details (from bill)",
   "pageLabels.functional": "Functional",
   "pageLabels.gBPBritishPound": "GBP - British Pound",
   "pageLabels.generateAIPoweredCashFlowPredictions": "Generate AI-powered cash flow predictions",

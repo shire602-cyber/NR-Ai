@@ -569,7 +569,13 @@ export interface JournalLineInput {
 /** Create a POSTED manual journal entry through the real API. */
 export async function postJournalEntry(
   tenant: Tenant,
-  input: { date: string; description?: string; lines: JournalLineInput[]; reference?: string }
+  input: {
+    date: string;
+    description?: string;
+    lines: JournalLineInput[];
+    reference?: string;
+    controlAdjustmentReason?: string;
+  }
 ): Promise<{ id: string; entryNumber?: string }> {
   const lines = [];
   for (const l of input.lines) {
@@ -587,6 +593,9 @@ export async function postJournalEntry(
     reference: input.reference,
     status: "posted",
     lines,
+    // A2 (H8): fixtures seed control-account balances (A/R, A/P, VAT ...) directly, which the
+    // API accepts only as a reasoned adjustment; ignored when no line is on a control account.
+    controlAdjustment: { reason: input.controlAdjustmentReason ?? "Test fixture: seeded balance" },
   });
   if (r.status >= 300)
     throw new Error(`postJournalEntry failed ${r.status} ${r.text.slice(0, 300)}`);

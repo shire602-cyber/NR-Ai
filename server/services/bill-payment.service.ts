@@ -26,11 +26,13 @@ import {
   transitionRow,
   withLedgerTx,
   type LedgerTx,
+  type PostJournalLineInput,
 } from "../ledger";
 import { emitDomainEventInTx } from "../platform/event-outbox";
 import { has, provide, resolve } from "../platform/service-registry";
 import { registerJob, listJobs } from "../platform/job-registry";
 import type { FxGetRate } from "./fx";
+import { bankCurrencyOf, cashLegFor } from "./fx/bank-currency";
 import { recordAudit } from "./audit.service";
 import { defaultPaymentAccountId } from "./payment-accounts.service";
 import { assertPeriodNotLocked } from "./period-lock.service";
@@ -56,6 +58,7 @@ import {
   type BillState,
 } from "./bill-posting.service";
 import { resolveVendor } from "./vendor.service";
+import { afterBillPosted, planPurchaseReturnStock } from "./inventory/documents";
 import { debitNoteCreateSchema, inboundBillSchema } from "../../shared/validators/bills";
 import { parseStrict } from "../http/strict-body";
 import type {
@@ -358,9 +361,13 @@ async function prepareBill(
       supplyType: l.vat_supply_type ?? null,
       accountId: l.account_id ?? null,
       productId: l.product_id ?? null,
-      poLineId: null as string | null,
+      poLineId: l.purchase_order_line_id ?? null,
       costCenterId: l.cost_center_id ?? null,
     }));
+    if (src && input.line_items) {
+      // A2 (C3): an edit keeps each line's purchase-order link so the bill still clears GRNI.
+      await linkPurchaseOrderLines(companyId, existing, input.line_items, src);
+    }
     if (!src && existing) {
       const r = await pool.query(
         `SELECT * FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
@@ -444,6 +451,78 @@ async function prepareBill(
     });
   }
   return { header, lines, warnings };
+}
+
+/**
+ * A2 (C3): resolve each edited line's purchase-order line. A line that omits
+ * `purchase_order_line_id` inherits the link of the stored line it replaces (same product first,
+ * else same position with the same product); `null` unlinks it. Explicit ids must be lines of
+ * the bill's own purchase order (or, for a new bill, of a purchase order of the company) and
+ * each PO line is invoiced by at most one line of the bill.
+ */
+async function linkPurchaseOrderLines(
+  companyId: string,
+  existing: BillRow | null,
+  input: Array<{ product_id?: string | null; purchase_order_line_id?: string | null }>,
+  src: Array<{ productId: string | null; poLineId: string | null }>
+): Promise<void> {
+  const poId = existing
+    ? ((existing as unknown as { purchase_order_id?: string | null }).purchase_order_id ?? null)
+    : null;
+  const prev = existing
+    ? ((
+        await pool.query(
+          `SELECT product_id, purchase_order_line_id FROM bill_line_items
+            WHERE bill_id = $1 ORDER BY created_at, id`,
+          [existing.id]
+        )
+      ).rows as Array<{ product_id: string | null; purchase_order_line_id: string | null }>)
+    : [];
+  const used = new Set<string>();
+  const explicit = input
+    .map((l) => l.purchase_order_line_id)
+    .filter((v): v is string => typeof v === "string");
+  explicit.forEach((id) => used.add(id));
+  input.forEach((l, i) => {
+    if (l.purchase_order_line_id !== undefined) return;
+    const free = (r: { purchase_order_line_id: string | null }) =>
+      !!r.purchase_order_line_id && !used.has(r.purchase_order_line_id);
+    const pid = src[i].productId;
+    const hit =
+      (pid ? prev.find((r) => free(r) && r.product_id === pid) : undefined) ??
+      (prev[i] && free(prev[i]) && (prev[i].product_id ?? null) === pid ? prev[i] : undefined);
+    if (hit?.purchase_order_line_id) {
+      src[i].poLineId = hit.purchase_order_line_id;
+      used.add(hit.purchase_order_line_id);
+    }
+  });
+  const ids = src.map((l) => l.poLineId).filter((v): v is string => !!v);
+  if (new Set(ids).size !== ids.length) {
+    throw new DomainError(
+      "PO_LINE_DUPLICATE",
+      422,
+      undefined,
+      "Each purchase-order line can be invoiced by only one line of the bill"
+    );
+  }
+  if (!explicit.length) return;
+  const { rows } = await pool.query(
+    `SELECT pol.id FROM purchase_order_lines pol
+       JOIN purchase_orders po ON po.id = pol.purchase_order_id
+      WHERE pol.id = ANY($1::uuid[]) AND po.company_id = $2
+        AND ($3::uuid IS NULL OR po.id = $3)`,
+    [explicit, companyId, poId]
+  );
+  const found = new Set(rows.map((r: { id: string }) => r.id));
+  const missing = explicit.find((id) => !found.has(id));
+  if (missing) {
+    throw new DomainError(
+      "PO_LINE_NOT_FOUND",
+      404,
+      { purchaseOrderLineId: missing },
+      "Purchase-order line not found on this bill's purchase order"
+    );
+  }
 }
 
 async function writeLines(tx: LedgerTx, billId: string, lines: Array<Record<string, unknown>>) {
@@ -695,6 +774,10 @@ export interface RecordBillPaymentArgs {
   paymentAccountId?: string | null;
   /** Payment-date rate (bill currency → AED); default fx.getRate at `date`. */
   exchangeRate?: string | null;
+  /** A2 (C4): amount debited by the bank in its own currency (third-currency payments). */
+  bankAmountFils?: number | null;
+  /** A2 (C4): bank currency → base rate on `date` (third-currency payments). */
+  bankExchangeRate?: string | null;
   method?: string | null;
   reference?: string | null;
   notes?: string | null;
@@ -763,8 +846,21 @@ export async function recordBillPayment(
   const payRate = foreign
     ? await resolveDocRate(companyId, billPre.currency, args.date, args.exchangeRate ?? null)
     : "1";
-  const fx = foreign ? await fxAccounts(companyId) : null;
   const currency = documentCurrency(billPre.currency, companyBase);
+  // A2 (C4, IAS 21): the cash line is measured in the bank account's own currency.
+  const bankCurrency = (await bankCurrencyOf(companyId, cash.id)) ?? companyBase;
+  const leg = await cashLegFor({
+    companyId,
+    base: companyBase,
+    bankCurrency,
+    docCurrency: currency,
+    docAmountFils: args.amountFils,
+    docRate: payRate,
+    date: args.date,
+    bankAmountFils: args.bankAmountFils ?? null,
+    bankRate: args.bankExchangeRate ?? null,
+  });
+  const fx = foreign || bankCurrency !== companyBase ? await fxAccounts(companyId) : null;
 
   let paidEvent = false;
   const result = await withLedgerTx(async (tx) => {
@@ -790,7 +886,7 @@ export async function recordBillPayment(
     } else {
       apBase = toBase(args.amountFils, billRate, foreign);
     }
-    const cashBase = toBase(args.amountFils, payRate, foreign);
+    const cashBase = leg.cashBaseFils;
     const fxDiff = cashBase - apBase; // > 0 loss, < 0 gain
     const inserted = await txRows<Record<string, unknown> & { id: string }>(
       tx,
@@ -831,11 +927,11 @@ export async function recordBillPayment(
         accountId: cash.id,
         creditFils: cashBase,
         description: `Payment to ${bill.vendor_name} - Bill ${billRef}`.slice(0, 255),
-        ...(foreign
+        ...(leg.tag
           ? {
-              foreignCurrency: currency,
-              foreignCredit: fromFils(args.amountFils),
-              exchangeRate: payRate,
+              foreignCurrency: leg.tag.foreignCurrency,
+              foreignCredit: leg.tag.amount,
+              exchangeRate: leg.tag.exchangeRate,
             }
           : {}),
       },
@@ -1031,6 +1127,16 @@ export async function createPrepayment(args: {
   const cash = await resolvePaymentAccount(companyId, input.payment_account_id);
   const advances = await ensureAccountByCode(companyId, VENDOR_ADVANCES_CODE);
   const baseFils = toBase(input.amount, rate, foreign);
+  // A2 (C4): the bank line carries the bank account's own currency (cross-converted if needed).
+  const leg = await cashLegFor({
+    companyId,
+    base: companyBase,
+    bankCurrency: await bankCurrencyOf(companyId, cash.id),
+    docCurrency: currency,
+    docAmountFils: input.amount,
+    docRate: rate,
+    date: input.payment_date,
+  });
   return withLedgerTx(async (tx) => {
     const rows = await txRows<Record<string, unknown> & { id: string }>(
       tx,
@@ -1074,7 +1180,13 @@ export async function createPrepayment(args: {
             accountId: cash.id,
             creditFils: baseFils,
             description: `Advance paid - ${vendor.vendorName}`,
-            ...(foreign ? { ...fxPart, foreignCredit: fromFils(input.amount) } : {}),
+            ...(leg.tag
+              ? {
+                  foreignCurrency: leg.tag.foreignCurrency,
+                  foreignCredit: leg.tag.amount,
+                  exchangeRate: leg.tag.exchangeRate,
+                }
+              : {}),
           },
         ],
       },
@@ -1247,6 +1359,7 @@ export async function createDebitNote(args: {
   const vatFils = sumFils(lineCalcs.map((l) => l.vatFils));
   const total = subtotal + vatFils;
   if (vatFils > 0 && !inputVat) throw new DomainError("VAT_ACCOUNTS_MISSING", 422);
+  await assertRefsOwned(pool, companyId, { product: input.lines.map((l) => l.product_id ?? null) });
   return withLedgerTx(async (tx) => {
     const number =
       input.debit_note_number ??
@@ -1273,11 +1386,32 @@ export async function createDebitNote(args: {
       ]
     );
     const note = rows[0];
-    const credits = lineCalcs.map((l) => ({
+    let credits: PostJournalLineInput[] = lineCalcs.map((l) => ({
       accountId: l.accountId,
       creditFils: toBase(l.amount, rate, foreign),
       description: `Debit note ${number} - ${l.description}`.slice(0, 255),
     }));
+    // A2 (M4): returned stock items leave inventory at cost (variance to COGS), not expense.
+    const returned = lineCalcs.map((l, index) => ({ l, index })).filter(({ l }) => !!l.product_id);
+    let returnMovements: string[] = [];
+    if (returned.length) {
+      const plan = await planPurchaseReturnStock(tx, {
+        companyId,
+        noteId: note.id,
+        number,
+        date: input.note_date,
+        lines: returned.map(({ l, index }) => ({
+          index,
+          productId: l.product_id!,
+          quantity: l.quantity ?? 1,
+          creditFils: toBase(l.amount, rate, foreign),
+          description: l.description,
+        })),
+        actorId: args.actorId,
+      });
+      returnMovements = plan.movementIds;
+      credits = [...credits.filter((_, i) => !plan.handled.includes(i)), ...plan.lines];
+    }
     const vatBase = toBase(vatFils, rate, foreign);
     if (vatBase > 0 && inputVat) {
       credits.push({
@@ -1286,7 +1420,7 @@ export async function createDebitNote(args: {
         description: `Input VAT reversal - ${number}`,
       });
     }
-    const apDebit = sumFils(credits.map((c) => c.creditFils));
+    const apDebit = sumFils(credits.map((c) => (c.creditFils ?? 0) - (c.debitFils ?? 0)));
     const { entry } = await postJournal(
       {
         companyId,
@@ -1312,6 +1446,7 @@ export async function createDebitNote(args: {
       },
       { actorId: args.actorId, tx }
     );
+    await afterBillPosted(tx, returnMovements, entry.id);
     return { debitNote: note, journalEntryId: entry.id };
   }, args.tx);
 }

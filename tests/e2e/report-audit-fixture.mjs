@@ -284,6 +284,8 @@ async function seedOpeningBalances(companyId, account) {
       date: ymd(monthStart(new Date(), -5)),
       status: "posted",
       memo: "Synthetic opening balance for report audit",
+      // A2 (H8): opening inventory is a control account, accepted only as a reasoned adjustment.
+      controlAdjustment: { reason: "QA fixture: synthetic opening balance" },
       lines: [
         { accountId: account.bank.id, debit: 300000, credit: 0, description: "Opening bank" },
         { accountId: account.cash.id, debit: 20000, credit: 0, description: "Opening cash" },
