@@ -74,7 +74,8 @@ describe("D2b CTO checkpoint guards", () => {
     expect(charts).toContain("strokeWidth={1.5}");
     expect(charts).toContain("CHART_COLORS.neutral");
     expect(charts).toContain('strokeDasharray="3 4"');
-    expect(read("client/src/index.css")).toContain("--chart-neutral: var(--neutral-400)");
+    // WP-A: between neutral-400 and -500 so the comparison series keeps 3:1 on cards.
+    expect(read("client/src/index.css")).toContain("--chart-neutral: 220 9% 56%;");
   });
 
   it("7: StatusBadge carries localized overdue days", () => {

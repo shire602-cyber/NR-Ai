@@ -187,4 +187,6 @@ export const ALL_CRAWL_SKIPPED = [
   "/view/invoice/:token",
   "/portal/:token",
   "/accounts",
+  // WP-A design-system gallery: only routed in VITE_UI_GALLERY=1 review builds.
+  "/__ui",
 ];
