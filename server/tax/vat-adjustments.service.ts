@@ -308,14 +308,25 @@ export function installBadDebtPaymentHook(): void {
       [p.entityId]
     );
     const date = pay.rows[0]?.d ?? new Date().toISOString().slice(0, 10);
-    try {
-      await reverseBadDebtReliefClaim({
+    const reverse = (on: string) =>
+      reverseBadDebtReliefClaim({
         companyId: p.companyId,
         claimId: rows[0].id,
         userId: p.actorUserId || rows[0].created_by,
-        date,
+        date: on,
         reason: "Payment received after bad-debt relief was claimed",
       });
+    try {
+      try {
+        await reverse(date);
+      } catch (err) {
+        // A payment dated in a filed VAT period: the recovered VAT is declared in the next open
+        // period's return (Executive Regulation Art. 70), never by changing the filed one.
+        const next = (err as DomainError & { details?: { nextOpenPeriodStart?: string } })?.details
+          ?.nextOpenPeriodStart;
+        if ((err as DomainError)?.code !== "VAT_PERIOD_FILED" || !next) throw err;
+        await reverse(next);
+      }
     } catch (err) {
       log.error({ err, claimId: rows[0].id }, "bad-debt relief reversal on payment failed");
     }

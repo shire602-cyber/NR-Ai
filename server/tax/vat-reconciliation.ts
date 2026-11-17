@@ -27,6 +27,8 @@ export function categoryForSource(source: string | null | undefined): ReconCateg
       return "bad_debt_relief";
     case "fixed_asset":
       return "fixed_asset_disposals";
+    case "vat_partial_exemption":
+      return "partial_exemption";
     default:
       return `journal:${source || "manual"}`;
   }
@@ -70,7 +72,7 @@ const LABELS: Record<string, string> = {
   receipts: "Posted receipts",
   bad_debt_relief: "Bad-debt relief claims",
   fixed_asset_disposals: "Fixed-asset acquisitions (input VAT) and disposals",
-  partial_exemption: "Partial-exemption apportionment (not posted)",
+  partial_exemption: "Partial-exemption irrecoverable input VAT (Art. 55), posted as a cost",
   return_adjustments: "Return adjustments: tourist refunds, imports, corrections (not posted)",
 };
 

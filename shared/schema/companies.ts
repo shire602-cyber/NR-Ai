@@ -88,6 +88,9 @@ export const companies = pgTable("companies", {
   // Partial exemption: fraction of supplies that are exempt (0..1). When > 0, input VAT
   // is reduced by this ratio per FTA partial-exemption rules.
   exemptSupplyRatio: vatRateType("exempt_supply_ratio").notNull().default(0),
+  // A1 (C6, Exec. Reg. Art. 55): partial exemption on. Residual input VAT is apportioned by the
+  // standard-method ratio from the period's supplies; exemptSupplyRatio is only the fallback.
+  partialExemptionEnabled: boolean("partial_exemption_enabled").notNull().default(false),
   // VAT autopilot configuration. periodStartMonth is the calendar month (1-12)
   // that the VAT period cycle starts on — defaults to January but FTA assigns
   // each registrant a stagger so quarterly periods may begin in Feb or Mar.

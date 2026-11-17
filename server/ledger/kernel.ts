@@ -26,6 +26,7 @@ import {
 } from "./normalize";
 import { allocateEntryNumber, lockIdempotencyKey } from "./numbering";
 import { journalMachine, transitionRow } from "./state-machines";
+import { assertVatPeriodOpen } from "./vat-lock";
 import { findPgError, rowsOf, withLedgerTx } from "./tx";
 import type {
   EntryKind,
@@ -267,6 +268,16 @@ export async function insertNormalizedEntry(
   await assertAccountsUsable(tx, n.companyId, n.lines, !!internal.allowInactiveAccounts);
 
   const isPosted = n.status === "posted";
+  // A1 (C1): a submitted / filed VAT return closes its period for VAT-affecting postings.
+  if (isPosted) {
+    await assertVatPeriodOpen(tx, {
+      companyId: n.companyId,
+      dateIso: n.dateIso,
+      source: n.source,
+      accountIds: n.lines.map((l) => l.accountId),
+      reversedEntryId: internal.reversedEntryId ?? null,
+    });
+  }
   const values = {
     companyId: n.companyId,
     entryNumber: "",
@@ -474,6 +485,12 @@ export async function postDraft(
     const normalized: NormalizedLine[] = lines.map((l) => ({ ...l }));
     const totals = assertLinesBalanced(normalized, { allowSameAccount: true });
     await assertAccountsUsable(tx, pre.companyId, normalized, false);
+    await assertVatPeriodOpen(tx, {
+      companyId: pre.companyId,
+      dateIso: entryIso(pre),
+      source: pre.source ?? null,
+      accountIds: normalized.map((l) => l.accountId),
+    });
 
     const patch: Record<string, unknown> = {
       postedBy: actorId,

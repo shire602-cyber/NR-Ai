@@ -59,6 +59,7 @@ import {
 } from "./bill-posting.service";
 import { resolveVendor } from "./vendor.service";
 import { afterBillPosted, planPurchaseReturnStock } from "./inventory/documents";
+import { planDebitNoteVat, type DebitNoteBillVat } from "./debit-note-vat";
 import { debitNoteCreateSchema, inboundBillSchema } from "../../shared/validators/bills";
 import { parseStrict } from "../http/strict-body";
 import type {
@@ -307,6 +308,12 @@ async function prepareBill(
     if (input[k] !== undefined) header[k] = input[k] ?? null;
   }
   if (input.designated_zone !== undefined) header.designated_zone = input.designated_zone;
+  // A1 (M7, C6): customs value / duty (Box 6) and the input VAT attribution.
+  for (const k of ["customs_value", "customs_duty_amount"] as const) {
+    if (input[k] !== undefined) header[k] = input[k] === null ? null : fromFils(input[k]!);
+  }
+  if (input.input_vat_attribution !== undefined)
+    header.input_vat_attribution = input.input_vat_attribution ?? null;
   if (input.recoverable_vat_percent !== undefined)
     header.recoverable_vat_percent = input.recoverable_vat_percent;
 
@@ -595,6 +602,9 @@ const HEADER_COLUMNS = new Set([
   "designated_zone",
   "recoverable_vat_percent",
   "withholding_amount",
+  "customs_value",
+  "customs_duty_amount",
+  "input_vat_attribution",
 ]);
 
 async function updateHeader(
@@ -684,7 +694,16 @@ export async function createBill(args: {
         args.purchaseOrderId ?? null,
       ]
     );
-    const bill = rows[0];
+    let bill = rows[0];
+    const a1Header = Object.fromEntries(
+      (["customs_value", "customs_duty_amount", "input_vat_attribution"] as const)
+        .filter((k) => h[k] !== undefined && h[k] !== null)
+        .map((k) => [k, h[k]])
+    );
+    if (Object.keys(a1Header).length > 0) {
+      await updateHeader(tx, bill.id, a1Header);
+      bill = { ...bill, ...a1Header };
+    }
     await writeLines(tx, bill.id, prepared.lines ?? []);
     const lines = await txRows(
       tx,
@@ -1323,14 +1342,40 @@ export async function createDebitNote(args: {
   const { companyId, input } = args;
   let vendorName = input.vendor_name ?? null;
   let vendorId = input.vendor_id ?? null;
+  let billVat: DebitNoteBillVat | null = null;
   if (input.bill_id) {
     const b = await pool.query(
-      `SELECT vendor_id, vendor_name, currency FROM vendor_bills WHERE id = $1 AND company_id = $2`,
+      `SELECT vendor_id, vendor_name, currency, exchange_rate, vat_amount,
+              COALESCE(reverse_charge, false) AS reverse_charge, COALESCE(is_import, false) AS is_import,
+              COALESCE(recoverable_vat_percent, 100) AS recoverable_pct, recoverable_vat_base
+         FROM vendor_bills WHERE id = $1 AND company_id = $2`,
       [input.bill_id, companyId]
     );
     if (!b.rows[0]) throw new DomainError("BILL_NOT_FOUND", 404);
     vendorName = vendorName ?? b.rows[0].vendor_name;
     vendorId = vendorId ?? b.rows[0].vendor_id;
+    // A1 (C2): the note follows the bill's VAT treatment (blocked / partial / reverse charge).
+    const br = b.rows[0];
+    const billBase = await loadBaseCurrency(companyId);
+    const billVatBase = toBase(
+      filsOf(br.vat_amount),
+      rateTextOf(br as BillRow, billBase),
+      isForeign(br as BillRow, billBase)
+    );
+    const pct = Number(br.recoverable_pct);
+    billVat = {
+      reverseCharge: br.reverse_charge === true,
+      isImport: br.is_import === true,
+      vatFils: billVatBase,
+      recoverableFils:
+        br.recoverable_vat_base !== null && br.recoverable_vat_base !== undefined
+          ? filsOf(br.recoverable_vat_base)
+          : pct >= 100
+            ? null
+            : pct <= 0
+              ? 0
+              : mulRate(billVatBase, String(pct / 100)),
+    };
   }
   const vendor = await resolveVendor(companyId, { vendor_id: vendorId, vendor_name: vendorName });
   if (!vendor?.vendorName)
@@ -1356,9 +1401,25 @@ export async function createDebitNote(args: {
     return { ...l, vatFils: vat, accountId: l.account_id ?? general.id };
   });
   const subtotal = sumFils(lineCalcs.map((l) => l.amount));
-  const vatFils = sumFils(lineCalcs.map((l) => l.vatFils));
-  const total = subtotal + vatFils;
-  if (vatFils > 0 && !inputVat) throw new DomainError("VAT_ACCOUNTS_MISSING", 422);
+  const vatPlan = planDebitNoteVat(
+    lineCalcs.map((l) => ({ amountFils: l.amount, vatFils: l.vatFils })),
+    billVat
+  );
+  const vatFils = vatPlan.vatFils;
+  const total = vatPlan.apFils;
+  const outputVat =
+    vatPlan.treatment === "reverse_charge"
+      ? (accounts.find(
+          (a) =>
+            a.isVatAccount &&
+            a.vatType === "output" &&
+            a.code === ACCOUNT_CODES.VAT_OUTPUT &&
+            usable(a)
+        ) ?? accounts.find((a) => a.isVatAccount && a.vatType === "output" && usable(a)))
+      : undefined;
+  if (vatPlan.recoverableFils > 0 && !inputVat) throw new DomainError("VAT_ACCOUNTS_MISSING", 422);
+  if (vatPlan.treatment === "reverse_charge" && vatFils > 0 && !outputVat)
+    throw new DomainError("VAT_ACCOUNTS_MISSING", 422);
   await assertRefsOwned(pool, companyId, { product: input.lines.map((l) => l.product_id ?? null) });
   return withLedgerTx(async (tx) => {
     const number =
@@ -1367,8 +1428,9 @@ export async function createDebitNote(args: {
     const rows = await txRows<Record<string, unknown> & { id: string }>(
       tx,
       `INSERT INTO vendor_debit_notes (company_id, vendor_id, vendor_name, debit_note_number, bill_id, note_date,
-          currency, exchange_rate, subtotal, vat_amount, total_amount, reason, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+          currency, exchange_rate, subtotal, vat_amount, total_amount, reason, created_by,
+          vat_treatment, recoverable_vat_amount)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [
         companyId,
         vendor.vendorId,
@@ -1383,12 +1445,15 @@ export async function createDebitNote(args: {
         fromFils(total),
         input.reason,
         args.actorId,
+        vatPlan.treatment,
+        fromFils(vatPlan.recoverableFils),
       ]
     );
     const note = rows[0];
-    let credits: PostJournalLineInput[] = lineCalcs.map((l) => ({
+    // Each line credits its net plus the VAT that was never recovered on it (blocked / partial).
+    let credits: PostJournalLineInput[] = lineCalcs.map((l, i) => ({
       accountId: l.accountId,
-      creditFils: toBase(l.amount, rate, foreign),
+      creditFils: toBase(l.amount + vatPlan.lineCostFils[i], rate, foreign),
       description: `Debit note ${number} - ${l.description}`.slice(0, 255),
     }));
     // A2 (M4): returned stock items leave inventory at cost (variance to COGS), not expense.
@@ -1404,7 +1469,7 @@ export async function createDebitNote(args: {
           index,
           productId: l.product_id!,
           quantity: l.quantity ?? 1,
-          creditFils: toBase(l.amount, rate, foreign),
+          creditFils: toBase(l.amount + vatPlan.lineCostFils[index], rate, foreign),
           description: l.description,
         })),
         actorId: args.actorId,
@@ -1412,15 +1477,30 @@ export async function createDebitNote(args: {
       returnMovements = plan.movementIds;
       credits = [...credits.filter((_, i) => !plan.handled.includes(i)), ...plan.lines];
     }
-    const vatBase = toBase(vatFils, rate, foreign);
-    if (vatBase > 0 && inputVat) {
+    const recoverableBase = toBase(vatPlan.recoverableFils, rate, foreign);
+    if (recoverableBase > 0 && inputVat) {
       credits.push({
         accountId: inputVat.id,
-        creditFils: vatBase,
+        creditFils: recoverableBase,
         description: `Input VAT reversal - ${number}`,
       });
     }
-    const apDebit = sumFils(credits.map((c) => (c.creditFils ?? 0) - (c.debitFils ?? 0)));
+    // Reverse charge: the self-assessed output VAT falls with the consideration (Box 3).
+    const rcOutputBase =
+      vatPlan.treatment === "reverse_charge" ? toBase(vatFils, rate, foreign) : 0;
+    const debits =
+      rcOutputBase > 0 && outputVat
+        ? [
+            {
+              accountId: outputVat.id,
+              debitFils: rcOutputBase,
+              description: `Reverse-charge output VAT reversal - ${number}`,
+            },
+          ]
+        : [];
+    // A2 (M4): a purchase return may carry a debit line (cost variance to COGS).
+    const apDebit =
+      sumFils(credits.map((c) => (c.creditFils ?? 0) - (c.debitFils ?? 0))) - rcOutputBase;
     const { entry } = await postJournal(
       {
         companyId,
@@ -1441,6 +1521,7 @@ export async function createDebitNote(args: {
               ? { foreignCurrency: currency, foreignDebit: fromFils(total), exchangeRate: rate }
               : {}),
           },
+          ...debits,
           ...credits,
         ],
       },

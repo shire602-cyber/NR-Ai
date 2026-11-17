@@ -375,6 +375,7 @@ interface PlannedAllocation {
   accountId: string | null;
   createdJournal: boolean;
   status: "pending" | "active";
+  vat?: BuiltEntry["vat"];
 }
 
 /** The cash-side rule: the entry must hit this bank GL account for the same amount and side. */
@@ -596,6 +597,11 @@ async function reverseBillPayment(
 interface BuiltEntry {
   lines: PostJournalLineInput[];
   contraAccountId: string;
+  /**
+   * A1 (H7/M8): what the VAT return reports for this entry. Net is signed: + a supply (inflow),
+   * - a purchase (outflow). Null when the entry carries no VAT treatment.
+   */
+  vat: { treatment: VatTreatment; netFils: number; vatFils: number } | null;
 }
 
 async function accountIdByCode(companyId: string, code: string): Promise<string | null> {
@@ -738,6 +744,8 @@ export async function buildEntryLines(
       );
   }
   const net = contraTotal - vat;
+  const vatRecord =
+    treatment === "none" ? null : { treatment, netFils: inflow ? net : -net, vatFils: vat };
   lines.push(
     inflow
       ? {
@@ -753,7 +761,7 @@ export async function buildEntryLines(
           costCenterId: opts.costCenterId ?? null,
         }
   );
-  return { lines, contraAccountId: contra.id };
+  return { lines, contraAccountId: contra.id, vat: vatRecord };
 }
 
 // ─── applyMatch ────────────────────────────────────────────────────────────
@@ -1149,6 +1157,7 @@ export async function applyMatch(input: ApplyMatchInput): Promise<ApplyMatchResu
           accountId: built.contraAccountId,
           createdJournal: true,
           status: draft ? "pending" : "active",
+          vat: built.vat,
         },
       ];
     };
@@ -1177,6 +1186,9 @@ export async function applyMatch(input: ApplyMatchInput): Promise<ApplyMatchResu
           paymentId: a.paymentId,
           accountId: a.accountId,
           createdJournal: a.createdJournal,
+          vatTreatment: a.vat?.treatment ?? null,
+          vatNetAmount: a.vat ? Number(fromFils(a.vat.netFils)) : null,
+          vatAmount: a.vat ? Number(fromFils(a.vat.vatFils)) : null,
           status: a.status,
           idempotencyKey: i === 0 ? idem : `${idem}:${i}`,
           createdBy: actorId,

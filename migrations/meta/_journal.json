@@ -841,6 +841,13 @@
    "when": 1781430350000,
    "tag": "0120_a2_purchases",
    "breakpoints": false
+  },
+  {
+   "idx": 120,
+   "version": "7",
+   "when": 1781430360000,
+   "tag": "0121_a1_vat_lock",
+   "breakpoints": false
   }
  ]
 }
