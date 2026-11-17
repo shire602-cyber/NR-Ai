@@ -1157,12 +1157,16 @@ describe("report discoverability", () => {
   });
 
   it("keeps VAT filing and the VAT 201 worksheet discoverable from compliance navigation", () => {
+    // WP-A (Fable spec 3.5): the Tax group is VAT (VAT autopilot becomes its Periods tab and
+    // highlights VAT), Corporate tax, E-invoicing, Calendar, Filed returns, Evidence. The
+    // rendered group is covered by sidebar-nav-behaviour.test.ts; this pins the source shape.
     expect(sidebarSource).toContain('key: "compliance"');
-    expect(sidebarSource).toContain('titleKey: "vatFiling", url: "/vat-filing"');
-    expect(sidebarSource).toContain('titleKey: "vatAutopilot", url: "/vat-autopilot"');
-    expect(sidebarSource).toContain('titleKey: "corporateTax", url: "/corporate-tax"');
-    expect(sidebarSource).toContain('titleKey: "taxReturnArchive", url: "/tax-return-archive"');
-    expect(sidebarSource).not.toContain('titleKey: "evidenceCenter", url: "/evidence-center"');
+    expect(sidebarSource).toMatch(
+      /titleKey: "shell\.nav\.vat",\s*url: "\/vat-filing",[\s\S]*?matches: \["\/vat-autopilot"\]/
+    );
+    expect(sidebarSource).toContain('url: "/corporate-tax"');
+    expect(sidebarSource).toContain('url: "/tax-return-archive"');
+    expect(sidebarSource).toContain('url: "/evidence-center"');
     expect(sidebarSource).toContain("CLIENT_PORTAL_COMPLIANCE_ITEMS");
     expect(sidebarSource).toContain(
       '{ titleKey: "vatFiling", icon: ClipboardList, url: "/vat-filing" }'

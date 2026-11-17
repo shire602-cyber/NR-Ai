@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -16,9 +16,10 @@ import {
   FileStack,
   CalendarDays,
   ListTodo,
-  Newspaper,
   ClipboardList,
   Sparkles,
+  Package,
+  Landmark,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -47,6 +48,8 @@ import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
+import { SETTINGS_ROUTES } from "@/components/layout/settings-nav";
+import { useEdgeFadeY } from "@/components/ui/use-scroll-fade";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -57,6 +60,10 @@ interface SubItem {
   title?: string;
   description?: string;
   testId?: string;
+  /** Other routes that highlight this item (pages that became tabs of it). */
+  matches?: string[];
+  /** Shown only for companies registered in Saudi Arabia (ZATCA). */
+  saudiOnly?: boolean;
 }
 
 interface NavGroup {
@@ -65,6 +72,8 @@ interface NavGroup {
   icon: LucideIcon;
   items: SubItem[];
   url?: string;
+  /** Direct items: other routes that highlight this entry. */
+  matches?: string[];
 }
 
 interface ClientPortalItem {
@@ -75,141 +84,194 @@ interface ClientPortalItem {
 
 // ─── Nav data ────────────────────────────────────────────────────────────────
 
+// WP-A (Fable spec 3.5): no group exceeds 7 items; labels are short sentence case
+// (`shell.nav.*`); single destinations are direct items. `testId` keeps the data-testids the
+// links had before the regroup (`link-<testId>`). Pages that left the sidebar stay routed and
+// are reached from their parent page (tabs), the settings sub-nav or the command palette.
 const CUSTOMER_GROUPS: NavGroup[] = [
   {
     key: "sales",
-    titleKey: "sales",
+    titleKey: "shell.nav.sales",
     icon: TrendingUp,
     items: [
-      { titleKey: "invoices", url: "/invoices" },
-      { titleKey: "quotes", url: "/quotes" },
-      { titleKey: "creditNotes", url: "/credit-notes" },
-      { titleKey: "invoiceTemplates", url: "/invoice-templates" },
-      { titleKey: "recurringInvoices", url: "/recurring-invoices" },
-      { titleKey: "paymentChasing", url: "/payment-chasing" },
-      { titleKey: "contacts", url: "/contacts" },
+      { titleKey: "shell.nav.invoices", url: "/invoices", testId: "invoices" },
+      { titleKey: "shell.nav.quotes", url: "/quotes", testId: "quotes" },
+      { titleKey: "shell.nav.creditNotes", url: "/credit-notes", testId: "creditNotes" },
+      { titleKey: "shell.nav.recurring", url: "/recurring-invoices", testId: "recurringInvoices" },
+      { titleKey: "shell.nav.customers", url: "/contacts", testId: "contacts" },
+      {
+        titleKey: "shell.nav.paymentReminders",
+        url: "/payment-chasing",
+        testId: "paymentChasing",
+      },
     ],
   },
   {
     key: "purchases",
-    titleKey: "purchases",
+    titleKey: "shell.nav.purchases",
     icon: ShoppingCart,
     items: [
-      { titleKey: "receipts", url: "/receipts" },
-      { titleKey: "receiptAutopilot", url: "/receipt-autopilot" },
-      { titleKey: "billPay", url: "/bill-pay" },
-      { titleKey: "pages.vendor", url: "/vendors" },
-      { titleKey: "purchaseOrders", url: "/purchase-orders" },
-      { titleKey: "expenseClaims", url: "/expense-claims" },
-      { titleKey: "inventory", url: "/inventory" },
+      { titleKey: "shell.nav.bills", url: "/bill-pay", testId: "billPay" },
+      {
+        titleKey: "shell.nav.receipts",
+        url: "/receipts",
+        testId: "receipts",
+        matches: ["/receipt-autopilot"],
+      },
+      { titleKey: "shell.nav.suppliers", url: "/vendors", testId: "pages.vendor" },
+      { titleKey: "shell.nav.purchaseOrders", url: "/purchase-orders", testId: "purchaseOrders" },
+      { titleKey: "shell.nav.expenseClaims", url: "/expense-claims", testId: "expenseClaims" },
+    ],
+  },
+  {
+    key: "inventory",
+    titleKey: "shell.nav.inventory",
+    icon: Package,
+    url: "/inventory",
+    items: [],
+  },
+  {
+    key: "banking",
+    titleKey: "shell.nav.banking",
+    icon: Landmark,
+    items: [
+      {
+        titleKey: "shell.nav.bankAccounts",
+        url: "/bank-accounts",
+        testId: "banking.accounts.title",
+      },
+      {
+        titleKey: "shell.nav.reconciliation",
+        url: "/bank-reconciliation",
+        testId: "bankReconciliation",
+        matches: ["/reconciliation-rules", "/auto-reconcile"],
+      },
+      { titleKey: "shell.nav.bankFeeds", url: "/bank-feeds", testId: "banking.feeds.title" },
     ],
   },
   {
     key: "accounting",
-    titleKey: "accounting",
+    titleKey: "shell.nav.accounting",
     icon: BookMarked,
     items: [
-      { titleKey: "chartOfAccounts", url: "/chart-of-accounts" },
-      { titleKey: "journal", url: "/journal" },
-      { titleKey: "bankReconciliation", url: "/bank-reconciliation" },
-      { titleKey: "banking.accounts.title", url: "/bank-accounts" },
-      { titleKey: "banking.feeds.title", url: "/bank-feeds" },
-      { titleKey: "reconciliationRules", url: "/reconciliation-rules" },
-      { titleKey: "costCenters", url: "/cost-centers" },
-      { titleKey: "exchangeRates", url: "/exchange-rates" },
-      { titleKey: "consolidation.navGroups", url: "/company-groups" },
-      { titleKey: "fixedAssets", url: "/fixed-assets" },
-      { titleKey: "monthEndClose", url: "/month-end" },
+      {
+        titleKey: "shell.nav.chartOfAccounts",
+        url: "/chart-of-accounts",
+        testId: "chartOfAccounts",
+      },
+      { titleKey: "shell.nav.journal", url: "/journal", testId: "journal" },
+      { titleKey: "shell.nav.fixedAssets", url: "/fixed-assets", testId: "fixedAssets" },
+      { titleKey: "shell.nav.budgets", url: "/budgets", testId: "budgets" },
+      { titleKey: "shell.nav.costCentres", url: "/cost-centers", testId: "costCenters" },
+      { titleKey: "shell.nav.exchangeRates", url: "/exchange-rates", testId: "exchangeRates" },
+      { titleKey: "shell.nav.monthEnd", url: "/month-end", testId: "monthEndClose" },
     ],
   },
   {
     key: "reports",
-    titleKey: "reportsSection",
+    titleKey: "shell.nav.reports",
     icon: BarChart3,
     url: "/reports",
     items: [],
   },
   {
-    key: "ai",
-    titleKey: "ai.hubTitle",
-    icon: Sparkles,
-    url: "/ai",
-    items: [],
-  },
-  {
-    key: "payroll",
-    titleKey: "hrPayroll",
-    icon: Banknote,
-    items: [{ titleKey: "payroll", url: "/payroll" }],
-  },
-  {
     key: "compliance",
-    titleKey: "compliance",
+    titleKey: "shell.nav.tax",
     icon: ClipboardList,
     items: [
-      { titleKey: "vatFiling", url: "/vat-filing" },
-      { titleKey: "vatAutopilot", url: "/vat-autopilot" },
-      { titleKey: "corporateTax", url: "/corporate-tax" },
-      { titleKey: "taxReturnArchive", url: "/tax-return-archive" },
-      { titleKey: "complianceCalendar", url: "/compliance-calendar" },
-      { titleKey: "documentVersions", url: "/document-versions" },
-    ],
-  },
-  {
-    key: "settings",
-    titleKey: "settings",
-    icon: Settings,
-    items: [
-      { titleKey: "companySettings", url: "/settings/company" },
-      { titleKey: "companyProfile", url: "/company-profile" },
-      { titleKey: "teamManagement", url: "/team" },
-      { titleKey: "portal.firmRelationshipNav", url: "/firm-relationship" },
-      { titleKey: "security.pageTitle", url: "/settings/security", testId: "security-settings" },
-      { titleKey: "integrations", url: "/integrations-hub" },
       {
-        titleKey: "einvoicing.navEInvoicing",
+        titleKey: "shell.nav.vat",
+        url: "/vat-filing",
+        testId: "vatFiling",
+        matches: ["/vat-autopilot"],
+      },
+      { titleKey: "shell.nav.corporateTax", url: "/corporate-tax", testId: "corporateTax" },
+      {
+        titleKey: "shell.nav.einvoicing",
         url: "/settings/einvoicing",
         testId: "einvoicing-settings",
       },
-      { titleKey: "einvoicing.navZatca", url: "/settings/zatca", testId: "zatca-settings" },
-      { titleKey: "developerSettings", url: "/developer-settings" },
-      { titleKey: "notificationPreferences", url: "/notification-preferences" },
-      { titleKey: "subscription", url: "/subscription" },
-      { titleKey: "commercial.navImportData", url: "/import" },
-      { titleKey: "backupRestore", url: "/backup-restore" },
-      { titleKey: "history", url: "/history" },
+      {
+        titleKey: "shell.nav.zatca",
+        url: "/settings/zatca",
+        testId: "zatca-settings",
+        saudiOnly: true,
+      },
+      { titleKey: "shell.nav.calendar", url: "/compliance-calendar", testId: "complianceCalendar" },
+      {
+        titleKey: "shell.nav.filedReturns",
+        url: "/tax-return-archive",
+        testId: "taxReturnArchive",
+      },
+      { titleKey: "shell.nav.evidence", url: "/evidence-center", testId: "evidenceCenter" },
     ],
+  },
+  {
+    key: "payroll",
+    titleKey: "shell.nav.payroll",
+    icon: Banknote,
+    url: "/payroll",
+    items: [],
+  },
+  {
+    key: "ai",
+    titleKey: "shell.nav.assistant",
+    icon: Sparkles,
+    url: "/ai",
+    matches: ["/assistant"],
+    items: [],
   },
 ];
 
+// Settings is one entry that opens the settings area (left sub-nav, SettingsLayout).
+const SETTINGS_GROUP: NavGroup = {
+  key: "settings",
+  titleKey: "shell.nav.settings",
+  icon: Settings,
+  url: "/settings/company",
+  matches: SETTINGS_ROUTES,
+  items: [],
+};
+
 const NRA_GROUP: NavGroup = {
   key: "nra",
-  titleKey: "nraCenter",
+  titleKey: "shell.nav.practice",
   icon: Briefcase,
   items: [
-    { titleKey: "firmCommandCenter", url: "/firm/command-center" },
-    { titleKey: "valueOps", url: "/firm/value-ops" },
-    { titleKey: "clientPortfolio", url: "/firm/clients" },
-    { titleKey: "staffManagement", url: "/firm/staff" },
-    { titleKey: "firm.practiceWorkspace", url: "/firm/practice" },
-    { titleKey: "healthDashboard", url: "/firm/health" },
-    { titleKey: "communications", url: "/firm/comms" },
-    { titleKey: "documentChasing", url: "/firm/document-chasing" },
-    { titleKey: "emailIntake", url: "/firm/email-intake" },
+    {
+      titleKey: "shell.nav.commandCentre",
+      url: "/firm/command-center",
+      testId: "firmCommandCenter",
+      matches: ["/firm/health", "/firm/value-ops", "/firm/analytics", "/firm/pipeline"],
+    },
+    { titleKey: "shell.nav.clients", url: "/firm/clients", testId: "clientPortfolio" },
+    { titleKey: "shell.nav.practiceWork", url: "/firm/practice", testId: "firm.practiceWorkspace" },
+    { titleKey: "shell.nav.staff", url: "/firm/staff", testId: "staffManagement" },
+    { titleKey: "shell.nav.communications", url: "/firm/comms", testId: "communications" },
+    {
+      titleKey: "shell.nav.documentChasing",
+      url: "/firm/document-chasing",
+      testId: "documentChasing",
+    },
+    { titleKey: "shell.nav.emailIntake", url: "/firm/email-intake", testId: "emailIntake" },
   ],
 };
 
 const ADMIN_GROUP: NavGroup = {
   key: "admin",
-  titleKey: "adminPanel",
+  titleKey: "shell.nav.admin",
   icon: Shield,
   items: [
-    { titleKey: "adminDashboard", url: "/admin/dashboard" },
-    { titleKey: "clientDocuments", url: "/admin/documents" },
-    { titleKey: "userInvitations", url: "/admin/invitations" },
-    { titleKey: "clientImport", url: "/admin/import" },
-    { titleKey: "userManagement", url: "/admin/users" },
-    { titleKey: "activityLogs", url: "/admin/activity-logs" },
+    { titleKey: "shell.nav.adminOverview", url: "/admin/dashboard", testId: "adminDashboard" },
+    { titleKey: "shell.nav.adminUsers", url: "/admin/users", testId: "userManagement" },
+    {
+      titleKey: "shell.nav.adminInvitations",
+      url: "/admin/invitations",
+      testId: "userInvitations",
+    },
+    { titleKey: "shell.nav.adminDocuments", url: "/admin/documents", testId: "clientDocuments" },
+    { titleKey: "shell.nav.adminImport", url: "/admin/import", testId: "clientImport" },
+    { titleKey: "shell.nav.adminActivity", url: "/admin/activity-logs", testId: "activityLogs" },
   ],
 };
 
@@ -226,10 +288,6 @@ const CLIENT_PORTAL_COMPLIANCE_ITEMS: ClientPortalItem[] = [
   { titleKey: "taskCenter", icon: ListTodo, url: "/task-center" },
 ];
 
-const CLIENT_PORTAL_INSIGHT_ITEMS: ClientPortalItem[] = [
-  { titleKey: "newsFeed", icon: Newspaper, url: "/news-feed" },
-];
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const SIDEBAR_LS_KEY = "sidebar-expanded-group";
@@ -240,19 +298,20 @@ function routeMatchesItem(location: string, itemUrl: string): boolean {
   return location.startsWith(itemUrl + "?");
 }
 
-function getGroupForRoute(location: string, groups: NavGroup[]): string | null {
-  for (const group of groups) {
-    if (group.url && routeMatchesItem(location, group.url)) {
-      return group.key;
-    }
+function itemIsActive(location: string, item: { url?: string; matches?: string[] }): boolean {
+  return [...(item.url ? [item.url] : []), ...(item.matches ?? [])].some((url) =>
+    routeMatchesItem(location, url)
+  );
+}
 
-    for (const item of group.items) {
-      if (routeMatchesItem(location, item.url)) {
-        return group.key;
-      }
-    }
-  }
-  return null;
+function groupIsActive(location: string, group: NavGroup): boolean {
+  return group.url
+    ? itemIsActive(location, group)
+    : group.items.some((item) => itemIsActive(location, item));
+}
+
+function getGroupForRoute(location: string, groups: NavGroup[]): string | null {
+  return groups.find((group) => groupIsActive(location, group))?.key ?? null;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -272,7 +331,10 @@ export function AppSidebar() {
   // client company. Firm-level tools (the NRA Center) belong at the firm level,
   // so we hide that group while a specific client file is the active workspace.
   // The user re-enters the firm via the "Firm workspace" entry in CompanySwitcher.
-  const { isFirmContext } = useActiveCompany();
+  const { isFirmContext, company } = useActiveCompany();
+  // ZATCA applies to companies registered in Saudi Arabia only (UAE companies never see it).
+  const isSaudi =
+    (company as { addressCountry?: string | null } | undefined)?.addressCountry === "SA";
   // S4: staff of any approved firm (GET /api/firms/me) get the firm group too,
   // without the NR-only links (firm messaging, document chasing, email intake,
   // value-ops). NR staff and admins keep the full NRA Center.
@@ -295,16 +357,27 @@ export function AppSidebar() {
   // All collapsible groups for this user (Dashboard is separate — direct link)
   const allGroups = useMemo<NavGroup[]>(
     () => [
-      ...CUSTOMER_GROUPS,
+      ...CUSTOMER_GROUPS.map((group) => ({
+        ...group,
+        items: group.items.filter((item) => !item.saudiOnly || isSaudi),
+      })),
       ...(showNraCenter ? [firmGroup] : []),
       ...(isAdmin ? [ADMIN_GROUP] : []),
+      SETTINGS_GROUP,
     ],
-    [showNraCenter, firmGroup, isAdmin]
+    [showNraCenter, firmGroup, isAdmin, isSaudi]
   );
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollFade = useEdgeFadeY(scrollRef, 16);
 
   // Initialize expanded group: active route's group takes precedence, then localStorage
   const [expandedGroup, setExpandedGroup] = useState<string | null>(() => {
-    const fromRoute = getGroupForRoute(location, [...CUSTOMER_GROUPS, NRA_GROUP, ADMIN_GROUP]);
+    const fromRoute = getGroupForRoute(location, [
+      ...CUSTOMER_GROUPS,
+      NRA_GROUP,
+      ADMIN_GROUP,
+      SETTINGS_GROUP,
+    ]);
     if (fromRoute) return fromRoute;
     try {
       return localStorage.getItem(SIDEBAR_LS_KEY);
@@ -361,9 +434,7 @@ export function AppSidebar() {
   const renderNavGroup = (group: NavGroup) => {
     const Icon = group.icon;
     const isExpanded = expandedGroup === group.key;
-    const hasActive = group.url
-      ? routeMatchesItem(location, group.url)
-      : group.items.some((item) => routeMatchesItem(location, item.url));
+    const hasActive = groupIsActive(location, group);
     const groupTitle = (t as Record<string, string>)[group.titleKey] ?? group.titleKey;
 
     const groupUrl = group.url;
@@ -377,7 +448,9 @@ export function AppSidebar() {
             data-testid={`group-${group.key}`}
           >
             <Icon className="w-4 h-4" />
-            <span>{groupTitle}</span>
+            <span className="min-w-0 truncate" title={groupTitle}>
+              {groupTitle}
+            </span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       );
@@ -393,7 +466,10 @@ export function AppSidebar() {
           data-testid={`group-${group.key}`}
         >
           <Icon className="w-4 h-4" />
-          <span>{groupTitle}</span>
+          {/* Group labels never wrap (spec 3.5): one line, truncated with a tooltip. */}
+          <span className="min-w-0 truncate" title={groupTitle}>
+            {groupTitle}
+          </span>
           <motion.div
             className="ms-auto"
             animate={{ rotate: isExpanded ? 180 : 0 }}
@@ -420,7 +496,7 @@ export function AppSidebar() {
                 )}
               >
                 {group.items.map((item) => {
-                  const isActive = routeMatchesItem(location, item.url);
+                  const isActive = itemIsActive(location, item);
                   const label =
                     item.title ?? (t as Record<string, string>)[item.titleKey] ?? item.titleKey;
                   const description = group.key === "reports" ? undefined : item.description;
@@ -484,24 +560,21 @@ export function AppSidebar() {
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.18, ease: "easeOut" }}
       >
+        {/* Spec 3.5: logo + wordmark only (no tagline); the company switcher sits directly
+            under it for every user type. */}
         <SidebarHeader className="px-3 pt-4 pb-3 space-y-3">
           <div className="flex items-center gap-2.5 px-1">
             <BrandMark size="md" />
-            <div className="min-w-0">
-              {/* i18n-ignore: brand name */}
-              <div className="font-semibold text-[14px] tracking-tight text-sidebar-accent-foreground leading-tight">
-                Muhasib<span className="text-sidebar-primary">.ai</span>
-              </div>
-              <div className="text-[11.5px] text-sidebar-muted leading-tight">
-                {t.smartAccounting}
-              </div>
+            {/* i18n-ignore: brand name */}
+            <div className="font-semibold text-[15px] tracking-tight text-sidebar-accent-foreground leading-tight">
+              Muhasib<span className="text-sidebar-primary">.ai</span>
             </div>
           </div>
           <CompanySwitcher />
         </SidebarHeader>
       </motion.div>
 
-      <SidebarContent className="px-1.5">
+      <SidebarContent ref={scrollRef} className="px-1.5" style={scrollFade}>
         {/* ── Client portal — simplified flat view ── */}
         {userType === "client" && (
           <>
@@ -539,7 +612,6 @@ export function AppSidebar() {
               {t["shell.sidebarInsights"]}
             </div>
             <SidebarMenu className="px-1.5">
-              {CLIENT_PORTAL_INSIGHT_ITEMS.map(renderClientPortalItem)}
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={location === "/reports"}
