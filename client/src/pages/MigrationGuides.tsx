@@ -1,14 +1,7 @@
 import { Link } from "wouter";
 import { T } from "@/components/layout/T";
 import { MarketingLayout } from "@/components/marketing/MarketingLayout";
-import {
-  ArrowRight,
-  CheckCircle2,
-  ClipboardCheck,
-  FileSpreadsheet,
-  Landmark,
-  Upload,
-} from "lucide-react";
+import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useTranslation } from "@/lib/i18n";
@@ -45,18 +38,17 @@ export default function MigrationGuides() {
         <section className="mk-container mk-inner-section">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {MIGRATION_PATHS.map((path) => (
-              <Card key={path.id} className="mk-surface-card">
+              <Card key={path.id} className="mk-surface-card h-full">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-lg">
-                    <Upload className="h-5 w-5 text-accent" aria-hidden="true" />
+                  <CardTitle className="text-h3">
                     {t[`marketing.migration${path.id}Title`]}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <ol className="space-y-3 text-sm text-muted-foreground">
+                  <ol className="space-y-3 text-[0.875rem] leading-[1.375rem] text-muted-foreground">
                     {Array.from({ length: path.steps }, (_, index) => (
                       <li key={index} className="flex gap-3">
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold tabular-nums text-foreground">
+                        <span className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border-strong text-caption font-semibold tabular-nums text-foreground">
                           {index + 1}
                         </span>
                         <span>{t[`marketing.migration${path.id}${index + 1}`]}</span>
@@ -72,8 +64,7 @@ export default function MigrationGuides() {
         <section className="mk-section--sunken">
           <div className="mk-container mk-inner-section grid gap-8 lg:grid-cols-[0.85fr_1.15fr]">
             <div>
-              <h2 className="flex items-center gap-2 text-h3 font-semibold">
-                <ClipboardCheck className="h-6 w-6 text-accent" aria-hidden="true" />
+              <h2 className="mk-h2">
                 <T k="pageLabels.goLiveChecklist" />
               </h2>
               <p className="mt-3 text-muted-foreground">{t["marketing.migrationChecklistBody"]}</p>
@@ -96,23 +87,21 @@ export default function MigrationGuides() {
           <div className="grid gap-4 md:grid-cols-2">
             <Card className="mk-surface-card">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <FileSpreadsheet className="h-5 w-5 text-accent" aria-hidden="true" />
+                <CardTitle className="text-h3">
                   <T k="pageLabels.supportedImportFiles" />
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-sm leading-6 text-muted-foreground">
+              <CardContent className="text-[0.875rem] leading-[1.375rem] text-muted-foreground">
                 {t["marketing.migrationFilesBody"]}
               </CardContent>
             </Card>
             <Card className="mk-surface-card">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Landmark className="h-5 w-5 text-accent" aria-hidden="true" />
+                <CardTitle className="text-h3">
                   <T k="pageLabels.bankReconciliationAfterMigration" />
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-sm leading-6 text-muted-foreground">
+              <CardContent className="text-[0.875rem] leading-[1.375rem] text-muted-foreground">
                 {t["marketing.migrationBankBody"]}
               </CardContent>
             </Card>

@@ -218,10 +218,10 @@ describe("X3 pricing makes only true claims", () => {
     await act(async () => root.render(createElement(mod.default)));
     const text = container.textContent ?? "";
     expect(text).not.toMatch(/AI OCR/i);
-    expect(text).toMatch(/AI receipt reading \(coming soon\)/);
-    expect(text).toMatch(
-      /switched on when we connect your accredited provider \(A-Cube \/ Complyance\)/
-    );
+    // WP-B: qualifiers sit on a sub-line under the row label instead of inside it.
+    expect(text).toContain("AI receipt readingAutomatic reading arrives later");
+    expect(text).toContain("E-invoicing (PINT AE)Sending needs an accredited service provider");
+    expect(text).not.toMatch(/coming soon/i);
   });
 });
 

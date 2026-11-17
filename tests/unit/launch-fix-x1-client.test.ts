@@ -114,11 +114,16 @@ describe("X1 J4: onboarding targets the active company", () => {
     const trn = container.querySelector<HTMLInputElement>("[data-testid=express-trn]")!;
     expect(trn.value).toBe("100999999900003");
 
-    const button = container.querySelector<HTMLButtonElement>("[data-testid=onboarding-express]")!;
-    await act(async () => {
-      button.click();
-      await new Promise((r) => setTimeout(r, 20));
-    });
+    // WP-B: three screens. Step 1 saves the company, step 2 is skippable, choosing a first
+    // task on step 3 finishes onboarding.
+    for (const id of ["onboarding-express", "onboarding-skip", "onboarding-task-explore"]) {
+      const button = container.querySelector<HTMLButtonElement>(`[data-testid=${id}]`)!;
+      expect(button, id).not.toBeNull();
+      await act(async () => {
+        button.click();
+        await new Promise((r) => setTimeout(r, 20));
+      });
+    }
     const patch = calls.find((c) => c.method === "PATCH");
     const complete = calls.find((c) => c.url.endsWith("/onboarding/complete"));
     expect(patch?.url).toContain("/api/companies/c-b");

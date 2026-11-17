@@ -1,855 +1,343 @@
-import { formatMoneyText } from "@/lib/format-money";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
 import { Link } from "wouter";
-import { ArrowRight, Check, Minus, Plus, Mail, Zap, Crown, Rocket, Building2 } from "lucide-react";
-import { Fragment, useState } from "react";
-import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
+import {
+  ArrowRight,
+  BookOpenCheck,
+  Check,
+  ChevronDown,
+  FileDown,
+  FileText,
+  Landmark,
+  Languages,
+  Scale,
+  type LucideIcon,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { MarketingLayout } from "@/components/marketing/MarketingLayout";
+import { ClosingCta, FaqSection, SectionHeading } from "@/components/marketing/Sections";
+import { PlanCard } from "@/components/marketing/PlanCard";
+import { Segmented } from "@/components/marketing/Segmented";
+import {
+  BILLING_CYCLES,
+  COMPARE_GROUPS,
+  EVERY_PLAN,
+  PLANS,
+  cycleSavingPercent,
+  planNameKey,
+  planPrice,
+  type BillingCycle,
+  type Cell,
+  type PlanId,
+} from "@/components/marketing/plans";
+import { formatAmountDigits, formatMoneyText } from "@/lib/format-money";
+import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
 
-// ── Pricing Data ───────────────────────────────────────────────────────
+/*
+ * /pricing (WP-B, spec 3.1): the same header, section heading, card and closing band as the
+ * landing page. Seven sections: header band with the billing control, plan row, what every
+ * plan includes, compare plans (sticky header; a plan picker on phones), the accountant band,
+ * questions, closing CTA. Plan data and prices: components/marketing/plans.ts. Trial terms:
+ * shared/trial.ts through the marketing catalog.
+ */
 
-interface PricingTier {
-  id: string;
-  icon: React.ElementType;
-  monthlyPrice: number;
-  /** Per-month price when billed every 3 months (between monthly and yearly). */
-  quarterlyPrice: number;
-  yearlyPrice: number;
-  companies: string;
-  users: string;
-  badge?: string;
-  badgeVariant?: "default" | "secondary" | "outline";
-  ctaVariant: "outline" | "default";
-  highlight: boolean;
-  iconColor: string;
-}
+const CYCLE_LABEL: Record<BillingCycle, string> = {
+  monthly: "marketing.prCycleMonthly",
+  quarterly: "marketing.pricingQuarterly",
+  yearly: "marketing.prCycleYearly",
+};
 
-const tiers: PricingTier[] = [
-  {
-    id: "free",
-    icon: Zap,
-    monthlyPrice: 0,
-    quarterlyPrice: 0,
-    yearlyPrice: 0,
-    companies: "1",
-    users: "1",
-    ctaVariant: "outline",
-    highlight: false,
-    iconColor: "text-muted-foreground",
-  },
-  {
-    id: "starter",
-    icon: Rocket,
-    monthlyPrice: 49,
-    quarterlyPrice: 44,
-    yearlyPrice: 39,
-    companies: "1",
-    users: "3",
-    ctaVariant: "default",
-    highlight: false,
-    iconColor: "text-info",
-  },
-  {
-    id: "professional",
-    icon: Crown,
-    monthlyPrice: 149,
-    quarterlyPrice: 134,
-    yearlyPrice: 119,
-    companies: "3",
-    users: "10",
-    badge: "mostPopular",
-    badgeVariant: "default",
-    ctaVariant: "default",
-    highlight: true,
-    iconColor: "text-success",
-  },
-  {
-    id: "enterprise",
-    icon: Building2,
-    monthlyPrice: 299,
-    quarterlyPrice: 269,
-    yearlyPrice: 239,
-    companies: "unlimited",
-    users: "unlimited",
-    ctaVariant: "outline",
-    highlight: false,
-    iconColor: "text-chart-5",
-  },
-];
+const EVERY_ICON: Record<(typeof EVERY_PLAN)[number]["id"], LucideIcon> = {
+  invoices: FileText,
+  vat: Landmark,
+  ledger: BookOpenCheck,
+  bilingual: Languages,
+  bank: Scale,
+  exports: FileDown,
+};
 
-// Feature matrix: true = included, false = not included
-type FeatureKey = string;
-interface FeatureRow {
-  key: FeatureKey;
-  /** TIER_FEATURES flag enforced by server/middleware/featureGate.ts (kept in sync by a test). */
-  gate?: string;
-  free: boolean;
-  starter: boolean;
-  professional: boolean;
-  enterprise: boolean;
-}
+const PLAN_IDS = PLANS.map((p) => p.id);
 
-interface FeatureCategory {
-  categoryKey: string;
-  features: FeatureRow[];
-}
-
-const featureMatrix: FeatureCategory[] = [
-  {
-    categoryKey: "coreAccounting",
-    features: [
-      { key: "invoicing", free: true, starter: true, professional: true, enterprise: true },
-      { key: "receiptScanning", free: true, starter: true, professional: true, enterprise: true },
-      {
-        key: "bankReconciliation",
-        free: true,
-        starter: true,
-        professional: true,
-        enterprise: true,
-      },
-      { key: "vatFiling", free: true, starter: true, professional: true, enterprise: true },
-      {
-        key: "recurringInvoices",
-        gate: "recurringInvoices",
-        free: false,
-        starter: true,
-        professional: true,
-        enterprise: true,
-      },
-      { key: "billPay", free: false, starter: true, professional: true, enterprise: true },
-      {
-        key: "inventoryManagement",
-        free: false,
-        starter: true,
-        professional: true,
-        enterprise: true,
-      },
-      { key: "monthEndClose", free: false, starter: false, professional: true, enterprise: true },
-      {
-        key: "fixedAssets",
-        gate: "fixedAssets",
-        free: false,
-        starter: false,
-        professional: true,
-        enterprise: true,
-      },
-      {
-        key: "multiCurrency",
-        gate: "multiCurrency",
-        free: false,
-        starter: true,
-        professional: true,
-        enterprise: true,
-      },
-      {
-        key: "onlinePayments",
-        gate: "invoicePayment",
-        free: false,
-        starter: true,
-        professional: true,
-        enterprise: true,
-      },
-      {
-        key: "bulkOps",
-        gate: "bulkOps",
-        free: false,
-        starter: false,
-        professional: true,
-        enterprise: true,
-      },
-      { key: "budgeting", free: false, starter: false, professional: true, enterprise: true },
-      { key: "expenseClaims", free: false, starter: false, professional: true, enterprise: true },
-    ],
-  },
-  {
-    categoryKey: "aiIntelligence",
-    features: [
-      {
-        key: "basicAICategorization",
-        free: true,
-        starter: true,
-        professional: true,
-        enterprise: true,
-      },
-      { key: "aiOCR", free: false, starter: true, professional: true, enterprise: true },
-      { key: "autonomousGL", free: false, starter: false, professional: true, enterprise: true },
-      { key: "aiCFO", free: false, starter: false, professional: true, enterprise: true },
-      {
-        key: "aiAnomalyDetection",
-        free: false,
-        starter: false,
-        professional: true,
-        enterprise: true,
-      },
-      {
-        key: "aiCashFlowForecast",
-        free: false,
-        starter: false,
-        professional: true,
-        enterprise: true,
-      },
-      {
-        key: "smartReconciliation",
-        free: false,
-        starter: false,
-        professional: true,
-        enterprise: true,
-      },
-      { key: "priorityAI", free: false, starter: false, professional: false, enterprise: true },
-    ],
-  },
-  {
-    categoryKey: "hrPayroll",
-    features: [
-      {
-        key: "payrollWPS",
-        gate: "payroll",
-        free: false,
-        starter: false,
-        professional: true,
-        enterprise: true,
-      },
-    ],
-  },
-  {
-    categoryKey: "uaeCompliance",
-    features: [
-      {
-        key: "vatFilingCompliance",
-        free: true,
-        starter: true,
-        professional: true,
-        enterprise: true,
-      },
-      { key: "corporateTax", free: false, starter: false, professional: true, enterprise: true },
-      { key: "eInvoicing", free: false, starter: false, professional: true, enterprise: true },
-    ],
-  },
-  {
-    categoryKey: "communication",
-    features: [
-      { key: "clientPortal", free: false, starter: false, professional: true, enterprise: true },
-    ],
-  },
-  {
-    categoryKey: "platform",
-    features: [
-      { key: "multiCompany", free: false, starter: false, professional: true, enterprise: true },
-      {
-        key: "dedicatedManager",
-        free: false,
-        starter: false,
-        professional: false,
-        enterprise: true,
-      },
-      {
-        key: "customIntegrations",
-        free: false,
-        starter: false,
-        professional: false,
-        enterprise: true,
-      },
-      { key: "slaGuarantee", free: false, starter: false, professional: false, enterprise: true },
-      {
-        key: "advancedAnalytics",
-        free: false,
-        starter: false,
-        professional: false,
-        enterprise: true,
-      },
-      { key: "multiBranch", free: false, starter: false, professional: false, enterprise: true },
-      {
-        key: "apiAccess",
-        gate: "apiAccess",
-        free: false,
-        starter: false,
-        professional: false,
-        enterprise: true,
-      },
-      {
-        key: "webhooks",
-        gate: "webhooks",
-        free: false,
-        starter: false,
-        professional: false,
-        enterprise: true,
-      },
-    ],
-  },
-];
-
-// ── Component ──────────────────────────────────────────────────────────
-
-export default function Pricing() {
-  const { locale } = useI18n();
-  const { t: tr } = useTranslation();
-  const [cycle, setCycle] = useState<"monthly" | "quarterly" | "yearly">("monthly");
-  const isYearly = cycle === "yearly";
-  const freeInvoices = tr["marketing.pricingFreeInvoicesAfterOffer"];
-  const freeReceipts = tr["marketing.pricingFreeReceiptsAfterOffer"];
-
-  // ── Translations ────────────────────────────────────────────────────
-
-  const t = {
-    header: {
-      title: tr["marketing.pricingSimplePricingThatGrowsWithYou"],
-      billingLabel: tr["marketing.pricingBillingPeriod"],
-      subtitle:
-        locale === "en"
-          ? "Start on the free plan and move up when you need more companies, users or payroll."
-          : "ابدأ بالخطة المجانية وانتقل إلى خطة أعلى عندما تحتاج إلى شركات أو مستخدمين أو رواتب أكثر.",
-      monthly: locale === "en" ? "Monthly" : "شهري",
-      yearly: locale === "en" ? "Yearly" : "سنوي",
-      save20: locale === "en" ? "Save 20%" : "وفّر 20%",
-      perMonth: locale === "en" ? "/mo" : "/ شهريًا",
-      free: locale === "en" ? "Free" : "مجاني",
-    },
-    tiers: {
-      free: {
-        name: locale === "en" ? "Free" : "مجاني",
-        description: tr["marketing.pricingForFreelancersGettingStarted"],
-        cta: tr["marketing.startFreeTrial"],
-      },
-      starter: {
-        name: locale === "en" ? "Starter" : "المبتدئ",
-        description: tr["marketing.pricingForSmallBusinessesScalingUp"],
-        cta: tr["marketing.startFreeTrial"],
-      },
-      professional: {
-        name: locale === "en" ? "Professional" : "الاحترافي",
-        description: tr["marketing.pricingForGrowingCompaniesWithTeams"],
-        cta: tr["marketing.startFreeTrial"],
-      },
-      enterprise: {
-        name: locale === "en" ? "Enterprise" : "المؤسسات",
-        description: tr["marketing.pricingForLargeOrganizations"],
-        cta: tr["marketing.pricingContactSales"],
-      },
-    },
-    badges: {
-      recommended: locale === "en" ? "Recommended" : "موصى به",
-      mostPopular: tr["marketing.pricingMostPopular"],
-    },
-    limits: {
-      companies: locale === "en" ? "company" : "شركة",
-      companiesPlural: locale === "en" ? "companies" : "شركات",
-      users: locale === "en" ? "user" : "مستخدم",
-      usersPlural: locale === "en" ? "users" : "مستخدمين",
-      unlimited: locale === "en" ? "Unlimited" : "غير محدود",
-      invoicesMonth: locale === "en" ? "invoices/mo" : "فاتورة/شهر",
-      receiptsMonth: locale === "en" ? "receipts/mo" : "إيصال/شهر",
-    },
-    tierFeatures: {
-      free: {
-        features:
-          locale === "en"
-            ? [
-                tr["marketing.pricingFreeOneCompany"],
-                tr["marketing.pricingFreeUserAfterOffer"],
-                freeInvoices,
-                freeReceipts,
-                "Basic AI categorization",
-                "VAT filing",
-                "Bank reconciliation (manual)",
-              ]
-            : [
-                tr["marketing.pricingFreeOneCompany"],
-                tr["marketing.pricingFreeUserAfterOffer"],
-                freeInvoices,
-                freeReceipts,
-                "تصنيف ذكي أساسي",
-                "تقديم ضريبة القيمة المضافة",
-                "تسوية بنكية (يدوية)",
-              ],
-      },
-      starter: {
-        features:
-          locale === "en"
-            ? [
-                "1 company, 3 users",
-                "200 invoices/month",
-                "200 receipts/month",
-                "AI receipt reading (coming soon)",
-                "AI categorization",
-                "Recurring invoices",
-                "Bill pay",
-                "Inventory management",
-              ]
-            : [
-                "شركة واحدة، 3 مستخدمين",
-                "200 فاتورة/شهر",
-                "200 إيصال/شهر",
-                "قراءة الإيصالات بالذكاء الاصطناعي (قريباً)",
-                "تصنيف ذكي",
-                "فواتير متكررة",
-                "دفع الفواتير",
-                "إدارة المخزون",
-              ],
-      },
-      professional: {
-        header:
-          locale === "en" ? "Everything in Starter, plus:" : "كل ميزات المبتدئ، بالإضافة إلى:",
-        features:
-          locale === "en"
-            ? [
-                "3 companies, 10 users",
-                "Unlimited invoices",
-                "Unlimited receipts",
-                "Autonomous GL (AI auto-posting)",
-                "AI CFO & Financial Advisor",
-                "AI Anomaly Detection",
-                "AI Cash Flow Forecast",
-                "Smart Reconciliation",
-                "Month-End Close automation",
-                "Payroll & WPS",
-                "Fixed Assets & Depreciation",
-                "Budgeting & Variance",
-                "Expense Claims",
-                "Corporate Tax (9%)",
-                "E-Invoicing (PINT AE): ready, switched on when we connect your accredited provider (A-Cube / Complyance)",
-                "Client Portal",
-              ]
-            : [
-                "3 شركات، 10 مستخدمين",
-                "فواتير غير محدودة",
-                "إيصالات غير محدودة",
-                "قيود تلقائية بالذكاء الاصطناعي",
-                "مستشار مالي ذكي",
-                "كشف الحالات الشاذة",
-                "توقعات التدفق النقدي",
-                "تسوية ذكية",
-                "أتمتة إقفال نهاية الشهر",
-                "الرواتب وحماية الأجور",
-                "الأصول الثابتة والإهلاك",
-                "الميزانيات والتحليل",
-                "مطالبات المصروفات",
-                "ضريبة الشركات (9%)",
-                "الفوترة الإلكترونية (PINT AE): جاهزة وتُفعَّل عند ربط مزوّدك المعتمد (A-Cube / Complyance)",
-                "بوابة العميل",
-              ],
-      },
-      enterprise: {
-        header:
-          locale === "en"
-            ? "Everything in Professional, plus:"
-            : "كل ميزات الاحترافي، بالإضافة إلى:",
-        features:
-          locale === "en"
-            ? [
-                "Unlimited companies, unlimited users",
-                "Priority AI processing",
-                "Dedicated account manager",
-                "Custom integrations",
-                "Enterprise support terms",
-                "Advanced analytics",
-                "Multi-branch support",
-                "API access",
-              ]
-            : [
-                "شركات ومستخدمين غير محدودين",
-                "أولوية معالجة الذكاء الاصطناعي",
-                "مدير حساب مخصص",
-                "تكاملات مخصصة",
-                "شروط دعم المؤسسات",
-                "تحليلات متقدمة",
-                "دعم متعدد الفروع",
-                "وصول API",
-              ],
-      },
-    },
-    comparison: {
-      title: tr["marketing.pricingCompleteFeatureComparison"],
-      subtitle: tr["marketing.pricingEveryFeatureAcrossEveryPlan"],
-    },
-    featureCategories: {
-      coreAccounting: tr["marketing.pricingCoreAccounting"],
-      aiIntelligence: locale === "en" ? "AI & Intelligence" : "الذكاء الاصطناعي",
-      hrPayroll: locale === "en" ? "HR & Payroll" : "الموارد البشرية والرواتب",
-      uaeCompliance: locale === "en" ? "UAE Compliance" : "الامتثال الإماراتي",
-      communication: locale === "en" ? "Communication" : "التواصل",
-      platform: locale === "en" ? "Platform" : "المنصة",
-    },
-    featureNames: {
-      invoicing: locale === "en" ? "Invoicing" : "الفواتير",
-      receiptScanning:
-        locale === "en"
-          ? "Receipt capture (automatic reading coming soon)"
-          : "تسجيل الإيصالات (القراءة التلقائية قريباً)",
-      bankReconciliation: tr["marketing.pricingBankReconciliation"],
-      vatFiling: locale === "en" ? "VAT Filing" : "تقديم ضريبة القيمة المضافة",
-      recurringInvoices: tr["marketing.pricingRecurringInvoices"],
-      billPay: tr["marketing.pricingBillPay"],
-      inventoryManagement: tr["marketing.pricingInventoryManagement"],
-      monthEndClose: locale === "en" ? "Month-End Close" : "إقفال نهاية الشهر",
-      fixedAssets: locale === "en" ? "Fixed Assets & Depreciation" : "الأصول الثابتة والإهلاك",
-      budgeting: locale === "en" ? "Budgeting & Variance" : "الميزانيات والتحليل",
-      expenseClaims: tr["marketing.pricingExpenseClaims"],
-      basicAICategorization: tr["marketing.pricingBasicAiCategorization"],
-      aiOCR:
-        locale === "en"
-          ? "AI receipt reading (coming soon)"
-          : "قراءة الإيصالات بالذكاء الاصطناعي (قريباً)",
-      autonomousGL: locale === "en" ? "Autonomous GL (Auto-posting)" : "قيود تلقائية",
-      aiCFO: locale === "en" ? "AI CFO & Financial Advisor" : "مستشار مالي ذكي",
-      aiAnomalyDetection: locale === "en" ? "AI Anomaly Detection" : "كشف الحالات الشاذة",
-      aiCashFlowForecast: locale === "en" ? "AI Cash Flow Forecast" : "توقعات التدفق النقدي",
-      smartReconciliation: tr["marketing.pricingSmartReconciliation"],
-      priorityAI: tr["marketing.pricingPriorityAiProcessing"],
-      payrollWPS: locale === "en" ? "Payroll & WPS" : "الرواتب وحماية الأجور",
-      vatFilingCompliance: locale === "en" ? "VAT Filing (5%)" : "ضريبة القيمة المضافة (5%)",
-      corporateTax: locale === "en" ? "Corporate Tax (9%)" : "ضريبة الشركات (9%)",
-      eInvoicing:
-        locale === "en"
-          ? "E-Invoicing (PINT AE): ready, switched on when we connect your accredited provider (A-Cube / Complyance)"
-          : "الفوترة الإلكترونية (PINT AE): جاهزة وتُفعَّل عند ربط مزوّدك المعتمد (A-Cube / Complyance)",
-      clientPortal: tr["marketing.pricingClientPortal"],
-      multiCompany: locale === "en" ? "Multi-Company" : "شركات متعددة",
-      dedicatedManager: tr["marketing.pricingDedicatedAccountManager"],
-      customIntegrations: tr["marketing.pricingCustomIntegrations"],
-      slaGuarantee: tr["marketing.pricingEnterpriseSupportTerms"],
-      advancedAnalytics: tr["marketing.pricingAdvancedAnalytics"],
-      multiBranch: locale === "en" ? "Multi-Branch Support" : "دعم متعدد الفروع",
-      apiAccess: locale === "en" ? "API Access" : "وصول API",
-      webhooks: tr["marketing.pricingSignedWebhooks"],
-      multiCurrency: locale === "en" ? "Multi-Currency Documents" : "مستندات متعددة العملات",
-      onlinePayments: tr["marketing.pricingOnlineInvoicePaymentLinks"],
-      bulkOps: tr["marketing.pricingBulkOperations"],
-    },
-    faq: {
-      title: tr["marketing.pricingFrequentlyAskedQuestions"],
-      subtitle: tr["marketing.pricingEverythingYouNeedToKnowAbout"],
-      questions: [
-        {
-          q: locale === "en" ? "Can I switch plans anytime?" : "هل يمكنني تغيير الخطة في أي وقت؟",
-          a:
-            locale === "en"
-              ? "Yes! You can upgrade or downgrade your plan at any time. When upgrading, you'll get immediate access to new features. When downgrading, the change takes effect at your next billing cycle."
-              : "نعم! يمكنك ترقية أو تخفيض خطتك في أي وقت. عند الترقية، ستحصل على وصول فوري للميزات الجديدة. عند التخفيض، يسري التغيير في دورة الفوترة التالية.",
-        },
-        {
-          q: locale === "en" ? "Is there a free trial?" : "هل توجد فترة تجريبية مجانية؟",
-          a: tr["marketing.pricingTrialFaqAnswer"],
-        },
-        {
-          q: locale === "en" ? "What payment methods do you accept?" : "ما طرق الدفع المقبولة؟",
-          a:
-            locale === "en"
-              ? "We accept all major credit and debit cards via Stripe, including Visa, Mastercard, and American Express. All payments are securely processed."
-              : "نقبل جميع بطاقات الائتمان والخصم الرئيسية عبر Stripe، بما في ذلك فيزا، ماستركارد، وأمريكان إكسبريس. تتم معالجة جميع المدفوعات بشكل آمن.",
-        },
-        {
-          q: locale === "en" ? "Is my data secure?" : "هل بياناتي آمنة؟",
-          a:
-            locale === "en"
-              ? "We use TLS for data in transit, role-based access, audit logs, encrypted connected-service secrets, and managed infrastructure controls. SOC 2 and ISO 27001 are roadmap items, not current certifications."
-              : "نستخدم TLS للبيانات أثناء النقل، وصلاحيات قائمة على الأدوار، وسجلات تدقيق، وتشفير أسرار الخدمات المتصلة، وضوابط بنية تحتية مدارة. شهادتا SOC 2 و ISO 27001 ضمن خارطة الطريق وليستا شهادات حالية.",
-        },
-      ],
-    },
-    footerCta: {
-      title: locale === "en" ? "Start on the free plan today." : "ابدأ بالخطة المجانية اليوم.",
-      subtitle:
-        locale === "en"
-          ? "Set up your company in minutes, or talk to us about migration and the plan that fits."
-          : "أعدّ شركتك في دقائق، أو تحدث إلينا عن نقل بياناتك والخطة المناسبة لك.",
-      startFree: tr["marketing.startFreeTrial"],
-      bookDemo: tr["marketing.pricingTalkToUs"],
-      guarantee: tr["marketing.pricingFooterNote"],
-    },
-    nav: {
-      home: locale === "en" ? "Home" : "الرئيسية",
-      pricing: locale === "en" ? "Pricing" : "الأسعار",
-      login: locale === "en" ? "Login" : "تسجيل الدخول",
-      languageToggle: locale === "en" ? "العربية" : "EN",
-    },
-  };
-
-  // ── Render helpers ──────────────────────────────────────────────────
-
-  const formatPrice = (price: number) => {
-    if (price === 0) return t.header.free;
-    return formatMoneyText(price, "AED", locale, { fractionDigits: 0 });
-  };
-
-  const getPrice = (tier: PricingTier) => {
-    return cycle === "yearly"
-      ? tier.yearlyPrice
-      : cycle === "quarterly"
-        ? tier.quarterlyPrice
-        : tier.monthlyPrice;
-  };
-
-  const renderCheckOrDash = (included: boolean) =>
-    included ? (
+function CellValue({ cell }: { cell: Cell }) {
+  const { t } = useTranslation();
+  if (cell === true) {
+    return (
       <span className="mk-ptable__yes">
         <Check aria-hidden="true" />
-        <span className="sr-only">{locale === "en" ? "Included" : "مشمول"}</span>
-      </span>
-    ) : (
-      <span className="mk-ptable__no">
-        <Minus aria-hidden="true" />
-        <span className="sr-only">{tr["marketing.pricingNotIncluded"]}</span>
+        <span className="sr-only">{t["marketing.prIncluded"]}</span>
       </span>
     );
+  }
+  if (cell === false) {
+    return (
+      <span className="mk-ptable__no">
+        <span aria-hidden="true">{"–"}</span>
+        <span className="sr-only">{t["marketing.pricingNotIncluded"]}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="mk-ptable__val">
+      {typeof cell === "number" ? formatAmountDigits(cell, 0) : t[cell]}
+    </span>
+  );
+}
 
-  // ── Render ──────────────────────────────────────────────────────────
+function PriceShort({ id, cycle }: { id: PlanId; cycle: BillingCycle }) {
+  const { t, locale } = useTranslation();
+  const plan = PLANS.find((p) => p.id === id)!;
+  const price = planPrice(plan, cycle);
+  return (
+    <small>
+      {formatMessage(t["marketing.prPerMonthShort"], {
+        amount: formatMoneyText(price, "AED", locale, { fractionDigits: 0 }),
+      })}
+    </small>
+  );
+}
+
+function CompareTable({ cycle }: { cycle: BillingCycle }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(COMPARE_GROUPS.map((g) => [g.key, !!g.open]))
+  );
+  return (
+    <table className="mk-ptable" aria-labelledby="mk-compare-title">
+      <colgroup>
+        <col className="mk-ptable__labelcol" />
+        {PLAN_IDS.map((id) => (
+          <col key={id} data-featured={id === "professional" ? "true" : undefined} />
+        ))}
+      </colgroup>
+      <thead>
+        <tr>
+          <th scope="col">
+            <span className="sr-only">{t["marketing.prFeature"]}</span>
+          </th>
+          {PLANS.map((plan) => (
+            <th
+              key={plan.id}
+              scope="col"
+              data-featured={plan.featured ? "true" : undefined}
+              data-testid={`compare-head-${plan.id}`}
+            >
+              <span>{t[planNameKey(plan.id)]}</span>
+              <PriceShort id={plan.id} cycle={cycle} />
+              {plan.cta === "contact" ? (
+                <Button asChild variant="outline" size="sm">
+                  <a href={`mailto:${UPGRADE_CONTACT_EMAIL}?subject=Muhasib.ai%20Enterprise`}>
+                    {t["marketing.pricingTalkToUs"]}
+                  </a>
+                </Button>
+              ) : (
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/register">{t["marketing.prTryCta"]}</Link>
+                </Button>
+              )}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      {COMPARE_GROUPS.map((group) => {
+        const isOpen = open[group.key];
+        const bodyId = `mk-compare-${group.key.replace(/\W/g, "-")}`;
+        return (
+          <tbody key={group.key} id={bodyId}>
+            <tr className="mk-ptable__group">
+              <th colSpan={5} scope="colgroup">
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => setOpen((o) => ({ ...o, [group.key]: !o[group.key] }))}
+                >
+                  <ChevronDown aria-hidden="true" data-open={isOpen} />
+                  {t[group.key]}
+                </button>
+              </th>
+            </tr>
+            {group.rows.map((row) => (
+              <tr key={row.key} hidden={!isOpen}>
+                <td>
+                  {t[row.key]}
+                  {row.noteKey ? <small className="mk-ptable__note">{t[row.noteKey]}</small> : null}
+                </td>
+                {PLAN_IDS.map((id) => (
+                  <td key={id} data-featured={id === "professional" ? "true" : undefined}>
+                    <CellValue cell={row.cells[id]} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        );
+      })}
+    </table>
+  );
+}
+
+/** Phones: a plan picker and one column per group, no horizontal scroll. */
+function CompareList() {
+  const { t } = useTranslation();
+  const [plan, setPlan] = useState<PlanId>("professional");
+  return (
+    <div className="mk-compare-list">
+      <Segmented
+        className="mk-compare-list__picker"
+        dense
+        value={plan}
+        onChange={setPlan}
+        label={t["marketing.prPickPlan"]}
+        options={PLANS.map((p) => ({ value: p.id, label: t[planNameKey(p.id)] }))}
+      />
+      {COMPARE_GROUPS.map((group) => (
+        <section key={group.key} className="mk-compare-list__group">
+          <h3>{t[group.key]}</h3>
+          <dl>
+            {group.rows.map((row) => (
+              <div key={row.key}>
+                <dt>
+                  {t[row.key]}
+                  {row.noteKey ? <small>{t[row.noteKey]}</small> : null}
+                </dt>
+                <dd>
+                  <CellValue cell={row.cells[plan]} />
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+const FAQ = [
+  ["marketing.prFaqTrialQ", "marketing.pricingTrialFaqAnswer"],
+  ["marketing.prFaqAfterQ", "marketing.prFaqAfterA"],
+  ["marketing.prFaqChangeQ", "marketing.prFaqChangeA"],
+  ["marketing.prFaqBillingQ", "marketing.prFaqBillingA"],
+  ["marketing.prFaqHelpQ", "marketing.prFaqHelpA"],
+  ["marketing.faq7Q", "marketing.faq7A"],
+] as const;
+
+export default function Pricing() {
+  const { t } = useTranslation();
+  const [cycle, setCycle] = useState<BillingCycle>("monthly");
+  // Professional first on phones (CSS order), equal-height row from tablet up.
+  const quarterly = cycleSavingPercent("quarterly");
+  const yearly = cycleSavingPercent("yearly");
 
   return (
     <MarketingLayout
       titleKey="marketing.seoPricingTitle"
       descriptionKey="marketing.seoPricingDescription"
     >
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <header className="mk-pagehead" style={{ borderBlockEnd: 0, textAlign: "center" }}>
-        <div className="mk-container">
-          <p className="mk-eyebrow">{tr["marketing.pricingPricingInAed"]}</p>
-          <h1 className="mk-h1" style={{ marginInline: "auto", maxInlineSize: "18ch" }}>
-            {t.header.title}
-          </h1>
-          <p className="mk-lead" style={{ marginInline: "auto" }}>
-            {t.header.subtitle}
-          </p>
-
-          <p className="mk-small" style={{ marginBlockStart: "1rem" }} data-testid="trial-claim">
-            {tr["marketing.trialClaim"]}
-          </p>
-
-          {/* Monthly / quarterly / yearly toggle */}
-          <div
-            className="mk-billing"
-            role="radiogroup"
-            aria-label={t.header.billingLabel}
-            data-testid="billing-cycle"
-          >
-            {(["monthly", "quarterly", "yearly"] as const).map((c) => (
-              <button
-                key={c}
-                type="button"
-                role="radio"
-                aria-checked={cycle === c}
-                data-active={cycle === c}
-                data-testid={`billing-cycle-${c}`}
-                onClick={() => setCycle(c)}
-                className="mk-billing__option"
-              >
-                {c === "monthly"
-                  ? t.header.monthly
-                  : c === "quarterly"
-                    ? tr["marketing.pricingQuarterly"]
-                    : t.header.yearly}
-              </button>
-            ))}
-            <span className="mk-badge" data-tone="success" data-visible={isYearly}>
-              {t.header.save20}
-            </span>
+      {/* 1 · Header band */}
+      <header className="mk-section mk-prhead" aria-labelledby="mk-pricing-h1">
+        <div className="mk-container mk-prhead__grid">
+          <div>
+            <p className="mk-eyebrow">{t["marketing.pricingEyebrow"]}</p>
+            <h1 id="mk-pricing-h1" className="mk-h2 mk-prhead__title">
+              {t["marketing.prTitle"]}
+            </h1>
+            <p className="mk-lead">{t["marketing.pricingBody"]}</p>
+          </div>
+          <div className="mk-prhead__billing">
+            <Segmented
+              value={cycle}
+              onChange={setCycle}
+              label={t["marketing.pricingBillingPeriod"]}
+              testId="billing-cycle"
+              optionTestId={(c) => `billing-cycle-${c}`}
+              options={BILLING_CYCLES.map((c) => ({ value: c, label: t[CYCLE_LABEL[c]] }))}
+            />
+            <p className="mk-caption">
+              {formatMessage(t["marketing.prSavingNote"], { quarterly, yearly })}
+            </p>
           </div>
         </div>
       </header>
 
-      {/* ── Plan cards ─────────────────────────────────────────────────── */}
-      <section className="mk-container" style={{ paddingBlockEnd: "var(--section)" }}>
-        <div className="mk-tiers">
-          {tiers.map((tier) => {
-            const tierKey = tier.id as keyof typeof t.tiers;
-            const tierT = t.tiers[tierKey];
-            const tierFeatures = t.tierFeatures[tierKey];
-            const price = getPrice(tier);
-            return (
-              <article
-                key={tier.id}
-                className="mk-card mk-tier"
-                data-featured={tier.highlight ? "true" : undefined}
-                data-testid={`card-plan-${tier.id}`}
-              >
-                <div className="mk-tier__top">
-                  <h2 className="mk-tier__name">{tierT.name}</h2>
-                  {tier.badge && (
-                    <span className="mk-plan__tag">
-                      {t.badges[tier.badge as keyof typeof t.badges]}
-                    </span>
-                  )}
-                </div>
-                <p className="mk-small">{tierT.description}</p>
-                <p className="mk-tier__price">
-                  <strong className="mk-num">{formatPrice(price)}</strong>
-                  {price > 0 && <span>{t.header.perMonth}</span>}
-                </p>
-                <p className="mk-small mk-tier__billed">
-                  {price > 0 && cycle !== "monthly"
-                    ? formatMessage(
-                        tr[
-                          cycle === "yearly"
-                            ? "marketing.pricingBilledYearly"
-                            : "marketing.pricingBilledQuarterly"
-                        ],
-                        {
-                          amount: formatMoneyText(
-                            price * (cycle === "yearly" ? 12 : 3),
-                            "AED",
-                            locale,
-                            { fractionDigits: 0 }
-                          ),
-                        }
-                      )
-                    : "\u00a0"}
-                </p>
-                {tier.id === "enterprise" ? (
-                  <Button asChild variant="outline" size="lg">
-                    <a
-                      href="mailto:hello@muhasib.ai?subject=Muhasib.ai%20Enterprise"
-                      data-testid={`button-plan-${tier.id}`}
-                    >
-                      {tierT.cta}
-                      <ArrowRight className="mk-flip" aria-hidden="true" />
-                    </a>
-                  </Button>
-                ) : (
-                  <Button asChild variant={tier.highlight ? "default" : "outline"} size="lg">
-                    <Link href="/register" data-testid={`button-plan-${tier.id}`}>
-                      {tierT.cta}
-                      <ArrowRight className="mk-flip" aria-hidden="true" />
-                    </Link>
-                  </Button>
-                )}
-                {"header" in tierFeatures && (
-                  <p className="mk-tier__inherit">{(tierFeatures as { header: string }).header}</p>
-                )}
-                <ul className="mk-checklist mk-tier__features">
-                  {tierFeatures.features.map((feature) => (
-                    <li key={feature}>
-                      <Check aria-hidden="true" />
-                      <span>{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-              </article>
-            );
-          })}
-        </div>
-        <p className="mk-small" style={{ textAlign: "center", marginBlockStart: "2rem" }}>
-          {t.footerCta.guarantee}
-        </p>
-      </section>
-
-      {/* ── Feature comparison ─────────────────────────────────────────── */}
-      <section className="mk-section mk-section--sunken" aria-labelledby="mk-compare-title">
+      {/* 2 · Plan row */}
+      <section className="mk-prplans" aria-label={t["marketing.prPlansLabel"]}>
         <div className="mk-container">
-          <div className="mk-heading mk-heading--center">
-            <h2 id="mk-compare-title" className="mk-h2">
-              {t.comparison.title}
-            </h2>
-            <p className="mk-lead">{t.comparison.subtitle}</p>
-          </div>
-          <div
-            className="mk-card mk-ptable-wrap"
-            tabIndex={0}
-            role="region"
-            aria-labelledby="mk-compare-title"
-          >
-            <table className="mk-ptable">
-              <caption className="sr-only">{t.comparison.title}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">{locale === "en" ? "Feature" : "الميزة"}</th>
-                  {tiers.map((tier) => (
-                    <th
-                      key={tier.id}
-                      scope="col"
-                      data-featured={tier.highlight ? "true" : undefined}
-                    >
-                      <span>{t.tiers[tier.id as keyof typeof t.tiers].name}</span>
-                      <small className="mk-num">
-                        {getPrice(tier) === 0
-                          ? t.header.free
-                          : `${formatPrice(getPrice(tier))} ${t.header.perMonth}`}
-                      </small>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {featureMatrix.map((category) => (
-                  <Fragment key={category.categoryKey}>
-                    <tr className="mk-ptable__group">
-                      <td colSpan={5}>
-                        {
-                          t.featureCategories[
-                            category.categoryKey as keyof typeof t.featureCategories
-                          ]
-                        }
-                      </td>
-                    </tr>
-                    {category.features.map((feature) => (
-                      <tr key={feature.key}>
-                        <td>{t.featureNames[feature.key as keyof typeof t.featureNames]}</td>
-                        <td>{renderCheckOrDash(feature.free)}</td>
-                        <td>{renderCheckOrDash(feature.starter)}</td>
-                        <td>{renderCheckOrDash(feature.professional)}</td>
-                        <td>{renderCheckOrDash(feature.enterprise)}</td>
-                      </tr>
-                    ))}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      {/* Competitor comparison table removed: it made specific, unverified and
-          in several cases false claims about named competitors (e.g. that Zoho Books
-          lacks UAE VAT, corporate tax, Arabic and e-invoicing — all of which it has).
-          Do not re-add a comparison unless every cell is backed by a dated screenshot
-          from the competitor's own public documentation, with the verification date shown. */}
-
-      {/* ── FAQ ─────────────────────────────────────────────────────────── */}
-      <section className="mk-section" aria-labelledby="mk-pfaq-title">
-        <div className="mk-container mk-container--narrow">
-          <div className="mk-heading mk-heading--center">
-            <h2 id="mk-pfaq-title" className="mk-h2">
-              {t.faq.title}
-            </h2>
-            <p className="mk-lead">{t.faq.subtitle}</p>
-          </div>
-          <div className="mk-faq">
-            {t.faq.questions.map((item) => (
-              <details key={item.q}>
-                <summary>
-                  <span>{item.q}</span>
-                  <Plus aria-hidden="true" />
-                </summary>
-                <div className="mk-faq__answer">
-                  <p>{item.a}</p>
-                </div>
-              </details>
+          <div className="mk-prplans__row">
+            {PLANS.map((plan) => (
+              <PlanCard key={plan.id} plan={plan} cycle={cycle} />
             ))}
           </div>
+          <p className="mk-prplans__terms">
+            <span data-testid="trial-claim">{t["marketing.trialClaim"]}</span>
+            <span aria-hidden="true">{" · "}</span>
+            <span>{t["marketing.prVatIncluded"]}</span>
+            <span aria-hidden="true">{" · "}</span>
+            <span>{t["marketing.pricingPricingInAed"]}</span>
+          </p>
         </div>
       </section>
 
-      {/* ── Closing CTA ─────────────────────────────────────────────────── */}
-      <section className="mk-section" style={{ paddingBlockStart: 0 }} id="contact">
-        <div className="mk-container">
-          <div className="mk-cta">
-            <h2 className="mk-h2">{t.footerCta.title}</h2>
-            <p className="mk-lead">{t.footerCta.subtitle}</p>
-            <div className="mk-hero__ctas">
-              <Button asChild size="xl">
-                <Link href="/register">
-                  {t.footerCta.startFree}
-                  <ArrowRight className="mk-flip" aria-hidden="true" />
-                </Link>
-              </Button>
-              <Button asChild variant="outline" size="xl">
-                <a href="mailto:hello@muhasib.ai?subject=Muhasib.ai%20demo%20request">
-                  <Mail aria-hidden="true" />
-                  {t.footerCta.bookDemo}
-                </a>
-              </Button>
-            </div>
-          </div>
+      {/* 3 · What every plan includes */}
+      <section className="mk-section mk-section--tight" aria-labelledby="mk-every-title">
+        <div className="mk-container mk-split">
+          <SectionHeading
+            id="mk-every-title"
+            eyebrow={t["marketing.prEveryEyebrow"]}
+            title={t["marketing.prEveryTitle"]}
+          />
+          <ul className="mk-cells">
+            {EVERY_PLAN.map((item) => {
+              const Icon = EVERY_ICON[item.id];
+              return (
+                <li key={item.id}>
+                  <Icon aria-hidden="true" />
+                  <h3>{t[item.title]}</h3>
+                  <p>{t[item.body]}</p>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       </section>
+
+      {/* 4 · Compare plans */}
+      <section className="mk-section mk-section--sunken" aria-labelledby="mk-compare-title">
+        <div className="mk-container">
+          <SectionHeading id="mk-compare-title" title={t["marketing.prCompareTitle"]} />
+          <div className="mk-compare">
+            <CompareTable cycle={cycle} />
+          </div>
+          <CompareList />
+        </div>
+      </section>
+
+      {/* 5 · Accountant band */}
+      <section className="mk-section mk-section--tight mk-band" aria-labelledby="mk-acct-title">
+        <div className="mk-container mk-acct">
+          <div>
+            <h2 id="mk-acct-title" className="mk-h2">
+              {t["marketing.prAcctTitle"]}
+            </h2>
+            <p className="mk-lead">{t["marketing.prAcctBody"]}</p>
+          </div>
+          <Button asChild variant="outline" size="lg" className="mk-on-band">
+            <Link href="/services" data-testid="link-accounting-services">
+              {t["marketing.prAcctCta"]}
+              <ArrowRight className="mk-flip" aria-hidden="true" />
+            </Link>
+          </Button>
+        </div>
+      </section>
+
+      {/* 6 · Questions */}
+      <FaqSection
+        id="mk-pfaq-title"
+        eyebrow={t["marketing.faqEyebrow"]}
+        title={t["marketing.prFaqTitle"]}
+        items={FAQ.map(([q, a]) => ({ q: t[q], a: t[a] }))}
+      />
+
+      {/* 7 · Closing CTA (the landing's) */}
+      <ClosingCta />
     </MarketingLayout>
   );
 }
