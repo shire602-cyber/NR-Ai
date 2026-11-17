@@ -495,7 +495,7 @@ export default function Subscription() {
         {/* Plan Cards */}
         <div
           id="subscription-plans"
-          className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-4 scroll-mt-4"
+          className="grid items-stretch gap-4 sm:grid-cols-2 scroll-mt-4"
         >
           {/* WP-E (spec 3.15): the plan grid reuses the site's PlanCard so the app and the
               pricing page show plans the same way; only the action differs here. */}
