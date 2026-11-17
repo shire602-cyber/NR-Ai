@@ -101,6 +101,51 @@ router.post("/x", strictBody(schema), async (req, res) => {
     expect(r.code).toBe(0);
   });
 
+  it("CL-B: follows imported handlers, so a split-out handler cannot hide a raw body", () => {
+    const handler = `
+export const handlePostThing = async (req, res) => {
+  const { companyId } = req.body;
+  res.json({ companyId });
+};
+export const handleGetThing = async (req, res) => {
+  res.json(req.params);
+};`;
+    const unvalidated = fixture({
+      "server/routes/things/handlers.ts": handler,
+      "server/routes/things.routes.ts": `
+import { handlePostThing } from "./things/handlers";
+export function register(app) {
+  app.post("/api/thing", authMiddleware, asyncHandler(handlePostThing));
+}`,
+    });
+    const bad = runScript("check-raw-body.mjs", [
+      "--root",
+      unvalidated.root,
+      "--baseline",
+      unvalidated.baselinePath,
+    ]);
+    expect(bad.code).toBe(1);
+    expect(bad.out).toContain("server/routes/things/handlers.ts");
+    expect(bad.out).toContain("destructure-req-body");
+
+    const validated = fixture({
+      "server/routes/things/handlers.ts": handler,
+      "server/routes/things.routes.ts": `
+import { handlePostThing } from "./things/handlers";
+export function register(app) {
+  app.post("/api/thing", authMiddleware, strictBody(thingBody), asyncHandler(handlePostThing));
+}`,
+    });
+    const ok = runScript("check-raw-body.mjs", [
+      "--root",
+      validated.root,
+      "--baseline",
+      validated.baselinePath,
+    ]);
+    expect(ok.out).toContain("OK");
+    expect(ok.code).toBe(0);
+  });
+
   it("--update records offenders so the baseline then passes", () => {
     const { root, baselinePath } = fixture({ "server/routes/evil.routes.ts": RAW_BODY_OFFENDER });
     expect(

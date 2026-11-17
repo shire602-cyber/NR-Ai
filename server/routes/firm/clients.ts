@@ -30,6 +30,7 @@ import {
   canAccessClient,
   createClientSchema,
   getClientStats,
+  type FirmClientsImportBody,
   importPayloadSchema,
   loadActiveServicePlans,
   seedChartOfAccounts,
@@ -336,16 +337,17 @@ export const handlePostFirmClientsImport = async (req: Request, res: Response) =
   const ctx = firmContextOf(res);
 
   // Accept either pre-parsed rows or a base64-encoded file.
+  const body = parsedBody<FirmClientsImportBody>(req);
   let rows: Record<string, unknown>[];
-  if (req.body?.fileData) {
+  if (body.fileData) {
     try {
-      const buffer = Buffer.from(req.body.fileData, "base64");
-      rows = (await parseSpreadsheet(buffer, req.body.fileName)).rows;
+      const buffer = Buffer.from(body.fileData, "base64");
+      rows = (await parseSpreadsheet(buffer, body.fileName)).rows;
     } catch (err: unknown) {
       return res.status(400).json({ message: `Could not parse file: ${errorMessage(err)}` });
     }
   } else {
-    const parsed = importPayloadSchema.safeParse(req.body);
+    const parsed = importPayloadSchema.safeParse({ rows: body.rows });
     if (!parsed.success) {
       return res.status(400).json({ message: "Invalid payload", errors: parsed.error.issues });
     }

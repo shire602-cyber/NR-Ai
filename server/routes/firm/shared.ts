@@ -606,3 +606,13 @@ export const assignStaffSchema = z.object({
 export const importPayloadSchema = z.object({
   rows: z.array(z.record(z.string(), z.any())).min(1).max(500),
 });
+
+/** POST /firm/clients/import body: pre-parsed rows, or a base64 CSV/XLSX the server parses. */
+export const firmClientsImportBody = z
+  .object({
+    rows: z.array(z.record(z.string(), z.any())).max(500).optional(),
+    fileData: z.string().max(20_000_000).optional(),
+    fileName: z.string().max(255).optional(),
+  })
+  .strict();
+export type FirmClientsImportBody = z.output<typeof firmClientsImportBody>;

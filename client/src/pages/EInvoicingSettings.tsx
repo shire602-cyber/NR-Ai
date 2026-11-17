@@ -26,6 +26,8 @@ import {
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useActiveCompany } from "@/components/ActiveCompanyProvider";
+import { isSaudiCompany } from "@/lib/company-country";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
@@ -304,6 +306,7 @@ export default function EInvoicingSettings() {
   const s: Copy = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
+  const { company: activeCompany } = useActiveCompany();
 
   const settings = useQuery<SettingsView>({
     queryKey: ["/api/companies", companyId, "einvoicing", "settings"],
@@ -373,9 +376,11 @@ export default function EInvoicingSettings() {
         description={s.description}
         icon={FileCheck2}
         actions={
-          <Button asChild variant="outline">
-            <Link href="/settings/zatca">{s.zatcaLink}</Link>
-          </Button>
+          isSaudiCompany(activeCompany) ? (
+            <Button asChild variant="outline">
+              <Link href="/settings/zatca">{s.zatcaLink}</Link>
+            </Button>
+          ) : undefined
         }
       />
 

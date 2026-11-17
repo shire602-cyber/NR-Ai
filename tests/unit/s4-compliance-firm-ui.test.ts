@@ -132,49 +132,33 @@ describe("S4 CompliancePulse maps on check keys (W4-A follow-up)", () => {
   });
 });
 
-describe("S4 firm UI access via /api/firms/me (W5-D follow-up)", () => {
-  const otherFirm = {
-    membership: {
-      firm: { id: "f", name: "Second Firm", status: "active", isNr: false },
-      role: "preparer",
-      isNr: false,
-      platformAdmin: false,
-      permissions: ["firm.clients.read", "firm.workpapers.prepare"],
-    },
-  };
-
-  it("[S4-firm-route] staff of an approved non-NR firm open the firm UI without NR-only links", () => {
-    const access = resolveFirmAccess({ isAdmin: false, firmRole: null }, otherFirm);
-    expect(access).toMatchObject({ canAccessFirm: true, isNr: false, role: "preparer" });
-    expect(firmPathAllowed(access, "/firm/practice")).toBe(true);
-    expect(firmPathAllowed(access, "/firm/clients/abc")).toBe(true);
+describe("firm UI access is NR-internal", () => {
+  it("[CL-B-firm-nr-only] every /firm/* path is NR-only; only NR staff and platform admins get access", () => {
+    expect(NR_ONLY_FIRM_PATHS).toEqual(["/firm"]);
+    const customer = resolveFirmAccess({ isAdmin: false, firmRole: null });
+    expect(customer).toMatchObject({ canAccessFirm: false, isNr: false });
+    expect(resolveFirmAccess(null).canAccessFirm).toBe(false);
+    const nr = resolveFirmAccess({ firmRole: "reviewer" });
+    expect(nr).toMatchObject({ canAccessFirm: true, isNr: true });
+    expect(resolveFirmAccess({ isAdmin: true }).isNr).toBe(true);
     for (const p of [
+      "/firm",
+      "/firm/practice",
+      "/firm/clients/abc",
+      "/firm/pipeline",
+      "/firm/analytics",
+      "/firm/bulk",
       "/firm/comms",
       "/firm/document-chasing",
       "/firm/email-intake",
-      "/firm/value-ops",
+      "/firm/value-ops?x=1",
     ]) {
-      expect(NR_ONLY_FIRM_PATHS).toContain(p);
-      expect(firmPathAllowed(access, p)).toBe(false);
-      expect(firmPathAllowed(access, `${p}?x=1`)).toBe(false);
+      expect(firmPathAllowed(customer, p), p).toBe(false);
+      expect(firmPathAllowed(nr, p), p).toBe(true);
     }
-  });
-
-  it("[S4-firm-route] pending firms, customers and no membership get no firm UI; NR staff get everything", () => {
-    const pending = {
-      membership: {
-        ...otherFirm.membership,
-        firm: { ...otherFirm.membership.firm, status: "pending" },
-        permissions: [],
-      },
-    };
-    expect(resolveFirmAccess({ firmRole: null }, pending).canAccessFirm).toBe(false);
-    expect(resolveFirmAccess({ firmRole: null }, { membership: null }).canAccessFirm).toBe(false);
-    expect(resolveFirmAccess(null, otherFirm).canAccessFirm).toBe(false);
-    const nr = resolveFirmAccess({ firmRole: "reviewer" }, undefined);
-    expect(nr).toMatchObject({ canAccessFirm: true, isNr: true });
-    expect(firmPathAllowed(nr, "/firm/document-chasing")).toBe(true);
-    expect(resolveFirmAccess({ isAdmin: true }, undefined).isNr).toBe(true);
+    // Non-firm paths are never gated by this helper.
+    expect(firmPathAllowed(customer, "/firm-relationship")).toBe(true);
+    expect(firmPathAllowed(customer, "/dashboard")).toBe(true);
   });
 });
 

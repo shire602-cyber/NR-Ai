@@ -1,5 +1,13 @@
 import { Link } from "wouter";
-import { Building2, Languages, LifeBuoy, LogOut, MessageSquare, User } from "lucide-react";
+import {
+  Building2,
+  Languages,
+  LifeBuoy,
+  LogOut,
+  MessageSquare,
+  MessageSquareText,
+  User,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -46,7 +54,7 @@ export function AccountMenu() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-56" data-testid="menu-account">
         <DropdownMenuItem asChild>
-          <Link href="/company-profile" data-testid="menu-account-profile">
+          <Link href="/settings/company" data-testid="menu-account-profile">
             <Building2 aria-hidden />
             {tt["shell.accountCompanyProfile"]}
           </Link>
@@ -59,6 +67,12 @@ export function AccountMenu() {
           <Link href="/help" data-testid="menu-account-help">
             <LifeBuoy aria-hidden />
             {tt["shell.accountHelpCentre"]}
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href="/feedback" data-testid="menu-account-feedback">
+            <MessageSquareText aria-hidden />
+            {tt["shell.accountFeedback"]}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>

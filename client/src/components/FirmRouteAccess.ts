@@ -1,41 +1,23 @@
 /**
- * Firm UI access (S4, W5-D follow-up).
+ * Firm UI access.
  *
- * The firm workspace is open to NR staff (users.firm_role), platform admins
- * and staff of any *approved* accounting firm (GET /api/firms/me returns a
- * membership with permissions only for an active firm). NR-only surfaces —
- * firm messaging (comms), document chasing, email intake and value-ops/growth —
- * stay hidden for staff of other firms; the server enforces the same split
- * (requireNraAccess / requireNrFirm), this only controls visibility.
+ * Accounting-firm management is NR-internal: every /firm/* page is open to NR
+ * staff (users.firm_role) and platform admins only. Customers, client-portal
+ * users and staff of any other firm never see or reach it. The server enforces
+ * the same rule on /api/firm/* (requireNrFirm); this only controls visibility.
  */
-import { useQuery } from "@tanstack/react-query";
 import { canAccessNraCenter, type NraAccessUser } from "@shared/access";
 
-export interface FirmMembershipPayload {
-  membership: {
-    firm: { id: string; name: string; status: string; isNr: boolean } | null;
-    role: string;
-    isNr: boolean;
-    platformAdmin: boolean;
-    permissions: string[];
-  } | null;
-}
-
 export interface FirmAccess {
-  /** May open the firm workspace at all. */
+  /** May open the firm workspace (NR staff or platform admin). */
   canAccessFirm: boolean;
-  /** May open NR-only surfaces (NR staff or platform admin). */
+  /** Same as canAccessFirm; kept so callers can name the NR requirement. */
   isNr: boolean;
   role: string | null;
 }
 
-/** Firm routes only NR staff (and platform admins) may open. */
-export const NR_ONLY_FIRM_PATHS: readonly string[] = [
-  "/firm/value-ops",
-  "/firm/comms",
-  "/firm/document-chasing",
-  "/firm/email-intake",
-];
+/** Route prefixes that are NR-only: every firm page. */
+export const NR_ONLY_FIRM_PATHS: readonly string[] = ["/firm"];
 
 export function isNrOnlyFirmPath(url: string): boolean {
   const path = url.split(/[?#]/)[0];
@@ -44,44 +26,23 @@ export function isNrOnlyFirmPath(url: string): boolean {
 
 type AccessUser = (NraAccessUser & { userType?: string | null }) | null | undefined;
 
-/** Pure: combine the signed-in user with the /api/firms/me payload. */
-export function resolveFirmAccess(
-  user: AccessUser,
-  payload: FirmMembershipPayload | null | undefined
-): FirmAccess {
-  if (!user) return { canAccessFirm: false, isNr: false, role: null };
-  if (canAccessNraCenter(user)) {
-    return {
-      canAccessFirm: true,
-      isNr: true,
-      role: user.isAdmin === true ? "firm_owner" : (user.firmRole ?? null),
-    };
-  }
-  const m = payload?.membership;
-  const active = !!m && m.permissions.length > 0 && (m.firm?.status ?? "active") === "active";
-  if (!active) return { canAccessFirm: false, isNr: false, role: null };
-  return { canAccessFirm: true, isNr: m.isNr === true, role: m.role };
+/** Pure: the signed-in user's firm access. */
+export function resolveFirmAccess(user: AccessUser): FirmAccess {
+  if (!user || !canAccessNraCenter(user)) return { canAccessFirm: false, isNr: false, role: null };
+  return {
+    canAccessFirm: true,
+    isNr: true,
+    role: user.isAdmin === true ? "firm_owner" : (user.firmRole ?? null),
+  };
 }
 
 /** Whether `url` may be opened with this access (route guard + nav filter). */
 export function firmPathAllowed(access: FirmAccess, url: string): boolean {
-  if (!access.canAccessFirm) return false;
-  return access.isNr || !isNrOnlyFirmPath(url);
+  if (!isNrOnlyFirmPath(url)) return true;
+  return access.canAccessFirm && access.isNr;
 }
 
-export const firmMembershipQueryKey = ["/api/firms/me"] as const;
-
-/**
- * The caller's firm access. NR staff and admins resolve without a request;
- * other signed-in (non-portal) users ask /api/firms/me.
- */
+/** The caller's firm access (no request: it is derived from the signed-in user). */
 export function useFirmAccess(user: AccessUser): FirmAccess & { isLoading: boolean } {
-  const needsLookup = !!user && !canAccessNraCenter(user) && user.userType !== "client_portal";
-  const { data, isLoading } = useQuery<FirmMembershipPayload>({
-    queryKey: firmMembershipQueryKey,
-    enabled: needsLookup,
-    staleTime: 60_000,
-    retry: false,
-  });
-  return { ...resolveFirmAccess(user, data), isLoading: needsLookup && isLoading };
+  return { ...resolveFirmAccess(user), isLoading: false };
 }

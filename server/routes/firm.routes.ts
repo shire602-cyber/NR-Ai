@@ -5,7 +5,12 @@ import { createLogger } from "../config/logger";
 import { registerFirmWorkflowJobs } from "../services/firm/workflow.service";
 import { requireFirmAccess, requireFirmPermission } from "../middleware/rbac";
 import { strictBody } from "../http/strict-body";
-import { assignStaffSchema, createClientSchema, updateClientSchema } from "./firm/shared";
+import {
+  assignStaffSchema,
+  createClientSchema,
+  firmClientsImportBody,
+  updateClientSchema,
+} from "./firm/shared";
 import {
   handleGetFirmClients,
   handleGetFirmClientsSummary,
@@ -114,6 +119,7 @@ export function registerFirmRoutes(app: Express): void {
   router.post(
     "/firm/clients/import",
     requireFirmPermission("firm.clients.create"),
+    strictBody(firmClientsImportBody),
     asyncHandler(handlePostFirmClientsImport)
   );
 

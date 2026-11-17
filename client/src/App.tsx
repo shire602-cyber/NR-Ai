@@ -79,7 +79,6 @@ const PartyStatements = lazyWithReload(() => import("@/pages/reports/PartyStatem
 const FirmRelationship = lazyWithReload(() => import("@/pages/portal/FirmRelationship"));
 const Receipts = lazyWithReload(() => import("@/pages/Receipts"));
 const ReceiptAutopilot = lazyWithReload(() => import("@/pages/ReceiptAutopilot"));
-const CompanyProfile = lazyWithReload(() => import("@/pages/CompanyProfile"));
 const CompanySettings = lazyWithReload(() => import("@/pages/CompanySettings"));
 const SecuritySettings = lazyWithReload(() => import("@/pages/SecuritySettings"));
 const EInvoicingSettings = lazyWithReload(() => import("@/pages/EInvoicingSettings"));
@@ -125,7 +124,6 @@ const IntegrationsHub = lazyWithReload(() => import("@/pages/IntegrationsHub"));
 const Notifications = lazyWithReload(() => import("@/pages/Notifications"));
 const Reminders = lazyWithReload(() => import("@/pages/Reminders"));
 const DocumentChasing = lazyWithReload(() => import("@/pages/DocumentChasing"));
-const Referrals = lazyWithReload(() => import("@/pages/Referrals"));
 const Feedback = lazyWithReload(() => import("@/pages/Feedback"));
 
 const Onboarding = lazyWithReload(() => import("@/pages/Onboarding"));
@@ -451,11 +449,10 @@ function PortalRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// Guard: firm workspace routes — platform admins, NR staff and staff of any
-// approved accounting firm (/api/firms/me). `nrOnly` surfaces (firm messaging,
-// document chasing, email intake, value-ops) stay NR-only. Logic lives in
-// components/FirmRouteAccess.ts; the server enforces the same split.
-function FirmRoute({ children, nrOnly = false }: { children: React.ReactNode; nrOnly?: boolean }) {
+// Guard: every /firm/* page is NR-internal (platform admins and NR staff only).
+// Logic lives in components/FirmRouteAccess.ts; the server enforces the same
+// rule on /api/firm/*.
+function FirmRoute({ children }: { children: React.ReactNode }) {
   const { data: user, isLoading } = useCurrentUser();
   const access = useFirmAccess(user);
   const { t } = useTranslation();
@@ -476,15 +473,6 @@ function FirmRoute({ children, nrOnly = false }: { children: React.ReactNode; nr
         title={t["shell.firmAccessTitle"]}
         description={t["shell.firmAccessDescription"]}
         redirectTo="/dashboard"
-      />
-    );
-  }
-  if (nrOnly && !access.isNr) {
-    return (
-      <AccessRedirect
-        title={t["firm.nrOnlyTitle"]}
-        description={t["firm.nrOnlyDescription"]}
-        redirectTo="/firm/practice"
       />
     );
   }
@@ -626,7 +614,10 @@ function Router() {
         <Suspense fallback={<PageLoader variant="list" />}>
           <Switch>
             <Route path="/dashboard" component={Dashboard} />
-            <Route path="/company-profile" component={CompanyProfile} />
+            {/* Company profile and company settings are one page (/settings/company). */}
+            <Route path="/company-profile">
+              <RedirectTo to="/settings/company" />
+            </Route>
             <Route path="/firm-relationship" component={FirmRelationship} />
             <Route path="/settings/company" component={CompanySettings} />
             <Route path="/settings/security" component={SecuritySettings} />
@@ -698,7 +689,6 @@ function Router() {
             <Route path="/integrations-hub" component={IntegrationsHub} />
             <Route path="/notifications" component={Notifications} />
             <Route path="/reminders" component={Reminders} />
-            <Route path="/referrals" component={Referrals} />
             <Route path="/feedback" component={Feedback} />
             <Route path="/analytics" component={AnalyticsHub} />
             <Route path="/bank-reconciliation" component={BankReconciliation} />
@@ -753,7 +743,7 @@ function Router() {
               </FirmRoute>
             </Route>
             <Route path="/firm/value-ops">
-              <FirmRoute nrOnly>
+              <FirmRoute>
                 <ValueOps />
               </FirmRoute>
             </Route>
@@ -788,17 +778,17 @@ function Router() {
               </FirmRoute>
             </Route>
             <Route path="/firm/comms">
-              <FirmRoute nrOnly>
+              <FirmRoute>
                 <FirmComms />
               </FirmRoute>
             </Route>
             <Route path="/firm/document-chasing">
-              <FirmRoute nrOnly>
+              <FirmRoute>
                 <DocumentChasing />
               </FirmRoute>
             </Route>
             <Route path="/firm/email-intake">
-              <FirmRoute nrOnly>
+              <FirmRoute>
                 <EmailIntake />
               </FirmRoute>
             </Route>

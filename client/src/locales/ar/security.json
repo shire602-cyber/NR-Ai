@@ -77,5 +77,22 @@
   "security.logoutAllConfirmTitle": "تسجيل الخروج من جميع الأجهزة؟",
   "security.logoutAllConfirmBody": "سيؤدي ذلك إلى تسجيل خروجك من كل مكان، بما في ذلك هذا الجهاز. ستحتاج إلى تسجيل الدخول مرة أخرى.",
   "security.logoutAllConfirmAction": "تسجيل الخروج من كل مكان",
-  "security.logoutAllCancel": "إلغاء"
+  "security.logoutAllCancel": "إلغاء",
+  "security.changePasswordTitle": "تغيير كلمة المرور",
+  "security.changePasswordHelp": "اختر كلمة مرور جديدة. سيتم تسجيل الخروج من جميع الأجهزة والجلسات الأخرى، وتبقى هذه الجلسة مفتوحة.",
+  "security.currentPassword": "كلمة المرور الحالية",
+  "security.newPassword": "كلمة المرور الجديدة",
+  "security.confirmNewPassword": "تأكيد كلمة المرور الجديدة",
+  "security.passwordRules": "8 أحرف أو أكثر مع أحرف كبيرة وصغيرة ورقم؛ تُرفض كلمات المرور الشائعة.",
+  "security.changePasswordSubmit": "تغيير كلمة المرور",
+  "security.currentPasswordRequired": "أدخل كلمة المرور الحالية.",
+  "security.passwordTooShort": "يجب ألا تقل كلمة المرور الجديدة عن 8 أحرف.",
+  "security.passwordTooLong": "يجب ألا تزيد كلمة المرور الجديدة عن 256 حرفًا.",
+  "security.passwordComplexity": "تحتاج كلمة المرور الجديدة إلى حرف كبير وحرف صغير ورقم.",
+  "security.passwordsMismatch": "كلمتا المرور الجديدتان غير متطابقتين.",
+  "security.passwordUnchanged": "اختر كلمة مرور مختلفة عن الحالية.",
+  "security.currentPasswordWrong": "كلمة المرور الحالية غير صحيحة.",
+  "security.passwordLocked": "محاولات فاشلة كثيرة. يرجى الانتظار قبل المحاولة مرة أخرى.",
+  "security.passwordChanged": "تم تغيير كلمة المرور",
+  "security.passwordChangedBody": "تم تسجيل الخروج من كل الجلسات الأخرى."
 }

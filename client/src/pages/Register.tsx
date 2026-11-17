@@ -49,7 +49,15 @@ interface InvitationPreview {
   accountExists: boolean;
 }
 
-function TeamInviteAccept({ token }: { token: string }) {
+/**
+ * Two invitation systems share this screen:
+ *  - "team": company team invitations (`?teamInvite=`, /api/team-invitations/*)
+ *  - "admin": admin-created client invitations (`?invite=`, /api/invitations/*), which always
+ *    create a new account for the invited address.
+ */
+type InviteKind = "team" | "admin";
+
+function InviteAccept({ token, kind }: { token: string; kind: InviteKind }) {
   const { locale } = useTranslation();
   const tr = (b: Bilingual) => (locale === "ar" ? b.ar : b.en);
   const [, setLocation] = useLocation();
@@ -62,25 +70,41 @@ function TeamInviteAccept({ token }: { token: string }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    fetch(apiUrl(`/api/team-invitations/${encodeURIComponent(token)}`), { credentials: "include" })
-      .then(async (r) => (r.ok ? setPreview(await r.json()) : setInvalid(true)))
+    const previewUrl =
+      kind === "admin"
+        ? `/api/invitations/verify/${encodeURIComponent(token)}`
+        : `/api/team-invitations/${encodeURIComponent(token)}`;
+    fetch(apiUrl(previewUrl), { credentials: "include" })
+      .then(async (r) => {
+        if (!r.ok) return setInvalid(true);
+        const body = await r.json();
+        // Admin invitations come back without `accountExists`; the invited client becomes
+        // the owner of the company view, so label the role accordingly.
+        setPreview(kind === "admin" ? { ...body, role: "owner", accountExists: false } : body);
+      })
       .catch(() => setInvalid(true));
     fetchCurrentUser()
       .then((u) => setSignedIn(!!u))
       .catch(() => undefined);
-  }, [token]);
+  }, [token, kind]);
 
   const accept = async () => {
     setBusy(true);
     setError(null);
     try {
+      const acceptUrl =
+        kind === "admin"
+          ? `/api/invitations/accept/${encodeURIComponent(token)}`
+          : `/api/team-invitations/${encodeURIComponent(token)}/accept`;
       const result = await apiRequest(
         "POST",
-        `/api/team-invitations/${encodeURIComponent(token)}/accept`,
+        acceptUrl,
         preview?.accountExists ? {} : { name, password }
       );
-      if (result?.user) await establishAuthenticatedSession(result.user);
-      setLocation("/dashboard");
+      const currentUser = result?.user ? await establishAuthenticatedSession(result.user) : null;
+      setLocation(
+        currentUser?.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard"
+      );
     } catch (err) {
       setError((err as Error)?.message ?? null);
     } finally {
@@ -163,13 +187,13 @@ export default function Register() {
   const [, setLocation] = useLocation();
   const { locale } = useTranslation();
   const [notice, setNotice] = useState<string | null>(null);
-  const teamInvite =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("teamInvite")
-      : null;
+  const query = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const teamInvite = query?.get("teamInvite") ?? null;
+  const adminInvite = query?.get("invite") ?? null;
+  const pendingInvite = teamInvite ?? adminInvite;
 
   useEffect(() => {
-    if (teamInvite) return;
+    if (pendingInvite) return;
     fetchCurrentUser()
       .then((user) => {
         if (user)
@@ -178,7 +202,7 @@ export default function Register() {
           );
       })
       .catch(() => {});
-  }, [setLocation, teamInvite]);
+  }, [setLocation, pendingInvite]);
 
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
@@ -197,8 +221,8 @@ export default function Register() {
 
   return (
     <AuthLayout variant="register">
-      {teamInvite ? (
-        <TeamInviteAccept token={teamInvite} />
+      {pendingInvite ? (
+        <InviteAccept token={pendingInvite} kind={teamInvite ? "team" : "admin"} />
       ) : (
         <div className="w-full max-w-md">
           {notice && (

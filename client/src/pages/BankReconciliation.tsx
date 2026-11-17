@@ -1,5 +1,6 @@
 import { accountDisplayName } from "@/lib/account-name";
 import { useState, useMemo } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -602,24 +603,6 @@ export default function BankReconciliation() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] }),
   });
 
-  const autoReconcileMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/auto-reconcile`),
-    onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
-      toast({
-        title: "Auto-Reconciliation Complete",
-        description: `Found ${data.matches?.length ?? 0} potential matches`,
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: "Auto-Reconciliation Failed",
-        description: error?.message,
-      });
-    },
-  });
-
   // ─── File import handlers ─────────────────────────────────────────────────
 
   const strings = IMPORT_STRINGS[locale === "ar" ? "ar" : "en"];
@@ -846,19 +829,11 @@ export default function BankReconciliation() {
               <BarChart3 className="w-4 h-4" />
               <T k="reportCenter.report" />
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => autoReconcileMutation.mutate()}
-              disabled={autoReconcileMutation.isPending}
-              data-testid="button-auto-reconcile"
-            >
-              {autoReconcileMutation.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
+            <Button variant="outline" size="sm" asChild data-testid="button-auto-reconcile">
+              <Link href="/auto-reconcile">
                 <Sparkles className="w-4 h-4" />
-              )}
-              {t.autoMatch}
+                {t.autoMatch}
+              </Link>
             </Button>
             <Button
               onClick={() => setImportDialogOpen(true)}

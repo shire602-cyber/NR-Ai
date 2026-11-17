@@ -144,7 +144,7 @@ export function registerReferralRoutes(app: Express) {
           "notification.referralSignup.message"
         ),
         priority: "normal",
-        actionUrl: "/referrals",
+        actionUrl: "/notifications",
       });
 
       res.json(referral);

@@ -7,7 +7,6 @@ import { DomainError, errorMessage, errorStatus, errorStatusCode } from "../../e
 import type { Request, Response } from "express";
 import { aiErrorBody } from "../../services/ai/usage-meter";
 import { aiRowsToParsedRows, importStatementRows } from "../../services/bank-import.service";
-import { applyMatch } from "../../services/bank-reconciliation.service";
 import { createHash } from "node:crypto";
 import { parsedBody } from "../../http/parsed-body";
 import { resolveModel } from "../../services/ai/model-router";
@@ -135,56 +134,6 @@ ${wrapUserData("ledger_records", JSON.stringify(ledgerData, null, 2), 40000)}`,
     }
   };
 }
-
-/** POST /api/bank-transactions/:id/reconcile */
-export const handlePostBankTransactionsReconcile = async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user!.id;
-    // Support both matchId (frontend) and matchedId (legacy) parameter names
-    const matchId = req.body.matchId || req.body.matchedId;
-    const { matchType } = req.body;
-
-    if (!matchId || !matchType) {
-      return res.status(400).json({ message: "matchId and matchType are required" });
-    }
-
-    // Find the transaction within the user's accessible companies (tenant-scoped).
-    const userCompanies = await storage.getCompaniesByUserId(userId);
-    let txn: Awaited<ReturnType<typeof storage.getBankTransactionById>> | undefined;
-    for (const c of userCompanies) {
-      txn = await storage.getBankTransactionById(id, c.id);
-      if (txn) break;
-    }
-    if (!txn) {
-      return res.status(404).json({ message: "Transaction not found" });
-    }
-
-    // W3-C: every reconcile goes through the one bank match service (payments for
-    // invoices, cash-side check for journals, period lock, idempotent apply).
-    const kind =
-      matchType === "invoice"
-        ? "invoice"
-        : matchType === "receipt"
-          ? "receipt"
-          : matchType === "bill"
-            ? "bill"
-            : "journal";
-    const result = await applyMatch({
-      companyId: txn.companyId,
-      transactionId: id,
-      actorId: userId,
-      target: { kind, id: String(matchId) },
-      req,
-    });
-    res.json(result.transaction);
-  } catch (error: unknown) {
-    if (error instanceof DomainError) throw error;
-    res
-      .status(errorStatus(error) || errorStatusCode(error) || 500)
-      .json({ message: errorMessage(error), ...aiErrorBody(error) });
-  }
-};
 
 /** GET /api/companies/:companyId/bank-transactions */
 export const handleGetCompaniesBankTransactions = async (req: Request, res: Response) => {

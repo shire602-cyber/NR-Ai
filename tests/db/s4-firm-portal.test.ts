@@ -171,14 +171,17 @@ describe("S4 email-to-task for firm practice (R15-15)", () => {
 });
 
 describe("S4 firm UI access contract (/api/firms/me)", () => {
-  it("[S4-firm-route] approved non-NR firm staff get a membership with permissions; NR-only APIs stay closed", async () => {
+  it("[S4-firm-route] approved non-NR firm staff get a membership but every /api/firm API stays closed", async () => {
     const b = await firmB();
     const me = await b.as.get("/api/firms/me");
     expect(me.status).toBe(200);
     expect(me.body.membership).toMatchObject({ isNr: false, role: "firm_owner" });
     expect(me.body.membership.permissions.length).toBeGreaterThan(0);
     expect(me.body.membership.firm.status).toBe("active");
-    expect((await b.as.get("/api/firm/clients")).status).toBe(200);
+    // Accounting-firm features are NR-internal: the membership exists, the workspace is closed.
+    const closed = await b.as.get("/api/firm/clients");
+    expect(closed.status).toBe(403);
+    expect(closed.body.code).toBe("NR_FIRM_ONLY");
     for (const url of [
       "/api/firm/email-intake/status",
       "/api/firm/comms/templates",
@@ -193,7 +196,7 @@ describe("S4 firm UI access contract (/api/firms/me)", () => {
 
 describe("S4 client-side firm screens (invitation, engagement letter, request upload)", () => {
   it("[S4-portal] the owner accepts and revokes; a member signs the letter and uploads a requested document", async () => {
-    const b = await firmB();
+    const b = await nrOwner();
     const client = await h.createTenant({ name: "S4PortalClient" });
     const cid = client.company.id;
     const invite = await b.as.post("/api/firm/client-links", { inviteeEmail: client.email });
@@ -205,7 +208,7 @@ describe("S4 client-side firm screens (invitation, engagement letter, request up
     });
     expect(accepted.status, accepted.text).toBe(200);
     const links = await client.as.get(`/api/companies/${cid}/firm-links`);
-    expect(links.body.links[0]).toMatchObject({ status: "active", firmName: "S4 Second Firm LLC" });
+    expect(links.body.links[0]).toMatchObject({ status: "active" });
 
     // Engagement letter: typed-name acceptance.
     const letter = await b.as.post(`/api/firm/clients/${cid}/engagement-letters`, {
