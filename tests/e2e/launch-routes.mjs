@@ -190,4 +190,6 @@ export const ALL_CRAWL_SKIPPED = [
   "/view/invoice/:token",
   "/portal/:token",
   "/accounts",
+  // Dev-only component gallery, mounted only when VITE_UI_GALLERY=1 (never in a product build).
+  "/__ui",
 ];
