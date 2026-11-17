@@ -101,8 +101,24 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
     enabled: showProjection,
   });
 
+  // Months before the first cash movement add nothing (a flat zero line and rows of 0.00).
+  const shownBuckets = useMemo(() => {
+    const rows = buckets.data ?? [];
+    const first = rows.findIndex(
+      (b) =>
+        b.endingBalance ||
+        b.operatingInflow ||
+        b.operatingOutflow ||
+        b.investingInflow ||
+        b.investingOutflow ||
+        b.financingInflow ||
+        b.financingOutflow
+    );
+    return first === -1 ? [] : rows.slice(first);
+  }, [buckets.data]);
+
   const points = useMemo<ChartPoint[]>(() => {
-    const actual: ChartPoint[] = (buckets.data ?? []).map((b) => ({
+    const actual: ChartPoint[] = shownBuckets.map((b) => ({
       key: b.to,
       balance: b.endingBalance,
     }));
@@ -112,7 +128,7 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
       ...forecast.data.projections.map((p) => ({ key: p.weekEnd, projected: p.projectedBalance })),
     ];
     return [...actual, ...projected];
-  }, [buckets.data, forecast.data, showProjection, historyTo]);
+  }, [shownBuckets, forecast.data, showProjection, historyTo]);
 
   const seriesLabel = (key: string) =>
     key === "projected" ? t["analytics.cashProjected"] : t["analytics.cashPosition"];
@@ -120,7 +136,7 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
 
   if (statement.isLoading && buckets.isLoading) return <InsightsSkeleton />;
   const s = statement.data;
-  const actualCount = (buckets.data ?? []).length;
+  const actualCount = shownBuckets.length;
   // Spec 2.6: a company with no cash movement sees guidance, not a KPI row of zeros.
   const hasCashActivity =
     Boolean(s && (s.closingCash || s.operating.total || s.investing.total || s.financing.total)) ||
@@ -301,7 +317,7 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(buckets.data ?? []).map((b) => (
+                  {shownBuckets.map((b) => (
                     <TableRow key={b.from}>
                       <TableCell className="whitespace-nowrap">
                         {formatMonthYear(b.from, locale)}
