@@ -386,6 +386,14 @@ async function main() {
     if (await express.count()) {
       await express.click();
       await page.waitForTimeout(3500);
+      // WP-B: onboarding is three screens; skip the starting point, then look around.
+      for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
+        const next = page.locator(`[data-testid="${id}"]`);
+        if (await next.count()) {
+          await next.click();
+          await page.waitForTimeout(1500);
+        }
+      }
     }
   }
   if (!cleanPath(page.url()).startsWith("/dashboard")) {
