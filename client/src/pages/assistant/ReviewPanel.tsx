@@ -145,7 +145,8 @@ export default function ReviewPanel() {
 
   const bankItems = pending.data ?? [];
   const showBank = filter !== "checks";
-  const showChecks = filter !== "bank";
+  // Checks have their own run action and summary (WP-D), so they get their own filter.
+  const showChecks = filter === "checks";
   const loading = pending.isLoading;
 
   const filters: Array<{ id: Filter; label: string; count: number }> = [

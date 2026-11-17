@@ -189,6 +189,12 @@ describe("Review panel", () => {
     expect(container.querySelector('[data-testid="review-item-q1"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="button-choose-q1"]')).not.toBeNull();
     expect(container.textContent).not.toMatch(/OpenAI|not configured/);
+    expect(container.querySelector('[data-testid="assistant-review-checks"]')).toBeNull();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-testid="review-filter-checks"]')!.click();
+    });
+    await flush();
     expect(container.querySelector('[data-testid="assistant-review-checks"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="review-item-q1"]')).toBeNull();
   });
 });
