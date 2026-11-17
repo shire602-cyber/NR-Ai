@@ -173,9 +173,8 @@ describe("CTO 21: Reports copy", () => {
   });
 
   it("wraps long report names to two lines instead of truncating them", () => {
-    const parts = read("client/src/pages/reports/StatementParts.tsx");
-    expect(parts).toContain("line-clamp-2 break-words");
-    const panel = read("client/src/pages/reports/panels/ReportsPanel.tsx");
+    // Spec 3.11 (WP-D): statements and reports render as rows of one catalogue module.
+    const panel = read("client/src/pages/reports/panels/ReportCatalogue.tsx");
     expect(panel).toContain("line-clamp-2 break-words text-body font-medium");
   });
 });

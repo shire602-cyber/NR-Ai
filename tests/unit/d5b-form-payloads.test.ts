@@ -606,6 +606,19 @@ describe("[D5b] payroll run form payload unchanged", () => {
   });
 });
 
+/** Open a DatePicker, move `months` from the open month and pick a day (react-day-picker v8). */
+async function pickDay(testId: string, months: number, day: string) {
+  await click(byTestId(testId));
+  const nav = months < 0 ? "previous-month" : "next-month";
+  for (let i = 0; i < Math.abs(months); i++) {
+    await click(document.querySelector<HTMLButtonElement>(`button[name="${nav}"]`)!);
+  }
+  const target = [...document.querySelectorAll<HTMLButtonElement>('button[name="day"]')].find(
+    (b) => b.textContent?.trim() === day && !b.className.includes("day_outside")
+  );
+  await click(target!);
+}
+
 describe("[D5b] budget plan form payload unchanged", () => {
   it("POSTs the same budget plan body", async () => {
     const { default: Budgets } = await import("../../client/src/pages/Budgets");
@@ -613,8 +626,9 @@ describe("[D5b] budget plan form payload unchanged", () => {
     await click(buttonByText(/new budget/i));
     await type(named("name"), "FY 2026 operating budget");
     await type(named("fiscalYear"), "2026");
-    await type(named("startDate"), "2026-01-01");
-    await type(named("endDate"), "2026-12-31");
+    // WP-D (G1): start and end are the shared DatePicker, opening on the fiscal-year defaults.
+    await pickDay("input-budget-start-date", 0, "1");
+    await pickDay("input-budget-end-date", 0, "31");
     await type(named("notes"), "Board approved draft");
     await submit(dialog().querySelector('button[type="submit"]'));
     expect(body("POST", `${C}/budget-plans`)).toStrictEqual(BUDGET_BODY);

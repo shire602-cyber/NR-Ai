@@ -1401,7 +1401,11 @@ export default function Budgets() {
                       <FormItem>
                         <FormLabel required>{t["forms.budget.startDate"]}</FormLabel>
                         <FormControl>
-                          <DatePicker value={field.value ?? ""} onChange={field.onChange} />
+                          <DatePicker
+                            value={field.value ?? ""}
+                            onChange={field.onChange}
+                            data-testid="input-budget-start-date"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1414,7 +1418,11 @@ export default function Budgets() {
                       <FormItem>
                         <FormLabel required>{t["forms.budget.endDate"]}</FormLabel>
                         <FormControl>
-                          <DatePicker value={field.value ?? ""} onChange={field.onChange} />
+                          <DatePicker
+                            value={field.value ?? ""}
+                            onChange={field.onChange}
+                            data-testid="input-budget-end-date"
+                          />
                         </FormControl>
                         <FormDescription>{t["forms.budget.periodHelp"]}</FormDescription>
                         <FormMessage />
