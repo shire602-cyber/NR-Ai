@@ -480,9 +480,11 @@ describe("W4-E purchases, adjustments and amendments", () => {
       [{ description: "Job", quantity: 1, unitPrice: 1000, vatRate: 5 }],
       { date: "2026-01-10", dueDate: "2026-02-09" }
     );
+    // L1 (A4): six months run from the date of supply (10 Jan -> after 10 Jul), not the due
+    // date; the old "early" date 15 Jul was eligible under Art. 64(1)(c).
     const early = await t.as.post(`/api/companies/${t.company.id}/vat/bad-debt-relief`, {
       invoiceId: inv.id,
-      claimDate: "2026-07-15",
+      claimDate: "2026-07-10",
       writtenOff: true,
       customerNotified: true,
     });

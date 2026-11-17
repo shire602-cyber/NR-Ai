@@ -6,3 +6,4 @@ export * from "./deadlines";
 export * from "./repository";
 export * from "./engine";
 export * from "./lifecycle";
+export * from "./deferred-tax";

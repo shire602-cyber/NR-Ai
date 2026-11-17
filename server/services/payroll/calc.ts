@@ -8,6 +8,8 @@ import { DomainError } from "../../errors";
 import {
   DEFAULT_LEGAL_PARAMS,
   pensionCountry,
+  pensionRuleFor,
+  type PensionFund,
   type PayrollLegalParams,
   type PensionRule,
 } from "./legal-params";
@@ -126,6 +128,8 @@ export function pensionBaseFils(w: WageComponents, rule: PensionRule): number {
 export interface PensionResult {
   pensionable: boolean;
   country: string | null;
+  /** gpssa | adpf | gcc (null when not pensionable). */
+  fund: PensionFund | null;
   baseFils: number;
   employeeFils: number;
   employerFils: number;
@@ -136,24 +140,28 @@ export interface PensionResult {
 export function pensionContribution(
   w: WageComponents,
   nationality: string | null | undefined,
-  params: PayrollLegalParams = DEFAULT_LEGAL_PARAMS
+  params: PayrollLegalParams = DEFAULT_LEGAL_PARAMS,
+  /** employees.pension_scheme: 'adpf' for Abu Dhabi Pension Fund members (M11). */
+  scheme?: string | null
 ): PensionResult {
-  const country = pensionCountry(nationality);
-  if (!country) {
+  const ruleRef = pensionRuleFor(nationality, scheme);
+  if (!ruleRef) {
     return {
       pensionable: false,
       country: null,
+      fund: null,
       baseFils: 0,
       employeeFils: 0,
       employerFils: 0,
       ruleConfirmed: true,
     };
   }
-  const rule = params.pension[country];
+  const rule = params.pension[ruleRef.key];
   const baseFils = pensionBaseFils(w, rule);
   return {
     pensionable: true,
-    country,
+    country: ruleRef.country,
+    fund: ruleRef.fund,
     baseFils,
     employeeFils: pct(baseFils, rule.employeeRate),
     employerFils: pct(baseFils, rule.employerRate),
@@ -336,6 +344,8 @@ export function unpaidLeaveDeductionFils(
 
 export interface PayrollLineInput extends WageComponents {
   nationality: string | null | undefined;
+  /** employees.pension_scheme ('adpf' = Abu Dhabi Pension Fund). */
+  pensionScheme?: string | null;
   /** Manual overtime amount (fils). Added to any hours-based overtime. */
   overtimeFils?: number;
   overtimeHours?: number;
@@ -374,7 +384,7 @@ export function calculatePayrollLine(
     transportFils: input.transportFils,
     otherFils: input.otherFils,
   };
-  const pension = pensionContribution(w, input.nationality, params);
+  const pension = pensionContribution(w, input.nationality, params, input.pensionScheme);
   const multiplier = input.overtimeMultiplier ?? params.overtime.normalMultiplier;
   const overtimeFils =
     (input.overtimeFils ?? 0) +

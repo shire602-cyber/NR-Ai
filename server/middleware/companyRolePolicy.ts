@@ -157,6 +157,8 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("POST", "companies/*/receivables/allowance", "ledger.post"),
   r("POST", "companies/*/customer-credits/*/apply", "ledger.post"),
   r("POST", "companies/*/customer-credits/*/refund", "ledger.post"),
+  // A4 (M1): a customer deposit posts Dr bank / Cr 2050 / Cr 2020 VAT on receipt.
+  r("POST", "companies/*/customer-deposits", "ledger.post"),
   r("POST", "companies/*/debit-notes/*/apply", "ledger.post"),
   r("POST", "companies/*/fx-revaluations/*/undo", "ledger.post"),
   r("POST", "receipts/*/post", "ledger.post"),
@@ -198,7 +200,17 @@ export const POLICY_RULES: readonly PolicyRule[] = [
 
   // Tax filing
   r("POST", "corporate-tax/returns/*/unfile", "tax.submit"),
+  // A4: year-end CT accrual and deferred-tax adjustments post to the GL; returns filed outside
+  // Muhasib set the losses brought forward.
+  r("POST", "corporate-tax/returns/*/accrue", "ledger.post"),
+  r("POST", "companies/*/corporate-tax/deferred-tax", "ledger.post"),
+  r("POST", "companies/*/corporate-tax/deferred-tax/*/reverse", "ledger.post"),
+  r("MUT", "companies/*/corporate-tax/external-returns", "tax.submit"),
+  r("MUT", "companies/*/corporate-tax/external-returns/*", "tax.submit"),
   r("POST", "vat-returns/*/submit", "tax.submit"),
+  // VAT paid to / refunded by the FTA for a submitted return (posts Dr 2020 / Cr 1050 / bank).
+  r("POST", "vat-returns/*/settlement", "tax.submit"),
+  r("POST", "vat-returns/*/settlement/reverse", "tax.submit"),
   r("PATCH", "vat/autopilot/periods/*/status", "tax.submit"),
 
   // Read-only computations and exports sent as POST

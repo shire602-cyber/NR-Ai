@@ -5,6 +5,7 @@ import {
   boolean,
   index,
   integer,
+  date as pgDate,
   pgTable,
   text,
   timestamp,
@@ -126,6 +127,8 @@ export const customerCreditAllocations = pgTable(
     exchangeRate: rate("exchange_rate"),
     reference: text("reference"),
     journalEntryId: uuid("journal_entry_id").references(() => journalEntries.id),
+    /** A4 (M1, migration 0123): VAT share reversed when a customer deposit is applied/refunded. */
+    vatAmount: money("vat_amount"),
     createdBy: uuid("created_by"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -135,6 +138,47 @@ export const customerCreditAllocations = pgTable(
   })
 );
 export type CustomerCreditAllocation = typeof customerCreditAllocations.$inferSelect;
+
+// A4 (M1, migration 0123): customer deposits / advances received before the invoice. VAT is due
+// on receipt (FDL 8/2017 Art. 25-26): Dr bank / Cr 2050 contract liability (net) / Cr 2020 VAT.
+// Each deposit is also a customer credit (source_type 'deposit') that is applied to the final
+// invoice (reversing the advance VAT, since the invoice charges it in full) or refunded.
+export const customerDeposits = pgTable(
+  "customer_deposits",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id"),
+    customerName: text("customer_name").notNull(),
+    customerTrn: text("customer_trn"),
+    number: text("number"),
+    date: pgDate("date", { mode: "string" }).notNull(),
+    amount: money("amount").notNull(),
+    netAmount: money("net_amount").notNull(),
+    vatAmount: money("vat_amount").notNull().default(0),
+    vatTreatment: text("vat_treatment").notNull().default("standard"),
+    vatRate: rate("vat_rate").notNull().default(0.05),
+    emirate: text("emirate"),
+    currency: text("currency").notNull().default("AED"),
+    paymentAccountId: uuid("payment_account_id").notNull(),
+    liabilityAccountId: uuid("liability_account_id").notNull(),
+    journalEntryId: uuid("journal_entry_id"),
+    creditId: uuid("credit_id"),
+    reference: text("reference"),
+    description: text("description"),
+    status: text("status").notNull().default("open"), // open | applied | refunded
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdx: index("idx_customer_deposits_company").on(table.companyId, table.date),
+  })
+);
+export type CustomerDeposit = typeof customerDeposits.$inferSelect;
 
 // ===========================
 // Recurring Invoices

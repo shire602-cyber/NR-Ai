@@ -54,6 +54,7 @@ import { computePartialExemption, type PartialExemptionResult } from "./partial-
 import {
   buildReconciliation,
   categoryForSource,
+  VAT_SETTLEMENT_SOURCE,
   type ReconCategory,
   type VatReconciliation,
 } from "./vat-reconciliation";
@@ -71,6 +72,8 @@ export type VatSourceType =
   | "fixed_asset_acquisition"
   | "bad_debt_relief"
   | "bad_debt_relief_reversal"
+  | "customer_deposit"
+  | "customer_deposit_applied"
   | "return_adjustment"
   | "partial_exemption"
   | "bank_line_entry"
@@ -259,6 +262,7 @@ const DOC_SOURCES = new Set([
   "vat_bad_debt_relief",
   "fixed_asset",
   "vat_partial_exemption",
+  "customer_deposit",
 ]);
 
 // ─── main ────────────────────────────────────────────────────────────────
@@ -370,6 +374,7 @@ async function computeSingle(
   await collectFixedAssetDisposals(companyId, from, to, company, push, issues, counts);
   await collectFixedAssetAcquisitions(companyId, from, to, push, counts);
   await collectBadDebtRelief(companyId, from, to, push, counts);
+  await collectCustomerDeposits(companyId, from, to, push, counts);
   await collectReturnAdjustments(companyId, from, to, company, push, issues, counts);
   const bankEntries = await collectBankLineEntries(
     companyId,
@@ -1122,6 +1127,97 @@ async function collectFixedAssetAcquisitions(
   }
 }
 
+// ─── Customer deposits / advances (A4: M1) ───────────────────────────────
+
+/**
+ * FDL 8/2017 Art. 25-26: VAT on an advance is due when it is received. A deposit reports its
+ * net / VAT in the period of receipt (Box 1 of the company's emirate, or Box 4 / Box 5 for a
+ * zero-rated / exempt supply). Applying it to the final invoice (or refunding it) reports the
+ * same share negatively, because the invoice reports the whole supply: over the two periods the
+ * supply is declared once. Journals: source 'customer_deposit' (receipt and each application).
+ */
+async function collectCustomerDeposits(
+  companyId: string,
+  from: string,
+  to: string,
+  push: (c: VatContribution) => void,
+  counts: Record<string, number>
+) {
+  if (!(await tableExists("customer_deposits"))) return;
+  const familyOf = (t: string): Vat201Family | null =>
+    t === "standard"
+      ? "standard"
+      : t === "zero_rated"
+        ? "zero_rated"
+        : t === "exempt"
+          ? "exempt"
+          : null;
+  const received = await pool.query(
+    `SELECT d.id, d.number, d.customer_name, d.customer_trn, d.emirate, d.vat_treatment,
+            d.net_amount, d.vat_amount, d.date::text AS d
+       FROM customer_deposits d
+       JOIN journal_entries je ON je.id = d.journal_entry_id AND je.company_id = d.company_id
+      WHERE d.company_id = $1 AND d.date >= $2::date AND d.date <= $3::date
+        AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL`,
+    [companyId, from, to]
+  );
+  for (const r of received.rows) {
+    const family = familyOf(r.vat_treatment);
+    const emirate = normaliseEmirate(r.emirate);
+    if (!family || (familyNeedsEmirate(family) && !emirate)) continue;
+    counts.customerDeposits = (counts.customerDeposits ?? 0) + 1;
+    push({
+      sourceType: "customer_deposit",
+      sourceId: r.id,
+      reference: r.number ?? null,
+      date: r.d,
+      counterparty: r.customer_name ?? null,
+      counterpartyTrn: r.customer_trn ?? null,
+      emirate: familyNeedsEmirate(family) ? emirate : null,
+      family,
+      boxes: salesDelta(family, emirate, fils(r.net_amount), fils(r.vat_amount)),
+      category: "customer_deposits",
+      inLedger: true,
+      ledgerSource: "customer_deposit",
+    });
+  }
+  const consumed = await pool.query(
+    `SELECT a.id, a.kind, a.amount, a.vat_amount, to_char(a.date, 'YYYY-MM-DD') AS d,
+            d.number, d.customer_name, d.customer_trn, d.emirate, d.vat_treatment
+       FROM customer_credit_allocations a
+       JOIN customer_credits c ON c.id = a.credit_id AND c.source_type = 'deposit'
+       JOIN customer_deposits d ON d.id = c.source_id AND d.company_id = a.company_id
+       JOIN journal_entries je ON je.id = a.journal_entry_id AND je.company_id = a.company_id
+      WHERE a.company_id = $1
+        AND (a.date + interval '4 hours')::date >= $2::date
+        AND (a.date + interval '4 hours')::date <= $3::date
+        AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL`,
+    [companyId, from, to]
+  );
+  for (const r of consumed.rows) {
+    const family = familyOf(r.vat_treatment);
+    const emirate = normaliseEmirate(r.emirate);
+    if (!family || (familyNeedsEmirate(family) && !emirate)) continue;
+    const vatFils = fils(r.vat_amount);
+    const netFils = fils(r.amount) - vatFils;
+    push({
+      sourceType: "customer_deposit_applied",
+      sourceId: r.id,
+      reference: r.number ?? null,
+      date: r.d,
+      counterparty: r.customer_name ?? null,
+      counterpartyTrn: r.customer_trn ?? null,
+      emirate: familyNeedsEmirate(family) ? emirate : null,
+      family,
+      boxes: salesDelta(family, emirate, -netFils, -vatFils),
+      category: "customer_deposits",
+      inLedger: true,
+      ledgerSource: "customer_deposit",
+      memo: r.kind === "refund" ? "Deposit refunded" : "Deposit applied to the final invoice",
+    });
+  }
+}
+
 // ─── Bad-debt relief, return adjustments ─────────────────────────────────
 
 async function collectBadDebtRelief(
@@ -1438,6 +1534,8 @@ async function collectLedger(
     let source = l.source || "manual";
     if (source === "reversal" && l.sourceId) source = originalSource.get(l.sourceId) ?? source;
     if (receiptEntries.has(l.entryId)) source = "receipt";
+    // Paying / receiving a filed return's VAT settles a prior period: not this period's tax.
+    if (source === VAT_SETTLEMENT_SOURCE) continue;
     const t = typeOf.get(l.accountId);
     const out = t === "output" ? l.credit - l.debit : 0;
     const inp = t === "input" ? l.debit - l.credit : 0;

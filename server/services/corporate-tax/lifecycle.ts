@@ -15,18 +15,32 @@
  *   self-review; the audit row records it).
  * - Filing optionally posts the CT provision (Dr tax expense / Cr CT payable)
  *   through server/ledger. Nothing here submits anything to the FTA.
+ * - A4 (M2, IAS 12.12): the current-tax liability is recognised at the
+ *   reporting date, before the return is filed: `accrueCtReturn` posts the
+ *   computed tax as a year-end accrual dated period end (source
+ *   `corporate_tax_accrual`; re-accruing reverses the previous accrual first).
+ *   Filing then posts only the true-up (filed tax - accrued tax), dated period
+ *   end while that period is open, else on the filing date as a prior-period
+ *   under/over-provision (IAS 8.36 change in estimate).
  */
 import type { Request } from "express";
 import { pool } from "../../db";
 import { DomainError } from "../../errors";
-import { defineMachine, assertTransition, postJournal, reverseBySource } from "../../ledger";
+import {
+  defineMachine,
+  assertTransition,
+  postJournal,
+  reverseBySource,
+  reverseEntry,
+} from "../../ledger";
 import { recordAudit } from "../audit.service";
 import { storage } from "../../storage";
 import { assertDifferentActor, companyHasSingleMember } from "../../middleware/companyRolePolicy";
 import type { CorporateTaxReturn } from "../../../shared/schema";
 import { computeReturnState, uaeIsoDate, type ComputeOverrides } from "./engine";
 import { ensureCtTagAccounts } from "./repository";
-import { assertPeriodNotLocked } from "../period-lock.service";
+import { assertPeriodNotLocked, isPeriodLocked } from "../period-lock.service";
+import { uaeToday } from "./deadlines";
 
 export const CT_RETURN_STATES = [
   "draft",
@@ -55,6 +69,8 @@ export const ctReturnMachine = defineMachine<CtReturnStatus>({
 export const CT_EDITABLE_STATUSES: readonly CtReturnStatus[] = ["draft", "computed"];
 
 export const CT_PROVISION_SOURCE = "corporate_tax";
+/** Year-end current-tax accrual posted before filing (A4, M2). */
+export const CT_ACCRUAL_SOURCE = "corporate_tax_accrual";
 
 export function assertEditable(ctReturn: Pick<CorporateTaxReturn, "status" | "id">): void {
   if (!(CT_EDITABLE_STATUSES as readonly string[]).includes(ctReturn.status)) {
@@ -78,6 +94,8 @@ function snapshot(r: CorporateTaxReturn) {
     filedBy: r.filedBy,
     reviewedBy: r.reviewedBy,
     provisionEntryId: r.provisionEntryId,
+    accrualEntryId: r.accrualEntryId ?? null,
+    accruedTax: r.accruedTax ?? 0,
   };
 }
 
@@ -158,6 +176,8 @@ export async function updateIfStatus(
     supersededById: "superseded_by_id",
     provisionEntryId: "provision_entry_id",
     provisionReversalEntryId: "provision_reversal_entry_id",
+    accrualEntryId: "accrual_entry_id",
+    accruedTax: "accrued_tax",
   };
   const sets: string[] = [];
   const values: unknown[] = [id, companyId, from as unknown as string[]];
@@ -215,6 +235,143 @@ export interface TransitionInput {
   note?: string;
 }
 
+const toFilsAed = (v: unknown) => Math.round((Number(v) || 0) * 100);
+
+async function ctProvisionAccounts(companyId: string) {
+  const accounts = await ensureCtTagAccounts(companyId, [
+    "corporate_tax_expense",
+    "corporate_tax_payable",
+  ]);
+  const expense = accounts.get("corporate_tax_expense");
+  const payable = accounts.get("corporate_tax_payable");
+  if (!expense || !payable) throw new DomainError("CT_PROVISION_ACCOUNTS_MISSING", 500);
+  return { expense, payable };
+}
+
+/** Dr/Cr lines moving `fils` (signed: + more tax) between tax expense and CT payable. */
+function provisionLines(expenseId: string, payableId: string, fils: number, what: string) {
+  return fils >= 0
+    ? [
+        { accountId: expenseId, debitFils: fils, description: `Corporate tax expense${what}` },
+        { accountId: payableId, creditFils: fils, description: `Corporate tax payable${what}` },
+      ]
+    : [
+        { accountId: payableId, debitFils: -fils, description: `Corporate tax payable${what}` },
+        { accountId: expenseId, creditFils: -fils, description: `Corporate tax expense${what}` },
+      ];
+}
+
+/**
+ * A4 (M2): filing against a year-end accrual posts only the difference. Dated period end while
+ * that period is open; once it is locked, on the filing date (prior-period under/over-provision).
+ */
+async function postProvisionTrueUp(
+  ctReturn: CorporateTaxReturn,
+  userId: string,
+  filedOn: string,
+  req?: Request
+): Promise<string | null> {
+  const delta = toFilsAed(ctReturn.taxPayable) - toFilsAed(ctReturn.accruedTax);
+  if (delta === 0) return null;
+  const { expense, payable } = await ctProvisionAccounts(ctReturn.companyId);
+  const periodEnd = uaeIsoDate(ctReturn.taxPeriodEnd);
+  const date = (await isPeriodLocked(ctReturn.companyId, periodEnd)) ? filedOn : periodEnd;
+  const unfiled = await pool.query(
+    `SELECT count(*)::int AS n FROM audit_logs
+      WHERE company_id = $1 AND resource_id = $2 AND action = 'corporate_tax_return.unfiled'`,
+    [ctReturn.companyId, ctReturn.id]
+  );
+  const refile = Number(unfiled.rows[0]?.n ?? 0);
+  const what = delta > 0 ? " - under-provision on filing" : " - over-provision on filing";
+  const result = await postJournal(
+    {
+      companyId: ctReturn.companyId,
+      date,
+      memo: `Corporate tax true-up on filing ${uaeIsoDate(ctReturn.taxPeriodStart)} to ${periodEnd}`,
+      source: CT_PROVISION_SOURCE,
+      sourceId: ctReturn.id,
+      idempotencyKey: `ct-return:${ctReturn.id}:trueup${refile > 0 ? `:refile-${refile}` : ""}`,
+      status: "posted",
+      lines: provisionLines(expense.id, payable.id, delta, what),
+    },
+    { actorId: userId, req, audit: true }
+  );
+  return result.entry.id;
+}
+
+/**
+ * A4 (M2, IAS 12.12): accrue the computed current tax at the reporting date, before filing.
+ * Dr corporate tax expense / Cr corporate tax payable, dated period end. Re-accruing after the
+ * figures changed reverses the previous accrual and posts the new amount; an unchanged amount is
+ * a no-op. Filing later posts only the true-up.
+ */
+export async function accrueCtReturn(
+  ctReturn: CorporateTaxReturn,
+  userId: string,
+  req?: Request
+): Promise<{ return: CorporateTaxReturn; changed: boolean; entryId: string | null }> {
+  if (!["computed", "reviewed"].includes(ctReturn.status)) {
+    throw new DomainError(
+      "CT_ACCRUAL_NOT_ALLOWED",
+      409,
+      { status: ctReturn.status },
+      ctReturn.status === "draft"
+        ? "Compute the return before accruing the tax"
+        : "A filed return is settled by its filing; amend it to change the tax"
+    );
+  }
+  const taxFils = toFilsAed(ctReturn.taxPayable);
+  const accruedFils = toFilsAed(ctReturn.accruedTax);
+  if (taxFils === accruedFils && (taxFils === 0 || ctReturn.accrualEntryId)) {
+    return { return: ctReturn, changed: false, entryId: ctReturn.accrualEntryId ?? null };
+  }
+  const periodEnd = uaeIsoDate(ctReturn.taxPeriodEnd);
+  await assertPeriodNotLocked(ctReturn.companyId, periodEnd);
+  let reversalId: string | null = null;
+  if (ctReturn.accrualEntryId) {
+    const rev = await reverseEntry(
+      ctReturn.accrualEntryId,
+      { date: periodEnd, reason: "Corporate tax accrual replaced after recomputation" },
+      { actorId: userId, req, companyId: ctReturn.companyId }
+    );
+    reversalId = rev.reversal.id;
+  }
+  let entryId: string | null = null;
+  if (taxFils > 0) {
+    const { expense, payable } = await ctProvisionAccounts(ctReturn.companyId);
+    const seq = await pool.query(
+      `SELECT count(*)::int AS n FROM journal_entries
+        WHERE company_id = $1 AND source = $2 AND source_id = $3`,
+      [ctReturn.companyId, CT_ACCRUAL_SOURCE, ctReturn.id]
+    );
+    const result = await postJournal(
+      {
+        companyId: ctReturn.companyId,
+        date: periodEnd,
+        memo: `Corporate tax accrual (year end) ${uaeIsoDate(ctReturn.taxPeriodStart)} to ${periodEnd}`,
+        source: CT_ACCRUAL_SOURCE,
+        sourceId: ctReturn.id,
+        idempotencyKey: `ct-return:${ctReturn.id}:accrual:${Number(seq.rows[0]?.n ?? 0) + 1}`,
+        status: "posted",
+        lines: provisionLines(expense.id, payable.id, taxFils, " - year-end accrual"),
+      },
+      { actorId: userId, req, audit: true }
+    );
+    entryId = result.entry.id;
+  }
+  await pool.query(
+    `UPDATE corporate_tax_returns SET accrual_entry_id = $2, accrued_tax = $3, updated_at = now()
+      WHERE id = $1`,
+    [ctReturn.id, entryId, (taxFils / 100).toFixed(2)]
+  );
+  const updated = (await storage.getCorporateTaxReturn(ctReturn.id))!;
+  await audit("accrued", userId, ctReturn, updated, req, {
+    accrualEntryId: entryId,
+    replacedAccrualReversalId: reversalId,
+  });
+  return { return: updated, changed: true, entryId };
+}
+
 async function postProvision(
   ctReturn: CorporateTaxReturn,
   userId: string,
@@ -222,13 +379,7 @@ async function postProvision(
 ): Promise<string | null> {
   const fils = Math.round((Number(ctReturn.taxPayable) || 0) * 100);
   if (fils <= 0) return null;
-  const accounts = await ensureCtTagAccounts(ctReturn.companyId, [
-    "corporate_tax_expense",
-    "corporate_tax_payable",
-  ]);
-  const expense = accounts.get("corporate_tax_expense");
-  const payable = accounts.get("corporate_tax_payable");
-  if (!expense || !payable) throw new DomainError("CT_PROVISION_ACCOUNTS_MISSING", 500);
+  const { expense, payable } = await ctProvisionAccounts(ctReturn.companyId);
   const periodEnd = uaeIsoDate(ctReturn.taxPeriodEnd);
   // A return marked not filed had its provision reversed; re-filing posts a fresh one.
   const unfiled = await pool.query(
@@ -305,8 +456,11 @@ export async function transitionCtReturn(
       }
       // The provision is a ledger posting dated period end: check the period lock BEFORE the
       // status changes, so a locked period never leaves a return "filed" without its provision.
-      // A soft lock passes with an audited X-Period-Lock-Reason.
-      if (input.postProvision && (Number(ctReturn.taxPayable) || 0) > 0) {
+      // A soft lock passes with an audited X-Period-Lock-Reason. With a year-end accrual (A4)
+      // only the true-up posts, on the filing date when the period is locked.
+      const hasAccrual = !!ctReturn.accrualEntryId || toFilsAed(ctReturn.accruedTax) !== 0;
+      const filedOn = input.filedOn ?? uaeToday();
+      if (!hasAccrual && input.postProvision && (Number(ctReturn.taxPayable) || 0) > 0) {
         await assertPeriodNotLocked(ctReturn.companyId, uaeIsoDate(ctReturn.taxPeriodEnd));
       }
       updated = await updateIfStatus(ctReturn.id, ctReturn.companyId, from, {
@@ -316,7 +470,9 @@ export async function transitionCtReturn(
         filingReference: reference,
       });
       if (input.postProvision) {
-        const entryId = await postProvision(updated, userId, req);
+        const entryId = hasAccrual
+          ? await postProvisionTrueUp(updated, userId, filedOn, req)
+          : await postProvision(updated, userId, req);
         if (entryId) {
           await pool.query(
             `UPDATE corporate_tax_returns SET provision_entry_id = $2 WHERE id = $1`,
@@ -329,9 +485,25 @@ export async function transitionCtReturn(
       extra.manualFiling = "Recorded as filed in EmaraTax by the user; Muhasib does not submit.";
       break;
     }
-    case "paid":
+    case "paid": {
+      updated = await updateIfStatus(ctReturn.id, ctReturn.companyId, from, { status: input.to });
+      break;
+    }
     case "void": {
       updated = await updateIfStatus(ctReturn.id, ctReturn.companyId, from, { status: input.to });
+      // A voided return no longer supports its year-end accrual (A4).
+      if (ctReturn.accrualEntryId) {
+        try {
+          const rev = await reverseEntry(
+            ctReturn.accrualEntryId,
+            { reason: "Corporate tax return voided" },
+            { actorId: userId, req, companyId: ctReturn.companyId }
+          );
+          extra.accrualReversalEntryId = rev.reversal.id;
+        } catch (err) {
+          if ((err as { code?: string }).code !== "ALREADY_REVERSED") throw err;
+        }
+      }
       break;
     }
     default:
@@ -405,11 +577,12 @@ export async function amendCtReturn(
         total_deductions, taxable_income, exemption_threshold, tax_rate, tax_payable,
         loss_brought_forward, loss_carried_forward, small_business_relief, related_party_notes,
         status, workpaper, notes, prepared_by, amends_return_id, amendment_number,
-        interest_carried_forward)
+        interest_carried_forward, accrual_entry_id, accrued_tax)
      SELECT company_id, tax_period_start, tax_period_end, total_revenue, total_expenses,
             total_deductions, taxable_income, exemption_threshold, tax_rate, tax_payable,
             loss_brought_forward, loss_carried_forward, small_business_relief, related_party_notes,
-            'draft', workpaper, notes, $2, id, amendment_number + 1, interest_carried_forward
+            'draft', workpaper, notes, $2, id, amendment_number + 1, interest_carried_forward,
+            accrual_entry_id, accrued_tax
        FROM corporate_tax_returns WHERE id = $1 AND company_id = $3
      RETURNING id`,
     [original.id, userId, original.companyId]

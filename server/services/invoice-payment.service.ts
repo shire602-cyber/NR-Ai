@@ -50,6 +50,11 @@ import {
   toBase,
 } from "./invoice-posting.service";
 import { isTerminal } from "./invoice-state-machine";
+import {
+  CUSTOMER_DEPOSIT_SOURCE,
+  depositConsumptionLines,
+  syncDepositStatus,
+} from "./customer-deposits.service";
 import { getRate } from "./fx/rates";
 import {
   ALLOWANCE_FOR_DOUBTFUL_DEBTS_CODE,
@@ -447,19 +452,35 @@ export async function applyCustomerCredit(args: {
     const foreign = credit.currency.toUpperCase() !== baseCurrency;
     const fxAcc = liabBase !== arBase ? await getFxAccounts(tx, args.companyId) : null;
     const label = `Credit applied to ${invoice.number}`;
+    // A4 (M1): a customer deposit carried VAT on receipt; applying it to the invoice (which
+    // charges VAT in full) reverses that share from 2020 so the supply's VAT is declared once.
+    const isDeposit = credit.sourceType === "deposit";
+    const deposit = isDeposit
+      ? await depositConsumptionLines(
+          tx,
+          credit,
+          args.amountFils,
+          `Deposit applied to ${invoice.number}`,
+          args.date
+        )
+      : null;
     const lines: PostJournalLineInput[] = [
-      {
-        accountId: credit.liabilityAccountId,
-        debitFils: liabBase,
-        description: label,
-        ...(foreign
-          ? {
-              foreignCurrency: credit.currency,
-              foreignDebit: fromFils(args.amountFils),
-              exchangeRate: creditRate,
-            }
-          : {}),
-      },
+      ...(deposit
+        ? deposit.lines
+        : [
+            {
+              accountId: credit.liabilityAccountId,
+              debitFils: liabBase,
+              description: label,
+              ...(foreign
+                ? {
+                    foreignCurrency: credit.currency,
+                    foreignDebit: fromFils(args.amountFils),
+                    exchangeRate: creditRate,
+                  }
+                : {}),
+            },
+          ]),
       {
         accountId: ar,
         creditFils: arBase,
@@ -485,6 +506,7 @@ export async function applyCustomerCredit(args: {
         amount: Number(fromFils(args.amountFils)),
         date: new Date(`${args.date}T00:00:00.000Z`),
         exchangeRate: Number(invRate),
+        vatAmount: deposit ? Number(fromFils(deposit.vatFils)) : null,
         createdBy: args.userId,
       })
       .returning();
@@ -492,9 +514,9 @@ export async function applyCustomerCredit(args: {
       {
         companyId: args.companyId,
         date: args.date,
-        memo: label,
+        memo: isDeposit ? `Deposit ${deposit!.deposit.number} applied to ${invoice.number}` : label,
         status: "posted",
-        source: "customer_credit",
+        source: isDeposit ? CUSTOMER_DEPOSIT_SOURCE : "customer_credit",
         sourceId: alloc.id,
         idempotencyKey: `customer_credit:${alloc.id}:apply`,
         lines,
@@ -506,6 +528,7 @@ export async function applyCustomerCredit(args: {
       .set({ journalEntryId: entry.id })
       .where(eq(customerCreditAllocations.id, alloc.id));
     await reduceCredit(tx, credit, args.amountFils);
+    if (isDeposit) await syncDepositStatus(tx, credit);
     const updated = await refreshSettlementStatus(tx, invoice.id);
     return { allocationId: alloc.id, journalEntryId: entry.id, invoice: updated as Invoice };
   });
@@ -561,20 +584,31 @@ export async function refundCustomerCredit(args: {
     });
     const cashBase = leg.cashBaseFils;
     const fxAcc = liabBase !== cashBase ? await getFxAccounts(tx, args.companyId) : null;
-    const label = `Refund of customer credit (${credit.customerName})`;
+    const isDeposit = credit.sourceType === "deposit";
+    const label = isDeposit
+      ? `Refund of customer deposit (${credit.customerName})`
+      : `Refund of customer credit (${credit.customerName})`;
+    // A4 (M1): refunding an advance reverses its share of the VAT declared on receipt.
+    const deposit = isDeposit
+      ? await depositConsumptionLines(tx, credit, args.amountFils, label, args.date)
+      : null;
     const lines: PostJournalLineInput[] = [
-      {
-        accountId: credit.liabilityAccountId,
-        debitFils: liabBase,
-        description: label,
-        ...(foreign
-          ? {
-              foreignCurrency: credit.currency,
-              foreignDebit: fromFils(args.amountFils),
-              exchangeRate: creditRate,
-            }
-          : {}),
-      },
+      ...(deposit
+        ? deposit.lines
+        : [
+            {
+              accountId: credit.liabilityAccountId,
+              debitFils: liabBase,
+              description: label,
+              ...(foreign
+                ? {
+                    foreignCurrency: credit.currency,
+                    foreignDebit: fromFils(args.amountFils),
+                    exchangeRate: creditRate,
+                  }
+                : {}),
+            },
+          ]),
       {
         accountId: args.paymentAccountId,
         creditFils: cashBase,
@@ -601,6 +635,7 @@ export async function refundCustomerCredit(args: {
         date: new Date(`${args.date}T00:00:00.000Z`),
         exchangeRate: Number(refundRate),
         reference: args.reference ?? null,
+        vatAmount: deposit ? Number(fromFils(deposit.vatFils)) : null,
         createdBy: args.userId,
       })
       .returning();
@@ -610,7 +645,7 @@ export async function refundCustomerCredit(args: {
         date: args.date,
         memo: label,
         status: "posted",
-        source: "customer_credit",
+        source: isDeposit ? CUSTOMER_DEPOSIT_SOURCE : "customer_credit",
         sourceId: alloc.id,
         idempotencyKey: `customer_credit:${alloc.id}:refund`,
         lines,
@@ -622,6 +657,7 @@ export async function refundCustomerCredit(args: {
       .set({ journalEntryId: entry.id })
       .where(eq(customerCreditAllocations.id, alloc.id));
     await reduceCredit(tx, credit, args.amountFils);
+    if (isDeposit) await syncDepositStatus(tx, credit);
     return { allocationId: alloc.id, journalEntryId: entry.id };
   });
 }

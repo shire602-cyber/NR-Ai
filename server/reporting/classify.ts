@@ -29,7 +29,7 @@ const COST_OF_SALES_SUBTYPES = new Set([
  * account with an income-tax sub_type. Presented after profit before tax (IAS 1.82(d), IAS 12.77),
  * never inside operating expenses.
  */
-export const INCOME_TAX_CODES = new Set(["5200"]);
+export const INCOME_TAX_CODES = new Set(["5200", "5210"]);
 const INCOME_TAX_SUBTYPES = new Set([
   "income_tax",
   "corporate_tax",
@@ -153,8 +153,30 @@ export function isContraAsset(a: Pick<ReportAccount, "type" | "code" | "nameEn">
 
 export type CashFlowActivity = "operating" | "investing" | "financing";
 
+/**
+ * Non-current balances whose movement is a non-cash part of operating profit, not an investing
+ * or financing flow: deferred tax assets / liabilities (1270 / 2260, the deferred part of income
+ * tax: IAS 12.58, taxes are operating unless specifically identified, IAS 7.35) and the
+ * end-of-service gratuity provision (2036, an employee benefit accrued through payroll cost,
+ * non-current since A3 H10).
+ */
+export const OPERATING_NON_CURRENT_CODES = new Set(["1270", "2260", "2036"]);
+
+export function isOperatingNonCurrent(
+  a: Pick<ReportAccount, "type" | "subType" | "code" | "nameEn">
+): boolean {
+  if (a.type !== "asset" && a.type !== "liability") return false;
+  return (
+    OPERATING_NON_CURRENT_CODES.has(a.code) ||
+    (a.subType ?? "").toLowerCase() === "deferred_tax" ||
+    /deferred tax (asset|liabilit)/i.test(a.nameEn) ||
+    /end[- ]of[- ]service|gratuity/i.test(a.nameEn)
+  );
+}
+
 /** Activity for the indirect method's balance-change adjustments. */
 export function indirectActivity(a: ReportAccount): CashFlowActivity {
+  if (isOperatingNonCurrent(a)) return "operating";
   if (a.type === "equity") return "financing";
   if (a.type === "liability") return isNonCurrent(a) ? "financing" : "operating";
   if (a.type === "asset") return isNonCurrent(a) ? "investing" : "operating";

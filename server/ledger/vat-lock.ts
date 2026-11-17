@@ -31,6 +31,7 @@ export const VAT_DOCUMENT_SOURCES: ReadonlySet<string> = new Set([
   "receipt",
   "vat_bad_debt_relief",
   "vat_partial_exemption",
+  "customer_deposit",
 ]);
 
 /**

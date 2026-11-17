@@ -44,6 +44,7 @@ import {
   isContraAsset,
   isGratuityProvisionAccount,
   isNonCurrent,
+  isOperatingNonCurrent,
   isRetainedEarningsAccount,
   isRevaluationReserveAccount,
   plSection,
@@ -768,7 +769,8 @@ async function indirectBuckets(
 ): Promise<CashFlowBuckets> {
   const buckets = emptyBuckets();
   addTo(buckets.operating, NET_INCOME_LINE_ID, netIncome, "net_income");
-  const isPpe = (a: ReportAccount) => a.type === "asset" && !cashIds.has(a.id) && isNonCurrent(a);
+  const isPpe = (a: ReportAccount) =>
+    a.type === "asset" && !cashIds.has(a.id) && isNonCurrent(a) && !isOperatingNonCurrent(a);
   const ppeIds = accounts.filter(isPpe).map((a) => a.id);
   const adj = await cashFlowAdjustments(companyId, range, ppeIds, Array.from(cashIds), q);
 
@@ -966,7 +968,7 @@ export async function cashFlow(
       const act: CashFlowActivity =
         !cp || cp.type === "income" || cp.type === "expense"
           ? "operating"
-          : cp.type === "asset" && isNonCurrent(cp)
+          : cp.type === "asset" && isNonCurrent(cp) && !isOperatingNonCurrent(cp)
             ? "investing"
             : indirectActivity(cp);
       const key = cp?.id ?? "unclassified";

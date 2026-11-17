@@ -142,6 +142,18 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     isSystemAccount: false,
   },
   {
+    // L2: cars and vans get their own class (IAS 16.37 class disclosure).
+    code: "1250",
+    nameEn: "Motor Vehicles",
+    nameAr: "المركبات",
+    description: "Company cars, vans and other motor vehicles",
+    type: "asset",
+    subType: "fixed_asset",
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: false,
+  },
+  {
     code: "1240",
     nameEn: "Accumulated Depreciation",
     nameAr: "الاستهلاك المتراكم",
@@ -272,7 +284,20 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
     code: "2050",
     nameEn: "Deferred Revenue",
     nameAr: "الإيرادات المؤجلة",
-    description: "Payments received before goods/services delivered",
+    description:
+      "Contract liabilities: customer deposits and advances received before goods/services are delivered",
+    type: "liability",
+    subType: "current_liability",
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: false,
+  },
+  {
+    // L5: overpayments and credit-note credits owed back to customers (not deferred revenue).
+    code: "2055",
+    nameEn: "Customer Credit Balances",
+    nameAr: "أرصدة دائنة للعملاء",
+    description: "Overpayments and credit notes owed to customers (applied or refunded)",
     type: "liability",
     subType: "current_liability",
     isVatAccount: false,

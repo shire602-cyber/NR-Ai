@@ -36,6 +36,8 @@ export interface Employee {
   transport_allowance: string;
   other_allowance: string;
   opening_gratuity_provision?: string | null;
+  opening_gratuity_as_of?: string | null;
+  pension_scheme?: string | null;
   total_salary: string;
   status: string;
   archived_at: string | null;

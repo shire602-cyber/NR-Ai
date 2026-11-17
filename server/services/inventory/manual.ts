@@ -374,6 +374,95 @@ export async function writeDownStock(
   };
 }
 
+/**
+ * L8 (A4, IAS 2.33-34): reverse an earlier NRV write-down when net realisable value recovers.
+ * Limited to the write-downs of this product not yet reversed (never above original cost) and
+ * to stock still on hand. Dr 1070 Inventory / Cr 5007 (reduces the inventory expense).
+ */
+export async function reverseWriteDown(
+  tx: LedgerTx,
+  args: {
+    companyId: string;
+    productId: string;
+    amountFils: number;
+    date: string;
+    reason: string;
+    actorId: string;
+  }
+): Promise<ManualMovementResult & { reversibleFils: number }> {
+  if (!Number.isSafeInteger(args.amountFils) || args.amountFils <= 0) {
+    throw new DomainError("INVALID_AMOUNT", 422, { amount: args.amountFils });
+  }
+  await lockProduct(tx, args.companyId, args.productId);
+  const [sums] = await q<{ down: string; up: string; qty: string }>(
+    tx,
+    sql`SELECT
+          COALESCE(-SUM(total_cost) FILTER (WHERE source_type = 'write_down'
+                     AND reversed_by_movement_id IS NULL), 0)::text AS down,
+          COALESCE(SUM(total_cost) FILTER (WHERE source_type = 'write_down_reversal'
+                     AND reversed_by_movement_id IS NULL), 0)::text AS up,
+          (SELECT COALESCE(current_stock, 0) FROM products WHERE id = ${args.productId})::text AS qty
+        FROM inventory_movements
+       WHERE company_id = ${args.companyId} AND product_id = ${args.productId}`
+  );
+  const reversibleFils =
+    Math.round(Number(sums?.down ?? 0) * 100) - Math.round(Number(sums?.up ?? 0) * 100);
+  if (!(Number(sums?.qty ?? 0) > 0)) {
+    throw new DomainError(
+      "NO_STOCK_ON_HAND",
+      422,
+      undefined,
+      "There is no stock on hand to reverse a write-down against"
+    );
+  }
+  if (args.amountFils > reversibleFils) {
+    throw new DomainError(
+      "WRITE_DOWN_REVERSAL_EXCEEDS",
+      422,
+      { reversible: reversibleFils / 100 },
+      `Only AED ${(reversibleFils / 100).toFixed(2)} of earlier write-downs can be reversed`
+    );
+  }
+  const r = await revalueStock(tx, args.productId, args.amountFils, {
+    companyId: args.companyId,
+    actorId: args.actorId,
+    date: args.date,
+    sourceType: "write_down_reversal",
+    reference: "Inventory write-down reversal",
+    notes: args.reason,
+  });
+  const expense = await ensureAccountByCode(tx, args.companyId, INVENTORY_CODES.ADJUSTMENTS);
+  const entryId = await postInventoryJournal(tx, {
+    companyId: args.companyId,
+    date: args.date,
+    memo: `Inventory write-down reversal - ${r.product.sku ?? r.product.name}: ${args.reason}`,
+    source: "inventory",
+    sourceId: r.movementId,
+    idempotencyKey: `inventory:movement:${r.movementId}`,
+    lines: [
+      {
+        accountId: r.accounts.inventory,
+        fils: args.amountFils,
+        description: "Write-down reversal",
+      },
+      {
+        accountId: expense,
+        fils: -args.amountFils,
+        description: `Write-down reversal - ${args.reason}`,
+      },
+    ],
+    actorId: args.actorId,
+  });
+  if (entryId) await linkMovementsToEntry(tx, [r.movementId], entryId);
+  return {
+    movementId: r.movementId,
+    newStock: r.newQty,
+    journalEntryId: entryId,
+    valueFils: args.amountFils,
+    reversibleFils: reversibleFils - args.amountFils,
+  };
+}
+
 // ─── Stocktakes ─────────────────────────────────────────────────────────────
 
 export async function createStocktake(

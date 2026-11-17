@@ -13,6 +13,9 @@ import { inputEffect, outputEffect, type BoxDelta, type Vat201Fils } from "./vat
 
 export type ReconCategory = string;
 
+/** Journal source of a filed return's payment / refund (server/tax/vat-settlement.service.ts). */
+export const VAT_SETTLEMENT_SOURCE = "vat_return_settlement";
+
 export function categoryForSource(source: string | null | undefined): ReconCategory {
   switch (source) {
     case "invoice":
@@ -29,6 +32,8 @@ export function categoryForSource(source: string | null | undefined): ReconCateg
       return "fixed_asset_disposals";
     case "vat_partial_exemption":
       return "partial_exemption";
+    case "customer_deposit":
+      return "customer_deposits";
     default:
       return `journal:${source || "manual"}`;
   }
@@ -73,6 +78,7 @@ const LABELS: Record<string, string> = {
   bad_debt_relief: "Bad-debt relief claims",
   fixed_asset_disposals: "Fixed-asset acquisitions (input VAT) and disposals",
   partial_exemption: "Partial-exemption irrecoverable input VAT (Art. 55), posted as a cost",
+  customer_deposits: "Customer deposits and advances (VAT on receipt)",
   return_adjustments: "Return adjustments: tourist refunds, imports, corrections (not posted)",
 };
 

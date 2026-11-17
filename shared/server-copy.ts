@@ -615,6 +615,14 @@ export const MONTH_END_TEMPLATES: readonly CopyTemplate[] = [
   T("monthEnd.fx.postedOne", "1 revaluation entry posted"),
   T("monthEnd.fx.posted", "{n} revaluation entries posted"),
   T("monthEnd.fx.missing", "{n} account(s) hold foreign-currency balances; run the revaluation"),
+  T("monthEnd.controls.title", "Control Accounts Reconciled"),
+  T(
+    "monthEnd.controls.description",
+    "Receivables, payables, VAT and payroll control accounts equal their sub-ledgers"
+  ),
+  T("monthEnd.controls.none", "No control-account activity in this period"),
+  T("monthEnd.controls.tied", "{n} control account(s) tie to their sub-ledgers"),
+  T("monthEnd.controls.differences", "{n} control account(s) differ from their sub-ledger: {list}"),
   T("monthEnd.closeMemo", "Computed close for {start} to {end}"),
   T(
     "monthEnd.closeMessage",

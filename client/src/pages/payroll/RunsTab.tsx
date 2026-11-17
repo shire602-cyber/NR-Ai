@@ -48,7 +48,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
@@ -120,6 +120,12 @@ export function RunsTab({ companyId }: { companyId: string }) {
   const [reason, setReason] = useState("");
   const runGate = useFormGate([{ id: "run-year", label: tx("hr.year"), invalid: !year.trim() }]);
   const [issues, setIssues] = useState<SifIssue[] | null>(null);
+  // A4 (M10): the first run asks for each long-serving employee's opening gratuity provision.
+  const [gratuityGap, setGratuityGap] = useState<{
+    runId: string;
+    asOf: string;
+    employees: Array<{ employeeId: string; fullName: string; joinDate: string; amount: string }>;
+  } | null>(null);
 
   const run = runs.find((r) => r.id === viewing) ?? null;
   const refresh = () => {
@@ -138,6 +144,45 @@ export function RunsTab({ companyId }: { companyId: string }) {
       toast({ title: tx(`hr.done.${v.path}`) });
       setPayRun(null);
       setReverseRun(null);
+    },
+    onError: (err: unknown, v) => {
+      const body = err instanceof ApiError ? err.body : undefined;
+      if (body?.code === "OPENING_GRATUITY_REQUIRED") {
+        const d = body.details as {
+          asOf: string;
+          employees: Array<{
+            employeeId: string;
+            fullName: string;
+            joinDate: string;
+            suggestedOpeningProvision: string;
+          }>;
+        };
+        setGratuityGap({
+          runId: v.id,
+          asOf: d.asOf,
+          employees: d.employees.map((e) => ({ ...e, amount: e.suggestedOpeningProvision })),
+        });
+        return;
+      }
+      fail(err);
+    },
+  });
+
+  const saveOpening = useMutation({
+    mutationFn: async () => {
+      for (const e of gratuityGap!.employees) {
+        await apiRequest("PATCH", `/api/employees/${e.employeeId}`, {
+          openingGratuityProvision: e.amount,
+          openingGratuityAsOf: gratuityGap!.asOf,
+        });
+      }
+      return apiRequest("POST", `/api/payroll-runs/${gratuityGap!.runId}/calculate`, {});
+    },
+    onSuccess: () => {
+      refresh();
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
+      setGratuityGap(null);
+      toast({ title: tx("hr.done.calculate") });
     },
     onError: fail,
   });
@@ -500,6 +545,74 @@ export function RunsTab({ companyId }: { companyId: string }) {
               </Button>
               <Button type="submit" variant="destructive" disabled={!reason || action.isPending}>
                 {tx("hr.confirm")}
+              </Button>
+            </FormActions>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!gratuityGap} onOpenChange={(o) => !o && setGratuityGap(null)}>
+        <DialogContent size="lg" data-testid="dialog-opening-gratuity">
+          <DialogHeader>
+            <DialogTitle>{tx("hr.openingGratuity.title")}</DialogTitle>
+            <DialogDescription>
+              {tx("hr.openingGratuity.hint", { date: gratuityGap?.asOf ?? "" })}
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!saveOpening.isPending) saveOpening.mutate();
+            }}
+          >
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{tx("hr.field.fullName")}</TableHead>
+                    <TableHead>{tx("hr.field.joinDate")}</TableHead>
+                    <TableHead data-numeric>{tx("hr.openingGratuity.amount")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(gratuityGap?.employees ?? []).map((e, i) => (
+                    <TableRow key={e.employeeId}>
+                      <TableCell className="font-medium">{e.fullName}</TableCell>
+                      <TableCell dir="ltr">{e.joinDate}</TableCell>
+                      <TableCell data-numeric>
+                        <Input
+                          aria-label={tx("hr.openingGratuity.amount")}
+                          inputMode="decimal"
+                          dir="ltr"
+                          className="ms-auto max-w-40"
+                          value={e.amount}
+                          onChange={(ev) =>
+                            setGratuityGap((g) =>
+                              g
+                                ? {
+                                    ...g,
+                                    employees: g.employees.map((x, j) =>
+                                      j === i ? { ...x, amount: ev.target.value } : x
+                                    ),
+                                  }
+                                : g
+                            )
+                          }
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <p className="text-xs text-muted-foreground">{tx("hr.openingGratuity.ledgerNote")}</p>
+            <FormActions>
+              <Button type="button" variant="outline" onClick={() => setGratuityGap(null)}>
+                {tx("hr.cancel")}
+              </Button>
+              <Button type="submit" disabled={saveOpening.isPending}>
+                {tx("hr.openingGratuity.save")}
               </Button>
             </FormActions>
           </form>

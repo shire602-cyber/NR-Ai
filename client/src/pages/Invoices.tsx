@@ -98,6 +98,7 @@ import { EInvoiceHeaderStrip } from "@/components/einvoice/EInvoiceHeaderStrip";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
+import { CustomerDepositsDialog } from "./invoices/CustomerDepositsDialog";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
 import {
   downloadServerFile,
@@ -110,6 +111,7 @@ import { WriteOffInvoiceDialog } from "@/components/invoices/WriteOffInvoiceDial
 import { evidenceSourceHref } from "@/lib/evidenceLinks";
 import {
   Plus,
+  Wallet,
   FileText,
   FileCode,
   CalendarIcon,
@@ -284,6 +286,7 @@ export default function Invoices() {
   const vatRegistered = isVatRegisteredCompany(company);
   const blankLine = useCallback(() => blankInvoiceLine(vatRegistered), [vatRegistered]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [depositsOpen, setDepositsOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   // R18-07: a freshly saved invoice is a draft; offer to issue it right away.
   const [draftNudge, setDraftNudge] = useState<{ id: string; number: string } | null>(null);
@@ -1253,6 +1256,15 @@ export default function Invoices() {
               </DropdownMenuContent>
             </DropdownMenu>
             <Button
+              variant="outline"
+              onClick={() => setDepositsOpen(true)}
+              data-testid="button-customer-deposits"
+              {...gate("ledger.post")}
+            >
+              <Wallet className="h-4 w-4" aria-hidden />
+              <span className="hidden sm:inline">{t["invoices.deposits.open"]}</span>
+            </Button>
+            <Button
               onClick={() => setDialogOpen(true)}
               data-testid="button-create-invoice"
               {...gate("documents.write")}
@@ -1263,6 +1275,14 @@ export default function Invoices() {
           </>
         }
       />
+
+      {selectedCompanyId && (
+        <CustomerDepositsDialog
+          companyId={selectedCompanyId}
+          open={depositsOpen}
+          onOpenChange={setDepositsOpen}
+        />
+      )}
 
       <AlertDialog
         open={invoicePendingDelete !== null}

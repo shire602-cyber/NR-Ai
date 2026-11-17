@@ -52,7 +52,11 @@ import {
   type PostJournalLineInput,
 } from "../ledger";
 import { normalizeEntry, parseLedgerDate, todayIso } from "../ledger/normalize";
-import { registerLedgerJobs, runJournalTemplate } from "../ledger/templates";
+import {
+  registerLedgerJobs,
+  reverseIfAutoReverseDue,
+  runJournalTemplate,
+} from "../ledger/templates";
 import {
   MANUAL_SOURCES,
   assertManualControlPosting,
@@ -341,6 +345,8 @@ export function registerJournalRoutes(app: Express) {
       if (pendingApproval && !result.replayed) {
         entry = await submitForApproval(entry.id, { actorId: userId, companyId });
       }
+      // L8: a back-dated accrual whose reversal date has passed reverses now.
+      if (entry.status === "posted") await reverseIfAutoReverseDue(entry.id, userId);
       res.status(pendingApproval ? 202 : 200).json({
         id: entry.id,
         entryNumber: entry.entryNumber,
@@ -505,6 +511,7 @@ export function registerJournalRoutes(app: Express) {
         result = await postDraft(entry.id, ctx, {
           approvalThresholdFils: await approvalThresholdFils(entry.companyId),
         });
+        await reverseIfAutoReverseDue(result.entry.id, userId);
       }
       log.info({ id: entry.id }, "Draft journal entry updated");
       res.json({
@@ -525,6 +532,7 @@ export function registerJournalRoutes(app: Express) {
       const result = await postDraft(entry.id, ctx, {
         approvalThresholdFils: await approvalThresholdFils(entry.companyId),
       });
+      await reverseIfAutoReverseDue(result.entry.id, userId);
       return res.json({
         id: result.entry.id,
         status: "posted",
@@ -573,6 +581,7 @@ export function registerJournalRoutes(app: Express) {
         // Threshold 0 forces the approval stamp for any non-zero entry.
         { approvalThresholdFils: 0 }
       );
+      await reverseIfAutoReverseDue(result.entry.id, userId);
       res.json({
         id: result.entry.id,
         status: result.entry.status,

@@ -14,7 +14,7 @@ import { createLogger } from "../../config/logger";
 import { fromFils } from "../../../shared/money";
 import { pensionContribution, utcDate, addDays, isoDay } from "./calc";
 import { loadPayrollSettings } from "./context";
-import { pensionCountry } from "./legal-params";
+import { pensionCountry, pensionRuleFor } from "./legal-params";
 import { dayOf, fils, q, q1 } from "./sql";
 
 const log = createLogger("payroll-gpssa");
@@ -28,7 +28,9 @@ const csvCell = (v: unknown) => {
 
 export async function gpssaContributionCsv(
   companyId: string,
-  runId: string
+  runId: string,
+  /** A4 (M11): "adpf" lists Abu Dhabi Pension Fund members only; GPSSA excludes them. */
+  fund: "gpssa" | "adpf" = "gpssa"
 ): Promise<{ fileName: string; content: string; rows: number; totalFils: number }> {
   const run = await q1<{ period_month: number; period_year: number; status: string }>(
     `SELECT period_month, period_year, status FROM payroll_runs WHERE id = $1 AND company_id = $2`,
@@ -45,7 +47,7 @@ export async function gpssaContributionCsv(
   }
   const settings = await loadPayrollSettings(companyId);
   const items = await q<Record<string, unknown>>(
-    `SELECT pi.*, e.full_name, e.nationality, e.emirates_id, e.employee_number
+    `SELECT pi.*, e.full_name, e.nationality, e.emirates_id, e.employee_number, e.pension_scheme
        FROM payroll_items pi JOIN employees e ON e.id = pi.employee_id
       WHERE pi.payroll_run_id = $1 ORDER BY e.full_name`,
     [runId]
@@ -68,6 +70,10 @@ export async function gpssaContributionCsv(
   const month = `${String(run.period_month).padStart(2, "0")}/${run.period_year}`;
   for (const it of items) {
     if (!pensionCountry(it.nationality as string | null)) continue;
+    const itemFund =
+      (it.pension_fund as string | null) ??
+      pensionRuleFor(it.nationality as string | null, it.pension_scheme as string | null)?.fund;
+    if ((itemFund ?? "gpssa") !== fund) continue;
     const p = pensionContribution(
       {
         basicFils: fils(it.basic_salary),
@@ -76,7 +82,8 @@ export async function gpssaContributionCsv(
         otherFils: fils(it.other_allowance),
       },
       it.nationality as string,
-      settings.params
+      settings.params,
+      it.pension_scheme as string | null
     );
     const ee = fils(it.pension_employee);
     const er = fils(it.pension_employer);
@@ -100,7 +107,7 @@ export async function gpssaContributionCsv(
     );
   }
   return {
-    fileName: `GPSSA_contributions_${run.period_year}_${String(run.period_month).padStart(2, "0")}.csv`,
+    fileName: `${fund === "adpf" ? "ADPF" : "GPSSA"}_contributions_${run.period_year}_${String(run.period_month).padStart(2, "0")}.csv`,
     content: lines.join("\r\n") + "\r\n",
     rows,
     totalFils,

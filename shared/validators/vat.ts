@@ -128,6 +128,20 @@ export const markVatReturnReadyBody = z
 
 export const amendVatReturnBody = z.object({ reason: zText(2000, { min: 3 }) }).strict();
 
+/** POST /api/vat-returns/:id/settlement: the VAT paid to (or refunded by) the FTA. */
+export const settleVatReturnBody = z
+  .object({
+    date: zDate,
+    paymentAccountId: zUuid,
+    reference: zText(200).optional().nullable(),
+  })
+  .strict();
+
+/** POST /api/vat-returns/:id/settlement/reverse */
+export const reverseVatReturnSettlementBody = z
+  .object({ date: zDate, reason: zText(1000, { min: 3 }) })
+  .strict();
+
 export const VAT_RETURN_ADJUSTMENT_KINDS = [
   "tourist_refund",
   "import_adjustment",

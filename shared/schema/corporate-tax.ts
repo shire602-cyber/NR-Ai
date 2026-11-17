@@ -74,6 +74,10 @@ export const corporateTaxReturns = pgTable(
     amendmentNumber: integer("amendment_number").notNull().default(0),
     provisionEntryId: uuid("provision_entry_id"),
     provisionReversalEntryId: uuid("provision_reversal_entry_id"),
+    // A4 (M2, migration 0123): year-end current-tax accrual posted before filing; filing posts
+    // only the true-up against `accruedTax`.
+    accrualEntryId: uuid("accrual_entry_id"),
+    accruedTax: money("accrued_tax").notNull().default(0),
     interestCarriedForward: money("interest_carried_forward").notNull().default(0),
     workpaper: jsonb("workpaper"),
     notes: text("notes"),
@@ -84,6 +88,65 @@ export const corporateTaxReturns = pgTable(
     companyIdIdx: index("idx_corporate_tax_returns_company_id").on(table.companyId),
   })
 );
+
+// A4 (M13, migration 0123): corporate-tax returns filed outside Muhasib (before go-live). Their
+// losses / disallowed interest carried forward feed the next return's brought-forward figures.
+export const ctExternalReturns = pgTable(
+  "ct_external_returns",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    taxPeriodStart: pgDate("tax_period_start", { mode: "string" }).notNull(),
+    taxPeriodEnd: pgDate("tax_period_end", { mode: "string" }).notNull(),
+    totalRevenue: money("total_revenue").notNull().default(0),
+    lossCarriedForward: money("loss_carried_forward").notNull().default(0),
+    interestCarriedForward: money("interest_carried_forward").notNull().default(0),
+    filingReference: text("filing_reference"),
+    note: text("note"),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    periodUnique: unique("uq_ct_external_returns_period").on(table.companyId, table.taxPeriodEnd),
+  })
+);
+export type CtExternalReturn = typeof ctExternalReturns.$inferSelect;
+
+// A4 (M2, IAS 12, migration 0123): manual deferred-tax adjustments. Each row records the closing
+// deferred tax asset / liability (optionally from a temporary-difference schedule) and the
+// movement journal that brought the ledger to them.
+export const deferredTaxAdjustments = pgTable(
+  "deferred_tax_adjustments",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    asOf: pgDate("as_of", { mode: "string" }).notNull(),
+    taxRate: ctRateType("tax_rate").notNull().default(0.09),
+    closingAsset: money("closing_asset").notNull().default(0),
+    closingLiability: money("closing_liability").notNull().default(0),
+    movementAsset: money("movement_asset").notNull().default(0),
+    movementLiability: money("movement_liability").notNull().default(0),
+    schedule: jsonb("schedule").notNull().default([]),
+    note: text("note"),
+    journalEntryId: uuid("journal_entry_id"),
+    status: text("status").notNull().default("posted"), // posted | reversed
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    companyIdx: index("idx_deferred_tax_adjustments_company").on(table.companyId, table.asOf),
+  })
+);
+export type DeferredTaxAdjustment = typeof deferredTaxAdjustments.$inferSelect;
 
 // CT / compliance profile per company (W4-A, migration 0100): QFZP status,
 // MNE group revenue for TP thresholds, adviser confirmation, and the settings

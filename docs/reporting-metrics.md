@@ -528,6 +528,20 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   `server/services/compliance-obligations.service.ts` (job `compliance.deadlineScan`, no ESR) and
   feeds the Task Centre. Nothing is transmitted to EmaraTax. Verify with
   `tests/db/corporate-tax-lifecycle.test.ts` and `tests/db/compliance-calendar.test.ts`.
+  A4: year-end accrual / true-up, deferred tax and external returns are in
+  `docs/corporate-tax-rules.md`; `tests/db/a4-payroll-ct.test.ts`.
+- Customer deposits (A4, M1): `server/services/customer-deposits.service.ts`. VAT is due on
+  receipt (FDL 8/2017 Art. 25-26): Dr bank / Cr 2050 contract liability / Cr 2020. The deposit is a
+  customer credit (`source_type = 'deposit'`) applied with `customer-credits/:id/apply` (Dr 2050
+  net share + Dr 2020 VAT share / Cr 1040) or refunded; the settlement rule counts the
+  application. VAT 201 (`collectCustomerDeposits`): +net/VAT in the receipt period, -share when
+  applied/refunded, the invoice in full, so the supply is declared once. Over-payments go to 2055
+  Customer Credit Balances (L5), not 2050.
+- Month-end control ties (A4, M12): checklist step 11 `control_accounts`
+  (`server/services/control-account-ties.service.ts`) compares AR 1040 / AP 2010 with the aging
+  (settlement rule), the VAT control accounts with the period's VAT 201 reconciliation, 2032 with
+  approved-run contributions less pension payments, 2036 with opening provisions + accruals -
+  settlement use, and 2030 with payroll-sourced postings.
 - Inventory and COGS (W4-B) live in `server/services/inventory/` (weighted average default or FIFO
   layers in `costing.ts`); every stock change posts through `server/ledger` in the document's own
   transaction: bill approval Dr 1070, invoice issue stock out + COGS (`invoice_cogs`), void/credit

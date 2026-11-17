@@ -651,14 +651,22 @@ export async function revalueAsset(
   const lines: PostJournalLineInput[] = [];
   // `surplus` tracks the gross revaluation adjustment on the cost account (register column
   // revaluation_surplus); `equitySurplus` is what the asset still holds in 3050 (A3, H4).
-  let surplus = c.revaluationFils ?? 0;
+  // IAS 16.35(b) (A4 L7): accumulated depreciation and impairment are eliminated against the
+  // gross carrying amount, so after the revaluation the gross amount is the fair value and the
+  // accumulated balance restarts at zero. One net line on the cost account carries both steps.
+  const eliminated = c.accumulatedFils + (c.impairmentFils ?? 0);
+  let surplus = (c.revaluationFils ?? 0) - eliminated;
   const equitySurplus = await assetSurplusFils(tx, a);
-  if (delta > 0) {
+  if (eliminated > 0) {
     lines.push({
-      accountId: acc.cost,
-      debitFils: delta,
-      description: `Revaluation - ${a.asset_name}`,
+      accountId: acc.accumulated,
+      debitFils: eliminated,
+      description: `Eliminate accumulated depreciation on revaluation - ${a.asset_name}`,
     });
+  }
+  let costNet = -eliminated;
+  if (delta > 0) {
+    costNet += delta;
     lines.push({
       accountId: surplusAcct,
       creditFils: delta,
@@ -684,12 +692,15 @@ export async function revalueAsset(
         description: `Revaluation loss - ${a.asset_name}`,
       });
     }
+    costNet -= down;
+    surplus -= down;
+  }
+  if (costNet !== 0) {
     lines.push({
       accountId: acc.cost,
-      creditFils: down,
+      ...(costNet > 0 ? { debitFils: costNet } : { creditFils: -costNet }),
       description: `Revaluation - ${a.asset_name}`,
     });
-    surplus -= down;
   }
   const n = await q<{ n: number }>(
     tx,
@@ -704,6 +715,7 @@ export async function revalueAsset(
   });
   await tx.execute(
     sql`UPDATE fixed_assets SET revaluation_surplus = ${fromFils(surplus)},
+               accumulated_depreciation = 0, impairment_loss = 0,
                net_book_value = ${fromFils(args.fairValueFils)} WHERE id = ${a.id}`
   );
   await recordEvent(tx, a, {

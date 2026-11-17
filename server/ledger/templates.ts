@@ -130,6 +130,35 @@ export async function runDueJournalTemplates(today: string = todayIso()): Promis
   return posted;
 }
 
+/**
+ * L8 (A4): an accrual posted with an auto-reverse date that has already arrived (a back-dated
+ * accrual) is reversed straight away, on its planned date (today when that period is locked),
+ * instead of waiting for the next 01:27 job, so reports in between never show it unreversed.
+ * Returns the reversal entry id, or null when nothing was due.
+ */
+export async function reverseIfAutoReverseDue(
+  entryId: string,
+  actorId: string,
+  today: string = todayIso()
+): Promise<string | null> {
+  const res = await db.execute(sql`
+    SELECT id, company_id, to_char(auto_reverse_on, 'YYYY-MM-DD') AS on_date
+      FROM journal_entries
+     WHERE id = ${entryId} AND auto_reverse_on IS NOT NULL AND auto_reverse_on <= ${today}::date
+       AND status = 'posted' AND reversed_by_entry_id IS NULL AND entry_kind <> 'reversal'
+  `);
+  const row = rowsOf<{ id: string; company_id: string; on_date: string }>(res)[0];
+  if (!row) return null;
+  const ctx = { actorId, companyId: row.company_id };
+  const reason = "Automatic reversal (accrual)";
+  try {
+    return (await reverseEntry(row.id, { date: row.on_date, reason }, ctx)).reversal.id;
+  } catch (err) {
+    if (!(err instanceof AppError) || err.statusCode !== 403) throw err;
+    return (await reverseEntry(row.id, { date: today, reason }, ctx)).reversal.id;
+  }
+}
+
 /** Job body: reverse posted entries whose auto_reverse_on has arrived. */
 export async function runDueAutoReversals(today: string = todayIso()): Promise<number> {
   const res = await db.execute(sql`

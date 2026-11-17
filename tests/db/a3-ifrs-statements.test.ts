@@ -103,8 +103,11 @@ describe("A3 S7 fixed assets: revaluation, impairment, disposal and the cash flo
       fairValue: 8000,
     });
     expect(reval.status, reval.text).toBeLessThan(300);
+    // IAS 16.35(b) (A4 L7): accumulated depreciation 2,875.28 is eliminated against the gross
+    // amount, which is then restated to fair value 8,000 (net Cr 1290 2,000; surplus 875.28).
     expect(await linesOf(reval.body.journalEntryId)).toEqual({
-      "1290": [875.28, 0],
+      "1240": [2875.28, 0],
+      "1290": [0, 2000],
       "3050": [0, 875.28],
     });
 
@@ -195,11 +198,11 @@ describe("A3 S7 fixed assets: revaluation, impairment, disposal and the cash flo
 
     // H5: register ties to GL; the schedule projects from the revised carrying amount.
     const reg = await get(t, `/api/fixed-assets/${furniture.body.id}`);
-    expect(Number(reg.gross_carrying_amount)).toBe(10875.28);
-    expect(Number(reg.accumulated_depreciation_and_impairment)).toBe(3375.28);
+    expect(Number(reg.gross_carrying_amount)).toBe(8000);
+    expect(Number(reg.accumulated_depreciation_and_impairment)).toBe(500);
     expect(Number(reg.revaluation_reserve)).toBe(375.28);
-    expect(await glBalance(t, "1290")).toBe(10875.28);
-    expect(await glBalance(t, "1240")).toBe(-3375.28);
+    expect(await glBalance(t, "1290")).toBe(8000);
+    expect(await glBalance(t, "1240")).toBe(-500);
     const schedule = await get(t, `/api/fixed-assets/${furniture.body.id}/schedule`);
     const nov = schedule.book.find((p: any) => p.year === 2026 && p.month === 11);
     expect(nov).toMatchObject({ amount: 250, posted: false });

@@ -18,6 +18,14 @@
  *    audit found the code used basic + housing + transport — R09-06). Floors
  *    and caps on the contribution salary are configurable and default to none
  *    until counsel confirms the figures in the 2023 law and GPSSA circulars.
+ *  - Abu Dhabi Pension Fund (ADPF), Abu Dhabi Law No. 2 of 2000 as amended: UAE
+ *    nationals registered with ADPF (family book in Abu Dhabi, employed in the
+ *    emirate) contribute instead of GPSSA. Default reading: employee 5%,
+ *    employer 15% of the contribution salary (basic + housing). The government
+ *    share that applies to some categories is not posted. Flagged
+ *    `confirmed: false` ("confirm with adviser") until the company's adviser
+ *    confirms the rates. Selected per employee (`employees.pension_scheme =
+ *    'adpf'`); everyone else follows nationality.
  *  - Other GCC nationals (GCC Unified Insurance Protection Extension): the
  *    home-country scheme's rates apply. Defaults mirror the UAE rates and are
  *    flagged `confirmed: false` so the UI shows that they need an adviser.
@@ -77,6 +85,8 @@ export const legalParamsSchema = z
         KW: pensionRuleSchema,
         OM: pensionRuleSchema,
         QA: pensionRuleSchema,
+        /** Abu Dhabi Pension Fund for Abu Dhabi nationals (employee scheme 'adpf'). */
+        ADPF: pensionRuleSchema,
       })
       .strict(),
     gratuity: z
@@ -138,6 +148,8 @@ export const DEFAULT_LEGAL_PARAMS: PayrollLegalParams = Object.freeze({
     KW: { ...uaeRule },
     OM: { ...uaeRule },
     QA: { ...uaeRule },
+    // ADPF (Abu Dhabi Law 2/2000): employee 5%, employer 15% — confirm with adviser.
+    ADPF: { ...uaeRule, employerRate: "0.15" },
   },
   gratuity: {
     firstTierDaysPerYear: 21,
@@ -228,6 +240,39 @@ const NATIONALITY_ALIASES: Record<string, "AE" | GccCountry> = {
 export function pensionCountry(nationality: string | null | undefined): "AE" | GccCountry | null {
   if (!nationality) return null;
   return NATIONALITY_ALIASES[nationality.trim().toUpperCase()] ?? null;
+}
+
+/** Pension schemes an employee can be registered with (M11). */
+export const PENSION_SCHEMES = ["gpssa", "adpf"] as const;
+export type PensionScheme = (typeof PENSION_SCHEMES)[number];
+
+/**
+ * Fund the employer pays an employee's contributions to: ADPF for its members, otherwise GPSSA
+ * (other GCC nationals' contributions are also paid to GPSSA under the GCC extension, which
+ * forwards them to the home scheme).
+ */
+export type PensionFund = "gpssa" | "adpf";
+
+/**
+ * The pension rule key and fund for an employee: ADPF only for UAE nationals registered with
+ * it (scheme 'adpf'); otherwise GPSSA for UAE nationals and the home scheme for GCC nationals.
+ */
+export function pensionRuleFor(
+  nationality: string | null | undefined,
+  scheme?: string | null
+): {
+  key: keyof PayrollLegalParams["pension"];
+  country: "AE" | GccCountry;
+  fund: PensionFund;
+} | null {
+  const country = pensionCountry(nationality);
+  if (!country) return null;
+  if (country === "AE") {
+    return scheme === "adpf"
+      ? { key: "ADPF", country, fund: "adpf" }
+      : { key: "AE", country, fund: "gpssa" };
+  }
+  return { key: country, country, fund: "gpssa" };
 }
 
 export function isUaeOrGccNational(nationality: string | null | undefined): boolean {

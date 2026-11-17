@@ -33,6 +33,8 @@ import {
   payrollRunPatchSchema,
   payrollWpsStatusSchema,
   payslipEmailSchema,
+  pensionPaymentSchema,
+  type PensionPaymentBody,
   settlementCreateSchema,
   sifValidateSchema,
   wpsSettingsSchema,
@@ -56,6 +58,12 @@ import {
   isUaeOrGccNational,
   legalParamsSchema,
 } from "../services/payroll/legal-params";
+import {
+  listPensionPayments,
+  payPension,
+  pensionLiability,
+  reversePensionPayment,
+} from "../services/payroll/pension-payments";
 import {
   archiveEmployee,
   createEmployee,
@@ -638,7 +646,11 @@ export function registerPayrollRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { run } = await runRow(req);
-      const file = await gpssaContributionCsv(run.company_id, run.id);
+      const file = await gpssaContributionCsv(
+        run.company_id,
+        run.id,
+        req.query.fund === "adpf" ? "adpf" : "gpssa"
+      );
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader("Content-Disposition", `attachment; filename="${file.fileName}"`);
       res.send(file.content);
@@ -1060,6 +1072,60 @@ export function registerPayrollRoutes(app: Express) {
           req
         )
       );
+    })
+  );
+
+  // =============================================
+  // PENSION CONTRIBUTION PAYMENTS (A4: M14 — GPSSA / ADPF / GCC schemes)
+  // =============================================
+
+  app.get(
+    "/api/companies/:companyId/payroll/pension-liability",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = await companyAccess(req);
+      res.json(await pensionLiability(companyId));
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/payroll/pension-payments",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = await companyAccess(req);
+      res.json(await listPensionPayments(companyId));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/payroll/pension-payments",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("payroll.approve"),
+    strictBody(pensionPaymentSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, userId } = await companyAccess(req);
+      res
+        .status(201)
+        .json(await payPension(companyId, userId, parsedBody<PensionPaymentBody>(req), req));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/payroll/pension-payments/:paymentId/reverse",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("payroll.approve"),
+    strictBody(payrollReverseSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, userId } = await companyAccess(req);
+      if (!zUuid.safeParse(req.params.paymentId).success) {
+        throw new DomainError("PENSION_PAYMENT_NOT_FOUND", 404);
+      }
+      const { reason } = parsedBody<{ reason: string }>(req);
+      res.json(await reversePensionPayment(companyId, req.params.paymentId, userId, reason, req));
     })
   );
 

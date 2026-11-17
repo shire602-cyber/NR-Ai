@@ -38,6 +38,8 @@ import {
   generateVatReturnBody,
   markVatReturnReadyBody,
   patchVatReturnBody,
+  reverseVatReturnSettlementBody,
+  settleVatReturnBody,
   submitVatReturnBody,
   vatGroupBody,
   vatRecoveryRuleBody,
@@ -49,6 +51,11 @@ import {
   vatWorkpaperStatusBody,
 } from "../../shared/validators/vat";
 import { computeVat201 } from "../tax/vat-engine";
+import {
+  getVatReturnSettlement,
+  reverseVatReturnSettlement,
+  settleVatReturn,
+} from "../tax/vat-settlement.service";
 import {
   amendVatReturn,
   assertReconciledOrOverridden,
@@ -766,6 +773,65 @@ export function registerVATRoutes(app: Express) {
         req,
       });
       res.status(201).json({ ...result.vatReturn, diff: result.diff });
+    })
+  );
+
+  // VAT paid to / refunded by the FTA for a submitted return (Dr 2020 / Cr 1050 / Cr bank).
+  // The proper seam for clearing the VAT control accounts (A2 H8): no manual adjustment needed.
+  app.get(
+    "/api/vat-returns/:id/settlement",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const access = await requireReturnAccess(req, res);
+      if (!access) return;
+      res.json({
+        settlement: await getVatReturnSettlement(access.existing.companyId, access.existing.id),
+      });
+    })
+  );
+
+  app.post(
+    "/api/vat-returns/:id/settlement",
+    authMiddleware,
+    strictBody(settleVatReturnBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const access = await requireReturnAccess(req, res);
+      if (!access) return;
+      await assertCompanyPermission(req, access.existing.companyId, "tax.submit");
+      const body = parsedBody<Body<typeof settleVatReturnBody>>(req);
+      res.status(201).json(
+        await settleVatReturn({
+          companyId: access.existing.companyId,
+          vatReturnId: access.existing.id,
+          date: body.date,
+          paymentAccountId: body.paymentAccountId,
+          reference: body.reference ?? null,
+          actorId: access.userId,
+          req,
+        })
+      );
+    })
+  );
+
+  app.post(
+    "/api/vat-returns/:id/settlement/reverse",
+    authMiddleware,
+    strictBody(reverseVatReturnSettlementBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const access = await requireReturnAccess(req, res);
+      if (!access) return;
+      await assertCompanyPermission(req, access.existing.companyId, "tax.submit");
+      const body = parsedBody<Body<typeof reverseVatReturnSettlementBody>>(req);
+      res.json(
+        await reverseVatReturnSettlement({
+          companyId: access.existing.companyId,
+          vatReturnId: access.existing.id,
+          date: body.date,
+          reason: body.reason,
+          actorId: access.userId,
+          req,
+        })
+      );
     })
   );
 

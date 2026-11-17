@@ -6,6 +6,7 @@ import { describeMonthEndText, type CopyDescriptor } from "@shared/server-copy";
 import { detectAnomalies } from "./anomaly-detection.service";
 import { AI_QUEUE_STILL_OPEN_SQL } from "./ai-gl-queue-sql";
 import { getEffectiveLock, type LockScope, type LockType } from "./period-lock.service";
+import { controlAccountTies, type ControlTie } from "./control-account-ties.service";
 import {
   YEAR_END_CLOSE_SOURCE,
   accountTotals,
@@ -59,6 +60,8 @@ export interface ChecklistItem {
     note: string | null;
   } | null;
   effectiveStatus?: "complete" | "incomplete";
+  /** Control-account ties (step 11, A4 M12). */
+  ties?: ControlTie[];
 }
 
 export interface ClosingLine {
@@ -461,6 +464,30 @@ export async function getCloseChecklist(
     requiresSignOff: true,
     actionHref: "/exchange-rates",
     actionEndpoint: "POST /api/companies/:companyId/exchange-rates/revalue",
+  });
+
+  // 11. A4 (M12): control accounts tie to their sub-ledgers at period end (AR 1040, AP 2010,
+  //     VAT, pension 2032, gratuity 2036, salaries 2030). A difference keeps the step open.
+  const ties = await controlAccountTies(companyId, periodStart, periodEnd);
+  const applicable = ties.filter((t) => t.applicable);
+  const broken = applicable.filter((t) => !t.reconciled);
+  const list = broken
+    .map((t) => `${t.accountCode ?? t.key.toUpperCase()} (${t.difference.toFixed(2)})`)
+    .join(", ");
+  checklist.push({
+    id: 11,
+    key: "control_accounts",
+    title: "Control Accounts Reconciled",
+    description: "Receivables, payables, VAT and payroll control accounts equal their sub-ledgers",
+    status: broken.length === 0 ? "complete" : "incomplete",
+    details:
+      applicable.length === 0
+        ? "No control-account activity in this period"
+        : broken.length === 0
+          ? `${applicable.length} control account(s) tie to their sub-ledgers`
+          : `${broken.length} control account(s) differ from their sub-ledger: ${list}`,
+    actionHref: "/reports",
+    ties,
   });
 
   const keys: Record<number, string> = {

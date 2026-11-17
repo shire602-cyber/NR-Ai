@@ -104,6 +104,12 @@ const TEXT_FIELDS: Array<{ key: string; label: string; type?: string; col?: keyo
     type: "number",
     col: "opening_gratuity_provision",
   },
+  {
+    key: "openingGratuityAsOf",
+    label: "hr.field.openingGratuityAsOf",
+    type: "date",
+    col: "opening_gratuity_as_of",
+  },
 ];
 
 const FIELD_BY_KEY = new Map(TEXT_FIELDS.map((f) => [f.key, f]));
@@ -139,7 +145,9 @@ const EMPLOYEE_SECTIONS: Array<{ title: string; keys: string[] }> = [
       "housingAllowance",
       "transportAllowance",
       "otherAllowance",
+      "pensionScheme",
       "openingGratuityProvision",
+      "openingGratuityAsOf",
     ],
   },
   { title: "forms.section.wps", keys: ["bankName", "iban", "routingCode"] },
@@ -159,10 +167,15 @@ const LTR_KEYS = new Set([
 ]);
 
 const CONTRACT_TYPES = ["full_time", "part_time", "temporary", "flexible", "remote", "job_sharing"];
+/** A4 (M11): "auto" = by nationality (GPSSA); "adpf" = Abu Dhabi Pension Fund member. */
+const PENSION_SCHEME_OPTIONS = ["auto", "gpssa", "adpf"] as const;
 const DATE_KEYS = new Set(TEXT_FIELDS.filter((f) => f.type === "date").map((f) => f.key));
 
 function toForm(emp: Employee | null): FormState {
-  const out: FormState = { contractType: emp?.contract_type ?? "" };
+  const out: FormState = {
+    contractType: emp?.contract_type ?? "",
+    pensionScheme: (emp?.pension_scheme as string | null | undefined) ?? "",
+  };
   for (const f of TEXT_FIELDS) {
     const v = emp && f.col ? emp[f.col] : null;
     out[f.key] =
@@ -414,6 +427,34 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
               <FormSection key={section.title} title={tx(section.title)}>
                 <FormGrid>
                   {section.keys.map((k) => {
+                    if (k === "pensionScheme") {
+                      return (
+                        <Field
+                          key={k}
+                          id="emp-pensionScheme"
+                          label={tx("hr.field.pensionScheme")}
+                          help={tx("hr.pensionSchemeHint")}
+                        >
+                          <Select
+                            value={form.pensionScheme || "auto"}
+                            onValueChange={(v) =>
+                              setForm({ ...form, pensionScheme: v === "auto" ? "" : v })
+                            }
+                          >
+                            <SelectTrigger id="emp-pensionScheme">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {PENSION_SCHEME_OPTIONS.map((c) => (
+                                <SelectItem key={c} value={c}>
+                                  {tx(`hr.pensionScheme.${c}`)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                      );
+                    }
                     if (k === "contractType") {
                       return (
                         <Field key={k} id="emp-contractType" label={tx("hr.field.contractType")}>

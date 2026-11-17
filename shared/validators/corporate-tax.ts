@@ -209,3 +209,50 @@ export const ctAccountTagSchema = z
 export function readCtDate(value: unknown): string | null {
   return parseIsoDate(value);
 }
+
+/** A4 (M2): year-end current-tax accrual (no body; the computed tax is accrued). */
+export const accrueCtReturnSchema = z.object({}).strict();
+
+/** A4 (M2, IAS 12): one temporary-difference line of a deferred-tax schedule. */
+export const deferredTaxItemSchema = z
+  .object({
+    description: zText(200, { min: 1 }),
+    kind: z.enum(["asset", "liability", "tax_loss", "interest"]),
+    carryingAmount: zCtSignedAmount.optional(),
+    taxBase: zCtSignedAmount.optional(),
+    amount: zCtAmount.optional(),
+  })
+  .strict();
+
+/**
+ * A4 (M2): manual deferred-tax adjustment at a reporting date: closing DTA / DTL entered directly,
+ * computed from a schedule, or seeded from a return's deferred-tax note (`fromReturnId`).
+ */
+export const deferredTaxSchema = z
+  .object({
+    asOf: zCtDate,
+    taxRate: z.number().min(0).max(1).optional(),
+    closingAsset: zCtAmount.optional(),
+    closingLiability: zCtAmount.optional(),
+    schedule: z.array(deferredTaxItemSchema).max(200).optional(),
+    fromReturnId: zUuid.optional(),
+    note: zText(1000).nullable().optional(),
+  })
+  .strict();
+export type DeferredTaxBody = z.output<typeof deferredTaxSchema>;
+
+export const deferredTaxReverseSchema = z.object({ reason: zText(1000, { min: 3 }) }).strict();
+
+/** A4 (M13): a corporate-tax return filed outside Muhasib (before go-live). */
+export const ctExternalReturnSchema = z
+  .object({
+    taxPeriodStart: zDateIn({ min: "2023-01-01", maxDaysAhead: 0 }),
+    taxPeriodEnd: zDateIn({ min: "2023-01-01", maxDaysAhead: 0 }),
+    totalRevenue: zCtAmount.optional(),
+    lossCarriedForward: zCtAmount,
+    interestCarriedForward: zCtAmount.optional(),
+    filingReference: zText(120).nullable().optional(),
+    note: zText(1000).nullable().optional(),
+  })
+  .strict();
+export type CtExternalReturnBody = z.output<typeof ctExternalReturnSchema>;

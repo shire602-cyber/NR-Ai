@@ -191,7 +191,8 @@ describe("W4-B fixed assets", () => {
   it("[R10-17] classes default the accounts and life; revaluation, impairment, audit trail, CSV import and register export", async () => {
     const t = await h.createTenant();
     const vehicles = await h.sql<{ id: string }>(
-      `INSERT INTO accounts (company_id, code, name_en, type, sub_type) VALUES ($1, '1250', 'Vehicles', 'asset', 'fixed_asset') RETURNING id`,
+      // L2 (A4): 1250 Motor Vehicles is in the default chart now.
+      `SELECT id FROM accounts WHERE company_id = $1 AND code = '1250'`,
       [t.company.id]
     );
     const cls = await t.as.post(`/api/companies/${t.company.id}/fixed-asset-classes`, {
@@ -250,7 +251,9 @@ describe("W4-B fixed assets", () => {
     expect(reg.status).toBe(200);
     const row = reg.body.rows.find((r: { id: string }) => r.id === truck.body.id);
     expect(row.taxAccumulatedDepreciation).toBe(800);
-    expect(row.bookAccumulatedDepreciation).toBe(1000);
+    // IAS 16.35(b) (A4 L7): the 1 Feb revaluation eliminated January's 1,000 against the gross
+    // amount (now the 50,000 fair value); the book columns are the asset's current state.
+    expect(row.bookAccumulatedDepreciation).toBe(0);
     const xlsx = await t.as.get(`/api/companies/${t.company.id}/fixed-assets/register?format=xlsx`);
     expect(xlsx.status).toBe(200);
     expect(String(xlsx.headers.get("content-type"))).toContain("spreadsheetml");

@@ -53,7 +53,9 @@ import {
   invoiceWriteOffReinstateSchema,
   invoiceWriteOffSchema,
   refundCustomerCreditSchema,
+  createCustomerDepositSchema,
 } from "../../shared/validators/payments";
+import { createCustomerDeposit, listCustomerDeposits } from "../services/customer-deposits.service";
 import { fromFils, mulRate, toFils } from "../../shared/money";
 import { emitDomainEvent } from "../platform/domain-events";
 import { createAndEmitNotification } from "../services/socket.service";
@@ -1316,6 +1318,62 @@ export function registerInvoiceRoutes(app: Express) {
         entityId: creditId,
         before: null,
         after: { amount: fromFils(body.amount), paymentAccountId: body.paymentAccountId },
+        req,
+      });
+      res.status(201).json(result);
+    })
+  );
+
+  // ── Customer deposits / advances (A4: M1, FDL 8/2017 Art. 25-26) ─────────
+  // VAT is due on receipt; the deposit becomes a customer credit applied to the final invoice
+  // (POST customer-credits/:creditId/apply) or refunded, reversing its VAT share.
+  app.get(
+    "/api/companies/:companyId/customer-deposits",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      res.json(await listCustomerDeposits(companyId));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/customer-deposits",
+    authMiddleware,
+    requireCustomer,
+    strictBody(createCustomerDepositSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const userId = userOf(req);
+      await assertCompanyAccess(req, companyId);
+      const body = validated<z.output<typeof createCustomerDepositSchema>>(req);
+      await assertPeriodNotLocked(companyId, toDate(body.date));
+      const result = await createCustomerDeposit({
+        companyId,
+        userId,
+        contactId: body.contactId ?? null,
+        customerName: body.customerName ?? null,
+        customerTrn: body.customerTrn ?? null,
+        date: body.date,
+        amountFils: body.amount,
+        vatTreatment: body.vatTreatment,
+        paymentAccountId: body.paymentAccountId,
+        reference: body.reference ?? null,
+        description: body.description ?? null,
+      });
+      await recordAudit({
+        userId,
+        companyId,
+        action: "customer_deposit.create",
+        entityType: "customer_deposit",
+        entityId: result.deposit.id,
+        before: null,
+        after: {
+          amount: fromFils(body.amount),
+          vatTreatment: body.vatTreatment,
+          journalEntryId: result.journalEntryId,
+        },
         req,
       });
       res.status(201).json(result);
