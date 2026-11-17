@@ -1,3 +1,4 @@
+import type React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -267,79 +268,71 @@ function BankVsLedger({ accounts }: { accounts: BankVsGlAccount[] }) {
           {tt["dashboard.bankVsGlNoAccounts"]}
         </p>
       ) : (
-        <table className="mt-1 w-full border-separate border-spacing-0 text-small tabular-nums">
-          <thead className="sr-only sm:not-sr-only">
-            <tr className="text-caption text-muted-foreground">
-              <th scope="col" className="pb-1 text-start font-normal">
-                <span className="sr-only">{tt["banking.accounts.title"] ?? ""}</span>
-              </th>
-              <th scope="col" className="pb-1 ps-3 text-end font-normal">
-                {tt["dashboard.bankColStatement"]}
-              </th>
-              <th scope="col" className="pb-1 ps-3 text-end font-normal">
-                {tt["dashboard.bankColLedger"]}
-              </th>
-              <th scope="col" className="pb-1 ps-3 text-end font-normal">
-                {tt["dashboard.bankColDifference"]}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {accounts.map((a) => {
-              // X6a: no statement imported means nothing to compare and no difference.
-              const noStatement = a.hasStatement === false || a.statementBalance === null;
-              const ties = !noStatement && (a.difference ?? 0) === 0;
-              return (
-                <tr key={a.bankAccountId}>
-                  <td className="max-w-0 truncate border-t border-border py-2 pe-3 sm:w-[34%]">
-                    <span dir="auto">{a.name}</span>
-                  </td>
-                  <td className="border-t border-border py-2 ps-3 text-end">
-                    {noStatement ? (
-                      <span
-                        className="text-caption text-muted-foreground"
-                        data-testid={`bank-vs-gl-no-statement-${a.bankAccountId}`}
-                      >
-                        {tt["dashboard.bankNoStatement"]}
-                      </span>
-                    ) : (
-                      <Money amount={a.statementBalance!} currency={a.currency} />
-                    )}
-                  </td>
-                  <td className="border-t border-border py-2 ps-3 text-end text-muted-foreground">
-                    {a.glBalance === null ? (
+        <ul className="mt-1 divide-hairline">
+          {accounts.map((a) => {
+            // X6a: no statement imported means nothing to compare and no difference.
+            const noStatement = a.hasStatement === false || a.statementBalance === null;
+            const ties = !noStatement && (a.difference ?? 0) === 0;
+            const figure = (label: string, value: React.ReactNode) => (
+              <div className="min-w-0">
+                <dt className="text-caption text-muted-foreground">{label}</dt>
+                <dd className="truncate text-small tabular-nums">{value}</dd>
+              </div>
+            );
+            return (
+              <li key={a.bankAccountId} className="space-y-1.5 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <span dir="auto" className="min-w-0 truncate text-small font-medium">
+                    {a.name}
+                  </span>
+                  {noStatement ? (
+                    <span
+                      className="shrink-0 text-caption text-muted-foreground"
+                      data-testid={`bank-vs-gl-no-statement-${a.bankAccountId}`}
+                    >
+                      {tt["dashboard.bankNoStatement"]}
+                    </span>
+                  ) : (
+                    <ToneBadge
+                      tone={ties ? "success" : "danger"}
+                      data-ties-state={ties ? "ties" : "differs"}
+                      className="shrink-0"
+                    >
+                      {ties ? t["launchProof.ties"] : t["launchProof.differs"]}
+                    </ToneBadge>
+                  )}
+                </div>
+                <dl className="grid grid-cols-3 gap-3">
+                  {figure(
+                    tt["dashboard.bankColStatement"],
+                    noStatement ? "–" : <Money amount={a.statementBalance!} currency={a.currency} />
+                  )}
+                  {figure(
+                    tt["dashboard.bankColLedger"],
+                    a.glBalance === null ? (
                       "–"
                     ) : (
                       <Money amount={a.glBalance} currency={a.currency} />
-                    )}
-                  </td>
-                  <td className="border-t border-border py-2 ps-3 text-end">
-                    {noStatement ? (
-                      <span className="text-muted-foreground">–</span>
+                    )
+                  )}
+                  {figure(
+                    tt["dashboard.bankColDifference"],
+                    noStatement ? (
+                      "–"
                     ) : (
-                      <span className="inline-flex items-center justify-end gap-2">
-                        {!ties && (
-                          <Money
-                            amount={a.difference ?? 0}
-                            currency={a.currency}
-                            signDisplay="always"
-                            className="font-medium"
-                          />
-                        )}
-                        <ToneBadge
-                          tone={ties ? "success" : "danger"}
-                          data-ties-state={ties ? "ties" : "differs"}
-                        >
-                          {ties ? t["launchProof.ties"] : t["launchProof.differs"]}
-                        </ToneBadge>
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                      <Money
+                        amount={a.difference ?? 0}
+                        currency={a.currency}
+                        signDisplay={ties ? "auto" : "always"}
+                        className={ties ? undefined : "font-medium"}
+                      />
+                    )
+                  )}
+                </dl>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );

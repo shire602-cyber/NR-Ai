@@ -317,7 +317,6 @@
   "invoices.reminders.ruleActive": "On",
   "invoices.reminders.ruleOff": "Off",
   "invoices.reminders.ruleSummary": "{before} days before due · {after} days after · every {repeat} days · up to {max}",
-  "invoices.reminders.noRulesTitle": "No automatic emails yet",
   "invoices.reminders.noRulesBody": "Add a rule to email customers before or after a due date.",
   "invoices.reminders.ruleDialogTitle": "New email rule",
   "invoices.reminders.ruleDialogDesc": "Choose when the email goes out and how it reads.",
@@ -350,5 +349,7 @@
   "invoices.editor.total": "Total",
   "invoices.editor.saveDraft": "Save draft",
   "invoices.editor.saveChanges": "Save changes",
-  "invoices.reminders.bulkBody": "Each invoice moves to its next reminder step."
+  "invoices.reminders.bulkBody": "Each invoice moves to its next reminder step.",
+  "invoices.reminders.bucketOne": "1 invoice",
+  "invoices.reminders.bucketNone": "No invoices"
 }

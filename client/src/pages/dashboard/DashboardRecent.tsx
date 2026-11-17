@@ -56,7 +56,7 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
                           <div dir="auto" className="truncate text-sm font-medium text-foreground">
                             {invoice.customerName}
                           </div>
-                          <div className="text-caption text-muted-foreground">
+                          <div className="truncate text-caption text-muted-foreground">
                             {/* Credit notes share this list, so every row names its type. */}
                             {invoice.invoiceType === "credit_note"
                               ? `${t["dashboard.docTypeCreditNote"]} · `

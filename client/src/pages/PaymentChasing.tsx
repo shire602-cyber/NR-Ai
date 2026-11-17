@@ -187,16 +187,25 @@ export default function PaymentChasing() {
               label={tt[`invoices.reminders.bucket.${tile.bucket as AgingBucket}`]}
               loading={overdueQuery.isLoading}
               value={
-                <span className="money">
-                  {formatMessage(tt["invoices.reminders.bucketCount"], { count: tile.count })}
-                </span>
+                tile.mixed ? (
+                  <span className="money">{tile.count}</span>
+                ) : (
+                  <Money amount={tile.amount} currency={tile.currency ?? "AED"} />
+                )
               }
               hint={
-                tile.count === 0 ? undefined : tile.currency ? (
-                  <Money amount={tile.amount} currency={tile.currency} />
-                ) : tile.mixed ? (
-                  tt["invoices.reminders.bucketMixed"]
-                ) : undefined
+                tile.mixed
+                  ? tt["invoices.reminders.bucketMixed"]
+                  : tile.count === 0
+                    ? tt["invoices.reminders.bucketNone"]
+                    : formatMessage(
+                        tt[
+                          tile.count === 1
+                            ? "invoices.reminders.bucketOne"
+                            : "invoices.reminders.bucketCount"
+                        ],
+                        { count: tile.count }
+                      )
               }
             />
           ))}

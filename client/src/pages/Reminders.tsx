@@ -168,11 +168,7 @@ export function AutomaticEmailRules({ companyId }: { companyId?: string }) {
         {isLoading ? (
           <Skeleton className="h-24 w-full" />
         ) : !settings?.length ? (
-          <EmptyState
-            size="sm"
-            title={tt["invoices.reminders.noRulesTitle"]}
-            description={tt["invoices.reminders.noRulesBody"]}
-          />
+          <EmptyState size="sm" title={tt["invoices.reminders.noRulesBody"]} />
         ) : (
           <ul className="divide-hairline rounded-lg border border-border">
             {settings.map((rule) => (

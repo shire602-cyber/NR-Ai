@@ -318,8 +318,8 @@ function DocumentsSettings({
   );
 
   return (
-    <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
-      <div className="min-w-0 space-y-8">
+    <div className="space-y-8">
+      <div className="space-y-8">
         <Form {...form}>
           <form onSubmit={form.handleSubmit((data) => saveBranding.mutate(data))}>
             <SectionCard
@@ -546,12 +546,8 @@ function DocumentsSettings({
         )}
       </div>
 
-      <aside
-        className="min-w-0 xl:sticky xl:top-6 xl:self-start"
-        aria-label={tt["invoices.editor.preview"]}
-      >
-        {preview}
-      </aside>
+      {/* SettingsLayout keeps a 760 px column, so the live preview follows the settings. */}
+      <SectionCard title={tt["invoices.editor.preview"]}>{preview}</SectionCard>
     </div>
   );
 }

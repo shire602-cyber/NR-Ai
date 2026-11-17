@@ -317,7 +317,6 @@
   "invoices.reminders.ruleActive": "مفعّلة",
   "invoices.reminders.ruleOff": "متوقفة",
   "invoices.reminders.ruleSummary": "قبل الاستحقاق بـ {before} أيام · بعده بـ {after} أيام · كل {repeat} أيام · حتى {max}",
-  "invoices.reminders.noRulesTitle": "لا توجد رسائل تلقائية بعد",
   "invoices.reminders.noRulesBody": "أضف قاعدة لمراسلة العملاء قبل تاريخ الاستحقاق أو بعده.",
   "invoices.reminders.ruleDialogTitle": "قاعدة بريد جديدة",
   "invoices.reminders.ruleDialogDesc": "اختر موعد إرسال البريد وصياغته.",
@@ -350,5 +349,7 @@
   "invoices.editor.total": "الإجمالي",
   "invoices.editor.saveDraft": "حفظ كمسودة",
   "invoices.editor.saveChanges": "حفظ التغييرات",
-  "invoices.reminders.bulkBody": "تنتقل كل فاتورة إلى خطوة التذكير التالية."
+  "invoices.reminders.bulkBody": "تنتقل كل فاتورة إلى خطوة التذكير التالية.",
+  "invoices.reminders.bucketOne": "فاتورة واحدة",
+  "invoices.reminders.bucketNone": "لا توجد فواتير"
 }

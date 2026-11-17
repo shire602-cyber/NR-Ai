@@ -28,7 +28,7 @@
   "dashboard.quickActionsTitle": "Quick actions",
   "dashboard.quickCreateInvoice": "Create Invoice",
   "dashboard.quickCreateInvoiceBody": "Create VAT-ready tax invoices in seconds",
-  "dashboard.quickScanReceipt": "Scan Receipt",
+  "dashboard.quickScanReceipt": "Scan receipt",
   "dashboard.quickScanReceiptBody": "OCR receipts straight into your books",
   "dashboard.quickJournalEntry": "Journal Entry",
   "dashboard.quickJournalEntryBody": "Record manual double-entry transactions",
