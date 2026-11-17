@@ -8,7 +8,7 @@ import {
   formSpanFull,
 } from "@/components/ui/form-layout";
 import { useFormGate } from "@/hooks/use-form-gate";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { PORTAL_LINK_TTL_DAYS } from "@shared/validators/portal";
 import { useState, useCallback } from "react";
@@ -427,12 +427,16 @@ export default function CustomerContacts() {
         queryKey: ["/api/companies", companyId, "customer-contacts"],
       });
       toast({
-        title: "Import completed!",
+        title: translateNow("toasts.importCompleted"),
         description: result.message,
       });
     },
     onError: (error: any) => {
-      toast({ variant: "destructive", title: "Import failed", description: error?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.importFailed2"),
+        description: error?.message,
+      });
     },
   });
 
@@ -450,7 +454,7 @@ export default function CustomerContacts() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create contact",
+        title: translateNow("toasts.failedToCreateContact"),
         description: error?.message,
       });
     },
@@ -470,7 +474,7 @@ export default function CustomerContacts() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update contact",
+        title: translateNow("toasts.failedToUpdateContact"),
         description: error?.message,
       });
     },
@@ -489,7 +493,7 @@ export default function CustomerContacts() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete contact",
+        title: translateNow("toasts.failedToDeleteContact"),
         description: error?.message,
       });
     },
@@ -516,14 +520,14 @@ export default function CustomerContacts() {
       setShowClearAllDialog(false);
       setClearAllConfirmation("");
       toast({
-        title: "All contacts cleared",
+        title: translateNow("toasts.allContactsCleared"),
         description: result.message,
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to clear contacts",
+        title: translateNow("toasts.failedToClearContacts"),
         description: error?.message,
       });
     },
@@ -556,7 +560,7 @@ export default function CustomerContacts() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to generate portal link",
+        title: translateNow("toasts.failedToGeneratePortalLink"),
         description: error?.message,
       });
     },
@@ -583,8 +587,8 @@ export default function CustomerContacts() {
       if (!selectedFile.name.match(/\.(xlsx|csv)$/i)) {
         toast({
           variant: "destructive",
-          title: "Invalid file type",
-          description: "Please upload an Excel file (.xlsx) or CSV file",
+          title: translateNow("toasts.invalidFileType"),
+          description: translateNow("toasts.pleaseUploadAnExcelFileXlsxOr"),
         });
         return;
       }
@@ -607,11 +611,16 @@ export default function CustomerContacts() {
           const mappedData = preview.rows;
 
           setPreviewData(mappedData);
-          toast({ title: `Found ${mappedData.length} contacts in ${selectedFile.name}` });
+          toast({
+            title: formatMessage(translateNow("toasts.foundContactsIn"), {
+              count: mappedData.length,
+              name: selectedFile.name,
+            }),
+          });
         } catch (err: any) {
           toast({
             variant: "destructive",
-            title: "Failed to parse file",
+            title: translateNow("toasts.failedToParseFile"),
             description: err?.message,
           });
         }
@@ -665,7 +674,7 @@ export default function CustomerContacts() {
       .catch((err: any) =>
         toast({
           variant: "destructive",
-          title: "Failed to create template",
+          title: translateNow("toasts.failedToCreateTemplate"),
           description: err?.message,
         })
       );

@@ -34,7 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency } from "@/lib/format";
@@ -257,8 +257,8 @@ export default function AdvancedReports() {
     );
 
     toast({
-      title: "Report Exported",
-      description: `${reportType} report has been downloaded.`,
+      title: translateNow("toasts.reportExported"),
+      description: formatMessage(translateNow("toasts.reportHasBeenDownloaded"), { reportType }),
     });
   };
 

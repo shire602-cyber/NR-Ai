@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useCallback } from "react";
 import { useMutation } from "@tanstack/react-query";
@@ -70,10 +70,19 @@ export default function ClientImport() {
     },
     onSuccess: (data: PreviewData) => {
       setPreviewData(data);
-      toast({ title: `Found ${data.totalRows} records in ${data.fileName}` });
+      toast({
+        title: formatMessage(translateNow("toasts.foundRecordsIn"), {
+          totalRows: data.totalRows,
+          fileName: data.fileName,
+        }),
+      });
     },
     onError: (error: any) => {
-      toast({ variant: "destructive", title: "Failed to parse file", description: error?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.failedToParseFile"),
+        description: error?.message,
+      });
     },
   });
 
@@ -89,12 +98,16 @@ export default function ClientImport() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/clients"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
       toast({
-        title: "Import completed!",
+        title: translateNow("toasts.importCompleted"),
         description: result.message,
       });
     },
     onError: (error: any) => {
-      toast({ variant: "destructive", title: "Import failed", description: error?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.importFailed2"),
+        description: error?.message,
+      });
     },
   });
 
@@ -103,8 +116,8 @@ export default function ClientImport() {
       if (!selectedFile.name.match(/\.(xlsx|csv)$/i)) {
         toast({
           variant: "destructive",
-          title: "Invalid file type",
-          description: "Please upload an Excel file (.xlsx) or CSV file",
+          title: translateNow("toasts.invalidFileType"),
+          description: translateNow("toasts.pleaseUploadAnExcelFileXlsxOr"),
         });
         return;
       }
@@ -171,7 +184,11 @@ export default function ClientImport() {
 
       toast({ title: t["clientImport.templateDownloadedSuccessfully"] });
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Download failed", description: error?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.downloadFailed"),
+        description: error?.message,
+      });
     }
   };
 

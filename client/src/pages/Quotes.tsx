@@ -60,7 +60,7 @@ import {
 } from "@/components/ui/select";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation, formatMessage } from "@/lib/i18n";
+import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
@@ -151,7 +151,10 @@ export default function Quotes() {
       apiRequest("POST", `/api/companies/${selectedCompanyId}/quotes`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "quotes"] });
-      toast({ title: "Quote created", description: "Your quote has been created successfully." });
+      toast({
+        title: translateNow("toasts.quoteCreated"),
+        description: translateNow("toasts.yourQuoteHasBeenCreatedSuccessfully"),
+      });
       setDialogOpen(false);
       setEditingQuote(null);
       resetForm();
@@ -159,8 +162,8 @@ export default function Quotes() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create quote",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToCreateQuote"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -170,7 +173,10 @@ export default function Quotes() {
       apiRequest("PUT", `/api/quotes/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "quotes"] });
-      toast({ title: "Quote updated", description: "Your quote has been updated successfully." });
+      toast({
+        title: translateNow("toasts.quoteUpdated"),
+        description: translateNow("toasts.yourQuoteHasBeenUpdatedSuccessfully"),
+      });
       setDialogOpen(false);
       setEditingQuote(null);
       resetForm();
@@ -178,8 +184,8 @@ export default function Quotes() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update quote",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToUpdateQuote"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -188,13 +194,16 @@ export default function Quotes() {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/quotes/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "quotes"] });
-      toast({ title: "Quote deleted", description: "The quote has been deleted." });
+      toast({
+        title: translateNow("toasts.quoteDeleted"),
+        description: translateNow("toasts.theQuoteHasBeenDeleted"),
+      });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete quote",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToDeleteQuote"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -207,15 +216,15 @@ export default function Quotes() {
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
       });
       toast({
-        title: "Quote converted",
-        description: "The quote has been converted to an invoice.",
+        title: translateNow("toasts.quoteConverted"),
+        description: translateNow("toasts.theQuoteHasBeenConvertedToAn"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to convert quote",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToConvertQuote"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -254,8 +263,8 @@ export default function Quotes() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to load quote details.",
+        title: translateNow("toasts.error"),
+        description: error?.message || translateNow("toasts.failedToLoadQuoteDetails"),
       });
     }
   };

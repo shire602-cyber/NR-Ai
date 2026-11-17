@@ -1,6 +1,6 @@
 // ClientPortfolio module (W5-D split of ClientPortfolio.tsx; no behaviour change).
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Target, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -33,7 +33,7 @@ export function RevenueGrowthPanel({
     onError: (e: any) =>
       toast({
         variant: "destructive",
-        title: "Could not refresh revenue opportunities",
+        title: translateNow("toasts.couldNotRefreshRevenueOpportunities"),
         description: e?.message,
       }),
   });
@@ -61,7 +61,7 @@ export function RevenueGrowthPanel({
     onError: (e: any) =>
       toast({
         variant: "destructive",
-        title: "Could not update opportunity",
+        title: translateNow("toasts.couldNotUpdateOpportunity"),
         description: e?.message,
       }),
   });

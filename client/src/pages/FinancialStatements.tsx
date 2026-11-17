@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { exportToExcel, type ExportData } from "@/lib/export";
@@ -746,14 +746,15 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
         `cash-flow-statement-${data.startDate}-to-${data.endDate}`
       );
       toast({
-        title: "Cash flow exported",
-        description: "The statement workbook has been downloaded for review.",
+        title: translateNow("toasts.cashFlowExported"),
+        description: translateNow("toasts.theStatementWorkbookHasBeenDownloadedFor"),
       });
     } catch (exportError: any) {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: exportError?.message || "Could not export the cash flow statement.",
+        title: translateNow("toasts.exportFailed"),
+        description:
+          exportError?.message || translateNow("toasts.couldNotExportTheCashFlowStatement"),
       });
     }
   };

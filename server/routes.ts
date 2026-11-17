@@ -13,7 +13,7 @@ import { createServer, type Server } from "http";
 import { createLogger } from "./config/logger";
 import { companyRolePolicy } from "./middleware/companyRolePolicy";
 import { rejectApiKeysOutsidePublicApi } from "./middleware/api-key-auth";
-import { planFeaturePolicy, usageLimitPolicy } from "./middleware/featureGate";
+import { planFeaturePolicy, storageLimitPolicy, usageLimitPolicy } from "./middleware/featureGate";
 import { registerPublicApiRoutes } from "./routes/public-api.routes";
 import { registerImportRoutes } from "./routes/import.routes";
 
@@ -131,7 +131,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ─── Plan gates and usage meter (W5-B, R19-04, R19-05) ──
   // METHOD + path tables in server/middleware/featureGate.ts: feature flags
   // (403 TIER_LOCKED) and monthly quotas (402 USAGE_LIMIT_REACHED).
-  app.use("/api", planFeaturePolicy, usageLimitPolicy);
+  app.use("/api", planFeaturePolicy, usageLimitPolicy, storageLimitPolicy);
   // S4: refresh the stored compliance calendar after writes that change its inputs.
   app.use("/api", complianceObligationRefreshObserver);
 

@@ -572,7 +572,17 @@ export default function TeamManagement() {
             <DialogTitle>{t["pages.teamInviteTeamMember"]}</DialogTitle>
             <DialogDescription>{t["pages.teamSendAnInvitationToJoinYour"]}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          {/* X6b: a real form so Enter in the email field sends the invitation. */}
+          <form
+            id="invite-member-form"
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (inviteEmail && !inviteMutation.isPending) {
+                inviteMutation.mutate({ email: inviteEmail, role: inviteRole });
+              }
+            }}
+          >
             <div className="space-y-2">
               <Label>{t["pages.teamEmailAddress"]}</Label>
               <Input
@@ -606,13 +616,14 @@ export default function TeamManagement() {
                 </SelectContent>
               </Select>
             </div>
-          </div>
+          </form>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setInviteDialogOpen(false)}>
               {locale === "ar" ? "إلغاء" : "Cancel"}
             </Button>
             <Button
-              onClick={() => inviteMutation.mutate({ email: inviteEmail, role: inviteRole })}
+              type="submit"
+              form="invite-member-form"
               disabled={inviteMutation.isPending || !inviteEmail}
               data-testid="button-confirm-invite"
             >

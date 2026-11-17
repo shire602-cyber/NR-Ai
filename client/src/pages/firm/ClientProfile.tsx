@@ -1,6 +1,6 @@
 import { formatAedText } from "@/lib/format";
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
@@ -201,7 +201,7 @@ export default function ClientProfile() {
     onError: (e: any) => {
       toast({
         variant: "destructive",
-        title: "Could not open client books",
+        title: translateNow("toasts.couldNotOpenClientBooks"),
         description: e?.message,
       });
     },
@@ -233,7 +233,11 @@ export default function ClientProfile() {
       setEditData({});
     },
     onError: (e: any) => {
-      toast({ variant: "destructive", title: "Update failed", description: e?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.updateFailed2"),
+        description: e?.message,
+      });
     },
   });
 
@@ -258,7 +262,11 @@ export default function ClientProfile() {
       setSelectedStaff("");
     },
     onError: (e: any) => {
-      toast({ variant: "destructive", title: "Assignment failed", description: e?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.assignmentFailed"),
+        description: e?.message,
+      });
     },
   });
 

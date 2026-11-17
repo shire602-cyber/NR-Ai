@@ -253,6 +253,11 @@ export const limiterProfiles = {
     max: envInt("RL_AI_MAX", 20),
     message: "AI rate limit exceeded. Please try again later.",
   } as RouteLimit,
+  ocrCompany: {
+    windowMs: envInt("RL_OCR_COMPANY_WINDOW_MS", 60_000),
+    max: envInt("RL_OCR_COMPANY_MAX", 30),
+    message: "Too many receipt scans for this company. Please try again shortly.",
+  } as RouteLimit,
   read: {
     // GET-heavy dashboards fire 8-15 requests per page view, so the ceiling
     // must sit well above real navigation and report review. The key is

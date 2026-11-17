@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, Building2, CheckCircle2 } from "lucide-react";
 import type { Company } from "@shared/schema";
@@ -68,8 +68,8 @@ export default function Companies() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: "Company created",
-        description: "Your company has been created with a Chart of Accounts.",
+        title: translateNow("toasts.companyCreated"),
+        description: translateNow("toasts.yourCompanyHasBeenCreatedWithA"),
       });
       setDialogOpen(false);
       form.reset();
@@ -77,8 +77,8 @@ export default function Companies() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create company",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToCreateCompany"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });

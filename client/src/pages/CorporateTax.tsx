@@ -27,7 +27,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -257,7 +257,11 @@ export default function CorporateTax() {
       link.remove();
       URL.revokeObjectURL(objectUrl);
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Download failed", description: error?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.downloadFailed"),
+        description: error?.message,
+      });
     }
   };
 
@@ -269,14 +273,16 @@ export default function CorporateTax() {
         queryKey: [`/api/companies/${companyId}/corporate-tax/returns`],
       });
       toast({
-        title: `${result?.rows ?? 0} workpaper rows pulled from books`,
-        description: "One row per income/expense account with its posted net for the period.",
+        title: formatMessage(translateNow("toasts.workpaperRowsPulledFromBooks"), {
+          rows: result?.rows ?? 0,
+        }),
+        description: translateNow("toasts.oneRowPerIncomeExpenseAccountWith"),
       });
     },
     onError: (e: any) =>
       toast({
         variant: "destructive",
-        title: "Could not pull from books",
+        title: translateNow("toasts.couldNotPullFromBooks"),
         description: e?.message,
       }),
   });
@@ -382,15 +388,17 @@ export default function CorporateTax() {
     onSuccess: (data: CalculationResult) => {
       setCalculation(data);
       toast({
-        title: "Calculation Complete",
-        description: `Processed ${data.journalEntriesProcessed} journal entries.`,
+        title: translateNow("toasts.calculationComplete"),
+        description: formatMessage(translateNow("toasts.processedJournalEntries"), {
+          journalEntriesProcessed: data.journalEntriesProcessed,
+        }),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Calculation Failed",
-        description: error?.message || "Failed to calculate corporate tax",
+        title: translateNow("toasts.calculationFailed"),
+        description: error?.message || translateNow("toasts.failedToCalculateCorporateTax"),
       });
     },
   });
@@ -424,8 +432,8 @@ export default function CorporateTax() {
         queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
       });
       toast({
-        title: "Draft Saved",
-        description: "Corporate tax return saved as draft.",
+        title: translateNow("toasts.draftSaved"),
+        description: translateNow("toasts.corporateTaxReturnSavedAsDraft"),
       });
       setCalculation(null);
       setNotes("");
@@ -435,8 +443,8 @@ export default function CorporateTax() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Save Failed",
-        description: error?.message || "Failed to save draft",
+        title: translateNow("toasts.saveFailed"),
+        description: error?.message || translateNow("toasts.failedToSaveDraft"),
       });
     },
   });

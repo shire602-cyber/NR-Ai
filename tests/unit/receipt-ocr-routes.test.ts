@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import express from "express";
 
 const COMPANY = "11111111-1111-4111-8111-111111111111";
+const OTHER_COMPANY = "22222222-2222-4222-8222-222222222222";
+// X6b: a small per-company OCR budget so the limiter test stays short (read when the route loads).
+vi.hoisted(() => {
+  process.env.RL_OCR_COMPANY_MAX = "3";
+});
 
 vi.mock("../../server/middleware/auth", () => ({
   authMiddleware: (req: any, _res: any, next: any) => {
@@ -43,6 +48,7 @@ vi.mock("../../server/services/local-ocr.service", () => ({
   }),
 }));
 
+import { extractReceiptWithLocalOcr } from "../../server/services/local-ocr.service";
 import { registerOCRRoutes } from "../../server/routes/ocr.routes";
 import { setUsageStore, clearPromptCache } from "../../server/services/ai/usage-meter";
 
@@ -367,5 +373,50 @@ describe("X3 /api/ocr/status tells the page up front whether automatic reading i
     const { client } = anthropicReturning(goodExtraction);
     const res = await status(appWith({ anthropic: client }));
     expect(res.body).toEqual({ aiConfigured: true });
+  });
+});
+
+describe("X6b OCR fails fast and is rate limited per company", () => {
+  it("answers 503 AI_NOT_CONFIGURED at once for an image when no AI provider is set, without starting local OCR", async () => {
+    vi.mocked(extractReceiptWithLocalOcr).mockClear();
+    const started = Date.now();
+    const res = await post(appWith({}), { imageData: PNG_URL, companyId: COMPANY });
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe("AI_NOT_CONFIGURED");
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(extractReceiptWithLocalOcr).not.toHaveBeenCalled();
+  });
+
+  it("still parses pasted text without a provider (no 503 for the instant parser)", async () => {
+    const res = await post(appWith({}), {
+      companyId: COMPANY,
+      content: "Spinneys\nDate 10/11/2026\nTotal 105.00 AED",
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.ocrSource).toBe("text-parser");
+  });
+
+  it("limits scans per company: the 4th call in the window is 429, another company is unaffected", async () => {
+    const app = appWith({});
+    const server = app.listen(0);
+    try {
+      const addr = server.address();
+      if (typeof addr === "string" || !addr) throw new Error("no address");
+      const call = async (companyId: string) => {
+        const r = await fetch(`http://127.0.0.1:${addr.port}/api/ocr/process`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ companyId, content: "Cafe\nTotal 10.00 AED" }),
+        });
+        return { status: r.status, body: await r.json() };
+      };
+      for (let i = 0; i < 3; i++) expect((await call(COMPANY)).status).toBe(200);
+      const limited = await call(COMPANY);
+      expect(limited.status).toBe(429);
+      expect(limited.body.code).toBe("RATE_LIMITED");
+      expect((await call(OTHER_COMPANY)).status).toBe(200);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });

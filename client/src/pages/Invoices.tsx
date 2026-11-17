@@ -1,3 +1,4 @@
+import { invoiceRowActions } from "@/lib/invoice-row-actions";
 import { T } from "@/components/layout/T";
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
@@ -73,7 +74,7 @@ import { Money, MoneyCell } from "@/components/ui/money";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { invoiceStatusTargets } from "@/lib/invoice-status";
@@ -144,6 +145,7 @@ import {
   parseInvoiceStatusFilter,
   type InvoiceStatusFilter,
 } from "@/lib/invoice-filters";
+import { accountDisplayName } from "@/lib/account-name";
 
 // D5b: the bilingual preview is its own chunk (only loaded when the invoice dialog opens).
 const InvoicePreview = lazy(() =>
@@ -544,7 +546,7 @@ export default function Invoices() {
       toast({
         variant: "destructive",
         title: t["invoices.toastUpdateFailed"],
-        description: error?.message || "Please try again.",
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -800,7 +802,7 @@ export default function Invoices() {
       const result = await apiRequest("POST", `/api/invoices/${invoice.id}/generate-einvoice`);
       toast({
         title: t["invoices.toastEinvoiceGenerated"],
-        description: `UUID: ${result.uuid}`,
+        description: formatMessage(translateNow("toasts.uuid"), { uuid: result.uuid }),
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoices"],
@@ -1150,7 +1152,7 @@ export default function Invoices() {
       toast({
         variant: "destructive",
         title: t["invoices.toastExportFailed"],
-        description: result.error || "Failed to export to Google Sheets",
+        description: result.error || translateNow("toasts.failedToExportToGoogleSheets"),
       });
     }
   };
@@ -2136,10 +2138,12 @@ export default function Invoices() {
                               {t["invoices.actionShare"]}
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuItem onSelect={() => openAddPayment(invoice)}>
-                            <DollarSign aria-hidden />
-                            <T k="invoices.actionAddPayment" />
-                          </DropdownMenuItem>
+                          {invoiceRowActions(invoice).canRecordPayment && (
+                            <DropdownMenuItem onSelect={() => openAddPayment(invoice)}>
+                              <DollarSign aria-hidden />
+                              <T k="invoices.actionAddPayment" />
+                            </DropdownMenuItem>
+                          )}
                         </>
                       }
                     />
@@ -2266,13 +2270,17 @@ export default function Invoices() {
                                       {t["invoices.actionShare"]}
                                     </DropdownMenuItem>
                                   )}
-                                  <DropdownMenuItem
-                                    onSelect={() => openAddPayment(invoice)}
-                                    data-testid={`button-add-payment-${invoice.id}`}
-                                  >
-                                    <DollarSign aria-hidden />
-                                    <T k="invoices.actionAddPayment" />
-                                  </DropdownMenuItem>
+                                  {/* X6b: a draft is not issued yet, so it has no payments, credit
+                                      notes or e-invoice. */}
+                                  {invoiceRowActions(invoice).canRecordPayment && (
+                                    <DropdownMenuItem
+                                      onSelect={() => openAddPayment(invoice)}
+                                      data-testid={`button-add-payment-${invoice.id}`}
+                                    >
+                                      <DollarSign aria-hidden />
+                                      <T k="invoices.actionAddPayment" />
+                                    </DropdownMenuItem>
+                                  )}
                                   <DropdownMenuItem
                                     onSelect={() => void openViewPayments(invoice)}
                                     data-testid={`button-view-payments-${invoice.id}`}
@@ -2280,13 +2288,15 @@ export default function Invoices() {
                                     <FileText aria-hidden />
                                     <T k="invoices.actionViewPayments" />
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onSelect={() => void generateEinvoice(invoice)}
-                                    data-testid={`button-einvoice-${invoice.id}`}
-                                  >
-                                    <FileCode aria-hidden />
-                                    <T k="invoices.actionGenerateEinvoice" />
-                                  </DropdownMenuItem>
+                                  {invoiceRowActions(invoice).canGenerateEinvoice && (
+                                    <DropdownMenuItem
+                                      onSelect={() => void generateEinvoice(invoice)}
+                                      data-testid={`button-einvoice-${invoice.id}`}
+                                    >
+                                      <FileCode aria-hidden />
+                                      <T k="invoices.actionGenerateEinvoice" />
+                                    </DropdownMenuItem>
+                                  )}
                                   <DropdownMenuItem
                                     onSelect={() => openRecurring(invoice)}
                                     data-testid={`button-set-recurring-${invoice.id}`}
@@ -2298,7 +2308,7 @@ export default function Invoices() {
                                       <T k="invoices.actionSetRecurring" />
                                     )}
                                   </DropdownMenuItem>
-                                  {(invoice as any).invoiceType !== "credit_note" && (
+                                  {invoiceRowActions(invoice as any).canCreateCreditNote && (
                                     <DropdownMenuItem
                                       onSelect={() => requestCreditNote(invoice)}
                                       disabled={createCreditNoteMutation.isPending}
@@ -3007,7 +3017,7 @@ export default function Invoices() {
                   <SelectContent>
                     {paymentAccounts.map((acc) => (
                       <SelectItem key={acc.id} value={acc.id}>
-                        {acc.code} — {locale === "ar" && acc.nameAr ? acc.nameAr : acc.nameEn}
+                        {acc.code} — {accountDisplayName(acc, locale)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -3195,9 +3205,7 @@ export default function Invoices() {
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <div className="font-medium">
-                            {locale === "ar" && account.nameAr ? account.nameAr : account.nameEn}
-                          </div>
+                          <div className="font-medium">{accountDisplayName(account, locale)}</div>
                           <div className="text-sm text-muted-foreground">{account.code}</div>
                         </div>
                         {selectedPaymentAccount === account.id && (

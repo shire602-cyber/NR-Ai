@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../lib/queryClient";
 import { useDefaultCompany } from "./useDefaultCompany";
+import type { TrialState } from "@shared/trial";
 
 interface SubscriptionData {
   subscription: {
@@ -17,6 +18,9 @@ interface SubscriptionData {
   };
   limits: Record<string, number>;
   enforcement?: boolean;
+  /** False while Stripe is not configured: the plan buttons become "Contact us". */
+  checkoutAvailable?: boolean;
+  trial?: TrialState | null;
 }
 
 interface UsageData {
@@ -26,7 +30,7 @@ interface UsageData {
     receipts: { used: number; limit: number };
     aiCredits: { used: number; limit: number };
     users: { used: number; limit: number };
-    storage: { used: number; limit: number };
+    storage: { used: number | null; limit: number };
   };
 }
 
@@ -175,6 +179,10 @@ export function useSubscription() {
     subscription: subData?.subscription,
     usage: usageData?.usage,
     limits: subData?.limits,
+    /** Plan limits (invoices, receipts, seats) are enforced only once billing enforcement is on. */
+    enforcement: subData?.enforcement === true,
+    checkoutAvailable: subData?.checkoutAvailable === true,
+    trial: subData?.trial ?? null,
     tierName,
     isFreeTier,
     canAccess,

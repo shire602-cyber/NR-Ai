@@ -77,7 +77,7 @@ const UNSUPPORTED_CLAIMS = [
   /bank feeds?/i,
   /money-back/i,
   /UAE-hosted/i,
-  /most popular/i,
+  // "Most popular" is a plan-card highlight the owner asked for (X6b); it states no user count.
   /trusted by/i,
   /SOC 2 (Type II )?(certified|compliant)/i,
 ];

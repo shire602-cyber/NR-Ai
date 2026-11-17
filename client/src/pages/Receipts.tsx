@@ -34,7 +34,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import {
   defaultPaymentAccountId,
   postablePaymentAccounts,
@@ -113,6 +113,7 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
+import { accountDisplayName } from "@/lib/account-name";
 
 interface ExtractedData {
   merchant?: string;
@@ -386,7 +387,7 @@ export default function Receipts() {
   // Receipt-capture strings for the confidence/duplicate/TRN additions (en + ar).
   const tr = useCallback((en: string, ar: string) => (locale === "ar" ? ar : en), [locale]);
   const accountLabel = (a?: { nameEn: string; nameAr?: string | null }) =>
-    a ? (locale === "ar" && a.nameAr ? a.nameAr : a.nameEn) : "";
+    a ? accountDisplayName(a, locale) : "";
   const { toast } = useToast();
   const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
   // X3: ask up front whether automatic reading (AI/OCR) is enabled, so a scan never spins for a
@@ -489,7 +490,7 @@ export default function Receipts() {
       toast({
         variant: "destructive",
         title: tr("Failed to update receipt", "تعذّر تحديث الإيصال"),
-        description: error?.message || "Please try again.",
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -532,7 +533,7 @@ export default function Receipts() {
       toast({
         variant: "destructive",
         title: tr("Failed to post expense", "تعذّر ترحيل المصروف"),
-        description: error?.message || "Please try again.",
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
     onSettled: () => {
@@ -567,7 +568,7 @@ export default function Receipts() {
       toast({
         variant: "destructive",
         title: tr("Failed to create expense", "تعذّر إنشاء المصروف"),
-        description: error?.message || "Please try again.",
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -594,7 +595,7 @@ export default function Receipts() {
       toast({
         variant: "destructive",
         title: tr("Failed to create account", "تعذّر إنشاء الحساب"),
-        description: error?.message || "Please try again.",
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -629,7 +630,7 @@ export default function Receipts() {
       toast({
         variant: "destructive",
         title: tr("Failed to delete expense", "تعذّر حذف المصروف"),
-        description: error?.message || "Please try again.",
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
     onSettled: () => {
@@ -1885,7 +1886,11 @@ export default function Receipts() {
                           <T k="hr.status.pending" />
                         </Badge>
                         <p className="text-sm text-muted-foreground">
-                          <T k="pageLabels.readyToProcess" />
+                          {autoReadUnavailable ? (
+                            t["pages.receiptsReadyToAttach"]
+                          ) : (
+                            <T k="pageLabels.readyToProcess" />
+                          )}
                         </p>
                       </div>
                     )}
@@ -2448,7 +2453,9 @@ export default function Receipts() {
               description={
                 dateRange.from || dateRange.to
                   ? t["pages.receiptsEmptyRangeBody"]
-                  : t["pages.receiptsEmptyBody"]
+                  : autoReadUnavailable
+                    ? t["pages.receiptsEmptyBodyManual"]
+                    : t["pages.receiptsEmptyBody"]
               }
               action={
                 !(dateRange.from || dateRange.to)
@@ -2887,7 +2894,7 @@ export default function Receipts() {
                     ?.filter((acc) => acc.type === "expense")
                     .map((account) => (
                       <SelectItem key={account.id} value={account.id}>
-                        {locale === "ar" && account.nameAr ? account.nameAr : account.nameEn}
+                        {accountDisplayName(account, locale)}
                       </SelectItem>
                     ))}
                 </SelectContent>
@@ -2926,7 +2933,7 @@ export default function Receipts() {
                   {/* X5 (J1 D1): only postable cash / bank accounts (no headers, no A/R). */}
                   {postablePaymentAccounts(accounts ?? []).map((account) => (
                     <SelectItem key={account.id} value={account.id}>
-                      {locale === "ar" && account.nameAr ? account.nameAr : account.nameEn}
+                      {accountDisplayName(account, locale)}
                     </SelectItem>
                   ))}
                 </SelectContent>

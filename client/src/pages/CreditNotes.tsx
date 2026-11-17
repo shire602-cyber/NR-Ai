@@ -50,7 +50,7 @@ import {
 } from "@/components/ui/select";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
@@ -176,8 +176,8 @@ export default function CreditNotes() {
         queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
       });
       toast({
-        title: "Credit note created",
-        description: "Your credit note has been created successfully.",
+        title: translateNow("toasts.creditNoteCreated"),
+        description: translateNow("toasts.yourCreditNoteHasBeenCreatedSuccessfully"),
       });
       setDialogOpen(false);
       setEditingCreditNote(null);
@@ -186,8 +186,8 @@ export default function CreditNotes() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create credit note",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToCreateCreditNote"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -200,8 +200,8 @@ export default function CreditNotes() {
         queryKey: ["/api/companies", selectedCompanyId, "credit-notes"],
       });
       toast({
-        title: "Credit note updated",
-        description: "Your credit note has been updated successfully.",
+        title: translateNow("toasts.creditNoteUpdated"),
+        description: translateNow("toasts.yourCreditNoteHasBeenUpdatedSuccessfully"),
       });
       setDialogOpen(false);
       setEditingCreditNote(null);
@@ -210,8 +210,8 @@ export default function CreditNotes() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update credit note",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToUpdateCreditNote"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -268,8 +268,8 @@ export default function CreditNotes() {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to load credit note details.",
+        title: translateNow("toasts.error"),
+        description: error?.message || translateNow("toasts.failedToLoadCreditNoteDetails"),
       });
     }
   };

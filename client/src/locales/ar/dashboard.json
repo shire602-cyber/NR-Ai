@@ -70,7 +70,7 @@
   "dashboard.marginHint": "صافي الربح ÷ الإيرادات",
   "dashboard.cashRunwayHint": "تكفي {months} شهرًا",
   "dashboard.cashFromLedger": "من دفتر الأستاذ",
-  "dashboard.receivablesHint": "{open} فواتير · {overdue} متأخرة",
+  "dashboard.receivablesHint": "{open, plural, zero {لا فواتير} one {فاتورة واحدة} two {فاتورتان} few {# فواتير} many {# فاتورة} other {# فاتورة}} · {overdue} متأخرة",
   "dashboard.receivablesHintNone": "لا توجد فواتير مفتوحة",
   "dashboard.payablesHint": "متوسط السداد {days} يومًا",
   "dashboard.payablesHintNone": "فواتير معتمدة لم تُسدد بعد",

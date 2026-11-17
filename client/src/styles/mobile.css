@@ -210,8 +210,16 @@
     flex-direction: row;
     align-items: center;
     gap: 0.625rem;
-    height: 48px;
-    padding-block: 0;
+    min-height: 48px;
+    height: auto;
+    padding-block: 0.375rem;
+  }
+  /* X6b: long labels ("VAT return", "AI hub") wrap to two lines instead of ending in an ellipsis. */
+  .mobile-nav-more-item--tile .mobile-nav-more-label {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.25;
   }
   .mobile-nav-more-icon {
     width: 1.25rem;

@@ -293,5 +293,9 @@
   "forms.errors.exchangeRateInvalid": "أدخل سعرًا موجبًا بحد أقصى 6 منازل عشرية.",
   "forms.claim.amountExclVatAed": "المبلغ بدون الضريبة (د.إ)",
   "forms.asset.inputVat": "ضريبة المدخلات المدفوعة (د.إ)",
-  "forms.asset.inputVatHelp": "ضريبة القيمة المضافة القابلة للاسترداد في فاتورة الشراء. تُرحَّل إلى ضريبة المدخلات المستردة وتظهر في الخانة 9 من الإقرار."
+  "forms.asset.inputVatHelp": "ضريبة القيمة المضافة القابلة للاسترداد في فاتورة الشراء. تُرحَّل إلى ضريبة المدخلات المستردة وتظهر في الخانة 9 من الإقرار.",
+  "forms.serverErrors.STRIPE_NOT_CONFIGURED": "الدفع الإلكتروني غير متاح بعد. تواصل معنا للترقية.",
+  "forms.serverErrors.STORAGE_LIMIT_REACHED": "تم بلوغ حد مساحة التخزين. احذف بعض الملفات أو تواصل معنا للترقية.",
+  "forms.serverErrors.COMPANY_LIMIT_REACHED": "لا تسمح باقتك بإضافة المزيد من الشركات. تواصل معنا لإضافة المزيد.",
+  "forms.serverErrors.AI_NOT_CONFIGURED": "القراءة التلقائية للإيصالات غير مفعّلة بعد. أدخل التفاصيل بنفسك."
 }

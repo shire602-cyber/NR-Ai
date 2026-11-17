@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -148,7 +148,11 @@ export default function AnomalyDetection() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
   const isFetching = scanMutation.isPending;
@@ -160,12 +164,16 @@ export default function AnomalyDetection() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/anomalies`] });
       toast({
-        title: "Anomaly dismissed",
-        description: "The anomaly has been removed from the list.",
+        title: translateNow("toasts.anomalyDismissed"),
+        description: translateNow("toasts.theAnomalyHasBeenRemovedFromThe"),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 

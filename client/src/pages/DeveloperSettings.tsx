@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -216,7 +216,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create API key",
+        title: translateNow("toasts.failedToCreateApiKey"),
         description: error?.message,
       });
     },
@@ -227,12 +227,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
       apiRequest("PUT", `/api/api-keys/${id}`, { isActive }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "api-keys"] });
-      toast({ title: "API key updated" });
+      toast({ title: translateNow("toasts.apiKeyUpdated") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update API key",
+        title: translateNow("toasts.failedToUpdateApiKey"),
         description: error?.message,
       });
     },
@@ -242,13 +242,13 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/api-keys/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "api-keys"] });
-      toast({ title: "API key revoked" });
+      toast({ title: translateNow("toasts.apiKeyRevoked") });
       setDeleteId(null);
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to revoke API key",
+        title: translateNow("toasts.failedToRevokeApiKey"),
         description: error?.message,
       });
     },
@@ -553,7 +553,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create webhook",
+        title: translateNow("toasts.failedToCreateWebhook"),
         description: error?.message,
       });
     },
@@ -569,7 +569,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update webhook",
+        title: translateNow("toasts.failedToUpdateWebhook"),
         description: error?.message,
       });
     },
@@ -585,7 +585,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete webhook",
+        title: translateNow("toasts.failedToDeleteWebhook"),
         description: error?.message,
       });
     },
@@ -596,19 +596,30 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "webhooks"] });
       if (result.success) {
-        toast({ title: "Test sent", description: `Received HTTP ${result.responseStatus}` });
+        toast({
+          title: translateNow("toasts.testSent"),
+          description: formatMessage(translateNow("toasts.receivedHttp"), {
+            responseStatus: result.responseStatus,
+          }),
+        });
       } else {
         toast({
           variant: "destructive",
-          title: "Test failed",
+          title: translateNow("toasts.testFailed"),
           description: result.responseStatus
-            ? `Received HTTP ${result.responseStatus}`
-            : "Could not reach endpoint",
+            ? formatMessage(translateNow("toasts.receivedHttp"), {
+                responseStatus: result.responseStatus,
+              })
+            : translateNow("toasts.couldNotReachEndpoint"),
         });
       }
     },
     onError: (error: any) => {
-      toast({ variant: "destructive", title: "Test failed", description: error?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.testFailed"),
+        description: error?.message,
+      });
     },
   });
 

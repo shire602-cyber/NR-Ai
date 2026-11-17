@@ -68,7 +68,7 @@ import {
 } from "@/components/ui/select";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation, formatMessage } from "@/lib/i18n";
+import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -177,12 +177,16 @@ export default function RecurringInvoices() {
       setDialogOpen(false);
       form.reset();
       toast({
-        title: "Recurring invoice created",
-        description: "The recurring invoice template has been created.",
+        title: translateNow("toasts.recurringInvoiceCreated"),
+        description: translateNow("toasts.theRecurringInvoiceTemplateHasBeenCreated"),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -216,12 +220,16 @@ export default function RecurringInvoices() {
       setEditingItem(null);
       form.reset();
       toast({
-        title: "Recurring invoice updated",
-        description: "The recurring invoice template has been updated.",
+        title: translateNow("toasts.recurringInvoiceUpdated"),
+        description: translateNow("toasts.theRecurringInvoiceTemplateHasBeenUpdated"),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -235,7 +243,11 @@ export default function RecurringInvoices() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -247,10 +259,17 @@ export default function RecurringInvoices() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "recurring-invoices"],
       });
-      toast({ title: "Deleted", description: "Recurring invoice has been deleted." });
+      toast({
+        title: translateNow("toasts.deleted"),
+        description: translateNow("toasts.recurringInvoiceHasBeenDeleted"),
+      });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 

@@ -170,5 +170,16 @@
   "shell.mobileReportOperations": "Report operations - {workspace}",
   "shell.mobileAutomationImpact": "Automation impact - {workspace}",
   "shell.mobileAutomationImpactDesc": "Automation impact for {name}",
-  "shell.cmdListLabel": "Suggestions"
+  "shell.cmdListLabel": "Suggestions",
+  "shell.toastPleaseTryAgain": "Please try again.",
+  "shell.toastRegistrationFailed": "Registration failed",
+  "shell.toastAccountCreated": "Account created!",
+  "shell.toastYouHaveSuccessfullyLoggedIn": "You have successfully logged in.",
+  "shell.toastWelcomeBack": "Welcome back!",
+  "shell.toastWeCouldNotCompleteSocialLoginPlease": "We could not complete social login. Please try again.",
+  "shell.toastLoginFailed": "Login failed",
+  "shell.toastYouCanNowSignInWithYour": "You can now sign in with your new password.",
+  "shell.toastPasswordReset": "Password reset",
+  "shell.toastThisLinkIsMissingItsTokenRequest": "This link is missing its token. Request a new one.",
+  "shell.toastInvalidResetLink": "Invalid reset link"
 }

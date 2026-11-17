@@ -26,7 +26,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
@@ -59,6 +59,7 @@ import {
   RefreshCw,
   MoreHorizontal,
 } from "lucide-react";
+import { accountDisplayName } from "@/lib/account-name";
 
 interface LedgerEntry {
   id: string;
@@ -149,7 +150,7 @@ export default function AccountLedger() {
     onError: (error: any) => {
       toast({
         title: locale === "ar" ? "فشل عكس القيد" : "Reversal failed",
-        description: error?.message || "An error occurred",
+        description: error?.message || translateNow("toasts.anErrorOccurred"),
         variant: "destructive",
       });
     },
@@ -317,7 +318,7 @@ export default function AccountLedger() {
     } catch (_error) {
       toast({
         title: locale === "ar" ? "فشل التصدير" : "Export failed",
-        description: "Could not generate PDF",
+        description: translateNow("toasts.couldNotGeneratePdf"),
         variant: "destructive",
       });
     } finally {
@@ -354,9 +355,7 @@ export default function AccountLedger() {
   }
 
   const accountName = ledger
-    ? locale === "ar" && ledger.account.nameAr
-      ? ledger.account.nameAr
-      : ledger.account.nameEn
+    ? accountDisplayName(ledger.account, locale)
     : locale === "ar"
       ? "دفتر الأستاذ"
       : "Account Ledger";

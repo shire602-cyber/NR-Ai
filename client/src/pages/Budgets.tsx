@@ -80,7 +80,7 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -334,14 +334,18 @@ export default function Budgets() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
       toast({
-        title: "Budget Created",
-        description: "The budget plan has been created successfully.",
+        title: translateNow("toasts.budgetCreated"),
+        description: translateNow("toasts.theBudgetPlanHasBeenCreatedSuccessfully"),
       });
       setBudgetDialogOpen(false);
       budgetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -350,13 +354,20 @@ export default function Budgets() {
       apiRequest("PATCH", `/api/budget-plans/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Budget Updated", description: "The budget plan has been updated." });
+      toast({
+        title: translateNow("toasts.budgetUpdated"),
+        description: translateNow("toasts.theBudgetPlanHasBeenUpdated"),
+      });
       setBudgetDialogOpen(false);
       setEditingBudget(null);
       budgetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -364,11 +375,18 @@ export default function Budgets() {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/budget-plans/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Budget Deleted", description: "The budget plan has been deleted." });
+      toast({
+        title: translateNow("toasts.budgetDeleted"),
+        description: translateNow("toasts.theBudgetPlanHasBeenDeleted"),
+      });
       if (selectedBudget) setSelectedBudget(null);
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -376,10 +394,17 @@ export default function Budgets() {
     mutationFn: (id: string) => apiRequest("POST", `/api/budget-plans/${id}/approve`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Budget Approved", description: "The budget has been approved." });
+      toast({
+        title: translateNow("toasts.budgetApproved"),
+        description: translateNow("toasts.theBudgetHasBeenApproved"),
+      });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -400,7 +425,11 @@ export default function Budgets() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -419,7 +448,11 @@ export default function Budgets() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -437,7 +470,11 @@ export default function Budgets() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -459,7 +496,11 @@ export default function Budgets() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (error) {
-      toast({ title: "Error", description: (error as Error).message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: (error as Error).message,
+        variant: "destructive",
+      });
     }
   };
 
@@ -476,13 +517,20 @@ export default function Budgets() {
         queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
       });
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Line Added", description: "Budget line has been added." });
+      toast({
+        title: translateNow("toasts.lineAdded"),
+        description: translateNow("toasts.budgetLineHasBeenAdded"),
+      });
       setAddLineDialogOpen(false);
       setEditingLine(null);
       lineForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -494,13 +542,20 @@ export default function Budgets() {
         queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
       });
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Line Updated", description: "Budget line has been updated." });
+      toast({
+        title: translateNow("toasts.lineUpdated"),
+        description: translateNow("toasts.budgetLineHasBeenUpdated"),
+      });
       setAddLineDialogOpen(false);
       setEditingLine(null);
       lineForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -511,10 +566,17 @@ export default function Budgets() {
         queryKey: [`/api/budget-plans/${selectedBudget?.id}/lines`],
       });
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/budget-plans`] });
-      toast({ title: "Line Deleted", description: "Budget line has been removed." });
+      toast({
+        title: translateNow("toasts.lineDeleted"),
+        description: translateNow("toasts.budgetLineHasBeenRemoved"),
+      });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 

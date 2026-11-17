@@ -1,6 +1,6 @@
 import { useHasMounted } from "@/hooks/use-has-mounted";
 import { T } from "@/components/layout/T";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -69,12 +69,15 @@ export default function ReceiptAutopilot() {
       apiRequest("PATCH", "/api/ai/classifier-config", { companyId, ...patch }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai/classifier-stats", companyId] });
-      toast({ title: "Settings saved", description: "Autopilot configuration updated." });
+      toast({
+        title: translateNow("toasts.settingsSaved"),
+        description: translateNow("toasts.autopilotConfigurationUpdated"),
+      });
     },
     onError: (err: any) => {
       toast({
-        title: "Could not save",
-        description: err?.message || "Please try again.",
+        title: translateNow("toasts.couldNotSave"),
+        description: err?.message || translateNow("toasts.pleaseTryAgain"),
         variant: "destructive",
       });
     },

@@ -58,7 +58,7 @@ import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import type { Backup } from "@shared/schema";
-import { useI18n, useTranslation } from "@/lib/i18n";
+import { useI18n, useTranslation, translateNow } from "@/lib/i18n";
 
 type BackupWithoutData = Omit<Backup, "dataSnapshot">;
 
@@ -211,8 +211,8 @@ export default function BackupRestore() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
       toast({
-        title: "Backup Created",
-        description: "Your financial data has been backed up successfully.",
+        title: translateNow("toasts.backupCreated"),
+        description: translateNow("toasts.yourFinancialDataHasBeenBackedUp"),
       });
       setIsCreateDialogOpen(false);
       setNewBackupName("");
@@ -220,8 +220,8 @@ export default function BackupRestore() {
     },
     onError: (error: any) => {
       toast({
-        title: "Backup Failed",
-        description: error?.message || "Failed to create backup",
+        title: translateNow("toasts.backupFailed"),
+        description: error?.message || translateNow("toasts.failedToCreateBackup"),
         variant: "destructive",
       });
     },
@@ -234,14 +234,14 @@ export default function BackupRestore() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", selectedCompanyId, "backups"] });
       toast({
-        title: "Backup Deleted",
-        description: "The backup has been removed.",
+        title: translateNow("toasts.backupDeleted"),
+        description: translateNow("toasts.theBackupHasBeenRemoved"),
       });
     },
     onError: (error: any) => {
       toast({
-        title: "Delete Failed",
-        description: error?.message || "Failed to delete backup",
+        title: translateNow("toasts.deleteFailed"),
+        description: error?.message || translateNow("toasts.failedToDeleteBackup"),
         variant: "destructive",
       });
     },
@@ -323,13 +323,13 @@ export default function BackupRestore() {
       a.remove();
 
       toast({
-        title: "Download Started",
-        description: "Your backup file is downloading.",
+        title: translateNow("toasts.downloadStarted"),
+        description: translateNow("toasts.yourBackupFileIsDownloading"),
       });
     } catch (error: any) {
       toast({
-        title: "Download Failed",
-        description: error?.message || "Failed to download backup",
+        title: translateNow("toasts.downloadFailed2"),
+        description: error?.message || translateNow("toasts.failedToDownloadBackup"),
         variant: "destructive",
       });
     }

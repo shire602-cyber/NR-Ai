@@ -43,7 +43,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
@@ -182,13 +182,17 @@ export default function ReconciliationRules() {
         queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
       });
       toast({
-        title: "Rule created",
-        description: "Reconciliation rule has been created successfully.",
+        title: translateNow("toasts.ruleCreated"),
+        description: translateNow("toasts.reconciliationRuleHasBeenCreatedSuccessfully"),
       });
       closeDialog();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -201,13 +205,17 @@ export default function ReconciliationRules() {
         queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
       });
       toast({
-        title: "Rule updated",
-        description: "Reconciliation rule has been updated successfully.",
+        title: translateNow("toasts.ruleUpdated"),
+        description: translateNow("toasts.reconciliationRuleHasBeenUpdatedSuccessfully"),
       });
       closeDialog();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -219,10 +227,17 @@ export default function ReconciliationRules() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules"],
       });
-      toast({ title: "Rule deleted", description: "Reconciliation rule has been deleted." });
+      toast({
+        title: translateNow("toasts.ruleDeleted"),
+        description: translateNow("toasts.reconciliationRuleHasBeenDeleted"),
+      });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -236,7 +251,11 @@ export default function ReconciliationRules() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -265,7 +284,11 @@ export default function ReconciliationRules() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Auto-match failed", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.autoMatchFailed"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 

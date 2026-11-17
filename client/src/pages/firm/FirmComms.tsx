@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import {
   Mail,
   MessageCircle,
@@ -375,7 +375,11 @@ function ComposeTab() {
       if (res.success) {
         toast({ title: t["firmComms.messageSent"] });
       } else {
-        toast({ title: "Logged (not sent)", description: res.note, variant: "destructive" });
+        toast({
+          title: translateNow("toasts.loggedNotSent"),
+          description: res.note,
+          variant: "destructive",
+        });
       }
       setBody("");
       setSubject("");
@@ -827,7 +831,11 @@ function BulkActionsTab() {
     onSuccess: (res: BulkResult) => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/comms/log"] });
       toast({
-        title: `${t.bulkRemindSuccess}: ${res.sent} sent, ${res.failed} failed`,
+        title: formatMessage(translateNow("toasts.sentFailed"), {
+          bulkRemindSuccess: t.bulkRemindSuccess,
+          sent: res.sent,
+          failed: res.failed,
+        }),
       });
       setPreview(null);
     },

@@ -1,6 +1,6 @@
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -216,7 +216,11 @@ export default function ClientPortfolio() {
       setForm(emptyForm);
     },
     onError: (e: any) => {
-      toast({ variant: "destructive", title: "Failed to create client", description: e?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.failedToCreateClient"),
+        description: e?.message,
+      });
     },
   });
 
@@ -231,7 +235,7 @@ export default function ClientPortfolio() {
     onError: (e: any) => {
       toast({
         variant: "destructive",
-        title: "Could not open client books",
+        title: translateNow("toasts.couldNotOpenClientBooks"),
         description: e?.message,
       });
     },
@@ -257,13 +261,23 @@ export default function ClientPortfolio() {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/bookkeeper-dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       toast({
-        title: `Imported ${result.created.length} clients`,
+        title: formatMessage(translateNow("toasts.importedClients"), {
+          count: result.created.length,
+        }),
         description:
-          result.errors.length > 0 ? `${result.errors.length} errors — see details.` : undefined,
+          result.errors.length > 0
+            ? formatMessage(translateNow("toasts.errorsSeeDetails"), {
+                count: result.errors.length,
+              })
+            : undefined,
       });
     },
     onError: (e: any) => {
-      toast({ variant: "destructive", title: "Import failed", description: e?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.importFailed2"),
+        description: e?.message,
+      });
     },
   });
 

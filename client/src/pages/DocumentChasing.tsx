@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation, formatMessage } from "@/lib/i18n";
+import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -151,7 +151,10 @@ export default function DocumentChasing() {
         }
       ),
     onSuccess: (data: { whatsappLink?: string | null }) => {
-      toast({ title: "Chase recorded", description: "Marked as sent." });
+      toast({
+        title: translateNow("toasts.chaseRecorded"),
+        description: translateNow("toasts.markedAsSent"),
+      });
       if (data?.whatsappLink) window.open(data.whatsappLink, "_blank", "noopener,noreferrer");
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "document-chases", "queue"],
@@ -165,14 +168,23 @@ export default function DocumentChasing() {
       setPreviewItem(null);
     },
     onError: (e: Error) =>
-      toast({ title: "Failed", description: e.message ?? "Send failed", variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.failed"),
+        description: e.message ?? translateNow("toasts.sendFailed"),
+        variant: "destructive",
+      }),
   });
 
   const bulkSendMutation = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/document-chases/bulk-send`, {}),
     onSuccess: (data: { sentCount: number }) => {
-      toast({ title: "Bulk chase complete", description: `Sent ${data.sentCount} reminders.` });
+      toast({
+        title: translateNow("toasts.bulkChaseComplete"),
+        description: formatMessage(translateNow("toasts.sentReminders"), {
+          sentCount: data.sentCount,
+        }),
+      });
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "document-chases", "queue"],
       });
@@ -181,7 +193,11 @@ export default function DocumentChasing() {
       });
     },
     onError: (e: Error) =>
-      toast({ title: "Failed", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.failed"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const markReceivedMutation = useMutation({
@@ -199,7 +215,11 @@ export default function DocumentChasing() {
       });
     },
     onError: (e: Error) =>
-      toast({ title: "Failed", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.failed"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const requirements = useMemo(() => requirementsQuery.data ?? [], [requirementsQuery.data]);
@@ -734,7 +754,11 @@ function AddRequirementDialog(props: { open: boolean; onClose: () => void; compa
       props.onClose();
     },
     onError: (e: Error) =>
-      toast({ title: "Failed", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.failed"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   return (
@@ -865,7 +889,11 @@ function AddComplianceEventDialog(props: {
       props.onClose();
     },
     onError: (e: Error) =>
-      toast({ title: "Failed", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.failed"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   return (

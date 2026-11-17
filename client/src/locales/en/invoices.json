@@ -78,8 +78,8 @@
   "invoices.actionCreateCreditNote": "Create credit note",
   "invoices.actionDelete": "Delete invoice",
   "invoices.actionDownloadPdf": "Download PDF",
-  "invoices.deleteTitle": "Delete invoice {number}?",
-  "invoices.deleteBody": "This permanently deletes the invoice. This cannot be undone.",
+  "invoices.deleteTitle": "Delete draft invoice {number}?",
+  "invoices.deleteBody": "If this is your latest invoice number, the draft is deleted and its number is reused. Otherwise the draft is cancelled and its number stays on file, so numbering has no gaps. Issued invoices cannot be deleted.",
   "invoices.einvoiceShort": "E-invoice",
   "invoices.exporting": "Exporting…",
   "invoices.colDue": "Due",
@@ -200,5 +200,7 @@
   "invoices.publicTrn": "TRN",
   "invoices.publicLinkExpiredBody": "This invoice link has expired. Please contact the sender for a new link.",
   "invoices.publicLinkInvalidBody": "This invoice link is invalid or has been removed.",
-  "invoices.publicPayFailed": "Payment could not be started"
+  "invoices.publicPayFailed": "Payment could not be started",
+  "invoices.currency.pegBadge": "Peg",
+  "invoices.currency.pegNote": "The dirham is pegged to the US dollar at 3.6725. You can change it for this invoice."
 }

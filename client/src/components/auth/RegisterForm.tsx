@@ -23,7 +23,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { apiUrl } from "@/lib/api";
 import { UserPlus } from "lucide-react";
 import { OAuthButtons } from "./OAuthButtons";
@@ -109,14 +109,14 @@ export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
       await onSuccess(result.user);
 
       toast({
-        title: "Account created!",
+        title: translateNow("shell.toastAccountCreated"),
         description: noEmail ? t["security.registerNoEmail"] : t["security.registerCheckEmail"],
       });
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Registration failed",
-        description: error?.message || "Please try again.",
+        title: translateNow("shell.toastRegistrationFailed"),
+        description: error?.message || translateNow("shell.toastPleaseTryAgain"),
       });
     } finally {
       setIsLoading(false);
@@ -225,8 +225,11 @@ export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
               data-testid="button-register"
             >
               <UserPlus className="w-4 h-4 mr-2" />
-              {isLoading ? t.loading : t.signUp}
+              {isLoading ? t.loading : t["marketing.startFreeTrial"]}
             </Button>
+            <p className="text-center text-xs text-muted-foreground" data-testid="text-trial-claim">
+              {t["marketing.trialClaim"]}
+            </p>
           </form>
         </Form>
         <div className="mt-4">

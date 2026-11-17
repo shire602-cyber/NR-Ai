@@ -26,7 +26,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
@@ -189,8 +189,10 @@ export default function IntegrationsHub() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/integrations/ecommerce", companyId] });
       toast({
-        title: "Connected",
-        description: `${selectedPlatform?.name} integration connected successfully`,
+        title: translateNow("toasts.connected"),
+        description: formatMessage(translateNow("toasts.integrationConnected"), {
+          name: selectedPlatform?.name ?? "",
+        }),
       });
       setConnectDialogOpen(false);
       setConfigForm({ platform: "" });
@@ -198,8 +200,8 @@ export default function IntegrationsHub() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to connect integration",
+        title: translateNow("toasts.error"),
+        description: error?.message || translateNow("toasts.failedToConnectIntegration"),
       });
     },
   });
@@ -221,8 +223,8 @@ export default function IntegrationsHub() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Sync Failed",
-        description: error?.message || "Failed to sync data",
+        title: translateNow("toasts.syncFailed"),
+        description: error?.message || translateNow("toasts.failedToSyncData"),
       });
     },
   });
@@ -246,8 +248,8 @@ export default function IntegrationsHub() {
     if (selectedPlatform.id === "stripe" && !configForm.apiKey) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "Please enter your Stripe Secret Key",
+        title: translateNow("toasts.error"),
+        description: translateNow("toasts.pleaseEnterYourStripeSecretKey"),
       });
       return;
     }
@@ -255,8 +257,8 @@ export default function IntegrationsHub() {
     if (selectedPlatform.id === "shopify" && (!configForm.shopDomain || !configForm.accessToken)) {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: "Please enter both Shop Domain and Access Token",
+        title: translateNow("toasts.error"),
+        description: translateNow("toasts.pleaseEnterBothShopDomainAndAccess"),
       });
       return;
     }

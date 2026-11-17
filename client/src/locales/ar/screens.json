@@ -61,7 +61,7 @@
   "screens.billNumber": "رقم الفاتورة",
   "screens.paid": "المدفوع",
   "screens.confirmDeleteBill": "هل تريد حذف هذه الفاتورة؟ لا يمكن التراجع عن ذلك.",
-  "screens.billsCount": "{count} فواتير",
+  "screens.billsCount": "{count, plural, zero {لا فواتير موردين} one {فاتورة مورّد واحدة} two {فاتورتا مورّد} few {# فواتير موردين} many {# فاتورة مورّد} other {# فاتورة مورّد}}",
   "screens.agingCurrent": "حالية (غير مستحقة بعد)",
   "screens.aging1to30": "1–30 يومًا",
   "screens.aging31to60": "31–60 يومًا",
@@ -229,6 +229,6 @@
   "screens.editCostCenter": "تعديل مركز التكلفة",
   "screens.costCenterDialogEditDesc": "حدّث تفاصيل مركز التكلفة.",
   "screens.costCenterDialogNewDesc": "أدخل التفاصيل لإنشاء مركز تكلفة.",
-  "screens.invoicesCount": "{count} فواتير",
+  "screens.invoicesCount": "{count, plural, zero {لا فواتير} one {فاتورة واحدة} two {فاتورتان} few {# فواتير} many {# فاتورة} other {# فاتورة}}",
   "screens.entryLines": "بنود القيد"
 }

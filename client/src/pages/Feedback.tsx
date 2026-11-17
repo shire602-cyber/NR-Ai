@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -100,7 +100,7 @@ export default function Feedback() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/feedback"] });
-      toast({ title: "Thank you for your feedback!" });
+      toast({ title: translateNow("toasts.thankYouForYourFeedback") });
       setFormData({
         feedbackType: "",
         category: "",
@@ -113,7 +113,11 @@ export default function Feedback() {
       setActiveTab("history");
     },
     onError: (error: any) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 

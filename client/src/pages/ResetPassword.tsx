@@ -27,7 +27,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
 import { ArrowLeft, CheckCircle2, KeyRound } from "lucide-react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 
 /** R01-06: a reset signs out every device that was signed in before it. */
 const RESET_COPY = {
@@ -72,8 +72,8 @@ export default function ResetPassword() {
     if (!token) {
       toast({
         variant: "destructive",
-        title: "Invalid reset link",
-        description: "This link is missing its token. Request a new one.",
+        title: translateNow("shell.toastInvalidResetLink"),
+        description: translateNow("shell.toastThisLinkIsMissingItsTokenRequest"),
       });
     }
   }, [token, toast]);
@@ -93,8 +93,8 @@ export default function ResetPassword() {
       }
       setDone(true);
       toast({
-        title: "Password reset",
-        description: "You can now sign in with your new password.",
+        title: translateNow("shell.toastPasswordReset"),
+        description: translateNow("shell.toastYouCanNowSignInWithYour"),
       });
       // Redirect to login after a brief moment so the user sees confirmation.
       setTimeout(() => setLocation("/login"), 1500);

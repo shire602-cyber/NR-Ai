@@ -33,7 +33,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
+import { formatMessage, useI18n, useTranslation, translateNow } from "@/lib/i18n";
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
@@ -479,11 +479,16 @@ export default function BankReconciliation() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
       toast({
-        title: "Import Successful",
+        title: translateNow("toasts.importSuccessful"),
         description:
           data.skippedDuplicates > 0
-            ? `Imported ${data.imported ?? 0} new transaction(s); skipped ${data.skippedDuplicates} duplicate(s).`
-            : `Imported ${data.imported ?? 0} transaction(s). Matching suggestions are being prepared.`,
+            ? formatMessage(translateNow("toasts.importedSkippedDuplicates"), {
+                imported: data.imported ?? 0,
+                skipped: data.skippedDuplicates,
+              })
+            : formatMessage(translateNow("toasts.importedMatchingPrepared"), {
+                imported: data.imported ?? 0,
+              }),
       });
       setImportDialogOpen(false);
       resetStatementPreview();
@@ -491,7 +496,11 @@ export default function BankReconciliation() {
       setProcessingStatus("");
     },
     onError: (error: any) => {
-      toast({ variant: "destructive", title: "Import Failed", description: error?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.importFailed"),
+        description: error?.message,
+      });
     },
   });
 
@@ -531,8 +540,8 @@ export default function BankReconciliation() {
     },
     onSuccess: () => {
       toast({
-        title: "Transaction Reconciled",
-        description: "Bank transaction matched successfully.",
+        title: translateNow("toasts.transactionReconciled"),
+        description: translateNow("toasts.bankTransactionMatchedSuccessfully"),
       });
       setMatchDialogOpen(false);
       setSelectedTransaction(null);
@@ -543,7 +552,7 @@ export default function BankReconciliation() {
       }
       toast({
         variant: "destructive",
-        title: "Reconciliation Failed",
+        title: translateNow("toasts.reconciliationFailed"),
         description: error?.message,
       });
     },
@@ -571,13 +580,20 @@ export default function BankReconciliation() {
       return { previous, queryKey };
     },
     onSuccess: () => {
-      toast({ title: "Match Removed", description: "Transaction reset to unmatched." });
+      toast({
+        title: translateNow("toasts.matchRemoved"),
+        description: translateNow("toasts.transactionResetToUnmatched"),
+      });
     },
     onError: (error: any, _id, context: any) => {
       if (context?.previous && context?.queryKey) {
         queryClient.setQueryData(context.queryKey, context.previous);
       }
-      toast({ variant: "destructive", title: "Error", description: error?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.error"),
+        description: error?.message,
+      });
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
@@ -607,14 +623,16 @@ export default function BankReconciliation() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "bank-statements"] });
       toast({
-        title: "Auto-Reconciliation Complete",
-        description: `Found ${data.matches?.length ?? 0} potential matches`,
+        title: translateNow("toasts.autoReconciliationComplete"),
+        description: formatMessage(translateNow("toasts.foundPotentialMatches"), {
+          count: data.matches?.length ?? 0,
+        }),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Auto-Reconciliation Failed",
+        title: translateNow("toasts.autoReconciliationFailed"),
         description: error?.message,
       });
     },
@@ -715,8 +733,8 @@ export default function BankReconciliation() {
     if (!importFile || !selectedBankAccount) {
       toast({
         variant: "destructive",
-        title: "Missing Information",
-        description: "Select a bank account and upload a file",
+        title: translateNow("toasts.missingInformation"),
+        description: translateNow("toasts.selectABankAccountAndUploadA"),
       });
       return;
     }
@@ -757,8 +775,8 @@ export default function BankReconciliation() {
         if (txns.length === 0) {
           toast({
             variant: "destructive",
-            title: "No transactions found",
-            description: "Try a different format.",
+            title: translateNow("toasts.noTransactionsFound"),
+            description: translateNow("toasts.tryADifferentFormat"),
           });
           return;
         }
@@ -771,7 +789,12 @@ export default function BankReconciliation() {
         queryClient.invalidateQueries({
           queryKey: ["/api/companies", companyId, "bank-statements"],
         });
-        toast({ title: "Import Successful", description: `Imported ${txns.length} transactions` });
+        toast({
+          title: translateNow("toasts.importSuccessful"),
+          description: formatMessage(translateNow("toasts.importedTransactions"), {
+            count: txns.length,
+          }),
+        });
         setImportDialogOpen(false);
         resetStatementPreview();
       } else {
@@ -788,7 +811,11 @@ export default function BankReconciliation() {
         });
       }
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Import Failed", description: error?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.importFailed"),
+        description: error?.message,
+      });
     } finally {
       setIsImporting(false);
       setProcessingStatus("");

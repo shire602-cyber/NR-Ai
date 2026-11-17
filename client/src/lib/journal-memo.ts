@@ -53,6 +53,98 @@ const SHAPES: MemoShape[] = [
     key: "journal.memo.yearEndClose",
     params: ["ref"],
   },
+  // X6b: inventory, payroll and bill posting descriptions (also used as line descriptions).
+  { pattern: /^Opening stock - (.*)$/, key: "journal.memo.openingStock", params: ["ref"] },
+  { pattern: /^Opening stock$/, key: "journal.memo.openingStockLine", params: [] },
+  {
+    pattern: /^Opening stock valuation - (.*)$/,
+    key: "journal.memo.openingStockValuation",
+    params: ["ref"],
+  },
+  {
+    pattern: /^Opening stock valuation backfill$/,
+    key: "journal.memo.openingStockBackfill",
+    params: [],
+  },
+  {
+    pattern: /^Opening stock valuation$/,
+    key: "journal.memo.openingStockValuationLine",
+    params: [],
+  },
+  {
+    pattern: /^Payroll (\S+) - (\d+) employee\(s\)$/,
+    key: "journal.memo.payrollRun",
+    params: ["label", "n"],
+  },
+  {
+    pattern: /^Salary payment - payroll (\S+)$/,
+    key: "journal.memo.salaryPayment",
+    params: ["label"],
+  },
+  {
+    pattern: /^End-of-service settlement payment - (.*)$/,
+    key: "journal.memo.eosSettlementPayment",
+    params: ["party"],
+  },
+  {
+    pattern: /^End-of-service settlement - (.*)$/,
+    key: "journal.memo.eosSettlement",
+    params: ["party"],
+  },
+  {
+    pattern: /^Salaries & wages - payroll (\S+)(.*)$/,
+    key: "journal.memo.payrollSalaries",
+    params: ["label", "rest"],
+  },
+  {
+    pattern: /^Employer pension contribution \(GPSSA\) - payroll (\S+)(.*)$/,
+    key: "journal.memo.payrollEmployerPension",
+    params: ["label", "rest"],
+  },
+  {
+    pattern: /^End-of-service gratuity accrual - payroll (\S+)(.*)$/,
+    key: "journal.memo.payrollGratuityAccrual",
+    params: ["label", "rest"],
+  },
+  {
+    pattern: /^Net salaries payable - payroll (\S+)$/,
+    key: "journal.memo.payrollNetPayable",
+    params: ["label"],
+  },
+  {
+    pattern: /^Pension payable to GPSSA \(employee \+ employer\) - payroll (\S+)$/,
+    key: "journal.memo.payrollPensionPayable",
+    params: ["label"],
+  },
+  {
+    pattern: /^Payroll deductions payable - payroll (\S+)$/,
+    key: "journal.memo.payrollDeductionsPayable",
+    params: ["label"],
+  },
+  {
+    pattern: /^End-of-service gratuity provision - payroll (\S+)$/,
+    key: "journal.memo.payrollGratuityProvision",
+    params: ["label"],
+  },
+  { pattern: /^Input VAT - Bill (\S+)$/, key: "journal.memo.billInputVat", params: ["ref"] },
+  {
+    pattern: /^Reverse-charge output VAT - Bill (\S+)$/,
+    key: "journal.memo.billReverseChargeVat",
+    params: ["ref"],
+  },
+  {
+    pattern: /^Settle A\/P - Bill (\S+) - (.*)$/,
+    key: "journal.memo.billSettleAp",
+    params: ["ref", "party"],
+  },
+  {
+    pattern: /^Payment to (.*) - Bill (\S+)$/,
+    key: "journal.memo.billPaymentTo",
+    params: ["party", "ref"],
+  },
+  { pattern: /^Realised FX loss - Bill (\S+)$/, key: "journal.memo.billFxLoss", params: ["ref"] },
+  { pattern: /^Realised FX gain - Bill (\S+)$/, key: "journal.memo.billFxGain", params: ["ref"] },
+  { pattern: /^Bill (\S+) - (.*)$/, key: "journal.memo.billLine", params: ["ref", "party"] },
 ];
 
 const METHOD_KEYS: Record<string, string> = {

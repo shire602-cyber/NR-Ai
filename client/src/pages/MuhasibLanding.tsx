@@ -4,7 +4,6 @@ import { Link } from "wouter";
 import {
   ArrowRight,
   BookOpenCheck,
-  Building2,
   Check,
   FileDown,
   FileSpreadsheet,
@@ -14,7 +13,6 @@ import {
   Languages,
   LineChart,
   Plus,
-  ShieldCheck,
   Users,
   Wallet,
   type LucideIcon,
@@ -128,7 +126,7 @@ function Hero() {
           <div className="mk-hero__ctas mk-rise mk-rise--3">
             <Button asChild size="xl">
               <Link href="/register" data-testid="button-hero-start">
-                {t["marketing.startFree"]}
+                {t["marketing.startFreeTrial"]}
                 <ArrowRight className="mk-flip" aria-hidden="true" />
               </Link>
             </Button>
@@ -330,47 +328,6 @@ function Product() {
   );
 }
 
-function Firms() {
-  const { t } = useTranslation();
-  const points: [Icon, string, string][] = [
-    [Building2, "marketing.firmsPoint1Title", "marketing.firmsPoint1Body"],
-    [BookOpenCheck, "marketing.firmsPoint2Title", "marketing.firmsPoint2Body"],
-    [ShieldCheck, "marketing.firmsPoint3Title", "marketing.firmsPoint3Body"],
-  ];
-  return (
-    <section id="firms" className="mk-section mk-band" aria-labelledby="mk-firms-title">
-      <div className="mk-container mk-firms">
-        <div>
-          <p className="mk-eyebrow">{t["marketing.firmsEyebrow"]}</p>
-          <h2 id="mk-firms-title" className="mk-h2" style={{ marginBlockStart: "1rem" }}>
-            {t["marketing.firmsTitle"]}
-          </h2>
-          <p className="mk-lead" style={{ marginBlockStart: "1.25rem" }}>
-            {t["marketing.firmsBody"]}
-          </p>
-          <div style={{ marginBlockStart: "2rem" }}>
-            <Button asChild variant="outline" size="lg" className="mk-on-band">
-              <Link href="/services">
-                {t["marketing.firmsCta"]}
-                <ArrowRight className="mk-flip" aria-hidden="true" />
-              </Link>
-            </Button>
-          </div>
-        </div>
-        <ul className="mk-firms__list">
-          {points.map(([IconCmp, title, body]) => (
-            <li key={title} className="mk-firms__item">
-              <IconCmp aria-hidden="true" />
-              <h3 className="mk-h3">{t[title]}</h3>
-              <p>{t[body]}</p>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
 function Steps() {
   const { t } = useTranslation();
   return (
@@ -498,7 +455,7 @@ function FinalCta() {
           <div className="mk-hero__ctas">
             <Button asChild size="xl">
               <Link href="/register">
-                {t["marketing.startFree"]}
+                {t["marketing.startFreeTrial"]}
                 <ArrowRight className="mk-flip" aria-hidden="true" />
               </Link>
             </Button>
@@ -520,7 +477,6 @@ export default function MuhasibLanding() {
     >
       <Hero />
       <Product />
-      <Firms />
       <Steps />
       <PricingTeaser />
       <Faq />

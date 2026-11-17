@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
@@ -127,12 +127,19 @@ export default function AutoReconcile() {
       );
       setSelectedMatches(highConf);
       toast({
-        title: "Scan complete",
-        description: `Found ${data.matches.length} potential match(es) for ${data.totalUnreconciled} unreconciled transaction(s).`,
+        title: translateNow("toasts.scanComplete"),
+        description: formatMessage(
+          translateNow("toasts.foundPotentialMatchEsForUnreconciledTransaction"),
+          { count: data.matches.length, totalUnreconciled: data.totalUnreconciled }
+        ),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Scan failed", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.scanFailed"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -153,7 +160,7 @@ export default function AutoReconcile() {
     onSuccess: (data: { message: string; skipped?: number; errors?: string[] }) => {
       // Failed or skipped lines are reported, never counted as reconciled.
       toast({
-        title: "Reconciliation applied",
+        title: translateNow("toasts.reconciliationApplied"),
         description: [data.message, ...(data.errors ?? []).slice(0, 3)].join(" · "),
         variant: data.errors && data.errors.length > 0 ? "destructive" : undefined,
       });
@@ -161,7 +168,11 @@ export default function AutoReconcile() {
       scanMutation.mutate();
     },
     onError: (error: Error) => {
-      toast({ title: "Apply failed", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.applyFailed"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 

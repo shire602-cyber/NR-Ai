@@ -124,6 +124,8 @@ function cleanPath(url) {
   return parsed.pathname;
 }
 
+let crawlEmail = "";
+
 async function main() {
   await mkdir(ARTIFACT_DIR, { recursive: true });
   const axe = RTL_MODE ? null : await loadAxe();
@@ -165,6 +167,7 @@ async function main() {
     if (login.status() >= 300) throw new Error(`login failed: ${login.status()}`);
   } else {
     const email = `a11y-crawl+${Date.now()}@test.local`;
+    crawlEmail = email;
     const reg = await page.request.post(`${BASE}/api/auth/register`, {
       data: {
         email,
@@ -194,6 +197,21 @@ async function main() {
   // Multi-company variant: once the first company is onboarded, a second one makes the shell
   // company switcher render (it is hidden for one-company users).
   if (MULTI_COMPANY) {
+    // The Free plan allows one company per user (a launch-offer cost cap, X6b). A disposable local
+    // database lets the crawl move its own company to a plan that allows more; a real target must
+    // run with COST_CAPS_ENFORCEMENT=false or an existing multi-company user (A11Y_EMAIL).
+    if (crawlEmail && process.env.DATABASE_URL && isLocal) {
+      const { default: pg } = await import("pg");
+      const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+      await db.connect();
+      await db.query(
+        `UPDATE subscriptions SET plan_id = 'professional', plan_name = 'Professional'
+          WHERE company_id IN (SELECT cu.company_id FROM company_users cu
+                                 JOIN users u ON u.id = cu.user_id WHERE u.email = $1)`,
+        [crawlEmail]
+      );
+      await db.end();
+    }
     const csrf = await (await page.request.get(`${BASE}/api/csrf-token`)).json();
     const created = await page.request.post(`${BASE}/api/companies`, {
       data: { name: "A11y Second Trading LLC" },

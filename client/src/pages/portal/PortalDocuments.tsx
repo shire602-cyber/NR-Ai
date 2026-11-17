@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, FileImage, File, Loader2, CheckCircle2 } from "lucide-react";
@@ -72,10 +72,17 @@ export default function PortalDocuments() {
     mutationFn: (file: File) => uploadDocument(file),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-documents"] });
-      toast({ title: "Document uploaded", description: "NR Accounting can now see your file." });
+      toast({
+        title: translateNow("toasts.documentUploaded"),
+        description: translateNow("toasts.nrAccountingCanNowSeeYourFile"),
+      });
     },
     onError: (e: any) =>
-      toast({ title: "Upload failed", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.uploadFailed2"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {

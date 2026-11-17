@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -112,15 +112,15 @@ export default function NotificationPreferences() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/notification-preferences"] });
       toast({
-        title: "Preferences saved",
-        description: "Your notification preferences have been updated.",
+        title: translateNow("toasts.preferencesSaved"),
+        description: translateNow("toasts.yourNotificationPreferencesHaveBeenUpdated"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to save preferences",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToSavePreferences"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -148,8 +148,8 @@ export default function NotificationPreferences() {
       } else {
         toast({
           variant: "destructive",
-          title: "Push notifications blocked",
-          description: "Please allow notifications in your browser settings.",
+          title: translateNow("toasts.pushNotificationsBlocked"),
+          description: translateNow("toasts.pleaseAllowNotificationsInYourBrowserSettings"),
         });
       }
     }

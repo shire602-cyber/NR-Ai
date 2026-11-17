@@ -37,7 +37,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -236,16 +236,16 @@ export default function VATFiling() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vat-returns"] });
       toast({
-        title: "VAT Return Generated",
-        description: "Review the calculated amounts before submitting.",
+        title: translateNow("toasts.vatReturnGenerated2"),
+        description: translateNow("toasts.reviewTheCalculatedAmountsBeforeSubmitting"),
       });
       setCreateDialogOpen(false);
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Generation Failed",
-        description: error?.message || "Failed to generate VAT return",
+        title: translateNow("toasts.generationFailed"),
+        description: error?.message || translateNow("toasts.failedToGenerateVatReturn"),
       });
     },
   });
@@ -256,16 +256,16 @@ export default function VATFiling() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vat-returns"] });
       toast({
-        title: "VAT Return Updated",
-        description: "Your changes have been saved.",
+        title: translateNow("toasts.vatReturnUpdated"),
+        description: translateNow("toasts.yourChangesHaveBeenSaved"),
       });
       setEditDialogOpen(false);
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Update Failed",
-        description: error?.message || "Failed to update VAT return",
+        title: translateNow("toasts.updateFailed"),
+        description: error?.message || translateNow("toasts.failedToUpdateVatReturn"),
       });
     },
   });
@@ -276,9 +276,8 @@ export default function VATFiling() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vat-returns"] });
       toast({
-        title: "Finalised for review — not yet filed",
-        description:
-          "Muhasib does not file with the FTA. Submit this return through EmaraTax, then record the FTA reference number against it.",
+        title: translateNow("toasts.finalisedForReviewNotYetFiled"),
+        description: translateNow("toasts.muhasibDoesNotFileWithTheFta"),
       });
       setEditDialogOpen(false);
       setSelectedReturn(null);
@@ -286,8 +285,8 @@ export default function VATFiling() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Submission Failed",
-        description: error?.message || "Failed to submit VAT return",
+        title: translateNow("toasts.submissionFailed"),
+        description: error?.message || translateNow("toasts.failedToSubmitVatReturn"),
       });
     },
   });
@@ -400,8 +399,8 @@ export default function VATFiling() {
     if (!canGenerateVatReturn) {
       toast({
         variant: "destructive",
-        title: "Add TRN first",
-        description: "VAT returns require the company TRN before creating an official draft.",
+        title: translateNow("toasts.addTrnFirst"),
+        description: translateNow("toasts.vatReturnsRequireTheCompanyTrnBefore"),
       });
       return;
     }
@@ -415,8 +414,8 @@ export default function VATFiling() {
     if (!canGenerateVatReturn) {
       toast({
         variant: "destructive",
-        title: "Add TRN first",
-        description: "VAT returns require the company TRN before creating an official draft.",
+        title: translateNow("toasts.addTrnFirst"),
+        description: translateNow("toasts.vatReturnsRequireTheCompanyTrnBefore"),
       });
       return;
     }
@@ -802,8 +801,8 @@ export default function VATFiling() {
     doc.save(`VAT201-${format(parseISO(vatReturn.periodStart), "yyyy-MM")}.pdf`);
 
     toast({
-      title: "PDF Exported",
-      description: "VAT 201 return has been downloaded.",
+      title: translateNow("toasts.pdfExported"),
+      description: translateNow("toasts.vat201ReturnHasBeenDownloaded"),
     });
   };
 
@@ -814,14 +813,14 @@ export default function VATFiling() {
         vat201ExportFilename(vatReturn, company)
       );
       toast({
-        title: "Excel Exported",
-        description: "VAT 201 workbook has been downloaded for review and filing support.",
+        title: translateNow("toasts.excelExported"),
+        description: translateNow("toasts.vat201WorkbookHasBeenDownloadedFor"),
       });
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: error?.message || "Could not export VAT 201 workbook.",
+        title: translateNow("toasts.exportFailed"),
+        description: error?.message || translateNow("toasts.couldNotExportVat201Workbook"),
       });
     }
   };

@@ -61,7 +61,7 @@
   "screens.billNumber": "Bill no.",
   "screens.paid": "Paid",
   "screens.confirmDeleteBill": "Delete this bill? This cannot be undone.",
-  "screens.billsCount": "{count} bills",
+  "screens.billsCount": "{count, plural, one {# bill} other {# bills}}",
   "screens.agingCurrent": "Current (not yet due)",
   "screens.aging1to30": "1–30 days",
   "screens.aging31to60": "31–60 days",
@@ -229,6 +229,6 @@
   "screens.editCostCenter": "Edit cost center",
   "screens.costCenterDialogEditDesc": "Update the cost center details.",
   "screens.costCenterDialogNewDesc": "Fill in the details to create a cost center.",
-  "screens.invoicesCount": "{count} invoices",
+  "screens.invoicesCount": "{count, plural, one {# invoice} other {# invoices}}",
   "screens.entryLines": "Entry lines"
 }

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { Money } from "@/components/ui/money";
 import { apiRequest } from "@/lib/queryClient";
@@ -124,8 +124,8 @@ export default function SmartAssistant() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Error",
-        description: error?.message || "Failed to process your question",
+        title: translateNow("toasts.error"),
+        description: error?.message || translateNow("toasts.failedToProcessYourQuestion"),
       });
     },
   });

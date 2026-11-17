@@ -38,6 +38,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { ArrowLeft, CheckCircle2, XCircle, Clock, FileText, RotateCcw, Ban } from "lucide-react";
+import { accountDisplayName } from "@/lib/account-name";
 
 interface JournalLine {
   id: string;
@@ -452,9 +453,7 @@ export default function JournalEntryDetail() {
                   {line.account?.code || "—"}
                 </TableCell>
                 <TableCell data-truncate="" dir="auto">
-                  {locale === "ar" && line.account?.nameAr
-                    ? line.account.nameAr
-                    : line.account?.nameEn || t["screens.unknownAccount"]}
+                  {accountDisplayName(line.account, locale) || t["screens.unknownAccount"]}
                 </TableCell>
                 <TableCell data-nowrap="" className="hidden text-muted-foreground sm:table-cell">
                   {accountTypeLabel(line.account?.type)}

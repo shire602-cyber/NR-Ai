@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useTranslation, formatMessage } from "@/lib/i18n";
+import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { Inbox, Plus, Trash2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 // ─── Types (mirror the firm email-intake API) ──────────────────────────────
@@ -210,13 +210,20 @@ function SendersTab({
         requireDkimPass: requireDkim,
       }),
     onSuccess: () => {
-      toast({ title: "Sender linked", description: `${senderEmail} → ${clientName(companyId)}` });
+      toast({
+        title: translateNow("toasts.senderLinked"),
+        description: `${senderEmail} → ${clientName(companyId)}`,
+      });
       setSenderEmail("");
       setLabel("");
       invalidate();
     },
     onError: (e: any) =>
-      toast({ title: "Could not link sender", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.couldNotLinkSender"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const toggleMutation = useMutation({
@@ -398,7 +405,11 @@ function CompletenessTab({
       ),
     onSuccess: (data: CompletenessResult) => setResult(data),
     onError: (e: any) =>
-      toast({ title: "Could not load", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.couldNotLoad"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const chaseMutation = useMutation({
@@ -409,11 +420,18 @@ function CompletenessTab({
       }),
     onSuccess: (r: { created: number; skipped: number }) =>
       toast({
-        title: "Chase requests raised",
-        description: `${r.created} created, ${r.skipped} already chased`,
+        title: translateNow("toasts.chaseRequestsRaised"),
+        description: formatMessage(translateNow("toasts.createdAlreadyChased"), {
+          created: r.created,
+          skipped: r.skipped,
+        }),
       }),
     onError: (e: any) =>
-      toast({ title: "Could not raise chases", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.couldNotRaiseChases"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const coveragePct = result ? Math.round(result.summary.coverageRatio * 100) : null;

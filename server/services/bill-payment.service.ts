@@ -40,6 +40,7 @@ import {
   PAYABLE_BILL_STATES,
   VENDOR_ADVANCES_CODE,
   billMachine,
+  billReference,
   computeBillTotals,
   currentBillApCreditFils,
   ensureAccountByCode,
@@ -812,7 +813,7 @@ export async function recordBillPayment(
       ]
     );
     const payment = inserted[0];
-    const billRef = bill.bill_number || bill.id.slice(0, 8);
+    const billRef = billReference(bill);
     const lines = [
       {
         accountId: ap.id,

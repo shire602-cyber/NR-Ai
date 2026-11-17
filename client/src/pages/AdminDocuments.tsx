@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -145,8 +145,8 @@ export default function AdminDocuments() {
         queryKey: ["/api/companies", selectedCompanyId, "documents"],
       });
       toast({
-        title: "Upload Successful",
-        description: "Document has been saved for the client",
+        title: translateNow("toasts.uploadSuccessful"),
+        description: translateNow("toasts.documentHasBeenSavedForTheClient"),
       });
       setUploadDialogOpen(false);
       resetForm();
@@ -154,7 +154,7 @@ export default function AdminDocuments() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Upload Failed",
+        title: translateNow("toasts.uploadFailed"),
         description: error?.message,
       });
     },
@@ -167,8 +167,8 @@ export default function AdminDocuments() {
         queryKey: ["/api/companies", selectedCompanyId, "documents"],
       });
       toast({
-        title: "Deleted",
-        description: "Document has been deleted",
+        title: translateNow("toasts.deleted"),
+        description: translateNow("toasts.documentHasBeenDeleted"),
       });
     },
   });
@@ -189,8 +189,8 @@ export default function AdminDocuments() {
     if (!newDocument.name) {
       toast({
         variant: "destructive",
-        title: "Missing Information",
-        description: "Please enter document name",
+        title: translateNow("toasts.missingInformation"),
+        description: translateNow("toasts.pleaseEnterDocumentName"),
       });
       return;
     }
@@ -198,8 +198,8 @@ export default function AdminDocuments() {
     if (!selectedCompanyId) {
       toast({
         variant: "destructive",
-        title: "Select Client",
-        description: "Please select a client first",
+        title: translateNow("toasts.selectClient"),
+        description: translateNow("toasts.pleaseSelectAClientFirst"),
       });
       return;
     }

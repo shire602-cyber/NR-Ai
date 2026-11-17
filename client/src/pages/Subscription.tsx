@@ -14,6 +14,10 @@ import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
+import { TrialBanner } from "@/components/TrialBanner";
+import { useToast } from "@/hooks/use-toast";
+import { ApiError } from "@/lib/queryClient";
+import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
 import {
   CreditCard,
   Check,
@@ -44,7 +48,7 @@ const PLANS = [
     features: [
       "pages.subscription1User",
       "pages.subscription20InvoicesMonth",
-      "pages.subscription10ReceiptsMonth",
+      "pages.subscription20ReceiptsMonth",
       "pages.subscription10AiCreditsMonth",
       "pages.subscriptionBasicDashboard",
       "pages.subscriptionVatReports",
@@ -68,11 +72,11 @@ const PLANS = [
     features: [
       "pages.subscription3Users",
       "pages.subscription200InvoicesMonth",
-      "pages.subscription100ReceiptsMonth",
+      "pages.subscription200ReceiptsMonth",
       "pages.subscription50AiCreditsMonth",
-      "pages.subscriptionOcrReceiptScanning",
+      "pages.subscriptionOcrComingSoon",
       "pages.subscriptionBankImportsReconciliation",
-      "pages.subscriptionEInvoicingXmlWorkflow",
+      "pages.subscriptionInventoryManagement",
       "pages.subscriptionQuotesEstimates",
       "pages.subscriptionCreditNotes",
       "pages.subscriptionRecurringInvoices",
@@ -81,7 +85,7 @@ const PLANS = [
     ],
     limits: {
       invoices: 200,
-      receipts: 100,
+      receipts: 200,
       aiCredits: 50,
       users: 3,
     },
@@ -89,8 +93,8 @@ const PLANS = [
   {
     id: "professional",
     name: "pages.subscriptionProfessional",
-    monthlyPrice: 129,
-    yearlyPrice: 99,
+    monthlyPrice: 149,
+    yearlyPrice: 119,
     icon: Crown,
     description: "pages.subscriptionForGrowingBusinesses",
     popular: true,
@@ -106,7 +110,7 @@ const PLANS = [
       "pages.subscriptionAdvancedReports",
       "pages.subscriptionBulkOperations",
       "pages.subscriptionPayrollIntegration",
-      "pages.subscriptionInventoryManagement",
+      "pages.subscriptionEInvoicingWithProvider",
       "pages.subscriptionPhoneChatSupport",
     ],
     limits: {
@@ -120,7 +124,7 @@ const PLANS = [
     id: "enterprise",
     name: "pages.subscriptionEnterprise",
     monthlyPrice: 299,
-    yearlyPrice: 249,
+    yearlyPrice: 239,
     icon: Gem,
     description: "pages.subscriptionForLargeOrganizations",
     color: "from-amber-500 to-orange-600",
@@ -150,19 +154,37 @@ function formatCurrency0(amount: number, locale: string): string {
   return formatMoneyText(amount, "AED", locale, { fractionDigits: 0 });
 }
 
+/** "Contact us to upgrade" link while online checkout is not configured. */
+function contactHref(planName?: string): string {
+  const subject = encodeURIComponent(`Muhasib.ai upgrade${planName ? `: ${planName}` : ""}`);
+  return `mailto:${UPGRADE_CONTACT_EMAIL}?subject=${subject}`;
+}
+
 function UsageMeter({
   label,
   used,
   limit,
   icon: Icon,
   onUpgrade,
+  unit,
+  postOfferLimit,
+  canUpgrade = true,
+  checkoutAvailable = true,
 }: {
   label: string;
   used: number;
   limit: number;
   icon: React.ElementType;
   onUpgrade?: () => void;
+  /** Suffix for used / limit figures (storage: "MB"). */
+  unit?: string;
+  /** Launch offer: this limit is not enforced yet; the figure is the limit after the offer. */
+  postOfferLimit?: number;
+  canUpgrade?: boolean;
+  checkoutAvailable?: boolean;
 }) {
+  const notEnforcedYet = postOfferLimit !== undefined;
+  if (notEnforcedYet) limit = -1;
   const isUnlimited = limit === -1;
   const percentage = isUnlimited ? 0 : Math.min((used / limit) * 100, 100);
   const isNearLimit = !isUnlimited && percentage >= 80;
@@ -182,14 +204,21 @@ function UsageMeter({
           >
             {isUnlimited
               ? formatMessage(t["pages.subscriptionUsedCount"], { used })
-              : `${used} / ${limit}`}
+              : `${used}${unit ? ` ${unit}` : ""} / ${limit}${unit ? ` ${unit}` : ""}`}
           </span>
-          {isAtLimit && onUpgrade && (
+          {isAtLimit && onUpgrade && !checkoutAvailable && canUpgrade && (
+            <Button type="button" size="sm" variant="outline" asChild data-testid="usage-upgrade">
+              <a href={contactHref()}>{t["pages.subscriptionContactToUpgrade"]}</a>
+            </Button>
+          )}
+          {isAtLimit && onUpgrade && (checkoutAvailable || !canUpgrade) && (
             <Button
               type="button"
               size="sm"
               variant="outline"
               onClick={onUpgrade}
+              disabled={!canUpgrade}
+              title={!canUpgrade ? t["common.noPermission"] : undefined}
               data-testid="usage-upgrade"
             >
               {t["pages.subscriptionUpgrade"]}
@@ -197,6 +226,13 @@ function UsageMeter({
           )}
         </span>
       </div>
+      {notEnforcedYet && (
+        <p className="text-xs text-muted-foreground" data-testid="usage-offer-note">
+          {formatMessage(t["pages.subscriptionNoLimitDuringOffer"], {
+            limit: `${postOfferLimit}${unit ? ` ${unit}` : ""}`,
+          })}
+        </p>
+      )}
       {!isUnlimited && (
         <Progress
           value={percentage}
@@ -216,9 +252,15 @@ function UsageMeter({
 export default function Subscription() {
   const { t, locale } = useTranslation();
   const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
-  const { subscription, usage, tierName, isLoading } = useSubscription();
+  const { subscription, usage, tierName, isLoading, enforcement, checkoutAvailable } =
+    useSubscription();
   const { companyId } = useDefaultCompany();
-  const { gate } = useCompanyPermission();
+  const { can } = useCompanyPermission();
+  const { toast } = useToast();
+  // Trial period: invoices, receipts and seats are metered but not limited until billing enforcement
+  // starts; AI credits, storage and companies are cost caps and always show their limit.
+  const offerOpen = !enforcement;
+  const canManageBilling = can("billing.manage");
 
   const checkoutMutation = useMutation({
     mutationFn: (planId: string) => {
@@ -233,6 +275,14 @@ export default function Subscription() {
         window.location.href = data.url;
       }
     },
+    onError: (error: Error) => {
+      const unavailable = error instanceof ApiError && error.status === 503;
+      toast({
+        title: t["pages.subscriptionCheckoutFailed"],
+        description: unavailable ? t["pages.subscriptionCheckoutUnavailable"] : error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const portalMutation = useMutation({
@@ -244,6 +294,13 @@ export default function Subscription() {
       if (data.url) {
         window.location.href = data.url;
       }
+    },
+    onError: (error: Error) => {
+      toast({
+        title: t["pages.subscriptionPortalFailed"],
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -258,6 +315,17 @@ export default function Subscription() {
   const currentPlan = PLANS.find((p) => p.id === tierName) || PLANS[0];
   const scrollToPlans = () =>
     document.getElementById("subscription-plans")?.scrollIntoView({ behavior: "smooth" });
+  const isDowngrade = (planId: string) =>
+    planId === "free" ||
+    PLANS.findIndex((p) => p.id === tierName) > PLANS.findIndex((p) => p.id === planId);
+  const upgradeProps = {
+    onUpgrade: scrollToPlans,
+    canUpgrade: canManageBilling,
+    checkoutAvailable,
+  };
+  /** During the launch offer a limit is shown only as the post-offer figure; -1 = unlimited. */
+  const offerNote = (limit: number): number | undefined =>
+    offerOpen && limit !== -1 ? limit : undefined;
 
   return (
     <div className="space-y-6">
@@ -266,6 +334,8 @@ export default function Subscription() {
         title={t["pages.subscriptionPageTitle"]}
         description={t["pages.subscriptionPageDescription"]}
       />
+
+      <TrialBanner />
 
       {/* Current Plan & Usage */}
       <div className="grid gap-6 md:grid-cols-2">
@@ -354,40 +424,44 @@ export default function Subscription() {
           </CardHeader>
           <CardContent className="space-y-5">
             <UsageMeter
-              onUpgrade={scrollToPlans}
               label={t["pages.subscriptionUsageInvoices"]}
               used={usage?.invoices?.used ?? 0}
               limit={usage?.invoices?.limit ?? currentPlan.limits.invoices}
+              postOfferLimit={offerNote(usage?.invoices?.limit ?? currentPlan.limits.invoices)}
               icon={FileText}
+              {...upgradeProps}
             />
             <UsageMeter
-              onUpgrade={scrollToPlans}
               label={t["pages.subscriptionUsageReceipts"]}
               used={usage?.receipts?.used ?? 0}
               limit={usage?.receipts?.limit ?? currentPlan.limits.receipts}
+              postOfferLimit={offerNote(usage?.receipts?.limit ?? currentPlan.limits.receipts)}
               icon={Receipt}
+              {...upgradeProps}
             />
             <UsageMeter
-              onUpgrade={scrollToPlans}
               label={t["pages.subscriptionUsageAiCredits"]}
               used={usage?.aiCredits?.used ?? 0}
               limit={usage?.aiCredits?.limit ?? currentPlan.limits.aiCredits}
               icon={Brain}
+              {...upgradeProps}
             />
             <UsageMeter
-              onUpgrade={scrollToPlans}
               label={t["pages.subscriptionUsageTeamMembers"]}
               used={usage?.users?.used ?? 0}
               limit={usage?.users?.limit ?? currentPlan.limits.users}
+              postOfferLimit={offerNote(usage?.users?.limit ?? currentPlan.limits.users)}
               icon={Users}
+              {...upgradeProps}
             />
             {usage?.storage && usage.storage.used != null && (
               <UsageMeter
-                onUpgrade={scrollToPlans}
                 label={t["pages.subscriptionUsageStorage"]}
                 used={usage.storage.used}
                 limit={usage.storage.limit}
+                unit="MB"
                 icon={HardDrive}
+                {...upgradeProps}
               />
             )}
           </CardContent>
@@ -497,25 +571,37 @@ export default function Subscription() {
                     <Button variant="outline" className="w-full" disabled>
                       <T k="pageLabels.currentPlan" />
                     </Button>
+                  ) : !checkoutAvailable && canManageBilling ? (
+                    <Button
+                      className="w-full"
+                      variant={plan.popular ? "default" : "outline"}
+                      asChild
+                      data-testid={`plan-contact-${plan.id}`}
+                    >
+                      <a href={contactHref(t[plan.name])}>
+                        <CreditCard className="w-4 h-4 me-2" />
+                        {isDowngrade(plan.id)
+                          ? t["pages.subscriptionContactUs"]
+                          : t["pages.subscriptionContactToUpgrade"]}
+                      </a>
+                    </Button>
                   ) : (
                     <Button
                       className={`w-full ${plan.popular ? "hover:" : ""}`}
                       variant={plan.popular ? "default" : "outline"}
                       onClick={() => checkoutMutation.mutate(plan.id)}
-                      disabled={checkoutMutation.isPending}
-                      {...gate("billing.manage")}
+                      disabled={checkoutMutation.isPending || !canManageBilling}
+                      title={!canManageBilling ? t["common.noPermission"] : undefined}
+                      data-testid={`plan-upgrade-${plan.id}`}
                     >
                       {checkoutMutation.isPending ? (
                         <Loader2 className="w-4 h-4 me-2 animate-spin" />
                       ) : (
                         <CreditCard className="w-4 h-4 me-2" />
                       )}
-                      {plan.monthlyPrice === 0
+                      {isDowngrade(plan.id)
                         ? t["pages.subscriptionDowngrade"]
-                        : PLANS.findIndex((p) => p.id === tierName) >
-                            PLANS.findIndex((p) => p.id === plan.id)
-                          ? t["pages.subscriptionDowngrade"]
-                          : t["pages.subscriptionUpgrade"]}
+                        : t["pages.subscriptionUpgrade"]}
                     </Button>
                   )}
                 </div>
@@ -564,15 +650,15 @@ export default function Subscription() {
                   {
                     label: "pages.subscriptionReceiptsMonth",
                     values: [
-                      "10",
-                      "100",
+                      "20",
+                      "200",
                       "pages.subscriptionUnlimited",
                       "pages.subscriptionUnlimited",
                     ],
                   },
                   {
                     label: "pages.subscriptionAiCreditsMonth",
-                    values: ["5", "50", "500", "pages.subscriptionUnlimited"],
+                    values: ["10", "50", "500", "pages.subscriptionUnlimited"],
                   },
                   {
                     label: "pages.subscriptionTeamMembers",
@@ -580,13 +666,26 @@ export default function Subscription() {
                   },
                   {
                     label: "pages.subscriptionOcrReceiptScanning",
-                    values: [false, true, true, true],
+                    values: [
+                      false,
+                      "pages.subscriptionComingSoon",
+                      "pages.subscriptionComingSoon",
+                      "pages.subscriptionComingSoon",
+                    ],
                   },
                   {
                     label: "pages.subscriptionBankReconciliation",
-                    values: [false, true, true, true],
+                    values: [true, true, true, true],
                   },
-                  { label: "pages.subscriptionEInvoicing", values: [false, true, true, true] },
+                  {
+                    label: "pages.subscriptionEInvoicing",
+                    values: [
+                      false,
+                      false,
+                      "pages.subscriptionWithProvider",
+                      "pages.subscriptionWithProvider",
+                    ],
+                  },
                   { label: "pages.subscriptionQuotesEstimates", values: [false, true, true, true] },
                   { label: "pages.subscriptionCreditNotes", values: [false, true, true, true] },
                   {
@@ -607,7 +706,7 @@ export default function Subscription() {
                   },
                   {
                     label: "pages.subscriptionInventoryManagement",
-                    values: [false, false, true, true],
+                    values: [false, true, true, true],
                   },
                   { label: "pages.subscriptionApiAccess", values: [false, false, false, true] },
                   { label: "pages.subscriptionWhiteLabel", values: [false, false, false, true] },

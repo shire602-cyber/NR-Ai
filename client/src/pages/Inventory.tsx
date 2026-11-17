@@ -74,7 +74,7 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -208,12 +208,19 @@ export default function Inventory() {
       apiRequest("POST", `/api/companies/${companyId}/products`, productPayload(data)),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
-      toast({ title: "Product Created", description: "The product has been added successfully." });
+      toast({
+        title: translateNow("toasts.productCreated"),
+        description: translateNow("toasts.theProductHasBeenAddedSuccessfully"),
+      });
       setProductDialogOpen(false);
       productForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -223,15 +230,19 @@ export default function Inventory() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
       toast({
-        title: "Product Updated",
-        description: "The product has been updated successfully.",
+        title: translateNow("toasts.productUpdated"),
+        description: translateNow("toasts.theProductHasBeenUpdatedSuccessfully"),
       });
       setProductDialogOpen(false);
       setEditingProduct(null);
       productForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -239,10 +250,17 @@ export default function Inventory() {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/products/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
-      toast({ title: "Product Deleted", description: "The product has been deleted." });
+      toast({
+        title: translateNow("toasts.productDeleted"),
+        description: translateNow("toasts.theProductHasBeenDeleted"),
+      });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -274,7 +292,11 @@ export default function Inventory() {
       movementForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 

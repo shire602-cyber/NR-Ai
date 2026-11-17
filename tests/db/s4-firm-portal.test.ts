@@ -8,6 +8,9 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 
+// X6b: firm sign-up is closed by default (NR-internal); these tests onboard a second firm on purpose.
+process.env.FIRM_SELF_SIGNUP = "true";
+
 const h = useHarness();
 const TRN = "100000000000003";
 

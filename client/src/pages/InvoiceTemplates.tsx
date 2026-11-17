@@ -41,7 +41,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { Plus, Layout, Loader2, Check, Trash2, Edit, Star } from "lucide-react";
 
 const templateSchema = z.object({
@@ -111,8 +111,8 @@ export default function InvoiceTemplates() {
         queryKey: ["/api/companies", selectedCompanyId, "invoice-templates"],
       });
       toast({
-        title: "Template created",
-        description: "Your invoice template has been created successfully.",
+        title: translateNow("toasts.templateCreated"),
+        description: translateNow("toasts.yourInvoiceTemplateHasBeenCreatedSuccessfully"),
       });
       setDialogOpen(false);
       setEditingTemplate(null);
@@ -121,8 +121,8 @@ export default function InvoiceTemplates() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create template",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToCreateTemplate"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -135,8 +135,8 @@ export default function InvoiceTemplates() {
         queryKey: ["/api/companies", selectedCompanyId, "invoice-templates"],
       });
       toast({
-        title: "Template updated",
-        description: "Your invoice template has been updated successfully.",
+        title: translateNow("toasts.templateUpdated"),
+        description: translateNow("toasts.yourInvoiceTemplateHasBeenUpdatedSuccessfully"),
       });
       setDialogOpen(false);
       setEditingTemplate(null);
@@ -145,8 +145,8 @@ export default function InvoiceTemplates() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update template",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToUpdateTemplate"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -157,13 +157,16 @@ export default function InvoiceTemplates() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", selectedCompanyId, "invoice-templates"],
       });
-      toast({ title: "Template deleted", description: "The template has been deleted." });
+      toast({
+        title: translateNow("toasts.templateDeleted"),
+        description: translateNow("toasts.theTemplateHasBeenDeleted"),
+      });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete template",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToDeleteTemplate"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });
@@ -175,15 +178,15 @@ export default function InvoiceTemplates() {
         queryKey: ["/api/companies", selectedCompanyId, "invoice-templates"],
       });
       toast({
-        title: "Default template set",
-        description: "This template will be used for new invoices.",
+        title: translateNow("toasts.defaultTemplateSet"),
+        description: translateNow("toasts.thisTemplateWillBeUsedForNew"),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to set default",
-        description: error?.message || "Please try again.",
+        title: translateNow("toasts.failedToSetDefault"),
+        description: error?.message || translateNow("toasts.pleaseTryAgain"),
       });
     },
   });

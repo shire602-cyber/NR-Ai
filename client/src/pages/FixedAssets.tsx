@@ -76,7 +76,7 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
@@ -88,6 +88,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { accountDisplayName } from "@/lib/account-name";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -285,7 +286,11 @@ export default function FixedAssets() {
       toast({ title: fa.capitalized });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -305,14 +310,18 @@ export default function FixedAssets() {
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
       toast({
-        title: "Asset Created",
-        description: "The fixed asset has been added successfully.",
+        title: translateNow("toasts.assetCreated"),
+        description: translateNow("toasts.theFixedAssetHasBeenAddedSuccessfully"),
       });
       setAssetDialogOpen(false);
       assetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -327,15 +336,19 @@ export default function FixedAssets() {
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
       toast({
-        title: "Asset Updated",
-        description: "The fixed asset has been updated successfully.",
+        title: translateNow("toasts.assetUpdated"),
+        description: translateNow("toasts.theFixedAssetHasBeenUpdatedSuccessfully"),
       });
       setAssetDialogOpen(false);
       setEditingAsset(null);
       assetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -346,10 +359,17 @@ export default function FixedAssets() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
-      toast({ title: "Asset Deleted", description: "The fixed asset has been deleted." });
+      toast({
+        title: translateNow("toasts.assetDeleted"),
+        description: translateNow("toasts.theFixedAssetHasBeenDeleted"),
+      });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -361,12 +381,18 @@ export default function FixedAssets() {
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
       toast({
-        title: "Depreciation Recorded",
-        description: `Monthly depreciation of ${formatCurrency(data.monthlyDepreciation, "AED", locale)} recorded.`,
+        title: translateNow("toasts.depreciationRecorded"),
+        description: formatMessage(translateNow("toasts.monthlyDepreciationRecorded"), {
+          amount: formatCurrency(data.monthlyDepreciation, "AED", locale),
+        }),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -388,15 +414,22 @@ export default function FixedAssets() {
       });
       const glType = data.gainLossType === "gain" ? "Gain" : "Loss";
       toast({
-        title: "Asset Disposed",
-        description: `${glType} on disposal: ${formatCurrency(Math.abs(data.gainLoss), "AED", locale)}`,
+        title: translateNow("toasts.assetDisposed"),
+        description: formatMessage(translateNow("toasts.glOnDisposal"), {
+          glType,
+          amount: formatCurrency(Math.abs(data.gainLoss), "AED", locale),
+        }),
       });
       setDisposeDialogOpen(false);
       setDisposingAsset(null);
       disposeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -409,14 +442,22 @@ export default function FixedAssets() {
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
       toast({
-        title: "Batch Depreciation Complete",
-        description: `Processed ${data.assetsProcessed} assets for ${data.month}/${data.year}.`,
+        title: translateNow("toasts.batchDepreciationComplete"),
+        description: formatMessage(translateNow("toasts.processedAssetsFor"), {
+          assetsProcessed: data.assetsProcessed,
+          month: data.month,
+          year: data.year,
+        }),
       });
       setDepRunDialogOpen(false);
       depRunForm.reset({ month: new Date().getMonth() + 1, year: new Date().getFullYear() });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -1010,7 +1051,7 @@ export default function FixedAssets() {
                             <SelectContent>
                               {cashAccounts.map((a) => (
                                 <SelectItem key={a.id} value={a.id}>
-                                  {a.code} — {locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}
+                                  {a.code} — {accountDisplayName(a, locale)}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -1248,7 +1289,7 @@ export default function FixedAssets() {
                         <SelectContent>
                           {cashAccounts.map((a) => (
                             <SelectItem key={a.id} value={a.id}>
-                              {a.code} — {locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}
+                              {a.code} — {accountDisplayName(a, locale)}
                             </SelectItem>
                           ))}
                         </SelectContent>

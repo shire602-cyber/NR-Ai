@@ -26,6 +26,8 @@ import { pq } from "../services/connectors/pq";
 import { z } from "zod";
 import { createLogger } from "../config/logger";
 import { errorMessage } from "../errors";
+import { TRIAL_DAYS, TRIAL_END_BEHAVIOUR, trialState } from "../../shared/trial";
+import { companyStorageBytes } from "../services/storage-usage";
 
 const log = createLogger("billing");
 
@@ -66,7 +68,26 @@ export function registerBillingRoutes(app: Express) {
       // the client paywall must fail open too, or the UI blocks features the
       // API happily serves.
       const enforcement = billingEnforced();
-      res.json({ subscription, limits, enforcement, trialDays: trialDays() });
+      res.json({
+        subscription,
+        limits,
+        enforcement,
+        trialDays: trialDays(),
+        // X6b: the Upgrade button becomes "Contact us" while checkout cannot work.
+        checkoutAvailable: isStripeConfigured(),
+        // Free trial (shared/trial.ts): counted from the company's subscription row; only the
+        // free plan is on a trial. Nothing is locked when it ends (TRIAL_END_BEHAVIOUR).
+        trial:
+          subscription.planId === "free"
+            ? trialState(
+                (subscription as { createdAt?: Date | string | null }).createdAt ??
+                  (await storage.getCompany(companyId))?.createdAt,
+                new Date(),
+                TRIAL_DAYS
+              )
+            : null,
+        trialEndBehaviour: TRIAL_END_BEHAVIOUR,
+      });
     })
   );
 
@@ -92,6 +113,8 @@ export function registerBillingRoutes(app: Express) {
       };
 
       const limits = getTierLimits(subscription.planId);
+      const storageMb =
+        Math.round(((await companyStorageBytes(companyId)) / (1024 * 1024)) * 10) / 10;
       const [invoices, receipts, aiCalls, users] = await Promise.all([
         getUsage(companyId, "invoices"),
         getUsage(companyId, "receipts"),
@@ -108,7 +131,7 @@ export function registerBillingRoutes(app: Express) {
           receipts: { used: receipts, limit: limits.maxReceiptsPerMonth },
           aiCredits: { used: aiCalls, limit: limits.aiCreditsPerMonth },
           users: { used: users, limit: limits.maxUsers },
-          storage: { used: null, limit: limits.maxStorageMb },
+          storage: { used: storageMb, limit: limits.maxStorageMb },
         },
       });
     })
@@ -198,7 +221,9 @@ export function registerBillingRoutes(app: Express) {
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
       if (!isStripeConfigured()) {
-        return res.status(503).json({ message: "Payment processing not configured" });
+        return res
+          .status(503)
+          .json({ message: "Payment processing not configured", code: "STRIPE_NOT_CONFIGURED" });
       }
 
       if (!planId || !billingCycle) {

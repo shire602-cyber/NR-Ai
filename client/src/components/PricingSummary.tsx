@@ -44,8 +44,18 @@ export function PricingSummary() {
       yearlyPrice: 0,
       highlights:
         locale === "en"
-          ? ["1 company, 1 user", "20 invoices/mo", "Basic AI categorization", "VAT filing"]
-          : ["شركة واحدة، مستخدم واحد", "20 فاتورة/شهر", "تصنيف ذكي أساسي", "ضريبة القيمة المضافة"],
+          ? [
+              "1 company, 1 user",
+              "Everything included in the launch offer",
+              "Basic AI categorization",
+              "VAT filing",
+            ]
+          : [
+              "شركة واحدة، مستخدم واحد",
+              "كل شيء مشمول في عرض الإطلاق",
+              "تصنيف ذكي أساسي",
+              "ضريبة القيمة المضافة",
+            ],
       cta: tr["marketing.pricingSummaryGetStartedFree"],
       variant: "outline" as const,
       highlight: false,
@@ -74,7 +84,7 @@ export function PricingSummary() {
               "قراءة الإيصالات (قريباً)",
               "مخزون ودفع فواتير",
             ],
-      cta: locale === "en" ? "Start 14-Day Trial" : "ابدأ تجربة 14 يوم",
+      cta: tr["marketing.pricingStartFree"],
       variant: "default" as const,
       highlight: false,
       badge: "recommended",
@@ -102,7 +112,7 @@ export function PricingSummary() {
               "مستشار مالي وكشف شاذ",
               "رواتب، ضرائب وفوترة إلكترونية",
             ],
-      cta: locale === "en" ? "Start 14-Day Trial" : "ابدأ تجربة 14 يوم",
+      cta: tr["marketing.pricingStartFree"],
       variant: "default" as const,
       highlight: true,
       badge: "mostPopular",
