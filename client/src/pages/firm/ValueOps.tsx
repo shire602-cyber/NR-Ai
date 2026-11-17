@@ -1,4 +1,5 @@
 import { formatAedText } from "@/lib/format";
+import { PracticeNav } from "@/components/firm/PracticeNav";
 import { T } from "@/components/layout/T";
 import { useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
@@ -379,6 +380,7 @@ export default function ValueOps() {
           </Button>
         }
       />
+      <PracticeNav />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MetricCard

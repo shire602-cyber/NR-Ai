@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { PracticeNav } from "@/components/firm/PracticeNav";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -633,6 +634,7 @@ export default function LeadPipeline() {
           </>
         }
       />
+      <PracticeNav />
 
       {/* Auto-discover panel */}
       {showDiscover && <AutoDiscoverPanel onClose={() => setShowDiscover(false)} />}

@@ -72,6 +72,26 @@ describe("practice task titles", () => {
   });
 });
 
+describe("practice nav", () => {
+  it("links the command centre's sibling views (the sidebar shows only the command centre)", async () => {
+    const { loadLocale } = await import("../../client/src/lib/i18n");
+    await loadLocale("en");
+    const { PracticeNav } = await import("../../client/src/components/firm/PracticeNav");
+    const div = document.createElement("div");
+    const r = createRoot(div);
+    await act(async () => r.render(createElement(PracticeNav)));
+    const hrefs = [...div.querySelectorAll("a")].map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual([
+      "/firm/command-center",
+      "/firm/health",
+      "/firm/value-ops",
+      "/firm/analytics",
+      "/firm/pipeline",
+    ]);
+    act(() => r.unmount());
+  });
+});
+
 describe("feedback form", () => {
   let container: HTMLDivElement;
   let root: Root;

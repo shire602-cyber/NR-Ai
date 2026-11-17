@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { PracticeNav } from "@/components/firm/PracticeNav";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -228,6 +229,7 @@ export default function FirmHealth() {
     <div className="space-y-6">
       {/* Header */}
       <PageHeader eyebrow="Firm" title={t.healthDashboard} description={t.healthDashboardDesc} />
+      <PracticeNav />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

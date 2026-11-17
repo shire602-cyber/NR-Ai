@@ -5,6 +5,7 @@ import type * as React from "react";
  * Executive dashboard for firm owners with key metrics, client health table,
  * alerts feed, staff workload visualization, period comparison, and batch ops.
  */
+import { PracticeNav } from "@/components/firm/PracticeNav";
 import { StatCard } from "@/components/ui/stat-card";
 import { chartTheme, ChartTooltipContent, formatAxisCompact } from "@/components/ui/chart-theme";
 import { T } from "@/components/layout/T";
@@ -448,6 +449,7 @@ export default function FirmCommandCenter() {
           </Button>
         }
       />
+      <PracticeNav />
 
       {/* Metrics row */}
       <div className="mobile-keep-cols grid grid-cols-2 gap-3 md:gap-4 lg:grid-cols-4">

@@ -54,5 +54,11 @@
   "firmOps.bulkSendTitle": "Send {count} reminders?",
   "firmOps.bulkSendBody": "A chase is recorded for every queued request, and messages go out on the channels set up for each client. This cannot be undone.",
   "firmOps.date": "Date",
-  "firmOps.stageConverted": "Became a client"
+  "firmOps.stageConverted": "Became a client",
+  "firmOps.navLabel": "Practice views",
+  "firmOps.navCommandCentre": "Command centre",
+  "firmOps.navClientHealth": "Client health",
+  "firmOps.navValueProgrammes": "Value programmes",
+  "firmOps.navAnalytics": "Analytics",
+  "firmOps.navPipeline": "Pipeline"
 }

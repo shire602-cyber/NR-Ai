@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { PracticeNav } from "@/components/firm/PracticeNav";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
@@ -48,11 +49,14 @@ export default function FirmAnalytics() {
   });
 
   const header = (
-    <PageHeader
-      eyebrow="Firm"
-      title={t["firmOps.analyticsTitle"]}
-      description={t["firmOps.analyticsDescription"]}
-    />
+    <>
+      <PageHeader
+        eyebrow="Firm"
+        title={t["firmOps.analyticsTitle"]}
+        description={t["firmOps.analyticsDescription"]}
+      />
+      <PracticeNav />
+    </>
   );
 
   if (revLoading || utilLoading || healthLoading) {

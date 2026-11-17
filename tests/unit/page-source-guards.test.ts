@@ -119,9 +119,9 @@ describe("consolidated navigation redirects (App source)", () => {
   });
 
   it("R18-09: the mobile More sheet and command palette point at the hub, not the retired routes", () => {
-    // WP-A: the More sheet renders the shared nav config (Assistant entry → /ai).
+    // WP-A/WP-E: the More sheet renders the shared nav config (Assistant entry → /assistant).
     expect(read("client/src/components/MobileNav.tsx")).toContain("useNavGroups");
-    expect(read("client/src/components/layout/nav-config.ts")).toContain('url: "/ai"');
+    expect(read("client/src/components/layout/nav-config.ts")).toContain('url: "/assistant"');
     expect(read("client/src/components/CommandPalette.tsx")).toContain('href: "/ai?tab=chat"');
     expect(readDashboardSource()).toContain('<Link href="/ai?tab=cfo">');
   });
