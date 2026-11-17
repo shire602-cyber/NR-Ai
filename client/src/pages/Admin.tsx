@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { StatCard } from "@/components/ui/stat-card";
 import { activityActionLabel, activityEntityLabel } from "@/lib/activity-log-labels";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { Money } from "@/components/ui/money";
@@ -23,7 +24,6 @@ import {
   Download,
   BarChart3,
   FileText,
-  Building2,
   CreditCard,
   Loader2,
 } from "lucide-react";
@@ -377,70 +377,27 @@ export default function Admin() {
         <TabsContent value="overview" className="space-y-6">
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pageLabels.totalUsers" />
-                </CardTitle>
-                <Users className="w-4 h-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-h1 font-semibold tabular-nums" data-testid="stat-total-users">
-                  {stats?.totalUsers || 0}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pageLabels.activeCompanies" />
-                </CardTitle>
-                <Building2 className="w-4 h-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div
-                  className="text-h1 font-semibold tabular-nums"
-                  data-testid="stat-total-companies"
-                >
-                  {stats?.totalCompanies || 0}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pageLabels.monthlyRevenue" />
-                </CardTitle>
-                <DollarSign className="w-4 h-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div
-                  className="text-h1 font-semibold tabular-nums"
-                  data-testid="stat-monthly-revenue"
-                >
-                  <Money amount={stats?.monthlyRevenue || 0} currency="AED" />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pageLabels.aICreditsUsed" />
-                </CardTitle>
-                <Activity className="w-4 h-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-h1 font-semibold tabular-nums" data-testid="stat-ai-credits">
-                  {stats?.aiCreditsUsed || 0}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  <T k="pages.thisMonth" />
-                </p>
-              </CardContent>
-            </Card>
+            <StatCard
+              label={<T k="pageLabels.totalUsers" />}
+              value={stats?.totalUsers || 0}
+              testId="stat-total-users"
+            />
+            <StatCard
+              label={<T k="pageLabels.activeCompanies" />}
+              value={stats?.totalCompanies || 0}
+              testId="stat-total-companies"
+            />
+            <StatCard
+              label={<T k="pageLabels.monthlyRevenue" />}
+              value={<Money amount={stats?.monthlyRevenue || 0} currency="AED" />}
+              testId="stat-monthly-revenue"
+            />
+            <StatCard
+              label={<T k="pageLabels.aICreditsUsed" />}
+              value={stats?.aiCreditsUsed || 0}
+              hint={<T k="pages.thisMonth" />}
+              testId="stat-ai-credits"
+            />
           </div>
 
           {/* WP-E (spec 3.16): the hard-coded "all green" system status and the quick actions
@@ -474,8 +431,10 @@ export default function Admin() {
                         {activityEntityLabel(t, log.resourceType)}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(log.createdAt).toLocaleString(
-                          locale === "ar" ? "ar-AE" : undefined
+                        {formatDate(log.createdAt, locale)}{" "}
+                        {new Date(log.createdAt).toLocaleTimeString(
+                          locale === "ar" ? "ar-AE-u-nu-latn" : "en-GB",
+                          { hour: "2-digit", minute: "2-digit" }
                         )}
                       </p>
                     </div>

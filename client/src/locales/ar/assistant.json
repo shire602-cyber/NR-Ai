@@ -14,7 +14,7 @@
   "assistant.suggestUnposted": "ما الإيصالات التي لم تُرحّل بعد؟",
   "assistant.recentQuestions": "الأسئلة الأخيرة",
   "assistant.composerLabel": "سؤالك",
-  "assistant.composerPlaceholder": "اسأل عن الفواتير أو المصروفات أو الضريبة أو النقد",
+  "assistant.composerPlaceholder": "اطرح سؤالًا عن دفاترك",
   "assistant.send": "إرسال",
   "assistant.thinking": "جارٍ الاطلاع على دفاترك…",
   "assistant.answerFailed": "تعذّر إعداد الإجابة. حاول مرة أخرى بعد قليل.",
