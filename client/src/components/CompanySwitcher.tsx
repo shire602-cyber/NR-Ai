@@ -54,7 +54,8 @@ export function CompanySwitcher({
   );
   if (!active || !companies) return null;
   if (!canSwitch) {
-    // Nothing to switch between: the compact top bar still shows which company this is.
+    // Nothing to switch between: both the compact top bar and the sidebar still show which
+    // company this is (spec 3.5: the same control sits under the logo for every user type).
     return variant === "compact" ? (
       <span
         className="block min-w-0 truncate text-sm font-semibold text-foreground"
@@ -64,7 +65,23 @@ export function CompanySwitcher({
       >
         {active.name}
       </span>
-    ) : null;
+    ) : (
+      <div
+        className="flex h-10 w-full min-w-0 items-center gap-2 rounded-md border border-border bg-card px-2 text-small font-medium text-foreground"
+        title={active.name}
+        data-testid="text-active-company-sidebar"
+      >
+        <span
+          aria-hidden
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-secondary text-caption font-semibold text-secondary-foreground"
+        >
+          {active.name.trim().charAt(0).toUpperCase()}
+        </span>
+        <span className="truncate" dir="auto">
+          {active.name}
+        </span>
+      </div>
+    );
   }
 
   const handleReturnToFirm = () => {
@@ -162,7 +179,7 @@ export function CompanySwitcher({
       >
         {canReturnToFirm && (
           <>
-            <DropdownMenuLabel>NRA</DropdownMenuLabel>
+            <DropdownMenuLabel>{t["shell.nav.practice"]}</DropdownMenuLabel>
             <DropdownMenuItem
               onSelect={() => handleReturnToFirm()}
               disabled={!isFirmContext}

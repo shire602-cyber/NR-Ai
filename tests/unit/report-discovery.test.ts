@@ -178,9 +178,14 @@ describe("report discoverability", () => {
   const commandSource = inlineCatalogCopy(read("client/src/components/CommandPalette.tsx"));
   const dashboardSource = readDashboardSource(process.cwd(), true);
   const reportLaunchPickerSource = read("client/src/components/reports/ReportLaunchPicker.tsx");
+  // WP-A (Fable spec 3.5): the mobile More sheet lists navigation only; the catalog-driven
+  // "Report shortcuts" collapsible was deleted (reports are reached from the Reports tab).
   const mobileNavSource = read("client/src/components/MobileNav.tsx");
   const onboardingSource = read("client/src/pages/Onboarding.tsx");
-  const sidebarSource = read("client/src/components/layout/AppSidebar.tsx");
+  // WP-A: the sidebar renders the shared nav config (layout/nav-config.ts); read both.
+  const sidebarSource =
+    read("client/src/components/layout/AppSidebar.tsx") +
+    read("client/src/components/layout/nav-config.ts");
   const i18nSource = read("client/src/lib/i18n.ts");
   const reportCatalogApiSource = read("client/src/lib/reportCatalogApi.ts");
   const reportsSource = readReportsPageSource();
@@ -551,9 +556,6 @@ describe("report discoverability", () => {
     expect(sidebarSource).toContain('url: "/reports"');
     expect(sidebarSource).toContain("items: []");
     expect(sidebarSource).not.toContain("/reports?tab=");
-    expect(mobileNavSource).toContain(
-      'px("shell.mobileRoleSetup", { workspace: wsTitle(workspace) })'
-    );
     expect(dashboardSource).toContain("getPreferredReportPersona() ??");
     expect(dashboardSource).toContain("getPreferredReportWorkflowSearch");
     expect(dashboardSource).toContain("clearPreferredReportWorkflowSearch");
@@ -925,85 +927,6 @@ describe("report discoverability", () => {
     expect(catalogSource).toContain("monthly tax-close actions");
     expect(catalogSource).toContain("reviewer queues");
     expect(catalogSource).toContain("reportPersonaHref");
-    expect(mobileNavSource).toContain("reportPersonaWorkspaces.map");
-    expect(mobileNavSource).toContain("readyReportCatalog");
-    expect(mobileNavSource).toContain("interface MoreLink");
-    expect(mobileNavSource).toContain("key?: string");
-    expect(mobileNavSource).toContain("description?: string");
-    expect(mobileNavSource).toContain("workspace.navLabel");
-    expect(mobileNavSource).toContain("reportPersonaWorkspaces.flatMap");
-    expect(mobileNavSource).toContain("report.personas.includes(workspace.persona)");
-    expect(mobileNavSource).toContain("reportPersonaHref(report, workspace.persona)");
-    expect(mobileNavSource).toContain("key: `report-catalog-${workspace.persona}-${report.id}`");
-    expect(mobileNavSource).toContain(
-      'label: `${ct("report", report.id, "name", report.name)} - ${wsTitle(workspace)}`'
-    );
-    expect(mobileNavSource).toContain(
-      'description: `${ct("category", report.category, "label", report.category)} - ${ct("report", report.id, "comparison", report.comparison)} - ${ct("report", report.id, "automation", report.automation)}`'
-    );
-    expect(mobileNavSource).toContain("key={link.key ?? link.href}");
-    expect(mobileNavSource).toContain("reportSuiteProfiles.map");
-    expect(mobileNavSource).toContain("reportSuiteHref(suite)");
-    expect(mobileNavSource).toContain('reportSectionHref(workspace, "report-suites")');
-    expect(mobileNavSource).toContain("reportQuickAccessProfiles");
-    expect(mobileNavSource).toContain(
-      'px("shell.mobileQuickAccess", { workspace: wsTitle(workspace) })'
-    );
-    expect(mobileNavSource).toContain('reportSectionHref(workspace, "quick-access")');
-    expect(mobileNavSource).toContain("reportSavedViewProfiles.map");
-    expect(mobileNavSource).toContain("reportSavedViewHref(view)");
-    expect(mobileNavSource).toContain(
-      'px("shell.mobileSavedViews", { workspace: wsTitle(workspace) })'
-    );
-    expect(mobileNavSource).toContain('reportSectionHref(workspace, "saved-views")');
-    expect(mobileNavSource).toContain("workspace.automationNavLabel");
-    expect(mobileNavSource).toContain(
-      'description: ct("workspace", workspace.persona, "focus", workspace.focus)'
-    );
-    expect(mobileNavSource).toContain('"automationOutcome"');
-    expect(mobileNavSource).toContain('"packSchedule.automation"');
-    expect(mobileNavSource).toContain("reportAutomationImpactProfiles");
-    expect(mobileNavSource).toContain(
-      'px("shell.mobileAutomationImpact", { workspace: wsTitle(workspace) })'
-    );
-    expect(mobileNavSource).toContain('reportSectionHref(workspace, "automation-impact")');
-    expect(mobileNavSource).toContain("reportWorkspaceHref(workspace)");
-    expect(mobileNavSource).toContain('reportSectionHref(workspace, "automation-operations")');
-    expect(mobileNavSource).toContain(
-      'px("shell.mobileReportOperations", { workspace: wsTitle(workspace) })'
-    );
-    expect(mobileNavSource).toContain('reportSectionHref(workspace, "automation-command-center")');
-    expect(mobileNavSource).toContain("reportDecisionShortcuts.map");
-    expect(mobileNavSource).toContain("reportDecisionShortcutHref(shortcut)");
-    expect(mobileNavSource).toContain(
-      'description: ct("shortcut", shortcut.id, "answer", shortcut.answer)'
-    );
-    expect(mobileNavSource).toContain("reportAutomationTriggerRules.map");
-    expect(mobileNavSource).toContain("reportAutomationTriggerRuleHref(rule)");
-    expect(mobileNavSource).toContain(
-      'description: `${ct("rule", rule.id, "condition", rule.condition)} - ${ct("rule", rule.id, "actionLabel", rule.actionLabel)}`'
-    );
-    expect(mobileNavSource).toContain("reportDeliverySubscriptions.map");
-    expect(mobileNavSource).toContain("reportDeliverySubscriptionHref(subscription)");
-    expect(mobileNavSource).toContain(
-      'description: `${ct("delivery", subscription.id, "cadence", subscription.cadence)} - ${ct("delivery", subscription.id, "channel", subscription.channel)}`'
-    );
-    expect(mobileNavSource).toContain("reportAutomationStarters.map");
-    expect(mobileNavSource).toContain("reportAutomationStarterHref(starter)");
-    expect(mobileNavSource).toContain(
-      'description: `${ct("starter", starter.id, "audience", starter.audience)} - ${ct("starter", starter.id, "outcome", starter.outcome)}`'
-    );
-    expect(mobileNavSource).toContain("reportPackTemplates.map");
-    expect(mobileNavSource).toContain("reportPackTemplateHref(template)");
-    expect(mobileNavSource).toContain(
-      'description: `${ct("pack", template.id, "cadence", template.cadence)} - ${ct("pack", template.id, "delivery", template.delivery)}`'
-    );
-    expect(mobileNavSource).toContain("reportComparisonPresets.map");
-    expect(mobileNavSource).toContain("reportComparisonPresetHref(preset)");
-    expect(mobileNavSource).toContain(
-      'description: `${ct("preset", preset.id, "baseline", preset.baseline)} - ${ct("preset", preset.id, "automationTrigger", preset.automationTrigger)}`'
-    );
-    expect(mobileNavSource).toContain("mobile-nav-more-description");
     expect(onboardingSource).toContain("reportPersonaWorkspaces.map");
     expect(onboardingSource).toContain("workspace.navLabel");
     expect(onboardingSource).toContain("selectedWorkspace.automationNavLabel");
@@ -4862,5 +4785,10 @@ describe("report discoverability", () => {
     );
     expect(reportsSource).toContain("wpsReadyShare");
     expect(reportsSource).toContain('run.status === "calculated" || run.status === "approved"');
+  });
+  it("WP-A: the mobile More sheet carries no report-catalog shortcut list", () => {
+    expect(mobileNavSource).not.toContain("readyReportCatalog");
+    expect(mobileNavSource).not.toContain("moreSectionReports");
+    expect(mobileNavSource).toContain("useNavGroups");
   });
 });
