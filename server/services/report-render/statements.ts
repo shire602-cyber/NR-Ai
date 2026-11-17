@@ -23,7 +23,7 @@ import {
   type BalanceSheet,
   type StatementSection,
 } from "../../reporting";
-import { blockingIssues, computeVat201 } from "../../tax/vat-engine";
+import { computeVat201 } from "../../tax/vat-engine";
 import {
   computeCtLiability,
   CT_STANDARD_RATE,
@@ -744,8 +744,8 @@ export async function renderVatSummary(
             ar: "محسوب بواسطة محرك الضريبة من المستندات المرحّلة.",
           }
         : {
-            en: `Incomplete: ${blockingIssues(vat.issues).length} document issue(s) must be fixed before filing.`,
-            ar: `غير مكتمل: يجب معالجة ${blockingIssues(vat.issues).length} مشكلة في المستندات قبل التقديم.`,
+            en: `Incomplete: ${vat.issues.filter((i) => i.severity !== "warning").length} document issue(s) must be fixed before filing.`,
+            ar: `غير مكتمل: يجب معالجة ${vat.issues.filter((i) => i.severity !== "warning").length} مشكلة في المستندات قبل التقديم.`,
           },
       {
         en: "Not filed with the FTA from this report.",
