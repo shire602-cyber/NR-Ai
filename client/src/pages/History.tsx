@@ -249,7 +249,10 @@ export default function History() {
         ) : (
           <ul className="divide-y divide-border/70" data-testid="history-feed">
             {filteredLogs.map((log) => {
-              const sentence = withoutIds(activityDescription(t, log, locale));
+              const sentence = readableSentence(
+                withoutIds(activityDescription(t, log, locale)),
+                t[`activityLog.action.${log.action}`]
+              );
               const changes = metadataChanges(log.metadata);
               const created = log.createdAt ? new Date(log.createdAt) : null;
               return (
@@ -364,6 +367,16 @@ function metadataChanges(metadata: string | null | undefined): string {
   } catch {
     return "";
   }
+}
+
+/**
+ * The server's generic audit text reads "Company group create on company group"; when the action
+ * has a catalog label ("Company group created") show that instead. Specific sentences
+ * ("Invoice INV-2026-0042 created") are kept.
+ */
+function readableSentence(sentence: string, actionLabel: string | undefined): string {
+  if (actionLabel && / on [a-z][a-z ]*$/.test(sentence)) return actionLabel;
+  return sentence;
 }
 
 /** "3 minutes ago" / "منذ 3 دقائق"; older than a week shows the date. */
