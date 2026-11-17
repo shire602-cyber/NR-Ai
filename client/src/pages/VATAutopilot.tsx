@@ -445,9 +445,6 @@ export function VatPeriodsPanel() {
               <TableHeader>
                 <TableRow>
                   <TableHead>
-                    <T k="firm.filingType" />
-                  </TableHead>
-                  <TableHead>
                     <T k="hr.period" />
                   </TableHead>
                   <TableHead>{t["compliance.autopilotColDue"]}</TableHead>
@@ -461,6 +458,9 @@ export function VatPeriodsPanel() {
                     <T k="pageLabels.inputVat" />
                   </TableHead>
                   <TableHead data-numeric>{t["compliance.autopilotColNet"]}</TableHead>
+                  <TableHead>
+                    <span className="sr-only">{t["compliance.periodsAction"]}</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -473,27 +473,6 @@ export function VatPeriodsPanel() {
                       data-testid="row-period"
                       className={isSelected ? "bg-muted/50" : undefined}
                     >
-                      <TableCell>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={isSelected ? "default" : "outline"}
-                          onClick={() => {
-                            setSelectedPeriodKey(key);
-                            calcMutation.mutate(p);
-                          }}
-                          disabled={calcMutation.isPending}
-                          aria-pressed={isSelected}
-                          data-testid={`button-select-vat-period-${p.periodStart.slice(0, 10)}`}
-                        >
-                          {calcMutation.isPending && isSelected ? (
-                            <Loader2 className="h-4 w-4 me-2 animate-spin" />
-                          ) : null}
-                          {p.status === "draft"
-                            ? t["compliance.periodsPrepare"]
-                            : t["compliance.periodsReview"]}
-                        </Button>
-                      </TableCell>
                       <TableCell>
                         <div className="font-medium">
                           {formatDate(p.periodStart, locale)} – {formatDate(p.periodEnd, locale)}
@@ -521,6 +500,27 @@ export function VatPeriodsPanel() {
                       </TableCell>
                       <TableCell data-numeric className=" font-medium">
                         <Money amount={p.netVatPayable} />
+                      </TableCell>
+                      <TableCell className="text-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={isSelected ? "default" : "outline"}
+                          onClick={() => {
+                            setSelectedPeriodKey(key);
+                            calcMutation.mutate(p);
+                          }}
+                          disabled={calcMutation.isPending}
+                          aria-pressed={isSelected}
+                          data-testid={`button-select-vat-period-${p.periodStart.slice(0, 10)}`}
+                        >
+                          {calcMutation.isPending && isSelected ? (
+                            <Loader2 className="h-4 w-4 me-2 animate-spin" />
+                          ) : null}
+                          {p.status === "draft"
+                            ? t["compliance.periodsPrepare"]
+                            : t["compliance.periodsReview"]}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );

@@ -173,5 +173,6 @@
   "compliance.filedReturnsEmptyHint": "Returns you file with the FTA are kept here with their files.",
   "compliance.tasksDueThisWeek": "Due this week",
   "compliance.vatBackToReturns": "Back to returns",
-  "compliance.vatWorkbookTitle": "VAT 201 workbook"
+  "compliance.vatWorkbookTitle": "VAT 201 workbook",
+  "compliance.periodsAction": "Action"
 }
