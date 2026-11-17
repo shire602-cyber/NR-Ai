@@ -735,19 +735,19 @@ export default function CorporateTax() {
           </div>
 
           <div className="hidden overflow-x-auto rounded-md border md:block">
-            <Table>
+            <Table density="compact">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[260px] text-base font-bold">
+                  <TableHead className="min-w-[260px]">
                     {formatMessage(t["corporateTax.workpaperYear"], {
                       year:
                         new Date(periodEnd || periodStart).getFullYear() || defaultFy.fiscalYear,
                     })}
                   </TableHead>
-                  <TableHead data-numeric className="min-w-[180px] text-base font-bold">
+                  <TableHead data-numeric className="min-w-[180px]">
                     <T k="pages.expense" />
                   </TableHead>
-                  <TableHead data-numeric className="min-w-[180px] text-base font-bold">
+                  <TableHead data-numeric className="min-w-[180px]">
                     <T k="pages.revenue" />
                   </TableHead>
                   <TableHead className="min-w-[220px]">
@@ -763,7 +763,7 @@ export default function CorporateTax() {
                       <Input
                         value={row.label}
                         onChange={(e) => updateWorkpaperRow(row.id, { label: e.target.value })}
-                        className="font-medium"
+                        className="h-8 font-medium"
                         aria-label={`${ctTr(locale, "Workpaper line description", "وصف بند ورقة العمل")}: ${row.label}`}
                       />
                     </TableCell>
@@ -779,11 +779,13 @@ export default function CorporateTax() {
                             updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
                           }
                           aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
-                          className="text-end"
+                          className="h-8 text-end"
                           placeholder="0.00"
                         />
                       ) : (
-                        <div className="h-10 rounded-md border bg-muted/30" />
+                        <span className="block pe-3 text-end text-muted-foreground" aria-hidden>
+                          –
+                        </span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -798,11 +800,13 @@ export default function CorporateTax() {
                             updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
                           }
                           aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
-                          className="text-end"
+                          className="h-8 text-end"
                           placeholder="0.00"
                         />
                       ) : (
-                        <div className="h-10 rounded-md border bg-muted/30" />
+                        <span className="block pe-3 text-end text-muted-foreground" aria-hidden>
+                          –
+                        </span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -815,6 +819,7 @@ export default function CorporateTax() {
                           "ملاحظة الدليل أو التسوية"
                         )}
                         aria-label={`${row.label} ${ctTr(locale, "note", "ملاحظة")}`}
+                        className="h-8"
                       />
                     </TableCell>
                     <TableCell data-numeric>
