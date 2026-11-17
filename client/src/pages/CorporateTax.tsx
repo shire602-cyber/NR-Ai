@@ -6,7 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -61,6 +61,7 @@ import {
   Trash2,
   Plus,
   RotateCcw,
+  MessageSquare,
   MoreHorizontal,
   Download,
   BookOpen,
@@ -333,6 +334,7 @@ export default function CorporateTax() {
   const [deductions, setDeductions] = useState(0);
   const [calculation, setCalculation] = useState<CalculationResult | null>(null);
   const [notes, setNotes] = useState("");
+  const [openNotes, setOpenNotes] = useState<Set<string>>(() => new Set());
   const [workpaperRows, setWorkpaperRows] = useState<CorporateTaxWorkpaperRow[]>(() =>
     defaultWorkpaperRows(locale)
   );
@@ -750,92 +752,127 @@ export default function CorporateTax() {
                   <TableHead data-numeric className="min-w-[180px]">
                     <T k="pages.revenue" />
                   </TableHead>
-                  <TableHead className="min-w-[220px]">
-                    <T k="pages.notes" />
+                  <TableHead className="w-[56px]">
+                    <span className="sr-only">
+                      <T k="pages.notes" />
+                    </span>
                   </TableHead>
                   <TableHead className="w-[56px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {workpaperRows.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell>
-                      <Input
-                        value={row.label}
-                        onChange={(e) => updateWorkpaperRow(row.id, { label: e.target.value })}
-                        className="h-8 font-medium"
-                        aria-label={`${ctTr(locale, "Workpaper line description", "وصف بند ورقة العمل")}: ${row.label}`}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {row.type === "expense" ? (
+                  <Fragment key={row.id}>
+                    <TableRow>
+                      <TableCell>
                         <Input
-                          type="number"
-                          inputMode="decimal"
-                          min={0}
-                          step="0.01"
-                          value={moneyInputValue(row.amount)}
-                          onChange={(e) =>
-                            updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
-                          }
-                          aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
-                          className="h-8 text-end"
-                          placeholder="0.00"
+                          value={row.label}
+                          onChange={(e) => updateWorkpaperRow(row.id, { label: e.target.value })}
+                          className="h-8 font-medium"
+                          aria-label={`${ctTr(locale, "Workpaper line description", "وصف بند ورقة العمل")}: ${row.label}`}
                         />
-                      ) : (
-                        <span className="block pe-3 text-end text-muted-foreground" aria-hidden>
-                          –
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {row.type === "revenue" ? (
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          min={0}
-                          step="0.01"
-                          value={moneyInputValue(row.amount)}
-                          onChange={(e) =>
-                            updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
-                          }
-                          aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
-                          className="h-8 text-end"
-                          placeholder="0.00"
-                        />
-                      ) : (
-                        <span className="block pe-3 text-end text-muted-foreground" aria-hidden>
-                          –
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={row.notes ?? ""}
-                        onChange={(e) => updateWorkpaperRow(row.id, { notes: e.target.value })}
-                        placeholder={ctTr(
-                          locale,
-                          "Evidence or adjustment note",
-                          "ملاحظة الدليل أو التسوية"
+                      </TableCell>
+                      <TableCell>
+                        {row.type === "expense" ? (
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            step="0.01"
+                            value={moneyInputValue(row.amount)}
+                            onChange={(e) =>
+                              updateWorkpaperRow(row.id, {
+                                amount: parseMoneyInput(e.target.value),
+                              })
+                            }
+                            aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
+                            className="h-8 text-end"
+                            placeholder="0.00"
+                          />
+                        ) : (
+                          <span className="block pe-3 text-end text-muted-foreground" aria-hidden>
+                            –
+                          </span>
                         )}
-                        aria-label={`${row.label} ${ctTr(locale, "note", "ملاحظة")}`}
-                        className="h-8"
-                      />
-                    </TableCell>
-                    <TableCell data-numeric>
-                      {workpaperRows.length > 1 && (
+                      </TableCell>
+                      <TableCell>
+                        {row.type === "revenue" ? (
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            step="0.01"
+                            value={moneyInputValue(row.amount)}
+                            onChange={(e) =>
+                              updateWorkpaperRow(row.id, {
+                                amount: parseMoneyInput(e.target.value),
+                              })
+                            }
+                            aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
+                            className="h-8 text-end"
+                            placeholder="0.00"
+                          />
+                        ) : (
+                          <span className="block pe-3 text-end text-muted-foreground" aria-hidden>
+                            –
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {/* Spec 3.12: the note opens as a row under the line (expander). */}
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          onClick={() => removeWorkpaperRow(row.id)}
-                          aria-label={`${ctTr(locale, "Remove", "إزالة")} ${row.label}`}
+                          aria-expanded={openNotes.has(row.id) || Boolean(row.notes)}
+                          aria-label={`${row.label} ${ctTr(locale, "note", "ملاحظة")}`}
+                          onClick={() =>
+                            setOpenNotes((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(row.id)) next.delete(row.id);
+                              else next.add(row.id);
+                              return next;
+                            })
+                          }
                         >
-                          <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
+                          <MessageSquare
+                            className={`h-4 w-4 ${row.notes ? "text-foreground" : "text-muted-foreground"}`}
+                            aria-hidden
+                          />
                         </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
+                      </TableCell>
+                      <TableCell data-numeric>
+                        {workpaperRows.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeWorkpaperRow(row.id)}
+                            aria-label={`${ctTr(locale, "Remove", "إزالة")} ${row.label}`}
+                          >
+                            <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                    {openNotes.has(row.id) || row.notes ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="pt-0">
+                          <Input
+                            value={row.notes ?? ""}
+                            onChange={(e) => updateWorkpaperRow(row.id, { notes: e.target.value })}
+                            placeholder={ctTr(
+                              locale,
+                              "Evidence or adjustment note",
+                              "ملاحظة الدليل أو التسوية"
+                            )}
+                            aria-label={`${row.label} ${ctTr(locale, "note", "ملاحظة")}`}
+                            className="h-8"
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </Fragment>
                 ))}
                 <TableRow className="bg-muted/40">
                   <TableCell className="font-bold">
