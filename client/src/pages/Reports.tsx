@@ -42,7 +42,7 @@ function InsightsPage() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Insights"
-        title={t.reports}
+        title={t["analytics.modeReports"]}
         description={t["analytics.insightsDescription"]}
       />
       <ReportsModeTabs mode="insights" />

@@ -92,3 +92,15 @@ describe("comparison deltas", () => {
     }
   });
 });
+
+describe("catalogue labels in sentence case (spec 2.1)", () => {
+  it("lower-cases words after the first, keeps acronyms, leaves Arabic alone", async () => {
+    const { sentenceCase } = await import("../../client/src/pages/reports/model/sentenceCase");
+    expect(sentenceCase("Profit & Loss", "en")).toBe("Profit & loss");
+    expect(sentenceCase("Financial Statements Center", "en")).toBe("Financial statements center");
+    expect(sentenceCase("A/R Aging", "en")).toBe("A/R aging");
+    expect(sentenceCase("VAT Summary", "en")).toBe("VAT summary");
+    expect(sentenceCase("WPS / SIF Summary", "en")).toBe("WPS / SIF summary");
+    expect(sentenceCase("قائمة الدخل", "ar")).toBe("قائمة الدخل");
+  });
+});

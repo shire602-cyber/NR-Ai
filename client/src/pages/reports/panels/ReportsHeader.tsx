@@ -90,7 +90,7 @@ export default function ReportsHeader() {
     <>
       <PageHeader
         eyebrow="Insights"
-        title={t.reports}
+        title={t["analytics.modeReports"]}
         description={
           (t as any).financialReportsSubtitle ??
           "Financial statements, tax reports and comparisons from your books"

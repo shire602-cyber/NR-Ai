@@ -13,6 +13,7 @@ import { apiUrl } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
 import { reportCatalogDataBasis } from "@/lib/reportCatalog";
 import { DataBasisBadge } from "../StatementParts";
+import { sentenceCase } from "../model/sentenceCase";
 import type { ReportViewerGroup } from "../shared";
 
 /** Catalog report id -> server statement kind (server/services/report-render STATEMENT_KINDS). */
@@ -136,7 +137,7 @@ export function ReportCatalogue({
   onOpen: (optionId: string) => void;
   ariaLabel: string;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const qs = new URLSearchParams();
   if (from) qs.set("from", from);
   if (to) qs.set("to", to);
@@ -147,7 +148,7 @@ export function ReportCatalogue({
         <section key={group.category} aria-labelledby={`report-group-${index}`}>
           <div className="flex items-baseline justify-between gap-3 border-b border-border pb-2">
             <h2 id={`report-group-${index}`} className="text-h3 font-semibold text-foreground">
-              {group.label}
+              {sentenceCase(group.label, locale)}
             </h2>
             <span className="text-caption tabular-nums text-muted-foreground">
               {group.options.length}
@@ -160,7 +161,7 @@ export function ReportCatalogue({
               return (
                 <Row
                   key={option.id}
-                  label={option.label}
+                  label={sentenceCase(option.label, locale)}
                   description={option.description}
                   badge={
                     <DataBasisBadge
