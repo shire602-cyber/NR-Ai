@@ -36,6 +36,12 @@ import { fiscalYearContaining } from "@/lib/fiscal-year";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { formatDate as formatDisplayDate, formatDateRange } from "@/lib/format-date";
 import {
   FileCheck,
@@ -48,6 +54,7 @@ import {
   Trash2,
   Plus,
   RotateCcw,
+  MoreHorizontal,
   Download,
   BookOpen,
   AlertTriangle,
@@ -567,7 +574,7 @@ export default function CorporateTax() {
     <div className="space-y-6">
       <PageHeader
         eyebrow="Compliance"
-        title={(t as any).corporateTax || "Corporate Tax (9%)"}
+        title={(t as any).corporateTax || "Corporate tax (9%)"}
         description={t["corporateTax.pageSubtitle"]}
       />
 
@@ -613,13 +620,25 @@ export default function CorporateTax() {
                 <Plus className="w-4 h-4 me-2" />
                 <T k="pageLabels.expenseRow" />
               </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setWorkpaperRows(defaultWorkpaperRows(locale))}
-              >
-                <RotateCcw className="w-4 h-4 me-2" /> <T k="pages.reset" />
-              </Button>
+              {/* Spec 3.12: Reset lives in the overflow menu. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t["reportCenter.moreActions"]}
+                    data-testid="button-workpaper-more"
+                  >
+                    <MoreHorizontal className="h-4 w-4" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setWorkpaperRows(defaultWorkpaperRows(locale))}>
+                    <RotateCcw className="w-4 h-4 me-2" /> <T k="pages.reset" />
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
