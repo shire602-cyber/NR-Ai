@@ -30,7 +30,7 @@ import {
   type Cell,
   type PlanId,
 } from "@/components/marketing/plans";
-import { formatMoneyText } from "@/lib/format-money";
+import { formatAmountDigits, formatMoneyText } from "@/lib/format-money";
 import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
 
 /*
@@ -76,7 +76,11 @@ function CellValue({ cell }: { cell: Cell }) {
       </span>
     );
   }
-  return <span className="mk-ptable__val">{t[cell]}</span>;
+  return (
+    <span className="mk-ptable__val">
+      {typeof cell === "number" ? formatAmountDigits(cell, 0) : t[cell]}
+    </span>
+  );
 }
 
 function PriceShort({ id, cycle }: { id: PlanId; cycle: BillingCycle }) {

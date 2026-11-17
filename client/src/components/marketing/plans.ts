@@ -109,8 +109,8 @@ export function cycleSavingPercent(cycle: BillingCycle, plans: readonly Plan[] =
 
 // ── Comparison table ─────────────────────────────────────────────────────────────────────────
 
-/** true = included, false = not included, string = catalog key of a short value ("20 / month"). */
-export type Cell = boolean | string;
+/** true = included, false = not included, number = a limit, string = catalog key ("Unlimited"). */
+export type Cell = boolean | number | string;
 
 export interface CompareRow {
   /** Catalog key of the row label. */
@@ -150,18 +150,18 @@ export const COMPARE_GROUPS: readonly CompareGroup[] = [
       {
         key: "marketing.prRowCompanies",
         cells: {
-          free: "marketing.prVal1",
-          starter: "marketing.prVal1",
-          professional: "marketing.prVal3",
+          free: 1,
+          starter: 1,
+          professional: 3,
           enterprise: "marketing.prValUnlimited",
         },
       },
       {
         key: "marketing.prRowUsers",
         cells: {
-          free: "marketing.prVal1",
-          starter: "marketing.prVal3",
-          professional: "marketing.prVal10",
+          free: 1,
+          starter: 3,
+          professional: 10,
           enterprise: "marketing.prValUnlimited",
         },
       },
@@ -169,8 +169,8 @@ export const COMPARE_GROUPS: readonly CompareGroup[] = [
         key: "marketing.prRowDocuments",
         noteKey: "marketing.prRowDocumentsNote",
         cells: {
-          free: "marketing.prVal20Month",
-          starter: "marketing.prVal200Month",
+          free: 20,
+          starter: 200,
           professional: "marketing.prValUnlimited",
           enterprise: "marketing.prValUnlimited",
         },

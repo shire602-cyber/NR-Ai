@@ -39,15 +39,9 @@
   --band-brand: hsl(var(--brand-300));
   --band-hairline: hsl(var(--neutral-0) / 0.1);
 
-  /* Semantic (text on the matching -subtle surface, as the app's badges) */
-  --success: hsl(var(--success-subtle-foreground));
-  --success-subtle: hsl(var(--success-subtle));
-  --warning: hsl(var(--warning-subtle-foreground));
-  --warning-subtle: hsl(var(--warning-subtle));
-  --danger: hsl(var(--danger-subtle-foreground));
-  --danger-subtle: hsl(var(--danger-subtle));
-  --info: hsl(var(--info-subtle-foreground));
-  --info-subtle: hsl(var(--info-subtle));
+  /* Semantic ink for marketing previews. Namespaced: redefining the shared --success /
+     --danger / … tokens here would break every app primitive rendered on a public page. */
+  --mk-success: hsl(var(--success-subtle-foreground));
 
   /* Type: Geist Sans for everything (display = the same family, semibold and
      tight); amounts are tabular sans, never mono. */
@@ -876,7 +870,7 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  color: var(--success);
+  color: var(--mk-success);
   font-weight: 600;
   font-size: 12.5px;
 }
