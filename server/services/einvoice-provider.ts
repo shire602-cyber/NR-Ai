@@ -18,7 +18,9 @@ import {
 } from "./einvoice-status";
 import { HttpEInvoiceProvider } from "./einvoice-provider-http";
 import type { DeliveryStatus, ReportingStatus } from "./einvoice/tracks";
-import { AcubeEInvoiceProvider, acubeConfigured } from "./einvoice/providers/acube";
+import type { einvoiceLegalEntities } from "../../shared/schema";
+// E2: accredited providers (A-Cube, Complyance) are registered modules, selected by name.
+import { providerModule, registeredProviderIds } from "./einvoice/providers/registry";
 
 export interface EInvoiceSubmission {
   invoiceId: string;
@@ -26,6 +28,8 @@ export interface EInvoiceSubmission {
   uuid: string;
   xml: string;
   documentType?: string;
+  /** E2: our company id, for providers that address each submission to a per-company source. */
+  companyId?: string;
 }
 
 export interface EInvoiceProviderResult {
@@ -58,6 +62,14 @@ export interface InboundListing {
   legalEntityId?: string | null;
   ownerFiscalId?: string | null;
 }
+
+/** E2: which of our legal entities an incoming document belongs to (provider ids, or the TIN). */
+export interface InboundOwner {
+  legalEntityId: string | null;
+  tin: string | null;
+}
+
+export type LegalEntityPatch = Partial<typeof einvoiceLegalEntities.$inferInsert>;
 
 /** A supplier e-invoice the ASP received for us (Peppol corner 3). */
 export interface InboundEInvoice {
@@ -94,10 +106,31 @@ export interface EInvoiceProvider {
   ): Promise<{ reporting: ReportingStatus; detail?: string | null }>;
   /** E1: find a document we may already have handed over (ambiguous transport failure). */
   lookupSubmission?(submission: EInvoiceSubmission): Promise<EInvoiceProviderResult | null>;
-  /** E1: list incoming documents (two-step receive: list, then fetchSource). */
-  listInbound?(): Promise<InboundListing[]>;
+  /**
+   * E1: list incoming documents (two-step receive: list, then fetchSource). E2: providers whose
+   * inbox is listed per company receive the provider legal-entity ids to list.
+   */
+  listInbound?(opts?: { legalEntityIds?: string[] }): Promise<InboundListing[]>;
   /** E1: the original XML of a document held by the ASP. */
   fetchSource?(providerMessageId: string, ref?: EInvoiceDocumentRef): Promise<string>;
+  /** E1/E2: providers that only transmit for a linked, active legal entity (EmaraTax). */
+  readonly requiresLegalEntity?: boolean;
+  /** E2: short brand name for messages ("A-Cube"). */
+  readonly displayName?: string;
+  /** E2: which legal entity an incoming document (webhook or poll payload) belongs to. */
+  inboundOwner?(
+    providerMessageId: string,
+    ref: EInvoiceDocumentRef,
+    payload: Record<string, unknown>
+  ): Promise<InboundOwner>;
+  /**
+   * E2: the current state of a provider legal entity after a provider event, as a row patch
+   * (the provider re-reads it; the event payload is not trusted).
+   */
+  legalEntityPatch?(
+    legalEntityId: string,
+    payload: Record<string, unknown>
+  ): Promise<LegalEntityPatch | null>;
   /** Map an inbound ASP status webhook payload to a normalised status update. */
   parseWebhook(
     payload: unknown
@@ -200,10 +233,10 @@ export function httpAspConfigured(env: NodeJS.ProcessEnv = process.env): boolean
   return !!base && !!key;
 }
 
-/** True when a real ASP is configured: the generic HTTP adapter or A-Cube (E1). */
+/** True when a real ASP is configured: the generic HTTP adapter or a registered ASP (E1/E2). */
 export function aspConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  const name = (env.EINVOICE_PROVIDER ?? "").toLowerCase();
-  if (name === "acube") return acubeConfigured(env);
+  const m = providerModule(env.EINVOICE_PROVIDER);
+  if (m) return m.configured(env);
   return httpAspConfigured(env);
 }
 
@@ -227,18 +260,22 @@ export function getEInvoiceProvider(
     );
   }
 
+  // E1/E2: an accredited provider module (A-Cube, Complyance). Credentials come from
+  // env/secrets only; a selected provider without them is "not configured", never a fallback.
+  const registered = providerModule(name);
+  if (registered) {
+    if (!registered.configured(env)) {
+      throw new EInvoiceProviderError(
+        "EINVOICE_PROVIDER_NOT_CONFIGURED",
+        registered.notConfiguredMessage
+      );
+    }
+    return registered.create(env, deps);
+  }
+
   switch (name) {
     case "mock":
       return new MockEInvoiceProvider();
-    case "acube":
-      // E1: A-Cube (MoF accreditation no. 188961). Credentials come from env/secrets only.
-      if (!acubeConfigured(env)) {
-        throw new EInvoiceProviderError(
-          "EINVOICE_PROVIDER_NOT_CONFIGURED",
-          "The A-Cube e-invoicing provider requires ACUBE_EMAIL and ACUBE_PASSWORD."
-        );
-      }
-      return new AcubeEInvoiceProvider(env, deps);
     case "http":
       if (!httpAspConfigured(env)) {
         throw new EInvoiceProviderError(
@@ -251,7 +288,9 @@ export function getEInvoiceProvider(
     default:
       throw new EInvoiceProviderError(
         "EINVOICE_PROVIDER_NOT_CONFIGURED",
-        `Unknown EINVOICE_PROVIDER "${name}". Use "acube", or "http" with an ASP mapping file.`
+        `Unknown EINVOICE_PROVIDER "${name}". Use ${registeredProviderIds()
+          .map((id) => `"${id}"`)
+          .join(" or ")}, or "http" with an ASP mapping file.`
       );
   }
 }

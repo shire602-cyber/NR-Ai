@@ -27,6 +27,7 @@ const CSRF_BEARER_EXEMPT = [
   /^\/api\/webhooks\/stripe$/,
   /^\/api\/webhooks\/einvoice\/[^/]+\/inbound$/, // W4-C: HMAC-signed ASP delivery
   /^\/api\/webhooks\/einvoice\/acube\/(sandbox|production)$/, // E1: Ed25519-signed A-Cube events
+  /^\/api\/webhooks\/einvoice\/complyance\/(sandbox|production)$/, // E2: HMAC-signed Complyance events
   // W4-D: invoice payment gateways and email delivery events (signed by the provider).
   /^\/api\/webhooks\/invoice-payments\/[a-z]+$/,
   /^\/api\/webhooks\/email-events\/[a-z-]+$/,

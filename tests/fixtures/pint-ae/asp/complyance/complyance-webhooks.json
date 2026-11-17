@@ -1,0 +1,99 @@
+{
+  "description": "DOC-DERIVED, NOT RECORDED. Complyance webhook deliveries built from docs.complyance.io /one-platform/developer-portal/webhooks/ (events, payload-and-delivery, purchase-invoices; read 2026-11-17). Payloads of invoice.* and company.* events are NOT documented field by field; the shapes below are assumptions to replace with real sandbox deliveries. See README.md.",
+  "testSecret": "whsec_test_doc_derived_0123456789abcdef",
+  "events": {
+    "purchase.invoice.stored": {
+      "eventId": "purchase:01JEXAMPLE0000000000000142",
+      "data": {
+        "id": "purchase:01JEXAMPLE0000000000000142",
+        "type": "purchase.invoice.stored",
+        "timestamp": "2026-09-18T07:04:01.550Z",
+        "data": {
+          "documentId": "01JEXAMPLE0000000000000142",
+          "documentNumber": "AE-INV-005",
+          "documentType": "tax_invoice",
+          "country": "AE",
+          "totalAmount": 1774.5,
+          "currency": "AED",
+          "sellerName": "Gulf Supplies L.L.C.",
+          "issueDate": "2026-09-17",
+          "submittedAt": "2026-09-18T07:04:01.550Z",
+          "attribution": {
+            "companyId": "66b9f0a1c2d3e4f567890123",
+            "branchId": "66b9f0b2c2d3e4f567890456"
+          }
+        },
+        "metadata": {
+          "requestId": "01JABCDEFGHIJKLMNOPQRSTUV"
+        }
+      }
+    },
+    "purchase.invoice.validation_failed": {
+      "eventId": "purchase:01JEXAMPLE0000000000000143",
+      "data": {
+        "id": "purchase:01JEXAMPLE0000000000000143",
+        "type": "purchase.invoice.validation_failed",
+        "timestamp": "2026-09-18T07:05:00.000Z",
+        "data": {
+          "documentId": "01JEXAMPLE0000000000000143",
+          "documentNumber": "AE-INV-006",
+          "documentType": "credit_note",
+          "country": "AE",
+          "errors": [
+            {
+              "code": "IBR-055-AE",
+              "message": "A credit note must reference the invoice it corrects."
+            }
+          ],
+          "attribution": {
+            "companyId": "66b9f0a1c2d3e4f567890123"
+          }
+        },
+        "metadata": {
+          "requestId": "01JABCDEFGHIJKLMNOPQRSTUW"
+        }
+      }
+    },
+    "invoice.passed": {
+      "eventId": "invoice:01K5EXAMPLE00000000000142",
+      "data": {
+        "id": "invoice:01K5EXAMPLE00000000000142",
+        "type": "invoice.passed",
+        "timestamp": "2026-09-22T10:00:00.000Z",
+        "data": {
+          "documentId": "01K5EXAMPLE00000000000142",
+          "documentNumber": "INV-2026-0001"
+        },
+        "metadata": {
+          "requestId": "01JABCDEFGHIJKLMNOPQRSTUX"
+        }
+      }
+    },
+    "company.added.successfully": {
+      "eventId": "company:66b9f0a1c2d3e4f567890123:added",
+      "data": {
+        "id": "company:66b9f0a1c2d3e4f567890123:added",
+        "type": "company.added.successfully",
+        "timestamp": "2026-08-01T12:00:01.000Z",
+        "data": {
+          "companyId": "66b9f0a1c2d3e4f567890123",
+          "tin": "1001234567"
+        },
+        "metadata": {
+          "requestId": "01JABCDEFGHIJKLMNOPQRSTUY"
+        }
+      }
+    }
+  },
+  "signed": {
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Webhook-Event": "purchase.invoice.stored",
+      "X-Webhook-ID": "purchase:01JEXAMPLE0000000000000142",
+      "X-Webhook-Timestamp": "2026-09-18T07:04:02.000Z",
+      "X-Webhook-Signature": "6b7c68569f66f2de1b20d637d9d6ef40d2d155488738497ed7dd1981f45b5609"
+    },
+    "rawBody": "{\"eventId\":\"purchase:01JEXAMPLE0000000000000142\",\"data\":{\"id\":\"purchase:01JEXAMPLE0000000000000142\",\"type\":\"purchase.invoice.stored\",\"timestamp\":\"2026-09-18T07:04:01.550Z\",\"data\":{\"documentId\":\"01JEXAMPLE0000000000000142\",\"documentNumber\":\"AE-INV-005\",\"documentType\":\"tax_invoice\",\"country\":\"AE\",\"totalAmount\":1774.5,\"currency\":\"AED\",\"sellerName\":\"Gulf Supplies L.L.C.\",\"issueDate\":\"2026-09-17\",\"submittedAt\":\"2026-09-18T07:04:01.550Z\",\"attribution\":{\"companyId\":\"66b9f0a1c2d3e4f567890123\",\"branchId\":\"66b9f0b2c2d3e4f567890456\"}},\"metadata\":{\"requestId\":\"01JABCDEFGHIJKLMNOPQRSTUV\"}}}",
+    "algorithm": "sha256"
+  }
+}

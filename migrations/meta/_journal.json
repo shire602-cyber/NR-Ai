@@ -813,6 +813,13 @@
    "when": 1781430310000,
    "tag": "0116_e1_einvoice_acube",
    "breakpoints": false
+  },
+  {
+   "idx": 116,
+   "version": "7",
+   "when": 1781430320000,
+   "tag": "0117_e2_einvoice_complyance",
+   "breakpoints": false
   }
  ]
 }

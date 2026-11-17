@@ -235,6 +235,7 @@ async function buildApp(): Promise<any> {
     "/api/webhooks/invoice-payments",
     "/api/webhooks/email-events",
     "/api/webhooks/einvoice/acube",
+    "/api/webhooks/einvoice/complyance",
   ];
   app.use(rawWebhookPrefixes, express.raw({ type: "*/*", limit: "1mb" }));
   app.use((req: any, res: any, next: any) => {

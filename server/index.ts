@@ -81,6 +81,7 @@ const RAW_WEBHOOK_PREFIXES = [
   "/api/webhooks/invoice-payments",
   "/api/webhooks/email-events",
   "/api/webhooks/einvoice/acube",
+  "/api/webhooks/einvoice/complyance", // E2: HMAC over the raw body
 ];
 app.use(RAW_WEBHOOK_PREFIXES, express.raw({ type: "*/*", limit: "1mb" }));
 

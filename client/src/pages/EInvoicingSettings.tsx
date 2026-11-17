@@ -29,7 +29,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
-import { AcubeConnectCard } from "@/components/einvoice/AcubeConnectCard";
+import { EInvoiceProviderCard } from "@/components/einvoice/EInvoiceProviderCard";
 
 // UAE e-invoicing (PINT AE) settings: identity, scope, ASP status, per-invoice
 // validation, archive and inbound documents (W4-C, R07-04/R07-13/R03-18/R04-23).
@@ -383,8 +383,8 @@ export default function EInvoicingSettings() {
         <p className="text-muted-foreground">{s.loading}</p>
       ) : (
         <>
-          {/* E1: guided A-Cube connection (five corners, EmaraTax steps, timeline, scope). */}
-          {companyId && <AcubeConnectCard companyId={companyId} />}
+          {/* E1/E2: the configured accredited provider's guided connection (or "Not connected"). */}
+          {companyId && <EInvoiceProviderCard companyId={companyId} />}
 
           <Card>
             <CardHeader>

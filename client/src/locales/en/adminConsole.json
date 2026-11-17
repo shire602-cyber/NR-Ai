@@ -135,6 +135,8 @@
   "activityLog.action.budget.variance_alert": "Budget variance alert",
   "activityLog.action.company.delete": "Company deleted",
   "activityLog.action.company.einvoicing_acube_reserve": "E-invoicing provider reserved",
+  "activityLog.action.company.einvoicing_complyance_connect": "E-invoicing provider connected",
+  "activityLog.action.invoice.einvoice_complyance_link": "E-invoicing provider document linked to invoice",
   "activityLog.action.company.einvoicing_settings": "E-invoicing settings changed",
   "activityLog.action.company.emirate": "Company emirate changed",
   "activityLog.action.company.logo_upload": "Company logo uploaded",

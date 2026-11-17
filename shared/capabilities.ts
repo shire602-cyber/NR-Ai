@@ -234,22 +234,31 @@ const DEFS: readonly CapabilityDef[] = [
       "ACUBE_ENV",
       "ACUBE_EMAIL",
       "ACUBE_PASSWORD",
+      "COMPLYANCE_ENV",
+      "COMPLYANCE_API_KEY",
     ],
     whenUnconfigured: "requires_external",
     // E1: A-Cube (EINVOICE_PROVIDER=acube) is live with production credentials, else sandbox.
+    // E2: Complyance (EINVOICE_PROVIDER=complyance) likewise with COMPLYANCE_ENV=production.
     detect: (env) =>
-      (env.EINVOICE_PROVIDER ?? "").toLowerCase() === "acube"
-        ? all(env, ["ACUBE_EMAIL", "ACUBE_PASSWORD"])
-          ? (env.ACUBE_ENV ?? "").toLowerCase() === "production"
+      (env.EINVOICE_PROVIDER ?? "").toLowerCase() === "complyance"
+        ? env.COMPLYANCE_API_KEY
+          ? (env.COMPLYANCE_ENV ?? "").toLowerCase() === "production"
             ? "live"
             : "sandbox"
           : null
-        : all(env, ["EINVOICE_ASP_API_KEY", "EINVOICE_ASP_BASE_URL"])
-          ? (env.EINVOICE_ASP_ENV ?? "").toLowerCase() === "production" &&
-            !looksSandbox(env.EINVOICE_ASP_BASE_URL)
-            ? "live"
-            : "sandbox"
-          : null,
+        : (env.EINVOICE_PROVIDER ?? "").toLowerCase() === "acube"
+          ? all(env, ["ACUBE_EMAIL", "ACUBE_PASSWORD"])
+            ? (env.ACUBE_ENV ?? "").toLowerCase() === "production"
+              ? "live"
+              : "sandbox"
+            : null
+          : all(env, ["EINVOICE_ASP_API_KEY", "EINVOICE_ASP_BASE_URL"])
+            ? (env.EINVOICE_ASP_ENV ?? "").toLowerCase() === "production" &&
+              !looksSandbox(env.EINVOICE_ASP_BASE_URL)
+              ? "live"
+              : "sandbox"
+            : null,
   },
   {
     id: "zatca",

@@ -1,5 +1,5 @@
 /**
- * Durable inbox for ASP events (E1, A-Cube).
+ * Durable inbox for ASP events (E1, A-Cube; E2 made provider-neutral for Complyance).
  *
  * Webhooks are answered 200 as soon as the signed request is stored in einvoice_provider_events
  * (unique per provider event id, so A-Cube's 15 retries over ~10 h land on one row). The
@@ -8,7 +8,10 @@
  * or lost: it refreshes documents still in flight and enqueues incoming documents it has not
  * seen, through the same inbox.
  *
- * Processing never trusts the payload's status: it re-reads the resource from A-Cube.
+ * Processing never trusts the payload's status: it re-reads the resource from the provider. E2: the
+ * provider-specific reads go through optional EInvoiceProvider hooks (inboundOwner, fetchSource,
+ * legalEntityPatch, listInbound), so this file names no provider; webhook routes normalise each
+ * provider's payload to { documentId, documentType, status } before enqueueing.
  *   document.delivered (invoice.outbound / credit_note.outbound) -> refresh delivery + reporting
  *   document.received  (invoice.inbound / credit_note.inbound)   -> fetch source XML ->
  *                        processInboundEInvoice (a DRAFT bill tagged origin "einvoice")
@@ -27,12 +30,11 @@ import {
 import { storage } from "../../storage";
 import { createLogger } from "../../config/logger";
 import { getEInvoiceProvider, type EInvoiceProvider } from "../einvoice-provider";
-import { AcubeEInvoiceProvider, ACUBE_PROVIDER_NAME } from "./providers/acube";
 import { processInboundEInvoice } from "./inbound";
 import { refreshAndPersist } from "./workflow";
 import {
   findLegalEntitiesByProviderId,
-  patchFromAcube,
+  legalEntityPatchFrom,
   updateLegalEntityRow,
 } from "./legal-entities";
 
@@ -131,10 +133,6 @@ async function claimEvents(opts: { id?: string; limit: number }): Promise<EInvoi
 
 type Outcome = { status: "processed" | "ignored"; companyId?: string | null; note?: string };
 
-function asAcube(provider: EInvoiceProvider): AcubeEInvoiceProvider | null {
-  return provider instanceof AcubeEInvoiceProvider ? provider : null;
-}
-
 async function handleDelivered(
   row: EInvoiceProviderEvent,
   provider: EInvoiceProvider
@@ -174,8 +172,9 @@ async function handleReceived(
   row: EInvoiceProviderEvent,
   provider: EInvoiceProvider
 ): Promise<Outcome> {
-  const acube = asAcube(provider);
-  if (!acube) return { status: "ignored", note: "provider has no document API" };
+  if (!provider.inboundOwner || !provider.fetchSource) {
+    return { status: "ignored", note: "provider has no document API" };
+  }
   const payload = row.payload as Record<string, unknown>;
   const documentId = String(payload.documentId ?? "");
   const documentType =
@@ -183,12 +182,12 @@ async function handleReceived(
     String(payload.documentTypeCode ?? "") === "381"
       ? "381"
       : "380";
-  const meta = await acube.getDocument(documentId, { documentType });
+  const owner = await provider.inboundOwner(documentId, { documentType }, payload);
   const matches = await findLegalEntitiesByProviderId(
     row.provider,
     row.environment,
-    (meta.legalEntityUuid as string | undefined) ?? null,
-    (meta.ownerFiscalId as string | undefined) ?? null
+    owner.legalEntityId,
+    owner.tin
   );
   if (matches.length === 0) {
     return { status: "ignored", note: "document belongs to no company of ours" };
@@ -200,7 +199,7 @@ async function handleReceived(
   const le = matches[0];
   const company = await storage.getCompany(le.companyId);
   if (!company) return { status: "ignored", note: "company gone" };
-  const xml = await acube.fetchSource(documentId, { documentType });
+  const xml = await provider.fetchSource(documentId, { documentType });
   try {
     await processInboundEInvoice({
       company: company as Company & { peppolParticipantId?: string | null },
@@ -231,19 +230,21 @@ async function handleLegalEntity(
     tin
   );
   if (rows.length === 0) return { status: "ignored", note: "legal entity not reserved by us" };
-  const acube = asAcube(provider);
   // The event says something changed; the resource says what is true now.
-  const current = acube ? await acube.getLegalEntity(legalEntityId) : null;
+  const current =
+    provider.legalEntityPatch && legalEntityId
+      ? await provider.legalEntityPatch(legalEntityId, payload)
+      : null;
   for (const le of rows) {
-    const patch = patchFromAcube({
-      ...(current ?? {
-        legalEntityId,
-        tin: tin ?? le.tin,
-        status: String(payload.status ?? ""),
-        nameEn: (payload.name as string | undefined) ?? undefined,
-      }),
-      action: typeof payload.action === "string" ? payload.action : null,
-    });
+    const patch = current
+      ? { ...current }
+      : legalEntityPatchFrom({
+          legalEntityId,
+          tin: tin ?? le.tin,
+          status: String(payload.status ?? ""),
+          nameEn: (payload.name as string | undefined) ?? undefined,
+          action: typeof payload.action === "string" ? payload.action : null,
+        });
     if (patch.status === "active" && le.status !== "active") patch.activatedAt = new Date();
     patch.lastError = null;
     await updateLegalEntityRow(le.id, patch);
@@ -321,10 +322,12 @@ export async function runProviderEvents(
 }
 
 /**
- * Polling fallback: refresh A-Cube documents still in flight (delivery queued/sending, or
- * delivered but not yet reported) and enqueue incoming documents not seen before.
+ * Polling fallback (E1; provider-neutral since E2): refresh the provider's documents still in
+ * flight (delivery queued/sending, or delivered but not yet reported) and enqueue incoming
+ * documents not seen before. Runs only for `providerName` (each provider has its own job).
  */
-export async function runAcubePoll(
+export async function runProviderPoll(
+  providerName: string,
   opts: { provider?: EInvoiceProvider; now?: Date } = {}
 ): Promise<{ refreshed: number; enqueued: number }> {
   let provider: EInvoiceProvider;
@@ -333,19 +336,20 @@ export async function runAcubePoll(
   } catch {
     return { refreshed: 0, enqueued: 0 };
   }
-  const acube = asAcube(provider);
-  if (!acube) return { refreshed: 0, enqueued: 0 };
+  if (provider.name !== providerName || !provider.listInbound) {
+    return { refreshed: 0, enqueued: 0 };
+  }
   const linked = await db
-    .select({ id: einvoiceLegalEntities.id })
+    .select({ legalEntityId: einvoiceLegalEntities.legalEntityId })
     .from(einvoiceLegalEntities)
     .where(
       and(
-        eq(einvoiceLegalEntities.provider, ACUBE_PROVIDER_NAME),
-        eq(einvoiceLegalEntities.environment, acube.environment),
+        eq(einvoiceLegalEntities.provider, providerName),
+        eq(einvoiceLegalEntities.environment, provider.environment),
         eq(einvoiceLegalEntities.status, "active")
       )
     )
-    .limit(1);
+    .limit(500);
   if (linked.length === 0) return { refreshed: 0, enqueued: 0 };
 
   const inFlight = await db
@@ -353,7 +357,7 @@ export async function runAcubePoll(
     .from(einvoiceDocuments)
     .where(
       and(
-        eq(einvoiceDocuments.provider, ACUBE_PROVIDER_NAME),
+        eq(einvoiceDocuments.provider, providerName),
         sql`${einvoiceDocuments.providerMessageId} IS NOT NULL`,
         sql`(${einvoiceDocuments.deliveryStatus} IN ('queued', 'sending')
              OR (${einvoiceDocuments.deliveryStatus} = 'delivered'
@@ -375,18 +379,20 @@ export async function runAcubePoll(
   }
 
   let enqueued = 0;
-  for (const item of await acube.listInbound()) {
-    const payload = {
+  const legalEntityIds = linked.map((l) => l.legalEntityId).filter((id): id is string => !!id);
+  for (const item of await provider.listInbound({ legalEntityIds })) {
+    const payload: Record<string, unknown> = {
       documentId: item.providerMessageId,
       documentNumber: item.documentNumber ?? null,
       documentType: item.documentType === "381" ? "credit-note" : "invoice",
       status: "received",
       source: "poll",
     };
+    if (item.legalEntityId) payload.ownerLegalEntityId = item.legalEntityId;
     // Same key as the webhook, so a document seen by both is processed once.
     const res = await enqueueProviderEvent({
-      provider: ACUBE_PROVIDER_NAME,
-      environment: acube.environment,
+      provider: providerName,
+      environment: provider.environment,
       type: "document.received",
       eventId: providerEventKey("document.received", payload),
       payload,
@@ -394,6 +400,13 @@ export async function runAcubePoll(
     if (!res.duplicate) enqueued++;
   }
   return { refreshed, enqueued };
+}
+
+/** E1: the A-Cube poll job (einvoice.acubePoll); see runProviderPoll. */
+export function runAcubePoll(
+  opts: { provider?: EInvoiceProvider; now?: Date } = {}
+): Promise<{ refreshed: number; enqueued: number }> {
+  return runProviderPoll("acube", opts);
 }
 
 /** Counts for the settings card (last events, failures needing attention). */

@@ -62,6 +62,8 @@ export interface EInvoiceStatusView {
   };
   transmission: {
     provider: string | null;
+    /** E2: the provider's brand name ("A-Cube", "Complyance"). */
+    providerDisplayName?: string | null;
     environment: string | null;
     connected: boolean;
     block: TransmissionBlock;
@@ -75,6 +77,8 @@ export interface EInvoiceStatusView {
     reasons: Array<{ code?: string; message?: string; field?: string | null }>;
     retryScheduledAt: string | null;
     resubmittable: boolean;
+    /** E2: the number is used up at the provider: credit note + new invoice. */
+    newDocumentRequired?: boolean;
   } | null;
   checklist: Array<{
     key: "posted" | "validated" | "sent" | "reported";
@@ -139,6 +143,23 @@ const KNOWN_ERRORS = new Set([
   "ACUBE_NO_DOCUMENT_ID",
   "TRANSPORT_ERROR",
   "EINVOICE_REPORT_FAILED",
+  // E2: Complyance
+  "COMPLYANCE_VALIDATION",
+  "COMPLYANCE_DUPLICATE_NUMBER",
+  "COMPLYANCE_XML_FAILED",
+  "COMPLYANCE_BAD_REQUEST",
+  "COMPLYANCE_SOURCE_NOT_FOUND",
+  "COMPLYANCE_SOURCE_AMBIGUOUS",
+  "COMPLYANCE_SOURCE_MISSING",
+  "COMPLYANCE_MAPPING_NOT_READY",
+  "COMPLYANCE_AUTH_FAILED",
+  "COMPLYANCE_RATE_LIMITED",
+  "COMPLYANCE_UNAVAILABLE",
+  "COMPLYANCE_NO_DOCUMENT_ID",
+  "COMPLYANCE_DELIVERY_FAILED",
+  "COMPLYANCE_FINAL_INVALID",
+  "COMPLYANCE_UNKNOWN_STATE",
+  "EINVOICE_NEW_DOCUMENT_REQUIRED",
 ]);
 
 /** Locale key for an error code, or null when the code has no localised text. */

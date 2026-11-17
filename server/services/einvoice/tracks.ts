@@ -208,5 +208,31 @@ export const EINVOICE_ERROR_CODES = [
   "ACUBE_NO_DOCUMENT_ID",
   "TRANSPORT_ERROR",
   "EINVOICE_REPORT_FAILED",
+  // E2: Complyance (providers/complyance.ts)
+  "COMPLYANCE_VALIDATION",
+  "COMPLYANCE_DUPLICATE_NUMBER",
+  "COMPLYANCE_XML_FAILED",
+  "COMPLYANCE_BAD_REQUEST",
+  "COMPLYANCE_SOURCE_NOT_FOUND",
+  "COMPLYANCE_SOURCE_AMBIGUOUS",
+  "COMPLYANCE_SOURCE_MISSING",
+  "COMPLYANCE_MAPPING_NOT_READY",
+  "COMPLYANCE_AUTH_FAILED",
+  "COMPLYANCE_RATE_LIMITED",
+  "COMPLYANCE_UNAVAILABLE",
+  "COMPLYANCE_NO_DOCUMENT_ID",
+  "COMPLYANCE_DELIVERY_FAILED",
+  "COMPLYANCE_FINAL_INVALID",
+  "COMPLYANCE_UNKNOWN_STATE",
+  "EINVOICE_NEW_DOCUMENT_REQUIRED",
 ] as const;
 export type EInvoiceErrorCode = (typeof EINVOICE_ERROR_CODES)[number];
+
+/**
+ * E2: outcomes after which the same document number can never be sent again (Complyance refuses a
+ * used number with GETS-HEAD-010): the fix is a credit note and a new invoice, not "resubmit".
+ */
+export const NEW_DOCUMENT_REQUIRED_CODES: ReadonlySet<string> = new Set([
+  "COMPLYANCE_FINAL_INVALID",
+  "COMPLYANCE_DUPLICATE_NUMBER",
+]);

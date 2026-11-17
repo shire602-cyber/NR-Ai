@@ -44,6 +44,7 @@ export const BRAND_ALLOWLIST = [
   "Android",
   // Provider, browser and format proper nouns that stay Latin inside Arabic sentences.
   "A-Cube",
+  "Complyance",
   "Lean Technologies",
   "Tarabut Gateway",
   "Wio Bank",

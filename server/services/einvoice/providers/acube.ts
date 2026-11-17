@@ -27,7 +27,11 @@ import type {
   EInvoiceSubmission,
   InboundEInvoice,
   InboundListing,
+  InboundOwner,
+  LegalEntityPatch,
 } from "../../einvoice-provider";
+import type { EInvoiceProviderModule } from "./types";
+import { MOF_ASP_REGISTER_URL as REGISTER_URL } from "./types";
 import type { EInvoiceRejectionReason, EInvoiceStatus } from "../../einvoice-status";
 import { createLogger } from "../../../config/logger";
 import {
@@ -42,8 +46,7 @@ const log = createLogger("einvoice-acube");
 
 export const ACUBE_ACCREDITATION_NUMBER = "188961";
 export const ACUBE_PROVIDER_NAME = "acube";
-export const MOF_ASP_REGISTER_URL =
-  "https://mof.gov.ae/en/about-us/initiatives/einvoicing/einvoicing-accredited-service-providers-asps/";
+export const MOF_ASP_REGISTER_URL = REGISTER_URL;
 
 export type AcubeEnvironment = "sandbox" | "production";
 
@@ -203,6 +206,7 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     cancel: false,
   };
   readonly requiresLegalEntity = true;
+  readonly displayName = "A-Cube";
   readonly cfg: AcubeConfig;
   private readonly fetchImpl: FetchLike;
 
@@ -560,6 +564,28 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     return null;
   }
 
+  /** E2 inbox hook: the document's legal entity, re-read from A-Cube (never from the payload). */
+  async inboundOwner(providerMessageId: string, ref: EInvoiceDocumentRef): Promise<InboundOwner> {
+    const meta = await this.getDocument(providerMessageId, ref);
+    return {
+      legalEntityId: (meta.legalEntityUuid as string | undefined) ?? null,
+      tin: (meta.ownerFiscalId as string | undefined) ?? null,
+    };
+  }
+
+  /** E2 inbox hook: legal_entity.synchronized -> the legal entity as A-Cube holds it now. */
+  async legalEntityPatch(
+    legalEntityId: string,
+    payload: Record<string, unknown>
+  ): Promise<LegalEntityPatch> {
+    const { legalEntityPatchFrom } = await import("../legal-entities");
+    const current = await this.getLegalEntity(legalEntityId);
+    return legalEntityPatchFrom({
+      ...current,
+      action: typeof payload.action === "string" ? payload.action : null,
+    });
+  }
+
   // ─── Legal entities ──────────────────────────────────────────────────
 
   /** Reserve the TIN so the taxpayer can link it in EmaraTax (POST /legal-entities). */
@@ -621,3 +647,32 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     return { created, existing };
   }
 }
+
+/** E2: A-Cube's entry in the provider registry (registry.ts). */
+export const ACUBE_PROVIDER_MODULE: EInvoiceProviderModule = {
+  id: ACUBE_PROVIDER_NAME,
+  displayName: "A-Cube",
+  legalName: "Platform ACube Technologies LLC",
+  accreditationNumber: ACUBE_ACCREDITATION_NUMBER,
+  website: "https://www.acubeapi.com/en/uae",
+  emaraTaxListing: "PLATFORM ACUBE TECHNOLOGIES L.L.C",
+  envVars: [
+    "ACUBE_ENV",
+    "ACUBE_EMAIL",
+    "ACUBE_PASSWORD",
+    "ACUBE_BASE_URL",
+    "ACUBE_LOGIN_URL",
+    "ACUBE_INVOICE_SUBMIT_PATH",
+    "ACUBE_CREDIT_NOTE_SUBMIT_PATH",
+    "ACUBE_TIMEOUT_MS",
+    "ACUBE_WEBHOOK_BASE_URL",
+    "ACUBE_WEBHOOK_TOKEN",
+    "ACUBE_WEBHOOK_TOKEN_HEADER",
+    "ACUBE_SIGNATURE_PUBLIC_KEY",
+    "ACUBE_WEBHOOK_MAX_AGE_SECONDS",
+  ],
+  configured: acubeConfigured,
+  environment: acubeEnvironment,
+  notConfiguredMessage: "The A-Cube e-invoicing provider requires ACUBE_EMAIL and ACUBE_PASSWORD.",
+  create: (env, deps) => new AcubeEInvoiceProvider(env, deps),
+};

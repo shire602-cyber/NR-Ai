@@ -18,6 +18,7 @@ import {
   deliveryFromLegacy,
   isDeliveryStatus,
   isReportingStatus,
+  NEW_DOCUMENT_REQUIRED_CODES,
   reportByDate,
   reportingFromLegacy,
   type DeliveryStatus,
@@ -193,6 +194,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     },
     transmission: {
       provider: provider?.name ?? null,
+      providerDisplayName: provider?.displayName ?? null,
       environment: provider?.environment ?? null,
       connected: block === null,
       block,
@@ -207,7 +209,10 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
           reasons: (doc?.rejectionReasons as unknown[] | null) ?? [],
           retryScheduledAt: iso(doc?.nextRetryAt),
           // A rejected document needs a corrected one; a delivery failure can be resent as is.
-          resubmittable: issues.length === 0,
+          // E2: after a final rejection the number is used up at some providers.
+          resubmittable:
+            issues.length === 0 && !NEW_DOCUMENT_REQUIRED_CODES.has(doc?.lastErrorCode ?? ""),
+          newDocumentRequired: NEW_DOCUMENT_REQUIRED_CODES.has(doc?.lastErrorCode ?? ""),
         }
       : null,
     checklist,
