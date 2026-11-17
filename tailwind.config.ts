@@ -237,7 +237,7 @@ export default {
         // Spec 2.5: page content enters once per route change.
         "page-in": {
           from: { transform: "translateY(4px)", opacity: "0" },
-          to: { transform: "translateY(0)", opacity: "1" },
+          to: { transform: "none", opacity: "1" },
         },
       },
       animation: {
