@@ -864,14 +864,14 @@ export default function VATFiling() {
       <div className="space-y-6 pb-24" data-testid="vat201-workbook-page">
         <PageHeader
           eyebrow={t["pages.eyebrowCompliance"]}
-          title={locale === "ar" ? "ورقة عمل الإقرار 201" : "VAT 201 workbook"}
+          title={t["compliance.vatWorkbookTitle"]}
           description={`${format(parseISO(selectedReturn.periodStart), "MMM yyyy", dfOpts)} – ${format(
             parseISO(selectedReturn.periodEnd),
             "MMM yyyy",
             dfOpts
           )}`}
           backHref="/vat-filing"
-          backLabel={locale === "ar" ? "العودة إلى الإقرارات" : "Back to returns"}
+          backLabel={t["compliance.vatBackToReturns"]}
         />
         <VAT201Form
           data={vatFormData}

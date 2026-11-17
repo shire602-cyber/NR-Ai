@@ -170,5 +170,8 @@
   "compliance.periodsPrepare": "إعداد",
   "compliance.periodsReview": "مراجعة",
   "compliance.filedReturnsTitle": "الإقرارات المقدمة",
-  "compliance.filedReturnsEmptyHint": "تُحفظ هنا الإقرارات التي تقدمها إلى الهيئة مع ملفاتها."
+  "compliance.filedReturnsEmptyHint": "تُحفظ هنا الإقرارات التي تقدمها إلى الهيئة مع ملفاتها.",
+  "compliance.tasksDueThisWeek": "مستحقة هذا الأسبوع",
+  "compliance.vatBackToReturns": "العودة إلى الإقرارات",
+  "compliance.vatWorkbookTitle": "ورقة عمل الإقرار 201"
 }

@@ -36,15 +36,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import {
-  Plus,
-  Search,
-  Calendar,
-  Loader2,
-  ListTodo,
-  MoreHorizontal,
-  Trash2,
-} from "lucide-react";
+import { Plus, Search, Calendar, Loader2, ListTodo, MoreHorizontal, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -393,7 +385,7 @@ export function TaskListPanel() {
           testId="stat-tasks-open"
         />
         <StatCard
-          label={locale === "ar" ? "مستحقة هذا الأسبوع" : "Due this week"}
+          label={t["compliance.tasksDueThisWeek"]}
           value={stats.dueThisWeek}
           testId="stat-tasks-due-week"
         />

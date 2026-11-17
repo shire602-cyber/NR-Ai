@@ -291,7 +291,7 @@ export default function VAT201Form({
 
       <section
         className="sticky bottom-0 z-10 rounded-xl border border-border bg-card/95 p-4 shadow-card-soft backdrop-blur supports-[backdrop-filter]:bg-card/85"
-        aria-label="Net VAT due / صافي ضريبة القيمة المضافة المستحقة"
+        aria-label={SUMMARY_LABELS.section}
         data-testid="vat201-summary"
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -303,8 +303,8 @@ export default function VAT201Form({
           </SummaryCell>
           <SummaryCell
             box="14"
-            en={net >= 0 ? "Payable tax for the period" : "Refundable tax for the period"}
-            ar={net >= 0 ? "الضريبة المستحقة الدفع للفترة" : "الضريبة المستردة للفترة"}
+            en={net >= 0 ? SUMMARY_LABELS.payable.en : SUMMARY_LABELS.refundable.en}
+            ar={net >= 0 ? SUMMARY_LABELS.payable.ar : SUMMARY_LABELS.refundable.ar}
             emphasis
           >
             {net >= 0 ? "" : "("}
@@ -325,6 +325,13 @@ export default function VAT201Form({
     </div>
   );
 }
+
+/** FTA VAT 201 bilingual labels for the summary (fixed English over Arabic, as on the form). */
+const SUMMARY_LABELS = {
+  section: "Net VAT due / صافي ضريبة القيمة المضافة المستحقة",
+  payable: { en: "Payable tax for the period", ar: "الضريبة المستحقة الدفع للفترة" },
+  refundable: { en: "Refundable tax for the period", ar: "الضريبة المستردة للفترة" },
+};
 
 function Meta({ en, ar, children }: { en: string; ar: string; children: ReactNode }) {
   return (
