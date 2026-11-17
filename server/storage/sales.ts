@@ -497,6 +497,11 @@ export class SalesStorage extends LedgerStorage {
     notes: string | null;
     paymentAccountId: string;
     paymentAccountCurrency?: string | null;
+    /**
+     * A2 (C4): currency the bank account holds and its rate to base. Omitted: the cash leg is
+     * tagged with the invoice currency (legacy). currency null: a base-currency account (no tag).
+     */
+    cashLeg?: { currency: string | null; rate: string | null };
     /** A-B5: AED-per-unit rate on the payment date; enables realised FX and
      *  cross-currency settlement. Null = settle at the invoice rate (no FX). */
     paymentExchangeRate?: number | null;
@@ -726,6 +731,33 @@ export class SalesStorage extends LedgerStorage {
       // fils balance, account/period guards, in-transaction numbering). The
       // payment date is the journal date (R03-13).
       const foreignCur = isForeignInvoice ? lockedInvoice.currency.toUpperCase() : null;
+      // A2 (C4, IAS 21): the cash leg is measured in the bank account's own currency.
+      const cashTag = (debitAed: number) => {
+        const leg = input.cashLeg;
+        if (!leg) {
+          return foreignCur
+            ? {
+                foreignCurrency: foreignCur,
+                foreignDebit: amountD.toFixed(2),
+                exchangeRate: String(payRate),
+              }
+            : {};
+        }
+        if (!leg.currency) return {};
+        if (leg.currency === foreignCur) {
+          return {
+            foreignCurrency: foreignCur,
+            foreignDebit: amountD.toFixed(2),
+            exchangeRate: String(payRate),
+          };
+        }
+        const rate = new Decimal(leg.rate ?? 1);
+        return {
+          foreignCurrency: leg.currency,
+          foreignDebit: new Decimal(debitAed).div(rate).toFixed(2),
+          exchangeRate: rate.toString(),
+        };
+      };
       const { entry } = await postJournal(
         {
           companyId: input.companyId,
@@ -752,13 +784,7 @@ export class SalesStorage extends LedgerStorage {
                     exchangeRate: String(invRate),
                   }
                 : {}),
-              ...(foreignCur && isCash
-                ? {
-                    foreignCurrency: foreignCur,
-                    foreignDebit: amountD.toFixed(2),
-                    exchangeRate: String(payRate),
-                  }
-                : {}),
+              ...(isCash ? cashTag(l.debit) : {}),
             };
           }),
         },

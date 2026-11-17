@@ -19,6 +19,7 @@ import {
   unappliedReceivableCreditsFilsSql,
 } from "./settlement";
 import {
+  ENTRY_LOCAL_DATE_SQL,
   accountTotals,
   aed,
   loadAccounts,
@@ -77,6 +78,12 @@ export interface AgingReport {
     agingTotal: number;
     difference: number;
     isReconciled: boolean;
+    /**
+     * A2 (H8): manual control-account adjustments (posted with a reason) included in the GL
+     * balance; they explain that much of `difference`. `unexplainedDifference` is the rest.
+     */
+    controlAdjustments: number;
+    unexplainedDifference: number;
   };
 }
 
@@ -93,7 +100,7 @@ async function controlBalance(
   asOf: IsoDate,
   kind: "receivable" | "payable",
   q: Queryable
-): Promise<{ code: string | null; name: string | null; fils: Fils }> {
+): Promise<{ code: string | null; name: string | null; fils: Fils; adjustmentsFils: Fils }> {
   const accounts = await loadAccounts(companyId, q);
   const code = kind === "receivable" ? "1040" : "2010";
   const re = kind === "receivable" ? /receivable/i : /payable/i;
@@ -105,10 +112,23 @@ async function controlBalance(
         re.test(a.nameEn) &&
         !/vat|tax/i.test(a.nameEn)
     );
-  if (!acct) return { code: null, name: null, fils: 0 };
-  const t = (await accountTotals(companyId, { to: asOf }, q)).get(acct.id);
+  if (!acct) return { code: null, name: null, fils: 0, adjustmentsFils: 0 };
+  const [totals, adj] = await Promise.all([
+    accountTotals(companyId, { to: asOf }, q),
+    q.query(
+      `SELECT COALESCE(SUM(ROUND(jl.debit * 100) - ROUND(jl.credit * 100)), 0)::text AS fils
+         FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+        WHERE je.company_id = $1 AND je.status = 'posted' AND jl.account_id = $2
+          AND je.control_adjustment_reason IS NOT NULL
+          AND ${ENTRY_LOCAL_DATE_SQL} <= $3::date`,
+      [companyId, acct.id, asOf]
+    ),
+  ]);
+  const t = totals.get(acct.id);
   const fils = t ? (kind === "receivable" ? t.debit - t.credit : t.credit - t.debit) : 0;
-  return { code: acct.code, name: acct.nameEn, fils };
+  const net = Number((adj.rows[0] as { fils?: string } | undefined)?.fils ?? 0);
+  const adjustmentsFils = kind === "receivable" ? net : -net;
+  return { code: acct.code, name: acct.nameEn, fils, adjustmentsFils };
 }
 
 /** Open-document rows the aging SQL returns (typed at the driver boundary). */
@@ -127,7 +147,7 @@ function build(
     days: number;
     open_fils: string;
   }>,
-  control: { code: string | null; name: string | null; fils: Fils },
+  control: { code: string | null; name: string | null; fils: Fils; adjustmentsFils: Fils },
   reportCurrency: string,
   unappliedFils: Fils
 ): AgingReport {
@@ -195,6 +215,8 @@ function build(
       agingTotal: aed(netFils),
       difference: aed(control.fils - netFils),
       isReconciled: control.fils === netFils,
+      controlAdjustments: aed(control.adjustmentsFils),
+      unexplainedDifference: aed(control.fils - netFils - control.adjustmentsFils),
     },
   };
 }

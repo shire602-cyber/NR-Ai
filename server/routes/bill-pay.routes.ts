@@ -643,6 +643,8 @@ export function registerBillPayRoutes(app: Express) {
         date: body.payment_date,
         paymentAccountId: body.payment_account_id ?? null,
         exchangeRate: body.exchange_rate ?? null,
+        bankAmountFils: body.bank_amount ?? null,
+        bankExchangeRate: body.bank_exchange_rate ?? null,
         method: body.payment_method ?? null,
         reference: body.reference ?? null,
         notes: body.notes ?? null,

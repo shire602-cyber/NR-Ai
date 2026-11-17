@@ -69,5 +69,7 @@
   "journal.memo.method.cash": "نقداً",
   "journal.memo.method.cheque": "شيك",
   "journal.memo.method.online": "دفع إلكتروني",
-  "journal.memo.method.card": "بطاقة"
+  "journal.memo.method.card": "بطاقة",
+  "journal.controlAdjustmentReason": "تسوية حساب مراقبة: السبب",
+  "journal.controlAdjustmentHint": "تُرحَّل بنود الذمم المدينة والدائنة والمخزون وضريبة القيمة المضافة والبضائع المستلمة غير المفوترة ومستحقات الرواتب عادةً من وحداتها الخاصة. رحّلها هنا كتسوية فقط مع ذكر السبب، وستظهر في التسوية."
 }

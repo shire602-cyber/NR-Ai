@@ -504,6 +504,12 @@ export default function FixedAssets() {
             <T k="pageLabels.disposed" />
           </StatusBadge>
         );
+      case "draft":
+        return (
+          <StatusBadge tone="warning">
+            <T k="pageLabels.assetDraftFromBill" />
+          </StatusBadge>
+        );
       case "fully_depreciated":
         return (
           <StatusBadge tone="neutral">
@@ -766,6 +772,13 @@ export default function FixedAssets() {
                           </>
                         }
                       >
+                        {asset.status === "draft" && (
+                          <RowActionButton
+                            label={t.edit}
+                            icon={Edit}
+                            onClick={() => handleOpenEditDialog(asset)}
+                          />
+                        )}
                         {asset.status === "active" && (
                           <>
                             <RowActionButton

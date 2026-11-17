@@ -53,6 +53,11 @@ export const billLineSchema = z
     product_id: zUuid.optional().nullable(),
     /** R10-11: cost centre of the line (posted on its journal line; must be the company's). */
     cost_center_id: zUuid.optional().nullable(),
+    /**
+     * A2 (C3): the purchase-order line this bill line invoices. Omitted on an edit, the line keeps
+     * the link it had (matched by product, then position); null unlinks it explicitly.
+     */
+    purchase_order_line_id: zUuid.optional().nullable(),
   })
   .strict();
 export type BillLineInput = z.output<typeof billLineSchema>;
@@ -134,6 +139,16 @@ export const billPaymentSchema = z.object({
   payment_account_id: zUuid.optional().nullable(),
   /** Payment-date rate (bill currency → AED); default fx.getRate on payment_date. */
   exchange_rate: zFxRate.optional().nullable(),
+  /**
+   * A2 (C4): paying from a bank account in a third currency (a EUR bill from a USD account): the
+   * amount the bank actually debited, in the bank account's currency (fils), and that
+   * currency's rate to AED on the payment date. Both optional; default the payment-date rates.
+   */
+  bank_amount: zMoneyFils
+    .refine((f) => f > 0, "Bank amount must be greater than zero")
+    .optional()
+    .nullable(),
+  bank_exchange_rate: zFxRate.optional().nullable(),
   reference: zText(255).optional().nullable(),
   notes: zText(2000).optional().nullable(),
 });
@@ -157,6 +172,9 @@ export const debitNoteLineSchema = z
     amount: zMoneyFils.refine((f) => f > 0, "Amount must be greater than zero"),
     vat_rate: zBillVatRate.optional().nullable(),
     account_id: zUuid.optional().nullable(),
+    /** A2 (M4): a returned stock item leaves inventory at cost (whole units). */
+    product_id: zUuid.optional().nullable(),
+    quantity: zPositiveQuantity.optional(),
   })
   .strict();
 

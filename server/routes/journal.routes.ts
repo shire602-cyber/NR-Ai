@@ -47,10 +47,17 @@ import {
   submitForApproval,
   updateDraftEntry,
   voidEntry,
+  withLedgerTx,
   type PostJournalLineInput,
 } from "../ledger";
 import { normalizeEntry, parseLedgerDate, todayIso } from "../ledger/normalize";
 import { registerLedgerJobs, runJournalTemplate } from "../ledger/templates";
+import {
+  MANUAL_SOURCES,
+  assertManualControlPosting,
+  manualEntryControlState,
+  stampControlAdjustment,
+} from "../ledger/control-accounts";
 import { recordAudit } from "../services/audit.service";
 import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
@@ -114,6 +121,30 @@ async function assertRole(req: Request, companyId: string, roles: Set<string>, c
   if (role !== null && !roles.has(role)) {
     throw new DomainError(code, 403, { role }, `Role '${role}' cannot do this`);
   }
+}
+
+/** A2 (H8): a manual draft that touches a control account needs its stamped adjustment. */
+async function assertDraftControl(entry: JournalEntry, userId: string): Promise<void> {
+  if (!MANUAL_SOURCES.has(String(entry.source))) return;
+  const state = await manualEntryControlState(entry.id);
+  await assertManualControlPosting({
+    companyId: entry.companyId,
+    accountIds: state.accountIds,
+    stampedReason: state.reason,
+    role: await companyRole(userId, entry.companyId),
+  });
+}
+
+/** A2 (H8): recurring templates never post to a control account (no adjustment path). */
+async function assertTemplateControl(
+  companyId: string,
+  lines: Array<{ accountId: string }>
+): Promise<void> {
+  await assertManualControlPosting({
+    companyId,
+    accountIds: lines.map((l) => l.accountId),
+    role: null,
+  });
 }
 
 async function approvalThresholdFils(companyId: string): Promise<number | null> {
@@ -260,6 +291,14 @@ export function registerJournalRoutes(app: Express) {
       const body: CreateJournalBody = createJournalBody.parse(req.body);
       await requireCompanyAccess(req, companyId);
 
+      // A2 (H8): control accounts take manual lines only as an explicit adjustment.
+      const control = await assertManualControlPosting({
+        companyId,
+        accountIds: body.lines.map((l) => l.accountId),
+        adjustment: body.controlAdjustment ?? null,
+        role: await companyRole(userId, companyId),
+      });
+      const adjustmentReason = control.length ? (body.controlAdjustment?.reason ?? null) : null;
       const requested = body.status ?? "draft";
       const input = {
         companyId,
@@ -283,7 +322,16 @@ export function registerJournalRoutes(app: Express) {
           pendingApproval = true;
         }
       }
-      const result = await postJournal({ ...input, status }, { actorId: userId, req, audit: true });
+      const result = await withLedgerTx(async (tx) => {
+        const r = await postJournal(
+          { ...input, status },
+          { actorId: userId, req, audit: true, tx }
+        );
+        if (adjustmentReason && !r.replayed) {
+          await stampControlAdjustment(tx, r.entry.id, adjustmentReason, userId);
+        }
+        return r;
+      });
       let entry = result.entry;
       if (pendingApproval && !result.replayed) {
         entry = await submitForApproval(entry.id, { actorId: userId, companyId });
@@ -423,6 +471,16 @@ export function registerJournalRoutes(app: Express) {
         );
       }
       const ctx = { actorId: userId, companyId: entry.companyId, req };
+      const prior = await manualEntryControlState(entry.id);
+      const control = MANUAL_SOURCES.has(String(entry.source))
+        ? await assertManualControlPosting({
+            companyId: entry.companyId,
+            accountIds: body.lines.map((l) => l.accountId),
+            adjustment: body.controlAdjustment ?? null,
+            stampedReason: body.controlAdjustment === null ? null : prior.reason,
+            role: await companyRole(userId, entry.companyId),
+          })
+        : [];
       let result = await updateDraftEntry(
         entry.id,
         {
@@ -434,6 +492,10 @@ export function registerJournalRoutes(app: Express) {
         },
         ctx
       );
+      const reason = control.length ? (body.controlAdjustment?.reason ?? prior.reason) : null;
+      if (reason !== prior.reason) {
+        await withLedgerTx((tx) => stampControlAdjustment(tx, entry.id, reason, userId));
+      }
       if (body.status === "posted") {
         result = await postDraft(entry.id, ctx, {
           approvalThresholdFils: await approvalThresholdFils(entry.companyId),
@@ -453,6 +515,7 @@ export function registerJournalRoutes(app: Express) {
     const userId = userIdOf(req);
     const entry = await requireEntry(req);
     const ctx = { actorId: userId, companyId: entry.companyId, req };
+    await assertDraftControl(entry, userId);
     try {
       const result = await postDraft(entry.id, ctx, {
         approvalThresholdFils: await approvalThresholdFils(entry.companyId),
@@ -498,6 +561,7 @@ export function registerJournalRoutes(app: Express) {
         throw new DomainError("SELF_APPROVAL", 403, undefined, "You cannot approve your own entry");
       }
       await assertRole(req, entry.companyId, APPROVER_ROLES, "APPROVER_ROLE_REQUIRED");
+      await assertDraftControl(entry, userId);
       const result = await postDraft(
         entry.id,
         { actorId: userId, companyId: entry.companyId, req },
@@ -801,6 +865,7 @@ export function registerJournalRoutes(app: Express) {
       await requireCompanyAccess(req, companyId);
       const body: CreateJournalTemplateBody = createJournalTemplateBody.parse(req.body);
       const { next, end } = checkTemplate(companyId, body);
+      await assertTemplateControl(companyId, body.lines);
       const [row] = await db
         .insert(journalTemplates)
         .values({
@@ -845,6 +910,7 @@ export function registerJournalRoutes(app: Express) {
         endOn: body.endOn !== undefined ? body.endOn : t.endOn,
       };
       const { next, end } = checkTemplate(t.companyId, merged);
+      if (body.lines !== undefined) await assertTemplateControl(t.companyId, body.lines);
       const patch: Partial<JournalTemplate> = {
         updatedAt: new Date(),
         nextRunOn: next,

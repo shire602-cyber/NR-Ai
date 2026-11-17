@@ -41,6 +41,16 @@ const entryFields = {
   /** Accrual: reverse automatically on this date (after `date`). */
   autoReverseOn: z.string().max(40).nullable().optional(),
   lines: z.array(journalLineBody).min(2, "Journal entry must have at least 2 lines").max(500),
+  /**
+   * A2 (H8): a manual line on a control account (A/R, A/P, inventory, VAT, GRNI, payroll
+   * payables) is refused unless posted as an explicit adjustment with a reason (owner, admin,
+   * accountant or CFO). The reason is stamped on the entry and shown on the reconciliation.
+   */
+  controlAdjustment: z
+    .object({ reason: z.string().trim().min(5, "Give a reason for the adjustment").max(1000) })
+    .strict()
+    .nullable()
+    .optional(),
 };
 
 /** POST /api/companies/:companyId/journal (mount with allowServerOwned: ["status"]). */

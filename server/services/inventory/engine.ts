@@ -220,14 +220,16 @@ export async function revalueStock(
   tx: LedgerTx,
   productId: string,
   deltaFils: number,
-  ctx: MoveContext
+  ctx: MoveContext,
+  /** "write_down" (NRV) or "cost_adjustment" (A2: purchase price variance on stock on hand). */
+  type: "write_down" | "cost_adjustment" = "write_down"
 ): Promise<MoveResult> {
   const p = await lockProduct(tx, ctx.companyId, productId);
   assertStockedProduct(p);
   const policy = await policyFor(tx, ctx.companyId);
   const before = await loadState(tx, p);
   const after = adjustValue(before, deltaFils, optsFor(p, policy));
-  return finish(tx, p, ctx, before, after, "write_down", 0, { unitCostFils: null });
+  return finish(tx, p, ctx, before, after, type, 0, { unitCostFils: null });
 }
 
 /**
@@ -305,7 +307,10 @@ export async function reverseMovement(
       opts
     ).state;
   } else {
-    after = adjustValue(before, -recorded, { ...opts });
+    // A value-only movement (write-down, purchase price variance) cannot take out more value
+    // than is left on hand (the stock has since been sold); the caller trues the rest up to COGS.
+    const delta = -recorded < 0 ? Math.max(-recorded, -Math.max(0, before.valueFils)) : -recorded;
+    after = adjustValue(before, delta, { ...opts });
   }
   return finish(
     tx,
@@ -330,6 +335,7 @@ export function stockChangeOf(m: { type: string; quantity: number }): number {
       return -Math.abs(qn);
     case "grni_clear":
     case "write_down":
+    case "cost_adjustment":
       return 0;
     default:
       return qn; // adjustment, stocktake, transfer_in/out, reversal, opening: signed
