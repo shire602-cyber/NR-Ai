@@ -485,6 +485,20 @@ describe("W4-E purchases, adjustments and amendments", () => {
     });
     expect(early.status).toBe(422);
     expect(early.body.code).toBe("BAD_DEBT_TOO_EARLY");
+    // A3 (H1): Art. 64(1)(b) needs the debt actually written off in the accounts first.
+    const notWrittenOff = await t.as.post(`/api/companies/${t.company.id}/vat/bad-debt-relief`, {
+      invoiceId: inv.id,
+      claimDate: "2026-08-20",
+      writtenOff: true,
+      customerNotified: true,
+    });
+    expect(notWrittenOff.status).toBe(422);
+    expect(notWrittenOff.body.code).toBe("BAD_DEBT_NOT_WRITTEN_OFF");
+    const writeOff = await t.as.post(
+      `/api/companies/${t.company.id}/invoices/${inv.id}/write-off`,
+      { date: "2026-08-18", reason: "Customer insolvent" }
+    );
+    expect(writeOff.status, writeOff.text).toBe(201);
     const claim = await t.as.post(`/api/companies/${t.company.id}/vat/bad-debt-relief`, {
       invoiceId: inv.id,
       claimDate: "2026-08-20",

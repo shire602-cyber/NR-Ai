@@ -96,6 +96,7 @@ export function registerDashboardRoutes(app: Express) {
           ...pl.sections.costOfSales.lines.map(tag("cost_of_sales")),
           ...pl.sections.operatingExpenses.lines.map(tag("operating_expenses")),
           ...pl.sections.otherExpenses.lines.map(tag("other_expenses")),
+          ...pl.sections.incomeTax.lines.map(tag("income_tax")),
         ],
         totalRevenue: pl.totalIncome,
         totalExpenses: pl.totalExpenses,

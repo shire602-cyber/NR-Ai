@@ -51,6 +51,10 @@ import {
 } from "./invoice-posting.service";
 import { isTerminal } from "./invoice-state-machine";
 import { getRate } from "./fx/rates";
+import {
+  ALLOWANCE_FOR_DOUBTFUL_DEBTS_CODE,
+  allowanceForDoubtfulDebtsFils,
+} from "../reporting/ifrs-adjustments";
 
 export const PAYMENT_ACCOUNT_SUB_TYPES = ["cash", "bank"] as const;
 
@@ -109,8 +113,37 @@ export interface RecordPaymentInput {
  * the commit.
  */
 export async function recordInvoicePayment(input: RecordPaymentInput) {
-  const invoice = await storage.getInvoice(input.invoiceId, input.companyId);
+  let invoice = await storage.getInvoice(input.invoiceId, input.companyId);
   if (!invoice) throw new DomainError("INVOICE_NOT_FOUND", 404, undefined, "Invoice not found");
+  if ((input.method ?? "").toLowerCase() === WRITE_OFF_METHOD) {
+    throw new DomainError(
+      "PAYMENT_METHOD_RESERVED",
+      422,
+      { method: input.method },
+      "Use the write-off action to write off a receivable."
+    );
+  }
+  // A3 (H1): a receipt on a written-off invoice first reinstates the write-off (bad debt
+  // recovered: Dr A/R / Cr bad-debt expense), then settles as an ordinary payment.
+  if (invoice.invoiceType !== "credit_note" && ["paid", "partial"].includes(invoice.status)) {
+    const target = invoice;
+    const { written, open } = await withLedgerTx(async (tx) => ({
+      written: await invoiceWrittenOffFils(tx, target.id),
+      open: await invoiceOpenFils(tx, target),
+    }));
+    const wanted = toFils(input.amount, { rounding: "halfUp" });
+    if (written > 0 && wanted > open) {
+      await reinstateWriteOffs({
+        companyId: input.companyId,
+        invoiceId: target.id,
+        date: input.date.toISOString().slice(0, 10),
+        reason: "Bad debt recovered: payment received",
+        userId: input.createdBy,
+        neededFils: wanted,
+      });
+      invoice = (await storage.getInvoice(input.invoiceId, input.companyId)) ?? target;
+    }
+  }
   if (invoice.invoiceType === "credit_note") {
     throw new DomainError(
       "CANNOT_PAY_CREDIT_NOTE",
@@ -217,6 +250,8 @@ export interface ReverseInvoicePaymentInput {
   paymentId: string;
   actorId: string;
   reason: string;
+  /** Reversal date (default: the kernel's rule, the original date if its period is open). */
+  date?: string | null;
   /** Run inside the caller's ledger transaction (bank unmatch, compensation). */
   tx?: LedgerTx;
 }
@@ -257,7 +292,12 @@ export async function reverseInvoicePayment(
       if (je && je.status === "posted" && !je.reversedBy) {
         await reverseEntry(
           payment.journalEntryId,
-          { reason: input.reason, source: "payment_reversal", sourceId: payment.invoiceId },
+          {
+            reason: input.reason,
+            source: "payment_reversal",
+            sourceId: payment.invoiceId,
+            ...(input.date ? { date: input.date } : {}),
+          },
           { actorId: input.actorId, tx, companyId: input.companyId }
         );
       }
@@ -541,5 +581,321 @@ export async function refundCustomerCredit(args: {
       .where(eq(customerCreditAllocations.id, alloc.id));
     await reduceCredit(tx, credit, args.amountFils);
     return { allocationId: alloc.id, journalEntryId: entry.id };
+  });
+}
+
+// ─── Bad-debt write-off and the allowance for doubtful debts (A3: H1, M5) ───────
+//
+// A write-off is a settlement of the invoice (IFRS 9.5.4.4: no reasonable expectation of
+// recovery), so it is an invoice_payments row with method 'write_off' and no payment account:
+// the one settlement rule (server/reporting/settlement.ts) closes the document and the aging
+// keeps tying to GL 1040. The journal debits the bad-debt expense (5120) or, against an
+// allowance already provided, the allowance for doubtful debts (1045), and credits A/R at the
+// invoice's booking rate. VAT bad-debt relief (FDL 8/2017 Art. 64) is a separate step on the
+// written-off amount (server/tax/vat-adjustments.service.ts). A later receipt reinstates the
+// write-off first (bad debt recovered), then settles as a normal payment.
+
+export const WRITE_OFF_METHOD = "write_off";
+export const WRITE_OFF_SOURCE = "invoice_write_off";
+export const ALLOWANCE_SOURCE = "doubtful_debt_allowance";
+export const BAD_DEBT_EXPENSE_CODE = "5120";
+const ALLOWANCE_CODE = ALLOWANCE_FOR_DOUBTFUL_DEBTS_CODE;
+
+/** Allowance balance (fils, credit) at `asOf` read inside the caller's transaction. */
+async function allowanceFilsInTx(tx: LedgerTx, companyId: string, asOf: string): Promise<number> {
+  const res = await tx.execute(
+    sql`SELECT COALESCE(SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100)), 0)::text AS f
+          FROM journal_lines jl
+          JOIN journal_entries je ON je.id = jl.entry_id
+          JOIN accounts a ON a.id = jl.account_id
+         WHERE je.company_id = ${companyId} AND je.status = 'posted' AND a.company_id = ${companyId}
+           AND a.code = ${ALLOWANCE_CODE}
+           AND ((je.date + interval '4 hours')::date) <= ${asOf}::date`
+  );
+  const rows = ((res as { rows?: unknown[] }).rows ?? res) as Array<{ f: string }>;
+  return Number(rows[0]?.f ?? 0);
+}
+
+async function ensureReceivableAccount(companyId: string, code: "5120" | "1045") {
+  const found = await storage.getAccountByCode(companyId, code);
+  if (found && found.isActive && !found.isArchived) return found;
+  const template =
+    code === "5120"
+      ? {
+          nameEn: "Bad Debt Expense",
+          nameAr: "مصروف الديون المعدومة",
+          description: "Receivables written off and impairment losses on trade receivables",
+          type: "expense",
+          subType: "operating_expense",
+        }
+      : {
+          nameEn: "Allowance for Doubtful Debts",
+          nameAr: "مخصص الديون المشكوك في تحصيلها",
+          description: "Loss allowance on trade receivables (IFRS 9 simplified approach)",
+          type: "asset",
+          subType: "contra_asset",
+        };
+  return storage.createAccount({
+    companyId,
+    code,
+    ...template,
+    isVatAccount: false,
+    vatType: null,
+    isSystemAccount: false,
+  } as Parameters<typeof storage.createAccount>[0]);
+}
+
+/** Written-off amount (document-currency fils) still standing on an invoice. */
+export async function invoiceWrittenOffFils(tx: LedgerTx, invoiceId: string): Promise<number> {
+  const res = await tx.execute(
+    sql`SELECT COALESCE(SUM(ROUND(amount * 100)), 0)::text AS f FROM invoice_payments
+         WHERE invoice_id = ${invoiceId} AND method = ${WRITE_OFF_METHOD}`
+  );
+  const rows = ((res as { rows?: unknown[] }).rows ?? res) as Array<{ f: string }>;
+  return Number(rows[0]?.f ?? 0);
+}
+
+export interface WriteOffInput {
+  companyId: string;
+  invoiceId: string;
+  date: string;
+  /** Document-currency fils; default the whole open balance. */
+  amountFils?: number | null;
+  against?: "expense" | "allowance";
+  reason: string;
+  userId: string;
+}
+
+export async function writeOffInvoice(input: WriteOffInput) {
+  const expense = await ensureReceivableAccount(input.companyId, BAD_DEBT_EXPENSE_CODE);
+  const allowanceAcct =
+    input.against === "allowance"
+      ? await ensureReceivableAccount(input.companyId, ALLOWANCE_CODE)
+      : null;
+  return withLedgerTx(async (tx) => {
+    const invoice = await lockInvoice(tx, input.invoiceId, input.companyId);
+    if (invoice.invoiceType === "credit_note") {
+      throw new DomainError("CANNOT_WRITE_OFF_CREDIT_NOTE", 422);
+    }
+    if (!["sent", "posted", "partial"].includes(invoice.status)) {
+      throw new DomainError(
+        "INVOICE_NOT_OPEN",
+        409,
+        { status: invoice.status },
+        "Only an issued invoice with an open balance can be written off."
+      );
+    }
+    const open = await invoiceOpenFils(tx, invoice);
+    const amount = input.amountFils ?? open;
+    if (amount <= 0 || amount > open) {
+      throw new DomainError(
+        "WRITE_OFF_EXCEEDS_BALANCE",
+        422,
+        { open: fromFils(open), attempted: fromFils(amount) },
+        "The write-off cannot exceed the invoice's open balance."
+      );
+    }
+    const baseCurrency = await loadBaseCurrency(input.companyId, tx);
+    const rate = invoiceRate(invoice, baseCurrency);
+    const base = toBase(amount, rate);
+    const foreign = isForeignCurrency(invoice.currency, baseCurrency);
+    const ar = await getArAccount(tx, input.companyId);
+    // Against the allowance: use what is provided, the rest is a direct expense.
+    const fromAllowance = allowanceAcct
+      ? Math.min(base, Math.max(0, await allowanceFilsInTx(tx, input.companyId, input.date)))
+      : 0;
+    const label = `Bad debt written off - ${invoice.number}`;
+    const [row] = await tx
+      .insert(invoicePayments)
+      .values({
+        invoiceId: invoice.id,
+        companyId: input.companyId,
+        amount: Number(fromFils(amount)),
+        date: new Date(`${input.date}T00:00:00.000Z`),
+        method: WRITE_OFF_METHOD,
+        reference: "Write-off",
+        notes: input.reason,
+        paymentAccountId: null,
+        exchangeRate: null,
+        createdBy: input.userId,
+      })
+      .returning();
+    const lines: PostJournalLineInput[] = [];
+    if (fromAllowance > 0) {
+      lines.push({
+        accountId: allowanceAcct!.id,
+        debitFils: fromAllowance,
+        description: `${label} (allowance used)`,
+      });
+    }
+    if (base - fromAllowance > 0) {
+      lines.push({ accountId: expense.id, debitFils: base - fromAllowance, description: label });
+    }
+    lines.push({
+      accountId: ar,
+      creditFils: base,
+      description: label,
+      ...(foreign
+        ? {
+            foreignCurrency: documentCurrency(invoice.currency, baseCurrency),
+            foreignCredit: fromFils(amount),
+            exchangeRate: rate,
+          }
+        : {}),
+    });
+    const { entry } = await postJournal(
+      {
+        companyId: input.companyId,
+        date: input.date,
+        memo: `${label}: ${input.reason}`.slice(0, 500),
+        status: "posted",
+        source: WRITE_OFF_SOURCE,
+        sourceId: invoice.id,
+        idempotencyKey: `${WRITE_OFF_SOURCE}:${row.id}`,
+        lines,
+      },
+      { actorId: input.userId, tx }
+    );
+    await tx
+      .update(invoicePayments)
+      .set({ journalEntryId: entry.id })
+      .where(eq(invoicePayments.id, row.id));
+    const updated = await refreshSettlementStatus(tx, invoice.id);
+    return {
+      writeOff: { ...row, journalEntryId: entry.id },
+      journalEntryId: entry.id,
+      amount: Number(fromFils(amount)),
+      baseAmount: Number(fromFils(base)),
+      fromAllowance: Number(fromFils(fromAllowance)),
+      toExpense: Number(fromFils(base - fromAllowance)),
+      invoice: updated as Invoice,
+    };
+  });
+}
+
+/**
+ * Reinstate the written-off balance of an invoice (newest write-off first) until at least
+ * `neededFils` is open again, or all of it when `neededFils` is null: the bad debt is recovered
+ * or the write-off was wrong. Each write-off journal is reversed on `date`.
+ */
+export async function reinstateWriteOffs(input: {
+  companyId: string;
+  invoiceId: string;
+  date: string;
+  reason: string;
+  userId: string;
+  neededFils?: number | null;
+  tx?: LedgerTx;
+}): Promise<{ reinstatedFils: number; invoice: Invoice | null }> {
+  return withLedgerTx(async (tx) => {
+    const invoice = await lockInvoice(tx, input.invoiceId, input.companyId);
+    const rows = await tx
+      .select()
+      .from(invoicePayments)
+      .where(
+        and(
+          eq(invoicePayments.invoiceId, invoice.id),
+          eq(invoicePayments.companyId, input.companyId),
+          eq(invoicePayments.method, WRITE_OFF_METHOD)
+        )
+      )
+      .orderBy(desc(invoicePayments.date), desc(invoicePayments.createdAt));
+    let open = await invoiceOpenFils(tx, invoice);
+    let reinstated = 0;
+    let latest: Invoice | null = invoice;
+    for (const r of rows) {
+      if (input.neededFils != null && open >= input.neededFils) break;
+      const f = toFils(r.amount, { rounding: "halfUp" });
+      const out = await reverseInvoicePayment({
+        companyId: input.companyId,
+        paymentId: r.id,
+        actorId: input.userId,
+        reason: input.reason,
+        date: input.date,
+        tx,
+      });
+      if (out.reversed) {
+        reinstated += f;
+        open += f;
+        latest = out.invoice;
+      }
+    }
+    return { reinstatedFils: reinstated, invoice: latest };
+  }, input.tx);
+}
+
+/** Allowance for doubtful debts at `asOf` (base currency) and the account carrying it. */
+export async function getDoubtfulDebtAllowance(companyId: string, asOf: string | null) {
+  const acct = await storage.getAccountByCode(companyId, ALLOWANCE_CODE);
+  const fils = await allowanceForDoubtfulDebtsFils(companyId, asOf);
+  return {
+    accountId: acct?.id ?? null,
+    accountCode: ALLOWANCE_CODE,
+    asOf,
+    balance: Number(fromFils(fils)),
+  };
+}
+
+/**
+ * Set the allowance for doubtful debts to `targetFils` at `date` (IFRS 9.5.5.15 simplified
+ * approach: a lifetime expected-credit-loss estimate the accountant enters). An increase posts
+ * Dr 5120 impairment loss / Cr 1045; a decrease reverses it. Receivables (1040) and the aging
+ * are untouched; the aging shows the allowance as a reconciling line to net receivables.
+ */
+export async function setDoubtfulDebtAllowance(input: {
+  companyId: string;
+  date: string;
+  targetFils: number;
+  memo?: string | null;
+  userId: string;
+}) {
+  const expense = await ensureReceivableAccount(input.companyId, BAD_DEBT_EXPENSE_CODE);
+  const allowance = await ensureReceivableAccount(input.companyId, ALLOWANCE_CODE);
+  return withLedgerTx(async (tx) => {
+    await tx.execute(
+      sql`SELECT id FROM accounts WHERE id = ${allowance.id} AND company_id = ${input.companyId} FOR UPDATE`
+    );
+    const current = await allowanceFilsInTx(tx, input.companyId, input.date);
+    const delta = input.targetFils - current;
+    if (delta === 0) {
+      throw new DomainError(
+        "ALLOWANCE_NO_CHANGE",
+        422,
+        { balance: fromFils(current) },
+        "The allowance already has this balance."
+      );
+    }
+    const label =
+      delta > 0
+        ? "Increase in allowance for doubtful debts"
+        : "Release of allowance for doubtful debts";
+    const memo = input.memo ? `${label}: ${input.memo}` : label;
+    const { entry } = await postJournal(
+      {
+        companyId: input.companyId,
+        date: input.date,
+        memo: memo.slice(0, 500),
+        status: "posted",
+        source: ALLOWANCE_SOURCE,
+        sourceId: allowance.id,
+        lines:
+          delta > 0
+            ? [
+                { accountId: expense.id, debitFils: delta, description: label },
+                { accountId: allowance.id, creditFils: delta, description: label },
+              ]
+            : [
+                { accountId: allowance.id, debitFils: -delta, description: label },
+                { accountId: expense.id, creditFils: -delta, description: label },
+              ],
+      },
+      { actorId: input.userId, tx }
+    );
+    return {
+      journalEntryId: entry.id,
+      previousBalance: Number(fromFils(current)),
+      balance: Number(fromFils(input.targetFils)),
+      change: Number(fromFils(delta)),
+    };
   });
 }

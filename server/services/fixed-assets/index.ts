@@ -6,9 +6,16 @@
  *
  *   capitalise   Dr asset cost account          / Cr payment account (or 3040 opening balance)
  *   depreciate   Dr depreciation expense (+cc)  / Cr accumulated depreciation
- *   revalue      up:   Dr cost / Cr 3050 Revaluation Surplus
- *                down: Dr 3050 (up to the surplus) + Dr 5150 Impairment / Cr cost
- *   impair       Dr 5150 Impairment Loss        / Cr accumulated depreciation
+ *   revalue      up:   Dr cost / Cr 3050 Revaluation Surplus (other comprehensive income)
+ *                down: Dr 3050 (up to the asset's surplus) + Dr 5150 Impairment / Cr cost
+ *   impair       Dr 3050 (up to the asset's surplus, IAS 36.60-61) + Dr 5150 Impairment Loss
+ *                / Cr accumulated depreciation and impairment
+ *
+ * A3 (H4/H5): the asset's revaluation surplus is read from its own posted 3050 lines
+ * (`assetSurplusFils`), so a decrease or an impairment is charged to the surplus first and the
+ * realised surplus moved to retained earnings on disposal is exactly what is left. After a
+ * revaluation or impairment, depreciation follows the revised carrying amount over the
+ * remaining useful life (IAS 16.50, IAS 36.63).
  *   dispose      Dr proceeds (cash/bank or 1040 A/R) incl. VAT + Dr accumulated (+ Dr loss)
  *                / Cr cost (+ Cr 2020 output VAT) (+ Cr 4080 gain)
  */
@@ -130,6 +137,28 @@ export async function assetAccounts(tx: LedgerTx, a: AssetRow) {
     expense:
       a.expense_account_id ?? (await ensureAccountByCode(tx, a.company_id, FA_CODES.EXPENSE)),
   };
+}
+
+/**
+ * Revaluation surplus (fils, credit balance) still held in equity for this asset: the asset's
+ * own posted lines on the revaluation-surplus account (revaluations, decreases and impairments
+ * charged to it, the realisation on disposal).
+ */
+export async function assetSurplusFils(
+  tx: LedgerTx,
+  a: Pick<AssetRow, "id" | "company_id">
+): Promise<number> {
+  const rows = await q<{ f: string }>(
+    tx,
+    sql`SELECT COALESCE(SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100)), 0)::text AS f
+          FROM journal_lines jl
+          JOIN journal_entries je ON je.id = jl.entry_id
+          JOIN accounts ac ON ac.id = jl.account_id
+         WHERE je.company_id = ${a.company_id} AND je.status = 'posted'
+           AND je.source = ${FA_SOURCE} AND je.source_id = ${a.id}
+           AND ac.code = ${FA_CODES.REVALUATION}`
+  );
+  return Number(rows[0]?.f ?? 0);
 }
 
 export async function recordEvent(
@@ -461,7 +490,10 @@ export async function revalueAsset(
   const acc = await assetAccounts(tx, a);
   const surplusAcct = await ensureAccountByCode(tx, a.company_id, FA_CODES.REVALUATION);
   const lines: PostJournalLineInput[] = [];
+  // `surplus` tracks the gross revaluation adjustment on the cost account (register column
+  // revaluation_surplus); `equitySurplus` is what the asset still holds in 3050 (A3, H4).
   let surplus = c.revaluationFils ?? 0;
+  const equitySurplus = await assetSurplusFils(tx, a);
   if (delta > 0) {
     lines.push({
       accountId: acc.cost,
@@ -476,7 +508,7 @@ export async function revalueAsset(
     surplus += delta;
   } else {
     const down = -delta;
-    const fromSurplus = Math.min(down, Math.max(0, surplus));
+    const fromSurplus = Math.min(down, Math.max(0, equitySurplus));
     const toExpense = down - fromSurplus;
     if (fromSurplus > 0)
       lines.push({
@@ -540,7 +572,32 @@ export async function impairAsset(
     throw new DomainError("IMPAIRMENT_EXCEEDS_CARRYING", 422, { carrying: fromFils(carrying) });
   }
   const acc = await assetAccounts(tx, a);
-  const imp = await ensureAccountByCode(tx, a.company_id, FA_CODES.IMPAIRMENT);
+  // A3 (H4): an impairment loss on a revalued asset is a revaluation decrease, charged to the
+  // asset's surplus (through OCI) first; only the excess is recognised in profit or loss
+  // (IAS 36.60-61).
+  const fromSurplus = Math.min(args.amountFils, Math.max(0, await assetSurplusFils(tx, a)));
+  const toProfitOrLoss = args.amountFils - fromSurplus;
+  const lines: PostJournalLineInput[] = [];
+  if (fromSurplus > 0) {
+    lines.push({
+      accountId: await ensureAccountByCode(tx, a.company_id, FA_CODES.REVALUATION),
+      debitFils: fromSurplus,
+      description: `Impairment charged to revaluation surplus - ${a.asset_name}`,
+    });
+  }
+  if (toProfitOrLoss > 0) {
+    lines.push({
+      accountId: await ensureAccountByCode(tx, a.company_id, FA_CODES.IMPAIRMENT),
+      debitFils: toProfitOrLoss,
+      costCenterId: a.cost_center_id,
+      description: `Impairment - ${a.asset_name}`,
+    });
+  }
+  lines.push({
+    accountId: acc.accumulated,
+    creditFils: args.amountFils,
+    description: `Accumulated impairment - ${a.asset_name}`,
+  });
   const n = await q<{ n: number }>(
     tx,
     sql`SELECT COUNT(*)::int AS n FROM fixed_asset_events WHERE asset_id = ${a.id}`
@@ -549,19 +606,7 @@ export async function impairAsset(
     date: args.date,
     memo: `Impairment: ${a.asset_name}`,
     key: `${FA_SOURCE}:${a.id}:impair:${n[0].n}`,
-    lines: [
-      {
-        accountId: imp,
-        debitFils: args.amountFils,
-        costCenterId: a.cost_center_id,
-        description: `Impairment - ${a.asset_name}`,
-      },
-      {
-        accountId: acc.accumulated,
-        creditFils: args.amountFils,
-        description: `Accumulated impairment - ${a.asset_name}`,
-      },
-    ],
+    lines,
     actorId: args.actorId,
   });
   const newImp = (c.impairmentFils ?? 0) + args.amountFils;
@@ -574,10 +619,18 @@ export async function impairAsset(
     date: args.date,
     amountFils: args.amountFils,
     journalEntryId: entryId,
-    details: { notes: args.notes ?? null },
+    details: {
+      notes: args.notes ?? null,
+      chargedToRevaluationSurplus: fromFils(fromSurplus),
+      chargedToProfitOrLoss: fromFils(toProfitOrLoss),
+    },
     actorId: args.actorId,
   });
-  return { journalEntryId: entryId };
+  return {
+    journalEntryId: entryId,
+    chargedToRevaluationSurplus: Number(fromFils(fromSurplus)),
+    chargedToProfitOrLoss: Number(fromFils(toProfitOrLoss)),
+  };
 }
 
 // ─── Disposal (R10-08) ──────────────────────────────────────────────────────
@@ -698,18 +751,20 @@ export async function disposeAsset(assetId: string, companyId: string, input: Di
         description: `Gain on disposal of ${a.asset_name}`,
       });
     }
-    // Realised revaluation surplus moves to retained earnings (IAS 16.41).
-    if ((c.revaluationFils ?? 0) > 0) {
+    // Realised revaluation surplus moves to retained earnings (IAS 16.41): what the asset still
+    // holds in the surplus after any decreases / impairments charged to it (A3, H4).
+    const heldSurplus = await assetSurplusFils(tx, a);
+    if (heldSurplus > 0) {
       const surplus = await ensureAccountByCode(tx, a.company_id, FA_CODES.REVALUATION);
       const re = await ensureAccountByCode(tx, a.company_id, "3020");
       lines.push({
         accountId: surplus,
-        debitFils: c.revaluationFils!,
+        debitFils: heldSurplus,
         description: `Realise revaluation surplus - ${a.asset_name}`,
       });
       lines.push({
         accountId: re,
-        creditFils: c.revaluationFils!,
+        creditFils: heldSurplus,
         description: `Realised revaluation surplus - ${a.asset_name}`,
       });
     }
@@ -790,6 +845,7 @@ export async function assetRegister(companyId: string, asOf: string) {
     const bookNbv =
       c.costFils + (c.revaluationFils ?? 0) - c.accumulatedFils - (c.impairmentFils ?? 0);
     const taxNbv = c.costFils - tax.accumulatedFils;
+    const disposed = a.status === "disposed";
     return {
       id: a.id,
       assetNumber: a.asset_number,
@@ -804,6 +860,12 @@ export async function assetRegister(companyId: string, asOf: string) {
       revaluationSurplus: Number(fromFils(c.revaluationFils ?? 0)),
       bookAccumulatedDepreciation: Number(fromFils(c.accumulatedFils)),
       impairment: Number(fromFils(c.impairmentFils ?? 0)),
+      // A3 (H5): the figures that tie to the GL cost (1290 etc.) and accumulated
+      // depreciation and impairment (1240) accounts.
+      grossCarryingAmount: disposed ? 0 : Number(fromFils(c.costFils + (c.revaluationFils ?? 0))),
+      accumulatedDepreciationAndImpairment: disposed
+        ? 0
+        : Number(fromFils(c.accumulatedFils + (c.impairmentFils ?? 0))),
       bookNetBookValue: a.status === "disposed" ? 0 : Number(fromFils(bookNbv)),
       taxUsefulLifeYears: a.tax_useful_life_years ?? a.useful_life_years,
       taxAccumulatedDepreciation:
@@ -829,6 +891,12 @@ export const REGISTER_COLUMNS = [
   { header: "Revaluation (AED)", key: "revaluationSurplus", width: 16 },
   { header: "Book acc. depreciation (AED)", key: "bookAccumulatedDepreciation", width: 20 },
   { header: "Impairment (AED)", key: "impairment", width: 14 },
+  { header: "Gross carrying amount (AED)", key: "grossCarryingAmount", width: 18 },
+  {
+    header: "Acc. depreciation and impairment (AED)",
+    key: "accumulatedDepreciationAndImpairment",
+    width: 22,
+  },
   { header: "Book NBV (AED)", key: "bookNetBookValue", width: 16 },
   { header: "Tax acc. depreciation (AED)", key: "taxAccumulatedDepreciation", width: 20 },
   { header: "Tax WDV (AED)", key: "taxWrittenDownValue", width: 16 },

@@ -5,7 +5,7 @@
  * server-owned; the payment account must be a cash/bank account (checked by the service, 422).
  */
 import { z } from "zod";
-import { zPositiveFils } from "./invoices";
+import { zNonNegativeFils, zPositiveFils } from "./invoices";
 import { zDate, zText, zUuid } from "./primitives";
 
 const zPaymentRate = z.coerce.number().finite().positive().max(1_000_000).optional().nullable();
@@ -45,3 +45,39 @@ export const refundCustomerCreditSchema = z
   })
   .strict();
 export type RefundCustomerCreditInput = z.output<typeof refundCustomerCreditSchema>;
+
+/**
+ * A3 (H1): POST /api/companies/:companyId/invoices/:invoiceId/write-off. Writes off an
+ * uncollectible receivable (IFRS 9.5.4.4): Dr bad-debt expense (or the allowance for doubtful
+ * debts, `against: "allowance"`) / Cr A/R, settling the invoice. `amount` (fils, document
+ * currency) defaults to the whole open balance.
+ */
+export const invoiceWriteOffSchema = z
+  .object({
+    date: zDate,
+    amount: zPositiveFils.optional(),
+    against: z.enum(["expense", "allowance"]).optional(),
+    reason: zText(1000, { min: 3 }),
+  })
+  .strict();
+export type InvoiceWriteOffInput = z.output<typeof invoiceWriteOffSchema>;
+
+/** A3 (H1): POST /api/companies/:companyId/invoices/:invoiceId/write-off/reinstate */
+export const invoiceWriteOffReinstateSchema = z
+  .object({ date: zDate, reason: zText(1000, { min: 3 }) })
+  .strict();
+export type InvoiceWriteOffReinstateInput = z.output<typeof invoiceWriteOffReinstateSchema>;
+
+/**
+ * A3 (M5): POST /api/companies/:companyId/receivables/allowance. Sets the allowance for doubtful
+ * debts (IFRS 9 simplified approach, a manual lifetime-ECL estimate) to `targetBalance` (fils)
+ * at `date`; the difference posts Dr impairment loss on receivables / Cr allowance (or back).
+ */
+export const doubtfulDebtAllowanceSchema = z
+  .object({
+    date: zDate,
+    targetBalance: zNonNegativeFils,
+    memo: zText(500).optional().nullable(),
+  })
+  .strict();
+export type DoubtfulDebtAllowanceInput = z.output<typeof doubtfulDebtAllowanceSchema>;

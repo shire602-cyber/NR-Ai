@@ -88,6 +88,7 @@ export function registerFinancialStatementRoutes(app: Express) {
             ...pl.sections.costOfSales.lines,
             ...pl.sections.operatingExpenses.lines,
             ...pl.sections.otherExpenses.lines,
+            ...pl.sections.incomeTax.lines,
           ]),
         },
         statement: pl,

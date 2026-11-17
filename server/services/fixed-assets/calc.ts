@@ -7,6 +7,9 @@
  * monthly amount remains) takes the exact remainder, so the total is exact.
  *
  * Declining balance: NBV × (2 / life) / 12, first month prorated, never below salvage.
+ * After a revaluation or impairment (A3, H5) straight line spreads the revised carrying amount
+ * less salvage over the remaining months of the useful life (IAS 16.50, IAS 36.63); declining
+ * balance already follows the carrying amount.
  * Land and other non-depreciable assets never depreciate (R10-04).
  */
 import { prorate } from "../inventory/costing";
@@ -78,13 +81,19 @@ export function depreciationFor(a: AssetCalcInput, year: number, month: number):
     amount = elapsed === 0 && firstPartial ? prorate(monthly, heldDays, dim) : monthly;
     if (elapsed >= totalMonths - (firstPartial ? 0 : 1)) amount = remaining;
   } else {
-    const depreciable =
-      a.costFils + (a.revaluationFils ?? 0) - (a.impairmentFils ?? 0) - a.salvageFils;
-    const monthly = prorate(depreciable, 1, totalMonths);
     const lastMonth = firstPartial ? totalMonths : totalMonths - 1;
+    const rebased = (a.revaluationFils ?? 0) !== 0 || (a.impairmentFils ?? 0) !== 0;
     if (elapsed >= lastMonth) amount = remaining;
-    else if (elapsed === 0 && firstPartial) amount = prorate(monthly, heldDays, dim);
-    else amount = monthly;
+    else if (rebased && elapsed > 0) {
+      // Revised carrying amount over the remaining useful life (this month included).
+      amount = prorate(remaining, 1, lastMonth - elapsed + 1);
+    } else {
+      const depreciable =
+        a.costFils + (a.revaluationFils ?? 0) - (a.impairmentFils ?? 0) - a.salvageFils;
+      const monthly = prorate(depreciable, 1, totalMonths);
+      if (elapsed === 0 && firstPartial) amount = prorate(monthly, heldDays, dim);
+      else amount = monthly;
+    }
   }
   amount = Math.max(0, Math.min(amount, remaining));
   const newAcc = a.accumulatedFils + amount;
@@ -132,6 +141,42 @@ export function scheduleTo(
     }
   }
   return { accumulatedFils: acc, months };
+}
+
+/**
+ * A3 (H5): projected depreciation from the asset's CURRENT state (carrying amount after any
+ * revaluation / impairment and the depreciation already posted), for the months after
+ * `after` (exclusive; null = from the acquisition month) to the end of the useful life.
+ */
+export function projectFrom(
+  a: AssetCalcInput,
+  after: { year: number; month: number } | null
+): Array<{ year: number; month: number; amountFils: number }> {
+  if (!a.isDepreciable || !a.usefulLifeYears || a.usefulLifeYears <= 0) return [];
+  const p = parts(a.purchaseDate);
+  let y = after ? after.year : p.y;
+  let m = after ? after.month + 1 : p.m;
+  if (m > 12) {
+    m = 1;
+    y++;
+  }
+  const endIndex = p.y * 12 + p.m + a.usefulLifeYears * 12;
+  const out: Array<{ year: number; month: number; amountFils: number }> = [];
+  let acc = a.accumulatedFils;
+  while (y * 12 + m <= endIndex) {
+    const c = depreciationFor({ ...a, accumulatedFils: acc }, y, m);
+    if (c.amountFils > 0) {
+      acc += c.amountFils;
+      out.push({ year: y, month: m, amountFils: c.amountFils });
+    }
+    if (c.skipReason === "FULLY_DEPRECIATED") break;
+    m++;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+  }
+  return out;
 }
 
 /** Disposal split (fils): VAT on proceeds and gain (+) / loss (−) against net book value. */

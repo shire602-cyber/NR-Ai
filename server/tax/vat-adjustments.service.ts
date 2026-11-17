@@ -25,6 +25,7 @@ import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { postJournal, reverseEntry, withLedgerTx } from "../ledger";
 import { recordAudit } from "../services/audit.service";
 import { invoiceSettlement, totalsForStoredDocument } from "../services/invoice-posting.service";
+import { invoiceWrittenOffFils } from "../services/invoice-payment.service";
 import { onDomainEvent } from "../platform/domain-events";
 import { createLogger } from "../config/logger";
 import { normaliseEmirate, toBaseFils } from "./vat-boxes";
@@ -139,7 +140,21 @@ export async function createBadDebtReliefClaim(input: {
 
   return withLedgerTx(async (tx) => {
     const s = await invoiceSettlement(tx, inv.id);
-    const outstandingDoc = totals.totalFils - s.paidFils - s.creditedFils - s.appliedFils;
+    // A3 (H1): Art. 64(1)(b) needs an actual write-off in the accounts, not a self-attestation.
+    // The write-off settles the invoice (method 'write_off'), so the unpaid consideration is
+    // what was neither received nor credited, and relief is limited to what was written off.
+    const writtenOffDoc = await invoiceWrittenOffFils(tx, inv.id);
+    if (writtenOffDoc <= 0) {
+      throw new DomainError(
+        "BAD_DEBT_NOT_WRITTEN_OFF",
+        422,
+        undefined,
+        "Write the debt off in the accounts first (invoice write-off), then claim the relief"
+      );
+    }
+    const unpaidDoc =
+      totals.totalFils - (s.paidFils - writtenOffDoc) - s.creditedFils - s.appliedFils;
+    const outstandingDoc = Math.min(unpaidDoc, writtenOffDoc);
     if (outstandingDoc <= 0) throw new DomainError("INVOICE_NOT_OUTSTANDING", 422);
     // VAT element of the unpaid consideration: VAT x outstanding / total.
     const vatDoc = Math.round((totals.vatFils * outstandingDoc) / totals.totalFils);

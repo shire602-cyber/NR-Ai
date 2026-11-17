@@ -27,6 +27,7 @@ import {
   type Queryable,
 } from "./ledger-query";
 import type { IsoDate } from "./dates";
+import { allowanceForDoubtfulDebtsFils, controlAccountFxRevaluationFils } from "./ifrs-adjustments";
 
 export interface AgingDocument {
   documentId: string;
@@ -70,11 +71,35 @@ export interface AgingReport {
   unappliedCredits: number;
   /** What is owed net of unapplied credits: totals.total − unappliedCredits (= the GL balance). */
   netTotal: number;
+  /**
+   * A3 (H6): unrealised FX revaluation carried on the control account at asOf (base currency;
+   * + increases the control balance). Documents age at their booking rate (the one settlement
+   * rule); the revaluation is the reconciling item to GL (IAS 21.23).
+   */
+  fxRevaluation: number;
+  /**
+   * A3 (H1/M5, receivables only): the allowance for doubtful debts (IFRS 9 simplified-approach
+   * loss allowance, 1045). It sits on its own contra account, so it never breaks the aging-to-GL
+   * tie; it is shown to arrive at the net carrying amount of trade receivables.
+   */
+  allowanceForDoubtfulDebts: number;
+  /** netTotal + fxRevaluation − allowanceForDoubtfulDebts. */
+  netCarryingAmount: number;
   reconciliation: {
     controlAccountCode: string | null;
     controlAccountName: string | null;
     glBalance: number;
+    /** Documents less unapplied credits (= netTotal). */
     agingTotal: number;
+    /** A3 (H6): reconciling items between agingTotal and glBalance. */
+    reconcilingItems: Array<{
+      key: "fx_revaluation";
+      label: string;
+      labelAr: string;
+      amount: number;
+    }>;
+    /** agingTotal + reconciling items. */
+    adjustedAgingTotal: number;
     difference: number;
     isReconciled: boolean;
   };
@@ -93,7 +118,13 @@ async function controlBalance(
   asOf: IsoDate,
   kind: "receivable" | "payable",
   q: Queryable
-): Promise<{ code: string | null; name: string | null; fils: Fils }> {
+): Promise<{
+  id: string | null;
+  code: string | null;
+  name: string | null;
+  fils: Fils;
+  fxFils: Fils;
+}> {
   const accounts = await loadAccounts(companyId, q);
   const code = kind === "receivable" ? "1040" : "2010";
   const re = kind === "receivable" ? /receivable/i : /payable/i;
@@ -105,10 +136,15 @@ async function controlBalance(
         re.test(a.nameEn) &&
         !/vat|tax/i.test(a.nameEn)
     );
-  if (!acct) return { code: null, name: null, fils: 0 };
-  const t = (await accountTotals(companyId, { to: asOf }, q)).get(acct.id);
+  if (!acct) return { id: null, code: null, name: null, fils: 0, fxFils: 0 };
+  const [all, fxDr] = await Promise.all([
+    accountTotals(companyId, { to: asOf }, q),
+    controlAccountFxRevaluationFils(companyId, acct.id, asOf, q),
+  ]);
+  const t = all.get(acct.id);
   const fils = t ? (kind === "receivable" ? t.debit - t.credit : t.credit - t.debit) : 0;
-  return { code: acct.code, name: acct.nameEn, fils };
+  const fxFils = kind === "receivable" ? fxDr : -fxDr;
+  return { id: acct.id, code: acct.code, name: acct.nameEn, fils, fxFils };
 }
 
 /** Open-document rows the aging SQL returns (typed at the driver boundary). */
@@ -127,9 +163,10 @@ function build(
     days: number;
     open_fils: string;
   }>,
-  control: { code: string | null; name: string | null; fils: Fils },
+  control: { code: string | null; name: string | null; fils: Fils; fxFils: Fils },
   reportCurrency: string,
-  unappliedFils: Fils
+  unappliedFils: Fils,
+  allowanceFils: Fils = 0
 ): AgingReport {
   const byName = new Map<string, Record<AgingBucket, Fils>>();
   const documents: AgingDocument[] = [];
@@ -172,6 +209,7 @@ function build(
     .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   const totalFils = sumB(tot);
   const netFils = totalFils - unappliedFils;
+  const adjustedFils = netFils + control.fxFils;
   return {
     reportCurrency,
     asOf,
@@ -188,13 +226,28 @@ function build(
     },
     unappliedCredits: aed(unappliedFils),
     netTotal: aed(netFils),
+    fxRevaluation: aed(control.fxFils),
+    allowanceForDoubtfulDebts: aed(allowanceFils),
+    netCarryingAmount: aed(adjustedFils - allowanceFils),
     reconciliation: {
       controlAccountCode: control.code,
       controlAccountName: control.name,
       glBalance: aed(control.fils),
       agingTotal: aed(netFils),
-      difference: aed(control.fils - netFils),
-      isReconciled: control.fils === netFils,
+      reconcilingItems:
+        control.fxFils !== 0
+          ? [
+              {
+                key: "fx_revaluation",
+                label: "Unrealised FX revaluation at the report date",
+                labelAr: "إعادة تقييم العملات الأجنبية غير المحققة في تاريخ التقرير",
+                amount: aed(control.fxFils),
+              },
+            ]
+          : [],
+      adjustedAgingTotal: aed(adjustedFils),
+      difference: aed(control.fils - adjustedFils),
+      isReconciled: control.fils === adjustedFils,
     },
   };
 }
@@ -217,7 +270,7 @@ export async function agedReceivables(
   q: Queryable = pool
 ): Promise<AgingReport> {
   const { companyId, asOf } = args;
-  const [{ rows }, control, unapplied] = await Promise.all([
+  const [{ rows }, control, unapplied, allowance] = await Promise.all([
     q.query(
       `SELECT i.id, i.number, COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown Customer') AS name,
               ${LOCAL("i.date")}::text AS date,
@@ -236,6 +289,7 @@ export async function agedReceivables(
     ),
     controlBalance(companyId, asOf, "receivable", q),
     unappliedFils(unappliedReceivableCreditsFilsSql("$1", AS_OF), companyId, asOf, q),
+    allowanceForDoubtfulDebtsFils(companyId, asOf, q),
   ]);
   return build(
     "receivable",
@@ -243,7 +297,8 @@ export async function agedReceivables(
     rows as AgingDocRows,
     control,
     await reportCurrencyOf(companyId, q),
-    unapplied
+    unapplied,
+    allowance
   );
 }
 
