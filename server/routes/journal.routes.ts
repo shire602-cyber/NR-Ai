@@ -322,16 +322,20 @@ export function registerJournalRoutes(app: Express) {
           pendingApproval = true;
         }
       }
-      const result = await withLedgerTx(async (tx) => {
-        const r = await postJournal(
-          { ...input, status },
-          { actorId: userId, req, audit: true, tx }
-        );
-        if (adjustmentReason && !r.replayed) {
-          await stampControlAdjustment(tx, r.entry.id, adjustmentReason, userId);
-        }
-        return r;
-      });
+      // A control-account adjustment is stamped in the posting transaction; ordinary entries
+      // keep the kernel's own transaction (no connection held across the pre-post checks).
+      const result = adjustmentReason
+        ? await withLedgerTx(async (tx) => {
+            const r = await postJournal(
+              { ...input, status },
+              { actorId: userId, req, audit: true, tx }
+            );
+            if (!r.replayed) {
+              await stampControlAdjustment(tx, r.entry.id, adjustmentReason, userId);
+            }
+            return r;
+          })
+        : await postJournal({ ...input, status }, { actorId: userId, req, audit: true });
       let entry = result.entry;
       if (pendingApproval && !result.replayed) {
         entry = await submitForApproval(entry.id, { actorId: userId, companyId });
