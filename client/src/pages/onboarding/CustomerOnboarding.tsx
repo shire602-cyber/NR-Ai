@@ -39,7 +39,7 @@ import {
   StepForm,
   StepHeading,
 } from "./OnboardingShell";
-import { isEmail, sendTeamInvite } from "./InviteField";
+import { isEmail, sendTeamInvite } from "./invite";
 import {
   FIRST_TASK_HREF,
   writeOnboardingRecord,

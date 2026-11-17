@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -9,21 +8,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { apiRequest } from "@/lib/queryClient";
+import { isEmail, sendTeamInvite } from "./invite";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import type { CompanyRole } from "@shared/permissions";
 
 /** Roles offered when inviting from onboarding (the team page offers the full list). */
 const INVITE_ROLES: readonly CompanyRole[] = ["accountant", "bookkeeper", "admin", "viewer"];
-
-/** POST the same invitation the team page sends. */
-export function sendTeamInvite(companyId: string, email: string, role: CompanyRole) {
-  return apiRequest("POST", `/api/companies/${companyId}/team/invite`, { email, role });
-}
-
-export function isEmail(value: string): boolean {
-  return z.string().email().safeParse(value.trim()).success;
-}
 
 /**
  * Inline "email + role + Send invite" row (firm onboarding step 2, spec 3.3). Sends through the
