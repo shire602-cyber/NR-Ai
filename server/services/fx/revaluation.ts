@@ -39,12 +39,14 @@ export const UNREALISED_FX_ACCOUNTS = {
     nameEn: "Unrealised Foreign Exchange Gain",
     nameAr: "أرباح صرف عملات أجنبية غير محققة",
     type: "income",
+    subType: "other_income",
   },
   loss: {
     code: "5141",
     nameEn: "Unrealised Foreign Exchange Loss",
     nameAr: "خسائر صرف عملات أجنبية غير محققة",
     type: "expense",
+    subType: "other_expense",
   },
 } as const;
 
@@ -176,7 +178,8 @@ async function resolveAccounts(
       nameAr: spec.nameAr,
       description: "Period-end unrealised FX revaluation (auto-created)",
       type: spec.type,
-      subType: null,
+      // B2 (NM4): presented as other income / other expense, never revenue (IAS 1.82(a)).
+      subType: spec.subType,
       isVatAccount: false,
       vatType: null,
       isSystemAccount: false,

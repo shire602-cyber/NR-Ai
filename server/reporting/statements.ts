@@ -39,25 +39,18 @@ import {
   type ReportAccount,
 } from "./ledger-query";
 import {
-  indirectActivity,
   isCashAccount,
   isContraAsset,
   isGratuityProvisionAccount,
   isNonCurrent,
-  isOperatingNonCurrent,
   isRetainedEarningsAccount,
   isRevaluationReserveAccount,
   plSection,
   type CashFlowActivity,
   type PlSection,
 } from "./classify";
-import {
-  FX_REVALUATION_SOURCES,
-  cashFlowAdjustments,
-  gratuityCurrentPortionFils,
-  otherComprehensiveIncome,
-  type PpeEntryLine,
-} from "./ifrs-adjustments";
+import { gratuityCurrentPortionFils, otherComprehensiveIncome } from "./ifrs-adjustments";
+import { classifyCashFlows, type ClassifiedCashFlows } from "./cash-flow-classify";
 
 /**
  * @deprecated W5-C (R14-19): statements are labelled in the company's base (functional)
@@ -706,6 +699,19 @@ export interface CashFlowStatement {
   financing: { total: number; breakdown: CashFlowLine[] };
   /** A3 (C5): effect of exchange-rate changes on cash held in foreign currency (IAS 7.28). */
   fxEffect: { total: number; breakdown: CashFlowLine[] };
+  /**
+   * B2 (NC2): investing and financing transactions that used no cash (an asset bought on credit,
+   * a dividend declared but unpaid, a provision charged to equity, a revaluation). Excluded from
+   * the statement and disclosed (IAS 7.43).
+   */
+  nonCashTransactions: Array<{
+    entryId: string;
+    entryNumber: string | null;
+    date: IsoDate;
+    memo: string | null;
+    source: string | null;
+    amount: number;
+  }>;
   cashProof: {
     openingCash: number;
     netCashChange: number;
@@ -745,86 +751,43 @@ const emptyBuckets = (): CashFlowBuckets => ({
 });
 
 /**
- * Indirect method (A3, C5). Net income, then:
- *  - entries that touch a non-current asset (PPE, accumulated depreciation / impairment) are
- *    read per entry: their P&L lines are non-cash adjustments (depreciation, impairment, loss
- *    or gain on disposal: IAS 7.20(b),(c)), their equity lines are non-cash transactions
- *    (revaluation surplus, IAS 7.43) and what is left (PPE effect + P&L + equity) is the
- *    investing flow (purchase < 0, disposal proceeds > 0: IAS 7.16). A purchase on credit is
- *    an investing outflow offset by the payable in operating until it is paid.
- *  - FX revaluation of cash balances is taken out of operating and shown on its own line, the
- *    effect of exchange-rate changes on cash (IAS 7.28).
- *  - every other balance-sheet account contributes its balance change to the activity of
- *    `indirectActivity` (working capital in operating, long-term debt and equity in financing).
+ * B2 (NC2, NM1): both methods read the same classified cash flows (cash-flow-classify.ts), so
+ * investing, financing and the FX effect are identical and operating is the same total.
+ *  - direct: operating cash flows per counter-account;
+ *  - indirect: net income + non-cash adjustments (depreciation, impairment, gain / loss on
+ *    derecognition, unrealised FX on cash: IAS 7.20) + working-capital changes (each account's
+ *    movement less what was classified as investing / financing or excluded as non-cash).
  */
-async function indirectBuckets(
-  companyId: string,
-  range: { from: IsoDate | null; to: IsoDate },
-  accounts: ReportAccount[],
+function bucketsFrom(
+  c: ClassifiedCashFlows,
+  method: "indirect" | "direct",
   byId: Map<string, ReportAccount>,
-  cashIds: Set<string>,
-  totals: Map<string, AccountTotals>,
-  netIncome: Fils,
-  q: Queryable
-): Promise<CashFlowBuckets> {
+  netIncome: Fils
+): CashFlowBuckets {
   const buckets = emptyBuckets();
-  addTo(buckets.operating, NET_INCOME_LINE_ID, netIncome, "net_income");
-  const isPpe = (a: ReportAccount) =>
-    a.type === "asset" && !cashIds.has(a.id) && isNonCurrent(a) && !isOperatingNonCurrent(a);
-  const ppeIds = accounts.filter(isPpe).map((a) => a.id);
-  const adj = await cashFlowAdjustments(companyId, range, ppeIds, Array.from(cashIds), q);
-
-  // Equity effects of non-cash PPE transactions (revaluation), removed from financing.
-  const equityNonCash = new Map<string, Fils>();
-  const byEntry = new Map<string, PpeEntryLine[]>();
-  for (const l of adj.ppeEntryLines) {
-    const list = byEntry.get(l.entryId) ?? [];
-    list.push(l);
-    byEntry.set(l.entryId, list);
+  if (method === "indirect") {
+    addTo(buckets.operating, NET_INCOME_LINE_ID, netIncome, "net_income");
+    for (const [id, f] of Array.from(c.nonCashAdjustments.entries()))
+      addTo(buckets.operating, `noncash:${id}`, f, "non_cash", byId.get(id));
+    for (const [id, f] of Array.from(c.workingCapital.entries()))
+      addTo(buckets.operating, id, f, "balance_change", byId.get(id));
+    if (c.fxOnCashFils !== 0)
+      addTo(buckets.operating, UNREALISED_FX_ON_CASH_LINE_ID, -c.fxOnCashFils, "non_cash");
+  } else {
+    for (const [id, v] of Array.from(c.operatingDirect.entries()))
+      addTo(buckets.operating, id, v.fils, "balance_change", byId.get(id));
   }
-  for (const lines of Array.from(byEntry.values())) {
-    let investing = 0;
-    let primary: ReportAccount | undefined;
-    let primaryWeight = -1;
-    for (const l of lines) {
-      const a = byId.get(l.accountId);
-      if (!a) continue;
-      if (isPpe(a)) {
-        investing += l.effect;
-        // The cost account names the flow; accumulated depreciation only when it is alone.
-        const w = isContraAsset(a) ? Math.abs(l.effect) / 1e6 : Math.abs(l.effect);
-        if (w > primaryWeight) {
-          primaryWeight = w;
-          primary = a;
-        }
-      } else if (a.type === "income" || a.type === "expense") {
-        // Non-cash P&L item: add back what net income deducted (or deduct a gain).
-        investing += l.effect;
-        addTo(buckets.operating, `noncash:${a.id}`, -l.effect, "non_cash", a);
-      } else if (a.type === "equity") {
-        investing += l.effect;
-        equityNonCash.set(a.id, (equityNonCash.get(a.id) ?? 0) + l.effect);
-      }
-    }
-    if (investing !== 0 && primary) {
-      const kind: CashFlowKind = investing < 0 ? "purchase" : "proceeds";
-      addTo(buckets.investing, `${kind}:${primary.id}`, investing, kind, primary);
-    }
-  }
-
-  if (adj.fxOnCashFils !== 0) {
-    addTo(buckets.operating, UNREALISED_FX_ON_CASH_LINE_ID, -adj.fxOnCashFils, "non_cash");
-    addTo(buckets.fx, FX_ON_CASH_LINE_ID, adj.fxOnCashFils, "fx_effect");
-  }
-
-  for (const a of accounts) {
-    if (cashIds.has(a.id) || isPpe(a)) continue;
-    if (a.type !== "asset" && a.type !== "liability" && a.type !== "equity") continue;
-    const t = totals.get(a.id);
-    const effect = (t ? t.credit - t.debit : 0) - (equityNonCash.get(a.id) ?? 0);
-    if (effect === 0) continue;
-    addTo(buckets[indirectActivity(a)], a.id, effect, "balance_change", a);
-  }
+  for (const inv of c.investing)
+    addTo(
+      buckets.investing,
+      `${inv.kind}:${inv.accountId}`,
+      inv.fils,
+      inv.kind,
+      byId.get(inv.accountId)
+    );
+  for (const [id, v] of Array.from(c.financing.entries()))
+    addTo(buckets.financing, id, v.fils, "balance_change", byId.get(id));
+  if (c.fxOnCashFils !== 0) addTo(buckets.fx, FX_ON_CASH_LINE_ID, c.fxOnCashFils, "fx_effect");
   return buckets;
 }
 
@@ -923,58 +886,8 @@ export async function cashFlow(
   }
 
   const netIncome = netIncomeOf(accounts, range);
-  let buckets: CashFlowBuckets;
-
-  if (method === "indirect") {
-    buckets = await indirectBuckets(
-      companyId,
-      { from, to },
-      accounts,
-      byId,
-      cashIds,
-      range,
-      netIncome,
-      q
-    );
-  } else {
-    buckets = emptyBuckets();
-    const lines = await ledgerLines(companyId, { from, to }, q);
-    const byEntry = new Map<string, typeof lines>();
-    for (const l of lines) {
-      const list = byEntry.get(l.entryId) ?? [];
-      list.push(l);
-      byEntry.set(l.entryId, list);
-    }
-    for (const entryLines of Array.from(byEntry.values())) {
-      const cashLines = entryLines.filter((l) => cashIds.has(l.accountId));
-      if (!cashLines.length) continue;
-      const netCash = cashLines.reduce((s, l) => s + l.debit - l.credit, 0);
-      if ((FX_REVALUATION_SOURCES as readonly string[]).includes(entryLines[0].source)) {
-        // A3 (C5): revaluing foreign cash is not a cash flow (IAS 7.28).
-        addTo(buckets.fx, FX_ON_CASH_LINE_ID, netCash, "fx_effect");
-        continue;
-      }
-      let dominant: (typeof entryLines)[number] | undefined;
-      let w = -1;
-      for (const l of entryLines) {
-        if (cashIds.has(l.accountId)) continue;
-        const lw = Math.abs(l.debit - l.credit);
-        if (lw > w) {
-          w = lw;
-          dominant = l;
-        }
-      }
-      const cp = dominant ? byId.get(dominant.accountId) : undefined;
-      const act: CashFlowActivity =
-        !cp || cp.type === "income" || cp.type === "expense"
-          ? "operating"
-          : cp.type === "asset" && isNonCurrent(cp) && !isOperatingNonCurrent(cp)
-            ? "investing"
-            : indirectActivity(cp);
-      const key = cp?.id ?? "unclassified";
-      addTo(buckets[act], key, netCash, "balance_change", cp);
-    }
-  }
+  const classified = await classifyCashFlows(companyId, { from, to }, accounts, q);
+  const buckets = bucketsFrom(classified, method, byId, netIncome);
 
   const build = (act: CashFlowActivity | "fx") => {
     const breakdown: CashFlowLine[] = [];
@@ -1010,6 +923,14 @@ export async function cashFlow(
     investing: inv.section,
     financing: fin.section,
     fxEffect: fx.section,
+    nonCashTransactions: classified.nonCashTransactions.map((t) => ({
+      entryId: t.entryId,
+      entryNumber: t.entryNumber,
+      date: t.date,
+      memo: t.memo,
+      source: t.source,
+      amount: aed(t.amountFils),
+    })),
     cashProof: {
       openingCash: aed(openFils),
       netCashChange: aed(computedNet),
@@ -1032,12 +953,8 @@ export async function cashFlowBuckets(
 ) {
   const { companyId, from, to } = args;
   const accounts = await loadAccounts(companyId, q);
-  const byId = new Map(accounts.map((a) => [a.id, a]));
   const cashIds = new Set(accounts.filter(isCashAccount).map((a) => a.id));
-  const [opening, lines] = await Promise.all([
-    accountTotals(companyId, { to: addDays(from, -1) }, q),
-    ledgerLines(companyId, { from, to }, q),
-  ]);
+  const opening = await accountTotals(companyId, { to: addDays(from, -1) }, q);
   let running = 0;
   for (const id of Array.from(cashIds)) {
     const t = opening.get(id);
@@ -1045,43 +962,27 @@ export async function cashFlowBuckets(
   }
   const openingCash = running;
   const out = [];
+  // B2 (NC2): each bucket classifies its cash legs exactly as the cash-flow statement does.
   for (const b of buckets(from, to, args.granularity)) {
-    const inB = lines.filter((l) => l.date >= b.from && l.date <= b.to);
-    const byEntry = new Map<string, typeof inB>();
-    for (const l of inB) {
-      const list = byEntry.get(l.entryId) ?? [];
-      list.push(l);
-      byEntry.set(l.entryId, list);
-    }
+    const c = await classifyCashFlows(companyId, { from: b.from, to: b.to }, accounts, q);
     const flows = { operating: [0, 0], investing: [0, 0], financing: [0, 0] } as Record<
       CashFlowActivity,
       [number, number]
     >;
-    for (const entryLines of Array.from(byEntry.values())) {
-      const cashLines = entryLines.filter((l) => cashIds.has(l.accountId));
-      if (!cashLines.length) continue;
-      const weights: Record<CashFlowActivity, number> = {
-        operating: 0,
-        investing: 0,
-        financing: 0,
-      };
-      for (const l of entryLines) {
-        if (cashIds.has(l.accountId)) continue;
-        const a = byId.get(l.accountId);
-        const act: CashFlowActivity =
-          !a || a.type === "income" || a.type === "expense" ? "operating" : indirectActivity(a);
-        weights[act] += Math.abs(l.debit - l.credit);
-      }
-      let dom: CashFlowActivity = "operating";
-      let w = -1;
-      for (const act of ["operating", "investing", "financing"] as CashFlowActivity[]) {
-        if (weights[act] > w) {
-          w = weights[act];
-          dom = act;
-        }
-      }
-      flows[dom][0] += cashLines.reduce((s, l) => s + l.debit, 0);
-      flows[dom][1] += cashLines.reduce((s, l) => s + l.credit, 0);
+    for (const v of Array.from(c.operatingDirect.values())) {
+      flows.operating[0] += v.inFils;
+      flows.operating[1] -= v.outFils;
+    }
+    // The FX revaluation of cash has no column of its own here; it moves the running balance.
+    if (c.fxOnCashFils > 0) flows.operating[0] += c.fxOnCashFils;
+    else flows.operating[1] -= c.fxOnCashFils;
+    for (const inv of c.investing) {
+      if (inv.fils > 0) flows.investing[0] += inv.fils;
+      else flows.investing[1] -= inv.fils;
+    }
+    for (const v of Array.from(c.financing.values())) {
+      flows.financing[0] += v.inFils;
+      flows.financing[1] -= v.outFils;
     }
     const net =
       flows.operating[0] -

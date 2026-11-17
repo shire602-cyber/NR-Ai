@@ -5,8 +5,6 @@
  *
  *   otherComprehensiveIncome   revaluation-reserve movements in a range, excluding transfers
  *                              to retained earnings (IAS 1.81A, IAS 16.39, IAS 16.41).
- *   cashFlowAdjustments        the non-cash items and investing flows the indirect cash flow
- *                              cannot see from balance changes (IAS 7.16, 7.20, 7.28, 7.43).
  *   gratuityCurrentPortionFils the end-of-service provision of known leavers (IAS 1.69).
  *   controlAccountFxRevaluationFils / allowanceForDoubtfulDebtsFils
  *                              aging-to-GL reconciling items (IAS 21.23, IFRS 9.5.5.15).
@@ -66,70 +64,6 @@ export async function otherComprehensiveIncome(
     if (f !== 0) out.set(r.account_id, f);
   }
   return out;
-}
-
-export interface PpeEntryLine {
-  entryId: string;
-  accountId: string;
-  /** credit − debit (fils) of this account in this entry. */
-  effect: Fils;
-}
-
-export interface CashFlowAdjustmentRows {
-  /** Lines of every entry in range that touches a non-current asset account (by account). */
-  ppeEntryLines: PpeEntryLine[];
-  /** Δcash (debit − credit, fils) on cash accounts from FX revaluation entries in range. */
-  fxOnCashFils: Fils;
-}
-
-/**
- * The entry-level facts the indirect cash flow needs. `ppeIds` are the non-current asset
- * accounts (including accumulated depreciation); `cashIds` the cash and bank accounts.
- * Only entries that touch a non-current asset are returned, aggregated per account.
- */
-export async function cashFlowAdjustments(
-  companyId: string,
-  range: { from?: IsoDate | null; to: IsoDate },
-  ppeIds: string[],
-  cashIds: string[],
-  q: Queryable = pool
-): Promise<CashFlowAdjustmentRows> {
-  const params = [companyId, range.from ?? null, range.to];
-  const [ppe, fx] = await Promise.all([
-    ppeIds.length
-      ? q.query(
-          `WITH e AS (
-             SELECT DISTINCT je.id
-               FROM journal_entries je
-               JOIN journal_lines pl ON pl.entry_id = je.id
-              WHERE ${RANGE_SQL} AND pl.account_id = ANY($4::uuid[])
-           )
-           SELECT jl.entry_id, jl.account_id,
-                  SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100))::bigint AS f
-             FROM journal_lines jl JOIN e ON e.id = jl.entry_id
-            GROUP BY jl.entry_id, jl.account_id`,
-          [...params, ppeIds]
-        )
-      : Promise.resolve({ rows: [] }),
-    cashIds.length
-      ? q.query(
-          `SELECT COALESCE(SUM(ROUND(jl.debit * 100) - ROUND(jl.credit * 100)), 0)::bigint AS f
-             FROM journal_lines jl
-             JOIN journal_entries je ON je.id = jl.entry_id
-            WHERE ${RANGE_SQL} AND je.source IN (${FX_SOURCES_SQL})
-              AND jl.account_id = ANY($4::uuid[])`,
-          [...params, cashIds]
-        )
-      : Promise.resolve({ rows: [{ f: 0 }] }),
-  ]);
-  return {
-    ppeEntryLines: ppe.rows.map((r) => ({
-      entryId: r.entry_id,
-      accountId: r.account_id,
-      effect: Number(r.f),
-    })),
-    fxOnCashFils: Number(fx.rows[0]?.f ?? 0),
-  };
 }
 
 /**

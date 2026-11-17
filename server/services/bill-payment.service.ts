@@ -58,6 +58,7 @@ import {
   type BillState,
 } from "./bill-posting.service";
 import { resolveVendor } from "./vendor.service";
+import { recostBillAssetsForDebitNote } from "./fixed-assets/index";
 import { afterBillPosted, planPurchaseReturnStock } from "./inventory/documents";
 import { planDebitNoteVat, type DebitNoteBillVat } from "./debit-note-vat";
 import { debitNoteCreateSchema, inboundBillSchema } from "../../shared/validators/bills";
@@ -1528,6 +1529,23 @@ export async function createDebitNote(args: {
       { actorId: args.actorId, tx }
     );
     await afterBillPosted(tx, returnMovements, entry.id);
+    // B2 (NM2): a credit to a fixed-asset cost account re-costs the asset the bill capitalised.
+    await recostBillAssetsForDebitNote(tx, {
+      companyId,
+      billId: input.bill_id ?? null,
+      date: input.note_date,
+      entryId: entry.id,
+      noteId: note.id,
+      noteNumber: number,
+      credits: lineCalcs
+        .map((l, i) => ({
+          accountId: l.accountId,
+          creditFils: l.product_id ? 0 : toBase(l.amount + vatPlan.lineCostFils[i], rate, foreign),
+          description: l.description,
+        }))
+        .filter((c) => c.creditFils > 0),
+      actorId: args.actorId,
+    });
     return { debitNote: note, journalEntryId: entry.id };
   }, args.tx);
 }

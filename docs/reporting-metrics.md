@@ -198,10 +198,17 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   and total comprehensive income. The balance sheet keeps the revaluation reserve (3050) apart from
   capital, shows the allowance for doubtful debts (1045) as a contra asset, and splits the gratuity
   provision (2036, non-current) into a current portion for known leavers (termination date within
-  12 months). The indirect cash flow reads entries that touch non-current assets per entry: their
-  P&L lines are non-cash adjustments (depreciation, impairment, disposal gain/loss), equity lines
-  are non-cash transactions (revaluation), the rest is the investing flow (purchases / disposal
-  proceeds); FX revaluation of cash is `fxEffect` (IAS 7.28), apart from the three activities.
+  12 months). The cash flow (B2, `server/reporting/cash-flow-classify.ts`) is classified from
+  cash legs, and both methods read the same classification, so they agree on every subtotal:
+  each non-cash line of an entry that moves cash carries its own share of the cash (asset lines
+  investing, VAT operating, equity / borrowings / dividends payable financing; purchases and
+  disposal proceeds gross, the disposal gain/loss part of the proceeds); a bill payment is
+  investing for the bill's asset share. Entries with no cash leg that touch a non-current asset,
+  equity or a financing liability (asset on credit, debit note on it, dividend declared, provision
+  charged to retained earnings, revaluation) are excluded and listed in `nonCashTransactions`
+  (IAS 7.43); their P&L lines (depreciation, impairment) are the indirect method's non-cash
+  adjustments. FX revaluation of cash is `fxEffect` (IAS 7.28), apart from the three activities.
+  4090 / 4091 FX gains and 5140 / 5141 FX losses are other income / other expense, never revenue.
   Aging adds `fxRevaluation` (revaluation carried on 1040 / 2010 at the date) as a reconciling item
   and, for receivables, `allowanceForDoubtfulDebts` / `netCarryingAmount`. A bad-debt write-off
   (`POST …/invoices/:id/write-off`) is an `invoice_payments` row with method `write_off` posted

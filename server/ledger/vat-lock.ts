@@ -49,7 +49,11 @@ export const VAT_DOCUMENT_SOURCES: ReadonlySet<string> = new Set([
  */
 export const REVERSAL_REPORTED_ON_OWN_DATE: ReadonlySet<string> = new Set(["vat_bad_debt_relief"]);
 
-/** B1 (NL1): sources that change no VAT 201 box although they touch the VAT accounts. */
+/**
+ * NL1 (B1 + B2): sources that touch the VAT control accounts but are not VAT transactions of any
+ * period: the payment / refund of a return (and its reversal) clears 2020 / 1050 and changes no
+ * box (the VAT engine leaves it out), so no filed period is affected by it.
+ */
 export const VAT_LOCK_EXEMPT_SOURCES: ReadonlySet<string> = new Set(["vat_return_settlement"]);
 
 /**

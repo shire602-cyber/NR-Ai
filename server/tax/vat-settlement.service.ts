@@ -119,17 +119,28 @@ export async function settleVatReturn(input: {
     throw new DomainError("VAT_RETURN_ALREADY_SETTLED", 409);
   }
   await assertCashOrBank(input.companyId, input.paymentAccountId);
-  const outputFils = toFils(ret.box12, { rounding: "halfUp" });
-  const inputFils = toFils(ret.box13, { rounding: "halfUp" });
-  const netFils = outputFils - inputFils;
-  if (outputFils === 0 && inputFils === 0) {
-    throw new DomainError("VAT_RETURN_NOTHING_TO_SETTLE", 422);
-  }
   const [output, inputVat] = await Promise.all([
     accountId(input.companyId, "2020"),
     accountId(input.companyId, "1050"),
   ]);
-  const label = `VAT return ${ret.period_start} to ${ret.period_end}`;
+  // B2 (NH4): an amended return (voluntary disclosure) replaces the figures of the return it
+  // amends, but what was already paid or refunded for those returns stays paid. Only the
+  // difference is settled now (Exec. Reg. Art. 70: the disclosure states the difference).
+  const prior = await settledOnSupersededReturns(input.companyId, ret.id, output, inputVat);
+  const outputFils = toFils(ret.box12, { rounding: "halfUp" }) - prior.outputFils;
+  const inputFils = toFils(ret.box13, { rounding: "halfUp" }) - prior.inputFils;
+  const netFils = outputFils - inputFils;
+  if (outputFils === 0 && inputFils === 0) {
+    throw new DomainError(
+      prior.returnIds.length ? "VAT_AMENDMENT_NOTHING_TO_SETTLE" : "VAT_RETURN_NOTHING_TO_SETTLE",
+      422,
+      prior.returnIds.length ? { alreadySettledOn: prior.returnIds } : undefined,
+      prior.returnIds.length
+        ? "The amended return changes no VAT already settled for this period"
+        : undefined
+    );
+  }
+  const label = `${prior.returnIds.length ? "Amended VAT return" : "VAT return"} ${ret.period_start} to ${ret.period_end}`;
   const side = (fils: number) => (fils >= 0 ? { debitFils: fils } : { creditFils: -fils });
   const lines: PostJournalLineInput[] = [];
   if (outputFils !== 0)
@@ -143,6 +154,15 @@ export async function settleVatReturn(input: {
       description:
         netFils > 0 ? `${label}: VAT paid to the FTA` : `${label}: VAT refund from the FTA`,
     });
+  // B2: one live settlement per return, but a reversed one may be settled again; each attempt
+  // gets its own key (the first keeps the original format), so a re-settlement after a reversal
+  // posts a new entry instead of replaying the reversed one.
+  const earlier = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM journal_entries
+      WHERE company_id = $1 AND source = $2 AND source_id = $3 AND entry_kind <> 'reversal'`,
+    [input.companyId, VAT_SETTLEMENT_SOURCE, ret.id]
+  );
+  const attempt = Number(earlier.rows[0]?.n ?? 0);
   const { entry } = await postJournal(
     {
       companyId: input.companyId,
@@ -152,7 +172,7 @@ export async function settleVatReturn(input: {
       source: VAT_SETTLEMENT_SOURCE,
       sourceId: ret.id,
       reference: input.reference ?? null,
-      idempotencyKey: `${VAT_SETTLEMENT_SOURCE}:${ret.id}`,
+      idempotencyKey: `${VAT_SETTLEMENT_SOURCE}:${ret.id}${attempt ? `:${attempt}` : ""}`,
       lines,
     },
     { actorId: input.actorId, audit: true }
@@ -163,7 +183,12 @@ export async function settleVatReturn(input: {
     action: "vat.return_settlement.create",
     entityType: "vat_return",
     entityId: ret.id,
-    after: { journalEntryId: entry.id, netPayable: fromFils(netFils), date: input.date },
+    after: {
+      journalEntryId: entry.id,
+      netPayable: fromFils(netFils),
+      date: input.date,
+      previouslySettledOn: prior.returnIds,
+    },
     req: input.req,
   });
   return {
@@ -173,6 +198,53 @@ export async function settleVatReturn(input: {
     outputVat: Number(fromFils(outputFils)),
     inputVat: Number(fromFils(inputFils)),
     netPayable: Number(fromFils(netFils)),
+    previouslySettled: {
+      returnIds: prior.returnIds,
+      outputVat: Number(fromFils(prior.outputFils)),
+      inputVat: Number(fromFils(prior.inputFils)),
+      netPaid: Number(fromFils(prior.outputFils - prior.inputFils)),
+    },
+  };
+}
+
+/**
+ * B2 (NH4): VAT already settled for the returns `vatReturnId` supersedes (its amends_return_id
+ * chain): the output VAT debited to 2020 and the input VAT credited to 1050 by their live
+ * (posted, unreversed) settlement entries. Each earlier settlement on the chain was itself only
+ * a difference, so the sum is what has been paid or refunded for the period so far.
+ */
+async function settledOnSupersededReturns(
+  companyId: string,
+  vatReturnId: string,
+  outputAccountId: string,
+  inputAccountId: string
+): Promise<{ returnIds: string[]; outputFils: number; inputFils: number }> {
+  const { rows } = await pool.query(
+    `WITH RECURSIVE chain(id, amends, depth) AS (
+       SELECT id, amends_return_id, 0 FROM vat_returns WHERE id = $2 AND company_id = $1
+       UNION ALL
+       SELECT r.id, r.amends_return_id, c.depth + 1
+         FROM vat_returns r JOIN chain c ON r.id = c.amends
+        WHERE r.company_id = $1 AND c.depth < 50
+     )
+     SELECT je.source_id AS return_id,
+            COALESCE(SUM(CASE WHEN jl.account_id = $4
+                              THEN ROUND(jl.debit * 100) - ROUND(jl.credit * 100) END), 0)::bigint AS output,
+            COALESCE(SUM(CASE WHEN jl.account_id = $5
+                              THEN ROUND(jl.credit * 100) - ROUND(jl.debit * 100) END), 0)::bigint AS input
+       FROM chain c
+       JOIN journal_entries je ON je.company_id = $1 AND je.source = $3
+                              AND je.source_id = c.id AND je.status = 'posted'
+                              AND je.reversed_by_entry_id IS NULL
+       JOIN journal_lines jl ON jl.entry_id = je.id
+      WHERE c.depth > 0
+      GROUP BY je.source_id`,
+    [companyId, vatReturnId, VAT_SETTLEMENT_SOURCE, outputAccountId, inputAccountId]
+  );
+  return {
+    returnIds: rows.map((r) => r.return_id as string),
+    outputFils: rows.reduce((s, r) => s + Number(r.output), 0),
+    inputFils: rows.reduce((s, r) => s + Number(r.input), 0),
   };
 }
 

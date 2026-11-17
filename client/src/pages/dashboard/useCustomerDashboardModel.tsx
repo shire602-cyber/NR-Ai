@@ -763,7 +763,12 @@ export function useCustomerDashboardModel() {
     const trends = monthlyTrends ?? [];
     const revenueSeries = trends.map((t) => Number(t?.revenue ?? 0));
     const expenseSeries = trends.map((t) => Number(t?.expenses ?? 0));
-    const profitSeries = trends.map((t) => Number(t?.revenue ?? 0) - Number(t?.expenses ?? 0));
+    // B2 (NM4): net profit includes other income, which is not part of revenue.
+    const profitSeries = trends.map((t) =>
+      t?.netProfit !== undefined
+        ? Number(t.netProfit)
+        : Number(t?.revenue ?? 0) - Number(t?.expenses ?? 0)
+    );
 
     const pctChange = (series: number[]) => {
       if (series.length < 2) return undefined;

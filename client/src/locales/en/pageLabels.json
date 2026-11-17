@@ -499,6 +499,8 @@
   "pageLabels.netCashPosition": "Net Cash Position",
   "pageLabels.netFinancingCashFlow": "Net Financing Cash Flow",
   "pageLabels.fxEffectOnCash": "Effect of exchange-rate changes on cash",
+  "pageLabels.nonCashTransactions": "Non-cash investing and financing transactions",
+  "pageLabels.nonCashTransactionsHint": "These used no cash, so they are not in the activities above (IAS 7.43).",
   "pageLabels.netIncome": "Net income",
   "pageLabels.netInvestingCashFlow": "Net Investing Cash Flow",
   "pageLabels.netOperatingCashFlow": "Net Operating Cash Flow",

@@ -28,6 +28,14 @@ export interface AssetCalcInput {
   purchaseDate: string; // YYYY-MM-DD
   accumulatedFils: number;
   isDepreciable: boolean;
+  /**
+   * B2: the carrying amount was re-based after acquisition (revaluation, impairment, or a cost
+   * reduction by a supplier debit note after depreciation started), so straight line spreads the
+   * remaining carrying amount over the remaining life (IAS 16.50, IAS 8.36 prospectively). Set
+   * from the asset's events, because a revaluation to exactly the original cost leaves no
+   * surplus or impairment behind to detect it by.
+   */
+  rebased?: boolean;
 }
 
 export interface DepreciationCalc {
@@ -82,7 +90,8 @@ export function depreciationFor(a: AssetCalcInput, year: number, month: number):
     if (elapsed >= totalMonths - (firstPartial ? 0 : 1)) amount = remaining;
   } else {
     const lastMonth = firstPartial ? totalMonths : totalMonths - 1;
-    const rebased = (a.revaluationFils ?? 0) !== 0 || (a.impairmentFils ?? 0) !== 0;
+    const rebased =
+      a.rebased === true || (a.revaluationFils ?? 0) !== 0 || (a.impairmentFils ?? 0) !== 0;
     if (elapsed >= lastMonth) amount = remaining;
     else if (rebased && elapsed > 0) {
       // Revised carrying amount over the remaining useful life (this month included).

@@ -499,6 +499,8 @@
   "pageLabels.netCashPosition": "صافي المركز النقدي",
   "pageLabels.netFinancingCashFlow": "صافي التدفق النقدي التمويلي",
   "pageLabels.fxEffectOnCash": "أثر تغيرات أسعار الصرف على النقد",
+  "pageLabels.nonCashTransactions": "معاملات استثمارية وتمويلية غير نقدية",
+  "pageLabels.nonCashTransactionsHint": "لم تُستخدم فيها أي نقدية، لذلك لا تظهر في الأنشطة أعلاه (معيار المحاسبة الدولي 7.43).",
   "pageLabels.netIncome": "صافي الدخل",
   "pageLabels.netInvestingCashFlow": "صافي التدفق النقدي الاستثماري",
   "pageLabels.netOperatingCashFlow": "صافي التدفق النقدي التشغيلي",

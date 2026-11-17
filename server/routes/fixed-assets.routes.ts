@@ -530,6 +530,7 @@ export function registerFixedAssetRoutes(app: Express) {
             method: a.tax_depreciation_method ?? a.depreciation_method,
             revaluationFils: 0,
             impairmentFils: 0,
+            rebased: false,
           },
           endY,
           m
