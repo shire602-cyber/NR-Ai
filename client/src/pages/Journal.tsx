@@ -2,7 +2,6 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { localizeJournalMemo } from "@/lib/journal-memo";
 import { T } from "@/components/layout/T";
 import {
-  FormActions,
   FormErrorSummary,
   FormGrid,
   FormSection,
@@ -26,14 +25,8 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { PageHeader } from "@/components/ui/page-header";
+import { EditorShell } from "@/components/ui/editor-shell";
 import { BooksStatusStrip } from "@/components/reports/BooksStatusStrip";
 import {
   Select,
@@ -385,6 +378,293 @@ export default function Journal() {
   const totalCredit = totalCreditFils / 100;
   const isBalanced = totalDebitFils === totalCreditFils;
 
+  // Spec 3.10 (WP-D): a journal entry has a lines table, so it is a full-page editor, not a
+  // dialog. Same form, same handlers; Cancel (or Back) returns to the list.
+  const closeEditor = () => {
+    setDialogOpen(false);
+    setEditingEntry(null);
+    form.reset({
+      companyId: selectedCompanyId,
+      date: new Date(),
+      memo: "",
+      lines: [
+        { accountId: "", debit: 0, credit: 0 },
+        { accountId: "", debit: 0, credit: 0 },
+      ],
+    });
+  };
+
+  if (dialogOpen) {
+    return (
+      <EditorShell
+        eyebrow={t["journal.pageEyebrow"]}
+        title={editingEntry ? t["forms.journal.editTitle"] : t.newEntry}
+        description={editingEntry ? t["forms.journal.editDesc"] : t["forms.journal.newDesc"]}
+        testId="dialog-journal-form"
+        footer={
+          <>
+            <Button type="button" variant="outline" onClick={closeEditor}>
+              {t.cancel}
+            </Button>
+            <Button
+              type="submit"
+              form="journal-entry-form"
+              className="sm:min-w-32"
+              disabled={!isBalanced || createMutation.isPending || editMutation.isPending}
+              data-testid="button-submit-entry"
+            >
+              {createMutation.isPending || editMutation.isPending ? t["forms.saving"] : t.save}
+            </Button>
+          </>
+        }
+      >
+        <Form {...form}>
+          <form
+            id="journal-entry-form"
+            onSubmit={form.handleSubmit(onSubmit)}
+            noValidate
+            className="space-y-6"
+          >
+            <FormErrorSummary />
+            <FormSection
+              title={t["forms.section.entry"]}
+              description={t["forms.section.entryDesc"]}
+            >
+              <FormGrid>
+                <FormField
+                  control={form.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel required>{t.date}</FormLabel>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full justify-start text-start font-normal",
+                                !field.value && "text-muted-foreground"
+                              )}
+                              data-testid="button-date-picker"
+                            >
+                              <CalendarIcon className="h-4 w-4" />
+                              {field.value ? (
+                                formatDate(field.value, locale)
+                              ) : (
+                                <span>
+                                  <T k="pages.pickADate" />
+                                </span>
+                              )}
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={field.value}
+                            onSelect={field.onChange}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="memo"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t.memo}</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          dir="auto"
+                          placeholder={t["forms.journal.memoPlaceholder"]}
+                          data-testid="input-memo"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </FormGrid>
+            </FormSection>
+
+            <FormSection
+              title={<T k="pageLabels.journalLines" />}
+              description={t["forms.journal.linesDesc"]}
+              actions={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => append({ accountId: "", debit: 0, credit: 0 })}
+                  data-testid="button-add-line"
+                >
+                  <Plus className="h-4 w-4" />
+                  <T k="pages.addLine" />
+                </Button>
+              }
+            >
+              <div className="rounded-lg bg-surface-sunken/60">
+                <div
+                  aria-hidden
+                  className="hidden grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem] gap-3 border-b border-border px-3 py-2 text-caption font-medium text-muted-foreground sm:grid"
+                >
+                  <span>
+                    <T k="consolidation.account" />
+                  </span>
+                  <span className="text-end">{t.debit}</span>
+                  <span className="text-end">{t.credit}</span>
+                  <span />
+                </div>
+                <ol className="divide-y divide-border px-3">
+                  {fields.map((field, index) => (
+                    <li
+                      key={field.id}
+                      className="mobile-keep-cols grid grid-cols-2 gap-3 py-3 sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem] sm:items-start"
+                    >
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.accountId`}
+                        render={({ field }) => (
+                          <FormItem className="col-span-2 sm:col-span-1">
+                            <FormLabel className={cn(lineLabelClass, "sm:sr-only")}>
+                              {formatMessage(t["forms.lineN"], { n: index + 1 })} ·{" "}
+                              <T k="consolidation.account" />
+                            </FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger data-testid={`select-account-${index}`}>
+                                  <SelectValue placeholder={t["forms.journal.selectAccount"]} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {accounts?.map((acc: any) => (
+                                  <SelectItem key={acc.id} value={acc.id}>
+                                    <span className="me-2 inline-block tabular-nums text-muted-foreground">
+                                      {acc.code}
+                                    </span>
+                                    {accountDisplayName(acc, locale)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.debit`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className={cn(lineLabelClass, "sm:sr-only")}>
+                              {t.debit}
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                placeholder="0.00"
+                                className="text-end"
+                                name={field.name}
+                                ref={field.ref}
+                                onBlur={field.onBlur}
+                                value={field.value ?? ""}
+                                onChange={(e) =>
+                                  field.onChange(e.target.value ? parseFloat(e.target.value) : "")
+                                }
+                                data-testid={`input-debit-${index}`}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.credit`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className={cn(lineLabelClass, "sm:sr-only")}>
+                              {t.credit}
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                placeholder="0.00"
+                                className="text-end"
+                                name={field.name}
+                                ref={field.ref}
+                                onBlur={field.onBlur}
+                                value={field.value ?? ""}
+                                onChange={(e) =>
+                                  field.onChange(e.target.value ? parseFloat(e.target.value) : "")
+                                }
+                                data-testid={`input-credit-${index}`}
+                              />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+                      <div className="col-span-2 flex justify-end sm:col-span-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-danger"
+                          disabled={fields.length <= 2}
+                          aria-label={formatMessage(t["forms.removeLine"], { n: index + 1 })}
+                          onClick={() => remove(index)}
+                          data-testid={
+                            fields.length > 2 ? `button-remove-line-${index}` : undefined
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+                <div className="mobile-keep-cols grid grid-cols-2 gap-3 border-t border-border-strong px-3 py-3 text-sm font-semibold sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem]">
+                  <span className="col-span-2 text-muted-foreground sm:col-span-1">
+                    {t["forms.preview.total"]}
+                  </span>
+                  <span className="text-end" data-testid="journal-total-debit">
+                    <Money amount={totalDebit} currency="AED" />
+                  </span>
+                  <span className="text-end" data-testid="journal-total-credit">
+                    <Money amount={totalCredit} currency="AED" />
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2" aria-live="polite">
+                {isBalanced ? (
+                  <>
+                    <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
+                    <StatusBadge tone="success">{t.balanced}</StatusBadge>
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="h-4 w-4 text-danger" aria-hidden />
+                    <StatusBadge tone="danger">
+                      {t.notBalanced} (
+                      {formatNumber(Math.abs(totalDebitFils - totalCreditFils) / 100, locale)})
+                    </StatusBadge>
+                  </>
+                )}
+              </div>
+            </FormSection>
+          </form>
+        </Form>
+      </EditorShell>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -404,285 +684,6 @@ export default function Journal() {
       />
       {/* R3 (CTO 23): books-balanced / period-lock status on the ledger. */}
       <BooksStatusStrip companyId={selectedCompanyId} />
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={(open) => {
-          setDialogOpen(open);
-          if (!open) {
-            setEditingEntry(null);
-            form.reset({
-              companyId: selectedCompanyId,
-              date: new Date(),
-              memo: "",
-              lines: [
-                { accountId: "", debit: 0, credit: 0 },
-                { accountId: "", debit: 0, credit: 0 },
-              ],
-            });
-          }
-        }}
-      >
-        <DialogContent size="lg" data-testid="dialog-journal-form">
-          <DialogHeader>
-            <DialogTitle>{editingEntry ? t["forms.journal.editTitle"] : t.newEntry}</DialogTitle>
-            <DialogDescription>
-              {editingEntry ? t["forms.journal.editDesc"] : t["forms.journal.newDesc"]}
-            </DialogDescription>
-          </DialogHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} noValidate className="space-y-6">
-              <FormErrorSummary />
-              <FormSection
-                title={t["forms.section.entry"]}
-                description={t["forms.section.entryDesc"]}
-              >
-                <FormGrid>
-                  <FormField
-                    control={form.control}
-                    name="date"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel required>{t.date}</FormLabel>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <FormControl>
-                              <Button
-                                variant="outline"
-                                className={cn(
-                                  "w-full justify-start text-start font-normal",
-                                  !field.value && "text-muted-foreground"
-                                )}
-                                data-testid="button-date-picker"
-                              >
-                                <CalendarIcon className="h-4 w-4" />
-                                {field.value ? (
-                                  formatDate(field.value, locale)
-                                ) : (
-                                  <span>
-                                    <T k="pages.pickADate" />
-                                  </span>
-                                )}
-                              </Button>
-                            </FormControl>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0">
-                            <Calendar
-                              mode="single"
-                              selected={field.value}
-                              onSelect={field.onChange}
-                              initialFocus
-                            />
-                          </PopoverContent>
-                        </Popover>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="memo"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t.memo}</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            dir="auto"
-                            placeholder={t["forms.journal.memoPlaceholder"]}
-                            data-testid="input-memo"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </FormGrid>
-              </FormSection>
-
-              <FormSection
-                title={<T k="pageLabels.journalLines" />}
-                description={t["forms.journal.linesDesc"]}
-                actions={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => append({ accountId: "", debit: 0, credit: 0 })}
-                    data-testid="button-add-line"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <T k="pages.addLine" />
-                  </Button>
-                }
-              >
-                <div className="rounded-lg bg-surface-sunken/60">
-                  <div
-                    aria-hidden
-                    className="hidden grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem] gap-3 border-b border-border px-3 py-2 text-caption font-medium text-muted-foreground sm:grid"
-                  >
-                    <span>
-                      <T k="consolidation.account" />
-                    </span>
-                    <span className="text-end">{t.debit}</span>
-                    <span className="text-end">{t.credit}</span>
-                    <span />
-                  </div>
-                  <ol className="divide-y divide-border px-3">
-                    {fields.map((field, index) => (
-                      <li
-                        key={field.id}
-                        className="mobile-keep-cols grid grid-cols-2 gap-3 py-3 sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem] sm:items-start"
-                      >
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.accountId`}
-                          render={({ field }) => (
-                            <FormItem className="col-span-2 sm:col-span-1">
-                              <FormLabel className={cn(lineLabelClass, "sm:sr-only")}>
-                                {formatMessage(t["forms.lineN"], { n: index + 1 })} ·{" "}
-                                <T k="consolidation.account" />
-                              </FormLabel>
-                              <Select onValueChange={field.onChange} value={field.value}>
-                                <FormControl>
-                                  <SelectTrigger data-testid={`select-account-${index}`}>
-                                    <SelectValue placeholder={t["forms.journal.selectAccount"]} />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {accounts?.map((acc: any) => (
-                                    <SelectItem key={acc.id} value={acc.id}>
-                                      <span className="me-2 inline-block tabular-nums text-muted-foreground">
-                                        {acc.code}
-                                      </span>
-                                      {accountDisplayName(acc, locale)}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.debit`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className={cn(lineLabelClass, "sm:sr-only")}>
-                                {t.debit}
-                              </FormLabel>
-                              <FormControl>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  placeholder="0.00"
-                                  className="text-end"
-                                  name={field.name}
-                                  ref={field.ref}
-                                  onBlur={field.onBlur}
-                                  value={field.value ?? ""}
-                                  onChange={(e) =>
-                                    field.onChange(e.target.value ? parseFloat(e.target.value) : "")
-                                  }
-                                  data-testid={`input-debit-${index}`}
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`lines.${index}.credit`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel className={cn(lineLabelClass, "sm:sr-only")}>
-                                {t.credit}
-                              </FormLabel>
-                              <FormControl>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  placeholder="0.00"
-                                  className="text-end"
-                                  name={field.name}
-                                  ref={field.ref}
-                                  onBlur={field.onBlur}
-                                  value={field.value ?? ""}
-                                  onChange={(e) =>
-                                    field.onChange(e.target.value ? parseFloat(e.target.value) : "")
-                                  }
-                                  data-testid={`input-credit-${index}`}
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                        <div className="col-span-2 flex justify-end sm:col-span-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="text-muted-foreground hover:text-danger"
-                            disabled={fields.length <= 2}
-                            aria-label={formatMessage(t["forms.removeLine"], { n: index + 1 })}
-                            onClick={() => remove(index)}
-                            data-testid={
-                              fields.length > 2 ? `button-remove-line-${index}` : undefined
-                            }
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                  <div className="mobile-keep-cols grid grid-cols-2 gap-3 border-t border-border-strong px-3 py-3 text-sm font-semibold sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem]">
-                    <span className="col-span-2 text-muted-foreground sm:col-span-1">
-                      {t["forms.preview.total"]}
-                    </span>
-                    <span className="text-end" data-testid="journal-total-debit">
-                      <Money amount={totalDebit} currency="AED" />
-                    </span>
-                    <span className="text-end" data-testid="journal-total-credit">
-                      <Money amount={totalCredit} currency="AED" />
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-end gap-2" aria-live="polite">
-                  {isBalanced ? (
-                    <>
-                      <CheckCircle2 className="h-4 w-4 text-success" aria-hidden />
-                      <StatusBadge tone="success">{t.balanced}</StatusBadge>
-                    </>
-                  ) : (
-                    <>
-                      <XCircle className="h-4 w-4 text-danger" aria-hidden />
-                      <StatusBadge tone="danger">
-                        {t.notBalanced} (
-                        {formatNumber(Math.abs(totalDebitFils - totalCreditFils) / 100, locale)})
-                      </StatusBadge>
-                    </>
-                  )}
-                </div>
-              </FormSection>
-
-              <FormActions sticky>
-                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
-                  {t.cancel}
-                </Button>
-                <Button
-                  type="submit"
-                  className="sm:min-w-32"
-                  disabled={!isBalanced || createMutation.isPending || editMutation.isPending}
-                  data-testid="button-submit-entry"
-                >
-                  {createMutation.isPending || editMutation.isPending ? t["forms.saving"] : t.save}
-                </Button>
-              </FormActions>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
 
       {isLoading ? (
         <CardListSkeleton count={4} />

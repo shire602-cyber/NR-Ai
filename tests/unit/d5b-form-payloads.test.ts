@@ -344,8 +344,8 @@ describe("[D5b] purchase order form payload unchanged", () => {
 });
 
 /** Radix Select keeps a hidden native <select> inside forms; change it to pick a value. */
-async function pickNative(index: number, value: string) {
-  const selects = [...dialog().querySelectorAll("select")];
+async function pickNative(index: number, value: string, scope: ParentNode | null = dialog()) {
+  const selects = [...scope!.querySelectorAll("select")];
   await type(selects[index], value);
 }
 
@@ -533,8 +533,9 @@ describe("[D5b] journal entry form payload unchanged", () => {
     await renderPage(Journal);
     await click(byTestId("button-create-entry"));
     await type(byTestId("input-memo"), "March office rent");
-    await pickNative(0, "a0000000-0000-4000-8000-000000000510");
-    await pickNative(1, "a0000000-0000-4000-8000-000000000102");
+    // WP-D (spec 3.10): the journal entry is a full-page editor, not a dialog.
+    await pickNative(0, "a0000000-0000-4000-8000-000000000510", document);
+    await pickNative(1, "a0000000-0000-4000-8000-000000000102", document);
     await type(byTestId("input-debit-0"), "7500");
     await type(byTestId("input-credit-1"), "7500");
     await submit(byTestId("button-submit-entry"));
