@@ -166,5 +166,10 @@
   "evidenceCenter.status.payslip": "قسيمة الراتب",
   "evidenceCenter.status.tax_certificate": "شهادة ضريبية",
   "evidenceCenter.downloadEvidencePack": "تنزيل حزمة الأدلة",
-  "evidenceCenter.checklistTitle": "قائمة الجاهزية"
+  "evidenceCenter.checklistTitle": "قائمة الجاهزية",
+  "documentVersions.document": "المستند",
+  "documentVersions.searchByNumber": "ابحث بالرقم",
+  "documentVersions.loadingDocuments": "جارٍ تحميل المستندات…",
+  "documentVersions.noDocumentsFound": "لا توجد مستندات مطابقة.",
+  "documentVersions.versionHistory": "سجل الإصدارات"
 }
