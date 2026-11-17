@@ -290,5 +290,8 @@
   "forms.serverErrors.PERIOD_SOFT_LOCKED": "This period is closed (soft lock). Ask the owner or your accountant to post it, or to reopen the period.",
   "forms.serverErrors.PERIOD_LOCKED": "This period is locked. Reopen the period before posting into it.",
   "forms.serverErrors.ACCOUNT_IS_HEADER": "This is a header account with sub-accounts. Choose the bank or cash account the money actually moved through.",
-  "forms.errors.exchangeRateInvalid": "Enter a positive rate with up to 6 decimals."
+  "forms.errors.exchangeRateInvalid": "Enter a positive rate with up to 6 decimals.",
+  "forms.claim.amountExclVatAed": "Amount excl. VAT (AED)",
+  "forms.asset.inputVat": "Input VAT paid (AED)",
+  "forms.asset.inputVatHelp": "Recoverable VAT on the purchase invoice. It is posted to VAT Receivable and reported in VAT return Box 9."
 }

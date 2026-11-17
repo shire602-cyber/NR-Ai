@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -31,6 +31,7 @@ import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fiscalYearContaining } from "@/lib/fiscal-year";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
@@ -279,12 +280,35 @@ export default function CorporateTax() {
         description: e?.message,
       }),
   });
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { company, companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
-  // Calculator state
-  const currentYear = new Date().getFullYear();
-  const [periodStart, setPeriodStart] = useState(`${currentYear}-01-01`);
-  const [periodEnd, setPeriodEnd] = useState(`${currentYear}-12-31`);
+  // Calculator state: defaults to the company's fiscal year (X4/J3), not 1 Jan - 31 Dec.
+  const fyStartMonth = (company as { fiscalYearStartMonth?: number } | null | undefined)
+    ?.fiscalYearStartMonth;
+  const defaultFy = fiscalYearContaining(fyStartMonth);
+  const [periodStart, setPeriodStart] = useState(defaultFy.start);
+  const [periodEnd, setPeriodEnd] = useState(defaultFy.end);
+  const periodTouched = useRef(false);
+  useEffect(() => {
+    if (periodTouched.current) return;
+    const fy = fiscalYearContaining(fyStartMonth);
+    setPeriodStart(fy.start);
+    setPeriodEnd(fy.end);
+  }, [fyStartMonth]);
+
+  // "Record as filed" dialog (X4/J3): confirmation, EmaraTax reference and filing date,
+  // and an audited soft-lock override reason when the provision lands in a closed period.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [fileTarget, setFileTarget] = useState<CorporateTaxReturn | null>(null);
+  const [filingReference, setFilingReference] = useState("");
+  const [filedOn, setFiledOn] = useState(todayIso);
+  const [unfileTarget, setUnfileTarget] = useState<CorporateTaxReturn | null>(null);
+  const [unfileReason, setUnfileReason] = useState("");
+  const openFileDialog = (r: CorporateTaxReturn) => {
+    setFileTarget(r);
+    setFilingReference("");
+    setFiledOn(todayIso);
+  };
   const [deductions, setDeductions] = useState(0);
   const [calculation, setCalculation] = useState<CalculationResult | null>(null);
   const [notes, setNotes] = useState("");
@@ -427,17 +451,26 @@ export default function CorporateTax() {
       id,
       to,
       postProvision,
+      filingReference: reference,
+      filedOn: filedDate,
     }: {
       id: string;
       to: "computed" | "reviewed" | "filed" | "paid" | "void";
       postProvision?: boolean;
+      filingReference?: string;
+      filedOn?: string;
     }) =>
+      // A provision that posts into a soft-locked period is handled by apiRequest: it asks for
+      // the audited override reason (PeriodLockReasonDialog) and replays once with the header.
       apiRequest("POST", `/api/corporate-tax/returns/${id}/transition`, {
         to,
         ...(postProvision ? { postProvision: true } : {}),
+        ...(reference ? { filingReference: reference } : {}),
+        ...(filedDate ? { filedOn: filedDate } : {}),
       }),
     onSuccess: () => {
       invalidateReturns();
+      setFileTarget(null);
       toast({ title: t["corporateTax.statusUpdated"] });
     },
     onError: (error: Error) => {
@@ -465,6 +498,22 @@ export default function CorporateTax() {
       }),
   });
   const [postProvision, setPostProvision] = useState(true);
+  const unfileMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiRequest("POST", `/api/corporate-tax/returns/${id}/unfile`, { reason }),
+    onSuccess: () => {
+      invalidateReturns();
+      setUnfileTarget(null);
+      setUnfileReason("");
+      toast({ title: t["corporateTax.markedNotFiled"] });
+    },
+    onError: (error: Error) =>
+      toast({
+        variant: "destructive",
+        title: t["corporateTax.statusUpdateFailed"],
+        description: error?.message,
+      }),
+  });
 
   const updateWorkpaperRow = (id: string, patch: Partial<CorporateTaxWorkpaperRow>) => {
     setWorkpaperRows((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)));
@@ -524,13 +573,27 @@ export default function CorporateTax() {
               <Label htmlFor="workpaperPeriodStart">
                 <T k="pages.periodStart" />
               </Label>
-              <DatePicker id="workpaperPeriodStart" value={periodStart} onChange={setPeriodStart} />
+              <DatePicker
+                id="workpaperPeriodStart"
+                value={periodStart}
+                onChange={(v) => {
+                  periodTouched.current = true;
+                  setPeriodStart(v);
+                }}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="workpaperPeriodEnd">
                 <T k="pages.periodEnd" />
               </Label>
-              <DatePicker id="workpaperPeriodEnd" value={periodEnd} onChange={setPeriodEnd} />
+              <DatePicker
+                id="workpaperPeriodEnd"
+                value={periodEnd}
+                onChange={(v) => {
+                  periodTouched.current = true;
+                  setPeriodEnd(v);
+                }}
+              />
             </div>
             <div className="flex flex-wrap gap-2">
               <Button type="button" variant="outline" onClick={() => addWorkpaperRow("revenue")}>
@@ -642,7 +705,8 @@ export default function CorporateTax() {
                 <TableRow>
                   <TableHead className="min-w-[260px] text-base font-bold">
                     {formatMessage(t["corporateTax.workpaperYear"], {
-                      year: new Date(periodEnd || periodStart).getFullYear() || currentYear,
+                      year:
+                        new Date(periodEnd || periodStart).getFullYear() || defaultFy.fiscalYear,
                     })}
                   </TableHead>
                   <TableHead data-numeric className="min-w-[180px] text-base font-bold">
@@ -784,13 +848,27 @@ export default function CorporateTax() {
               <Label htmlFor="periodStart">
                 <T k="pages.periodStart" />
               </Label>
-              <DatePicker id="periodStart" value={periodStart} onChange={setPeriodStart} />
+              <DatePicker
+                id="periodStart"
+                value={periodStart}
+                onChange={(v) => {
+                  periodTouched.current = true;
+                  setPeriodStart(v);
+                }}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="periodEnd">
                 <T k="pages.periodEnd" />
               </Label>
-              <DatePicker id="periodEnd" value={periodEnd} onChange={setPeriodEnd} />
+              <DatePicker
+                id="periodEnd"
+                value={periodEnd}
+                onChange={(v) => {
+                  periodTouched.current = true;
+                  setPeriodEnd(v);
+                }}
+              />
             </div>
             <Button
               onClick={() => calculateMutation.mutate()}
@@ -1113,13 +1191,7 @@ export default function CorporateTax() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() =>
-                                    transitionMutation.mutate({
-                                      id: taxReturn.id,
-                                      to: "filed",
-                                      postProvision,
-                                    })
-                                  }
+                                  onClick={() => openFileDialog(taxReturn)}
                                   disabled={transitionMutation.isPending}
                                   title={t["corporateTax.markFiled"]}
                                   data-testid={`button-ct-file-${taxReturn.id}`}
@@ -1163,6 +1235,22 @@ export default function CorporateTax() {
                                 title={t["corporateTax.markPaid"]}
                               >
                                 <Banknote className="w-4 h-4 text-muted-foreground" aria-hidden />
+                              </Button>
+                            )}
+                            {taxReturn.status === "filed" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setUnfileReason("");
+                                  setUnfileTarget(taxReturn);
+                                }}
+                                disabled={unfileMutation.isPending}
+                                title={t["corporateTax.markNotFiled"]}
+                                aria-label={t["corporateTax.markNotFiled"]}
+                                data-testid={`button-ct-unfile-${taxReturn.id}`}
+                              >
+                                <RotateCcw className="w-4 h-4" aria-hidden />
                               </Button>
                             )}
                             {(taxReturn.status === "filed" || taxReturn.status === "paid") && (
@@ -1323,6 +1411,112 @@ export default function CorporateTax() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
               <T k="pages.close" />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Record as filed (X4/J3): confirm, capture the EmaraTax reference and date */}
+      <Dialog
+        open={!!fileTarget}
+        onOpenChange={(open) => {
+          if (!open) setFileTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t["corporateTax.fileDialogTitle"]}</DialogTitle>
+            <DialogDescription>{t["corporateTax.fileDialogHint"]}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="ct-filing-reference">{t["corporateTax.filingReference"]}</Label>
+              <Input
+                id="ct-filing-reference"
+                dir="ltr"
+                value={filingReference}
+                onChange={(e) => setFilingReference(e.target.value)}
+                data-testid="input-ct-filing-reference"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ct-filed-on">{t["corporateTax.filedOn"]}</Label>
+              <DatePicker
+                id="ct-filed-on"
+                value={filedOn}
+                onChange={(v) => setFiledOn(v > todayIso ? todayIso : v)}
+                data-testid="input-ct-filed-on"
+              />
+            </div>
+            {postProvision && (
+              <p className="text-sm text-muted-foreground">
+                {t["corporateTax.fileDialogProvision"]}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFileTarget(null)}>
+              {t["corporateTax.cancelAction"]}
+            </Button>
+            <Button
+              disabled={
+                transitionMutation.isPending ||
+                filingReference.trim().length < 3 ||
+                !filedOn
+              }
+              onClick={() =>
+                fileTarget &&
+                transitionMutation.mutate({
+                  id: fileTarget.id,
+                  to: "filed",
+                  postProvision,
+                  filingReference: filingReference.trim(),
+                  filedOn,
+                })
+              }
+              data-testid="button-ct-file-confirm"
+            >
+              {t["corporateTax.markFiled"]}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mark not filed (X4/J3): audited undo of a mistaken filing record */}
+      <Dialog
+        open={!!unfileTarget}
+        onOpenChange={(open) => {
+          if (!open) setUnfileTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t["corporateTax.markNotFiled"]}</DialogTitle>
+            <DialogDescription>{t["corporateTax.unfileHint"]}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="ct-unfile-reason">{t["corporateTax.unfileReason"]}</Label>
+            <Textarea
+              id="ct-unfile-reason"
+              value={unfileReason}
+              onChange={(e) => setUnfileReason(e.target.value)}
+              data-testid="input-ct-unfile-reason"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnfileTarget(null)}>
+              {t["corporateTax.cancelAction"]}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={unfileMutation.isPending || unfileReason.trim().length < 3}
+              onClick={() =>
+                unfileTarget &&
+                unfileMutation.mutate({ id: unfileTarget.id, reason: unfileReason.trim() })
+              }
+              data-testid="button-ct-unfile-confirm"
+            >
+              {t["corporateTax.markNotFiled"]}
             </Button>
           </DialogFooter>
         </DialogContent>

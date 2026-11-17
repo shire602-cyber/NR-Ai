@@ -157,5 +157,10 @@
   "compliance.vatPreview.netSoFar": "صافي الضريبة حتى الآن",
   "compliance.vatPreview.note": "أرقام مباشرة من دفاترك حتى الآن. تتغير كلما سجلت المزيد، ويمكنك إنشاء الإقرار بعد انتهاء الفترة.",
   "compliance.vatPreview.unavailable": "المعاينة غير متاحة الآن.",
-  "compliance.vatPreview.generateAfter": "يمكنك إنشاء هذا الإقرار بعد {date}."
+  "compliance.vatPreview.generateAfter": "يمكنك إنشاء هذا الإقرار بعد {date}.",
+  "compliance.notApplicable": "غير منطبق",
+  "compliance.notApplicableHint": "استخدم هذا لالتزام لا ينطبق هنا، مثل فترة سابقة لبدء استخدامك محاسب وقُدّمت في مكان آخر. تُحفظ الملاحظة في سجل التدقيق.",
+  "compliance.notApplicableReason": "سبب عدم الانطباق",
+  "compliance.markedNotApplicable": "تم التحديد كغير منطبق",
+  "compliance.cancelAction": "إلغاء"
 }

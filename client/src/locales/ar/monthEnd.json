@@ -46,5 +46,6 @@
   "monthEnd.debitAed": "مدين (درهم)",
   "monthEnd.creditAed": "دائن (درهم)",
   "monthEnd.summaryReady": "جاهز للإقفال. اجتازت جميع الفحوصات ({total}). يمكنك المتابعة بمعاينة الإقفال وقفل الفترة.",
-  "monthEnd.summaryNotReady": "غير جاهز للإقفال: اجتاز {done}/{total} من الفحوصات. المشكلات المعلقة:"
+  "monthEnd.summaryNotReady": "غير جاهز للإقفال: اجتاز {done}/{total} من الفحوصات. المشكلات المعلقة:",
+  "monthEnd.reasonMin3": "أدخل 3 أحرف على الأقل"
 }

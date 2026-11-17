@@ -58,5 +58,17 @@
   "corporateTax.workpaperProfitLoss": "PROFIT / LOSS (Revenue - Expense)",
   "corporateTax.workpaperDisclaimer": "This is a corporate tax support schedule. It creates a draft return only; it does not submit to the FTA and it does not post accounting entries.",
   "corporateTax.calculatorDescription": "Calculate corporate tax from your journal entries for a given period",
-  "corporateTax.workpaperYear": "Year {year}"
+  "corporateTax.workpaperYear": "Year {year}",
+  "corporateTax.fileDialogTitle": "Record this return as filed?",
+  "corporateTax.fileDialogHint": "Muhasib does not submit to the FTA. Upload the return in EmaraTax first, then enter the reference EmaraTax gave you. A filed return can no longer be edited.",
+  "corporateTax.filingReference": "EmaraTax filing reference",
+  "corporateTax.filedOn": "Date filed",
+  "corporateTax.fileDialogProvision": "The corporate tax provision will be posted to the ledger on the period end date.",
+  "corporateTax.periodLockedProvision": "The period end is in a closed (soft-locked) period. Posting the provision there needs an audited reason.",
+  "corporateTax.lockOverrideReason": "Reason for posting into the closed period",
+  "corporateTax.cancelAction": "Cancel",
+  "corporateTax.markNotFiled": "Mark as not filed",
+  "corporateTax.markedNotFiled": "Return marked as not filed",
+  "corporateTax.unfileHint": "Use this if the return was recorded as filed by mistake. It goes back to reviewed, the filing reference is cleared and any provision posted at filing is reversed. The reason is kept in the audit trail.",
+  "corporateTax.unfileReason": "Reason"
 }

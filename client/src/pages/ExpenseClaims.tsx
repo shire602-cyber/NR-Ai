@@ -91,7 +91,7 @@ import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdow
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { getStoredUser } from "@/lib/auth";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { postablePaymentAccounts } from "@/lib/payment-accounts";
 
@@ -131,6 +131,7 @@ interface ExpenseClaim {
   /** S2 (R04-20): reimbursed on the employee's next payroll run. */
   reimburse_via_payroll?: boolean;
   payroll_run_id?: string | null;
+  employee_id?: string | null;
   created_at: string;
   items?: ExpenseClaimItem[];
 }
@@ -177,7 +178,9 @@ const claimFormSchema = z.object({
 type ClaimFormData = z.infer<typeof claimFormSchema>;
 
 const reviewFormSchema = z.object({
-  review_notes: z.string().min(1, "forms.errors.reviewNotesRequired"),
+  // Notes are optional on approve (the API treats them as optional) and
+  // required on reject; handleReviewSubmit enforces the reject case.
+  review_notes: z.string().optional(),
 });
 
 type ReviewFormData = z.infer<typeof reviewFormSchema>;
@@ -249,7 +252,7 @@ export default function ExpenseClaims() {
   });
   // X5 (J1 D1): only postable cash/bank leaves (a header account never receives postings).
   const cashAccounts = postablePaymentAccounts(ledgerAccounts);
-  const currentUser = getStoredUser();
+  const { data: currentUser } = useCurrentUser();
 
   const [claimDialogOpen, setClaimDialogOpen] = useState(false);
   const [editingClaim, setEditingClaim] = useState<ExpenseClaim | null>(null);
@@ -261,6 +264,15 @@ export default function ExpenseClaims() {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [claimToDelete, setClaimToDelete] = useState<string | null>(null);
   const [paymentClaimId, setPaymentClaimId] = useState<string | null>(null);
+  const [payrollClaimId, setPayrollClaimId] = useState<string | null>(null);
+  const [payrollEmployeeId, setPayrollEmployeeId] = useState<string>("");
+  const { data: employees = [] } = useQuery<
+    Array<{ id: string; full_name: string; employee_number?: string | null; status?: string }>
+  >({
+    queryKey: [`/api/companies/${companyId}/employees`],
+    enabled: !!companyId && !!payrollClaimId,
+  });
+  const activeEmployees = employees.filter((e) => !e.status || e.status === "active");
 
   // ─── Queries ──────────────────────────────────────────
 
@@ -461,9 +473,21 @@ export default function ExpenseClaims() {
 
   // S2 (R04-20): queue an approved claim for the employee's next payroll run (or take it off).
   const payrollMutation = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      apiRequest("POST", `/api/expense-claims/${id}/payroll-reimbursement`, { enabled }),
+    mutationFn: ({
+      id,
+      enabled,
+      employee_id,
+    }: {
+      id: string;
+      enabled: boolean;
+      employee_id?: string | null;
+    }) =>
+      apiRequest("POST", `/api/expense-claims/${id}/payroll-reimbursement`, {
+        enabled,
+        ...(enabled && employee_id ? { employee_id } : {}),
+      }),
     onSuccess: (_data, vars) => {
+      setPayrollClaimId(null);
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/expense-claims`] });
       toast({
         title: vars.enabled ? t["purchases.claimQueuedForPayroll"] : t["purchases.claimUnqueued"],
@@ -567,10 +591,15 @@ export default function ExpenseClaims() {
 
   const handleReviewSubmit = (data: ReviewFormData) => {
     if (!reviewClaimId) return;
+    const notes = (data.review_notes ?? "").trim();
     if (reviewAction === "approve") {
-      approveClaimMutation.mutate({ id: reviewClaimId, review_notes: data.review_notes });
+      approveClaimMutation.mutate({ id: reviewClaimId, review_notes: notes || undefined });
     } else {
-      rejectClaimMutation.mutate({ id: reviewClaimId, review_notes: data.review_notes });
+      if (!notes) {
+        reviewForm.setError("review_notes", { message: "forms.errors.reviewNotesRequired" });
+        return;
+      }
+      rejectClaimMutation.mutate({ id: reviewClaimId, review_notes: notes });
     }
   };
 
@@ -770,12 +799,16 @@ export default function ExpenseClaims() {
                             {canPay && (
                               <DropdownMenuItem
                                 disabled={payrollMutation.isPending}
-                                onSelect={() =>
-                                  payrollMutation.mutate({
-                                    id: claim.id,
-                                    enabled: !claim.reimburse_via_payroll,
-                                  })
-                                }
+                                onSelect={() => {
+                                  if (claim.reimburse_via_payroll) {
+                                    payrollMutation.mutate({ id: claim.id, enabled: false });
+                                  } else {
+                                    // Ask which employee's payroll reimburses the claim
+                                    // (the submitter's email may not match an employee).
+                                    setPayrollEmployeeId(claim.employee_id ?? "");
+                                    setPayrollClaimId(claim.id);
+                                  }
+                                }}
                                 aria-pressed={!!claim.reimburse_via_payroll}
                                 data-testid={`claim-payroll-${claim.id}`}
                               >
@@ -1120,7 +1153,7 @@ export default function ExpenseClaims() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel required className={lineLabelClass}>
-                              {t["forms.claim.amountAed"]}
+                              {t["forms.claim.amountExclVatAed"]}
                             </FormLabel>
                             <FormControl>
                               <Input type="number" step="0.01" min="0" {...field} />
@@ -1392,8 +1425,8 @@ export default function ExpenseClaims() {
             </DialogTitle>
             <DialogDescription>
               {reviewAction === "approve"
-                ? "Add optional notes and approve this expense claim."
-                : "Please provide a reason for rejecting this expense claim."}
+                ? t["purchases.claimApproveHint"]
+                : t["purchases.claimRejectHint"]}
             </DialogDescription>
           </DialogHeader>
 
@@ -1435,8 +1468,8 @@ export default function ExpenseClaims() {
                   {approveClaimMutation.isPending || rejectClaimMutation.isPending
                     ? t.loading || "Loading..."
                     : reviewAction === "approve"
-                      ? "Approve"
-                      : "Reject"}
+                      ? t["purchases.claimApprove"]
+                      : t["purchases.claimReject"]}
                 </Button>
               </DialogFooter>
             </form>
@@ -1512,6 +1545,64 @@ export default function ExpenseClaims() {
               </DialogFooter>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Payroll reimbursement: choose the employee ──── */}
+      <Dialog
+        open={!!payrollClaimId}
+        onOpenChange={(open) => {
+          if (!open) setPayrollClaimId(null);
+        }}
+      >
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>{t["purchases.reimburseViaPayroll"]}</DialogTitle>
+            <DialogDescription>{t["purchases.claimPayrollEmployeeHint"]}</DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!payrollClaimId || payrollMutation.isPending) return;
+              payrollMutation.mutate({
+                id: payrollClaimId,
+                enabled: true,
+                employee_id: payrollEmployeeId || null,
+              });
+            }}
+          >
+            <div className="space-y-2">
+              <label htmlFor="claim-payroll-employee" className="text-sm font-medium">
+                {t["purchases.claimPayrollEmployee"]}
+              </label>
+              <Select value={payrollEmployeeId} onValueChange={setPayrollEmployeeId}>
+                <SelectTrigger id="claim-payroll-employee" data-testid="claim-payroll-employee">
+                  <SelectValue placeholder={t["purchases.claimPayrollEmployeeMatch"]} />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeEmployees.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.employee_number ? `${e.employee_number} - ` : ""}
+                      {e.full_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setPayrollClaimId(null)}>
+                {t.cancel || "Cancel"}
+              </Button>
+              <Button
+                type="submit"
+                data-testid="claim-payroll-confirm"
+                disabled={payrollMutation.isPending}
+              >
+                {t["purchases.reimburseViaPayroll"]}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

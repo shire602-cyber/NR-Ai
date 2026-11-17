@@ -157,5 +157,10 @@
   "compliance.vatPreview.netSoFar": "Net VAT so far",
   "compliance.vatPreview.note": "Live figures from your books so far. They change as you record more, and you can generate the return once the period has ended.",
   "compliance.vatPreview.unavailable": "The preview is not available right now.",
-  "compliance.vatPreview.generateAfter": "You can generate this return after {date}."
+  "compliance.vatPreview.generateAfter": "You can generate this return after {date}.",
+  "compliance.notApplicable": "Not applicable",
+  "compliance.notApplicableHint": "Use this for an obligation that does not apply here, for example a period before you started using Muhasib that was filed elsewhere. The note is kept in the audit trail.",
+  "compliance.notApplicableReason": "Why it does not apply",
+  "compliance.markedNotApplicable": "Marked as not applicable",
+  "compliance.cancelAction": "Cancel"
 }

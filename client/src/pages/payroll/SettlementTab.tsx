@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Calculator, FileCheck } from "lucide-react";
+import { Calculator, FileCheck, Wallet } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,22 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
-import { dayOnly, errorMessage, useHr, type Employee } from "./shared";
+import {
+  dayOnly,
+  errorMessage,
+  isCashOrBankAccount,
+  monthName,
+  useHr,
+  type Employee,
+} from "./shared";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { StatusBadge } from "./StatusBadge";
 
 interface Preview {
@@ -62,6 +77,26 @@ export function SettlementTab({ companyId }: { companyId: string }) {
     queryKey: [`/api/companies/${companyId}/employees`],
   });
   const { data: settlements = [] } = useQuery<SettlementRow[]>({ queryKey: listKey });
+  // X4 (J3): settlements can be paid now (pay-from account) or later (Record payment).
+  const { data: accounts = [] } = useQuery<
+    Array<{
+      id: string;
+      code: string;
+      nameEn: string;
+      nameAr?: string | null;
+      type: string;
+      subType?: string | null;
+      isArchived?: boolean;
+      isActive?: boolean;
+    }>
+  >({ queryKey: [`/api/companies/${companyId}/accounts`] });
+  const cashAccounts = accounts.filter(isCashOrBankAccount);
+  const accountLabel = (a: (typeof accounts)[number]) =>
+    `${a.code} · ${locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}`;
+  const [payNowAccount, setPayNowAccount] = useState("");
+  const [paying, setPaying] = useState<SettlementRow | null>(null);
+  const [payAccount, setPayAccount] = useState("");
+  const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
   const [form, setForm] = useState({
     employeeId: "",
     terminationDate: new Date().toISOString().slice(0, 10),
@@ -84,6 +119,10 @@ export function SettlementTab({ companyId }: { companyId: string }) {
     otherAdditions: form.otherAdditions || "0",
     deductions: form.deductions || "0",
   });
+  const postBody = () => ({
+    ...body(),
+    ...(payNowAccount && payNowAccount !== "later" ? { paymentAccountId: payNowAccount } : {}),
+  });
   const fail = (err: unknown) =>
     toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" });
 
@@ -94,15 +133,31 @@ export function SettlementTab({ companyId }: { companyId: string }) {
     onError: fail,
   });
   const post = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/payroll/settlements`, body()),
+    mutationFn: () =>
+      apiRequest("POST", `/api/companies/${companyId}/payroll/settlements`, postBody()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: listKey });
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/employees`] });
       setPreview(null);
+      setPayNowAccount("");
       toast({ title: tx("hr.settlementPosted") });
     },
     onError: fail,
   });
+  const pay = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/companies/${companyId}/payroll/settlements/${paying!.id}/pay`, {
+        paymentAccountId: payAccount,
+        paymentDate: payDate,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: listKey });
+      setPaying(null);
+      toast({ title: tx("hr.settlementPaid") });
+    },
+    onError: fail,
+  });
+  const termMonth = form.terminationDate ? Number(form.terminationDate.slice(5, 7)) : 0;
 
   const field = (key: keyof typeof form, label: string, type = "text") => (
     <div className="space-y-1">
@@ -158,6 +213,32 @@ export function SettlementTab({ companyId }: { companyId: string }) {
             {field("otherAdditions", "hr.otherAdditions")}
             {field("deductions", "hr.deductions")}
           </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="space-y-1">
+              <Label htmlFor="set-payNow">{tx("hr.settlementPayFrom")}</Label>
+              <Select value={payNowAccount || "later"} onValueChange={setPayNowAccount}>
+                <SelectTrigger id="set-payNow" data-testid="settlement-pay-now">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="later">{tx("hr.settlementPayLater")}</SelectItem>
+                  {cashAccounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {accountLabel(a)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {termMonth > 0 && (
+            <p className="text-xs text-muted-foreground" data-testid="settlement-final-salary-note">
+              {tx("hr.settlementFinalSalaryNote", {
+                month: monthName(termMonth, locale),
+                year: form.terminationDate.slice(0, 4),
+              })}
+            </p>
+          )}
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -226,6 +307,9 @@ export function SettlementTab({ companyId }: { companyId: string }) {
                   <TableHead data-numeric>{tx("hr.gratuity")}</TableHead>
                   <TableHead data-numeric>{tx("hr.net")}</TableHead>
                   <TableHead>{tx("hr.statusLabel")}</TableHead>
+                  <TableHead>
+                    <span className="sr-only">{tx("hr.actions")}</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -242,6 +326,23 @@ export function SettlementTab({ companyId }: { companyId: string }) {
                     <TableCell>
                       <StatusBadge status={s.status} />
                     </TableCell>
+                    <TableCell>
+                      {s.status === "posted" && Number(s.net_amount) > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          data-testid={`settlement-pay-${s.id}`}
+                          onClick={() => {
+                            setPaying(s);
+                            setPayAccount("");
+                            setPayDate(new Date().toISOString().slice(0, 10));
+                          }}
+                        >
+                          <Wallet className="me-1.5 h-4 w-4" aria-hidden />
+                          {tx("hr.recordPayment")}
+                        </Button>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -249,6 +350,60 @@ export function SettlementTab({ companyId }: { companyId: string }) {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!paying} onOpenChange={(o) => !o && setPaying(null)}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>{tx("hr.recordPayment")}</DialogTitle>
+            <DialogDescription>
+              {paying
+                ? tx("hr.settlementPayHint", {
+                    name: paying.employee_name,
+                    amount: fmt(paying.net_amount),
+                  })
+                : null}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="settle-pay-account">{tx("hr.paymentAccount")}</Label>
+              <Select value={payAccount || undefined} onValueChange={setPayAccount}>
+                <SelectTrigger id="settle-pay-account" data-testid="settlement-pay-account">
+                  <SelectValue placeholder={tx("hr.select")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {cashAccounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {accountLabel(a)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="settle-pay-date">{tx("hr.paymentDate")}</Label>
+              <Input
+                id="settle-pay-date"
+                type="date"
+                value={payDate}
+                onChange={(e) => setPayDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPaying(null)}>
+              {tx("hr.cancel")}
+            </Button>
+            <Button
+              disabled={!payAccount || !payDate || pay.isPending}
+              onClick={() => pay.mutate()}
+              data-testid="settlement-pay-confirm"
+            >
+              {tx("hr.recordPayment")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -286,26 +286,35 @@ export async function getCloseChecklist(
   );
 
   if (fixedAssetsCheck.rows[0].exists) {
-    // Legacy databases may predate the depreciation_posted column; fall back
-    // to status-only detection rather than failing the whole checklist.
-    const depColCheck = await pool.query(
-      `SELECT EXISTS (
-         SELECT FROM information_schema.columns
-         WHERE table_name = 'fixed_assets' AND column_name = 'depreciation_posted'
-       ) AS exists`
-    );
-    const postedFilter = depColCheck.rows[0].exists
-      ? `(depreciation_posted = true OR status = 'fully_depreciated')`
-      : `status = 'fully_depreciated'`;
+    // X4 (J3): derived from the depreciation actually posted for the period (one
+    // depreciation_schedules row per asset and month, written with its journal entry), not a
+    // status flag. An active depreciable asset is done when every month of the period it owned
+    // the asset has a schedule row, or when it is fully depreciated.
     const depResult = await pool.query(
-      `SELECT
-         COUNT(*) AS total,
-         COUNT(*) FILTER (WHERE ${postedFilter}) AS posted
-       FROM fixed_assets
-       WHERE company_id = $1
-         AND purchase_date <= $2::date
-         AND (disposal_date IS NULL OR disposal_date > $3::date)`,
-      [companyId, periodEnd, periodStart]
+      `WITH a AS (
+         SELECT fa.id, fa.status, fa.net_book_value, fa.salvage_value,
+                date_trunc('month', GREATEST(fa.purchase_date::date, $2::date))::date AS from_month,
+                date_trunc('month', $3::date)::date AS to_month
+           FROM fixed_assets fa
+          WHERE fa.company_id = $1
+            AND fa.is_depreciable IS DISTINCT FROM false
+            AND fa.status IN ('active', 'fully_depreciated')
+            AND fa.purchase_date::date <= $3::date
+            AND (fa.disposal_date IS NULL OR fa.disposal_date::date > $2::date)
+       )
+       SELECT COUNT(*) AS total,
+              COUNT(*) FILTER (
+                WHERE a.status = 'fully_depreciated'
+                   OR COALESCE(a.net_book_value, 0) <= COALESCE(a.salvage_value, 0)
+                   OR (SELECT COUNT(DISTINCT (ds.period_year, ds.period_month))
+                         FROM depreciation_schedules ds
+                        WHERE ds.asset_id = a.id
+                          AND make_date(ds.period_year, ds.period_month, 1) BETWEEN a.from_month AND a.to_month)
+                      >= (EXTRACT(YEAR FROM age(a.to_month, a.from_month)) * 12
+                          + EXTRACT(MONTH FROM age(a.to_month, a.from_month)) + 1)
+              ) AS posted
+         FROM a`,
+      [companyId, periodStart, periodEnd]
     );
     const depTotal = parseInt(depResult.rows[0]?.total || "0");
     const depPosted = parseInt(depResult.rows[0]?.posted || "0");
@@ -878,6 +887,25 @@ export interface YearEndCloseResult {
 }
 
 /**
+ * 400 NOT_FISCAL_YEAR_END (with the expected date) unless `fye` is the last day of the
+ * company's fiscal year. The route calls it before the checklist (X4/J3), so a wrong date is
+ * reported as a wrong date, not as an incomplete checklist for an unrelated month.
+ */
+export async function assertFiscalYearEnd(companyId: string, fye: string) {
+  const company = await loadCompany(companyId);
+  const expectedEnd = fiscalYearEndOf(fye, company.fiscalYearStartMonth);
+  if (expectedEnd !== fye) {
+    throw new DomainError(
+      "NOT_FISCAL_YEAR_END",
+      400,
+      { expectedFiscalYearEnd: expectedEnd },
+      "fiscalYearEnd must be the last day of the company's fiscal year"
+    );
+  }
+  return company;
+}
+
+/**
  * Close a fiscal year: records the close and locks through the year end
  * (soft, or hard with hardClose). Posts ONE closing entry tagged
  * `year_end_close` to retained earnings only when the company opted in; that
@@ -897,16 +925,7 @@ export async function closeFiscalYear(
 ): Promise<YearEndCloseResult> {
   const fye = parseReportDate(fiscalYearEndRaw, "fiscalYearEnd");
   if (!fye) throw new DomainError("FISCAL_YEAR_END_REQUIRED", 400);
-  const company = await loadCompany(companyId);
-  const expectedEnd = fiscalYearEndOf(fye, company.fiscalYearStartMonth);
-  if (expectedEnd !== fye) {
-    throw new DomainError(
-      "NOT_FISCAL_YEAR_END",
-      400,
-      { expectedFiscalYearEnd: expectedEnd },
-      "fiscalYearEnd must be the last day of the company's fiscal year"
-    );
-  }
+  const company = await assertFiscalYearEnd(companyId, fye);
   const fys = fiscalYearStartOf(fye, company.fiscalYearStartMonth);
   const existing = await pool.query(
     `SELECT status FROM fiscal_year_closes WHERE company_id = $1 AND fiscal_year_end = $2::date`,

@@ -120,7 +120,12 @@ export interface FafFile {
 }
 
 const SUPPLY_SOURCES = new Set(["invoice", "credit_note", "debit_note", "fixed_asset_disposal"]);
-const PURCHASE_SOURCES = new Set(["bill", "receipt", "vendor_debit_note"]);
+const PURCHASE_SOURCES = new Set([
+  "bill",
+  "receipt",
+  "vendor_debit_note",
+  "fixed_asset_acquisition",
+]);
 
 const n = (v: number | undefined) => v ?? 0;
 

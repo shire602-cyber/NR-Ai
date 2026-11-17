@@ -14,6 +14,13 @@ let base: string;
 const IBAN_1 = "AE070331234567890123456";
 const IBAN_2 = "AE690260001015123456701";
 
+/** A valid UAE IBAN (ISO 13616 mod-97 check digits) for account number `n`. */
+function aeIban(n: number): string {
+  const bban = `033${String(n).padStart(16, "0")}`;
+  const check = 98n - (BigInt(`${bban}101400`) % 97n);
+  return `AE${String(check).padStart(2, "0")}${bban}`;
+}
+
 async function createEmployee(tenant: Tenant, body: Record<string, unknown>) {
   const r = await tenant.as.post(`/api/companies/${tenant.company.id}/employees`, body);
   expect(r.status, r.text).toBe(201);
@@ -110,7 +117,8 @@ describe("validation (R09-08 .. R09-11)", () => {
     }
     const ok = await t.as.post(`${base}/employees`, {
       fullName: "Emirates Id Stored",
-      emiratesId: "784199012345676",
+      // X4: a different person from `emirati` (Emirates IDs are unique per company).
+      emiratesId: "784199112345675",
       contractType: "full_time",
       contractStart: "2024-01-01",
       contractEnd: "2026-12-31",
@@ -118,7 +126,7 @@ describe("validation (R09-08 .. R09-11)", () => {
       salaryCurrency: "AED",
     });
     expect(ok.status, ok.text).toBe(201);
-    expect(ok.body.emirates_id).toBe("784-1990-1234567-6");
+    expect(ok.body.emirates_id).toBe("784-1991-1234567-5");
     expect(ok.body.contract_type).toBe("full_time");
     await t.as.delete(`/api/employees/${ok.body.id}`);
   });
@@ -322,6 +330,7 @@ describe("employee history (R09-05, R09-21)", () => {
       fullName: "History Holder",
       molPersonId: undefined,
       email: undefined,
+      iban: undefined, // X4: IBANs are unique per company
     });
     const run = await createRun(t, 2);
     await calculate(t, run.id);
@@ -428,10 +437,12 @@ describe("leave (R09-15)", () => {
     // Employees without MOL ids (from other tests) still block, per employee.
     const pre = await t.as.get(`/api/payroll-runs/${run.id}/sif-prevalidation`);
     const blank = pre.body.issues.filter((i: { scope: string }) => i.scope === "employee");
+    let n = 0;
     for (const i of blank) {
+      // X4: IBANs are unique per company, so each employee gets its own valid IBAN.
       await h.sql(
         `UPDATE employees SET mol_person_id = '10012345678999', routing_code = '600310101', iban = $2 WHERE id = $1`,
-        [i.employeeId, IBAN_1]
+        [i.employeeId, aeIban(++n)]
       );
     }
     const sif = await t.as.get(`/api/payroll-runs/${run.id}/generate-sif`);

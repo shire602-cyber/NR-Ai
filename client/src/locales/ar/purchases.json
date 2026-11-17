@@ -49,5 +49,16 @@
   "purchases.receiptPartsRequired": "يتطلب التقسيم إيصالين على الأقل",
   "purchases.receiptPartsTotalMismatch": "يجب أن يساوي مجموع الأجزاء مبلغ الإيصال",
   "purchases.receiptReasonRequired": "أدخل سبب التعديل",
-  "purchases.poUpgradeDescription": "أنشئ أوامر الشراء الموجهة إلى مورديك وتابعها. أدر مسارات المشتريات وطابق أوامر الشراء مع الفواتير."
+  "purchases.poUpgradeDescription": "أنشئ أوامر الشراء الموجهة إلى مورديك وتابعها. أدر مسارات المشتريات وطابق أوامر الشراء مع الفواتير.",
+  "purchases.claimApproveHint": "أضف ملاحظات اختيارية ووافق على مطالبة المصروفات هذه.",
+  "purchases.claimRejectHint": "يرجى ذكر سبب رفض مطالبة المصروفات هذه.",
+  "purchases.claimApprove": "موافقة",
+  "purchases.claimReject": "رفض",
+  "purchases.claimPayrollEmployee": "الموظف",
+  "purchases.claimPayrollEmployeeHint": "اختر الموظف الذي ستُسدَّد هذه المطالبة ضمن دورة رواتبه التالية.",
+  "purchases.claimPayrollEmployeeMatch": "المطابقة مع مقدّم المطالبة عبر البريد الإلكتروني",
+  "purchases.poLineProduct": "منتج البند {n}",
+  "purchases.poNoProduct": "بدون منتج (غير مخزني)",
+  "purchases.poReceivedNoStock": "تم الاستلام دون تحديث المخزون",
+  "purchases.poReceivedNoStockHint": "بعض البنود بلا منتج، لذلك لم تتحرك الكميات ولم يُرحَّل أي قيد مخزون لها. عدّل أمر الشراء واختر منتجًا للأصناف المخزنية."
 }

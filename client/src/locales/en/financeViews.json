@@ -103,5 +103,10 @@
   "advancedAnalytics.addInvoicesVendorBillsOr": "Add invoices, vendor bills or scheduled items to build a forecast. Without them nothing is projected.",
   "costCenters.allPostedPeriods": "All posted periods",
   "cashFlowForecast.historyTitle": "Cash Flow History (Last 6 Months)",
-  "cashFlowForecast.historyDescription": "Monthly income and expense totals from posted journal entries (accrual basis, not bank movement)"
+  "cashFlowForecast.historyDescription": "Monthly income and expense totals from posted journal entries (accrual basis, not bank movement)",
+  "budgets.summaryIncome": "Income",
+  "budgets.summaryExpense": "Expenses",
+  "budgets.summaryNet": "Net profit",
+  "budgets.favourable": "Favourable",
+  "budgets.unfavourable": "Unfavourable"
 }

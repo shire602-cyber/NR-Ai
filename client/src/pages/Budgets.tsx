@@ -87,6 +87,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import { Money } from "@/components/ui/money";
+import { summariseBudget } from "@/lib/budget-summary";
+import { fiscalYearContaining } from "@/lib/fiscal-year";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -138,6 +140,7 @@ interface VarianceLine {
   category: string;
   description: string | null;
   accountId: string | null;
+  accountType: string | null;
   months: Record<string, VarianceMonth>;
   totals: {
     budget: number;
@@ -258,7 +261,9 @@ const tr = (locale: string, en: string, ar: string) => (locale === "ar" ? ar : e
 export default function Budgets() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { company, companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const fyStartMonth = (company as { fiscalYearStartMonth?: number } | null | undefined)
+    ?.fiscalYearStartMonth;
 
   const [activeTab, setActiveTab] = useState("budgets");
   const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
@@ -517,12 +522,13 @@ export default function Budgets() {
 
   const handleOpenCreateBudget = () => {
     setEditingBudget(null);
-    const year = new Date().getFullYear();
+    // X4 (J3): default to the company's fiscal year (fiscalYearStartMonth), not Jan-Dec.
+    const fy = fiscalYearContaining(fyStartMonth);
     budgetForm.reset({
       name: "",
-      fiscalYear: year,
-      startDate: `${year}-01-01`,
-      endDate: `${year}-12-31`,
+      fiscalYear: fy.fiscalYear,
+      startDate: fy.start,
+      endDate: fy.end,
       notes: "",
     });
     setBudgetDialogOpen(true);
@@ -639,6 +645,20 @@ export default function Budgets() {
         );
       default:
         return <Badge variant="secondary">{status}</Badge>;
+    }
+  };
+
+  // Plain-text status for the page header (X4/J3: the badge element printed "[object Object]").
+  const statusLabel = (status: string | null | undefined): string => {
+    switch (status) {
+      case "draft":
+        return t["pages.draft"];
+      case "approved":
+        return t["pages.approved"];
+      case "closed":
+        return t["pages.closed"];
+      default:
+        return status ?? "";
     }
   };
 
@@ -771,7 +791,7 @@ export default function Budgets() {
         title={selectedBudget ? selectedBudget.name : tr(locale, "Budgets", "الموازنات")}
         description={
           selectedBudget
-            ? `${tr(locale, "FY", "السنة المالية")} ${selectedBudget.fiscal_year} · ${getStatusBadge(selectedBudget.status).props.children}`
+            ? `${tr(locale, "FY", "السنة المالية")} ${selectedBudget.fiscal_year} · ${statusLabel(selectedBudget.status)}`
             : tr(locale, "Plan, track, and analyze your budgets", "خطط موازناتك وتابعها وحللها")
         }
         actions={
@@ -1200,75 +1220,53 @@ export default function Budgets() {
                   </div>
                 )}
 
-                {/* Variance Summary Cards */}
+                {/* Variance Summary (X4/J3): income, expense and net are totalled separately */}
                 {varianceData && varianceData.varianceLines.length > 0 && (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">
-                          <T k="pages.totalBudget" />
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold">
-                          <Money
-                            amount={varianceData.varianceLines.reduce(
-                              (s, l) => s + l.totals.budget,
-                              0
-                            )}
-                            currency={"AED"}
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">
-                          <T k="pages.totalActual" />
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-2xl font-bold">
-                          <Money
-                            amount={varianceData.varianceLines.reduce(
-                              (s, l) => s + l.totals.actual,
-                              0
-                            )}
-                            currency={"AED"}
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">
-                          <T k="pages.totalVariance" />
-                        </CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {(() => {
-                          const totalVar = varianceData.varianceLines.reduce(
-                            (s, l) => s + l.totals.variance,
-                            0
-                          );
-                          return (
-                            <div
-                              className={`text-2xl font-bold flex items-center gap-2 ${getVarianceColor(totalVar)}`}
-                            >
-                              {totalVar >= 0 ? (
-                                <TrendingUp className="w-5 h-5" />
-                              ) : (
-                                <TrendingDown className="w-5 h-5" />
-                              )}
-                              <Money amount={Math.abs(totalVar)} currency={"AED"} />
-                              <span className="text-sm font-normal">
-                                {totalVar >= 0 ? "under budget" : "over budget"}
+                    {(() => {
+                      const summary = summariseBudget(varianceData.varianceLines);
+                      const groups = [
+                        { key: "income", title: t["budgets.summaryIncome"], g: summary.income },
+                        { key: "expense", title: t["budgets.summaryExpense"], g: summary.expense },
+                        { key: "net", title: t["budgets.summaryNet"], g: summary.net },
+                      ];
+                      return groups.map(({ key, title, g }) => (
+                        <Card key={key} data-testid={`budget-summary-${key}`}>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-sm font-medium">{title}</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-1 text-sm">
+                            <div className="flex justify-between gap-2">
+                              <span className="text-muted-foreground">
+                                <T k="pages.budget" />
                               </span>
+                              <Money amount={g.budget} currency={"AED"} />
                             </div>
-                          );
-                        })()}
-                      </CardContent>
-                    </Card>
+                            <div className="flex justify-between gap-2">
+                              <span className="text-muted-foreground">
+                                <T k="pages.actual" />
+                              </span>
+                              <Money amount={g.actual} currency={"AED"} />
+                            </div>
+                            <div
+                              className={`flex items-center justify-between gap-2 font-semibold ${getVarianceColor(g.variance)}`}
+                            >
+                              <span className="flex items-center gap-1">
+                                {g.variance >= 0 ? (
+                                  <TrendingUp className="w-4 h-4" aria-hidden />
+                                ) : (
+                                  <TrendingDown className="w-4 h-4" aria-hidden />
+                                )}
+                                {g.variance >= 0
+                                  ? t["budgets.favourable"]
+                                  : t["budgets.unfavourable"]}
+                              </span>
+                              <Money amount={Math.abs(g.variance)} currency={"AED"} />
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ));
+                    })()}
                   </div>
                 )}
               </CardContent>

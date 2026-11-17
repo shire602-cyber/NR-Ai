@@ -431,7 +431,12 @@ function CustomerOnboardingWizard() {
   async function handleExpressSetup(data: { name: string; emirate: string; trnVatNumber: string }) {
     setExpressSaving(true);
     try {
-      const payload = { ...companyForm, ...data };
+      // A blank express TRN never clears a TRN the company already has (X4/J3).
+      const payload = {
+        ...companyForm,
+        ...data,
+        trnVatNumber: data.trnVatNumber || company?.trnVatNumber || companyForm.trnVatNumber,
+      };
       let target = company;
       if (target) {
         await saveCompanyMutation.mutateAsync(payload);
@@ -574,6 +579,7 @@ function CustomerOnboardingWizard() {
                 <WelcomeStep
                   companyName={company?.name}
                   companyTrn={company?.trnVatNumber ?? ""}
+                  companyEmirate={company?.emirate ?? undefined}
                   onNext={goNext}
                   onExpress={handleExpressSetup}
                   expressSaving={expressSaving}
@@ -645,12 +651,14 @@ function CustomerOnboardingWizard() {
 function WelcomeStep({
   companyName,
   companyTrn,
+  companyEmirate,
   onNext,
   onExpress,
   expressSaving,
 }: {
   companyName?: string;
   companyTrn?: string;
+  companyEmirate?: string;
   onNext: () => void;
   // i18n-ignore: TypeScript type, not UI text
   onExpress: (data: { name: string; emirate: string; trnVatNumber: string }) => Promise<void>;
@@ -659,7 +667,7 @@ function WelcomeStep({
   const { t } = useTranslation();
   const tr = t as Record<string, string>;
   const [name, setName] = useState(companyName ?? "");
-  const [emirate, setEmirate] = useState("dubai");
+  const [emirate, setEmirate] = useState(companyEmirate || "dubai");
   // Prefilled from the company so registering with a TRN and then finishing setup keeps it.
   const [trn, setTrn] = useState(companyTrn ?? "");
   const [vatRegistered, setVatRegistered] = useState(!!companyTrn);

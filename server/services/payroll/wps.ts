@@ -62,7 +62,10 @@ async function sifInput(companyId: string, runId: string): Promise<SifInput> {
         // S2 (R04-20): expense claims reimbursed on the run are paid with the salary (variable).
         netFils: fils(it.net_salary) + fils(it.expense_reimbursement),
         variableFils: fils(it.overtime) + fils(it.expense_reimbursement),
-        leaveDays: num(it.unpaid_leave_days) + num(it.paid_leave_days),
+        // X4 (J3): the EDR "days on leave" explains a fixed salary below the contract, so only
+        // unpaid leave counts; paid annual leave is salary paid in full
+        // (docs/payroll-legal-parameters.md, WPS section: confirm with the WPS agent).
+        leaveDays: sifLeaveDays(it.unpaid_leave_days, it.paid_leave_days),
       };
     }),
   };
@@ -141,4 +144,9 @@ export async function wpsEvents(companyId: string, runId: string) {
       WHERE company_id = $1 AND payroll_run_id = $2 ORDER BY created_at`,
     [companyId, runId]
   );
+}
+
+/** EDR leave days for one payroll item: unpaid leave only (paid leave is fully paid salary). */
+export function sifLeaveDays(unpaidLeaveDays: unknown, _paidLeaveDays?: unknown): number {
+  return Math.max(0, num(unpaidLeaveDays));
 }

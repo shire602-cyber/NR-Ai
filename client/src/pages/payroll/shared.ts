@@ -35,6 +35,7 @@ export interface Employee {
   housing_allowance: string;
   transport_allowance: string;
   other_allowance: string;
+  opening_gratuity_provision?: string | null;
   total_salary: string;
   status: string;
   archived_at: string | null;
@@ -43,6 +44,8 @@ export interface Employee {
 
 export interface PayrollRun {
   id: string;
+  created_by?: string | null;
+  calculated_by?: string | null;
   period_month: number;
   period_year: number;
   status: string;
@@ -139,4 +142,20 @@ export async function downloadFile(path: string, fallbackName: string): Promise<
 
 export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Accounts a salary or settlement can be paid from: cash / bank only, like bill payments (X4/J3). */
+export function isCashOrBankAccount(a: {
+  type: string;
+  subType?: string | null;
+  code: string;
+  isArchived?: boolean;
+  isActive?: boolean;
+}): boolean {
+  return (
+    a.type === "asset" &&
+    !a.isArchived &&
+    a.isActive !== false &&
+    (a.subType === "cash" || a.subType === "bank" || ["1010", "1020", "1030"].includes(a.code))
+  );
 }

@@ -114,6 +114,8 @@ const employeeFields = {
   housingAllowance: zSalary,
   transportAllowance: zSalary,
   otherAllowance: zSalary,
+  /** X4: gratuity provision already booked before go-live (opening balance in 2036). */
+  openingGratuityProvision: zSalary,
 };
 
 type EmployeeFieldKey = keyof typeof employeeFields;

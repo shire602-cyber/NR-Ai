@@ -745,5 +745,11 @@
   "components.periodLock.reasonPlaceholder": "For example: supplier invoice received late",
   "components.periodLock.auditNote": "The reason is saved in the audit trail with your name.",
   "components.periodLock.cancel": "Cancel",
-  "components.periodLock.post": "Post with this reason"
+  "components.periodLock.post": "Post with this reason",
+  "components.srv.cashForecast.item.vatPaymentPeriod": "VAT return payment {from} to {to}",
+  "components.srv.cashForecast.item.corporateTaxPaymentPeriod": "Corporate tax payment {from} to {to}",
+  "components.srv.cashForecast.item.finalSettlement": "Final settlement – {name}",
+  "components.srv.cashForecast.item.gpssa": "GPSSA pension contributions payable",
+  "components.srv.cashForecast.note.settlementOverdue": "Past the 14-day settlement deadline; assumed paid today",
+  "components.srv.cashForecast.note.gpssa": "Amount = 2032 Pension Payable balance; due date assumed (15th of next month)"
 }

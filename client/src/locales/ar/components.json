@@ -745,5 +745,11 @@
   "components.periodLock.reasonPlaceholder": "مثال: وصلت فاتورة المورد متأخرة",
   "components.periodLock.auditNote": "يُحفظ السبب في سجل التدقيق مع اسمك.",
   "components.periodLock.cancel": "إلغاء",
-  "components.periodLock.post": "ترحيل مع هذا السبب"
+  "components.periodLock.post": "ترحيل مع هذا السبب",
+  "components.srv.cashForecast.item.vatPaymentPeriod": "سداد إقرار ضريبة القيمة المضافة من {from} إلى {to}",
+  "components.srv.cashForecast.item.corporateTaxPaymentPeriod": "سداد ضريبة الشركات من {from} إلى {to}",
+  "components.srv.cashForecast.item.finalSettlement": "مستحقات نهاية الخدمة – {name}",
+  "components.srv.cashForecast.item.gpssa": "اشتراكات المعاشات المستحقة للهيئة العامة للمعاشات",
+  "components.srv.cashForecast.note.settlementOverdue": "تجاوز مهلة التسوية البالغة 14 يومًا؛ يُفترض السداد اليوم",
+  "components.srv.cashForecast.note.gpssa": "المبلغ = رصيد حساب المعاشات المستحقة 2032؛ تاريخ الاستحقاق مفترض (اليوم 15 من الشهر التالي)"
 }

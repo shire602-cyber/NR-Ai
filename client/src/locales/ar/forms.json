@@ -290,5 +290,8 @@
   "forms.serverErrors.PERIOD_SOFT_LOCKED": "هذه الفترة مغلقة (إقفال مبدئي). اطلب من المالك أو محاسبك ترحيلها أو إعادة فتح الفترة.",
   "forms.serverErrors.PERIOD_LOCKED": "هذه الفترة مقفلة. أعد فتح الفترة قبل الترحيل فيها.",
   "forms.serverErrors.ACCOUNT_IS_HEADER": "هذا حساب رئيسي له حسابات فرعية. اختر الحساب البنكي أو النقدي الذي تحركت فيه الأموال فعلاً.",
-  "forms.errors.exchangeRateInvalid": "أدخل سعرًا موجبًا بحد أقصى 6 منازل عشرية."
+  "forms.errors.exchangeRateInvalid": "أدخل سعرًا موجبًا بحد أقصى 6 منازل عشرية.",
+  "forms.claim.amountExclVatAed": "المبلغ بدون الضريبة (د.إ)",
+  "forms.asset.inputVat": "ضريبة المدخلات المدفوعة (د.إ)",
+  "forms.asset.inputVatHelp": "ضريبة القيمة المضافة القابلة للاسترداد في فاتورة الشراء. تُرحَّل إلى ضريبة المدخلات المستردة وتظهر في الخانة 9 من الإقرار."
 }

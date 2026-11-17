@@ -337,7 +337,11 @@ describe("W4-A corporate tax: lifecycle (R08-04, R08-19)", () => {
     const base = `/api/corporate-tax/returns/${ret.id}`;
     await t.as.post(`${base}/transition`, { to: "computed" });
     await accountant.as.post(`${base}/transition`, { to: "reviewed" });
-    const filed = await t.as.post(`${base}/transition`, { to: "filed", postProvision: true });
+    const filed = await t.as.post(`${base}/transition`, {
+      to: "filed",
+      filingReference: "FTA-REF-2",
+      postProvision: true,
+    });
     expect(filed.status, filed.text).toBe(200);
     expect(filed.body.provisionEntryId).toBeTruthy();
     const lines = await h.sql<{ code: string; debit: string; credit: string; source: string }>(

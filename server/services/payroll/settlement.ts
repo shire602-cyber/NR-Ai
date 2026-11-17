@@ -91,7 +91,8 @@ async function prepare(companyId: string, body: SettlementRequest): Promise<Prep
       WHERE pr.company_id = $1 AND pi.employee_id = $2 AND pr.status IN ('approved', 'paid')`,
     [companyId, employee.id]
   );
-  const provisionFils = fils(provision?.total);
+  // Runs' accruals plus any provision booked before go-live (X4: opening balance in 2036).
+  const provisionFils = fils(provision?.total) + fils(employee.opening_gratuity_provision ?? 0);
   const result = calculateSettlement(
     {
       basicFils: fils(employee.basic_salary),
@@ -320,5 +321,104 @@ export async function postSettlement(
       });
     }
     return { id: settlementRow!.id, journalEntryId, ...describeSettlement(p) };
+  });
+}
+
+/**
+ * X4 (J3): pay a posted (unpaid) final settlement later: Dr 2030 Salaries Payable /
+ * Cr the chosen cash or bank account, and the settlement becomes `paid`.
+ */
+export async function paySettlement(
+  companyId: string,
+  settlementId: string,
+  actorId: string,
+  body: { paymentAccountId: string; paymentDate: string },
+  req?: Request
+) {
+  return withLedgerTx(async (tx) => {
+    const s = await q1<{
+      id: string;
+      status: string;
+      net_amount: string;
+      employee_id: string;
+      full_name: string;
+      termination_date: unknown;
+    }>(
+      `SELECT s.id, s.status, s.net_amount, s.employee_id, s.termination_date, e.full_name
+         FROM payroll_settlements s JOIN employees e ON e.id = s.employee_id
+        WHERE s.id = $1 AND s.company_id = $2
+        FOR UPDATE OF s`,
+      [settlementId, companyId],
+      tx
+    );
+    if (!s) throw new DomainError("SETTLEMENT_NOT_FOUND", 404, undefined, "Settlement not found");
+    if (s.status !== "posted") {
+      throw new DomainError(
+        "SETTLEMENT_NOT_PAYABLE",
+        409,
+        { status: s.status },
+        s.status === "paid" ? "This settlement is already paid" : "This settlement cannot be paid"
+      );
+    }
+    const termination = dayOf(s.termination_date);
+    if (termination && body.paymentDate < termination) {
+      throw new DomainError(
+        "PAYMENT_BEFORE_TERMINATION",
+        422,
+        undefined,
+        "The payment date cannot be before the termination date"
+      );
+    }
+    await assertPaymentAccount(companyId, body.paymentAccountId, tx);
+    const accounts = await payrollAccounts(companyId, tx);
+    const netFils = fils(s.net_amount);
+    let paymentEntryId: string | null = null;
+    if (netFils > 0) {
+      const posted = await postJournal(
+        {
+          companyId,
+          date: body.paymentDate,
+          memo: `End-of-service settlement payment - ${s.full_name}`,
+          source: "payroll_settlement_payment",
+          sourceId: s.id,
+          idempotencyKey: `payroll-settlement:${s.id}:payment`,
+          status: "posted",
+          lines: [
+            {
+              accountId: requireAccount(accounts, "salariesPayable"),
+              debitFils: netFils,
+              description: `Final settlement paid - ${s.full_name}`,
+            },
+            {
+              accountId: body.paymentAccountId,
+              creditFils: netFils,
+              description: `Final settlement payment - ${s.full_name}`,
+            },
+          ],
+        },
+        { actorId, tx, req, audit: true }
+      );
+      paymentEntryId = posted.entry.id;
+    }
+    const updated = await q1(
+      `UPDATE payroll_settlements
+          SET status = 'paid', payment_account_id = $2, payment_journal_entry_id = $3,
+              payment_date = $4::date, paid_at = NOW()
+        WHERE id = $1 AND status = 'posted' RETURNING *`,
+      [s.id, body.paymentAccountId, paymentEntryId, body.paymentDate],
+      tx
+    );
+    if (!updated) throw new DomainError("SETTLEMENT_CHANGED", 409, undefined, "Reload and retry");
+    await recordAudit({
+      userId: actorId,
+      companyId,
+      action: "payroll.settlement_pay",
+      entityType: "employee",
+      entityId: s.employee_id,
+      after: { settlementId: s.id, paymentJournalEntryId: paymentEntryId, net: s.net_amount },
+      req,
+      tx,
+    });
+    return updated;
   });
 }

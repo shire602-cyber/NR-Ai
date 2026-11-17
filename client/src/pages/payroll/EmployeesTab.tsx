@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/form-layout";
 import { useFormGate } from "@/hooks/use-form-gate";
 import { dayOnly, errorMessage, useHr, type Employee } from "./shared";
+import { apiFieldErrors, type FieldMessages } from "@/lib/api-field-errors";
 import { StatusBadge } from "./StatusBadge";
 
 type FormState = Record<string, string>;
@@ -97,6 +98,12 @@ const TEXT_FIELDS: Array<{ key: string; label: string; type?: string; col?: keyo
     type: "number",
     col: "other_allowance",
   },
+  {
+    key: "openingGratuityProvision",
+    label: "hr.field.openingGratuityProvision",
+    type: "number",
+    col: "opening_gratuity_provision",
+  },
 ];
 
 const FIELD_BY_KEY = new Map(TEXT_FIELDS.map((f) => [f.key, f]));
@@ -132,6 +139,7 @@ const EMPLOYEE_SECTIONS: Array<{ title: string; keys: string[] }> = [
       "housingAllowance",
       "transportAllowance",
       "otherAllowance",
+      "openingGratuityProvision",
     ],
   },
   { title: "forms.section.wps", keys: ["bankName", "iban", "routingCode"] },
@@ -173,6 +181,8 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<FormState>(toForm(null));
   const [terminating, setTerminating] = useState<Employee | null>(null);
+  // X4 (J3): field messages from the server (bad IBAN, duplicate Emirates ID, ...).
+  const [serverErrors, setServerErrors] = useState<FieldMessages>({});
   const gate = useFormGate([
     { id: "emp-fullName", label: tx("hr.field.fullName"), invalid: !form.fullName },
   ]);
@@ -198,9 +208,23 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
     onSuccess: () => {
       refresh();
       setOpen(false);
+      setServerErrors({});
       toast({ title: tx(editing ? "hr.employeeUpdated" : "hr.employeeCreated") });
     },
-    onError: fail,
+    onError: (err: unknown) => {
+      const fields = apiFieldErrors(err, (code, field) =>
+        code === "EMPLOYEE_DUPLICATE" ? tx(`hr.duplicate.${field}`) : undefined
+      );
+      setServerErrors(fields);
+      const names = Object.keys(fields)
+        .map((k) => (FIELD_BY_KEY.get(k) ? tx(FIELD_BY_KEY.get(k)!.label) : k))
+        .join(", ");
+      toast({
+        title: tx("hr.error"),
+        description: names ? tx("hr.fixFields", { fields: names }) : errorMessage(err),
+        variant: "destructive",
+      });
+    },
   });
 
   const remove = useMutation({
@@ -365,7 +389,10 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
         open={open}
         onOpenChange={(o) => {
           setOpen(o);
-          if (!o) gate.reset();
+          if (!o) {
+            gate.reset();
+            setServerErrors({});
+          }
         }}
       >
         <DialogContent size="lg" data-testid="dialog-employee-form">
@@ -415,7 +442,7 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
                         id={`emp-${f.key}`}
                         label={tx(f.label)}
                         required={f.key === "fullName"}
-                        error={gate.errorFor(`emp-${f.key}`)}
+                        error={gate.errorFor(`emp-${f.key}`) ?? serverErrors[f.key]}
                       >
                         <Input
                           type={f.type === "number" ? "text" : (f.type ?? "text")}
@@ -431,7 +458,13 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
                                   : "auto"
                           }
                           value={form[f.key] ?? ""}
-                          onChange={(ev) => setForm({ ...form, [f.key]: ev.target.value })}
+                          onChange={(ev) => {
+                            setForm({ ...form, [f.key]: ev.target.value });
+                            if (serverErrors[f.key]) {
+                              const { [f.key]: _cleared, ...rest } = serverErrors;
+                              setServerErrors(rest);
+                            }
+                          }}
                         />
                       </Field>
                     );

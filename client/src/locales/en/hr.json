@@ -210,5 +210,17 @@
   "hr.settingsSaved": "Settings saved",
   "hr.legal.pension": "GPSSA (UAE): employee {employee}, employer {employer} of {base}",
   "hr.legal.gratuity": "Gratuity: {first} days/year (years 1-5), {later} days/year after; cap {cap} months of basic",
-  "hr.legal.overtime": "Overtime multipliers: {normal} normal, {night} night/rest day"
+  "hr.legal.overtime": "Overtime multipliers: {normal} normal, {night} night/rest day",
+  "hr.approveNeedsPermission": "You do not have permission to approve payroll. Ask an owner, admin or approver.",
+  "hr.approveNeedsSecondPerson": "You calculated this run, so a different person must approve it.",
+  "hr.fixFields": "Check these fields: {fields}",
+  "hr.duplicate.employeeNumber": "Another employee already uses this employee number",
+  "hr.duplicate.iban": "Another employee already uses this IBAN",
+  "hr.duplicate.emiratesId": "Another employee already uses this Emirates ID",
+  "hr.settlementPayFrom": "Pay the settlement",
+  "hr.settlementPayLater": "Later (keep in Salaries Payable)",
+  "hr.settlementPaid": "Settlement payment recorded",
+  "hr.settlementPayHint": "Pay {amount} to {name} from a cash or bank account. This clears Salaries Payable.",
+  "hr.settlementFinalSalaryNote": "Salary for the days worked in {month} {year} is paid in that month's payroll run, not in this settlement.",
+  "hr.field.openingGratuityProvision": "Opening gratuity provision at go-live (AED, booked in 2036)"
 }

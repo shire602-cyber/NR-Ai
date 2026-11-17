@@ -103,5 +103,10 @@
   "advancedAnalytics.addInvoicesVendorBillsOr": "أضف فواتير أو فواتير موردين أو بنوداً مجدولة لبناء التنبؤ. بدونها لا يُتوقع شيء.",
   "costCenters.allPostedPeriods": "جميع الفترات المرحّلة",
   "cashFlowForecast.historyTitle": "سجل التدفق النقدي (آخر 6 أشهر)",
-  "cashFlowForecast.historyDescription": "إجمالي الإيرادات والمصروفات الشهرية من قيود اليومية المرحّلة (على أساس الاستحقاق وليس الحركة البنكية)"
+  "cashFlowForecast.historyDescription": "إجمالي الإيرادات والمصروفات الشهرية من قيود اليومية المرحّلة (على أساس الاستحقاق وليس الحركة البنكية)",
+  "budgets.summaryIncome": "الإيرادات",
+  "budgets.summaryExpense": "المصروفات",
+  "budgets.summaryNet": "صافي الربح",
+  "budgets.favourable": "إيجابي",
+  "budgets.unfavourable": "سلبي"
 }

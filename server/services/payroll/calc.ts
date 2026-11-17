@@ -544,3 +544,45 @@ export function calculateGratuityForEmployee(opts: {
     isCapped: r.isCapped,
   };
 }
+
+// ─── Partial month (joiners and leavers) ─────────────────────────────────────
+
+/**
+ * Days an employee is on the payroll in [periodStart, periodEnd] (ISO dates, inclusive):
+ * from the later of join date and period start to the earlier of termination date and
+ * period end. `monthDays` is the number of calendar days in the period.
+ */
+export function employedDaysInPeriod(
+  periodStart: string,
+  periodEnd: string,
+  joinDate: string | null,
+  terminationDate: string | null
+): { employedDays: number; monthDays: number } {
+  const dayMs = 86_400_000;
+  const ms = (iso: string) => Date.parse(`${iso}T00:00:00.000Z`);
+  const monthDays = Math.round((ms(periodEnd) - ms(periodStart)) / dayMs) + 1;
+  const from = joinDate && joinDate > periodStart ? joinDate : periodStart;
+  const to = terminationDate && terminationDate < periodEnd ? terminationDate : periodEnd;
+  const employedDays = to < from ? 0 : Math.round((ms(to) - ms(from)) / dayMs) + 1;
+  return { employedDays: Math.min(employedDays, monthDays), monthDays };
+}
+
+/**
+ * Fixed monthly pay for a partial month (X4/J3): each component x employed calendar days /
+ * calendar days in the month (docs/payroll-legal-parameters.md, "Partial month"). A full
+ * month returns the components unchanged, so the final month is paid exactly once.
+ */
+export function prorateWages(
+  w: WageComponents,
+  employedDays: number,
+  monthDays: number
+): WageComponents {
+  if (employedDays >= monthDays) return { ...w };
+  const part = (f: number) => Math.round((f * Math.max(0, employedDays)) / monthDays);
+  return {
+    basicFils: part(w.basicFils),
+    housingFils: part(w.housingFils),
+    transportFils: part(w.transportFils),
+    otherFils: part(w.otherFils),
+  };
+}

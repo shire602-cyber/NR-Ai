@@ -188,6 +188,7 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("*", "employees/**", PAYROLL_READ),
 
   // Tax filing
+  r("POST", "corporate-tax/returns/*/unfile", "tax.submit"),
   r("POST", "vat-returns/*/submit", "tax.submit"),
   r("PATCH", "vat/autopilot/periods/*/status", "tax.submit"),
 

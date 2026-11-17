@@ -156,6 +156,10 @@ export default function TaskCenter() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("active");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  // X4 (J3): mark a generated obligation "not applicable" (e.g. before the company used
+  // Muhasib, filed elsewhere) with an audited note.
+  const [naTask, setNaTask] = useState<ComplianceTask | null>(null);
+  const [naNote, setNaNote] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newTask, setNewTask] = useState({
     title: "",
@@ -191,12 +195,28 @@ export default function TaskCenter() {
   );
 
   const obligationMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: "completed" | "upcoming" }) =>
-      apiRequest("PATCH", `/api/companies/${companyId}/compliance-calendar/${id}`, { status }),
-    onSuccess: () => {
+    mutationFn: ({
+      id,
+      status,
+      note,
+    }: {
+      id: string;
+      status: "completed" | "upcoming" | "dismissed";
+      note?: string;
+    }) =>
+      apiRequest("PATCH", `/api/companies/${companyId}/compliance-calendar/${id}`, {
+        status,
+        ...(note ? { note } : {}),
+      }),
+    onSuccess: (_d, vars) => {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "compliance-calendar"],
       });
+      if (vars.status === "dismissed") {
+        setNaTask(null);
+        setNaNote("");
+        toast({ title: t["compliance.markedNotApplicable"] });
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -564,6 +584,19 @@ export default function TaskCenter() {
                         )}
                       </div>
 
+                      {task.generated && task.status !== "completed" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          data-testid={`button-task-na-${task.id}`}
+                          onClick={() => {
+                            setNaNote("");
+                            setNaTask(task);
+                          }}
+                        >
+                          {t["compliance.notApplicable"]}
+                        </Button>
+                      )}
                       {!task.generated && (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -735,6 +768,43 @@ export default function TaskCenter() {
             >
               {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
               {locale === "ar" ? "إنشاء" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!naTask} onOpenChange={(o) => !o && setNaTask(null)}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>{t["compliance.notApplicable"]}</DialogTitle>
+            <DialogDescription>{t["compliance.notApplicableHint"]}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="task-na-note">{t["compliance.notApplicableReason"]}</Label>
+            <Textarea
+              id="task-na-note"
+              value={naNote}
+              onChange={(e) => setNaNote(e.target.value)}
+              data-testid="input-task-na-note"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNaTask(null)}>
+              {t["compliance.cancelAction"]}
+            </Button>
+            <Button
+              disabled={naNote.trim().length < 3 || obligationMutation.isPending}
+              onClick={() =>
+                naTask &&
+                obligationMutation.mutate({
+                  id: naTask.id,
+                  status: "dismissed",
+                  note: naNote.trim(),
+                })
+              }
+              data-testid="button-task-na-confirm"
+            >
+              {t["compliance.notApplicable"]}
             </Button>
           </DialogFooter>
         </DialogContent>

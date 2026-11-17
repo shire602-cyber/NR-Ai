@@ -103,7 +103,10 @@ describe("W4-A compliance calendar (R08-03, R08-21)", () => {
 
     await t.as.post(`/api/corporate-tax/returns/${id}/transition`, { to: "computed" });
     await reviewer.as.post(`/api/corporate-tax/returns/${id}/transition`, { to: "reviewed" });
-    const filed = await t.as.post(`/api/corporate-tax/returns/${id}/transition`, { to: "filed" });
+    const filed = await t.as.post(`/api/corporate-tax/returns/${id}/transition`, {
+      to: "filed",
+      filingReference: "FTA-REF-CAL",
+    });
     expect(filed.status, filed.text).toBe(200);
 
     const cal2 = await t.as.get(`/api/companies/${t.company.id}/compliance-calendar`);
@@ -432,7 +435,10 @@ describe("S4 compliance GETs are read-only (W4-A follow-up)", () => {
     const id = created.body.id;
     await t.as.post(`/api/corporate-tax/returns/${id}/transition`, { to: "computed" });
     await reviewer.as.post(`/api/corporate-tax/returns/${id}/transition`, { to: "reviewed" });
-    const filed = await t.as.post(`/api/corporate-tax/returns/${id}/transition`, { to: "filed" });
+    const filed = await t.as.post(`/api/corporate-tax/returns/${id}/transition`, {
+      to: "filed",
+      filingReference: "FTA-REF-CAL",
+    });
     expect(filed.status, filed.text).toBe(200);
     await flushObligationRefreshes();
     const rows = await h.sql<{ status: string; related_entity_id: string }>(

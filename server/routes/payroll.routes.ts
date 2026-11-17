@@ -45,7 +45,12 @@ import {
   type SettlementCreateBody,
 } from "../../shared/validators/payroll";
 import { calculateGratuityForEmployee, isValidDate } from "../services/payroll/calc";
-import { assertPayrollAccess, actorOf, loadPayrollSettings } from "../services/payroll/context";
+import {
+  assertPayrollAccess,
+  actorOf,
+  companyMemberCount,
+  loadPayrollSettings,
+} from "../services/payroll/context";
 import {
   DEFAULT_LEGAL_PARAMS,
   isUaeOrGccNational,
@@ -83,7 +88,7 @@ import {
   renderPayslipPdf,
   resolvePayslipToken,
 } from "../services/payroll/payslip";
-import { postSettlement, previewSettlement } from "../services/payroll/settlement";
+import { paySettlement, postSettlement, previewSettlement } from "../services/payroll/settlement";
 import {
   gpssaContributionCsv,
   scanExpiryAlerts,
@@ -741,6 +746,9 @@ export function registerPayrollRoutes(app: Express) {
         defaults: DEFAULT_LEGAL_PARAMS,
         overrides: s.overrides,
         allowSingleOwnerApproval: s.allowSingleOwnerApproval,
+        /** X4: the maker may approve their own run (single-member company with the setting on). */
+        selfApprovalAllowed:
+          s.allowSingleOwnerApproval && (await companyMemberCount(companyId)) <= 1,
         adviserConfirmed: s.adviserConfirmed,
         adviserConfirmedBy: s.adviserConfirmedBy,
         adviserConfirmedAt: s.adviserConfirmedAt,
@@ -1028,6 +1036,30 @@ export function registerPayrollRoutes(app: Express) {
       res
         .status(201)
         .json(await postSettlement(companyId, userId, req.body as SettlementCreateBody, req));
+    })
+  );
+
+  // X4 (J3): pay a posted final settlement from a cash / bank account.
+  app.post(
+    "/api/companies/:companyId/payroll/settlements/:settlementId/pay",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("payroll.approve"),
+    strictBody(payrollPaySchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, userId } = await companyAccess(req);
+      if (!zUuid.safeParse(req.params.settlementId).success) {
+        throw new DomainError("SETTLEMENT_NOT_FOUND", 404, undefined, "Settlement not found");
+      }
+      res.json(
+        await paySettlement(
+          companyId,
+          req.params.settlementId,
+          userId,
+          req.body as PayrollPayBody,
+          req
+        )
+      );
     })
   );
 

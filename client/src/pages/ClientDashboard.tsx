@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
-import { getStoredUser } from "@/lib/auth";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatDate } from "@/lib/format";
 import {
@@ -23,7 +23,7 @@ import {
 
 export default function ClientDashboard() {
   const { t } = useTranslation();
-  const user = getStoredUser();
+  const { data: user } = useCurrentUser();
   const userName = user?.name || user?.email || "Client";
   const { companyId } = useDefaultCompany();
 

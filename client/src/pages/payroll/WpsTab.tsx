@@ -17,6 +17,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { errorMessage, monthName, useHr, type PayrollRun } from "./shared";
+import { apiFieldErrors, type FieldMessages } from "@/lib/api-field-errors";
 import { StatusBadge } from "./StatusBadge";
 
 interface WpsSettings {
@@ -43,6 +44,7 @@ export function WpsSettingsCard({ companyId }: { companyId: string }) {
   const { data } = useQuery<WpsSettings>({ queryKey: key });
   // Local edits layered over the saved values (no effect-driven state copy).
   const [edits, setEdits] = useState<Record<string, string>>({});
+  const [fieldErrors, setFieldErrors] = useState<FieldMessages>({});
   const value = (k: keyof WpsSettings) => edits[k] ?? data?.[k] ?? "";
   const save = useMutation({
     mutationFn: () =>
@@ -53,11 +55,23 @@ export function WpsSettingsCard({ companyId }: { companyId: string }) {
       ),
     onSuccess: () => {
       setEdits({});
+      setFieldErrors({});
       queryClient.invalidateQueries({ queryKey: key });
       toast({ title: tx("hr.wps.saved") });
     },
-    onError: (err) =>
-      toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" }),
+    onError: (err) => {
+      // X4 (J3): mark the field the server rejected (e.g. bad IBAN check digits).
+      const fields = apiFieldErrors(err);
+      setFieldErrors(fields);
+      const names = WPS_FIELDS.filter(([k]) => fields[k])
+        .map(([, label]) => tx(label))
+        .join(", ");
+      toast({
+        title: tx("hr.error"),
+        description: names ? tx("hr.fixFields", { fields: names }) : errorMessage(err),
+        variant: "destructive",
+      });
+    },
   });
   return (
     <Card>
@@ -73,8 +87,18 @@ export function WpsSettingsCard({ companyId }: { companyId: string }) {
               <Input
                 id={`wps-${k}`}
                 value={value(k)}
-                onChange={(e) => setEdits({ ...edits, [k]: e.target.value })}
+                aria-invalid={fieldErrors[k] ? true : undefined}
+                aria-describedby={fieldErrors[k] ? `wps-${k}-error` : undefined}
+                onChange={(e) => {
+                  setEdits({ ...edits, [k]: e.target.value });
+                  if (fieldErrors[k]) setFieldErrors({ ...fieldErrors, [k]: "" });
+                }}
               />
+              {fieldErrors[k] && (
+                <p id={`wps-${k}-error`} className="text-xs text-danger" role="alert">
+                  {fieldErrors[k]}
+                </p>
+              )}
             </div>
           ))}
         </div>

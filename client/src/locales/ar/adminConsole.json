@@ -384,5 +384,6 @@
   "activityLog.action.vendor_prepayment.create": "إنشاء دفعة مقدمة لمورّد",
   "activityLog.action.zatca.egs_created": "إنشاء وحدة إصدار فواتير لدى هيئة الزكاة والضريبة والجمارك",
   "activityLog.action.zatca.egs_onboarded": "تسجيل وحدة إصدار فواتير لدى هيئة الزكاة والضريبة والجمارك",
-  "activityLog.action.zatca.invoice_submitted": "إرسال فاتورة إلى هيئة الزكاة والضريبة والجمارك"
+  "activityLog.action.zatca.invoice_submitted": "إرسال فاتورة إلى هيئة الزكاة والضريبة والجمارك",
+  "activityLog.action.payroll.settlement_pay": "سُدّدت تسوية نهاية الخدمة"
 }

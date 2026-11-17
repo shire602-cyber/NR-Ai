@@ -39,7 +39,7 @@ export interface SifEmployeeLine {
   netFils: number;
   /** Variable component (overtime etc., AED fils). */
   variableFils: number;
-  /** Days on leave in the period (paid + unpaid). */
+  /** Days on unpaid leave in the period (paid annual leave is not reported). */
   leaveDays: number;
 }
 

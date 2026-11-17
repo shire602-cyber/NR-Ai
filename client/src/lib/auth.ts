@@ -67,10 +67,6 @@ export function removeToken(): void {
   }
 }
 
-export function getStoredUser(): any {
-  return null;
-}
-
 export function setStoredUser(user: any): void {
   void user;
   setAuthHint();
