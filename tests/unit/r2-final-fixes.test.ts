@@ -45,8 +45,12 @@ describe("R2 final-round fixes", () => {
   });
 
   it("prices and firm amounts go through the money formatter (item 5)", () => {
-    expect(read("client/src/pages/Pricing.tsx")).toContain("formatMoneyText(price");
-    expect(read("client/src/pages/MuhasibLanding.tsx")).toContain("formatMoneyText(plan.price");
+    // WP-B: both pages render plans through the one PlanCard, which formats every price.
+    expect(read("client/src/components/marketing/PlanCard.tsx")).toContain(
+      "formatMoneyParts(amount"
+    );
+    expect(read("client/src/pages/Pricing.tsx")).toContain("<PlanCard");
+    expect(read("client/src/pages/MuhasibLanding.tsx")).toContain("<PlanCard");
     expect(read("client/src/pages/firm/portfolio/helpers.ts")).toContain("formatAedText");
     expect(read("client/src/pages/VATFiling.tsx")).not.toContain("formatCurrency(");
   });

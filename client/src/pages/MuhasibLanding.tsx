@@ -1,20 +1,14 @@
-import { formatMoneyText } from "@/lib/format-money";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import {
   ArrowRight,
-  BookOpenCheck,
-  Check,
   FileDown,
   FileSpreadsheet,
   FileText,
   Info,
   Landmark,
-  Languages,
   LineChart,
-  Plus,
   Users,
-  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -27,6 +21,9 @@ import {
   VatPreview,
 } from "@/components/marketing/ProductPreview";
 import { SAMPLE } from "@/components/marketing/sample";
+import { Checklist, ClosingCta, FaqSection, SectionHeading } from "@/components/marketing/Sections";
+import { PlanCard } from "@/components/marketing/PlanCard";
+import { PLANS } from "@/components/marketing/plans";
 import { StatusBadge as Status } from "@/components/ui/status-badge";
 
 // Muhasib.ai public landing page (D1). Every capability on this page exists in
@@ -34,43 +31,6 @@ import { StatusBadge as Status } from "@/components/ui/status-badge";
 // e-invoice transmission) says so. Styles: components/marketing/marketing.css.
 
 type Icon = LucideIcon;
-
-function SectionHeading({
-  eyebrow,
-  title,
-  body,
-  center,
-  id,
-}: {
-  eyebrow: string;
-  title: string;
-  body?: string;
-  center?: boolean;
-  id?: string;
-}) {
-  return (
-    <div className={`mk-heading${center ? " mk-heading--center" : ""}`}>
-      <p className="mk-eyebrow">{eyebrow}</p>
-      <h2 className="mk-h2" id={id}>
-        {title}
-      </h2>
-      {body && <p className="mk-lead">{body}</p>}
-    </div>
-  );
-}
-
-function Checklist({ items }: { items: string[] }) {
-  return (
-    <ul className="mk-checklist">
-      {items.map((item) => (
-        <li key={item}>
-          <Check aria-hidden="true" />
-          <span>{item}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 function FeatureCard({
   icon: IconCmp,
@@ -102,23 +62,19 @@ function FeatureCard({
 
 function Hero() {
   const { t } = useTranslation();
-  const facts: [Icon, string][] = [
-    [BookOpenCheck, "marketing.factLedger"],
-    [Landmark, "marketing.factVat"],
-    [Languages, "marketing.factBilingual"],
-    [Wallet, "marketing.factCurrency"],
-    [FileDown, "marketing.factExports"],
+  const facts = [
+    "marketing.factLedger",
+    "marketing.factVat",
+    "marketing.factBilingual",
+    "marketing.factCurrency",
+    "marketing.factExports",
   ];
   return (
     <section className="mk-hero" aria-labelledby="mk-hero-title">
       <div className="mk-container">
         <div className="mk-hero__copy">
           <p className="mk-eyebrow mk-rise">{t["marketing.heroEyebrow"]}</p>
-          <h1
-            id="mk-hero-title"
-            className="mk-display mk-rise mk-rise--2"
-            style={{ marginBlockStart: "1.25rem" }}
-          >
+          <h1 id="mk-hero-title" className="mk-display mk-rise mk-rise--2">
             {t["marketing.heroTitleLead"]}{" "}
             <span className="mk-accent">{t["marketing.heroTitleAccent"]}</span>
           </h1>
@@ -138,15 +94,12 @@ function Hero() {
           </div>
           <p className="mk-hero__note mk-rise mk-rise--3">{t["marketing.heroNote"]}</p>
         </div>
-        <div className="mk-hero__visual mk-rise mk-rise--4">
+        <div className="mk-hero__visual mk-ruling mk-rise mk-rise--4">
           <ProductPreview />
         </div>
         <ul className="mk-facts">
-          {facts.map(([IconCmp, key]) => (
-            <li key={key}>
-              <IconCmp aria-hidden="true" />
-              {t[key]}
-            </li>
+          {facts.map((key) => (
+            <li key={key}>{t[key]}</li>
           ))}
         </ul>
       </div>
@@ -171,18 +124,8 @@ function Product() {
         <div className="mk-spotlight">
           <div>
             <p className="mk-eyebrow">{t["marketing.vatEyebrow"]}</p>
-            <h3
-              className="mk-h2"
-              style={{
-                marginBlockStart: "1rem",
-                fontSize: "clamp(1.75rem, 1.3rem + 1.6vw, 2.5rem)",
-              }}
-            >
-              {t["marketing.vatTitle"]}
-            </h3>
-            <p className="mk-body" style={{ marginBlockStart: "1.25rem" }}>
-              {t["marketing.vatBody"]}
-            </p>
+            <h3 className="mk-h2 mk-spotlight__title">{t["marketing.vatTitle"]}</h3>
+            <p className="mk-body mk-spotlight__body">{t["marketing.vatBody"]}</p>
             <Checklist
               items={[t["marketing.vatPoint1"], t["marketing.vatPoint2"], t["marketing.vatPoint3"]]}
             />
@@ -209,7 +152,7 @@ function Product() {
                   </div>
                   <div className="mk-small mk-num">{"INV-1043"}</div>
                 </div>
-                <div style={{ textAlign: "end" }}>
+                <div className="mk-doc__end">
                   <div className="mk-doc__title-ar" lang="ar" dir="rtl">
                     {t["marketing.invoiceDocTitleAr"]}
                   </div>
@@ -422,42 +365,20 @@ function Steps() {
   );
 }
 
-const PLANS = [
-  { id: "Free", price: 0 },
-  { id: "Starter", price: 49 },
-  { id: "Professional", price: 149, featured: true },
-  { id: "Enterprise", price: 299 },
-];
-
 function PricingTeaser() {
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
   return (
     <section className="mk-section mk-section--sunken" aria-labelledby="mk-pricing-title">
       <div className="mk-container">
         <SectionHeading
           id="mk-pricing-title"
-          center
           eyebrow={t["marketing.pricingEyebrow"]}
           title={t["marketing.pricingTitle"]}
           body={t["marketing.pricingBody"]}
         />
-        <div className="mk-plans">
+        <div className="mk-prplans__row" data-testid="landing-plans">
           {PLANS.map((plan) => (
-            <div
-              key={plan.id}
-              className="mk-card mk-plan"
-              data-featured={plan.featured ? "true" : undefined}
-            >
-              {plan.featured && <span className="mk-plan__tag">{t["marketing.planPopular"]}</span>}
-              <h3 className="mk-plan__name">{t[`marketing.plan${plan.id}`]}</h3>
-              <p className="mk-plan__price">
-                <strong className="mk-num">
-                  {formatMoneyText(plan.price, "AED", locale, { fractionDigits: 0 })}
-                </strong>
-                <span>{t["marketing.pricingPerMonth"]}</span>
-              </p>
-              <p className="mk-small">{t[`marketing.plan${plan.id}Summary`]}</p>
-            </div>
+            <PlanCard key={plan.id} plan={plan} cycle="monthly" compact headingLevel="h3" />
           ))}
         </div>
         <div className="mk-plans__foot">
@@ -473,69 +394,24 @@ function PricingTeaser() {
   );
 }
 
+const FAQ_LINKS: Record<number, [string, string]> = {
+  6: ["/migration-guides", "marketing.faqMigrationLink"],
+  7: ["/trust", "marketing.faqTrustLink"],
+};
+
 function Faq() {
   const { t } = useTranslation();
-  const links: Record<number, [string, string]> = {
-    6: ["/migration-guides", "marketing.faqMigrationLink"],
-    7: ["/trust", "marketing.faqTrustLink"],
-  };
   return (
-    <section className="mk-section" aria-labelledby="mk-faq-title">
-      <div className="mk-container mk-container--narrow">
-        <SectionHeading
-          id="mk-faq-title"
-          center
-          eyebrow={t["marketing.faqEyebrow"]}
-          title={t["marketing.faqTitle"]}
-        />
-        <div className="mk-faq">
-          {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-            <details key={n}>
-              <summary>
-                <span>{t[`marketing.faq${n}Q`]}</span>
-                <Plus aria-hidden="true" />
-              </summary>
-              <div className="mk-faq__answer">
-                <p>{t[`marketing.faq${n}A`]}</p>
-                {links[n] && (
-                  <Link href={links[n][0]} className="mk-link">
-                    {t[links[n][1]]}
-                    <ArrowRight className="mk-flip" aria-hidden="true" width={16} height={16} />
-                  </Link>
-                )}
-              </div>
-            </details>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function FinalCta() {
-  const { t } = useTranslation();
-  return (
-    <section className="mk-section" style={{ paddingBlockStart: 0 }} aria-labelledby="mk-cta-title">
-      <div className="mk-container">
-        <div className="mk-cta">
-          <h2 id="mk-cta-title" className="mk-h2">
-            {t["marketing.ctaTitle"]}
-          </h2>
-          <p className="mk-lead">{t["marketing.ctaBody"]}</p>
-          <div className="mk-hero__ctas">
-            <Button asChild size="xl">
-              <Link href="/register">
-                {t["marketing.startFreeTrial"]}
-                <ArrowRight className="mk-flip" aria-hidden="true" />
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="xl">
-              <Link href="/demo">{t["marketing.heroSecondary"]}</Link>
-            </Button>
-          </div>
-        </div>
-      </div>
-    </section>
+    <FaqSection
+      id="mk-faq-title"
+      eyebrow={t["marketing.faqEyebrow"]}
+      title={t["marketing.faqTitle"]}
+      items={[1, 2, 3, 4, 5, 6, 7].map((n) => ({
+        q: t[`marketing.faq${n}Q`],
+        a: t[`marketing.faq${n}A`],
+        link: FAQ_LINKS[n] ? { href: FAQ_LINKS[n][0], label: t[FAQ_LINKS[n][1]] } : undefined,
+      }))}
+    />
   );
 }
 
@@ -551,7 +427,7 @@ export default function MuhasibLanding() {
       <Steps />
       <PricingTeaser />
       <Faq />
-      <FinalCta />
+      <ClosingCta />
     </MarketingLayout>
   );
 }
