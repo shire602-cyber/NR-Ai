@@ -8,9 +8,10 @@
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Download, Mail, ScrollText } from "lucide-react";
+import { Download, Mail } from "lucide-react";
 import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -103,7 +104,7 @@ export default function PartyStatements() {
   return (
     <div className="space-y-6">
       <PageHeader
-        icon={ScrollText}
+        eyebrow="Reports"
         backHref="/reports"
         backLabel={t["reportCenter.backToReportCenter"]}
         title={<T k="reportCenter.partyStatementsTitle" />}
@@ -205,9 +206,7 @@ export default function PartyStatements() {
           </CardHeader>
           <CardContent className="space-y-6">
             {statement.sections.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                <T k="reportCenter.partyStatementEmpty" />
-              </p>
+              <EmptyState size="sm" title={t["reportCenter.partyStatementEmpty"]} />
             ) : (
               statement.sections.map((section) => (
                 <div key={section.currency} className="space-y-2">
