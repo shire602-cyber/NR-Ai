@@ -1,6 +1,12 @@
 // @ts-expect-error - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
-import { bilingual, pdfLocale, preparePdfDocument } from "./pdf-fonts";
+import {
+  bilingual,
+  isDraftStatus,
+  pdfLocale,
+  preparePdfDocument,
+  stampDraftWatermark,
+} from "./pdf-fonts";
 import { loadCompanyLogo } from "./pdf-logo";
 import type { CreditNote, CreditNoteLine, Company, Invoice } from "../../shared/schema";
 
@@ -21,6 +27,7 @@ export async function generateCreditNotePDF(
       const doc = new PDFDocument({
         size: "A4",
         margin: 50,
+        bufferPages: true,
         info: {
           Title: `Credit Note ${creditNote.number}`,
           Author: company.name,
@@ -272,6 +279,7 @@ export async function generateCreditNotePDF(
         );
       }
 
+      if (isDraftStatus(creditNote.status)) stampDraftWatermark(doc);
       doc.end();
     } catch (err) {
       reject(err);

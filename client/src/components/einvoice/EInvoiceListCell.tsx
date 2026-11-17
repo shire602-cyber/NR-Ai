@@ -6,14 +6,19 @@
 import { useMemo, useState } from "react";
 import { FileCode } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
 import {
+  DELIVERY_TONE,
+  REPORTING_TONE,
   deliveryFromLegacyStatus,
+  deliveryLabelKey,
+  reportingLabelKey,
   type DeliveryStatus,
   type ReportingStatus,
 } from "./einvoice-meta";
 import { EInvoiceSheet, EInvoiceTrackBadges } from "./EInvoiceStatus";
-import { useEInvoiceDocuments } from "./use-einvoice";
+import { useEInvoiceCompliance, useEInvoiceDocuments } from "./use-einvoice";
 
 export function EInvoiceListCell({
   companyId,
@@ -24,14 +29,22 @@ export function EInvoiceListCell({
   invoice: { id: string; number?: string | null; einvoiceStatus?: string | null };
   onEdit?: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [open, setOpen] = useState(false);
   const docs = useEInvoiceDocuments(companyId);
+  const compliance = useEInvoiceCompliance(companyId);
+  const pill = useMemo(
+    () => compliance.data?.items.find((p) => p.invoiceId === invoice.id),
+    [compliance.data, invoice.id]
+  );
   const doc = useMemo(
     () => docs.data?.items.find((d) => d.invoiceId === invoice.id),
     [docs.data, invoice.id]
   );
-  if (!doc && !invoice.einvoiceStatus) return null;
+  // X6d: with the mandate in force and a reportable (B2B) invoice, show the report-by date and
+  // the reporting/delivery state; outside scope nothing is shown beyond an existing document.
+  const showPills = !!compliance.data?.mandateApplies && !!pill?.reportingRequired;
+  if (!doc && !invoice.einvoiceStatus && !showPills) return null;
   const delivery: DeliveryStatus =
     (doc?.deliveryStatus as DeliveryStatus | null) ??
     deliveryFromLegacyStatus(doc?.status ?? invoice.einvoiceStatus);
@@ -47,7 +60,36 @@ export function EInvoiceListCell({
         data-testid={`einvoice-cell-${invoice.id}`}
       >
         <span className="sr-only">{t["einvoicing.statusAction"]}: </span>
-        <EInvoiceTrackBadges delivery={delivery} reporting={reporting} />
+        {showPills && pill ? (
+          <span
+            className="inline-flex flex-wrap items-center gap-1"
+            data-testid={`einvoice-compliance-${invoice.id}`}
+          >
+            <StatusBadge
+              tone={pill.overdue ? "danger" : REPORTING_TONE[pill.reporting]}
+              data-testid={`einvoice-reportby-${invoice.id}`}
+            >
+              {pill.reporting === "reported" || pill.reporting === "report_failed"
+                ? t[reportingLabelKey(pill.reporting)]
+                : pill.reportBy
+                  ? formatMessage(
+                      pill.overdue ? t["launchProof.reportOverdueShort"] : t["einvoicing.reportBy"],
+                      { date: formatDate(pill.reportBy, locale) }
+                    )
+                  : t[reportingLabelKey(pill.reporting)]}
+            </StatusBadge>
+            <StatusBadge
+              tone={DELIVERY_TONE[pill.delivery]}
+              data-testid={`einvoice-delivery-${invoice.id}`}
+            >
+              {pill.delivery === "validated"
+                ? t["einvoicing.delivery_validated_short"]
+                : t[deliveryLabelKey(pill.delivery)]}
+            </StatusBadge>
+          </span>
+        ) : (
+          <EInvoiceTrackBadges delivery={delivery} reporting={reporting} />
+        )}
       </button>
       {open && (
         <EInvoiceSheet

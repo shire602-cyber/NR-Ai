@@ -14,16 +14,7 @@ import { loadEInvoiceContext } from "./context";
 import { getEInvoiceDocument } from "./store";
 import { listDocumentEvents } from "./history";
 import { getLegalEntity } from "./legal-entities";
-import {
-  deliveryFromLegacy,
-  isDeliveryStatus,
-  isReportingStatus,
-  NEW_DOCUMENT_REQUIRED_CODES,
-  reportByDate,
-  reportingFromLegacy,
-  type DeliveryStatus,
-  type ReportingStatus,
-} from "./tracks";
+import { deriveInvoiceTracks, NEW_DOCUMENT_REQUIRED_CODES } from "./tracks";
 import { einvoiceMandateApplies } from "./scope";
 import { invoiceReportingRequired, providerRequiresLegalEntity } from "./workflow";
 
@@ -69,22 +60,20 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
   const required = invoiceReportingRequired(invoice, company, now);
   const legacy = invoice.einvoiceStatus ?? "not_generated";
 
-  const delivery: DeliveryStatus = isDeliveryStatus(doc?.deliveryStatus)
-    ? doc.deliveryStatus
-    : deliveryFromLegacy(legacy);
-  const storedReporting: ReportingStatus = isReportingStatus(doc?.reportingStatus)
-    ? doc.reportingStatus
-    : reportingFromLegacy(legacy, required);
-  // A "pending" report that is not (yet) required is not a pending obligation.
-  const reporting: ReportingStatus =
-    !required && storedReporting === "pending" ? "not_required" : storedReporting;
-  const isDraft = String(invoice.status ?? "").toLowerCase() === "draft";
-  // No deadline unless the mandate applies to this company; a draft has no deadline either.
-  const reportBy =
-    required && !isDraft
-      ? ((doc?.reportBy as string | null | undefined) ?? reportByDate(invoice.date))
-      : null;
-  const today = now.toISOString().slice(0, 10);
+  const { delivery, reporting, reportBy, overdue } = deriveInvoiceTracks({
+    invoiceDate: invoice.date,
+    invoiceStatus: invoice.status,
+    legacyStatus: legacy,
+    doc: doc
+      ? {
+          deliveryStatus: doc.deliveryStatus,
+          reportingStatus: doc.reportingStatus,
+          reportBy: doc.reportBy as string | null | undefined,
+        }
+      : null,
+    required,
+    now,
+  });
 
   // Transmission: who would send this, and is anything stopping it?
   const provider = providerOrNull();
@@ -188,7 +177,7 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
         at: iso(doc?.reportingStatusAt),
         required,
         reportBy,
-        overdue: !isDraft && !!reportBy && reporting === "pending" && reportBy < today,
+        overdue,
         mandateApplies: einvoiceMandateApplies(company, now),
       },
     },

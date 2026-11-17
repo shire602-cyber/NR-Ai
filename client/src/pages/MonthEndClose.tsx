@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatDate as formatDisplayDate, formatMonthYear } from "@/lib/format-date";
 import { localizeServerText, type CopyDescriptor } from "@shared/server-copy";
@@ -1197,6 +1198,17 @@ export default function MonthEndClose() {
                 <Lock className="h-4 w-4 me-2" />
                 <T k="monthEnd.closeYear" />
               </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <AskNajmaButton
+                companyId={companyId}
+                topic="year_end_close"
+                period={`FY ending ${fiscalYearEnd}`}
+                testId="button-ask-najma-year-end"
+              />
+              <span className="text-caption text-muted-foreground">
+                <T k="launchProof.askYearEndHint" />
+              </span>
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input

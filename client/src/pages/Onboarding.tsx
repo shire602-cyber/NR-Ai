@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { EInvoiceReadinessCard } from "@/components/einvoice/EInvoiceReadinessCard";
 import { useState, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -636,7 +637,10 @@ function CustomerOnboardingWizard() {
                 />
               )}
               {currentStep === "complete" && (
-                <CompleteStep onGoToDashboard={() => setLocation("/dashboard")} />
+                <CompleteStep
+                  onGoToDashboard={() => setLocation("/dashboard")}
+                  companyId={company?.id}
+                />
               )}
             </motion.div>
           </AnimatePresence>
@@ -1574,7 +1578,13 @@ function FirstDocStep({
 
 // ─── Step: Complete ─────────────────────────────────────────────────────────
 
-function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
+function CompleteStep({
+  onGoToDashboard,
+  companyId,
+}: {
+  onGoToDashboard: () => void;
+  companyId?: string;
+}) {
   const { t } = useTranslation();
   const ct = useCatalogText();
   const [showMore, setShowMore] = useState(false);
@@ -1648,6 +1658,10 @@ function CompleteStep({ onGoToDashboard }: { onGoToDashboard: () => void }) {
         <p className="text-muted-foreground text-lg max-w-md mx-auto">
           {t["onboarding.completeIntro"]}
         </p>
+      </div>
+
+      <div className="max-w-2xl mx-auto text-start">
+        <EInvoiceReadinessCard companyId={companyId} compact />
       </div>
 
       <div className="space-y-3 max-w-2xl mx-auto">

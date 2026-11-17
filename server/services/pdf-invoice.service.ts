@@ -7,8 +7,10 @@ import { renderEInvoiceQrPng } from "./einvoice-qr.service";
 import {
   bilingual,
   isArabic,
+  isDraftStatus,
   pdfLocale,
   preparePdfDocument,
+  stampDraftWatermark,
   type PdfDoc,
   type PdfLocale,
 } from "./pdf-fonts";
@@ -194,6 +196,7 @@ async function generateStandardInvoicePDF(
       const doc = new PDFDocument({
         size: "A4",
         margin: 50,
+        bufferPages: true,
         info: {
           Title: `Invoice ${invoice.number}`,
           Author: company.name,
@@ -638,6 +641,7 @@ async function generateStandardInvoicePDF(
         );
       }
 
+      if (isDraftStatus(invoice.status)) stampDraftWatermark(doc);
       doc.end();
     } catch (err) {
       reject(err);
@@ -651,6 +655,7 @@ async function generateNraInvoicePDF(invoice: Invoice, lines: InvoiceLine[]): Pr
       const doc = new PDFDocument({
         size: "A4",
         margin: 0,
+        bufferPages: true,
         info: {
           Title: `Invoice ${invoice.number}`,
           Author: "Najma Al Raeda Accounting Services",
@@ -659,7 +664,11 @@ async function generateNraInvoicePDF(invoice: Invoice, lines: InvoiceLine[]): Pr
         },
       });
 
-      if (isArabic(invoice.customerName) || lines.some((line) => isArabic(line.description))) {
+      if (
+        isDraftStatus(invoice.status) ||
+        isArabic(invoice.customerName) ||
+        lines.some((line) => isArabic(line.description))
+      ) {
         preparePdfDocument(doc);
       }
 
@@ -675,6 +684,7 @@ async function generateNraInvoicePDF(invoice: Invoice, lines: InvoiceLine[]): Pr
       drawNraLineItemsTable(doc, lines);
       drawNraTotalBox(doc, invoice);
 
+      if (isDraftStatus(invoice.status)) stampDraftWatermark(doc);
       doc.end();
     } catch (err) {
       reject(err);

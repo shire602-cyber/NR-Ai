@@ -64,6 +64,7 @@ export interface PdfDoc {
   roundedRect(x: number, y: number, w: number, h: number, r?: number): PdfDoc;
   lineWidth(width: number): PdfDoc;
   fillColor(color: string, opacity?: number): PdfDoc;
+  fillOpacity(opacity: number): PdfDoc;
   strokeColor(color: string, opacity?: number): PdfDoc;
   fill(color?: string): PdfDoc;
   stroke(color?: string): PdfDoc;
@@ -593,4 +594,39 @@ export function preparePdfDocument(doc: PdfDoc): PdfDoc {
     measureHeight(doc, str, { size: doc._fontSize, bold: doc.__bold, width: o?.width });
   doc.__arabicReady = true;
   return doc;
+}
+
+/** True when a document status means "not yet issued" (watermarked, never a tax document). */
+export function isDraftStatus(status: string | null | undefined): boolean {
+  return (status ?? "").trim().toLowerCase() === "draft";
+}
+
+/**
+ * X6d: stamps a diagonal "DRAFT / مسودة" watermark on every page of a buffered document so a
+ * draft cannot be sent as a tax invoice. The document must be created with `bufferPages: true`;
+ * call this immediately before `doc.end()`. It is drawn last so header bars cannot hide it.
+ */
+export function stampDraftWatermark(doc: PdfDoc): void {
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i += 1) {
+    doc.switchToPage(i);
+    const { width, height } = doc.page;
+    doc.save();
+    doc.rotate(-35, { origin: [width / 2, height / 2] });
+    doc.fillOpacity(0.16);
+    const stamp = (str: string, y: number, size: number) =>
+      text(doc, str, {
+        x: 0,
+        y,
+        width,
+        size,
+        bold: true,
+        color: "#DC2626",
+        align: "center",
+        singleLine: true,
+      });
+    stamp("DRAFT", height / 2 - 95, 120);
+    stamp("مسودة", height / 2 + 25, 72);
+    doc.restore();
+  }
 }

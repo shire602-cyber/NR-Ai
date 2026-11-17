@@ -28,6 +28,7 @@ import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 import { StatementDownloads } from "../StatementParts";
+import { AgingTiesToGl } from "@/components/reports/TiesToGlBadge";
 
 export default function BalancesTab() {
   const { t } = useTranslation();
@@ -156,6 +157,9 @@ export default function BalancesTab() {
             <div>
               <CardTitle>A/P Aging</CardTitle>
               <CardDescription>{t["balancesTab.openVendorBillsAgedFrom"]}</CardDescription>
+              <div className="mt-2">
+                <AgingTiesToGl companyId={selectedCompanyId ?? undefined} kind="payables" />
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <StatementDownloads

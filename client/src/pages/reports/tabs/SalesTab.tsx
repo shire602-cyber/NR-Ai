@@ -22,6 +22,7 @@ import { format } from "date-fns";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 import { StatementDownloads } from "../StatementParts";
+import { AgingTiesToGl } from "@/components/reports/TiesToGlBadge";
 
 export default function SalesTab() {
   const { t } = useTranslation();
@@ -147,6 +148,9 @@ export default function SalesTab() {
               <CardDescription>
                 <T k="reportCenter.salesAgingHint" />
               </CardDescription>
+              <div className="mt-2">
+                <AgingTiesToGl companyId={selectedCompanyId ?? undefined} kind="receivables" />
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <StatementDownloads
