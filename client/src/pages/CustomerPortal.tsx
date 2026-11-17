@@ -29,6 +29,7 @@ import {
   Upload,
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
+import { Money } from "@/components/ui/money";
 import { useTranslation } from "@/lib/i18n";
 
 /**
@@ -93,15 +94,6 @@ interface PortalDocument {
 }
 
 const SESSION_KEY = "muhasib.portalSession";
-
-function formatCurrency(amount: number, currency: string = "AED"): string {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-}
 
 function formatDate(date: string): string {
   return new Date(date).toLocaleDateString("en-AE", {
@@ -428,7 +420,7 @@ function PortalHome({ token }: { token: string | null }) {
                   <T k="pages.totalOutstanding" />
                 </p>
                 <p className="text-xl font-bold text-destructive">
-                  {formatCurrency(totalOutstanding, defaultCurrency)}
+                  <Money amount={totalOutstanding} currency={defaultCurrency} />
                 </p>
               </div>
             </CardContent>
@@ -441,7 +433,7 @@ function PortalHome({ token }: { token: string | null }) {
                   <T k="pages.totalPaid" />
                 </p>
                 <p className="text-xl font-bold text-success">
-                  {formatCurrency(totalPaid, defaultCurrency)}
+                  <Money amount={totalPaid} currency={defaultCurrency} />
                 </p>
               </div>
             </CardContent>
@@ -523,7 +515,7 @@ function PortalHome({ token }: { token: string | null }) {
                                 : formatDate(invoice.date)}
                             </TableCell>
                             <TableCell data-numeric className=" font-medium">
-                              {formatCurrency(invoice.amountDue, invoice.currency)}
+                              <Money amount={invoice.amountDue} currency={invoice.currency} />
                             </TableCell>
                             <TableCell>
                               <Badge className={STATUS_CLASS[invoice.paymentStatus]}>
@@ -598,7 +590,9 @@ function PortalHome({ token }: { token: string | null }) {
                       <span>
                         <T k="portal.openingBalance" />
                       </span>
-                      <span>{formatCurrency(s.openingBalance, s.currency)}</span>
+                      <span>
+                        <Money amount={s.openingBalance} currency={s.currency} />
+                      </span>
                     </div>
                     <Table>
                       <TableHeader>
@@ -626,13 +620,13 @@ function PortalHome({ token }: { token: string | null }) {
                             <TableCell>{l.date}</TableCell>
                             <TableCell>{l.reference}</TableCell>
                             <TableCell data-numeric>
-                              {l.debit ? formatCurrency(l.debit, s.currency) : ""}
+                              {l.debit ? <Money amount={l.debit} currency={s.currency} /> : ""}
                             </TableCell>
                             <TableCell data-numeric>
-                              {l.credit ? formatCurrency(l.credit, s.currency) : ""}
+                              {l.credit ? <Money amount={l.credit} currency={s.currency} /> : ""}
                             </TableCell>
                             <TableCell data-numeric>
-                              {formatCurrency(l.balance, s.currency)}
+                              <Money amount={l.balance} currency={s.currency} />
                             </TableCell>
                           </TableRow>
                         ))}
@@ -642,7 +636,9 @@ function PortalHome({ token }: { token: string | null }) {
                       <span>
                         <T k="portal.closingBalance" />
                       </span>
-                      <span>{formatCurrency(s.closingBalance, s.currency)}</span>
+                      <span>
+                        <Money amount={s.closingBalance} currency={s.currency} />
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -672,7 +668,7 @@ function PortalHome({ token }: { token: string | null }) {
                       <div>
                         <p className="font-medium">{q.number}</p>
                         <p className="text-sm text-muted-foreground">
-                          {formatCurrency(q.total, q.currency)} · {formatDate(q.date)}
+                          <Money amount={q.total} currency={q.currency} /> · {formatDate(q.date)}
                         </p>
                       </div>
                       {q.status === "sent" ? (

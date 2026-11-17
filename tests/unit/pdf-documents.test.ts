@@ -125,4 +125,55 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
     expect(text).toContain("عرض سعر");
     expect(text).toContain("QUOTATION");
   });
+
+  it("WP10: quote, purchase order and credit note print amounts with thousands separators", async () => {
+    const bigLine = { ...line, quantity: 3, unitPrice: 4115.17 }; // 12,345.51
+    const totals = { currency: "AED", subtotal: 12345.51, vatAmount: 617.28, total: 12962.79 };
+    const docs = [
+      await generateQuotePDF(
+        {
+          id: "q2",
+          number: "Q-2",
+          customerName: "C",
+          date: new Date("2026-03-10"),
+          status: "sent",
+          ...totals,
+        } as never,
+        [bigLine] as never,
+        company()
+      ),
+      await generatePurchaseOrderPDF(
+        {
+          id: "po2",
+          number: "PO-2",
+          vendorName: "V",
+          date: new Date("2026-03-10"),
+          status: "approved",
+          ...totals,
+        } as never,
+        [bigLine] as never,
+        company()
+      ),
+      await generateCreditNotePDF(
+        {
+          id: "cn2",
+          number: "CN-2",
+          customerName: "C",
+          date: new Date("2026-03-10"),
+          status: "issued",
+          ...totals,
+        } as never,
+        [bigLine] as never,
+        company()
+      ),
+    ];
+    for (const pdf of docs) {
+      const text = flat(await pdfToText(pdf));
+      expect(text).toContain("AED 4,115.17");
+      expect(text).toContain("AED 12,345.51");
+      expect(text).toContain("AED 617.28");
+      expect(text).toContain("AED 12,962.79");
+      expect(text).not.toContain("12345.51");
+    }
+  });
 });

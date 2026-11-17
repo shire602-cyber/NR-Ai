@@ -131,8 +131,7 @@ beforeAll(async () => {
      VALUES ($1, 'LCN-1', 'Acme LLC', $2, $3, 'AED', 100, 5, 105, 'issued')`,
     [t.company.id, inv5, `${daysAgo(15)}T00:00:00Z`]
   );
-  const { backfillStandaloneCreditNotes } =
-    await import("../../server/services/credit-note-consolidation.service");
+  const { backfillStandaloneCreditNotes } = await import("./legacy-credit-note-backfill");
   const res = await backfillStandaloneCreditNotes({
     query: async (text: string, values?: unknown[]) => ({ rows: await h.sql(text, values) }),
   });

@@ -3,6 +3,7 @@ import PDFDocument from "pdfkit";
 import { bilingual, pdfLocale, preparePdfDocument } from "./pdf-fonts";
 import { loadCompanyLogo } from "./pdf-logo";
 import type { CreditNote, CreditNoteLine, Company, Invoice } from "../../shared/schema";
+import { formatMoneyAmount as formatAmount } from "../utils/money-format";
 
 /**
  * Generate a professional credit note PDF on the server side using PDFKit.
@@ -277,8 +278,4 @@ export async function generateCreditNotePDF(
       reject(err);
     }
   });
-}
-
-function formatAmount(amount: number, currency: string = "AED"): string {
-  return `${currency} ${amount.toFixed(2)}`;
 }

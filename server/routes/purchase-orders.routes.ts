@@ -44,9 +44,9 @@ import {
   type PoUpdateInput,
 } from "../../shared/validators/purchase-orders";
 import { zUuid } from "../../shared/validators/primitives";
-import { fromFils, mulRate, sumFils, toFils } from "../../shared/money";
+import { fromFils, mulRate, toFils } from "../../shared/money";
 import { nextDocNumber, createBill, resolveDocRate } from "../services/bill-payment.service";
-import { txRows } from "../services/bill-posting.service";
+import { computeBillTotals, txRows } from "../services/bill-posting.service";
 import { resolveVendor } from "../services/vendor.service";
 import { assertRefsOwned } from "../tenancy";
 import {
@@ -79,23 +79,43 @@ export const poMachine = defineMachine<PoState>({
 
 const EDITABLE: readonly PoState[] = ["draft", "sent"];
 
-/** Line totals in fils (VAT 0 or 5 only; rounded once at document level per A-B13). */
-function poTotals(lines: Array<{ quantity: number; unitPrice: string | number; vatRate: number }>) {
-  const nets = lines.map((l) => {
-    const unit = toFils(String(l.unitPrice), { rounding: "halfUp" });
-    return unit === 0 ? 0 : mulRate(unit, l.quantity);
-  });
-  const vat = lines.reduce((s, l, i) => s + (l.vatRate > 0 ? nets[i] * 0.05 : 0), 0);
-  const subtotal = sumFils(nets);
-  const vatFils = Math.round(vat);
-  return {
-    subtotal: fromFils(subtotal),
-    vatAmount: fromFils(vatFils),
-    total: fromFils(subtotal + vatFils),
-  };
+const ZERO_VAT_SUPPLY = new Set(["zero_rated", "exempt", "out_of_scope"]);
+
+/**
+ * One line's VAT treatment. The supply type wins: zero-rated, exempt and
+ * out-of-scope lines carry 0% even when the rate is omitted (it used to default
+ * to 5%), and an omitted supply type follows the rate. A zero-VAT supply type
+ * sent with an explicit 5% is rejected by computeBillTotals (VAT_RATE_SUPPLY_MISMATCH).
+ */
+function poLineVat(l: Pick<PoLineInput, "vatRate" | "vatSupplyType">): {
+  vatRate: 0 | 5;
+  supplyType: string;
+} {
+  const supplyType = l.vatSupplyType ?? (l.vatRate === 0 ? "zero_rated" : "standard_rated");
+  if (ZERO_VAT_SUPPLY.has(supplyType)) return { vatRate: l.vatRate === 5 ? 5 : 0, supplyType };
+  return { vatRate: l.vatRate === 0 ? 0 : 5, supplyType };
 }
 
-const vatDecimal = (rate: number | null | undefined) => (rate === 0 ? 0 : 0.05);
+/**
+ * WP10: PO totals in integer fils through the same purchase-side calculator the
+ * converted bill uses (computeBillTotals): VAT per line from each line's own rate
+ * and supply type (0% for zero-rated / exempt / out-of-scope lines), reverse-charge
+ * VAT excluded from the amount payable to the vendor.
+ */
+function poTotals(lines: PoLineInput[]) {
+  const t = computeBillTotals({
+    lines: lines.map((l) => ({
+      quantity: l.quantity,
+      unitPriceFils: toFils(String(l.unitPrice), { rounding: "halfUp" }),
+      ...poLineVat(l),
+    })),
+  });
+  return {
+    subtotal: fromFils(t.subtotalFils),
+    vatAmount: fromFils(t.vatFils),
+    total: fromFils(t.totalFils),
+  };
+}
 
 async function loadPo(req: Request): Promise<PurchaseOrder> {
   const { id } = req.params;
@@ -118,8 +138,8 @@ function toLineRows(poId: string, lines: PoLineInput[]) {
     description: l.description,
     quantity: l.quantity,
     unitPrice: Number(l.unitPrice),
-    vatRate: vatDecimal(l.vatRate),
-    vatSupplyType: l.vatSupplyType ?? (l.vatRate === 0 ? "zero_rated" : "standard_rated"),
+    vatRate: poLineVat(l).vatRate === 5 ? 0.05 : 0,
+    vatSupplyType: poLineVat(l).supplyType,
     productId: l.productId ?? null,
     accountId: l.accountId ?? null,
   }));
@@ -249,7 +269,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
         account: body.lines.map((l) => l.accountId),
         product: body.lines.map((l) => l.productId),
       });
-      const totals = poTotals(body.lines.map((l) => ({ ...l, vatRate: l.vatRate ?? 5 })));
+      const totals = poTotals(body.lines);
       const po = await withLedgerTx(async (tx) => {
         const number = await allocatePoNumber(tx, companyId);
         const [row] = await tx
@@ -326,7 +346,7 @@ export function registerPurchaseOrderRoutes(app: Express) {
           account: body.lines.map((l) => l.accountId),
           product: body.lines.map((l) => l.productId),
         });
-        const t = poTotals(body.lines.map((l) => ({ ...l, vatRate: l.vatRate ?? 5 })));
+        const t = poTotals(body.lines);
         patch.subtotal = Number(t.subtotal);
         patch.vatAmount = Number(t.vatAmount);
         patch.total = Number(t.total);

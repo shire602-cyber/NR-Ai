@@ -21,7 +21,6 @@ import {
   type InsertCreditNoteLine,
   type InsertInvoice,
   type InsertInvoiceLine,
-  type InsertInvoicePayment,
   type InsertQuote,
   type InsertQuoteLine,
   type InsertRecurringInvoice,
@@ -44,7 +43,7 @@ import {
 } from "../services/invoice-state-machine";
 import { ACCOUNT_CODES } from "../constants";
 import { allocatePayment, buildPaymentJournalLines } from "../services/invoice-lifecycle";
-import { isForeignCurrency, loadBaseCurrency, postJournal } from "../ledger";
+import { deleteDraft, isForeignCurrency, loadBaseCurrency, postJournal } from "../ledger";
 import type { InvoiceSummary } from "./types";
 import { DEFAULT_LIST_LIMIT } from "./helpers";
 import { LedgerStorage } from "./ledger";
@@ -465,11 +464,6 @@ export class SalesStorage extends LedgerStorage {
       .orderBy(desc(invoicePayments.createdAt));
   }
 
-  async createInvoicePayment(data: InsertInvoicePayment): Promise<InvoicePayment> {
-    const [payment] = await db.insert(invoicePayments).values(data).returning();
-    return payment;
-  }
-
   async getJournalEntriesBySource(
     companyId: string,
     source: string,
@@ -838,14 +832,20 @@ export class SalesStorage extends LedgerStorage {
     });
   }
 
-  async safeDeleteInvoice(id: string): Promise<void> {
+  /**
+   * Delete a draft invoice / credit note and its draft journal entries.
+   *
+   * WP6: journal entries are never deleted directly. Draft entries go through
+   * the ledger kernel's audited `deleteDraft` inside this transaction; posted
+   * or reversed entries refuse the delete with a 409 (void or reverse the
+   * document instead); void entries stay for the audit trail.
+   */
+  async safeDeleteInvoice(id: string, actorId: string): Promise<void> {
     await db.transaction(async (tx: typeof db) => {
       // Read invoice for company scope
       const [inv] = await tx.select().from(invoices).where(eq(invoices.id, id));
       if (!inv) {
-        const e: Error & { code?: string; details?: unknown } = new Error("Invoice not found");
-        e.code = "INVOICE_NOT_FOUND";
-        throw e;
+        throw new DomainError("INVOICE_NOT_FOUND", 404, undefined, "Invoice not found");
       }
 
       // Find associated journal entries (any source — invoice or payment).
@@ -854,22 +854,26 @@ export class SalesStorage extends LedgerStorage {
         .from(journalEntries)
         .where(and(eq(journalEntries.companyId, inv.companyId), eq(journalEntries.sourceId, id)));
 
-      // Refuse if any are posted — caller must void instead.
-      const posted = associatedEntries.filter((e) => e.status === "posted");
-      if (posted.length > 0) {
-        const err: Error & { code?: string; details?: unknown } = new Error(
-          "Cannot delete invoice with posted journal entries. Void the invoice instead."
+      // Refuse if any entry has hit the books — caller must void/reverse instead.
+      const booked = associatedEntries.filter(
+        (e) => e.status === "posted" || e.status === "reversed"
+      );
+      if (booked.length > 0) {
+        throw new DomainError(
+          "INVOICE_HAS_POSTED_JE",
+          409,
+          { entryIds: booked.map((e) => e.id) },
+          "Cannot delete a document with posted journal entries. Void it instead."
         );
-        err.code = "INVOICE_HAS_POSTED_JE";
-        throw err;
       }
 
       // Order matters: invoice_payments references journal_entries, and
       // invoices cascades to invoice_payments. Drop the invoice first so
-      // payment rows are gone before we drop the JEs they referenced.
+      // payment rows are gone before the kernel drops the draft JEs.
       await tx.delete(invoices).where(eq(invoices.id, id));
       for (const e of associatedEntries) {
-        await tx.delete(journalEntries).where(eq(journalEntries.id, e.id));
+        if (e.status !== "draft") continue;
+        await deleteDraft(e.id, { actorId, companyId: inv.companyId, tx });
       }
     });
   }

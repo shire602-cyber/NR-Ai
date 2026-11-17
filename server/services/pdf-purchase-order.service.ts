@@ -2,6 +2,7 @@
 import PDFDocument from "pdfkit";
 import { bilingual, pdfLocale, preparePdfDocument } from "./pdf-fonts";
 import type { PurchaseOrder, PurchaseOrderLine, Company } from "../../shared/schema";
+import { formatMoneyAmount as formatAmount } from "../utils/money-format";
 
 /**
  * Generate a professional purchase order PDF on the server side using PDFKit.
@@ -263,8 +264,4 @@ export async function generatePurchaseOrderPDF(
       reject(err);
     }
   });
-}
-
-function formatAmount(amount: number, currency: string = "AED"): string {
-  return `${currency} ${amount.toFixed(2)}`;
 }

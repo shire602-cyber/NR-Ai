@@ -17,8 +17,6 @@ import { db } from "../db";
 import { and, desc, eq, inArray, lt, or } from "drizzle-orm";
 import { createJournalEntryCompat } from "../ledger/legacy";
 import { previewEntryNumber } from "../ledger/numbering";
-import type { JournalLineSummary } from "./types";
-import { assertBalanced } from "./helpers";
 import { ReportDeliveryStorage } from "./report-delivery";
 
 export class LedgerStorage extends ReportDeliveryStorage {
@@ -394,56 +392,6 @@ export class LedgerStorage extends ReportDeliveryStorage {
     return createJournalEntryCompat(insertEntry, lines);
   }
 
-  async updateJournalEntry(
-    id: string,
-    companyId: string,
-    data: Partial<JournalEntry>
-  ): Promise<JournalEntry> {
-    const [entry] = await db
-      .update(journalEntries)
-      .set(data)
-      .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)))
-      .returning();
-    if (!entry) {
-      throw new Error("Journal entry not found");
-    }
-    return entry;
-  }
-
-  async updateJournalEntryWithLines(
-    id: string,
-    companyId: string,
-    data: Partial<JournalEntry>,
-    lines: Array<Omit<InsertJournalLine, "entryId">>
-  ): Promise<JournalEntry> {
-    if (!Array.isArray(lines) || lines.length === 0) {
-      throw new Error("Journal entry must have at least one line");
-    }
-    assertBalanced(lines);
-
-    return await db.transaction(async (tx: typeof db) => {
-      const [entry] = await tx
-        .update(journalEntries)
-        .set(data)
-        .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)))
-        .returning();
-      if (!entry) {
-        throw new Error("Journal entry not found");
-      }
-      await tx.delete(journalLines).where(eq(journalLines.entryId, id));
-      for (const line of lines) {
-        await tx.insert(journalLines).values({ ...line, entryId: id });
-      }
-      return entry;
-    });
-  }
-
-  async deleteJournalEntry(id: string, companyId: string): Promise<void> {
-    await db
-      .delete(journalEntries)
-      .where(and(eq(journalEntries.id, id), eq(journalEntries.companyId, companyId)));
-  }
-
   async generateEntryNumber(companyId: string, date: Date): Promise<string> {
     // R14-06: lock-free preview only. The old session-level advisory lock
     // (lock and unlock could run on different pooled connections) leaked and
@@ -453,11 +401,6 @@ export class LedgerStorage extends ReportDeliveryStorage {
   }
 
   // Journal Lines
-  async createJournalLine(insertLine: InsertJournalLine): Promise<JournalLine> {
-    const [line] = await db.insert(journalLines).values(insertLine).returning();
-    return line;
-  }
-
   async getJournalLinesByEntryId(entryId: string): Promise<JournalLine[]> {
     return await db.select().from(journalLines).where(eq(journalLines.entryId, entryId));
   }
@@ -465,25 +408,6 @@ export class LedgerStorage extends ReportDeliveryStorage {
   async getJournalLinesByEntryIds(entryIds: string[]): Promise<JournalLine[]> {
     if (entryIds.length === 0) return [];
     return await db.select().from(journalLines).where(inArray(journalLines.entryId, entryIds));
-  }
-
-  async deleteJournalLinesByEntryId(entryId: string): Promise<void> {
-    await db.delete(journalLines).where(eq(journalLines.entryId, entryId));
-  }
-
-  // Journal Lines (for analytics)
-  async getJournalLinesByCompanyId(companyId: string): Promise<JournalLineSummary[]> {
-    return await db
-      .select({
-        id: journalLines.id,
-        entryId: journalLines.entryId,
-        accountId: journalLines.accountId,
-        debit: journalLines.debit,
-        credit: journalLines.credit,
-      })
-      .from(journalLines)
-      .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
-      .where(eq(journalEntries.companyId, companyId));
   }
 
   /**

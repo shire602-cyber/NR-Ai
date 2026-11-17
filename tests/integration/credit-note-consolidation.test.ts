@@ -263,8 +263,7 @@ describeDb("credit-note consolidation integration", () => {
   });
 
   it("keeps VAT-201 sales totals and trial balance unchanged after backfill", async () => {
-    const { backfillStandaloneCreditNotes } =
-      await import("../../server/services/credit-note-consolidation.service");
+    const { backfillStandaloneCreditNotes } = await import("../db/legacy-credit-note-backfill");
     const client = await pool.connect();
     try {
       await client.query("BEGIN");

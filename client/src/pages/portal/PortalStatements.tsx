@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { apiRequest } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
+import { Money } from "@/components/ui/money";
 
 /**
  * W4-D (R16-15): the customer's statement of account — opening balance, invoices, credit
@@ -49,14 +50,6 @@ interface Statement {
   party: { name: string };
   company: { name: string };
   sections: StatementSection[];
-}
-
-function money(n: number, currency: string) {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-  }).format(n);
 }
 
 export default function PortalStatements() {
@@ -107,7 +100,9 @@ export default function PortalStatements() {
               <span>
                 <T k="portal.openingBalance" />
               </span>
-              <span className="tabular-nums">{money(s.openingBalance, s.currency)}</span>
+              <span className="tabular-nums">
+                <Money amount={s.openingBalance} currency={s.currency} />
+              </span>
             </div>
             <Table>
               <TableHeader>
@@ -140,13 +135,13 @@ export default function PortalStatements() {
                       </span>
                     </TableCell>
                     <TableCell data-numeric className=" tabular-nums">
-                      {l.debit ? money(l.debit, s.currency) : ""}
+                      {l.debit ? <Money amount={l.debit} currency={s.currency} /> : ""}
                     </TableCell>
                     <TableCell data-numeric className=" tabular-nums">
-                      {l.credit ? money(l.credit, s.currency) : ""}
+                      {l.credit ? <Money amount={l.credit} currency={s.currency} /> : ""}
                     </TableCell>
                     <TableCell data-numeric className=" tabular-nums">
-                      {money(l.balance, s.currency)}
+                      <Money amount={l.balance} currency={s.currency} />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -156,7 +151,9 @@ export default function PortalStatements() {
               <span>
                 <T k="portal.closingBalance" />
               </span>
-              <span className="tabular-nums">{money(s.closingBalance, s.currency)}</span>
+              <span className="tabular-nums">
+                <Money amount={s.closingBalance} currency={s.currency} />
+              </span>
             </div>
             <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-sm">
               {(
@@ -173,7 +170,9 @@ export default function PortalStatements() {
                   <p className="text-muted-foreground">
                     <T k={k} />
                   </p>
-                  <p className="font-medium tabular-nums">{money(v, s.currency)}</p>
+                  <p className="font-medium tabular-nums">
+                    <Money amount={v} currency={s.currency} />
+                  </p>
                 </div>
               ))}
             </div>

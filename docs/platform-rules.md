@@ -9,7 +9,8 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   `tests/db/route-matrix.test.ts` is the cross-tenant route matrix; known gaps live as per-issue
   files in `tests/db/route-matrix-allow/`.
 - `npm run check` ends with `scripts/run-guards.mjs`: `check-raw-body.mjs` (raw `req.body` in
-  write routes), `check-ledger-writes.mjs` (direct journal writes outside the ledger service), and
+  write routes), `check-ledger-writes.mjs` (any insert/update/delete, `transitionRow` or raw SQL write on
+  `journal_entries`/`journal_lines` outside `server/ledger/`; baseline 0), and
   `check-i18n-ratchet.mjs` (hard-coded JSX strings). Baselines in `scripts/guard-baselines/` may
   only move down (`--update` after real progress).
 - Write routes should validate with `strictBody` (`server/http/strict-body.ts`, see its README)
@@ -42,7 +43,9 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   balance, account/period guards, in-transaction numbering under `pg_advisory_xact_lock`,
   idempotency keys and one-reversal-per-entry live there. `storage.createJournalEntry` is a legacy
   adapter over the kernel; new code must not add call sites (ratchet
-  `scripts/guard-baselines/ledger-writes.json`). Reversed/voided originals keep `status = posted`;
+  `scripts/guard-baselines/ledger-writes.json`). Drafts are deleted only with `deleteDraft`
+  (journal delete route, `safeDeleteInvoice` for draft credit notes); a document with posted
+  entries answers 409 and must be voided or reversed. Reversed/voided originals keep `status = posted`;
   use `journalLifecycle` for the lifecycle. Year-end close posts through the kernel
   (`ledgerClosePostingPort`, kind `year_end_close`); FX revaluation posts kind `revaluation` with a
   linked next-day reversal; receipt post/revise use `postJournal` + `reverseBySource`.

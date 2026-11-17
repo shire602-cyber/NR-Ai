@@ -70,7 +70,6 @@ import type {
   InsertInvitation,
   InsertInvoice,
   InsertInvoiceLine,
-  InsertInvoicePayment,
   InsertJournalEntry,
   InsertJournalLine,
   InsertMessage,
@@ -209,11 +208,6 @@ export type NewUserInput = Omit<InsertUser, "password"> & {
   password?: string;
   passwordHash?: string;
 };
-
-export type JournalLineSummary = Pick<
-  JournalLine,
-  "id" | "entryId" | "accountId" | "debit" | "credit"
->;
 
 export interface IStorage {
   // Users
@@ -386,25 +380,11 @@ export interface IStorage {
     entry: InsertJournalEntry & { postedAt?: Date | null; updatedAt?: Date | null },
     lines: Array<Omit<InsertJournalLine, "entryId">>
   ): Promise<JournalEntry>;
-  updateJournalEntry(
-    id: string,
-    companyId: string,
-    data: Partial<JournalEntry>
-  ): Promise<JournalEntry>;
-  updateJournalEntryWithLines(
-    id: string,
-    companyId: string,
-    data: Partial<JournalEntry>,
-    lines: Array<Omit<InsertJournalLine, "entryId">>
-  ): Promise<JournalEntry>;
-  deleteJournalEntry(id: string, companyId: string): Promise<void>;
   generateEntryNumber(companyId: string, date: Date): Promise<string>;
 
   // Journal Lines
-  createJournalLine(line: InsertJournalLine): Promise<JournalLine>;
   getJournalLinesByEntryId(entryId: string): Promise<JournalLine[]>;
   getJournalLinesByEntryIds(entryIds: string[]): Promise<JournalLine[]>;
-  deleteJournalLinesByEntryId(entryId: string): Promise<void>;
 
   // Invoices
   getInvoice(id: string, companyId: string): Promise<Invoice | undefined>;
@@ -509,11 +489,6 @@ export interface IStorage {
   getBankTransactionById(id: string, companyId: string): Promise<BankTransaction | undefined>;
   getBankTransactionsByCompanyId(companyId: string): Promise<BankTransaction[]>;
   getUnreconciledBankTransactions(companyId: string): Promise<BankTransaction[]>;
-  updateBankTransaction(
-    id: string,
-    companyId: string,
-    data: Partial<InsertBankTransaction>
-  ): Promise<BankTransaction>;
   // W3-C: reconcileBankTransaction was removed. Every reconcile path goes through
   // services/bank-reconciliation.service.ts applyMatch (it wrote raw Dr Bank / Cr AR journals).
 
@@ -533,9 +508,6 @@ export interface IStorage {
     companyId: string,
     data: Partial<InsertTransactionClassification>
   ): Promise<TransactionClassification>;
-
-  // Journal Lines (for analytics)
-  getJournalLinesByCompanyId(companyId: string): Promise<JournalLineSummary[]>;
 
   // Budgets
   getBudgetsByCompanyId(companyId: string, year: number, month: number): Promise<Budget[]>;
@@ -850,7 +822,6 @@ export interface IStorage {
   // Invoice Payments
   getInvoicePaymentsByInvoiceId(invoiceId: string): Promise<InvoicePayment[]>;
   getInvoicePaymentsByCompanyId(companyId: string): Promise<InvoicePayment[]>;
-  createInvoicePayment(data: InsertInvoicePayment): Promise<InvoicePayment>;
   getInvoicePaidTotal(invoiceId: string): Promise<number>;
   getDueInvoicesForRecurring(): Promise<Invoice[]>;
   /**
@@ -883,7 +854,7 @@ export interface IStorage {
    * Throws Error with .code === 'INVOICE_HAS_POSTED_JE' for the route
    * layer to translate to a 422.
    */
-  safeDeleteInvoice(id: string): Promise<void>;
+  safeDeleteInvoice(id: string, actorId: string): Promise<void>;
   /**
    * Get journal entries that originated from an invoice.
    */
