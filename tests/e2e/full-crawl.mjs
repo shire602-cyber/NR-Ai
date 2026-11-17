@@ -362,7 +362,15 @@ async function main() {
         customerName: "Credit Note Customer LLC",
         date: new Date().toISOString().slice(0, 10),
         placeOfSupplyEmirate: "dubai",
-        lines: [{ description: "Consulting", quantity: 1, unitPrice: 400, vatRate: 0 }],
+        lines: [
+          {
+            description: "Consulting",
+            quantity: 1,
+            unitPrice: 400,
+            vatRate: 0,
+            vatSupplyType: "out_of_scope",
+          },
+        ],
       },
     });
     const sourceInvoice = srcRes.status() < 300 ? await srcRes.json() : undefined;
