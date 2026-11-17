@@ -1,0 +1,14 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+	# One proxy hop in front of the app => TRUST_PROXY_HOPS=1.
+	reverse_proxy app:5000 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+	request_body {
+		max_size 25MB
+	}
+}

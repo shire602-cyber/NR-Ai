@@ -137,6 +137,7 @@ Detail: [docs/testing-runtime.md](docs/testing-runtime.md).
   banking, FX rules.
 - [docs/dev-commands.md](docs/dev-commands.md): QA fixtures, benchmark audit, audit generators.
 - [docs/database-migrations.md](docs/database-migrations.md), [docs/testing-runtime.md](docs/testing-runtime.md).
+- [docs/release/SELF-HOSTING.md](docs/release/SELF-HOSTING.md): on-prem production (compose prod profile, TLS, backups, monitoring).
 - [docs/einvoicing-providers.md](docs/einvoicing-providers.md): the two accredited e-invoicing
   providers (A-Cube, Complyance), `EINVOICE_PROVIDER` switching and the files to delete for each.
 - Other: `docs/corporate-tax-rules.md`, `docs/faf-export.md`, `docs/payroll-legal-parameters.md`,

@@ -1,0 +1,90 @@
+# Production profile for self-hosting (see docs/release/SELF-HOSTING.md).
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# Services: db (Postgres 16), migrate (one-shot release step), app, caddy (TLS reverse proxy).
+# Only caddy publishes ports (80/443); app is reachable by caddy on the internal network
+# and bound to 127.0.0.1 for local health checks; Postgres is never published.
+name: muhasib
+
+services:
+  db:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: muhasib
+      POSTGRES_USER: muhasib
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env.prod}
+    volumes:
+      - /srv/muhasib/pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U muhasib -d muhasib"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [internal]
+
+  # Release step: runs migrations to completion before the app starts.
+  migrate:
+    build:
+      context: .
+      args:
+        RAILWAY_GIT_COMMIT_SHA: ${COMMIT_SHA:-local}
+    image: muhasib-app:${COMMIT_SHA:-local}
+    command: ["node", "dist/migrate.js"]
+    env_file: [.env.prod]
+    environment:
+      DATABASE_URL: postgres://muhasib:${DB_PASSWORD}@db:5432/muhasib
+      NODE_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    networks: [internal]
+
+  app:
+    image: muhasib-app:${COMMIT_SHA:-local}
+    env_file: [.env.prod]
+    environment:
+      NODE_ENV: production
+      PORT: "5000"
+      DATABASE_URL: postgres://muhasib:${DB_PASSWORD}@db:5432/muhasib
+      AUTO_MIGRATE_ON_BOOT: "false"
+      TRUST_PROXY_HOPS: "1"
+      COMMIT_SHA: ${COMMIT_SHA:-local}
+      # /app/uploads is a bind-mounted host directory (backed up, survives rebuilds).
+      UPLOADS_PERSISTENT: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - /srv/muhasib/uploads:/app/uploads
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "10" }
+    networks: [internal]
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN in .env.prod}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env.prod}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /srv/muhasib/caddy-data:/data
+      - /srv/muhasib/caddy-config:/config
+    depends_on: [app]
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "10" }
+    networks: [internal]
+
+networks:
+  internal:

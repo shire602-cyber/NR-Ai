@@ -1,5 +1,7 @@
 # Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0117)
 
+Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
+
 Owner-run. The first deploy of this branch applies 29 migrations that rewrite some production data
 (users, roles, FX rates, reconciliation rules, portal tokens, audit chain, subscriptions). Do not
 merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived or external items
@@ -218,10 +220,10 @@ safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):
 
-| `EINVOICE_PROVIDER` | Required env | Optional env |
-|---|---|---|
-| `acube` | `ACUBE_ENV` (`sandbox` or `production`), `ACUBE_EMAIL`, `ACUBE_PASSWORD` | `ACUBE_WEBHOOK_BASE_URL`, `ACUBE_WEBHOOK_TOKEN`, `ACUBE_WEBHOOK_TOKEN_HEADER`, `ACUBE_SIGNATURE_PUBLIC_KEY`, `ACUBE_WEBHOOK_MAX_AGE_SECONDS`, `ACUBE_INVOICE_SUBMIT_PATH`, `ACUBE_CREDIT_NOTE_SUBMIT_PATH`, `ACUBE_TIMEOUT_MS` |
-| `complyance` | `COMPLYANCE_ENV` (`sandbox` or `production`), `COMPLYANCE_API_KEY`, `COMPLYANCE_WEBHOOK_SECRET` (without it the webhook answers 503 and the poll job is the only inbound path) | `COMPLYANCE_BASE_URL`, `COMPLYANCE_SUBMIT_FORMAT` (`gets`/`xml`), `COMPLYANCE_SOURCE_PREFIX`, `COMPLYANCE_SOURCE_VERSION`, `COMPLYANCE_USER_AGENT`, `COMPLYANCE_TIMEOUT_MS`, `COMPLYANCE_POLL_DAYS`, `COMPLYANCE_WEBHOOK_BASE_URL`, `COMPLYANCE_WEBHOOK_ALGORITHM`, `COMPLYANCE_WEBHOOK_MAX_AGE_SECONDS` |
+| `EINVOICE_PROVIDER` | Required env                                                                                                                                                                   | Optional env                                                                                                                                                                                                                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `acube`             | `ACUBE_ENV` (`sandbox` or `production`), `ACUBE_EMAIL`, `ACUBE_PASSWORD`                                                                                                       | `ACUBE_WEBHOOK_BASE_URL`, `ACUBE_WEBHOOK_TOKEN`, `ACUBE_WEBHOOK_TOKEN_HEADER`, `ACUBE_SIGNATURE_PUBLIC_KEY`, `ACUBE_WEBHOOK_MAX_AGE_SECONDS`, `ACUBE_INVOICE_SUBMIT_PATH`, `ACUBE_CREDIT_NOTE_SUBMIT_PATH`, `ACUBE_TIMEOUT_MS`                                                                           |
+| `complyance`        | `COMPLYANCE_ENV` (`sandbox` or `production`), `COMPLYANCE_API_KEY`, `COMPLYANCE_WEBHOOK_SECRET` (without it the webhook answers 503 and the poll job is the only inbound path) | `COMPLYANCE_BASE_URL`, `COMPLYANCE_SUBMIT_FORMAT` (`gets`/`xml`), `COMPLYANCE_SOURCE_PREFIX`, `COMPLYANCE_SOURCE_VERSION`, `COMPLYANCE_USER_AGENT`, `COMPLYANCE_TIMEOUT_MS`, `COMPLYANCE_POLL_DAYS`, `COMPLYANCE_WEBHOOK_BASE_URL`, `COMPLYANCE_WEBHOOK_ALGORITHM`, `COMPLYANCE_WEBHOOK_MAX_AGE_SECONDS` |
 
 Keep secrets (`ACUBE_PASSWORD`, `COMPLYANCE_API_KEY`, `COMPLYANCE_WEBHOOK_SECRET`) in the secret store.
 Complyance (MoF register no. 112219) is doc-derived: verify in its sandbox before production (list in
