@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { FileDrop } from "@/components/ui/file-drop";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useMemo, useState } from "react";
@@ -1382,14 +1383,15 @@ export default function ClientPortfolio() {
           <div className="space-y-3 py-2">
             <div className="grid gap-1.5">
               <Label htmlFor="import-file">CSV / XLSX file</Label>
-              <Input
+              <FileDrop
                 id="import-file"
-                type="file"
                 accept=".csv,.xlsx,.xls"
-                onChange={(e) => {
-                  setImportFile(e.target.files?.[0] ?? null);
+                value={importFile?.name}
+                onFiles={([f]) => {
+                  setImportFile(f ?? null);
                   setImportResult(null);
                 }}
+                onClear={() => setImportFile(null)}
               />
               <p className="text-xs text-muted-foreground">Up to 500 rows per upload.</p>
             </div>
