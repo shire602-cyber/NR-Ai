@@ -185,7 +185,7 @@ export default function BudgetView({ companyId }: { companyId: string }) {
           />
         }
       >
-        <div className="h-72" dir="ltr">
+        <div dir="ltr" style={{ height: Math.max(160, chartRows.length * 44 + 48) }}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={chartRows}
