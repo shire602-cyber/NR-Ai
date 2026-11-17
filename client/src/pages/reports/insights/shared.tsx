@@ -124,6 +124,24 @@ export function ControlsRow({ start, end }: { start: ReactNode; end?: ReactNode 
   );
 }
 
+/** Two-series key shown in the chart card header (spec 2.7: no legend under a 2-series chart). */
+export function SeriesKey({ items }: { items: Array<{ label: string; color: string }> }) {
+  return (
+    <ul className="flex shrink-0 flex-wrap gap-x-4 gap-y-1 text-caption text-muted-foreground">
+      {items.map((item) => (
+        <li key={item.label} className="flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="h-2 w-2 rounded-full"
+            style={{ backgroundColor: item.color }}
+          />
+          {item.label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Card that holds one chart and the table behind it. */
 export function ChartCard({
   title,

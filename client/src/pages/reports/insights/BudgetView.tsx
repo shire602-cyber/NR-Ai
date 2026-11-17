@@ -28,7 +28,7 @@ import { formatDateRange } from "@/lib/format-date";
 import { formatPercentDelta } from "@/lib/format-money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { type ComparisonMetric, comparisonDelta } from "./model";
-import { ChartCard, ControlsRow, InsightsSkeleton, InsightsTooltip } from "./shared";
+import { ChartCard, ControlsRow, InsightsSkeleton, InsightsTooltip, SeriesKey } from "./shared";
 import { chartAnimates, compactAxisValue, insightsChart } from "./chartStyle";
 
 interface BudgetActualRow {
@@ -176,6 +176,14 @@ export default function BudgetView({ companyId }: { companyId: string }) {
         title={t["analytics.largestVariances"]}
         description={t["analytics.largestVariancesHint"]}
         testId="insights-budget-chart"
+        action={
+          <SeriesKey
+            items={[
+              { label: t["analytics.actualLabel"], color: insightsChart.primary },
+              { label: t["analytics.budgetLabel"], color: insightsChart.neutral },
+            ]}
+          />
+        }
       >
         <div className="h-72" dir="ltr">
           <ResponsiveContainer width="100%" height="100%">
@@ -226,22 +234,6 @@ export default function BudgetView({ companyId }: { companyId: string }) {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <ul className="mt-3 flex flex-wrap gap-4 text-caption text-muted-foreground">
-          <li className="flex items-center gap-1.5">
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: insightsChart.primary }}
-            />
-            {t["analytics.actualLabel"]}
-          </li>
-          <li className="flex items-center gap-1.5">
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: insightsChart.neutral }}
-            />
-            {t["analytics.budgetLabel"]}
-          </li>
-        </ul>
       </ChartCard>
 
       <ChartCard title={t["analytics.budgetLines"]} testId="insights-budget-table">

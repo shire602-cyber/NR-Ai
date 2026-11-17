@@ -38,6 +38,7 @@ import {
   InsightsSkeleton,
   InsightsTooltip,
   PeriodSelect,
+  SeriesKey,
   SmallEmpty,
 } from "./shared";
 import { chartAnimates, compactAxisValue, insightsChart } from "./chartStyle";
@@ -151,6 +152,14 @@ export default function ComparisonView({ companyId }: { companyId: string }) {
         title={t["analytics.comparisonChartTitle"]}
         description={context}
         testId="insights-comparison-chart"
+        action={
+          <SeriesKey
+            items={[
+              { label: t["analytics.currentPeriod"], color: insightsChart.primary },
+              { label: t["analytics.previousPeriod"], color: insightsChart.neutral },
+            ]}
+          />
+        }
       >
         {!hasActivity ? (
           <SmallEmpty text={t["analytics.noActivityInPeriods"]} />
@@ -203,22 +212,6 @@ export default function ComparisonView({ companyId }: { companyId: string }) {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <ul className="mt-3 flex flex-wrap gap-4 text-caption text-muted-foreground">
-              <li className="flex items-center gap-1.5">
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: insightsChart.primary }}
-                />
-                {t["analytics.currentPeriod"]}
-              </li>
-              <li className="flex items-center gap-1.5">
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: insightsChart.neutral }}
-                />
-                {t["analytics.previousPeriod"]}
-              </li>
-            </ul>
           </>
         )}
       </ChartCard>

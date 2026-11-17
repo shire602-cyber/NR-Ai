@@ -23,6 +23,7 @@ import {
   ExportMenu,
   InsightsSkeleton,
   InsightsTooltip,
+  SeriesKey,
   SmallEmpty,
 } from "./shared";
 import { chartAnimates, compactAxisValue, insightsChart } from "./chartStyle";
@@ -157,6 +158,14 @@ export default function AgeingView({ companyId }: { companyId: string }) {
         title={t["analytics.ageingByBucket"]}
         description={t["analytics.ageingByBucketHint"]}
         testId="insights-ageing-chart"
+        action={
+          <SeriesKey
+            items={[
+              { label: t["analytics.receivables"], color: insightsChart.primary },
+              { label: t["analytics.payables"], color: insightsChart.neutral },
+            ]}
+          />
+        }
       >
         {!hasBalances ? (
           <SmallEmpty text={t["analytics.nothingOpen"]} />
@@ -214,22 +223,6 @@ export default function AgeingView({ companyId }: { companyId: string }) {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <ul className="mt-3 flex flex-wrap gap-4 text-caption text-muted-foreground">
-              <li className="flex items-center gap-1.5">
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: insightsChart.primary }}
-                />
-                {t["analytics.receivables"]}
-              </li>
-              <li className="flex items-center gap-1.5">
-                <span
-                  className="h-2 w-2 rounded-full"
-                  style={{ backgroundColor: insightsChart.neutral }}
-                />
-                {t["analytics.payables"]}
-              </li>
-            </ul>
           </>
         )}
       </ChartCard>
