@@ -28,6 +28,10 @@ import { PageSkeleton } from "@/components/PageSkeleton";
 // All pages lazy-loaded for route-level code splitting.
 // Layout shell (AppSidebar, ProtectedLayout) is NOT lazy — needed immediately.
 const NotFound = lazyWithReload(() => import("@/pages/not-found"));
+// WP-A: design-system gallery for review screenshots; only exists in builds made with
+// VITE_UI_GALLERY=1 (the constant folds to null otherwise and the chunk is never emitted).
+const UiGallery =
+  import.meta.env.VITE_UI_GALLERY === "1" ? lazyWithReload(() => import("@/dev/UiGallery")) : null;
 const Login = lazyWithReload(() => import("@/pages/Login"));
 const Register = lazyWithReload(() => import("@/pages/Register"));
 const AuthCallback = lazyWithReload(() => import("@/pages/AuthCallback"));
@@ -366,6 +370,8 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={location}
+                    // Spec 2.5: content fades in + 4 px once per route change (CSS, reduced-motion safe).
+                    className="page-enter"
                     initial={false}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
@@ -813,6 +819,7 @@ function Router() {
               </FirmRoute>
             </Route>
 
+            {UiGallery ? <Route path="/__ui" component={UiGallery} /> : null}
             <Route component={NotFound} />
           </Switch>
         </Suspense>

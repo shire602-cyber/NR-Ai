@@ -126,8 +126,10 @@
   --chart-3: 38 72% 40%;
   --chart-4: 280 24% 48%;
   --chart-5: 190 55% 34%;
-  /* Comparison series (expenses, prior period, "other"): neutral, never amber (amber = warning). */
-  --chart-neutral: var(--neutral-400);
+  /* Comparison series (expenses, prior period, "other"): neutral, never amber (amber = warning).
+     Spec 2.3 names neutral-400 (2.6:1 on white); set between 400 and 500 so the series keeps
+     the 3:1 non-text contrast of WCAG 1.4.11 on cards. */
+  --chart-neutral: 220 9% 56%;
   --chart-grid: var(--neutral-100);
   --chart-axis: var(--neutral-500);
 
