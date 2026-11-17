@@ -35,7 +35,8 @@ const ROUTES = [
   "/payment-chasing",
   "/contacts",
   "/receipts",
-  "/receipt-autopilot",
+  // WP-C: /receipt-autopilot redirects to the Receipts Automation tab.
+  "/receipts?tab=automation",
   "/chart-of-accounts",
   "/journal",
   "/vat-filing",
@@ -50,22 +51,24 @@ const ROUTES = [
   "/reports?workspace=insights",
   "/cashflow-forecast",
   "/anomaly-detection",
-  "/auto-reconcile",
-  "/ai?tab=cfo",
-  "/ai?tab=chat",
-  "/ai?tab=features",
-  "/ai?tab=inbox",
-  "/ai?tab=assistant",
+  // WP-C: /auto-reconcile and /reconciliation-rules redirect to the reconciliation tabs.
+  "/bank-reconciliation?tab=suggestions",
+  "/bank-reconciliation?tab=rules",
+  // WP-E: the /ai hub (every legacy tab) redirects to the Assistant.
+  "/assistant?tab=ask",
+  "/assistant?tab=review",
+  "/assistant?tab=automations",
   "/payroll",
   "/fixed-assets",
   "/budgets",
   "/bill-pay",
   "/expense-claims",
   "/inventory",
-  "/integrations",
+  // /integrations redirects to /integrations-hub.
   "/integrations-hub",
   "/notifications",
-  "/reminders",
+  // WP-C: /reminders redirects to the Payment reminders Schedule tab.
+  "/payment-chasing?tab=schedule",
   // /company-profile redirects to /settings/company since CL-B merged the two pages.
   "/settings/company",
   "/team",
@@ -79,7 +82,6 @@ const ROUTES = [
   "/purchase-orders",
   "/cost-centers",
   "/financial-statements",
-  "/reconciliation-rules",
   "/invoice-templates",
   "/document-versions",
   "/developer-settings",
@@ -87,13 +89,12 @@ const ROUTES = [
   "/subscription",
   // WP-D: /task-center redirects to the calendar's List view.
   "/compliance-calendar?view=list",
-  "/news-feed",
-  "/admin/dashboard",
+  // WP-E: /news-feed redirects to the compliance calendar (crawled above); /admin and
+  // /admin/dashboard redirect to /admin/users (crawled below).
   "/admin/invitations",
   "/admin/import",
   "/admin/activity-logs",
   "/admin/users",
-  "/admin",
   "/firm/command-center",
   "/firm/clients",
   "/firm/staff",
@@ -1289,7 +1290,6 @@ async function main() {
     "/tax-return-archive",
     "/compliance-calendar",
     "/compliance-calendar?view=list",
-    "/news-feed",
     "/reports",
   ]);
   await crawlAs("portal", "client_portal", [

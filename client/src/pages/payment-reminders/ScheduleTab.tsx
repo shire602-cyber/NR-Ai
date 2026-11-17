@@ -354,6 +354,7 @@ function ReminderStep({
                     fields={fields}
                     className="font-medium text-foreground"
                     dir={lang === "ar" ? "rtl" : "ltr"}
+                    lang={lang}
                   />
                 )}
               </div>
@@ -363,6 +364,7 @@ function ReminderStep({
                 fields={fields}
                 className="line-clamp-4 text-muted-foreground"
                 dir={lang === "ar" ? "rtl" : "ltr"}
+                lang={lang}
               />
             </div>
           ) : (

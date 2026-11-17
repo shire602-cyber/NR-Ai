@@ -52,6 +52,7 @@ export function ReminderReadyDialog({
         <div
           className="max-h-[50vh] overflow-y-auto whitespace-pre-wrap rounded-lg border border-border bg-surface-sunken p-4 text-small leading-6 text-foreground"
           dir={ready?.language === "ar" ? "rtl" : "ltr"}
+          lang={ready?.language}
           data-testid="textarea-preview"
         >
           {ready?.body}
@@ -127,6 +128,7 @@ export function InvoiceTimelineDialog({
               <p
                 className="mt-2 whitespace-pre-wrap text-small text-muted-foreground"
                 dir={c.language === "ar" ? "rtl" : "ltr"}
+                lang={c.language === "ar" ? "ar" : "en"}
               >
                 {c.messageText}
               </p>

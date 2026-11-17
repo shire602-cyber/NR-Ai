@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 import { splitMessage, tokenText, type TokenField, type TokenSyntax } from "./tokens";
 
 export type { TokenField, TokenSyntax } from "./tokens";
@@ -29,21 +30,26 @@ export function MessageWithChips({
   fields,
   className,
   dir,
+  lang,
 }: {
   value: string;
   syntax: TokenSyntax;
   fields: TokenField[];
   className?: string;
   dir?: "ltr" | "rtl" | "auto";
+  /** Language of the message itself (a reminder in English stays English in the Arabic UI). */
+  lang?: "en" | "ar";
 }) {
+  const { locale } = useTranslation();
   const labelOf = (key: string) => fields.find((f) => f.key === key)?.label ?? key;
   return (
-    <p className={cn("whitespace-pre-wrap text-small leading-6", className)} dir={dir}>
+    <p className={cn("whitespace-pre-wrap text-small leading-6", className)} dir={dir} lang={lang}>
       {splitMessage(value, syntax).map((part, i) =>
         part.kind === "text" ? (
           <span key={i}>{part.text}</span>
         ) : (
-          <span key={i} className={CHIP_CLASS}>
+          // The field chip is a UI label, in the UI language.
+          <span key={i} className={CHIP_CLASS} lang={lang && lang !== locale ? locale : undefined}>
             {labelOf(part.key)}
           </span>
         )
