@@ -245,7 +245,7 @@ export function RegisterForm({ onSuccess, captchaToken, captcha }: RegisterFormP
         {t.alreadyHaveAccount}{" "}
         <Link
           href="/login"
-          className="inline-flex min-h-11 items-center font-medium text-primary hover:underline md:min-h-0"
+          className="inline-flex min-h-11 items-center font-medium text-accent hover:underline md:min-h-0"
           data-testid="link-login"
         >
           {t["marketing.authSignIn"]}

@@ -33,7 +33,7 @@ export function OnboardingShell({
             <BrandMark size="sm" />
             <span className="text-[0.9375rem] font-semibold text-foreground" lang="en" dir="ltr">
               {"Muhasib"}
-              <span className="text-primary">{".ai"}</span>
+              <span className="text-accent">{".ai"}</span>
             </span>
           </span>
           {step ? (

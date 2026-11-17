@@ -183,7 +183,7 @@ export default function ResetPassword() {
       )}
       <AuthSwitch>
         {t["marketing.resetNeedLink"]}{" "}
-        <Link href="/forgot-password" className="font-medium text-primary hover:underline">
+        <Link href="/forgot-password" className="font-medium text-accent hover:underline">
           <T k="pageLabels.startOver" />
         </Link>
       </AuthSwitch>

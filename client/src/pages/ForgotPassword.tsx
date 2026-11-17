@@ -101,7 +101,7 @@ export default function ForgotPassword() {
           {devResetUrl && (
             <div className="break-all rounded-lg border border-border p-3 text-caption text-muted-foreground">
               <p className="mb-1 font-medium text-foreground">{t["marketing.forgotDevLink"]}</p>
-              <a href={devResetUrl} className="text-primary underline" data-testid="link-dev-reset">
+              <a href={devResetUrl} className="text-accent underline" data-testid="link-dev-reset">
                 {devResetUrl}
               </a>
             </div>
@@ -147,7 +147,7 @@ export default function ForgotPassword() {
       )}
       <AuthSwitch>
         {t["marketing.forgotRemembered"]}{" "}
-        <Link href="/login" className="font-medium text-primary hover:underline">
+        <Link href="/login" className="font-medium text-accent hover:underline">
           {t["marketing.authSignIn"]}
         </Link>
       </AuthSwitch>

@@ -167,7 +167,7 @@ export function LoginForm({ onSuccess, notice }: LoginFormProps) {
                   <FormLabel>{t.password}</FormLabel>
                   <Link
                     href="/forgot-password"
-                    className="inline-flex min-h-11 items-center text-small font-medium text-primary hover:underline md:min-h-0"
+                    className="inline-flex min-h-11 items-center text-small font-medium text-accent hover:underline md:min-h-0"
                     data-testid="link-forgot-password"
                   >
                     {t["components.authForgotPassword"]}
@@ -214,7 +214,7 @@ export function LoginForm({ onSuccess, notice }: LoginFormProps) {
         {t.dontHaveAccount}{" "}
         <Link
           href="/register"
-          className="inline-flex min-h-11 items-center font-medium text-primary hover:underline md:min-h-0"
+          className="inline-flex min-h-11 items-center font-medium text-accent hover:underline md:min-h-0"
           data-testid="link-register"
         >
           {t["marketing.authCreateAccount"]}

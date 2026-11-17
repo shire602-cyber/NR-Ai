@@ -204,7 +204,7 @@ export function PlanCard({
               type="button"
               className={cn(
                 "mt-3 min-h-11 self-start text-small font-medium underline-offset-4 hover:underline sm:hidden",
-                featured ? "text-brand-300" : "text-primary"
+                featured ? "text-brand-300" : "text-accent"
               )}
               onClick={() => setExpanded(true)}
             >

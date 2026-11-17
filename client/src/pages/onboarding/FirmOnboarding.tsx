@@ -55,12 +55,12 @@ function OptionCard({
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60"
       )}
     >
-      <Icon aria-hidden="true" strokeWidth={1.5} className="h-5 w-5 text-primary" />
+      <Icon aria-hidden="true" strokeWidth={1.5} className="h-5 w-5 text-accent" />
       <span className="mt-3 text-[0.9375rem] font-semibold">{title}</span>
       <span className="mt-1 text-small text-muted-foreground">{body}</span>
       <ArrowRight
         aria-hidden="true"
-        className="mt-3 h-4 w-4 text-muted-foreground transition-colors group-hover:text-primary rtl:rotate-180"
+        className="mt-3 h-4 w-4 text-muted-foreground transition-colors group-hover:text-accent rtl:rotate-180"
       />
     </button>
   );
