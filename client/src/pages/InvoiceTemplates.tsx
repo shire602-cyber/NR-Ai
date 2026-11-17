@@ -29,7 +29,12 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
-import { DEFAULT_DOCUMENT_ACCENT, InvoicePreview } from "@/components/invoices/InvoicePreview";
+import { InvoicePreview } from "@/components/invoices/InvoicePreview";
+import {
+  DOCUMENT_ACCENT_DEFAULT,
+  DOCUMENT_ACCENT_PRESETS,
+  resolveDocumentAccent,
+} from "@shared/document-accent";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -46,14 +51,6 @@ import { cn } from "@/lib/utils";
  * (d) a live preview. More templates are listed as cards only when the company has several.
  * The invoice "Branding" tab and the separate template list page are gone; their data is unchanged.
  */
-
-/** Spec 2.8 presets. The accent only colours the top rule and the amount-due row. */
-const ACCENT_PRESETS = [
-  { key: "emerald", hex: DEFAULT_DOCUMENT_ACCENT },
-  { key: "graphite", hex: "#1F2733" },
-  { key: "navy", hex: "#1E2F5C" },
-  { key: "maroon", hex: "#6B1F2A" },
-] as const;
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 
@@ -163,7 +160,7 @@ function DocumentsSettings({
   });
   const defaultTemplate = templates?.find((tpl) => tpl.isDefault) ?? templates?.[0] ?? null;
   const [draft, setDraft] = useState<TemplateDraft>({
-    primaryColor: DEFAULT_DOCUMENT_ACCENT,
+    primaryColor: DOCUMENT_ACCENT_DEFAULT,
     headerText: "",
     footerText: "",
     termsText: "",
@@ -172,9 +169,7 @@ function DocumentsSettings({
   useEffect(() => {
     if (!defaultTemplate) return;
     setDraft({
-      primaryColor: HEX_COLOR.test(defaultTemplate.primaryColor)
-        ? defaultTemplate.primaryColor
-        : DEFAULT_DOCUMENT_ACCENT,
+      primaryColor: resolveDocumentAccent(defaultTemplate.primaryColor),
       headerText: defaultTemplate.headerText ?? "",
       footerText: defaultTemplate.footerText ?? "",
       termsText: defaultTemplate.termsText ?? "",
@@ -313,7 +308,7 @@ function DocumentsSettings({
       vatAmount={150}
       total={3150}
       ratesLabel="5%"
-      accent={templatesAllowed ? draft.primaryColor : DEFAULT_DOCUMENT_ACCENT}
+      accent={templatesAllowed ? draft.primaryColor : DOCUMENT_ACCENT_DEFAULT}
     />
   );
 
@@ -447,12 +442,12 @@ function DocumentsSettings({
                     {tt["invoiceDesign.documents.accentLabel"]}
                   </legend>
                   <div className="flex flex-wrap items-center gap-2" role="radiogroup">
-                    {ACCENT_PRESETS.map((preset) => {
+                    {DOCUMENT_ACCENT_PRESETS.map((preset) => {
                       const selected =
                         draft.primaryColor.toLowerCase() === preset.hex.toLowerCase();
                       return (
                         <button
-                          key={preset.key}
+                          key={preset.id}
                           type="button"
                           role="radio"
                           aria-checked={selected}
@@ -463,7 +458,7 @@ function DocumentsSettings({
                               ? "border-primary bg-secondary text-foreground"
                               : "border-border text-muted-foreground hover:text-foreground"
                           )}
-                          data-testid={`accent-${preset.key}`}
+                          data-testid={`accent-${preset.id}`}
                         >
                           <span
                             className="flex h-5 w-5 items-center justify-center rounded-full"
@@ -472,7 +467,7 @@ function DocumentsSettings({
                           >
                             {selected && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
                           </span>
-                          {tt[`invoiceDesign.documents.accent.${preset.key}`]}
+                          {tt[`invoiceDesign.documents.accent.${preset.id}`]}
                         </button>
                       );
                     })}

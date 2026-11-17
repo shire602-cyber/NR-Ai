@@ -6,10 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatMessage } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { readOnboardingRecord } from "../onboarding/first-task";
 import type { DashboardModel } from "./useCustomerDashboardModel";
 
-/** Onboarding (WP-B) may store the first task the owner picked; that item is listed first. */
-const FIRST_TASK_KEY = "muhasib.onboarding.firstTask";
 const dismissKey = (companyId: string) => `muhasib.gettingStarted.dismissed.${companyId}`;
 /** The card stays until this many steps are done (spec 3.4). */
 const DONE_THRESHOLD = 3;
@@ -114,10 +113,20 @@ export function GettingStarted({
         hint: tt["dashboard.gsVatHint"],
       },
     ];
-    const first = FIRST_TASK_STEP[readStorage(FIRST_TASK_KEY) ?? ""];
+    // The first task chosen in onboarding (WP-B) is listed first.
+    const first = FIRST_TASK_STEP[readOnboardingRecord(companyId).firstTask ?? ""];
     if (!first) return list;
     return [...list.filter((s) => s.id === first), ...list.filter((s) => s.id !== first)];
-  }, [tt, recentInvoices, contacts, bankAccounts, bills, receipts, company?.trnVatNumber]);
+  }, [
+    tt,
+    companyId,
+    recentInvoices,
+    contacts,
+    bankAccounts,
+    bills,
+    receipts,
+    company?.trnVatNumber,
+  ]);
 
   const doneCount = steps.filter((s) => s.done).length;
   if (!alwaysShow && (dismissed || doneCount >= DONE_THRESHOLD)) return null;

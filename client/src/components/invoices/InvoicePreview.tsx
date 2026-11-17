@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { loadNamespace, t as catalogs, useTranslation, type Locale } from "@/lib/i18n";
 import { Money } from "@/components/ui/money";
 import { formatDate } from "@/lib/format";
+import { resolveDocumentAccent } from "@shared/document-accent";
 
 /**
  * D5b — live bilingual tax-invoice preview (BENCHMARK move 7, "bilingual invoice as the
@@ -42,9 +43,6 @@ export interface InvoicePreviewProps {
   accent?: string | null;
   className?: string;
 }
-
-/** Default document accent, "Emerald ink" (brand-700). */
-export const DEFAULT_DOCUMENT_ACCENT = "#0B5F45";
 
 const NS = "forms";
 
@@ -126,7 +124,8 @@ export function InvoicePreview(props: InvoicePreviewProps) {
     accent,
     className,
   } = props;
-  const accentColour = accent || DEFAULT_DOCUMENT_ACCENT;
+  // Same rule as the PDFs (WP-F): legacy blue or too-light colours print as Emerald ink.
+  const accentColour = resolveDocumentAccent(accent);
   const visibleLines = lines.filter((l) => l.description || l.unitPrice || l.lineTotal);
   const placeholder = <span className="text-muted-foreground">—</span>;
 
