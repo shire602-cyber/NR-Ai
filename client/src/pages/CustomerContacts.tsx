@@ -153,6 +153,7 @@ function ContactForm({
   onSubmit: (data: any) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
     name: contact?.name || "",
     email: contact?.email || "",
@@ -160,12 +161,11 @@ function ContactForm({
     trnNumber: contact?.trnNumber || "",
     address: contact?.address || "",
     city: contact?.city || "",
-    country: contact?.country || "UAE",
+    country: contact?.country || t["pageLabels.countryUaeName"],
     // R03-10: invoices to this contact default their place of supply and due date from here.
     emirate: contact?.emirate || "",
     paymentTerms: contact?.paymentTerms ?? 30,
   });
-  const { t } = useTranslation();
   const idp = contact ? `contact-${contact.id}` : "contact-new";
   const gate = useFormGate([
     { id: `${idp}-name`, label: t["forms.contact.name"], invalid: !formData.name },
@@ -315,7 +315,7 @@ function ContactForm({
               dir="auto"
               value={formData.country}
               onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-              placeholder="UAE"
+              placeholder={t["pageLabels.countryUaeName"]}
               data-testid="input-contact-country"
             />
           </Field>

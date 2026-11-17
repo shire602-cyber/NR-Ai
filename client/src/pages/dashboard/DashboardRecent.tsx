@@ -1,3 +1,4 @@
+import { localizeJournalMemo } from "@/lib/journal-memo";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -114,7 +115,8 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
                     <li key={entry.id} className="group flex items-center gap-3 py-2.5">
                       <div className="flex-1 min-w-0">
                         <div className="truncate text-sm font-medium text-foreground">
-                          {entry.memo || t["dashboard.journalEntryFallback"]}
+                          {localizeJournalMemo(t, entry.memo, locale) ||
+                            t["dashboard.journalEntryFallback"]}
                         </div>
                         <div className="text-caption text-muted-foreground">
                           {formatDate(entry.date, locale)}

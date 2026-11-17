@@ -404,7 +404,7 @@ describe("[D5b] contact form payload unchanged", () => {
       trnNumber: "100123456700003",
       address: "Unit 4, Al Jurf",
       city: "Ajman",
-      country: "UAE",
+      country: "United Arab Emirates",
       emirate: "ajman",
       paymentTerms: 45,
     });
@@ -447,7 +447,12 @@ describe("[D5b] manual expense (receipt) form payload unchanged", () => {
     await renderPage(Receipts);
     await click(byTestId("button-add-manual-expense"));
     await type(byTestId("input-manual-merchant"), "Careem");
-    await type(byTestId("input-manual-date"), "2026-03-10");
+    // X3: the date is the shared DatePicker (no native mm/dd/yyyy); pick the 10th of the open month.
+    await click(byTestId("input-manual-date"));
+    const day10 = [...document.querySelectorAll<HTMLButtonElement>('button[name="day"]')].find(
+      (b) => b.textContent?.trim() === "10"
+    );
+    await click(day10!);
     await type(byTestId("input-manual-amount"), "84");
     await type(byTestId("input-manual-vat"), "4");
     await type(byTestId("input-manual-category"), "Transport");

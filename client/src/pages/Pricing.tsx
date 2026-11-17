@@ -359,7 +359,7 @@ export default function Pricing() {
                 "1 company, 3 users",
                 "200 invoices/month",
                 "100 receipts/month",
-                "AI OCR scanning",
+                "AI receipt reading (coming soon)",
                 "AI categorization",
                 "Recurring invoices",
                 "Bill pay",
@@ -369,7 +369,7 @@ export default function Pricing() {
                 "شركة واحدة، 3 مستخدمين",
                 "200 فاتورة/شهر",
                 "100 إيصال/شهر",
-                "مسح OCR بالذكاء الاصطناعي",
+                "قراءة الإيصالات بالذكاء الاصطناعي (قريباً)",
                 "تصنيف ذكي",
                 "فواتير متكررة",
                 "دفع الفواتير",
@@ -396,7 +396,7 @@ export default function Pricing() {
                 "Budgeting & Variance",
                 "Expense Claims",
                 "Corporate Tax (9%)",
-                "E-Invoicing (PINT AE)",
+                "E-Invoicing (PINT AE): ready, switched on when we connect your accredited provider (A-Cube / Complyance)",
                 "Client Portal",
               ]
             : [
@@ -414,7 +414,7 @@ export default function Pricing() {
                 "الميزانيات والتحليل",
                 "مطالبات المصروفات",
                 "ضريبة الشركات (9%)",
-                "الفوترة الإلكترونية (PINT AE)",
+                "الفوترة الإلكترونية (PINT AE): جاهزة وتُفعَّل عند ربط مزوّدك المعتمد (A-Cube / Complyance)",
                 "بوابة العميل",
               ],
       },
@@ -461,7 +461,10 @@ export default function Pricing() {
     },
     featureNames: {
       invoicing: locale === "en" ? "Invoicing" : "الفواتير",
-      receiptScanning: tr["marketing.pricingReceiptScanning"],
+      receiptScanning:
+        locale === "en"
+          ? "Receipt capture (automatic reading coming soon)"
+          : "تسجيل الإيصالات (القراءة التلقائية قريباً)",
       bankReconciliation: tr["marketing.pricingBankReconciliation"],
       vatFiling: locale === "en" ? "VAT Filing" : "تقديم ضريبة القيمة المضافة",
       recurringInvoices: tr["marketing.pricingRecurringInvoices"],
@@ -472,7 +475,10 @@ export default function Pricing() {
       budgeting: locale === "en" ? "Budgeting & Variance" : "الميزانيات والتحليل",
       expenseClaims: tr["marketing.pricingExpenseClaims"],
       basicAICategorization: tr["marketing.pricingBasicAiCategorization"],
-      aiOCR: locale === "en" ? "AI OCR Scanning" : "مسح OCR بالذكاء الاصطناعي",
+      aiOCR:
+        locale === "en"
+          ? "AI receipt reading (coming soon)"
+          : "قراءة الإيصالات بالذكاء الاصطناعي (قريباً)",
       autonomousGL: locale === "en" ? "Autonomous GL (Auto-posting)" : "قيود تلقائية",
       aiCFO: locale === "en" ? "AI CFO & Financial Advisor" : "مستشار مالي ذكي",
       aiAnomalyDetection: locale === "en" ? "AI Anomaly Detection" : "كشف الحالات الشاذة",
@@ -482,7 +488,10 @@ export default function Pricing() {
       payrollWPS: locale === "en" ? "Payroll & WPS" : "الرواتب وحماية الأجور",
       vatFilingCompliance: locale === "en" ? "VAT Filing (5%)" : "ضريبة القيمة المضافة (5%)",
       corporateTax: locale === "en" ? "Corporate Tax (9%)" : "ضريبة الشركات (9%)",
-      eInvoicing: locale === "en" ? "E-Invoicing (PINT AE)" : "الفوترة الإلكترونية (PINT AE)",
+      eInvoicing:
+        locale === "en"
+          ? "E-Invoicing (PINT AE): ready, switched on when we connect your accredited provider (A-Cube / Complyance)"
+          : "الفوترة الإلكترونية (PINT AE): جاهزة وتُفعَّل عند ربط مزوّدك المعتمد (A-Cube / Complyance)",
       clientPortal: tr["marketing.pricingClientPortal"],
       multiCompany: locale === "en" ? "Multi-Company" : "شركات متعددة",
       dedicatedManager: tr["marketing.pricingDedicatedAccountManager"],

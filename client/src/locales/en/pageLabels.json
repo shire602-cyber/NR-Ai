@@ -1035,5 +1035,6 @@
   "pageLabels.notificationDismiss": "Dismiss",
   "pageLabels.notificationsPageTitle": "Notifications & news",
   "pageLabels.notificationsPageDesc": "Stay updated with deadlines, reminders, and regulatory changes",
-  "pageLabels.notificationsTab": "Notifications"
+  "pageLabels.notificationsTab": "Notifications",
+  "pageLabels.countryUaeName": "United Arab Emirates"
 }

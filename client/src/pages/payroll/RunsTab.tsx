@@ -1,4 +1,5 @@
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { accountDisplayName } from "@/lib/account-name";
 import { useState } from "react";
 import {
   ErrorSummary,
@@ -447,7 +448,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
                   <SelectContent>
                     {bankAccounts.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
-                        {a.code} · {a.nameEn}
+                        {a.code} · {accountDisplayName(a, locale)}
                       </SelectItem>
                     ))}
                   </SelectContent>

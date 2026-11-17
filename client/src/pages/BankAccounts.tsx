@@ -1,3 +1,4 @@
+import { accountDisplayName } from "@/lib/account-name";
 import { useMemo, useState } from "react";
 import {
   ErrorSummary,
@@ -275,7 +276,8 @@ export default function BankAccounts() {
                   <TableCell data-nowrap="" className="text-muted-foreground">
                     {gl ? (
                       <>
-                        <span className="tabular-nums">{gl.code}</span> {gl.nameEn}
+                        <span className="tabular-nums">{gl.code}</span>{" "}
+                        {accountDisplayName(gl, locale)}
                       </>
                     ) : (
                       "—"
@@ -488,7 +490,7 @@ export default function BankAccounts() {
                       <SelectItem value="auto">{tr("banking.accounts.glAuto")}</SelectItem>
                       {bankGlAccounts.map((a) => (
                         <SelectItem key={a.id} value={a.id}>
-                          {a.code} {a.nameEn}
+                          {a.code} {accountDisplayName(a, locale)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -545,7 +547,7 @@ export default function BankAccounts() {
               <SelectContent>
                 {bankGlAccounts.map((a) => (
                   <SelectItem key={a.id} value={a.id}>
-                    {a.code} {a.nameEn}
+                    {a.code} {accountDisplayName(a, locale)}
                   </SelectItem>
                 ))}
               </SelectContent>

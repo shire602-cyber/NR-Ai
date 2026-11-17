@@ -1,3 +1,4 @@
+import { accountDisplayName } from "@/lib/account-name";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -1895,7 +1896,7 @@ function BankLineActions({
   transactions: BankTransaction[];
   onDone: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const tr = (k: string) => t[k] ?? k;
   const { toast } = useToast();
   const [mode, setMode] = useState<LineMode>("entry");
@@ -2023,7 +2024,7 @@ function BankLineActions({
               <SelectContent>
                 {contraAccounts.map((a) => (
                   <SelectItem key={a.id} value={a.id}>
-                    {a.code} {a.nameEn}
+                    {a.code} {accountDisplayName(a, locale)}
                   </SelectItem>
                 ))}
               </SelectContent>

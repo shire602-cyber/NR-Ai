@@ -1,9 +1,10 @@
 import { T } from "@/components/layout/T";
 import { LegalLayout } from "@/components/LegalLayout";
+import { TermsOfServiceAr } from "./legal/legalAr";
 
 export default function TermsOfService() {
   return (
-    <LegalLayout slug="terms" effectiveDate="2026-04-26">
+    <LegalLayout slug="terms" effectiveDate="2026-04-26" arabic={<TermsOfServiceAr />}>
       <p>
         These Terms of Service (<strong>"Terms"</strong>) govern your access to and use of the
         Muhasib.ai platform (the <strong>"Service"</strong>) operated by Najma Al Raeda Accounting

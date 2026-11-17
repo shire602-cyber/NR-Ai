@@ -501,5 +501,6 @@
   "marketing.svcFact4": "Free consultation, no commitment",
   "marketing.svcFact5": "We respond within 24 hours",
   "marketing.forgotNoProviderTitle": "Email delivery is not set up yet",
-  "marketing.forgotNoProvider": "If an account exists, we'll email a reset link once email delivery is set up. Contact support@muhasib.ai for help."
+  "marketing.forgotNoProvider": "If an account exists, we'll email a reset link once email delivery is set up. Contact support@muhasib.ai for help.",
+  "marketing.legalArabicNotice": "This Arabic text is a reading copy. If it differs from the English text, the English text governs."
 }

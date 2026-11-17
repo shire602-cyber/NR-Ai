@@ -1,11 +1,12 @@
 import { T } from "@/components/layout/T";
 import { useTranslation } from "@/lib/i18n";
 import { LegalLayout } from "@/components/LegalLayout";
+import { CookiePolicyAr } from "./legal/legalAr";
 
 export default function CookiePolicy() {
   const { t } = useTranslation();
   return (
-    <LegalLayout slug="cookies" effectiveDate="2026-04-26">
+    <LegalLayout slug="cookies" effectiveDate="2026-04-26" arabic={<CookiePolicyAr />}>
       <p>
         This Cookie Policy explains how Muhasib.ai uses cookies and similar technologies on our
         website and platform. It should be read alongside our{" "}

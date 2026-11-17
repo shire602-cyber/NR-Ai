@@ -71,14 +71,15 @@ describe("dashboard stats basis", () => {
     expect(r.body.outstandingPayables).toBe(1050);
   });
 
-  it("R13-20 overdue list holds only the second invoice (4,250); DSO/DPO and cash in/out present", async () => {
+  it("R13-20 overdue list holds only the second invoice (4,250); DSO, no DPO without vendor payments, and cash in/out present", async () => {
     const r = await t.as.get(`${base()}/dashboard/stats`);
     expect(r.body.topOverdue.receivables).toHaveLength(1);
     expect(r.body.topOverdue.receivables[0]).toMatchObject({ number: "INV-2", open: 4250 });
     // DSO = open AR / trailing-90-day revenue x 90 = 6,350 / 7,000 x 90
     expect(r.body.dso).toBe(81.6);
-    // DPO = open AP / trailing-90-day expenses x 90 = 1,050 / 2,100 x 90
-    expect(r.body.dpo).toBe(45);
+    // DPO = open AP / trailing-90-day expenses x 90 (1,050 / 2,100 x 90 = 45), but X3 (J2): it
+    // is an average payment period, so with no vendor payment on record it is null ("—").
+    expect(r.body.dpo).toBeNull();
     expect(r.body.cashInOut).toHaveLength(6);
     const nov = r.body.cashInOut.at(-1);
     expect(nov.outflow).toBe(800);

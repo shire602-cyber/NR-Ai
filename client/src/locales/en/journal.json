@@ -54,5 +54,20 @@
   "journal.pageEyebrow": "Accounting",
   "journal.pageDescription": "Double-entry journal with automatic balance validation",
   "journal.emptyTitle": "No journal entries yet",
-  "journal.emptyDescription": "Record your first manual journal entry — every transaction needs at least one debit and one credit."
+  "journal.emptyDescription": "Record your first manual journal entry — every transaction needs at least one debit and one credit.",
+  "journal.memo.salesInvoice": "Sales Invoice {ref} - {party}",
+  "journal.memo.debitNote": "Debit Note {ref} - {party}",
+  "journal.memo.paymentReceived": "Payment received for Invoice {ref} - {method}",
+  "journal.memo.cogs": "Cost of goods sold - Invoice {ref}",
+  "journal.memo.vendorBill": "Vendor Bill {ref} - {party}",
+  "journal.memo.billPayment": "Payment - Bill {ref} - {party}",
+  "journal.memo.receipt": "Receipt: {party}",
+  "journal.memo.creditNote": "Credit note {ref} - {party}",
+  "journal.memo.depreciation": "Depreciation: {party}",
+  "journal.memo.yearEndClose": "Year-end close FY {ref}",
+  "journal.memo.method.bank": "bank",
+  "journal.memo.method.cash": "cash",
+  "journal.memo.method.cheque": "cheque",
+  "journal.memo.method.online": "online",
+  "journal.memo.method.card": "card"
 }

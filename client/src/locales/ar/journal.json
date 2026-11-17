@@ -54,5 +54,20 @@
   "journal.pageEyebrow": "المحاسبة",
   "journal.pageDescription": "دفتر يومية بالقيد المزدوج مع تحقق تلقائي من التوازن",
   "journal.emptyTitle": "لا توجد قيود يومية بعد",
-  "journal.emptyDescription": "سجّل أول قيد يومية يدوي — تحتاج كل معاملة إلى طرف مدين وطرف دائن على الأقل."
+  "journal.emptyDescription": "سجّل أول قيد يومية يدوي — تحتاج كل معاملة إلى طرف مدين وطرف دائن على الأقل.",
+  "journal.memo.salesInvoice": "فاتورة مبيعات {ref} - {party}",
+  "journal.memo.debitNote": "إشعار مدين {ref} - {party}",
+  "journal.memo.paymentReceived": "دفعة مستلمة للفاتورة {ref} - {method}",
+  "journal.memo.cogs": "تكلفة البضاعة المباعة - الفاتورة {ref}",
+  "journal.memo.vendorBill": "فاتورة مورد {ref} - {party}",
+  "journal.memo.billPayment": "دفعة - فاتورة مورد {ref} - {party}",
+  "journal.memo.receipt": "إيصال: {party}",
+  "journal.memo.creditNote": "إشعار دائن {ref} - {party}",
+  "journal.memo.depreciation": "الإهلاك: {party}",
+  "journal.memo.yearEndClose": "إقفال نهاية السنة المالية {ref}",
+  "journal.memo.method.bank": "تحويل بنكي",
+  "journal.memo.method.cash": "نقداً",
+  "journal.memo.method.cheque": "شيك",
+  "journal.memo.method.online": "دفع إلكتروني",
+  "journal.memo.method.card": "بطاقة"
 }

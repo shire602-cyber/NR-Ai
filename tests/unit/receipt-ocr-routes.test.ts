@@ -345,3 +345,27 @@ describe("R05-12 / R05-16 Arabic text without any AI provider", () => {
     });
   });
 });
+
+describe("X3 /api/ocr/status tells the page up front whether automatic reading is on", () => {
+  async function status(app: express.Express) {
+    const server = app.listen(0);
+    try {
+      const { port } = server.address() as { port: number };
+      const res = await fetch(`http://127.0.0.1:${port}/api/ocr/status`);
+      return { status: res.status, body: await res.json() };
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+
+  it("reports aiConfigured=false with no AI provider (the page opens manual entry, no 90s spinner)", async () => {
+    const res = await status(appWith({}));
+    expect(res).toEqual({ status: 200, body: { aiConfigured: false } });
+  });
+
+  it("reports aiConfigured=true when a provider client exists", async () => {
+    const { client } = anthropicReturning(goodExtraction);
+    const res = await status(appWith({ anthropic: client }));
+    expect(res.body).toEqual({ aiConfigured: true });
+  });
+});

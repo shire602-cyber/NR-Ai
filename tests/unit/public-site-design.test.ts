@@ -135,9 +135,12 @@ describe("D1 public site", () => {
     await render("PrivacyPolicy");
     const { t } = await import("../../client/src/lib/i18n");
     expect(container.querySelector("h1")?.textContent).toBe(t.ar["marketing.legalPrivacyTitle"]);
-    // The governing English text is marked as English, with an Arabic notice above it.
-    expect(container.querySelector("article")?.getAttribute("lang")).toBe("en");
-    expect(container.textContent).toContain(t.ar["marketing.legalEnglishOnly"]);
+    // X3: Arabic mode shows the Arabic reading copy, with a notice that the English text governs.
+    expect(container.querySelector("article")?.getAttribute("lang")).toBe("ar");
+    expect(container.querySelector("article")?.getAttribute("dir")).toBe("rtl");
+    expect(container.textContent).toContain(t.ar["marketing.legalArabicNotice"]);
+    expect(container.querySelector("article")?.textContent).toContain("سياسة الخصوصية");
+    expect(arabicModeEnglishLines()).toEqual([]);
   });
 
   it("[D1b] public pages use the app's one theme system (light / dark / system)", async () => {

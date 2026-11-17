@@ -1,3 +1,4 @@
+import { DatePicker } from "@/components/ui/date-picker";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import {
   FormActions,
@@ -383,9 +384,18 @@ function receiptCategoryLabel(t: Record<string, string>, category: string): stri
 export default function Receipts() {
   const { t, locale } = useTranslation();
   // Receipt-capture strings for the confidence/duplicate/TRN additions (en + ar).
-  const tr = (en: string, ar: string) => (locale === "ar" ? ar : en);
+  const tr = useCallback((en: string, ar: string) => (locale === "ar" ? ar : en), [locale]);
+  const accountLabel = (a?: { nameEn: string; nameAr?: string | null }) =>
+    a ? (locale === "ar" && a.nameAr ? a.nameAr : a.nameEn) : "";
   const { toast } = useToast();
   const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
+  // X3: ask up front whether automatic reading (AI/OCR) is enabled, so a scan never spins for a
+  // minute and then fails. `false` = not enabled; undefined = still loading (scan proceeds).
+  const { data: ocrStatus } = useQuery<{ aiConfigured: boolean }>({
+    queryKey: ["/api/ocr/status"],
+    staleTime: 5 * 60 * 1000,
+  });
+  const autoReadUnavailable = ocrStatus?.aiConfigured === false;
   const [processedReceipts, setProcessedReceipts] = useState<ProcessedReceipt[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
@@ -469,8 +479,8 @@ export default function Receipts() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
       toast({
-        title: "Receipt updated successfully",
-        description: "Your receipt has been updated.",
+        title: tr("Receipt updated successfully", "تم تحديث الإيصال"),
+        description: tr("Your receipt has been updated.", "تم تحديث إيصالك."),
       });
       setEditDialogOpen(false);
       setEditingReceipt(null);
@@ -478,7 +488,7 @@ export default function Receipts() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update receipt",
+        title: tr("Failed to update receipt", "تعذّر تحديث الإيصال"),
         description: error?.message || "Please try again.",
       });
     },
@@ -507,8 +517,8 @@ export default function Receipts() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "journal-entries"] });
       toast({
-        title: "Expense posted successfully",
-        description: "Journal entry has been created.",
+        title: tr("Expense posted successfully", "تم ترحيل المصروف"),
+        description: tr("Journal entry has been created.", "تم إنشاء قيد اليومية."),
       });
       setPostDialogOpen(false);
       setPostingReceipt(null);
@@ -521,7 +531,7 @@ export default function Receipts() {
       }
       toast({
         variant: "destructive",
-        title: "Failed to post expense",
+        title: tr("Failed to post expense", "تعذّر ترحيل المصروف"),
         description: error?.message || "Please try again.",
       });
     },
@@ -544,8 +554,11 @@ export default function Receipts() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
       toast({
-        title: "Expense created successfully",
-        description: "The expense has been added. You can now post it to the journal.",
+        title: tr("Expense created successfully", "تم إنشاء المصروف"),
+        description: tr(
+          "The expense has been added. You can now post it to the journal.",
+          "تمت إضافة المصروف. يمكنك الآن ترحيله إلى دفتر اليومية."
+        ),
       });
       setManualExpenseDialogOpen(false);
       manualExpenseForm.reset();
@@ -553,7 +566,7 @@ export default function Receipts() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create expense",
+        title: tr("Failed to create expense", "تعذّر إنشاء المصروف"),
         description: error?.message || "Please try again.",
       });
     },
@@ -564,8 +577,8 @@ export default function Receipts() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "accounts"] });
       toast({
-        title: "Account created successfully",
-        description: `${data.nameEn} has been added.`,
+        title: tr("Account created successfully", "تم إنشاء الحساب"),
+        description: tr(`${data.nameEn} has been added.`, `تمت إضافة ${data.nameEn}.`),
       });
       setCreateAccountDialogOpen(false);
       setNewAccountCode("");
@@ -580,7 +593,7 @@ export default function Receipts() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create account",
+        title: tr("Failed to create account", "تعذّر إنشاء الحساب"),
         description: error?.message || "Please try again.",
       });
     },
@@ -605,8 +618,8 @@ export default function Receipts() {
     },
     onSuccess: () => {
       toast({
-        title: "Expense deleted",
-        description: "The expense has been deleted successfully.",
+        title: tr("Expense deleted", "تم حذف المصروف"),
+        description: tr("The expense has been deleted successfully.", "تم حذف المصروف."),
       });
     },
     onError: (error: any, _id, context: any) => {
@@ -615,7 +628,7 @@ export default function Receipts() {
       }
       toast({
         variant: "destructive",
-        title: "Failed to delete expense",
+        title: tr("Failed to delete expense", "تعذّر حذف المصروف"),
         description: error?.message || "Please try again.",
       });
     },
@@ -661,8 +674,11 @@ export default function Receipts() {
     if (!postingReceipt || !selectedExpenseAccount || !selectedPaymentAccount) {
       toast({
         variant: "destructive",
-        title: "Missing information",
-        description: "Please select both expense and payment accounts.",
+        title: tr("Missing information", "معلومات ناقصة"),
+        description: tr(
+          "Please select both expense and payment accounts.",
+          "يرجى اختيار حساب المصروف وحساب الدفع."
+        ),
       });
       return;
     }
@@ -763,8 +779,11 @@ export default function Receipts() {
 
         if (!isImage && !isPdf) {
           toast({
-            title: "Invalid file",
-            description: `${file.name} must be an image or PDF file`,
+            title: tr("Invalid file", "ملف غير صالح"),
+            description: tr(
+              `${file.name} must be an image or PDF file`,
+              `يجب أن يكون الملف ${file.name} صورة أو ملف PDF`
+            ),
             variant: "destructive",
           });
           continue;
@@ -773,8 +792,11 @@ export default function Receipts() {
         if (isPdf) {
           try {
             toast({
-              title: "Converting PDF",
-              description: `Reading all pages of ${file.name}...`,
+              title: tr("Converting PDF", "جارٍ تحويل ملف PDF"),
+              description: tr(
+                `Reading all pages of ${file.name}...`,
+                `جارٍ قراءة جميع صفحات ${file.name}...`
+              ),
             });
 
             const { pages, total, rendered } = await convertPdfToImages(file);
@@ -793,17 +815,24 @@ export default function Receipts() {
             setProcessedReceipts((prev) => [...prev, ...newReceipts]);
 
             toast({
-              title: "PDF ready",
+              title: tr("PDF ready", "ملف PDF جاهز"),
               description:
-                rendered < total
-                  ? `${file.name}: ${rendered} of ${total} pages added (capped at ${MAX_PDF_PAGES}). Each page is a separate receipt to scan.`
-                  : `${file.name}: ${rendered} page${rendered === 1 ? "" : "s"} added — each is a separate receipt to scan.`,
+                locale === "ar"
+                  ? rendered < total
+                    ? `${file.name}: أُضيفت ${rendered} من ${total} صفحة (الحد الأقصى ${MAX_PDF_PAGES}). كل صفحة إيصال منفصل للمسح.`
+                    : `${file.name}: أُضيفت ${rendered} صفحة — كل صفحة إيصال منفصل للمسح.`
+                  : rendered < total
+                    ? `${file.name}: ${rendered} of ${total} pages added (capped at ${MAX_PDF_PAGES}). Each page is a separate receipt to scan.`
+                    : `${file.name}: ${rendered} page${rendered === 1 ? "" : "s"} added — each is a separate receipt to scan.`,
             });
           } catch (error: any) {
             console.error("PDF conversion error:", error);
             toast({
-              title: "PDF conversion failed",
-              description: `Could not convert ${file.name}. Please upload an image instead (JPG, PNG, HEIC).`,
+              title: tr("PDF conversion failed", "تعذّر تحويل ملف PDF"),
+              description: tr(
+                `Could not convert ${file.name}. Please upload an image instead (JPG, PNG, HEIC).`,
+                `تعذّر تحويل ${file.name}. يرجى رفع صورة بدلاً منه (JPG أو PNG أو HEIC).`
+              ),
               variant: "destructive",
             });
           }
@@ -814,8 +843,11 @@ export default function Receipts() {
             const converted = await normalizeImageToJpeg(file);
             if (!converted) {
               toast({
-                title: "Couldn't read this photo",
-                description: `${file.name} is in a format this browser can't open (often iPhone HEIC). Open the app in Safari, or convert it to JPEG and re-upload.`,
+                title: tr("Couldn't read this photo", "تعذّرت قراءة هذه الصورة"),
+                description: tr(
+                  `${file.name} is in a format this browser can't open (often iPhone HEIC). Open the app in Safari, or convert it to JPEG and re-upload.`,
+                  `صيغة ${file.name} لا يستطيع هذا المتصفح فتحها (غالباً HEIC من آيفون). افتح التطبيق في Safari أو حوّل الصورة إلى JPEG وأعد رفعها.`
+                ),
                 variant: "destructive",
               });
               continue;
@@ -839,7 +871,7 @@ export default function Receipts() {
         }
       }
     },
-    [toast]
+    [toast, tr, locale]
   );
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -864,9 +896,25 @@ export default function Receipts() {
     setProcessedReceipts((prev) => prev.filter((_, i) => i !== index));
   };
 
+  /** Explain (en/ar) that automatic reading is off and open manual entry right away. */
+  const explainAutoReadUnavailable = () => {
+    toast({
+      title: tr("Automatic reading isn't enabled yet", "القراءة التلقائية غير مفعّلة بعد"),
+      description: tr(
+        "We can't read receipts automatically yet. Enter the details yourself and attach the photo as evidence.",
+        "لا يمكننا قراءة الإيصالات تلقائياً بعد. أدخل التفاصيل بنفسك وأرفق الصورة كإثبات."
+      ),
+    });
+    setManualExpenseDialogOpen(true);
+  };
+
   const processReceipt = async (index: number) => {
     const receipt = processedReceipts[index];
     if (!receipt) return;
+    if (autoReadUnavailable) {
+      explainAutoReadUnavailable();
+      return;
+    }
 
     setProcessedReceipts((prev) => {
       const updated = [...prev];
@@ -898,13 +946,22 @@ export default function Receipts() {
 
       const normaliseOcrError = (status: number | null, message: string | null) => {
         if (status && status >= 500) {
-          return "OCR service is temporarily unavailable. Please try again in a moment.";
+          return tr(
+            "The reading service is temporarily unavailable. Please try again in a moment.",
+            "خدمة القراءة غير متاحة مؤقتاً. يرجى المحاولة بعد قليل."
+          );
         }
         if (message && /failed to fetch|load failed|networkerror/i.test(message)) {
-          return "Could not reach the OCR service. Please try again.";
+          return tr(
+            "Could not reach the reading service. Please try again.",
+            "تعذّر الوصول إلى خدمة القراءة. يرجى المحاولة مرة أخرى."
+          );
         }
         if (!message || /internal server error/i.test(message)) {
-          return "OCR processing failed. Please try again.";
+          return tr(
+            "Reading the receipt failed. Please try again.",
+            "تعذّرت قراءة الإيصال. يرجى المحاولة مرة أخرى."
+          );
         }
         return message;
       };
@@ -976,10 +1033,16 @@ export default function Receipts() {
           // even when the real cause is a misconfigured AI key on the server.
           try {
             const body = await response.json();
-            backendErrorMessage = normaliseOcrError(
-              response.status,
-              body?.message || `Backend OCR returned ${response.status}`
-            );
+            backendErrorMessage =
+              body?.code === "AI_NOT_CONFIGURED"
+                ? tr(
+                    "Automatic reading isn't enabled yet. Enter the details manually.",
+                    "القراءة التلقائية غير مفعّلة بعد. أدخل التفاصيل يدوياً."
+                  )
+                : normaliseOcrError(
+                    response.status,
+                    body?.message || `Backend OCR returned ${response.status}`
+                  );
           } catch {
             backendErrorMessage = normaliseOcrError(
               response.status,
@@ -1009,7 +1072,10 @@ export default function Receipts() {
         if (!canUseLocalFallback) {
           throw new Error(
             backendErrorMessage ||
-              "OCR service is temporarily unavailable. Please try again in a moment."
+              tr(
+                "The reading service is temporarily unavailable. Please try again in a moment.",
+                "خدمة القراءة غير متاحة مؤقتاً. يرجى المحاولة بعد قليل."
+              )
           );
         }
 
@@ -1083,7 +1149,9 @@ export default function Receipts() {
         updated[index] = {
           ...updated[index],
           status: "error",
-          error: error?.message || "OCR processing failed. Try a clearer image.",
+          error:
+            error?.message ||
+            tr("Reading failed. Try a clearer image.", "تعذّرت القراءة. جرّب صورة أوضح."),
           progress: 0,
         };
         return updated;
@@ -1097,6 +1165,10 @@ export default function Receipts() {
       .filter((index) => index >= 0);
 
     if (indexesToProcess.length === 0) return;
+    if (autoReadUnavailable) {
+      explainAutoReadUnavailable();
+      return;
+    }
 
     setIsProcessingBulk(true);
 
@@ -1106,8 +1178,11 @@ export default function Receipts() {
 
     setIsProcessingBulk(false);
     toast({
-      title: "Processing Complete",
-      description: `Processed ${indexesToProcess.length} receipt(s)`,
+      title: tr("Processing Complete", "اكتملت المعالجة"),
+      description: tr(
+        `Processed ${indexesToProcess.length} receipt(s)`,
+        `تمت معالجة ${indexesToProcess.length} إيصال`
+      ),
     });
   };
 
@@ -1179,8 +1254,8 @@ export default function Receipts() {
 
     if (completedIndices.length === 0 && completed.length === 0) {
       toast({
-        title: "No receipts to save",
-        description: "Please process receipts before saving",
+        title: tr("No receipts to save", "لا توجد إيصالات للحفظ"),
+        description: tr("Please process receipts before saving", "يرجى معالجة الإيصالات قبل الحفظ"),
         variant: "destructive",
       });
       return;
@@ -1188,8 +1263,11 @@ export default function Receipts() {
 
     if (!companyId) {
       toast({
-        title: "Error",
-        description: "Company not found. Please try refreshing the page.",
+        title: tr("Error", "خطأ"),
+        description: tr(
+          "Company not found. Please try refreshing the page.",
+          "لم يتم العثور على الشركة. يرجى تحديث الصفحة."
+        ),
         variant: "destructive",
       });
       return;
@@ -1204,8 +1282,11 @@ export default function Receipts() {
   const performSave = async (completedIndices: any[]) => {
     if (!companyId) {
       toast({
-        title: "Error",
-        description: "Company not found. Please try refreshing the page.",
+        title: tr("Error", "خطأ"),
+        description: tr(
+          "Company not found. Please try refreshing the page.",
+          "لم يتم العثور على الشركة. يرجى تحديث الصفحة."
+        ),
         variant: "destructive",
       });
       return;
@@ -1313,8 +1394,11 @@ export default function Receipts() {
 
     if (successCount > 0) {
       toast({
-        title: "Receipts Saved",
-        description: `Successfully saved ${successCount} receipt(s)${errorCount > 0 ? `. ${errorCount} failed` : ""}`,
+        title: tr("Receipts Saved", "تم حفظ الإيصالات"),
+        description: tr(
+          `Successfully saved ${successCount} receipt(s)${errorCount > 0 ? `. ${errorCount} failed` : ""}`,
+          `تم حفظ ${successCount} إيصال بنجاح${errorCount > 0 ? `، وفشل ${errorCount}` : ""}`
+        ),
       });
 
       // Only clear successfully saved receipts
@@ -1326,10 +1410,13 @@ export default function Receipts() {
       }
     } else {
       toast({
-        title: "Save Failed",
+        title: tr("Save Failed", "فشل الحفظ"),
         description: firstSaveError
-          ? `Couldn't save: ${firstSaveError}`
-          : "Failed to save any receipts. Please try again.",
+          ? tr(`Couldn't save: ${firstSaveError}`, `تعذّر الحفظ: ${firstSaveError}`)
+          : tr(
+              "Failed to save any receipts. Please try again.",
+              "تعذّر حفظ أي إيصال. يرجى المحاولة مرة أخرى."
+            ),
         variant: "destructive",
       });
     }
@@ -1399,8 +1486,11 @@ export default function Receipts() {
 
     exportToExcel([prepareReceiptsForExport(filteredReceipts, locale)], `expenses${dateRangeStr}`);
     toast({
-      title: "Export successful",
-      description: `${filteredReceipts.length} expenses exported to Excel`,
+      title: tr("Export successful", "تم التصدير بنجاح"),
+      description: tr(
+        `${filteredReceipts.length} expenses exported to Excel`,
+        `تم تصدير ${filteredReceipts.length} من المصروفات إلى Excel`
+      ),
     });
   };
 
@@ -1430,8 +1520,11 @@ export default function Receipts() {
 
     if (result.success) {
       toast({
-        title: "Export successful",
-        description: `${filteredReceipts.length} expenses exported to Google Sheets`,
+        title: tr("Export successful", "تم التصدير بنجاح"),
+        description: tr(
+          `${filteredReceipts.length} expenses exported to Google Sheets`,
+          `تم تصدير ${filteredReceipts.length} من المصروفات إلى Google Sheets`
+        ),
       });
       if (result.spreadsheetUrl) {
         window.open(result.spreadsheetUrl, "_blank");
@@ -1439,8 +1532,10 @@ export default function Receipts() {
     } else {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: result.error || "Failed to export to Google Sheets",
+        title: tr("Export failed", "فشل التصدير"),
+        description:
+          result.error ||
+          tr("Failed to export to Google Sheets", "تعذّر التصدير إلى Google Sheets"),
       });
     }
   };
@@ -1456,8 +1551,11 @@ export default function Receipts() {
     if (rows.length === 0) {
       toast({
         variant: "destructive",
-        title: "Nothing to export",
-        description: "Process at least one receipt before downloading.",
+        title: tr("Nothing to export", "لا يوجد ما يمكن تصديره"),
+        description: tr(
+          "Process at least one receipt before downloading.",
+          "عالج إيصالاً واحداً على الأقل قبل التنزيل."
+        ),
       });
       return;
     }
@@ -1466,14 +1564,18 @@ export default function Receipts() {
     try {
       await downloadOcrExcel(rows);
       toast({
-        title: "Excel ready",
-        description: `${rows.length} receipt${rows.length === 1 ? "" : "s"} exported to Excel.`,
+        title: tr("Excel ready", "ملف Excel جاهز"),
+        description: tr(
+          `${rows.length} receipt${rows.length === 1 ? "" : "s"} exported to Excel.`,
+          `تم تصدير ${rows.length} إيصال إلى Excel.`
+        ),
       });
     } catch (err: any) {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: err?.message || "Could not generate the spreadsheet.",
+        title: tr("Export failed", "فشل التصدير"),
+        description:
+          err?.message || tr("Could not generate the spreadsheet.", "تعذّر إنشاء ملف الجدول."),
       });
     } finally {
       setIsOcrExporting(false);
@@ -1498,14 +1600,18 @@ export default function Receipts() {
         ids: filteredReceipts.map((r: any) => r.id),
       });
       toast({
-        title: "Excel ready",
-        description: `${filteredReceipts.length} receipts exported.`,
+        title: tr("Excel ready", "ملف Excel جاهز"),
+        description: tr(
+          `${filteredReceipts.length} receipts exported.`,
+          `تم تصدير ${filteredReceipts.length} إيصال.`
+        ),
       });
     } catch (err: any) {
       toast({
         variant: "destructive",
-        title: "Export failed",
-        description: err?.message || "Could not generate the spreadsheet.",
+        title: tr("Export failed", "فشل التصدير"),
+        description:
+          err?.message || tr("Could not generate the spreadsheet.", "تعذّر إنشاء ملف الجدول."),
       });
     } finally {
       setIsExporting(false);
@@ -1678,7 +1784,7 @@ export default function Receipts() {
                 ) : (
                   <>
                     <FileSpreadsheet className="w-4 h-4" />
-                    Download Excel ({completedCount})
+                    {tr("Download Excel", "تنزيل Excel")} ({completedCount})
                   </>
                 )}
               </Button>
@@ -1697,15 +1803,35 @@ export default function Receipts() {
           {/* Status Summary */}
           {processedReceipts.length > 0 && (
             <div className="flex flex-wrap gap-2 text-sm">
-              {pendingCount > 0 && <Badge variant="outline">{pendingCount} pending</Badge>}
-              {processingCount > 0 && <Badge variant="outline">{processingCount} processing</Badge>}
-              {completedCount > 0 && (
-                <StatusBadge tone="success">{completedCount} ready to save</StatusBadge>
+              {pendingCount > 0 && (
+                <Badge variant="outline">
+                  {pendingCount} {tr("pending", "قيد الانتظار")}
+                </Badge>
               )}
-              {savedCount > 0 && <StatusBadge tone="info">{savedCount} saved</StatusBadge>}
-              {errorCount > 0 && <StatusBadge tone="danger">{errorCount} OCR errors</StatusBadge>}
+              {processingCount > 0 && (
+                <Badge variant="outline">
+                  {processingCount} {tr("processing", "قيد المعالجة")}
+                </Badge>
+              )}
+              {completedCount > 0 && (
+                <StatusBadge tone="success">
+                  {completedCount} {tr("ready to save", "جاهزة للحفظ")}
+                </StatusBadge>
+              )}
+              {savedCount > 0 && (
+                <StatusBadge tone="info">
+                  {savedCount} {tr("saved", "تم حفظها")}
+                </StatusBadge>
+              )}
+              {errorCount > 0 && (
+                <StatusBadge tone="danger">
+                  {errorCount} {tr("OCR errors", "أخطاء قراءة")}
+                </StatusBadge>
+              )}
               {saveErrorCount > 0 && (
-                <StatusBadge tone="warning">{saveErrorCount} save failed</StatusBadge>
+                <StatusBadge tone="warning">
+                  {saveErrorCount} {tr("save failed", "فشل الحفظ")}
+                </StatusBadge>
               )}
             </div>
           )}
@@ -2624,7 +2750,7 @@ export default function Receipts() {
                 id="account-code"
                 value={newAccountCode}
                 onChange={(e) => setNewAccountCode(e.target.value)}
-                placeholder="e.g., 5220"
+                placeholder={tr("e.g., 5220", "مثال: 5220")}
                 data-testid="input-account-code"
               />
             </div>
@@ -2636,7 +2762,7 @@ export default function Receipts() {
                 id="account-name"
                 value={newAccountName}
                 onChange={(e) => setNewAccountName(e.target.value)}
-                placeholder="e.g., Travel Expenses"
+                placeholder={tr("e.g., Travel Expenses", "مثال: مصاريف السفر")}
                 data-testid="input-account-name"
               />
             </div>
@@ -2656,8 +2782,11 @@ export default function Receipts() {
                   if (!newAccountCode.trim() || !newAccountName.trim()) {
                     toast({
                       variant: "destructive",
-                      title: "Missing information",
-                      description: "Please enter both account code and name.",
+                      title: tr("Missing information", "معلومات ناقصة"),
+                      description: tr(
+                        "Please enter both account code and name.",
+                        "يرجى إدخال رمز الحساب واسمه."
+                      ),
                     });
                     return;
                   }
@@ -2733,7 +2862,9 @@ export default function Receipts() {
 
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <Label htmlFor="expense-account">Expense Account (Debit)</Label>
+                <Label htmlFor="expense-account">
+                  {tr("Expense account (debit)", "حساب المصروف (مدين)")}
+                </Label>
                 <Button
                   type="button"
                   size="sm"
@@ -2744,7 +2875,7 @@ export default function Receipts() {
                   }}
                   data-testid="button-create-expense-account"
                 >
-                  + Create
+                  + {tr("Create", "إنشاء")}
                 </Button>
               </div>
               <Select value={selectedExpenseAccount} onValueChange={setSelectedExpenseAccount}>
@@ -2762,13 +2893,18 @@ export default function Receipts() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                The account that will be debited (increased) for this expense
+                {tr(
+                  "The account that will be debited (increased) for this expense",
+                  "الحساب الذي سيُدين (يزداد) لهذا المصروف"
+                )}
               </p>
             </div>
 
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <Label htmlFor="payment-account">Payment Account (Credit)</Label>
+                <Label htmlFor="payment-account">
+                  {tr("Payment account (credit)", "حساب الدفع (دائن)")}
+                </Label>
                 <Button
                   type="button"
                   size="sm"
@@ -2779,7 +2915,7 @@ export default function Receipts() {
                   }}
                   data-testid="button-create-payment-account"
                 >
-                  + Create
+                  + {tr("Create", "إنشاء")}
                 </Button>
               </div>
               <Select value={selectedPaymentAccount} onValueChange={setSelectedPaymentAccount}>
@@ -2796,18 +2932,23 @@ export default function Receipts() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                The cash or bank account that was used to pay (will be credited/decreased)
+                {tr(
+                  "The cash or bank account that was used to pay (will be credited/decreased)",
+                  "الحساب النقدي أو البنكي المستخدم للدفع (سيُقيَّد دائناً/ينقص)"
+                )}
               </p>
             </div>
 
             <div className="p-4 rounded-md border bg-card">
-              <p className="text-sm font-medium mb-2">Journal Entry Preview:</p>
+              <p className="text-sm font-medium mb-2">
+                {tr("Journal entry preview", "معاينة قيد اليومية")}:
+              </p>
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span>
-                    Dr.{" "}
-                    {accounts?.find((a) => a.id === selectedExpenseAccount)?.nameEn ||
-                      "Expense Account"}
+                    {tr("Dr.", "مدين")}{" "}
+                    {accountLabel(accounts?.find((a) => a.id === selectedExpenseAccount)) ||
+                      tr("Expense account", "حساب المصروف")}
                   </span>
                   <span>{formatCurrency(postingReceipt?.amount || 0, "AED", locale)}</span>
                 </div>
@@ -2819,9 +2960,9 @@ export default function Receipts() {
                 )}
                 <div className="flex justify-between ps-4">
                   <span>
-                    Cr.{" "}
-                    {accounts?.find((a) => a.id === selectedPaymentAccount)?.nameEn ||
-                      "Payment Account"}
+                    {tr("Cr.", "دائن")}{" "}
+                    {accountLabel(accounts?.find((a) => a.id === selectedPaymentAccount)) ||
+                      tr("Payment account", "حساب الدفع")}
                   </span>
                   <span>
                     {formatCurrency(
@@ -2909,7 +3050,11 @@ export default function Receipts() {
                       <FormItem>
                         <FormLabel required>{t.date}</FormLabel>
                         <FormControl>
-                          <Input type="date" dir="ltr" {...field} data-testid="input-manual-date" />
+                          <DatePicker
+                            value={field.value}
+                            onChange={field.onChange}
+                            data-testid="input-manual-date"
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
