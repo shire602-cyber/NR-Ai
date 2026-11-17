@@ -206,6 +206,8 @@ async function main() {
     await page.goto(`${BASE}/dashboard`);
     await page.waitForTimeout(2200);
     const express = page.locator('[data-testid="onboarding-express"]');
+    // The redirect to /onboarding can land after a fixed wait on a cold build.
+    await express.waitFor({ timeout: 10000 }).catch(() => undefined);
     if (await express.count()) {
       await express.click();
       await page.waitForTimeout(3500);

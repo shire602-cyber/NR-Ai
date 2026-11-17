@@ -80,7 +80,13 @@ export function FirmOnboarding({ firmRole }: { firmRole: "firm_owner" | "firm_ad
 
   const complete = useMutation({
     mutationFn: () => apiRequest("POST", `/api/companies/${company!.id}/onboarding/complete`, {}),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/companies"] }),
+    onSuccess: () => {
+      // Update the cached row first so the shell's onboarding redirect cannot bounce back here.
+      queryClient.setQueryData<Company[]>(["/api/companies"], (old) =>
+        old?.map((c) => (c.id === company?.id ? { ...c, onboardingCompleted: true } : c))
+      );
+      void queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+    },
     onError: (err: Error) =>
       toast({
         title: t["onboarding.firm.setupFailed"],

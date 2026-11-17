@@ -270,8 +270,13 @@ function Wizard({ company }: { company: Company | null }) {
           /* ignore */
         }
       }
-      await queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+      // Mark the company complete in the cache before leaving, so the shell's onboarding
+      // redirect never sees the stale row and bounces back here; then refresh from the server.
+      queryClient.setQueryData<Company[]>(["/api/companies"], (old) =>
+        old?.map((c) => (c.id === target?.id ? { ...c, onboardingCompleted: true } : c))
+      );
       setLocation(FIRST_TASK_HREF[task]);
+      void queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
     },
     onError: (err: Error) =>
       toast({
