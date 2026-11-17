@@ -5,6 +5,7 @@ import type * as React from "react";
  * Executive dashboard for firm owners with key metrics, client health table,
  * alerts feed, staff workload visualization, period comparison, and batch ops.
  */
+import { chartTheme, ChartTooltipContent, formatAxisCompact } from "@/components/ui/chart-theme";
 import { T } from "@/components/layout/T";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
@@ -821,15 +822,13 @@ export default function FirmCommandCenter() {
               {workloadChartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={workloadChartData}>
-                    <CartesianGrid vertical={false} stroke="hsl(var(--border))" />
-                    <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={11} />
-                    <YAxis tickLine={false} axisLine={false} fontSize={11} allowDecimals={false} />
-                    <RechartsTooltip />
+                    <CartesianGrid {...chartTheme.grid} />
+                    <XAxis dataKey="name" {...chartTheme.xAxis} />
+                    <YAxis {...chartTheme.yAxis} allowDecimals={false} />
+                    <RechartsTooltip {...chartTheme.tooltip} content={<ChartTooltipContent />} />
                     <Bar
                       dataKey="clients"
-                      fill="hsl(var(--chart-1))"
-                      radius={[4, 4, 0, 0]}
-                      maxBarSize={28}
+                      {...chartTheme.bar("brand")}
                       name={t["firmOps.chartClientsAssigned"]}
                     />
                   </BarChart>
@@ -917,30 +916,24 @@ export default function FirmCommandCenter() {
               </div>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={comparisonChartData}>
-                  <CartesianGrid vertical={false} stroke="hsl(var(--border))" />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={11} />
-                  <YAxis tickLine={false} axisLine={false} fontSize={11} />
-                  <RechartsTooltip />
+                  <CartesianGrid {...chartTheme.grid} />
+                  <XAxis dataKey="name" {...chartTheme.xAxis} />
+                  <YAxis {...chartTheme.yAxis} tickFormatter={formatAxisCompact} />
+                  <RechartsTooltip {...chartTheme.tooltip} content={<ChartTooltipContent />} />
                   <Legend />
                   <Bar
                     dataKey="revenue"
-                    fill="hsl(var(--chart-1))"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={28}
+                    {...chartTheme.bar("brand")}
                     name={t["firmOps.chartRevenue"]}
                   />
                   <Bar
                     dataKey="invoices"
-                    fill="hsl(var(--chart-2))"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={28}
+                    {...chartTheme.bar("slate")}
                     name={t["firmOps.chartInvoices"]}
                   />
                   <Bar
                     dataKey="receipts"
-                    fill="hsl(var(--chart-3))"
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={28}
+                    {...chartTheme.bar("ochre")}
                     name={t["firmOps.chartReceipts"]}
                   />
                 </BarChart>

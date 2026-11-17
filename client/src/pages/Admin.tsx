@@ -3,7 +3,9 @@ import { activityActionLabel, activityEntityLabel } from "@/lib/activity-log-lab
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
-import { useState, useEffect } from "react";
+import { Fragment, useState, useEffect } from "react";
+import { formatDate } from "@/lib/format-date";
+import { auditDetailEntries } from "@/pages/admin/audit-details";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Settings,
@@ -11,8 +13,6 @@ import {
   DollarSign,
   Shield,
   Activity,
-  Database,
-  Bell,
   Plug,
   Save,
   Plus,
@@ -22,7 +22,6 @@ import {
   Search,
   Download,
   BarChart3,
-  CheckCircle,
   FileText,
   Building2,
   CreditCard,
@@ -163,6 +162,7 @@ export default function Admin() {
     queryKey: ["/api/admin/companies"],
   });
 
+  const [expandedLog, setExpandedLog] = useState<string | null>(null);
   const { data: auditLogs = [], isLoading: logsLoading } = useQuery<AuditLog[]>({
     queryKey: ["/api/admin/audit-logs"],
   });
@@ -443,170 +443,9 @@ export default function Admin() {
             </Card>
           </div>
 
-          {/* Activity & Quick Actions */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  <T k="pageLabels.systemStatus" />
-                </CardTitle>
-                <CardDescription>
-                  <T k="pageLabels.currentSystemHealthAndStatus" />
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-success" />
-                    <span>
-                      <T k="pageLabels.database" />
-                    </span>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className="bg-success-subtle text-success border-success/30"
-                  >
-                    <T k="pages.healthy" />
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-success" />
-                    <span>
-                      <T k="pageLabels.aPIServices" />
-                    </span>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className="bg-success-subtle text-success border-success/30"
-                  >
-                    <T k="pageLabels.operational" />
-                  </Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4 text-success" />
-                    <span>{t["admin.aiServices"]}</span>
-                  </div>
-                  <Badge
-                    variant="outline"
-                    className="bg-success-subtle text-success border-success/30"
-                  >
-                    <T k="pages.connected" />
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  <T k="pageLabels.quickActions" />
-                </CardTitle>
-                <CardDescription>
-                  <T k="pageLabels.commonAdministrativeTasks" />
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  data-testid="button-backup-db"
-                  onClick={() => {
-                    toast({
-                      title: translateNow("toasts.backupStarted"),
-                      description: translateNow("toasts.databaseBackupIsInProgress"),
-                    });
-                    setTimeout(() => {
-                      toast({
-                        title: translateNow("toasts.backupComplete"),
-                        description: translateNow("toasts.databaseHasBeenBackedUpSuccessfully"),
-                      });
-                    }, 2000);
-                  }}
-                >
-                  <Database className="w-4 h-4 me-2" />
-                  <T k="pageLabels.backupDatabase" />
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  data-testid="button-send-newsletter"
-                  onClick={() => {
-                    toast({
-                      title: translateNow("toasts.newsletter"),
-                      description: translateNow(
-                        "toasts.newsletterFeatureWillBeAvailableSoonConfigure"
-                      ),
-                    });
-                  }}
-                >
-                  <Bell className="w-4 h-4 me-2" />
-                  <T k="pageLabels.sendNewsletter" />
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  data-testid="button-generate-report"
-                  onClick={() => {
-                    toast({
-                      title: translateNow("toasts.generatingReport"),
-                      description: translateNow("toasts.usageReportIsBeingGenerated"),
-                    });
-                    setTimeout(() => {
-                      const reportData = {
-                        generatedAt: new Date().toISOString(),
-                        totalUsers: stats?.totalUsers || 0,
-                        activeUsers: stats?.activeUsers || 0,
-                        totalCompanies: stats?.totalCompanies || 0,
-                        totalInvoices: stats?.totalInvoices || 0,
-                        totalReceipts: stats?.totalReceipts || 0,
-                        monthlyRevenue: stats?.monthlyRevenue || 0,
-                        aiCreditsUsed: stats?.aiCreditsUsed || 0,
-                      };
-                      const blob = new Blob([JSON.stringify(reportData, null, 2)], {
-                        type: "application/json",
-                      });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `usage-report-${new Date().toISOString().split("T")[0]}.json`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                      toast({
-                        title: translateNow("toasts.reportGenerated"),
-                        description: translateNow("toasts.usageReportHasBeenDownloaded"),
-                      });
-                    }, 1500);
-                  }}
-                >
-                  <FileText className="w-4 h-4 me-2" />
-                  <T k="pageLabels.generateUsageReport" />
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start"
-                  data-testid="button-sync-integrations"
-                  onClick={() => {
-                    toast({
-                      title: translateNow("toasts.syncingIntegrations"),
-                      description: translateNow("toasts.checkingAllIntegrationConnections"),
-                    });
-                    setTimeout(() => {
-                      toast({
-                        title: translateNow("toasts.syncComplete"),
-                        description: translateNow("toasts.allIntegrationsAreUpToDate"),
-                      });
-                    }, 2000);
-                  }}
-                >
-                  <RefreshCw className="w-4 h-4 me-2" />
-                  <T k="pageLabels.syncAllIntegrations" />
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-
+          {/* WP-E (spec 3.16): the hard-coded "all green" system status and the quick actions
+              that only showed toasts (backup, newsletter, sync) were removed; nothing here may
+              claim work it did not do. */}
           {/* Recent Activity */}
           <Card>
             <CardHeader>
@@ -1564,7 +1403,7 @@ export default function Admin() {
                       <TableHead>
                         <T k="pageLabels.resource" />
                       </TableHead>
-                      <TableHead>User</TableHead>
+                      <TableHead>{t["settingsPages.auditUser"]}</TableHead>
                       <TableHead>
                         <T k="reportCenter.details" />
                       </TableHead>
@@ -1587,34 +1426,75 @@ export default function Admin() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      auditLogs.map((log) => (
-                        <TableRow key={log.id}>
-                          <TableCell className="text-sm">
-                            {new Date(log.createdAt).toLocaleString(
-                              locale === "ar" ? "ar-AE" : undefined
+                      auditLogs.map((log) => {
+                        const entries = auditDetailEntries(log.details);
+                        const open = expandedLog === log.id;
+                        const actor = log.userId ? users.find((u) => u.id === log.userId) : null;
+                        return (
+                          <Fragment key={log.id}>
+                            <TableRow>
+                              <TableCell className="whitespace-nowrap text-sm tabular-nums">
+                                {formatDate(log.createdAt, locale)}{" "}
+                                <span className="text-muted-foreground">
+                                  {new Date(log.createdAt).toLocaleTimeString(
+                                    locale === "ar" ? "ar-AE-u-nu-latn" : "en-GB",
+                                    { hour: "2-digit", minute: "2-digit" }
+                                  )}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">
+                                  {activityActionLabel(t, log.action)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>{activityEntityLabel(t, log.resourceType)}</TableCell>
+                              <TableCell dir="auto">
+                                {log.userId
+                                  ? (actor?.name ??
+                                    actor?.email ??
+                                    t["settingsPages.auditUnknownUser"])
+                                  : t["shell.themeSystem"]}
+                              </TableCell>
+                              <TableCell>
+                                {entries.length === 0 ? (
+                                  <span className="text-muted-foreground">—</span>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    aria-expanded={open}
+                                    onClick={() => setExpandedLog(open ? null : log.id)}
+                                    data-testid={`button-audit-details-${log.id}`}
+                                  >
+                                    {open
+                                      ? t["settingsPages.auditHide"]
+                                      : t["settingsPages.auditShow"]}
+                                  </Button>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-muted-foreground" dir="ltr">
+                                {log.ipAddress || "—"}
+                              </TableCell>
+                            </TableRow>
+                            {open && (
+                              <TableRow data-testid={`audit-details-${log.id}`}>
+                                <TableCell colSpan={6} className="bg-surface-sunken">
+                                  <dl className="grid grid-cols-[minmax(8rem,auto)_1fr] gap-x-6 gap-y-1 text-small">
+                                    {entries.map((e, i) => (
+                                      <Fragment key={`${e.key}-${i}`}>
+                                        <dt className="text-muted-foreground">{e.key || "—"}</dt>
+                                        <dd className="break-all" dir="auto">
+                                          {e.value}
+                                        </dd>
+                                      </Fragment>
+                                    ))}
+                                  </dl>
+                                </TableCell>
+                              </TableRow>
                             )}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={
-                                log.action === "create"
-                                  ? "default"
-                                  : log.action === "delete"
-                                    ? "destructive"
-                                    : "secondary"
-                              }
-                            >
-                              {activityActionLabel(t, log.action)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>{activityEntityLabel(t, log.resourceType)}</TableCell>
-                          <TableCell>{log.userId || t["shell.themeSystem"]}</TableCell>
-                          <TableCell className="max-w-xs truncate">{log.details || "-"}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {log.ipAddress || "-"}
-                          </TableCell>
-                        </TableRow>
-                      ))
+                          </Fragment>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>

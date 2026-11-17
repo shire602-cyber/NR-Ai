@@ -30,5 +30,9 @@
   "settingsPages.linkStatusRevoked": "Access removed",
   "settingsPages.linkStatusInvited": "Invited",
   "settingsPages.linkStatusUnknown": "Pending",
-  "settingsPages.revokeTitle": "Remove the firm's access?"
+  "settingsPages.revokeTitle": "Remove the firm's access?",
+  "settingsPages.auditUser": "User",
+  "settingsPages.auditUnknownUser": "Former user",
+  "settingsPages.auditShow": "Show",
+  "settingsPages.auditHide": "Hide"
 }

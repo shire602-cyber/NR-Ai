@@ -1,10 +1,10 @@
-import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
 import { Money } from "@/components/ui/money";
 import { Skeleton } from "@/components/ui/skeleton";
+import { RankedBars, type RankedBarItem } from "@/components/ui/ranked-bars";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -32,44 +32,6 @@ const ISSUE_LABEL: Record<string, string> = {
   overdue_invoices: "firmOps.issueOverdueInvoices",
   overdue_vat: "firmOps.issueOverdueVat",
 };
-
-// Opacity steps for one-hue ranked bars (spec 2.7).
-const BAR_OPACITY = [1, 0.7, 0.5, 0.35, 0.25];
-
-interface RankedRow {
-  key: string;
-  label: string;
-  value: number;
-  display: ReactNode;
-}
-
-/** Ranked horizontal bars: label, thin bar in the brand hue, value at the end. */
-function RankedList({ rows, testId }: { rows: RankedRow[]; testId?: string }) {
-  const max = Math.max(1, ...rows.map((r) => r.value));
-  return (
-    <ul className="space-y-3" data-testid={testId}>
-      {rows.map((row, i) => (
-        <li key={row.key} className="space-y-1.5">
-          <div className="flex items-baseline justify-between gap-3 text-small">
-            <span className="min-w-0 truncate text-foreground" dir="auto">
-              {row.label}
-            </span>
-            <span className="shrink-0 tabular-nums text-foreground">{row.display}</span>
-          </div>
-          <div className="h-1.5 w-full rounded-full bg-surface-sunken" aria-hidden="true">
-            <div
-              className="h-1.5 rounded-full bg-[hsl(var(--chart-1))]"
-              style={{
-                width: `${Math.max(2, (row.value / max) * 100)}%`,
-                opacity: BAR_OPACITY[Math.min(i, BAR_OPACITY.length - 1)],
-              }}
-            />
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 /** Firm analytics (NR-only, spec 3.17): revenue, utilisation and client health. */
 export default function FirmAnalytics() {
@@ -110,14 +72,14 @@ export default function FirmAnalytics() {
   const growth = revenue?.revenueGrowthPercent ?? 0;
   const byClient = (revenue?.revenueByClient ?? []).slice(0, 10);
   const dist = health?.healthDistribution;
-  const healthRows: RankedRow[] = dist
+  const healthRows: RankedBarItem[] = dist
     ? [
         { key: "healthy", label: t["firmOps.healthHealthy"], value: dist.healthy },
         { key: "attention", label: t["firmOps.healthAttention"], value: dist.attention },
         { key: "critical", label: t["firmOps.healthCritical"], value: dist.critical },
       ]
         .filter((r) => r.value > 0)
-        .map((r) => ({ ...r, display: r.value }))
+        .map((r) => ({ id: r.key, label: r.label, value: r.value, display: r.value }))
     : [];
 
   return (
@@ -160,13 +122,15 @@ export default function FirmAnalytics() {
           {byClient.length === 0 ? (
             <p className="text-small text-muted-foreground">{t["firmOps.revenueByClientEmpty"]}</p>
           ) : (
-            <RankedList
+            <RankedBars
               testId="firm-revenue-by-client"
-              rows={byClient.map((r) => ({
-                key: r.companyId,
+              aria-label={t["firmOps.revenueByClient"]}
+              currency="AED"
+              limit={10}
+              items={byClient.map((r) => ({
+                id: r.companyId,
                 label: r.companyName,
                 value: r.totalRevenue,
-                display: <Money amount={r.totalRevenue} currency="AED" />,
               }))}
             />
           )}
@@ -176,7 +140,11 @@ export default function FirmAnalytics() {
           {healthRows.length === 0 ? (
             <p className="text-small text-muted-foreground">{t["firmOps.clientHealthEmpty"]}</p>
           ) : (
-            <RankedList rows={healthRows} testId="firm-client-health" />
+            <RankedBars
+              items={healthRows}
+              testId="firm-client-health"
+              aria-label={t["firmOps.clientHealth"]}
+            />
           )}
           {(health?.topIssues?.length ?? 0) > 0 && (
             <div className="mt-5 space-y-2 border-t border-border pt-4">

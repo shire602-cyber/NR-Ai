@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
@@ -169,295 +170,297 @@ export default function NotificationPreferences() {
   }
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Settings"
-        title={t["pages.notificationPrefsTitle"]}
-        description={t["pages.notificationPrefsDescription"]}
-      />
+    <SettingsLayout>
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Settings"
+          title={t["pages.notificationPrefsTitle"]}
+          description={t["pages.notificationPrefsDescription"]}
+        />
 
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 max-w-2xl">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Bell className="w-5 h-5" />
-                <T k="pages.notificationChannels" />
-              </CardTitle>
-              <CardDescription>
-                <T k="pages.chooseHowYouWantToReceiveNotifications" />
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <FormField
-                control={form.control}
-                name="pushEnabled"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base">
-                        <T k="pages.pushNotifications" />
-                      </FormLabel>
-                      <FormDescription>
-                        <T k="pages.receiveInstantBrowserPushNotifications" />
-                      </FormDescription>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {pushUnavailable && (
-                        <span
-                          className="text-xs text-muted-foreground"
-                          data-testid="push-unavailable"
-                        >
-                          <T k="settingsPages.notAvailableYet" />
-                        </span>
-                      )}
-                      {!pushActive && !pushUnavailable && (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleEnablePush}
-                        >
-                          <T k="pages.enablePush" />
-                        </Button>
-                      )}
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 max-w-2xl">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Bell className="w-5 h-5" />
+                  <T k="pages.notificationChannels" />
+                </CardTitle>
+                <CardDescription>
+                  <T k="pages.chooseHowYouWantToReceiveNotifications" />
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <FormField
+                  control={form.control}
+                  name="pushEnabled"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">
+                          <T k="pages.pushNotifications" />
+                        </FormLabel>
+                        <FormDescription>
+                          <T k="pages.receiveInstantBrowserPushNotifications" />
+                        </FormDescription>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {pushUnavailable && (
+                          <span
+                            className="text-xs text-muted-foreground"
+                            data-testid="push-unavailable"
+                          >
+                            <T k="settingsPages.notAvailableYet" />
+                          </span>
+                        )}
+                        {!pushActive && !pushUnavailable && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={handleEnablePush}
+                          >
+                            <T k="pages.enablePush" />
+                          </Button>
+                        )}
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            disabled={pushUnavailable}
+                            onCheckedChange={(checked) => {
+                              if (checked && !pushActive) {
+                                handleEnablePush();
+                              } else if (!checked && pushActive) {
+                                handleEnablePush();
+                              } else {
+                                field.onChange(checked);
+                              }
+                            }}
+                          />
+                        </FormControl>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="emailEnabled"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base flex items-center gap-2">
+                          <Mail className="w-4 h-4" />
+                          <T k="pages.emailNotifications" />
+                        </FormLabel>
+                        <FormDescription>
+                          <T k="pages.receiveNotificationsViaEmail" />
+                        </FormDescription>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {emailStatus === "disabled" && (
+                          <span
+                            className="text-xs text-muted-foreground"
+                            data-testid="email-not-configured"
+                          >
+                            <T k="settingsPages.notAvailableYet" />
+                          </span>
+                        )}
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            disabled={emailStatus === "disabled"}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  <T k="pages.notificationTypes" />
+                </CardTitle>
+                <CardDescription>
+                  <T k="pages.selectWhichTypesOfEventsTriggerNotifications" />
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <FormField
+                  control={form.control}
+                  name="invoiceReminders"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base flex items-center gap-2">
+                          <FileText className="w-4 h-4" />
+                          <T k="pages.invoiceReminders" />
+                        </FormLabel>
+                        <FormDescription>
+                          <T k="pages.getNotifiedAboutOverdueInvoicesAndPaymentDueDate" />
+                        </FormDescription>
+                      </div>
                       <FormControl>
-                        <Switch
-                          checked={field.value}
-                          disabled={pushUnavailable}
-                          onCheckedChange={(checked) => {
-                            if (checked && !pushActive) {
-                              handleEnablePush();
-                            } else if (!checked && pushActive) {
-                              handleEnablePush();
-                            } else {
-                              field.onChange(checked);
-                            }
-                          }}
-                        />
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
                       </FormControl>
-                    </div>
-                  </FormItem>
-                )}
-              />
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="emailEnabled"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base flex items-center gap-2">
-                        <Mail className="w-4 h-4" />
-                        <T k="pages.emailNotifications" />
-                      </FormLabel>
-                      <FormDescription>
-                        <T k="pages.receiveNotificationsViaEmail" />
-                      </FormDescription>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {emailStatus === "disabled" && (
-                        <span
-                          className="text-xs text-muted-foreground"
-                          data-testid="email-not-configured"
-                        >
-                          <T k="settingsPages.notAvailableYet" />
-                        </span>
-                      )}
+                <FormField
+                  control={form.control}
+                  name="vatDeadlines"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base flex items-center gap-2">
+                          <Calendar className="w-4 h-4" />
+                          <T k="pages.vatDeadlines" />
+                        </FormLabel>
+                        <FormDescription>
+                          <T k="pages.getRemindedAboutUpcomingVatFilingAndPaymentDeadl" />
+                        </FormDescription>
+                      </div>
                       <FormControl>
-                        <Switch
-                          checked={field.value}
-                          disabled={emailStatus === "disabled"}
-                          onCheckedChange={field.onChange}
-                        />
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
                       </FormControl>
-                    </div>
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
+                    </FormItem>
+                  )}
+                />
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                <T k="pages.notificationTypes" />
-              </CardTitle>
-              <CardDescription>
-                <T k="pages.selectWhichTypesOfEventsTriggerNotifications" />
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <FormField
-                control={form.control}
-                name="invoiceReminders"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base flex items-center gap-2">
-                        <FileText className="w-4 h-4" />
-                        <T k="pages.invoiceReminders" />
-                      </FormLabel>
-                      <FormDescription>
-                        <T k="pages.getNotifiedAboutOverdueInvoicesAndPaymentDueDate" />
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="paymentReceived"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base flex items-center gap-2">
+                          <CreditCard className="w-4 h-4" />
+                          <T k="pages.paymentReceived" />
+                        </FormLabel>
+                        <FormDescription>
+                          <T k="pages.getNotifiedWhenAPaymentIsReceivedForAnInvoice" />
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
 
-              <FormField
-                control={form.control}
-                name="vatDeadlines"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base flex items-center gap-2">
-                        <Calendar className="w-4 h-4" />
-                        <T k="pages.vatDeadlines" />
-                      </FormLabel>
-                      <FormDescription>
-                        <T k="pages.getRemindedAboutUpcomingVatFilingAndPaymentDeadl" />
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+                <FormField
+                  control={form.control}
+                  name="weeklyDigest"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base flex items-center gap-2">
+                          <BarChart3 className="w-4 h-4" />
+                          <T k="pages.weeklyDigest" />
+                        </FormLabel>
+                        <FormDescription>
+                          <T k="pages.receiveAWeeklySummaryOfYourFinancialActivity" />
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+            </Card>
 
-              <FormField
-                control={form.control}
-                name="paymentReceived"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base flex items-center gap-2">
-                        <CreditCard className="w-4 h-4" />
-                        <T k="pages.paymentReceived" />
-                      </FormLabel>
-                      <FormDescription>
-                        <T k="pages.getNotifiedWhenAPaymentIsReceivedForAnInvoice" />
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="weeklyDigest"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-base flex items-center gap-2">
-                        <BarChart3 className="w-4 h-4" />
-                        <T k="pages.weeklyDigest" />
-                      </FormLabel>
-                      <FormDescription>
-                        <T k="pages.receiveAWeeklySummaryOfYourFinancialActivity" />
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>
-                <T k="portal.notificationTypes" />
-              </CardTitle>
-              <CardDescription>
-                <T k="portal.notificationTypesHelp" />
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <FormField
-                control={form.control}
-                name="inAppEnabled"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <FormLabel className="text-base">
-                      <T k="portal.inAppNotifications" />
-                    </FormLabel>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="dailyDigest"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  <T k="portal.notificationTypes" />
+                </CardTitle>
+                <CardDescription>
+                  <T k="portal.notificationTypesHelp" />
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="inAppEnabled"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
                       <FormLabel className="text-base">
-                        <T k="portal.dailyDigest" />
+                        <T k="portal.inAppNotifications" />
                       </FormLabel>
-                      <FormDescription>
-                        <T k="portal.dailyDigestHelp" />
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-              <div className="divide-y rounded-lg border">
-                <div className="grid grid-cols-3 gap-2 p-3 text-sm font-medium">
-                  <span />
-                  <span>
-                    <T k="portal.channelInApp" />
-                  </span>
-                  <span>
-                    <T k="portal.channelEmail" />
-                  </span>
-                </div>
-                {(preferences?.eventTypes ?? []).map((type) => (
-                  <div key={type} className="grid grid-cols-3 gap-2 p-3 items-center text-sm">
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="dailyDigest"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">
+                          <T k="portal.dailyDigest" />
+                        </FormLabel>
+                        <FormDescription>
+                          <T k="portal.dailyDigestHelp" />
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <div className="divide-y rounded-lg border">
+                  <div className="grid grid-cols-3 gap-2 p-3 text-sm font-medium">
+                    <span />
                     <span>
-                      <T k={`portal.eventType.${type}`} />
+                      <T k="portal.channelInApp" />
                     </span>
-                    <Switch
-                      aria-label={`${type} in-app`}
-                      checked={typePrefs[type]?.inApp !== false}
-                      onCheckedChange={(v) => setTypePref(type, "inApp", v)}
-                    />
-                    <Switch
-                      aria-label={`${type} email`}
-                      checked={typePrefs[type]?.email ?? false}
-                      onCheckedChange={(v) => setTypePref(type, "email", v)}
-                    />
+                    <span>
+                      <T k="portal.channelEmail" />
+                    </span>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                  {(preferences?.eventTypes ?? []).map((type) => (
+                    <div key={type} className="grid grid-cols-3 gap-2 p-3 items-center text-sm">
+                      <span>
+                        <T k={`portal.eventType.${type}`} />
+                      </span>
+                      <Switch
+                        aria-label={`${type} in-app`}
+                        checked={typePrefs[type]?.inApp !== false}
+                        onCheckedChange={(v) => setTypePref(type, "inApp", v)}
+                      />
+                      <Switch
+                        aria-label={`${type} email`}
+                        checked={typePrefs[type]?.email ?? false}
+                        onCheckedChange={(v) => setTypePref(type, "email", v)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
 
-          <div className="flex justify-end">
-            <Button type="submit" disabled={updateMutation.isPending}>
-              {updateMutation.isPending
-                ? t["pages.notificationPrefsSaving"]
-                : t["pages.notificationPrefsSave"]}
-            </Button>
-          </div>
-        </form>
-      </Form>
-    </div>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={updateMutation.isPending}>
+                {updateMutation.isPending
+                  ? t["pages.notificationPrefsSaving"]
+                  : t["pages.notificationPrefsSave"]}
+              </Button>
+            </div>
+          </form>
+        </Form>
+      </div>
+    </SettingsLayout>
   );
 }

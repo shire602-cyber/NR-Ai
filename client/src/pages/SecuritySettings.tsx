@@ -3,6 +3,7 @@
  * (TOTP + recovery codes), email verification status, signed-in devices, sign-in history,
  * the company MFA policy and the tamper-evident audit trail.
  */
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { formatDate } from "@/lib/format";
 import { useCallback, useMemo, useState } from "react";
 import { collapseSessions, VISIBLE_DEVICE_ROWS } from "@/pages/settings/sessions";
@@ -311,318 +312,322 @@ export default function SecuritySettings() {
   const mfa = ov?.mfa;
 
   return (
-    <div className="max-w-narrow space-y-6" data-testid="page-security-settings">
-      <PageHeader
-        eyebrow="Settings"
-        title={t["security.pageTitle"]}
-        description={t["security.pageSubtitle"]}
-      />
+    <SettingsLayout>
+      <div className="max-w-narrow space-y-6" data-testid="page-security-settings">
+        <PageHeader
+          eyebrow="Settings"
+          title={t["security.pageTitle"]}
+          description={t["security.pageSubtitle"]}
+        />
 
-      {ov && ov.mfaRequiredByCompanies.length > 0 && (
-        <p
-          className="rounded-lg border border-warning/40 bg-warning-subtle p-3 text-small text-warning-subtle-foreground"
-          role="alert"
-        >
-          {t["security.mfaRequiredBy"]}
-        </p>
-      )}
+        {ov && ov.mfaRequiredByCompanies.length > 0 && (
+          <p
+            className="rounded-lg border border-warning/40 bg-warning-subtle p-3 text-small text-warning-subtle-foreground"
+            role="alert"
+          >
+            {t["security.mfaRequiredBy"]}
+          </p>
+        )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            {t["security.mfaTitle"]}
-            {mfa && (
-              <Badge variant={mfa.enabled ? "default" : "secondary"} data-testid="badge-mfa">
-                {mfa.enabled ? t["security.mfaOn"] : t["security.mfaOff"]}
-              </Badge>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {t["security.mfaTitle"]}
+              {mfa && (
+                <Badge variant={mfa.enabled ? "default" : "secondary"} data-testid="badge-mfa">
+                  {mfa.enabled ? t["security.mfaOn"] : t["security.mfaOff"]}
+                </Badge>
+              )}
+            </CardTitle>
+            <CardDescription>{t["security.mfaDescription"]}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {recoveryCodes && (
+              <div className="rounded-md border p-3" data-testid="recovery-codes">
+                <p className="font-medium">{t["security.mfaRecoveryTitle"]}</p>
+                <p className="mb-2 text-sm text-muted-foreground">
+                  {t["security.mfaRecoveryHelp"]}
+                </p>
+                <ul className="grid grid-cols-2 gap-1 font-mono text-sm" dir="ltr">
+                  {recoveryCodes.map((c) => (
+                    <li key={c}>{c}</li>
+                  ))}
+                </ul>
+              </div>
             )}
-          </CardTitle>
-          <CardDescription>{t["security.mfaDescription"]}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {recoveryCodes && (
-            <div className="rounded-md border p-3" data-testid="recovery-codes">
-              <p className="font-medium">{t["security.mfaRecoveryTitle"]}</p>
-              <p className="mb-2 text-sm text-muted-foreground">{t["security.mfaRecoveryHelp"]}</p>
-              <ul className="grid grid-cols-2 gap-1 font-mono text-sm" dir="ltr">
-                {recoveryCodes.map((c) => (
-                  <li key={c}>{c}</li>
-                ))}
-              </ul>
-            </div>
-          )}
 
-          {mfa && !mfa.enabled && !enrol && (
-            <Button onClick={startEnrol} data-testid="button-mfa-start">
-              {t["security.mfaStart"]}
-            </Button>
-          )}
+            {mfa && !mfa.enabled && !enrol && (
+              <Button onClick={startEnrol} data-testid="button-mfa-start">
+                {t["security.mfaStart"]}
+              </Button>
+            )}
 
-          {enrol && (
-            <div className="space-y-3">
-              <p className="text-sm">{t["security.mfaScan"]}</p>
-              <img src={enrol.qrDataUrl} alt="" width={220} height={220} />
-              <p className="text-sm">
-                {t["security.mfaManualKey"]}:{" "}
-                <code className="font-mono" dir="ltr">
-                  {enrol.secret}
-                </code>
-              </p>
-              <Label htmlFor="enrol-code">{t["security.mfaCode"]}</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="enrol-code"
-                  autoComplete="one-time-code"
-                  inputMode="numeric"
-                  value={enrolCode}
-                  onChange={(e) => setEnrolCode(e.target.value)}
-                />
-                <Button onClick={confirmEnrol} disabled={enrolCode.trim().length < 6}>
-                  {t["security.mfaConfirm"]}
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {mfa?.enabled && (
-            <div className="space-y-4">
-              <p className="text-sm">
-                {formatMessage(t["security.mfaRecoveryRemaining"], {
-                  count: mfa.recoveryCodesRemaining,
-                })}
-              </p>
-              <div className="flex flex-wrap items-end gap-2">
-                <div>
-                  <Label htmlFor="regen-code">{t["security.mfaCode"]}</Label>
+            {enrol && (
+              <div className="space-y-3">
+                <p className="text-sm">{t["security.mfaScan"]}</p>
+                <img src={enrol.qrDataUrl} alt="" width={220} height={220} />
+                <p className="text-sm">
+                  {t["security.mfaManualKey"]}:{" "}
+                  <code className="font-mono" dir="ltr">
+                    {enrol.secret}
+                  </code>
+                </p>
+                <Label htmlFor="enrol-code">{t["security.mfaCode"]}</Label>
+                <div className="flex gap-2">
                   <Input
-                    id="regen-code"
-                    value={regenCode}
-                    onChange={(e) => setRegenCode(e.target.value)}
+                    id="enrol-code"
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    value={enrolCode}
+                    onChange={(e) => setEnrolCode(e.target.value)}
                   />
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={regenerate}
-                  disabled={regenCode.trim().length < 6}
-                >
-                  {t["security.mfaRegenerate"]}
-                </Button>
-              </div>
-              <div className="space-y-2 rounded-md border p-3">
-                <p className="text-sm text-muted-foreground">{t["security.mfaDisableHelp"]}</p>
-                <div className="flex flex-wrap items-end gap-2">
-                  <div>
-                    <Label htmlFor="disable-password">{t["security.password"]}</Label>
-                    <Input
-                      id="disable-password"
-                      type="password"
-                      autoComplete="current-password"
-                      value={disablePassword}
-                      onChange={(e) => setDisablePassword(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="disable-code">{t["security.mfaCode"]}</Label>
-                    <Input
-                      id="disable-code"
-                      value={disableCode}
-                      onChange={(e) => setDisableCode(e.target.value)}
-                    />
-                  </div>
-                  <Button
-                    variant="destructive"
-                    onClick={disable}
-                    disabled={!disablePassword || disableCode.trim().length < 6}
-                  >
-                    {t["security.mfaDisable"]}
+                  <Button onClick={confirmEnrol} disabled={enrolCode.trim().length < 6}>
+                    {t["security.mfaConfirm"]}
                   </Button>
                 </div>
               </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            {t["security.emailTitle"]}
-            {ov && (
-              <Badge variant={ov.emailVerification.verified ? "default" : "secondary"}>
-                {ov.emailVerification.verified
-                  ? t["security.emailVerified"]
-                  : t["security.emailUnverified"]}
-              </Badge>
             )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          {ov && !ov.emailVerification.verified && (
-            <>
-              {/* WP-E: when verification is not enforced there is nothing to tell the customer
-                  (the old sentence described server configuration); only the action remains. */}
-              {ov.emailVerification.enforced && (
-                <p>
-                  {ov.emailVerification.restricted
-                    ? t["security.emailRestricted"]
-                    : formatMessage(t["security.emailGrace"], {
-                        date: fmt(ov.emailVerification.graceEndsAt, locale),
-                      })}
-                </p>
-              )}
-              <Button variant="outline" onClick={resend}>
-                {t["security.emailResend"]}
-              </Button>
-            </>
-          )}
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2">
-          <CardTitle>{t["security.sessionsTitle"]}</CardTitle>
-          <Button
-            variant="outline"
-            onClick={() => setConfirmLogoutAll(true)}
-            data-testid="button-logout-all"
-          >
-            {t["security.logoutAll"]}
-          </Button>
-          <Dialog open={confirmLogoutAll} onOpenChange={setConfirmLogoutAll}>
-            <DialogContent data-testid="dialog-logout-all">
-              <DialogHeader>
-                <DialogTitle>{t["security.logoutAllConfirmTitle"]}</DialogTitle>
-                <DialogDescription>{t["security.logoutAllConfirmBody"]}</DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setConfirmLogoutAll(false)}>
-                  {t["security.logoutAllCancel"]}
-                </Button>
-                <Button
-                  variant="destructive"
-                  onClick={() => void logoutAll()}
-                  data-testid="button-logout-all-confirm"
-                >
-                  {t["security.logoutAllConfirmAction"]}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </CardHeader>
-        <CardContent>
-          <ul className="divide-y text-sm" data-testid="security-devices">
-            {(showAllDevices ? deviceGroups : deviceGroups.slice(0, VISIBLE_DEVICE_ROWS)).map(
-              (g) => (
-                <li key={g.key} className="flex items-center justify-between gap-2 py-2">
-                  <div className="min-w-0">
-                    <p
-                      className="truncate font-medium"
-                      dir="ltr"
-                      title={g.lead.userAgent ?? undefined}
-                    >
-                      {describeUserAgent(g.lead.userAgent)}
-                    </p>
-                    <p className="text-caption text-muted-foreground">
-                      <bdi dir="ltr">{g.lead.ipAddress ?? "—"}</bdi> ·{" "}
-                      {formatMessage(t["security.sessionLastUsed"], {
-                        date: fmt(g.lead.lastUsedAt ?? g.lead.createdAt, locale),
-                      })}
-                      {g.count > 1 && (
-                        <>
-                          {" · "}
-                          {formatMessage(t["settingsPages.sessionCount"], { count: g.count })}
-                        </>
-                      )}
-                    </p>
-                  </div>
-                  {g.current ? (
-                    <Badge variant="success" dot>
-                      {t["security.sessionCurrent"]}
-                    </Badge>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void Promise.all(g.ids.map((id) => revoke(id)))}
-                    >
-                      {t["security.sessionRevoke"]}
-                    </Button>
-                  )}
-                </li>
-              )
-            )}
-          </ul>
-          {deviceGroups.length > VISIBLE_DEVICE_ROWS && (
-            <Button
-              variant="link"
-              className="mt-1 h-auto px-0"
-              onClick={() => setShowAllDevices((v) => !v)}
-              data-testid="button-devices-show-all"
-            >
-              {showAllDevices
-                ? t["settingsPages.showFewer"]
-                : formatMessage(t["settingsPages.showAllDevices"], {
-                    count: deviceGroups.length,
+            {mfa?.enabled && (
+              <div className="space-y-4">
+                <p className="text-sm">
+                  {formatMessage(t["security.mfaRecoveryRemaining"], {
+                    count: mfa.recoveryCodesRemaining,
                   })}
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+                </p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div>
+                    <Label htmlFor="regen-code">{t["security.mfaCode"]}</Label>
+                    <Input
+                      id="regen-code"
+                      value={regenCode}
+                      onChange={(e) => setRegenCode(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={regenerate}
+                    disabled={regenCode.trim().length < 6}
+                  >
+                    {t["security.mfaRegenerate"]}
+                  </Button>
+                </div>
+                <div className="space-y-2 rounded-md border p-3">
+                  <p className="text-sm text-muted-foreground">{t["security.mfaDisableHelp"]}</p>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div>
+                      <Label htmlFor="disable-password">{t["security.password"]}</Label>
+                      <Input
+                        id="disable-password"
+                        type="password"
+                        autoComplete="current-password"
+                        value={disablePassword}
+                        onChange={(e) => setDisablePassword(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="disable-code">{t["security.mfaCode"]}</Label>
+                      <Input
+                        id="disable-code"
+                        value={disableCode}
+                        onChange={(e) => setDisableCode(e.target.value)}
+                      />
+                    </div>
+                    <Button
+                      variant="destructive"
+                      onClick={disable}
+                      disabled={!disablePassword || disableCode.trim().length < 6}
+                    >
+                      {t["security.mfaDisable"]}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t["security.historyTitle"]}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {history.data?.events.length ? (
-            <ul className="divide-y text-sm">
-              {history.data.events.map((e) => (
-                <li key={e.id} className="flex flex-wrap justify-between gap-2 py-2">
-                  <span className="tabular-nums">{activityActionLabel(t, e.action)}</span>
-                  <span className="text-muted-foreground" dir="ltr">
-                    {fmt(e.at, locale)} · <bdi dir="ltr">{e.ipAddress ?? "—"}</bdi>
-                  </span>
-                </li>
-              ))}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {t["security.emailTitle"]}
+              {ov && (
+                <Badge variant={ov.emailVerification.verified ? "default" : "secondary"}>
+                  {ov.emailVerification.verified
+                    ? t["security.emailVerified"]
+                    : t["security.emailUnverified"]}
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {ov && !ov.emailVerification.verified && (
+              <>
+                {/* WP-E: when verification is not enforced there is nothing to tell the customer
+                    (the old sentence described server configuration); only the action remains. */}
+                {ov.emailVerification.enforced && (
+                  <p>
+                    {ov.emailVerification.restricted
+                      ? t["security.emailRestricted"]
+                      : formatMessage(t["security.emailGrace"], {
+                          date: fmt(ov.emailVerification.graceEndsAt, locale),
+                        })}
+                  </p>
+                )}
+                <Button variant="outline" onClick={resend}>
+                  {t["security.emailResend"]}
+                </Button>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardTitle>{t["security.sessionsTitle"]}</CardTitle>
+            <Button
+              variant="outline"
+              onClick={() => setConfirmLogoutAll(true)}
+              data-testid="button-logout-all"
+            >
+              {t["security.logoutAll"]}
+            </Button>
+            <Dialog open={confirmLogoutAll} onOpenChange={setConfirmLogoutAll}>
+              <DialogContent data-testid="dialog-logout-all">
+                <DialogHeader>
+                  <DialogTitle>{t["security.logoutAllConfirmTitle"]}</DialogTitle>
+                  <DialogDescription>{t["security.logoutAllConfirmBody"]}</DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setConfirmLogoutAll(false)}>
+                    {t["security.logoutAllCancel"]}
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => void logoutAll()}
+                    data-testid="button-logout-all-confirm"
+                  >
+                    {t["security.logoutAllConfirmAction"]}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y text-sm" data-testid="security-devices">
+              {(showAllDevices ? deviceGroups : deviceGroups.slice(0, VISIBLE_DEVICE_ROWS)).map(
+                (g) => (
+                  <li key={g.key} className="flex items-center justify-between gap-2 py-2">
+                    <div className="min-w-0">
+                      <p
+                        className="truncate font-medium"
+                        dir="ltr"
+                        title={g.lead.userAgent ?? undefined}
+                      >
+                        {describeUserAgent(g.lead.userAgent)}
+                      </p>
+                      <p className="text-caption text-muted-foreground">
+                        <bdi dir="ltr">{g.lead.ipAddress ?? "—"}</bdi> ·{" "}
+                        {formatMessage(t["security.sessionLastUsed"], {
+                          date: fmt(g.lead.lastUsedAt ?? g.lead.createdAt, locale),
+                        })}
+                        {g.count > 1 && (
+                          <>
+                            {" · "}
+                            {formatMessage(t["settingsPages.sessionCount"], { count: g.count })}
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    {g.current ? (
+                      <Badge variant="success" dot>
+                        {t["security.sessionCurrent"]}
+                      </Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void Promise.all(g.ids.map((id) => revoke(id)))}
+                      >
+                        {t["security.sessionRevoke"]}
+                      </Button>
+                    )}
+                  </li>
+                )
+              )}
             </ul>
-          ) : (
-            <p className="text-sm text-muted-foreground">{t["security.historyEmpty"]}</p>
-          )}
-        </CardContent>
-      </Card>
+            {deviceGroups.length > VISIBLE_DEVICE_ROWS && (
+              <Button
+                variant="link"
+                className="mt-1 h-auto px-0"
+                onClick={() => setShowAllDevices((v) => !v)}
+                data-testid="button-devices-show-all"
+              >
+                {showAllDevices
+                  ? t["settingsPages.showFewer"]
+                  : formatMessage(t["settingsPages.showAllDevices"], {
+                      count: deviceGroups.length,
+                    })}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
 
-      {companyId && (
-        <CompanySecurity companyId={companyId} withStepUp={stepUp.withStepUp} onError={fail} />
-      )}
+        <Card>
+          <CardHeader>
+            <CardTitle>{t["security.historyTitle"]}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {history.data?.events.length ? (
+              <ul className="divide-y text-sm">
+                {history.data.events.map((e) => (
+                  <li key={e.id} className="flex flex-wrap justify-between gap-2 py-2">
+                    <span className="tabular-nums">{activityActionLabel(t, e.action)}</span>
+                    <span className="text-muted-foreground" dir="ltr">
+                      {fmt(e.at, locale)} · <bdi dir="ltr">{e.ipAddress ?? "—"}</bdi>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t["security.historyEmpty"]}</p>
+            )}
+          </CardContent>
+        </Card>
 
-      <Dialog open={stepUp.open} onOpenChange={(open) => !open && stepUp.cancel()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t["security.stepUpTitle"]}</DialogTitle>
-            <DialogDescription>{t["security.stepUpHelp"]}</DialogDescription>
-          </DialogHeader>
-          <Input
-            autoComplete="one-time-code"
-            value={stepUp.code}
-            onChange={(e) => stepUp.setCode(e.target.value)}
-            aria-label={t["security.mfaCode"]}
-          />
-          {stepUp.error && (
-            <p className="text-sm text-destructive" role="alert">
-              {stepUp.error}
-            </p>
-          )}
-          <DialogFooter>
-            <Button variant="ghost" onClick={stepUp.cancel}>
-              {t["security.cancel"]}
-            </Button>
-            <Button onClick={stepUp.submit} disabled={stepUp.code.trim().length < 6}>
-              {t["security.verify"]}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+        {companyId && (
+          <CompanySecurity companyId={companyId} withStepUp={stepUp.withStepUp} onError={fail} />
+        )}
+
+        <Dialog open={stepUp.open} onOpenChange={(open) => !open && stepUp.cancel()}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t["security.stepUpTitle"]}</DialogTitle>
+              <DialogDescription>{t["security.stepUpHelp"]}</DialogDescription>
+            </DialogHeader>
+            <Input
+              autoComplete="one-time-code"
+              value={stepUp.code}
+              onChange={(e) => stepUp.setCode(e.target.value)}
+              aria-label={t["security.mfaCode"]}
+            />
+            {stepUp.error && (
+              <p className="text-sm text-destructive" role="alert">
+                {stepUp.error}
+              </p>
+            )}
+            <DialogFooter>
+              <Button variant="ghost" onClick={stepUp.cancel}>
+                {t["security.cancel"]}
+              </Button>
+              <Button onClick={stepUp.submit} disabled={stepUp.code.trim().length < 6}>
+                {t["security.verify"]}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </SettingsLayout>
   );
 }
 

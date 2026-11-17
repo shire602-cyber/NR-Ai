@@ -30,5 +30,9 @@
   "settingsPages.linkStatusRevoked": "أُزيل الوصول",
   "settingsPages.linkStatusInvited": "تمت الدعوة",
   "settingsPages.linkStatusUnknown": "قيد الانتظار",
-  "settingsPages.revokeTitle": "إزالة وصول المكتب؟"
+  "settingsPages.revokeTitle": "إزالة وصول المكتب؟",
+  "settingsPages.auditUser": "المستخدم",
+  "settingsPages.auditUnknownUser": "مستخدم سابق",
+  "settingsPages.auditShow": "عرض",
+  "settingsPages.auditHide": "إخفاء"
 }

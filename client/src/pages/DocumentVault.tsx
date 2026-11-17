@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -303,307 +304,98 @@ export default function DocumentVault() {
   }
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Operations"
-        title={locale === "ar" ? "خزنة المستندات" : t["shell.moreDocumentVault"]}
-        description={
-          locale === "ar"
-            ? "قم بتخزين وإدارة مستنداتك المهمة مع تنبيهات انتهاء الصلاحية"
-            : t["documentVault.storeAndManageYourImportant"]
-        }
-        actions={
-          <Button onClick={() => setUploadDialogOpen(true)} data-testid="button-upload-document">
-            <Plus className="w-4 h-4 mr-2" />
-            {locale === "ar" ? "رفع مستند" : t["pages.uploadDocument"]}
-          </Button>
-        }
-      />
+    <SettingsLayout>
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Operations"
+          title={locale === "ar" ? "خزنة المستندات" : t["shell.moreDocumentVault"]}
+          description={
+            locale === "ar"
+              ? "قم بتخزين وإدارة مستنداتك المهمة مع تنبيهات انتهاء الصلاحية"
+              : t["documentVault.storeAndManageYourImportant"]
+          }
+          actions={
+            <Button onClick={() => setUploadDialogOpen(true)} data-testid="button-upload-document">
+              <Plus className="w-4 h-4 mr-2" />
+              {locale === "ar" ? "رفع مستند" : t["pages.uploadDocument"]}
+            </Button>
+          }
+        />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                {locale === "ar" ? "إجمالي المستندات" : t["pages.totalDocuments"]}
+              </CardTitle>
+              <FolderOpen className="w-4 h-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{documents?.length || 0}</div>
+            </CardContent>
+          </Card>
+
+          <Card className={expiringDocs.length > 0 ? "border-warning" : ""}>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                {locale === "ar" ? "تنتهي قريباً" : t["pages.expiringSoon"]}
+              </CardTitle>
+              <Clock className="w-4 h-4 text-warning" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-warning">{expiringDocs.length}</div>
+              <p className="text-xs text-muted-foreground">
+                {locale === "ar" ? "خلال 30 يوم" : "Within 30 days"}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className={expiredDocs.length > 0 ? "border-destructive" : ""}>
+            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                {locale === "ar" ? "منتهية الصلاحية" : "Expired"}
+              </CardTitle>
+              <AlertTriangle className="w-4 h-4 text-destructive" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-destructive">{expiredDocs.length}</div>
+              <p className="text-xs text-muted-foreground">
+                {locale === "ar" ? "تحتاج إلى تجديد" : t["documentVault.needRenewal"]}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "إجمالي المستندات" : t["pages.totalDocuments"]}
-            </CardTitle>
-            <FolderOpen className="w-4 h-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{documents?.length || 0}</div>
-          </CardContent>
-        </Card>
-
-        <Card className={expiringDocs.length > 0 ? "border-warning" : ""}>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "تنتهي قريباً" : t["pages.expiringSoon"]}
-            </CardTitle>
-            <Clock className="w-4 h-4 text-warning" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-warning">{expiringDocs.length}</div>
-            <p className="text-xs text-muted-foreground">
-              {locale === "ar" ? "خلال 30 يوم" : "Within 30 days"}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className={expiredDocs.length > 0 ? "border-destructive" : ""}>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "منتهية الصلاحية" : "Expired"}
-            </CardTitle>
-            <AlertTriangle className="w-4 h-4 text-destructive" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">{expiredDocs.length}</div>
-            <p className="text-xs text-muted-foreground">
-              {locale === "ar" ? "تحتاج إلى تجديد" : t["documentVault.needRenewal"]}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col md:flex-row gap-4 justify-between">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-              <Input
-                placeholder={locale === "ar" ? "بحث في المستندات..." : "Search documents..."}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-                data-testid="input-search-documents"
-              />
-            </div>
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger
-                className="w-[200px]"
-                data-testid="select-category-filter"
-                aria-label={t["adminDocuments.filterByCategory"]}
-              >
-                <Filter className="w-4 h-4 mr-2" />
-                <SelectValue
-                  placeholder={
-                    locale === "ar" ? "تصفية حسب الفئة" : t["adminDocuments.filterByCategory"]
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  {locale === "ar" ? "جميع الفئات" : t["pages.allCategories"]}
-                </SelectItem>
-                {DOCUMENT_CATEGORIES.map((cat) => (
-                  <SelectItem key={cat.value} value={cat.value}>
-                    {locale === "ar" ? cat.labelAr : cat.labelEn}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {filteredDocuments.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>{locale === "ar" ? "لا توجد مستندات" : t["documentVault.noDocumentsFound"]}</p>
-              <Button variant="ghost" onClick={() => setUploadDialogOpen(true)}>
-                {locale === "ar" ? "رفع أول مستند" : t["documentVault.uploadYourFirstDocument"]}
-              </Button>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      {locale === "ar" ? "اسم المستند" : t["pages.documentName"]}
-                    </TableHead>
-                    <TableHead>{locale === "ar" ? "الفئة" : "Category"}</TableHead>
-                    <TableHead>
-                      {locale === "ar" ? "تاريخ الانتهاء" : t["pageLabels.expiryDate"]}
-                    </TableHead>
-                    <TableHead>{locale === "ar" ? "الحالة" : "Status"}</TableHead>
-                    <TableHead>
-                      {locale === "ar" ? "تاريخ الرفع" : t["documentVault.uploadDate"]}
-                    </TableHead>
-                    <TableHead className="text-right">
-                      {locale === "ar" ? "إجراءات" : "Actions"}
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredDocuments.map((doc) => {
-                    const expiryStatus = getExpiryStatus(doc.expiryDate);
-                    const category = DOCUMENT_CATEGORIES.find((c) => c.value === doc.category);
-
-                    return (
-                      <TableRow key={doc.id} data-testid={`row-document-${doc.id}`}>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-muted-foreground" />
-                            <div>
-                              <div className="font-medium">
-                                {locale === "ar" && doc.nameAr ? doc.nameAr : doc.name}
-                              </div>
-                              <div className="text-xs text-muted-foreground">{doc.fileName}</div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {locale === "ar" ? category?.labelAr : category?.labelEn}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {doc.expiryDate ? (
-                            <div className="flex items-center gap-1">
-                              <Calendar className="w-3 h-3" />
-                              {format(parseISO(doc.expiryDate), "dd MMM yyyy")}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {expiryStatus ? (
-                            <Badge
-                              variant={
-                                expiryStatus.status === "expired"
-                                  ? "destructive"
-                                  : expiryStatus.status === "expiring_soon"
-                                    ? "secondary"
-                                    : "default"
-                              }
-                            >
-                              {expiryStatus.status === "expired" && (
-                                <>
-                                  {locale === "ar"
-                                    ? `منتهي منذ ${expiryStatus.days} يوم`
-                                    : `Expired ${expiryStatus.days}d ago`}
-                                </>
-                              )}
-                              {expiryStatus.status === "expiring_soon" && (
-                                <>
-                                  {locale === "ar"
-                                    ? `ينتهي خلال ${expiryStatus.days} يوم`
-                                    : `Expires in ${expiryStatus.days}d`}
-                                </>
-                              )}
-                              {expiryStatus.status === "valid" && (
-                                <>
-                                  <CheckCircle2 className="w-3 h-3 mr-1" />
-                                  {locale === "ar" ? "صالح" : "Valid"}
-                                </>
-                              )}
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline">
-                              {locale === "ar" ? "بدون انتهاء" : t["documentVault.noExpiry"]}
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>{format(parseISO(doc.createdAt), "dd MMM yyyy")}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => void openVaultFile(doc, false)}
-                              data-testid={`button-view-${doc.id}`}
-                            >
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => void openVaultFile(doc, true)}
-                              data-testid={`button-download-${doc.id}`}
-                            >
-                              <Download className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => {
-                                if (
-                                  confirm(
-                                    locale === "ar"
-                                      ? "هل أنت متأكد من حذف هذا المستند؟"
-                                      : "Are you sure you want to delete this document?"
-                                  )
-                                ) {
-                                  deleteMutation.mutate(doc.id);
-                                }
-                              }}
-                              data-testid={`button-delete-${doc.id}`}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>
-              {locale === "ar" ? "رفع مستند جديد" : t["documentVault.uploadNewDocument"]}
-            </DialogTitle>
-            <DialogDescription>
-              {locale === "ar"
-                ? "ارفع مستنداً مهماً مثل الرخصة التجارية أو العقود"
-                : t["documentVault.uploadAnImportantDocumentLike"]}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>
-                  {locale === "ar" ? "اسم المستند (إنجليزي)" : "Document Name (English)"}
-                </Label>
+          <CardHeader>
+            <div className="flex flex-col md:flex-row gap-4 justify-between">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                 <Input
-                  value={newDocument.name}
-                  onChange={(e) => setNewDocument({ ...newDocument, name: e.target.value })}
-                  placeholder={t["documentVault.tradeLicense2025"]}
-                  data-testid="input-document-name"
+                  placeholder={locale === "ar" ? "بحث في المستندات..." : "Search documents..."}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                  data-testid="input-search-documents"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>{locale === "ar" ? "اسم المستند (عربي)" : "Document Name (Arabic)"}</Label>
-                <Input
-                  value={newDocument.nameAr}
-                  onChange={(e) => setNewDocument({ ...newDocument, nameAr: e.target.value })}
-                  placeholder="الرخصة التجارية 2025"
-                  dir="rtl"
-                  data-testid="input-document-name-ar"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>{locale === "ar" ? "الفئة" : "Category"}</Label>
-              <Select
-                value={newDocument.category}
-                onValueChange={(val) => setNewDocument({ ...newDocument, category: val })}
-              >
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                 <SelectTrigger
-                  data-testid="select-document-category"
-                  aria-label={t["documentVault.documentCategory"]}
+                  className="w-[200px]"
+                  data-testid="select-category-filter"
+                  aria-label={t["adminDocuments.filterByCategory"]}
                 >
-                  <SelectValue />
+                  <Filter className="w-4 h-4 mr-2" />
+                  <SelectValue
+                    placeholder={
+                      locale === "ar" ? "تصفية حسب الفئة" : t["adminDocuments.filterByCategory"]
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="all">
+                    {locale === "ar" ? "جميع الفئات" : t["pages.allCategories"]}
+                  </SelectItem>
                   {DOCUMENT_CATEGORIES.map((cat) => (
                     <SelectItem key={cat.value} value={cat.value}>
                       {locale === "ar" ? cat.labelAr : cat.labelEn}
@@ -612,83 +404,297 @@ export default function DocumentVault() {
                 </SelectContent>
               </Select>
             </div>
-
-            <div className="space-y-2">
-              <Label>{locale === "ar" ? "الوصف (اختياري)" : "Description (Optional)"}</Label>
-              <Textarea
-                value={newDocument.description}
-                onChange={(e) => setNewDocument({ ...newDocument, description: e.target.value })}
-                placeholder={
-                  locale === "ar"
-                    ? "أضف ملاحظات حول هذا المستند..."
-                    : "Add notes about this document..."
-                }
-                data-testid="input-document-description"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>
-                  {locale === "ar" ? "تاريخ الانتهاء (اختياري)" : "Expiry Date (Optional)"}
-                </Label>
-                <DatePicker
-                  value={newDocument.expiryDate}
-                  onChange={(v) => setNewDocument({ ...newDocument, expiryDate: v })}
-                  data-testid="input-expiry-date"
-                />
+          </CardHeader>
+          <CardContent>
+            {filteredDocuments.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>{locale === "ar" ? "لا توجد مستندات" : t["documentVault.noDocumentsFound"]}</p>
+                <Button variant="ghost" onClick={() => setUploadDialogOpen(true)}>
+                  {locale === "ar" ? "رفع أول مستند" : t["documentVault.uploadYourFirstDocument"]}
+                </Button>
               </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>
+                        {locale === "ar" ? "اسم المستند" : t["pages.documentName"]}
+                      </TableHead>
+                      <TableHead>{locale === "ar" ? "الفئة" : "Category"}</TableHead>
+                      <TableHead>
+                        {locale === "ar" ? "تاريخ الانتهاء" : t["pageLabels.expiryDate"]}
+                      </TableHead>
+                      <TableHead>{locale === "ar" ? "الحالة" : "Status"}</TableHead>
+                      <TableHead>
+                        {locale === "ar" ? "تاريخ الرفع" : t["documentVault.uploadDate"]}
+                      </TableHead>
+                      <TableHead className="text-right">
+                        {locale === "ar" ? "إجراءات" : "Actions"}
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredDocuments.map((doc) => {
+                      const expiryStatus = getExpiryStatus(doc.expiryDate);
+                      const category = DOCUMENT_CATEGORIES.find((c) => c.value === doc.category);
+
+                      return (
+                        <TableRow key={doc.id} data-testid={`row-document-${doc.id}`}>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-4 h-4 text-muted-foreground" />
+                              <div>
+                                <div className="font-medium">
+                                  {locale === "ar" && doc.nameAr ? doc.nameAr : doc.name}
+                                </div>
+                                <div className="text-xs text-muted-foreground">{doc.fileName}</div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {locale === "ar" ? category?.labelAr : category?.labelEn}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {doc.expiryDate ? (
+                              <div className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                {format(parseISO(doc.expiryDate), "dd MMM yyyy")}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {expiryStatus ? (
+                              <Badge
+                                variant={
+                                  expiryStatus.status === "expired"
+                                    ? "destructive"
+                                    : expiryStatus.status === "expiring_soon"
+                                      ? "secondary"
+                                      : "default"
+                                }
+                              >
+                                {expiryStatus.status === "expired" && (
+                                  <>
+                                    {locale === "ar"
+                                      ? `منتهي منذ ${expiryStatus.days} يوم`
+                                      : `Expired ${expiryStatus.days}d ago`}
+                                  </>
+                                )}
+                                {expiryStatus.status === "expiring_soon" && (
+                                  <>
+                                    {locale === "ar"
+                                      ? `ينتهي خلال ${expiryStatus.days} يوم`
+                                      : `Expires in ${expiryStatus.days}d`}
+                                  </>
+                                )}
+                                {expiryStatus.status === "valid" && (
+                                  <>
+                                    <CheckCircle2 className="w-3 h-3 mr-1" />
+                                    {locale === "ar" ? "صالح" : "Valid"}
+                                  </>
+                                )}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">
+                                {locale === "ar" ? "بدون انتهاء" : t["documentVault.noExpiry"]}
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>{format(parseISO(doc.createdAt), "dd MMM yyyy")}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => void openVaultFile(doc, false)}
+                                data-testid={`button-view-${doc.id}`}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => void openVaultFile(doc, true)}
+                                data-testid={`button-download-${doc.id}`}
+                              >
+                                <Download className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => {
+                                  if (
+                                    confirm(
+                                      locale === "ar"
+                                        ? "هل أنت متأكد من حذف هذا المستند؟"
+                                        : "Are you sure you want to delete this document?"
+                                    )
+                                  ) {
+                                    deleteMutation.mutate(doc.id);
+                                  }
+                                }}
+                                data-testid={`button-delete-${doc.id}`}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>
+                {locale === "ar" ? "رفع مستند جديد" : t["documentVault.uploadNewDocument"]}
+              </DialogTitle>
+              <DialogDescription>
+                {locale === "ar"
+                  ? "ارفع مستنداً مهماً مثل الرخصة التجارية أو العقود"
+                  : t["documentVault.uploadAnImportantDocumentLike"]}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>
+                    {locale === "ar" ? "اسم المستند (إنجليزي)" : "Document Name (English)"}
+                  </Label>
+                  <Input
+                    value={newDocument.name}
+                    onChange={(e) => setNewDocument({ ...newDocument, name: e.target.value })}
+                    placeholder={t["documentVault.tradeLicense2025"]}
+                    data-testid="input-document-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{locale === "ar" ? "اسم المستند (عربي)" : "Document Name (Arabic)"}</Label>
+                  <Input
+                    value={newDocument.nameAr}
+                    onChange={(e) => setNewDocument({ ...newDocument, nameAr: e.target.value })}
+                    placeholder="الرخصة التجارية 2025"
+                    dir="rtl"
+                    data-testid="input-document-name-ar"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "تذكير قبل (أيام)" : "Remind Before (Days)"}</Label>
-                <Input
-                  type="number"
-                  value={newDocument.reminderDays}
-                  onChange={(e) =>
-                    setNewDocument({ ...newDocument, reminderDays: parseInt(e.target.value) || 30 })
+                <Label>{locale === "ar" ? "الفئة" : "Category"}</Label>
+                <Select
+                  value={newDocument.category}
+                  onValueChange={(val) => setNewDocument({ ...newDocument, category: val })}
+                >
+                  <SelectTrigger
+                    data-testid="select-document-category"
+                    aria-label={t["documentVault.documentCategory"]}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DOCUMENT_CATEGORIES.map((cat) => (
+                      <SelectItem key={cat.value} value={cat.value}>
+                        {locale === "ar" ? cat.labelAr : cat.labelEn}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>{locale === "ar" ? "الوصف (اختياري)" : "Description (Optional)"}</Label>
+                <Textarea
+                  value={newDocument.description}
+                  onChange={(e) => setNewDocument({ ...newDocument, description: e.target.value })}
+                  placeholder={
+                    locale === "ar"
+                      ? "أضف ملاحظات حول هذا المستند..."
+                      : "Add notes about this document..."
                   }
-                  min="1"
-                  max="365"
-                  data-testid="input-reminder-days"
+                  data-testid="input-document-description"
                 />
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <Label>{locale === "ar" ? "الملف" : "File"}</Label>
-              <Input
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx,.csv,.txt"
-                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                data-testid="input-document-file"
-              />
-              {selectedFile && (
-                <p className="text-sm text-muted-foreground">
-                  {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
-                </p>
-              )}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>
+                    {locale === "ar" ? "تاريخ الانتهاء (اختياري)" : "Expiry Date (Optional)"}
+                  </Label>
+                  <DatePicker
+                    value={newDocument.expiryDate}
+                    onChange={(v) => setNewDocument({ ...newDocument, expiryDate: v })}
+                    data-testid="input-expiry-date"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{locale === "ar" ? "تذكير قبل (أيام)" : "Remind Before (Days)"}</Label>
+                  <Input
+                    type="number"
+                    value={newDocument.reminderDays}
+                    onChange={(e) =>
+                      setNewDocument({
+                        ...newDocument,
+                        reminderDays: parseInt(e.target.value) || 30,
+                      })
+                    }
+                    min="1"
+                    max="365"
+                    data-testid="input-reminder-days"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>{locale === "ar" ? "الملف" : "File"}</Label>
+                <Input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx,.csv,.txt"
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  data-testid="input-document-file"
+                />
+                {selectedFile && (
+                  <p className="text-sm text-muted-foreground">
+                    {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setUploadDialogOpen(false);
-                resetForm();
-              }}
-            >
-              {locale === "ar" ? "إلغاء" : "Cancel"}
-            </Button>
-            <Button
-              onClick={handleUpload}
-              disabled={isUploading}
-              data-testid="button-confirm-upload"
-            >
-              {isUploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {locale === "ar" ? "رفع" : "Upload"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setUploadDialogOpen(false);
+                  resetForm();
+                }}
+              >
+                {locale === "ar" ? "إلغاء" : "Cancel"}
+              </Button>
+              <Button
+                onClick={handleUpload}
+                disabled={isUploading}
+                data-testid="button-confirm-upload"
+              >
+                {isUploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {locale === "ar" ? "رفع" : "Upload"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </SettingsLayout>
   );
 }

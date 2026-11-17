@@ -5,6 +5,7 @@
  * documents on the firm's request lists. APIs: server/routes/firm-practice.routes.ts
  * ("Client owner side").
  */
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, FileSignature, Loader2, Upload, XCircle } from "lucide-react";
@@ -111,21 +112,23 @@ function StatusPill({ status }: { status: string }) {
 export default function FirmRelationship() {
   const { companyId, company } = useDefaultCompany();
   return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Settings"
-        title={<T k="portal.firmRelationshipTitle" />}
-        description={<T k="portal.firmRelationshipSubtitle" />}
-      />
-      <InvitationsCard />
-      {companyId ? (
-        <>
-          <FirmAccessCard companyId={companyId} companyName={company?.name ?? ""} />
-          <EngagementLettersCard companyId={companyId} />
-          <RequestListCard companyId={companyId} />
-        </>
-      ) : null}
-    </div>
+    <SettingsLayout>
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Settings"
+          title={<T k="portal.firmRelationshipTitle" />}
+          description={<T k="portal.firmRelationshipSubtitle" />}
+        />
+        <InvitationsCard />
+        {companyId ? (
+          <>
+            <FirmAccessCard companyId={companyId} companyName={company?.name ?? ""} />
+            <EngagementLettersCard companyId={companyId} />
+            <RequestListCard companyId={companyId} />
+          </>
+        ) : null}
+      </div>
+    </SettingsLayout>
   );
 }
 

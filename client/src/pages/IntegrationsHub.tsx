@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -334,204 +335,209 @@ export default function IntegrationsHub() {
   );
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Settings"
-        testId="text-integrations-title"
-        title={<T k="integrations.title" />}
-        description={<T k="integrations.description" />}
-      />
+    <SettingsLayout>
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Settings"
+          testId="text-integrations-title"
+          title={<T k="integrations.title" />}
+          description={<T k="integrations.description" />}
+        />
 
-      {integrationsLoading && !!companyId ? (
-        <div className="space-y-3" data-testid="integrations-loading">
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
-        </div>
-      ) : connected === 0 ? (
-        connectorsView
-      ) : (
-        <Tabs defaultValue="platforms" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="platforms" data-testid="tab-platforms">
-              <T k="integrations.tabConnectors" />
-            </TabsTrigger>
-            <TabsTrigger value="transactions" data-testid="tab-transactions">
-              <T k="pageLabels.transactions" />
-            </TabsTrigger>
-          </TabsList>
+        {integrationsLoading && !!companyId ? (
+          <div className="space-y-3" data-testid="integrations-loading">
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+          </div>
+        ) : connected === 0 ? (
+          connectorsView
+        ) : (
+          <Tabs defaultValue="platforms" className="space-y-6">
+            <TabsList>
+              <TabsTrigger value="platforms" data-testid="tab-platforms">
+                <T k="integrations.tabConnectors" />
+              </TabsTrigger>
+              <TabsTrigger value="transactions" data-testid="tab-transactions">
+                <T k="pageLabels.transactions" />
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsContent value="platforms">{connectorsView}</TabsContent>
+            <TabsContent value="platforms">{connectorsView}</TabsContent>
 
-          <TabsContent value="transactions" className="space-y-6">
-            {summary && (
-              <div className="grid gap-4 sm:grid-cols-3" data-testid="integrations-summary">
-                <StatCard
-                  label={<T k="integrations.importedCount" />}
-                  value={summary.total}
-                  testId="integrations-summary-total"
-                />
-                <StatCard
-                  label={<T k="pages.reconciled" />}
-                  value={summary.reconciled}
-                  testId="integrations-summary-reconciled"
-                />
-                <StatCard
-                  label={<T k="pageLabels.pendingReconciliation" />}
-                  value={summary.awaitingReconciliation}
-                  testId="integrations-summary-pending"
-                />
-              </div>
-            )}
-
-            <SectionCard
-              title={<T k="integrations.recentImports" />}
-              description={<T k="pageLabels.recentTransactionsImportedFromConnectedPlatforms" />}
-              flush
-            >
-              {transactionsLoading ? (
-                <div className="space-y-3 border-t p-5">
-                  <Skeleton className="h-11 w-full" />
-                  <Skeleton className="h-11 w-full" />
-                  <Skeleton className="h-11 w-full" />
-                </div>
-              ) : transactionRows.length === 0 ? (
-                <div className="border-t">
-                  <EmptyState
-                    icon={CreditCard}
-                    title={t["pageLabels.noImportedTransactionsYet"]}
-                    description={t["integrations.emptyTransactions"]}
-                    compact
+            <TabsContent value="transactions" className="space-y-6">
+              {summary && (
+                <div className="grid gap-4 sm:grid-cols-3" data-testid="integrations-summary">
+                  <StatCard
+                    label={<T k="integrations.importedCount" />}
+                    value={summary.total}
+                    testId="integrations-summary-total"
                   />
-                </div>
-              ) : (
-                <ul className="divide-y divide-border border-t">
-                  {transactionRows.map((txn) => {
-                    const platform = PLATFORMS.find((p) => p.id === txn.platform);
-                    const isRefund = txn.transactionType === "refund";
-                    return (
-                      <li
-                        key={txn.id}
-                        className="flex items-center justify-between gap-4 px-5 py-3 md:px-6"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-foreground">
-                            {txn.customerName || t["integrations.unnamedCustomer"]}
-                          </p>
-                          <p className="text-small text-muted-foreground">
-                            {platform?.name ?? txn.platform} ·{" "}
-                            {isRefund ? t["integrations.typeRefund"] : t["integrations.typeSale"]} ·{" "}
-                            {formatDate(txn.transactionDate, locale)}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-1">
-                          <span className="font-medium tabular-nums">
-                            <Money
-                              amount={isRefund ? -Math.abs(txn.amount) : txn.amount}
-                              currency={txn.currency}
-                            />
-                          </span>
-                          {txn.isReconciled ? (
-                            <StatusBadge tone="success">
-                              <T k="pages.reconciled" />
-                            </StatusBadge>
-                          ) : (
-                            <StatusBadge tone="warning">
-                              <T k="pages.pending" />
-                            </StatusBadge>
-                          )}
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </SectionCard>
-          </TabsContent>
-        </Tabs>
-      )}
-
-      <Dialog open={connectDialogOpen} onOpenChange={setConnectDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {selectedPlatform
-                ? formatMessage(t["pages.integrationConnect"], { name: selectedPlatform.name })
-                : null}
-            </DialogTitle>
-            <DialogDescription>
-              {formatMessage(t["integrations.connectHelp"], { name: selectedPlatform?.name ?? "" })}
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleSubmitConnect}>
-            <div className="space-y-4 py-4">
-              {selectedPlatform?.id === "stripe_payouts" && (
-                <div className="space-y-2">
-                  <Label htmlFor="apiKey">
-                    <T k="pageLabels.stripeSecretKey" />
-                  </Label>
-                  <Input
-                    id="apiKey"
-                    type="password"
-                    dir="ltr"
-                    placeholder="rk_live_..."
-                    value={configForm.apiKey || ""}
-                    onChange={(e) => setConfigForm({ ...configForm, apiKey: e.target.value })}
-                    data-testid="input-api-key"
+                  <StatCard
+                    label={<T k="pages.reconciled" />}
+                    value={summary.reconciled}
+                    testId="integrations-summary-reconciled"
                   />
-                  <p className="text-small text-muted-foreground">
-                    <T k="integrations.stripeKeyHelp" />
-                  </p>
+                  <StatCard
+                    label={<T k="pageLabels.pendingReconciliation" />}
+                    value={summary.awaitingReconciliation}
+                    testId="integrations-summary-pending"
+                  />
                 </div>
               )}
 
-              {selectedPlatform?.id === "shopify" && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="shopDomain">
-                      <T k="pageLabels.shopDomain" />
-                    </Label>
-                    <Input
-                      id="shopDomain"
-                      dir="ltr"
-                      placeholder="mystore.myshopify.com"
-                      value={configForm.shopDomain || ""}
-                      onChange={(e) => setConfigForm({ ...configForm, shopDomain: e.target.value })}
-                      data-testid="input-shop-domain"
+              <SectionCard
+                title={<T k="integrations.recentImports" />}
+                description={<T k="pageLabels.recentTransactionsImportedFromConnectedPlatforms" />}
+                flush
+              >
+                {transactionsLoading ? (
+                  <div className="space-y-3 border-t p-5">
+                    <Skeleton className="h-11 w-full" />
+                    <Skeleton className="h-11 w-full" />
+                    <Skeleton className="h-11 w-full" />
+                  </div>
+                ) : transactionRows.length === 0 ? (
+                  <div className="border-t">
+                    <EmptyState
+                      icon={CreditCard}
+                      title={t["pageLabels.noImportedTransactionsYet"]}
+                      description={t["integrations.emptyTransactions"]}
                     />
                   </div>
+                ) : (
+                  <ul className="divide-y divide-border border-t">
+                    {transactionRows.map((txn) => {
+                      const platform = PLATFORMS.find((p) => p.id === txn.platform);
+                      const isRefund = txn.transactionType === "refund";
+                      return (
+                        <li
+                          key={txn.id}
+                          className="flex items-center justify-between gap-4 px-5 py-3 md:px-6"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-foreground">
+                              {txn.customerName || t["integrations.unnamedCustomer"]}
+                            </p>
+                            <p className="text-small text-muted-foreground">
+                              {platform?.name ?? txn.platform} ·{" "}
+                              {isRefund ? t["integrations.typeRefund"] : t["integrations.typeSale"]}{" "}
+                              · {formatDate(txn.transactionDate, locale)}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            <span className="font-medium tabular-nums">
+                              <Money
+                                amount={isRefund ? -Math.abs(txn.amount) : txn.amount}
+                                currency={txn.currency}
+                              />
+                            </span>
+                            {txn.isReconciled ? (
+                              <StatusBadge tone="success">
+                                <T k="pages.reconciled" />
+                              </StatusBadge>
+                            ) : (
+                              <StatusBadge tone="warning">
+                                <T k="pages.pending" />
+                              </StatusBadge>
+                            )}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </SectionCard>
+            </TabsContent>
+          </Tabs>
+        )}
+
+        <Dialog open={connectDialogOpen} onOpenChange={setConnectDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                {selectedPlatform
+                  ? formatMessage(t["pages.integrationConnect"], { name: selectedPlatform.name })
+                  : null}
+              </DialogTitle>
+              <DialogDescription>
+                {formatMessage(t["integrations.connectHelp"], {
+                  name: selectedPlatform?.name ?? "",
+                })}
+              </DialogDescription>
+            </DialogHeader>
+
+            <form onSubmit={handleSubmitConnect}>
+              <div className="space-y-4 py-4">
+                {selectedPlatform?.id === "stripe_payouts" && (
                   <div className="space-y-2">
-                    <Label htmlFor="accessToken">
-                      <T k="pageLabels.accessToken" />
+                    <Label htmlFor="apiKey">
+                      <T k="pageLabels.stripeSecretKey" />
                     </Label>
                     <Input
-                      id="accessToken"
+                      id="apiKey"
                       type="password"
                       dir="ltr"
-                      placeholder="shpat_..."
-                      value={configForm.accessToken || ""}
-                      onChange={(e) =>
-                        setConfigForm({ ...configForm, accessToken: e.target.value })
-                      }
-                      data-testid="input-access-token"
+                      placeholder="rk_live_..."
+                      value={configForm.apiKey || ""}
+                      onChange={(e) => setConfigForm({ ...configForm, apiKey: e.target.value })}
+                      data-testid="input-api-key"
                     />
+                    <p className="text-small text-muted-foreground">
+                      <T k="integrations.stripeKeyHelp" />
+                    </p>
                   </div>
-                </>
-              )}
-            </div>
+                )}
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setConnectDialogOpen(false)}>
-                <T k="pages.cancel" />
-              </Button>
-              <Button type="submit" disabled={connectMutation.isPending}>
-                {connectMutation.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                <T k="integrations.connect" />
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
+                {selectedPlatform?.id === "shopify" && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="shopDomain">
+                        <T k="pageLabels.shopDomain" />
+                      </Label>
+                      <Input
+                        id="shopDomain"
+                        dir="ltr"
+                        placeholder="mystore.myshopify.com"
+                        value={configForm.shopDomain || ""}
+                        onChange={(e) =>
+                          setConfigForm({ ...configForm, shopDomain: e.target.value })
+                        }
+                        data-testid="input-shop-domain"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="accessToken">
+                        <T k="pageLabels.accessToken" />
+                      </Label>
+                      <Input
+                        id="accessToken"
+                        type="password"
+                        dir="ltr"
+                        placeholder="shpat_..."
+                        value={configForm.accessToken || ""}
+                        onChange={(e) =>
+                          setConfigForm({ ...configForm, accessToken: e.target.value })
+                        }
+                        data-testid="input-access-token"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setConnectDialogOpen(false)}>
+                  <T k="pages.cancel" />
+                </Button>
+                <Button type="submit" disabled={connectMutation.isPending}>
+                  {connectMutation.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                  <T k="integrations.connect" />
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </SettingsLayout>
   );
 }

@@ -3,6 +3,7 @@
  * CSV exports from Xero, QuickBooks Online, Zoho Books and Wafeq.
  * Server: /api/companies/:companyId/imports (server/routes/import.routes.ts).
  */
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -274,213 +275,215 @@ export default function ImportWizard() {
   };
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
-      <PageHeader eyebrow={c.eyebrow} title={c.title} description={c.description} icon={Upload} />
-      <p className="text-sm text-muted-foreground">{c.order}</p>
+    <SettingsLayout>
+      <div className="space-y-6 p-4 md:p-6">
+        <PageHeader eyebrow={c.eyebrow} title={c.title} description={c.description} icon={Upload} />
+        <p className="text-sm text-muted-foreground">{c.order}</p>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{c.step1}</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label>{c.kind}</Label>
-            <Select value={kind} onValueChange={(v) => (setKind(v as Kind), setJob(null))}>
-              <SelectTrigger data-testid="select-import-kind">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {KINDS.map((k) => (
-                  <SelectItem key={k} value={k}>
-                    {c.kinds[k]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>{c.source}</Label>
-            <Select value={source} onValueChange={(v) => setSource(v as Source)}>
-              <SelectTrigger data-testid="select-import-source">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SOURCES.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {c.sources[s]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          {(kind === "open_invoices" || kind === "open_bills") && (
-            <p
-              className="text-sm text-muted-foreground md:col-span-2"
-              data-testid="text-import-fx-hint"
-            >
-              {c.fxHint}
-            </p>
-          )}
-          {needsCutOver(kind) && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{c.step1}</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="cut-over">{c.cutOver}</Label>
-              <DatePicker id="cut-over" value={cutOver} onChange={(v) => setCutOver(v)} />
-            </div>
-          )}
-          {kind === "trial_balance" && (
-            <div className="space-y-2">
-              <Label>{c.arApMode}</Label>
-              <Select value={mode} onValueChange={(v) => setMode(v as "balance" | "documents")}>
-                <SelectTrigger>
+              <Label>{c.kind}</Label>
+              <Select value={kind} onValueChange={(v) => (setKind(v as Kind), setJob(null))}>
+                <SelectTrigger data-testid="select-import-kind">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="balance">{c.modeBalance}</SelectItem>
-                  <SelectItem value="documents">{c.modeDocuments}</SelectItem>
+                  {KINDS.map((k) => (
+                    <SelectItem key={k} value={k}>
+                      {c.kinds[k]}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
-          )}
-          <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="import-file">{c.file}</Label>
-            <Input
-              id="import-file"
-              type="file"
-              accept=".csv,text/csv"
-              data-testid="input-import-file"
-              onChange={(e) => onFile(e.target.files?.[0])}
-            />
-          </div>
-          <div className="flex flex-wrap gap-2 md:col-span-2">
-            <Button
-              onClick={() => preview.mutate()}
-              disabled={!file || !companyId || preview.isPending}
-              data-testid="button-import-preview"
-            >
-              <FileUp className="me-2 h-4 w-4" />
-              {c.preview}
-            </Button>
-            <Button variant="outline" asChild>
-              <a href={apiUrl(`/api/companies/${companyId}/imports/templates/${kind}`)}>
-                <Download className="me-2 h-4 w-4" />
-                {c.template}
-              </a>
-            </Button>
-            <Button variant="outline" asChild>
-              <a href={apiUrl(`/api/companies/${companyId}/imports/chart-of-accounts/export`)}>
-                <Download className="me-2 h-4 w-4" />
-                {c.exportCoa}
-              </a>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {job && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              {c.step2}
-              <Badge variant="outline">{c.status[job.status] ?? job.status}</Badge>
-            </CardTitle>
-            <CardDescription>
-              {job.rowCount} {c.rows}
-              {job.summary.mapping
-                ? ` · ${c.mapped}: ${Object.entries(job.summary.mapping)
-                    .map(([k, v]) => `${v} → ${k}`)
-                    .join(", ")}`
-                : ""}
-              {job.summary.unmappedColumns?.length
-                ? ` · ${c.unmapped}: ${job.summary.unmappedColumns.join(", ")}`
-                : ""}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {columns.length > 0 && (
-              <div className="max-h-80 overflow-auto rounded border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      {columns.map((col) => (
-                        <TableHead key={col}>{col}</TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {job.rows.slice(0, 50).map((row, i) => (
-                      <TableRow key={i}>
-                        {columns.map((col) => (
-                          <TableCell key={col} className="whitespace-nowrap text-xs">
-                            {row[col] == null ? "" : String(row[col])}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-            <IssueList title={c.errors} issues={errors} tone="error" />
-            <IssueList title={c.warnings} issues={warnings} tone="warning" />
-            {!errors.length && !warnings.length && (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                <CheckCircle2 className="h-4 w-4 text-success" />
-                {c.noIssues}
+            <div className="space-y-2">
+              <Label>{c.source}</Label>
+              <Select value={source} onValueChange={(v) => setSource(v as Source)}>
+                <SelectTrigger data-testid="select-import-source">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SOURCES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {c.sources[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {(kind === "open_invoices" || kind === "open_bills") && (
+              <p
+                className="text-sm text-muted-foreground md:col-span-2"
+                data-testid="text-import-fx-hint"
+              >
+                {c.fxHint}
               </p>
             )}
-            <div className="flex flex-wrap gap-2">
+            {needsCutOver(kind) && (
+              <div className="space-y-2">
+                <Label htmlFor="cut-over">{c.cutOver}</Label>
+                <DatePicker id="cut-over" value={cutOver} onChange={(v) => setCutOver(v)} />
+              </div>
+            )}
+            {kind === "trial_balance" && (
+              <div className="space-y-2">
+                <Label>{c.arApMode}</Label>
+                <Select value={mode} onValueChange={(v) => setMode(v as "balance" | "documents")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="balance">{c.modeBalance}</SelectItem>
+                    <SelectItem value="documents">{c.modeDocuments}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="import-file">{c.file}</Label>
+              <Input
+                id="import-file"
+                type="file"
+                accept=".csv,text/csv"
+                data-testid="input-import-file"
+                onChange={(e) => onFile(e.target.files?.[0])}
+              />
+            </div>
+            <div className="flex flex-wrap gap-2 md:col-span-2">
               <Button
-                variant="outline"
-                onClick={() => validate.mutate()}
-                disabled={job.status === "committed" || validate.isPending}
-                data-testid="button-import-validate"
+                onClick={() => preview.mutate()}
+                disabled={!file || !companyId || preview.isPending}
+                data-testid="button-import-preview"
               >
-                {c.validate}
+                <FileUp className="me-2 h-4 w-4" />
+                {c.preview}
               </Button>
-              <Button
-                onClick={() => commit.mutate()}
-                disabled={job.status !== "validated" || commit.isPending}
-                data-testid="button-import-commit"
-              >
-                {c.commit}
+              <Button variant="outline" asChild>
+                <a href={apiUrl(`/api/companies/${companyId}/imports/templates/${kind}`)}>
+                  <Download className="me-2 h-4 w-4" />
+                  {c.template}
+                </a>
+              </Button>
+              <Button variant="outline" asChild>
+                <a href={apiUrl(`/api/companies/${companyId}/imports/chart-of-accounts/export`)}>
+                  <Download className="me-2 h-4 w-4" />
+                  {c.exportCoa}
+                </a>
               </Button>
             </div>
-            {job.result && (
-              <pre className="overflow-auto rounded bg-muted p-3 text-xs" dir="ltr">
-                {JSON.stringify(job.result, null, 2)}
-              </pre>
-            )}
           </CardContent>
         </Card>
-      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{c.history}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableBody>
-              {(history.data ?? []).map((j) => (
-                <TableRow key={j.id}>
-                  <TableCell>{c.kinds[j.kind] ?? j.kind}</TableCell>
-                  <TableCell>{c.sources[j.sourceSystem] ?? j.sourceSystem}</TableCell>
-                  <TableCell>{j.fileName ?? ""}</TableCell>
-                  <TableCell>
-                    <Badge variant={j.status === "committed" ? "default" : "outline"}>
-                      {c.status[j.status] ?? j.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {new Date(j.createdAt).toLocaleString(locale === "ar" ? "ar-AE" : "en-AE")}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
+        {job && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                {c.step2}
+                <Badge variant="outline">{c.status[job.status] ?? job.status}</Badge>
+              </CardTitle>
+              <CardDescription>
+                {job.rowCount} {c.rows}
+                {job.summary.mapping
+                  ? ` · ${c.mapped}: ${Object.entries(job.summary.mapping)
+                      .map(([k, v]) => `${v} → ${k}`)
+                      .join(", ")}`
+                  : ""}
+                {job.summary.unmappedColumns?.length
+                  ? ` · ${c.unmapped}: ${job.summary.unmappedColumns.join(", ")}`
+                  : ""}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {columns.length > 0 && (
+                <div className="max-h-80 overflow-auto rounded border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {columns.map((col) => (
+                          <TableHead key={col}>{col}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {job.rows.slice(0, 50).map((row, i) => (
+                        <TableRow key={i}>
+                          {columns.map((col) => (
+                            <TableCell key={col} className="whitespace-nowrap text-xs">
+                              {row[col] == null ? "" : String(row[col])}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+              <IssueList title={c.errors} issues={errors} tone="error" />
+              <IssueList title={c.warnings} issues={warnings} tone="warning" />
+              {!errors.length && !warnings.length && (
+                <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <CheckCircle2 className="h-4 w-4 text-success" />
+                  {c.noIssues}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => validate.mutate()}
+                  disabled={job.status === "committed" || validate.isPending}
+                  data-testid="button-import-validate"
+                >
+                  {c.validate}
+                </Button>
+                <Button
+                  onClick={() => commit.mutate()}
+                  disabled={job.status !== "validated" || commit.isPending}
+                  data-testid="button-import-commit"
+                >
+                  {c.commit}
+                </Button>
+              </div>
+              {job.result && (
+                <pre className="overflow-auto rounded bg-muted p-3 text-xs" dir="ltr">
+                  {JSON.stringify(job.result, null, 2)}
+                </pre>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{c.history}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableBody>
+                {(history.data ?? []).map((j) => (
+                  <TableRow key={j.id}>
+                    <TableCell>{c.kinds[j.kind] ?? j.kind}</TableCell>
+                    <TableCell>{c.sources[j.sourceSystem] ?? j.sourceSystem}</TableCell>
+                    <TableCell>{j.fileName ?? ""}</TableCell>
+                    <TableCell>
+                      <Badge variant={j.status === "committed" ? "default" : "outline"}>
+                        {c.status[j.status] ?? j.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {new Date(j.createdAt).toLocaleString(locale === "ar" ? "ar-AE" : "en-AE")}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+    </SettingsLayout>
   );
 }
 

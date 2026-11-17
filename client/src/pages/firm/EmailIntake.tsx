@@ -3,6 +3,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
+import { SetupNotice } from "@/components/ui/setup-notice";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +30,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
-import { Info, Plus, Trash2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, Mail, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 // ─── Types (mirror the firm email-intake API) ──────────────────────────────
 interface EmailSource {
@@ -119,20 +120,14 @@ export default function EmailIntake() {
       />
 
       {featureOff && (
-        <Alert data-testid="email-intake-off">
-          <Info className="h-4 w-4" />
-          <AlertTitle>{t["firmOps.intakeOffTitle"]}</AlertTitle>
-          <AlertDescription>{t["firmOps.intakeOffBody"]}</AlertDescription>
-        </Alert>
+        <SetupNotice title={t["firmOps.intakeOffTitle"]} testId="email-intake-off">
+          {t["firmOps.intakeOffBody"]}
+        </SetupNotice>
       )}
       {mailboxOff && (
-        <Alert data-testid="email-intake-no-mailbox">
-          <Mail className="h-4 w-4" />
-          <AlertTitle>
-            <T k="pages.noMailboxConnected" />
-          </AlertTitle>
-          <AlertDescription>{t["firmOps.intakeNoMailboxBody"]}</AlertDescription>
-        </Alert>
+        <SetupNotice title={t["pages.noMailboxConnected"]} testId="email-intake-no-mailbox">
+          {t["firmOps.intakeNoMailboxBody"]}
+        </SetupNotice>
       )}
 
       <Tabs defaultValue="senders">

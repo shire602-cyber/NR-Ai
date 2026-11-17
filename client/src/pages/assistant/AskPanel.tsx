@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Money } from "@/components/ui/money";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { SetupNotice } from "@/components/ui/setup-notice";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useTranslation } from "@/lib/i18n";
 import { ApiError, apiRequest } from "@/lib/queryClient";
@@ -119,14 +119,16 @@ export default function AskPanel() {
       data-testid="assistant-ask"
     >
       {unavailable && (
-        <Alert className="mb-4" data-testid="assistant-unavailable">
-          <AlertDescription>{t["assistant.notAvailable"]}</AlertDescription>
-        </Alert>
+        <SetupNotice className="mb-4" testId="assistant-unavailable">
+          {t["assistant.notAvailable"]}
+        </SetupNotice>
       )}
 
       {turns.length === 0 ? (
         <div className="flex-1">
           <EmptyState
+            size="lg"
+            previewColumns={0}
             icon={MessageSquareText}
             title={t["assistant.askEmptyTitle"]}
             description={t["assistant.askEmptyBody"]}

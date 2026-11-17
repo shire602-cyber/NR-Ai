@@ -11,7 +11,20 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { collapseSessions } from "../../client/src/pages/settings/sessions";
 import { displayTaskTitle } from "../../client/src/pages/firm/task-title";
 
+import { auditDetailEntries } from "../../client/src/pages/admin/audit-details";
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+describe("admin audit details", () => {
+  it("turns a JSON details string into readable rows", () => {
+    expect(auditDetailEntries('{"invoiceNumber":"INV-7","old_status":"draft"}')).toEqual([
+      { key: "Invoice number", value: "INV-7" },
+      { key: "Old status", value: "draft" },
+    ]);
+    expect(auditDetailEntries("Signed in")).toEqual([{ key: "", value: "Signed in" }]);
+    expect(auditDetailEntries(null)).toEqual([]);
+  });
+});
 
 const session = (id: string, over: Record<string, unknown> = {}) => ({
   id,

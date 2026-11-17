@@ -87,7 +87,6 @@ const ZatcaSettings = lazyWithReload(() => import("@/pages/ZatcaSettings"));
 
 // Lazy-loaded pages (large or infrequently visited)
 const Admin = lazyWithReload(() => import("@/pages/Admin"));
-const AdminDashboard = lazyWithReload(() => import("@/pages/AdminDashboard"));
 const ClientImport = lazyWithReload(() => import("@/pages/ClientImport"));
 const AIHub = lazyWithReload(() => import("@/pages/AIHub"));
 const AnalyticsHub = lazyWithReload(() => import("@/pages/AnalyticsHub"));
@@ -729,7 +728,10 @@ function Router() {
             </Route>
 
             {/* Admin Routes */}
-            <Route path="/admin/dashboard" component={AdminDashboard} />
+            {/* WP-E (spec 3.16): one platform admin page; the second dashboard redirects. */}
+            <Route path="/admin/dashboard">
+              <RedirectTo to="/admin/users" />
+            </Route>
             {/* Legacy admin client pages were replaced by the /firm/clients portfolio (R15-09) */}
             <Route path="/admin/clients">
               <RedirectTo to="/firm/clients" />
