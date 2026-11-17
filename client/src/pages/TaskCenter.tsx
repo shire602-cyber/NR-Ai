@@ -1,16 +1,19 @@
-import { PageHeader } from "@/components/ui/page-header";
 import { DatePicker } from "@/components/ui/date-picker";
 import { formatDate } from "@/lib/format-date";
 import { localizeServerText } from "@shared/server-copy";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
+import { StatCard } from "@/components/ui/stat-card";
+import { cn } from "@/lib/utils";
 import { T } from "@/components/layout/T";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { parseISO, differenceInDays, isBefore } from "date-fns";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -36,9 +39,6 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Plus,
   Search,
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
   Calendar,
   Loader2,
   ListTodo,
@@ -149,7 +149,19 @@ const PRIORITIES = [
   },
 ];
 
+/**
+ * Spec 3.15 (WP-D): the task centre is the "List" view of the compliance calendar (same
+ * obligations and tasks). /task-center stays as a redirect.
+ */
 export default function TaskCenter() {
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    navigate("/compliance-calendar?view=list", { replace: true });
+  }, [navigate]);
+  return <Skeleton className="h-96 w-full" />;
+}
+
+export function TaskListPanel() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -346,6 +358,13 @@ export default function TaskCenter() {
       }) || [];
 
   const stats = {
+    open: tasks?.filter((t) => t.status !== "completed").length || 0,
+    dueThisWeek:
+      tasks?.filter((t) => {
+        if (t.status === "completed") return false;
+        const days = differenceInDays(parseISO(t.dueDate), new Date());
+        return days >= 0 && days <= 7;
+      }).length || 0,
     total: tasks?.length || 0,
     pending: tasks?.filter((t) => t.status === "pending").length || 0,
     completed: tasks?.filter((t) => t.status === "completed").length || 0,
@@ -355,9 +374,8 @@ export default function TaskCenter() {
   if (isLoadingCompany || isLoading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-24" />
           ))}
         </div>
@@ -368,64 +386,22 @@ export default function TaskCenter() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Compliance"
-        title={t["pages.taskCenterTaskCenter"]}
-        description={t["pages.taskCenterManageComplianceTasksAndReminders"]}
-        actions={
-          <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-task">
-            <Plus className="w-4 h-4 me-2" />
-            {t["pages.taskCenterNewTask"]}
-          </Button>
-        }
-      />
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">{t["pages.taskCenterTotalTasks"]}</CardTitle>
-            <ListTodo className="w-4 h-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "قيد التنفيذ" : "Pending"}
-            </CardTitle>
-            <Clock className="w-4 h-4 text-info" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-info">{stats.pending}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "مكتملة" : "Completed"}
-            </CardTitle>
-            <CheckCircle2 className="w-4 h-4 text-success" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-success">{stats.completed}</div>
-          </CardContent>
-        </Card>
-
-        <Card className={stats.overdue > 0 ? "border-destructive" : ""}>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "متأخرة" : "Overdue"}
-            </CardTitle>
-            <AlertTriangle className="w-4 h-4 text-destructive" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">{stats.overdue}</div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard
+          label={locale === "ar" ? "مفتوحة" : "Open"}
+          value={stats.open}
+          testId="stat-tasks-open"
+        />
+        <StatCard
+          label={locale === "ar" ? "مستحقة هذا الأسبوع" : "Due this week"}
+          value={stats.dueThisWeek}
+          testId="stat-tasks-due-week"
+        />
+        <StatCard
+          label={locale === "ar" ? "متأخرة" : "Overdue"}
+          value={stats.overdue}
+          testId="stat-tasks-overdue"
+        />
       </div>
 
       <Card>
@@ -442,23 +418,10 @@ export default function TaskCenter() {
               />
             </div>
             <div className="flex gap-2">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger
-                  className="w-[140px]"
-                  aria-label={t["pages.status"]}
-                  data-testid="select-status-filter"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">{locale === "ar" ? "نشطة" : "Active"}</SelectItem>
-                  <SelectItem value="completed">
-                    {locale === "ar" ? "مكتملة" : "Completed"}
-                  </SelectItem>
-                  <SelectItem value="overdue">{locale === "ar" ? "متأخرة" : "Overdue"}</SelectItem>
-                  <SelectItem value="all">{locale === "ar" ? "الكل" : "All"}</SelectItem>
-                </SelectContent>
-              </Select>
+              <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-task">
+                <Plus className="w-4 h-4 me-2" />
+                {t["pages.taskCenterNewTask"]}
+              </Button>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                 <SelectTrigger
                   className="w-[160px]"
@@ -478,6 +441,34 @@ export default function TaskCenter() {
               </Select>
             </div>
           </div>
+          <div
+            className="mt-3 flex flex-wrap gap-2"
+            role="group"
+            aria-label={t["pages.status"]}
+            data-testid="select-status-filter"
+          >
+            {(
+              [
+                ["active", locale === "ar" ? "نشطة" : "Active"],
+                ["overdue", locale === "ar" ? "متأخرة" : "Overdue"],
+                ["completed", locale === "ar" ? "مكتملة" : "Completed"],
+                ["all", locale === "ar" ? "الكل" : "All"],
+              ] as const
+            ).map(([value, label]) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={statusFilter === value ? "default" : "outline"}
+                aria-pressed={statusFilter === value}
+                className="h-8 rounded-full"
+                onClick={() => setStatusFilter(value)}
+                data-testid={`chip-task-status-${value}`}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
         </CardHeader>
         <CardContent>
           {filteredTasks.length === 0 ? (
@@ -493,15 +484,17 @@ export default function TaskCenter() {
               {filteredTasks.map((task) => {
                 const status = getTaskStatus(task);
                 const category = CATEGORIES.find((c) => c.value === task.category);
-                const priority = PRIORITIES.find((p) => p.value === task.priority);
                 const daysLeft = differenceInDays(parseISO(task.dueDate), new Date());
 
                 return (
                   <div
                     key={task.id}
-                    className={`flex items-center gap-4 p-4 rounded-lg border transition-colors ${
-                      task.status === "completed" ? "opacity-60 bg-muted/50" : "hover-elevate"
-                    } ${status === "overdue" ? "border-destructive/30 bg-danger-subtle " : ""}`}
+                    className={cn(
+                      "relative flex items-center gap-4 border-b border-border/70 py-3 pe-2 ps-4 last:border-b-0",
+                      task.status === "completed" && "opacity-60",
+                      status === "overdue" &&
+                        "before:absolute before:inset-y-2 before:start-0 before:w-0.5 before:rounded-full before:bg-danger"
+                    )}
                     data-testid={`task-${task.id}`}
                   >
                     <Checkbox
@@ -535,13 +528,10 @@ export default function TaskCenter() {
                         <Badge variant="outline" className="text-xs">
                           {locale === "ar" ? category?.labelAr : category?.labelEn}
                         </Badge>
-                        <Badge className={`text-xs ${priority?.color}`}>
-                          {locale === "ar" ? priority?.labelAr : priority?.labelEn}
-                        </Badge>
                         {task.generated && (
-                          <Badge variant="secondary" className="text-xs">
+                          <span className="text-caption text-muted-foreground">
                             <T k="compliance.generatedBadge" />
-                          </Badge>
+                          </span>
                         )}
                       </div>
                       {task.description && (
@@ -555,18 +545,23 @@ export default function TaskCenter() {
 
                     <div className="flex items-center gap-4">
                       <div className="text-end">
-                        <div className="flex items-center gap-1 text-sm">
-                          <Calendar className="w-3 h-3" />
+                        <div
+                          className={cn(
+                            "flex items-center gap-1 text-sm tabular-nums",
+                            status === "overdue" && "text-danger"
+                          )}
+                        >
+                          <Calendar className="w-3 h-3" aria-hidden />
                           {formatDate(task.dueDate.slice(0, 10), locale)}
                         </div>
                         {task.status !== "completed" && (
-                          <Badge
-                            variant={
+                          <StatusBadge
+                            tone={
                               status === "overdue"
-                                ? "destructive"
+                                ? "danger"
                                 : daysLeft <= 3
-                                  ? "secondary"
-                                  : "outline"
+                                  ? "warning"
+                                  : "neutral"
                             }
                             className="text-xs mt-1"
                           >
@@ -581,7 +576,7 @@ export default function TaskCenter() {
                                 : locale === "ar"
                                   ? `${daysLeft} يوم`
                                   : `${daysLeft}d left`}
-                          </Badge>
+                          </StatusBadge>
                         )}
                       </div>
 
