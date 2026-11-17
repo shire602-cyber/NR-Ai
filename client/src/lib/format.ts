@@ -79,15 +79,6 @@ export function formatPercent(value: number, locale: string = "en"): string {
   }).format(value);
 }
 
-// Calculate UAE VAT (5%)
-export function calculateVAT(amount: number, vatRate: number = 0.05): number {
-  return amount * vatRate;
-}
-
-export function calculateTotal(subtotal: number, vatAmount: number): number {
-  return subtotal + vatAmount;
-}
-
 /**
  * Money as text for helpers that cannot call hooks (module-level formatters). Reads the
  * current UI locale from the i18n store; always two decimals, locale currency label.

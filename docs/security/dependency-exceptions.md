@@ -30,15 +30,12 @@ gets the fixed DOMPurify 3.4.18 through the override below.
 
 Node 20.19 note: `pdfjs-dist` 6 declares `node >=22.13` but is only bundled into the browser client
 by Vite (`client/src/pages/{Receipts,BankReconciliation}.tsx`); the server never loads it, so the
-`EBADENGINE` warning on the Railway install path is expected. `file-type` is held at 21.x (22.x
-needs Node 22).
+`EBADENGINE` warning on the Railway install path is expected.
 
-Forced through `overrides` in `package.json` (transitive): `dompurify` ^3.4.18 (also via `jspdf`
-and `@pdfme/schemas`), `proxy-addr` ^2.0.8, `body-parser` ^1.20.9, `qs` ^6.17.1, `undici` ^6.29.1 /
+Forced through `overrides` in `package.json` (transitive): `dompurify` ^3.4.18 (via `jspdf`), `proxy-addr` ^2.0.8, `body-parser` ^1.20.9, `qs` ^6.17.1, `undici` ^6.29.1 /
 ^7.30.2, `engine.io` ^6.6.11, `brace-expansion` ^1.1.22 / ^2.1.8, `source-map-js` ^1.2.2,
 `fast-copy` ^4.3.1, `fflate` ^0.8.3, `postcss-selector-parser` ^6.1.6, `@vercel/cli-config` ^0.4.0
-(pulls zod 4.6.7 for `@vercel/oidc`), and `zod` ^4.6.7 inside `@pdfme/common` (which already
-depends on zod 4).
+(pulls zod 4.6.7 for `@vercel/oidc`).
 
 Validate the Railway install path after dependency changes:
 `npx -p node@20.19.0 -p npm@10.8.2 -c "npm ci --omit=dev --ignore-scripts"`.

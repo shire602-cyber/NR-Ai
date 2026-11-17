@@ -622,14 +622,8 @@
 }
 
 /* ── Toast / Notification ───────────────────────────────────────────── */
-[dir="rtl"] [data-sonner-toaster],
 [dir="rtl"] [role="status"] {
   text-align: right;
-}
-
-[dir="rtl"] [data-sonner-toast] [data-close-button] {
-  right: auto;
-  left: 0;
 }
 
 /* ── Command palette ────────────────────────────────────────────────── */

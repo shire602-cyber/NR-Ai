@@ -124,4 +124,3 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   write routes), `check-ledger-writes.mjs` (direct journal writes outside the ledger service), and
   `check-i18n-ratchet.mjs` (hard-coded JSX strings). Baselines in `scripts/guard-baselines/` may
   only move down (`--update` after real progress).
-

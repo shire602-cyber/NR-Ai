@@ -337,8 +337,6 @@ describe("Public SaaS launch surface", () => {
       { file: "client/src/locales/ar/marketing.json", pattern: /(\d+) فاتورة شهرياً/ },
       { file: "client/src/pages/Pricing.tsx", pattern: /"(\d+) invoices\/month"/ },
       { file: "client/src/pages/Pricing.tsx", pattern: /"(\d+) فاتورة\/شهر"/ },
-      { file: "client/src/components/PricingSummary.tsx", pattern: /"(\d+) invoices\/mo"/ },
-      { file: "client/src/components/PricingSummary.tsx", pattern: /"(\d+) فاتورة\/شهر"/ },
     ];
     for (const { file, pattern } of advertised) {
       const m = readRepoFile(file).match(pattern);

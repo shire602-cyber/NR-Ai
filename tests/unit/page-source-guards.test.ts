@@ -26,7 +26,6 @@ describe("NR-only surfaces stay out of customer-facing source", () => {
       "client/src/pages/Admin.tsx",
       "client/src/pages/ClientDashboard.tsx",
       "client/src/pages/CustomerContacts.tsx",
-      "client/src/pages/Integrations.tsx",
       "client/src/pages/Invoices.tsx",
       "client/src/pages/MuhasibLanding.tsx",
       "client/src/pages/PaymentChasing.tsx",

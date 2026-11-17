@@ -92,7 +92,7 @@ export const libHookDirs = [
   join(repoRoot, "client", "src", "hooks"),
 ];
 // The translation tables themselves.
-const LIB_HOOK_EXEMPT = new Set(["client/src/lib/i18n.ts", "client/src/lib/i18n-extended.ts"]);
+const LIB_HOOK_EXEMPT = new Set(["client/src/lib/i18n.ts"]);
 const VISIBLE_PROP =
   /\b(label|title|description|placeholder|message|heading|subtitle|helpText|emptyText|emptyState|cta|actionLabel|tooltip|ariaLabel|confirmLabel|cancelLabel|buttonLabel|hint|caption|toastTitle|toastDescription)\s*:\s*(["'`])((?:(?!\2)[^\n\\]|\\.)*)\2/g;
 

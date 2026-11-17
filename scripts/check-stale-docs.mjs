@@ -22,7 +22,8 @@ for (const rel of files) {
     if (/^[a-z]+:/i.test(target)) continue;
     if (!fs.existsSync(path.resolve(dir, target))) problems.push(`${rel}: broken link ${target}`);
   }
-  const pathRe = /`((?:docs|tests|server|client\/src|shared|scripts)\/[A-Za-z0-9_./-]+\.(?:md|ts|tsx|mjs|json))`/g;
+  const pathRe =
+    /`((?:docs|tests|server|client\/src|shared|scripts)\/[A-Za-z0-9_./-]+\.(?:md|ts|tsx|mjs|json))`/g;
   for (const m of text.matchAll(pathRe)) {
     if (m[1].includes("/.artifacts/")) continue; // generated at runtime
     if (!fs.existsSync(path.join(root, m[1]))) problems.push(`${rel}: missing path ${m[1]}`);
