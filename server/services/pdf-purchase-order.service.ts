@@ -41,7 +41,7 @@ export async function generatePurchaseOrderPDF(
       description: line.description,
       quantity: line.quantity,
       unitPrice: line.unitPrice,
-      vatPercent: ((line.vatRate || 0.05) * 100).toFixed(0),
+      vatPercent: ((line.vatRate ?? 0.05) * 100).toFixed(0),
       amount: line.quantity * line.unitPrice,
     })),
     totals: {
