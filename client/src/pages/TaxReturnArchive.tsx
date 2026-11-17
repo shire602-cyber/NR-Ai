@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
@@ -487,19 +488,17 @@ export default function TaxReturnArchive() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{t["compliance.taxArchivePeriodStart"]} *</Label>
-                <Input
-                  type="date"
+                <DatePicker
                   value={newReturn.periodStart}
-                  onChange={(e) => setNewReturn({ ...newReturn, periodStart: e.target.value })}
+                  onChange={(value) => setNewReturn({ ...newReturn, periodStart: value })}
                   data-testid="input-period-start"
                 />
               </div>
               <div className="space-y-2">
                 <Label>{t["compliance.taxArchivePeriodEnd"]} *</Label>
-                <Input
-                  type="date"
+                <DatePicker
                   value={newReturn.periodEnd}
-                  onChange={(e) => setNewReturn({ ...newReturn, periodEnd: e.target.value })}
+                  onChange={(value) => setNewReturn({ ...newReturn, periodEnd: value })}
                   data-testid="input-period-end"
                 />
               </div>
@@ -508,10 +507,9 @@ export default function TaxReturnArchive() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{t["compliance.taxArchiveFilingDate"]} *</Label>
-                <Input
-                  type="date"
+                <DatePicker
                   value={newReturn.filingDate}
-                  onChange={(e) => setNewReturn({ ...newReturn, filingDate: e.target.value })}
+                  onChange={(value) => setNewReturn({ ...newReturn, filingDate: value })}
                   data-testid="input-filing-date"
                 />
               </div>

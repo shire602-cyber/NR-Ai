@@ -166,5 +166,7 @@
   "compliance.notApplicableHint": "Use this for an obligation that does not apply here, for example a period before you started using Muhasib that was filed elsewhere. The note is kept in the audit trail.",
   "compliance.notApplicableReason": "Why it does not apply",
   "compliance.markedNotApplicable": "Marked as not applicable",
-  "compliance.cancelAction": "Cancel"
+  "compliance.cancelAction": "Cancel",
+  "compliance.periodsPrepare": "Prepare",
+  "compliance.periodsReview": "Review"
 }

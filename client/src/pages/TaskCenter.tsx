@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { DatePicker } from "@/components/ui/date-picker";
 import { formatDate } from "@/lib/format-date";
 import { localizeServerText } from "@shared/server-copy";
 import { useMemo, useState } from "react";
@@ -723,19 +724,17 @@ export default function TaskCenter() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{t["pages.taskCenterDueDate"]} *</Label>
-                <Input
-                  type="date"
+                <DatePicker
                   value={newTask.dueDate}
-                  onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
+                  onChange={(value) => setNewTask({ ...newTask, dueDate: value })}
                   data-testid="input-due-date"
                 />
               </div>
               <div className="space-y-2">
                 <Label>{t["pages.taskCenterReminderDate"]}</Label>
-                <Input
-                  type="date"
+                <DatePicker
                   value={newTask.reminderDate}
-                  onChange={(e) => setNewTask({ ...newTask, reminderDate: e.target.value })}
+                  onChange={(value) => setNewTask({ ...newTask, reminderDate: value })}
                   data-testid="input-reminder-date"
                 />
               </div>

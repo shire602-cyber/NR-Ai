@@ -1,4 +1,5 @@
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { DatePicker } from "@/components/ui/date-picker";
 import { accountDisplayName } from "@/lib/account-name";
 import { useState } from "react";
 import {
@@ -455,12 +456,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
                 </Select>
               </Field>
               <Field id="pay-date" label={tx("hr.paymentDate")} required>
-                <Input
-                  type="date"
-                  dir="ltr"
-                  value={payDate}
-                  onChange={(e) => setPayDate(e.target.value)}
-                />
+                <DatePicker dir="ltr" value={payDate} onChange={(value) => setPayDate(value)} />
               </Field>
             </FormGrid>
             <FormActions>

@@ -1,5 +1,4 @@
 import { T } from "@/components/layout/T";
-import { dateFnsOptions } from "@/lib/date-locale";
 import {
   activityActionLabel,
   activityDescription,
@@ -17,17 +16,15 @@ import {
   FileText,
   Receipt,
   Settings,
-  Trash2,
-  Edit,
-  Plus,
-  Eye,
   Database,
-  RefreshCw,
+  MoreHorizontal,
 } from "lucide-react";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Skeleton } from "@/components/ui/skeleton";
+import { formatDate } from "@/lib/format-date";
 import {
   Select,
   SelectContent,
@@ -35,14 +32,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { format } from "date-fns";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
@@ -88,21 +77,6 @@ export default function History() {
     return matchesSearch && matchesAction && matchesEntity;
   });
 
-  const getActionIcon = (action: string) => {
-    switch (action) {
-      case "create":
-        return <Plus className="h-4 w-4 text-success" />;
-      case "update":
-        return <Edit className="h-4 w-4 text-info" />;
-      case "delete":
-        return <Trash2 className="h-4 w-4 text-destructive" />;
-      case "view":
-        return <Eye className="h-4 w-4 text-muted-foreground" />;
-      default:
-        return <HistoryIcon className="h-4 w-4" />;
-    }
-  };
-
   const getEntityIcon = (entityType: string) => {
     switch (entityType) {
       case "user":
@@ -126,30 +100,18 @@ export default function History() {
     }
   };
 
-  const getActionBadge = (action: string) => {
-    switch (action) {
+  const actionFilterLabel = (filter: (typeof ACTION_FILTERS)[number]) => {
+    switch (filter) {
+      case "all":
+        return t["pages.allActions"];
       case "create":
-        return (
-          <Badge className="bg-success/10 text-success border-success/20">
-            <T k="pages.create" />
-          </Badge>
-        );
+        return t["pages.create"];
       case "update":
-        return (
-          <Badge className="bg-info/10 text-info border-info/20">
-            <T k="pages.update" />
-          </Badge>
-        );
+        return t["pages.update"];
       case "delete":
-        return (
-          <Badge variant="destructive">
-            <T k="pages.delete" />
-          </Badge>
-        );
-      case "view":
-        return <Badge variant="secondary">{t["hr.view"]}</Badge>;
+        return t["pages.delete"];
       default:
-        return <Badge variant="outline">{activityActionLabel(t, action)}</Badge>;
+        return t["hr.view"];
     }
   };
 
@@ -165,8 +127,10 @@ export default function History() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="space-y-2" aria-busy="true">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <Skeleton key={i} className="h-14 w-full" />
+        ))}
       </div>
     );
   }
@@ -198,160 +162,221 @@ export default function History() {
         description={t["history.trackAllChangesMadeTo"]}
       />
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-4 flex-1 min-w-[300px]">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={t["activityLogs.searchActivities"]}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                  data-testid="input-search-history"
-                />
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Select value={actionFilter} onValueChange={setActionFilter}>
-                <SelectTrigger className="w-32" data-testid="select-filter-action">
-                  <SelectValue placeholder={t["components.vwColAction"]} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    <T k="pages.allActions" />
-                  </SelectItem>
-                  <SelectItem value="create">
-                    <T k="pages.create" />
-                  </SelectItem>
-                  <SelectItem value="update">
-                    <T k="pages.update" />
-                  </SelectItem>
-                  <SelectItem value="delete">
-                    <T k="pages.delete" />
-                  </SelectItem>
-                  <SelectItem value="view">{t["hr.view"]}</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={entityFilter} onValueChange={setEntityFilter}>
-                <SelectTrigger className="w-36" data-testid="select-filter-entity">
-                  <SelectValue placeholder={t["activityLogs.entityType"]} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    <T k="pageLabels.allTypes" />
-                  </SelectItem>
-                  <SelectItem value="account">
-                    <T k="shell.moreAccounts" />
-                  </SelectItem>
-                  <SelectItem value="invoice">
-                    <T k="pages.invoices" />
-                  </SelectItem>
-                  <SelectItem value="journal_entry">
-                    <T k="pages.journalEntries" />
-                  </SelectItem>
-                  <SelectItem value="receipt">
-                    <T k="shell.navReceipts" />
-                  </SelectItem>
-                  <SelectItem value="backup">
-                    <T k="pageLabels.backups" />
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <Badge variant="secondary">
-                {formatMessage(t["activityLog.entries"], { count: filteredLogs.length })}
-              </Badge>
-            </div>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:max-w-sm">
+            <Search
+              className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              placeholder={t["activityLogs.searchActivities"]}
+              aria-label={t["activityLogs.searchActivities"]}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="ps-9"
+              data-testid="input-search-history"
+            />
           </div>
-        </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-[600px]">
-            {logsFailed ? (
-              <ErrorState compact onRetry={() => void refetchLogs()} testId="state-history-error" />
-            ) : filteredLogs.length === 0 ? (
-              <div className="text-center py-12">
-                <HistoryIcon className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium mb-2">
-                  <T k="pageLabels.noActivityYet" />
-                </h3>
-                <p className="text-muted-foreground">{t["history.activityWillAppearHereAs"]}</p>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[50px]"></TableHead>
-                    <TableHead>
-                      <T k="pages.description" />
-                    </TableHead>
-                    <TableHead>
-                      <T k="pages.action" />
-                    </TableHead>
-                    <TableHead>{t["consolidation.kind"]}</TableHead>
-                    <TableHead>
-                      <T k="pages.dateTime" />
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredLogs.map((log) => (
-                    <TableRow key={log.id} data-testid={`row-history-${log.id}`}>
-                      <TableCell>
-                        <div className="flex items-center justify-center">
-                          {getActionIcon(log.action)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <p className="font-medium">{activityDescription(t, log, locale)}</p>
-                        {log.metadata && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {(() => {
-                              try {
-                                const parsed = JSON.parse(log.metadata);
-                                return parsed.changes?.join(", ") || "";
-                              } catch {
-                                return "";
-                              }
-                            })()}
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell>{getActionBadge(log.action)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {getEntityIcon(log.entityType)}
-                          <span className="capitalize">
-                            {activityEntityLabel(t, log.entityType)}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {log.createdAt ? (
-                          <div>
-                            <p className="text-sm">
-                              {format(
-                                new Date(log.createdAt),
-                                "MMM d, yyyy",
-                                dateFnsOptions(locale)
-                              )}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {format(new Date(log.createdAt), "h:mm a", dateFnsOptions(locale))}
-                            </p>
-                          </div>
-                        ) : (
-                          "-"
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </ScrollArea>
-        </CardContent>
+          <div className="flex items-center gap-3">
+            <Select value={entityFilter} onValueChange={setEntityFilter}>
+              <SelectTrigger className="w-full sm:w-44" data-testid="select-filter-entity">
+                <SelectValue placeholder={t["activityLogs.entityType"]} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <T k="pageLabels.allTypes" />
+                </SelectItem>
+                <SelectItem value="account">
+                  <T k="shell.moreAccounts" />
+                </SelectItem>
+                <SelectItem value="invoice">
+                  <T k="pages.invoices" />
+                </SelectItem>
+                <SelectItem value="journal_entry">
+                  <T k="pages.journalEntries" />
+                </SelectItem>
+                <SelectItem value="receipt">
+                  <T k="shell.navReceipts" />
+                </SelectItem>
+                <SelectItem value="backup">
+                  <T k="pageLabels.backups" />
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <span className="shrink-0 text-caption tabular-nums text-muted-foreground">
+              {formatMessage(t["activityLog.entries"], { count: filteredLogs.length })}
+            </span>
+          </div>
+        </div>
+        {/* Spec 3.10: action filters as chips. */}
+        <div
+          className="flex flex-wrap gap-2"
+          role="group"
+          aria-label={t["components.vwColAction"]}
+          data-testid="select-filter-action"
+        >
+          {ACTION_FILTERS.map((filter) => (
+            <Button
+              key={filter}
+              type="button"
+              size="sm"
+              variant={actionFilter === filter ? "default" : "outline"}
+              aria-pressed={actionFilter === filter}
+              className="h-8 rounded-full"
+              onClick={() => setActionFilter(filter)}
+              data-testid={`chip-history-action-${filter}`}
+            >
+              {actionFilterLabel(filter)}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <Card className="overflow-hidden">
+        {logsFailed ? (
+          <ErrorState compact onRetry={() => void refetchLogs()} testId="state-history-error" />
+        ) : filteredLogs.length === 0 ? (
+          <EmptyState
+            icon={HistoryIcon}
+            title={t["pageLabels.noActivityYet"]}
+            description={t["history.activityWillAppearHereAs"]}
+            testId="state-history-empty"
+          />
+        ) : (
+          <ul className="divide-y divide-border/70" data-testid="history-feed">
+            {filteredLogs.map((log) => {
+              const sentence = withoutIds(activityDescription(t, log, locale));
+              const changes = metadataChanges(log.metadata);
+              const created = log.createdAt ? new Date(log.createdAt) : null;
+              return (
+                <li
+                  key={log.id}
+                  className="flex items-start gap-3 px-4 py-3 sm:px-5"
+                  data-testid={`row-history-${log.id}`}
+                >
+                  <span
+                    className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border bg-surface-sunken text-muted-foreground"
+                    aria-hidden
+                  >
+                    {getEntityIcon(log.entityType)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-body text-foreground">
+                      {sentence || activityActionLabel(t, log.action)}
+                    </p>
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-caption text-muted-foreground">
+                      <span>{activityEntityLabel(t, log.entityType)}</span>
+                      <span aria-hidden>·</span>
+                      <span>{activityActionLabel(t, log.action)}</span>
+                      {changes ? (
+                        <>
+                          <span aria-hidden>·</span>
+                          <span className="truncate">{changes}</span>
+                        </>
+                      ) : null}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {created ? (
+                      <time
+                        dateTime={created.toISOString()}
+                        title={`${formatDate(created, locale)} ${format(created, "HH:mm")}`}
+                        className="whitespace-nowrap text-caption tabular-nums text-muted-foreground"
+                      >
+                        {relativeTime(created, locale)}
+                      </time>
+                    ) : null}
+                    {log.entityId ? (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground"
+                            aria-label={t["history.details"]}
+                            data-testid={`button-history-details-${log.id}`}
+                          >
+                            <MoreHorizontal className="h-4 w-4" aria-hidden />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="end" className="w-72 text-caption">
+                          <dl className="space-y-2">
+                            <div>
+                              <dt className="text-muted-foreground">{t["history.details"]}</dt>
+                              <dd className="mt-0.5 text-foreground">
+                                {activityDescription(t, log, locale)}
+                              </dd>
+                            </div>
+                            <div>
+                              <dt className="text-muted-foreground">{t["history.reference"]}</dt>
+                              <dd className="mt-0.5 break-all font-mono text-foreground">
+                                {log.entityId}
+                              </dd>
+                            </div>
+                            {created ? (
+                              <div>
+                                <dt className="text-muted-foreground">
+                                  <T k="pages.dateTime" />
+                                </dt>
+                                <dd className="mt-0.5 tabular-nums text-foreground">
+                                  {formatDate(created, locale)} {format(created, "HH:mm")}
+                                </dd>
+                              </div>
+                            ) : null}
+                          </dl>
+                        </PopoverContent>
+                      </Popover>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </Card>
     </div>
   );
+}
+
+const ACTION_FILTERS = ["all", "create", "update", "delete", "view"] as const;
+
+const UUID_RE = /\s*\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+/** Spec 3.10: ids live in the Details popover, never in the sentence. */
+function withoutIds(text: string): string {
+  return text
+    .replace(UUID_RE, "")
+    .replace(/\s+([.,;:])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function metadataChanges(metadata: string | null | undefined): string {
+  if (!metadata) return "";
+  try {
+    const parsed = JSON.parse(metadata);
+    return Array.isArray(parsed.changes) ? parsed.changes.join(", ") : "";
+  } catch {
+    return "";
+  }
+}
+
+/** "3 minutes ago" / "منذ 3 دقائق"; older than a week shows the date. */
+function relativeTime(date: Date, locale: string): string {
+  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
+  const abs = Math.abs(seconds);
+  if (abs >= 7 * 86400) return formatDate(date, locale);
+  const rtf = new Intl.RelativeTimeFormat(locale === "ar" ? "ar" : "en", {
+    numeric: "auto",
+    // Latin digits in both languages, like every other figure.
+    localeMatcher: "lookup",
+  });
+  const fmt = (value: number, unit: Intl.RelativeTimeFormatUnit) =>
+    rtf.format(value, unit).replace(/[٠-٩]/g, (d) => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)));
+  if (abs < 60) return fmt(seconds, "second");
+  if (abs < 3600) return fmt(Math.round(seconds / 60), "minute");
+  if (abs < 86400) return fmt(Math.round(seconds / 3600), "hour");
+  return fmt(Math.round(seconds / 86400), "day");
 }

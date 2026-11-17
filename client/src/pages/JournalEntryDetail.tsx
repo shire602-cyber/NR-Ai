@@ -1,4 +1,5 @@
 import { localizeJournalMemo } from "@/lib/journal-memo";
+import { DatePicker } from "@/components/ui/date-picker";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useParams, Link } from "wouter";
@@ -344,11 +345,10 @@ export default function JournalEntryDetail() {
                   <div className="space-y-3">
                     <div className="space-y-1">
                       <Label htmlFor="reversal-date">{t["journal.reversalDate"]}</Label>
-                      <Input
+                      <DatePicker
                         id="reversal-date"
-                        type="date"
                         value={reverseDate}
-                        onChange={(e) => setReverseDate(e.target.value)}
+                        onChange={(value) => setReverseDate(value)}
                         data-testid="input-reversal-date"
                       />
                       <p className="text-xs text-muted-foreground">

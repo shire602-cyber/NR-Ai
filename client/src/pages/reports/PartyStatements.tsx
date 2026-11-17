@@ -5,6 +5,7 @@
  *   GET /api/companies/:companyId/supplier-statements/:vendorId?from&asOf[&format=pdf]
  *   POST /api/companies/:companyId/customer-statements/:contactId/email
  */
+import { DatePicker } from "@/components/ui/date-picker";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Download, Mail, ScrollText } from "lucide-react";
@@ -12,7 +13,6 @@ import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -156,23 +156,13 @@ export default function PartyStatements() {
             <Label htmlFor="statement-from">
               <T k="reportCenter.partyStatementFrom" />
             </Label>
-            <Input
-              id="statement-from"
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            />
+            <DatePicker id="statement-from" value={from} onChange={(value) => setFrom(value)} />
           </div>
           <div className="space-y-1">
             <Label htmlFor="statement-asof">
               <T k="reportCenter.partyStatementAsOf" />
             </Label>
-            <Input
-              id="statement-asof"
-              type="date"
-              value={asOf}
-              onChange={(e) => setAsOf(e.target.value)}
-            />
+            <DatePicker id="statement-asof" value={asOf} onChange={(value) => setAsOf(value)} />
           </div>
         </CardContent>
       </Card>

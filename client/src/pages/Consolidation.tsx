@@ -3,13 +3,13 @@
  * (GET /api/company-groups/:groupId/consolidated-statements) — eliminations, translation, CTA
  * and NCI are computed on the server; this page only renders them.
  */
+import { DatePicker } from "@/components/ui/date-picker";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -310,16 +310,11 @@ export default function Consolidation() {
           </div>
           <div className="space-y-1">
             <Label htmlFor="cons-from">{tr("from")}</Label>
-            <Input
-              id="cons-from"
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            />
+            <DatePicker id="cons-from" value={from} onChange={(value) => setFrom(value)} />
           </div>
           <div className="space-y-1">
             <Label htmlFor="cons-to">{tr("to")}</Label>
-            <Input id="cons-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            <DatePicker id="cons-to" value={to} onChange={(value) => setTo(value)} />
           </div>
           <Button onClick={() => setPeriod({ from, to })} disabled={!groupId}>
             {tr("run")}

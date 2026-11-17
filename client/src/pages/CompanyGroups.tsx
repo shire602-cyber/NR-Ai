@@ -3,6 +3,7 @@
  * manual elimination journals for the management consolidation. The server enforces access
  * (every member must be accessible; managing needs company-settings rights on the parent).
  */
+import { DatePicker } from "@/components/ui/date-picker";
 import { accountDisplayName } from "@/lib/account-name";
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -559,12 +560,7 @@ export default function CompanyGroups() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-1">
                   <Label htmlFor="el-date">{tr("date")}</Label>
-                  <Input
-                    id="el-date"
-                    type="date"
-                    value={elDate}
-                    onChange={(e) => setElDate(e.target.value)}
-                  />
+                  <DatePicker id="el-date" value={elDate} onChange={(value) => setElDate(value)} />
                   <Label htmlFor="el-memo">{tr("memo")}</Label>
                   <Input id="el-memo" value={elMemo} onChange={(e) => setElMemo(e.target.value)} />
                   <Label htmlFor="el-amount">{tr("debit")}</Label>

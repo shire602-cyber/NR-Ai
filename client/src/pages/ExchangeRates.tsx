@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { DatePicker } from "@/components/ui/date-picker";
 import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -75,10 +76,10 @@ const STALE_DAYS = 7;
 const STRINGS = {
   en: {
     eyebrow: "Accounting",
-    title: "Exchange Rates",
+    title: "Exchange rates",
     description: "Your company's exchange rates, currency conversion and period-end FX revaluation",
     backLabel: "Back to reports",
-    addRate: "Add Rate",
+    addRate: "Add rate",
     adding: "Adding...",
     fxTitle: "FX Gains and Losses",
     fxBasis:
@@ -101,7 +102,7 @@ const STRINGS = {
       bill: "Bill",
       bank: "Bank account" /* i18n-ignore: English half of the bilingual s object, Arabic below */,
     } as Record<string, string>,
-    converterTitle: "Currency Converter",
+    converterTitle: "Currency converter",
     converterDesc: "Convert amounts using your company's rates (system rates as fallback)",
     from: "From",
     to: "To",
@@ -109,7 +110,7 @@ const STRINGS = {
     convert: "Convert",
     rateLabel: "Rate",
     asOfShort: "as of",
-    savedRates: "Saved Rates",
+    savedRates: "Saved rates",
     savedRatesDesc:
       "Company rates apply only to this company. System rates are platform reference rates (for example FTA-published) used when the company has none.",
     noRates: "No exchange rates configured yet.",
@@ -123,17 +124,16 @@ const STRINGS = {
     staleBannerTitle: "Some exchange rates are out of date",
     staleBannerBody:
       "These pairs have no rate in the last {days} days. Documents and revaluations will warn until a newer rate is added:",
-    feedOffTitle: "No automatic rate feed",
-    feedOffBody:
-      "The CBUAE / ECB rate feed is not configured for this platform, so rates are only updated when entered here or imported by an administrator.",
+    feedOffTitle: "Rates are entered manually",
+    feedOffBody: "AED to USD uses the fixed peg. Add rates for other currencies here.",
     rewritten: "Corrected",
     rewrittenHint: "Stored inverted by an earlier version; corrected by migration",
     rateTypes: { spot: "Spot", closing: "Closing", average: "Average" } as Record<RateType, string>,
     delete: "Delete",
-    addTitle: "Add Exchange Rate",
+    addTitle: "Add exchange rate",
     addDesc: "Rates are stored as units of your base currency per 1 unit of the foreign currency.",
-    fromCurrency: "From Currency",
-    toCurrency: "To Currency",
+    fromCurrency: "From currency",
+    toCurrency: "To currency",
     rateHelp: (from: string, to: string) => `1 ${from} = ? ${to}`,
     cancel: "Cancel",
     added: "Exchange rate saved",
@@ -224,9 +224,9 @@ const STRINGS = {
     staleBannerTitle: "بعض أسعار الصرف قديمة",
     staleBannerBody:
       "لا يوجد سعر لهذه الأزواج خلال آخر {days} يوماً. ستظهر تنبيهات في المستندات وإعادة التقييم حتى تتم إضافة سعر أحدث:",
-    feedOffTitle: "لا توجد تغذية تلقائية للأسعار",
+    feedOffTitle: "تُدخل الأسعار يدويًا",
     feedOffBody:
-      "تغذية أسعار المصرف المركزي / البنك المركزي الأوروبي غير مفعّلة على هذه المنصة، لذلك تُحدَّث الأسعار فقط عند إدخالها هنا أو استيرادها من قبل المسؤول.",
+      "يستخدم سعر الدرهم مقابل الدولار الأمريكي سعر الربط الثابت. أضف أسعار العملات الأخرى هنا.",
     rewritten: "مُصحَّح",
     rewrittenHint: "خُزّن معكوساً في إصدار سابق وصُحّح أثناء الترحيل",
     rateTypes: { spot: "فوري", closing: "إقفال", average: "متوسط" } as Record<RateType, string>,
@@ -371,6 +371,49 @@ interface Revaluation {
 
 const yesterdayIso = () => new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
 const todayIso = () => new Date().toISOString().slice(0, 10);
+
+/** G8: rate source as a label, never the raw value. */
+const SOURCE_LABELS: Record<string, { en: string; ar: string }> = {
+  manual: { en: "Manual", ar: "يدوي" },
+  cbuae: { en: "Central Bank", ar: "المصرف المركزي" },
+  identity: { en: "Fixed", ar: "ثابت" },
+  import: { en: "Imported", ar: "مستورد" },
+  system: { en: "System", ar: "النظام" },
+};
+
+function sourceLabel(source: string | null | undefined, locale: string): string {
+  const key = (source ?? "").toLowerCase();
+  const label = SOURCE_LABELS[key];
+  if (!label) return source ?? "";
+  return locale === "ar" ? label.ar : label.en;
+}
+
+/**
+ * G9: the FX service words its warnings in English. Known shapes are re-worded in Arabic here
+ * (pairs and dates stay as they are); anything else is shown unchanged.
+ */
+function localizeFxWarning(warning: string, locale: string): string {
+  if (locale !== "ar") return warning;
+  const fallback = /^No (\w+) rate for ([A-Z]{3})\/([A-Z]{3}); the spot rate was used\.$/.exec(
+    warning
+  );
+  if (fallback) {
+    const kind = { closing: "إقفال", average: "متوسط" }[fallback[1]] ?? fallback[1];
+    return `لا يوجد سعر ${kind} للزوج ${fallback[2]}/${fallback[3]}؛ استُخدم السعر الفوري.`;
+  }
+  const missing = /^No ([A-Z]{3})→([A-Z]{3}) exchange rate on or before (\S+)$/.exec(warning);
+  if (missing) {
+    return `لا يوجد سعر صرف ${missing[1]}→${missing[2]} في ${missing[3]} أو قبله`;
+  }
+  const stale =
+    /^Rate ([A-Z]{3})\/([A-Z]{3}) is (\d+) days old \(dated (\S+)\); the proximity limit is (\d+) days\.$/.exec(
+      warning
+    );
+  if (stale) {
+    return `عمر سعر ${stale[1]}/${stale[2]} ${stale[3]} يومًا (بتاريخ ${stale[4]})؛ الحد المسموح ${stale[5]} يومًا.`;
+  }
+  return warning;
+}
 
 export default function ExchangeRates() {
   const { locale } = useTranslation();
@@ -715,7 +758,7 @@ export default function ExchangeRates() {
                   </p>
                   <ul className="mt-1 list-disc ps-5">
                     {fxReport?.warnings?.map((w) => (
-                      <li key={w}>{w}</li>
+                      <li key={w}>{localizeFxWarning(w, locale)}</li>
                     ))}
                   </ul>
                 </div>
@@ -835,13 +878,11 @@ export default function ExchangeRates() {
           <div className="flex flex-col gap-3 md:flex-row md:items-end">
             <div className="space-y-2">
               <Label htmlFor="reval-date">{s.revalDate}</Label>
-              <Input
+              <DatePicker
                 id="reval-date"
-                type="date"
-                max={todayIso()}
                 value={revalDate}
-                onChange={(e) => {
-                  setRevalDate(e.target.value);
+                onChange={(value) => {
+                  setRevalDate(value);
                   setPreview(null);
                 }}
               />
@@ -889,7 +930,7 @@ export default function ExchangeRates() {
               {preview.warnings.length > 0 && (
                 <ul className="list-disc ps-5 text-sm text-muted-foreground">
                   {preview.warnings.map((w) => (
-                    <li key={w}>{w}</li>
+                    <li key={w}>{localizeFxWarning(w, locale)}</li>
                   ))}
                 </ul>
               )}
@@ -1114,7 +1155,7 @@ export default function ExchangeRates() {
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell className="uppercase">{rate.source}</TableCell>
+                      <TableCell>{sourceLabel(rate.source, locale)}</TableCell>
                       <TableCell className="text-end">
                         {rate.scope === "company" && (
                           <Button
@@ -1200,11 +1241,9 @@ export default function ExchangeRates() {
               <Label>
                 <T k="pages.effectiveDate" />
               </Label>
-              <Input
-                type="date"
-                max={todayIso()}
+              <DatePicker
                 value={formEffectiveDate}
-                onChange={(e) => setFormEffectiveDate(e.target.value)}
+                onChange={(value) => setFormEffectiveDate(value)}
               />
             </div>
             {largeMove && (

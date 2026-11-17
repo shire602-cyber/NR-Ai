@@ -761,5 +761,11 @@
   "reportCenter.cmdWordQueue": "طابور",
   "reportCenter.cmdWordRetry": "إعادة محاولة",
   "reportCenter.nReadyShort": "{n} جاهزة",
-  "reportCenter.pinCommandAria": "تثبيت هذا الأمر"
+  "reportCenter.pinCommandAria": "تثبيت هذا الأمر",
+  "reportCenter.changesInEquityDesc": "حركة رأس المال والمسحوبات والأرباح المحتجزة خلال الفترة.",
+  "reportCenter.download": "تنزيل",
+  "reportCenter.executiveSummaryDesc": "صفحة واحدة: الربح والنقد والذمم المدينة والدائنة.",
+  "reportCenter.filesAndPacks": "ملفات لمحاسبك",
+  "reportCenter.moreActions": "إجراءات أخرى",
+  "reportCenter.open": "فتح"
 }

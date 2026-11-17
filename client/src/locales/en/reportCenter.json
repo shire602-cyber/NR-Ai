@@ -761,5 +761,11 @@
   "reportCenter.cmdWordQueue": "queue",
   "reportCenter.cmdWordRetry": "retry",
   "reportCenter.nReadyShort": "{n} ready",
-  "reportCenter.pinCommandAria": "Pin this command"
+  "reportCenter.pinCommandAria": "Pin this command",
+  "reportCenter.changesInEquityDesc": "Movements in capital, drawings and retained earnings for the period.",
+  "reportCenter.download": "Download",
+  "reportCenter.executiveSummaryDesc": "One page: profit, cash, receivables and payables.",
+  "reportCenter.filesAndPacks": "Files for your accountant",
+  "reportCenter.moreActions": "More actions",
+  "reportCenter.open": "Open"
 }

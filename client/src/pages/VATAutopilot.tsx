@@ -1,6 +1,7 @@
 import { T } from "@/components/layout/T";
 import { formatMessage, useTranslation } from "@/lib/i18n";
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -37,17 +38,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Money } from "@/components/ui/money";
-import { PageHeader } from "@/components/ui/page-header";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Clock,
-  FileText,
-  RefreshCw,
-  Send,
-  Loader2,
-  XCircle,
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, FileText, Send, Loader2, XCircle } from "lucide-react";
 
 // ─── Types matching the server's VAT autopilot service ───────────────────────
 
@@ -224,7 +215,19 @@ function calculationPath(companyId: string, period: VatPeriodSummary): string {
 
 // ─── Page ───────────────────────────────────────────────────────────────────
 
+/**
+ * Spec 3.12 (WP-D): VAT autopilot is no longer a page. Its periods, calculation, adjustments and
+ * status steps are the "Periods" tab of /vat-filing; /vat-autopilot stays as a redirect.
+ */
 export default function VATAutopilot() {
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    navigate("/vat-filing?tab=periods", { replace: true });
+  }, [navigate]);
+  return <Skeleton className="h-96 w-full" />;
+}
+
+export function VatPeriodsPanel() {
   const { t, locale } = useTranslation();
   const { companyId, isLoading: companyLoading } = useDefaultCompany();
   const { toast } = useToast();
@@ -394,9 +397,6 @@ export default function VATAutopilot() {
   if (!companyId) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">
-          <T k="pageLabels.vatAutopilot" />
-        </h1>
         <Card>
           <CardContent className="p-6 text-muted-foreground">
             <T k="pageLabels.setUpACompanyBeforeUsing" />
@@ -408,83 +408,125 @@ export default function VATAutopilot() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow={t["pages.eyebrowCompliance"]}
-        title={t["pageLabels.vatAutopilot"]}
-        description={t["compliance.autopilotDescription"]}
-        backHref="/vat-filing"
-        backLabel={t["compliance.autopilotBackToFiling"]}
-        actions={
-          <Button
-            onClick={() => selectedPeriod && calcMutation.mutate(selectedPeriod)}
-            disabled={calcMutation.isPending || !selectedPeriod}
-            data-testid="button-calculate-now"
-          >
-            {calcMutation.isPending ? (
-              <Loader2 className="h-4 w-4 me-2 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4 me-2" />
-            )}
-            {selectedPeriod
-              ? t["pageLabels.calculateSelectedPeriod"]
-              : t["compliance.autopilotChoosePeriodFirst"]}
-          </Button>
-        }
-      />
-
+      {/* Periods table */}
       <Card>
         <CardHeader>
           <CardTitle>
-            <T k="pageLabels.filingPeriod" />
+            <T k="pageLabels.periods" />
           </CardTitle>
           <CardDescription>
-            <T k="compliance.autopilotChoosePeriodHint" />
+            <T k="pageLabels.lastSeveralVatFilingWindowsFor" />
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div className="space-y-2 md:min-w-[360px]">
-            <Label htmlFor="vat-filing-period">
-              <T k="pageLabels.periodToFile" />
-            </Label>
-            <Select
-              value={selectedPeriodKey ?? ""}
-              onValueChange={setSelectedPeriodKey}
-              disabled={periodsQuery.isLoading || periods.length === 0 || calcMutation.isPending}
-            >
-              <SelectTrigger id="vat-filing-period" data-testid="select-vat-filing-period">
-                <SelectValue placeholder={t["compliance.autopilotSelectPeriod"]} />
-              </SelectTrigger>
-              <SelectContent>
-                {periods.map((period) => (
-                  <SelectItem key={periodKey(period)} value={periodKey(period)}>
-                    {periodLabel(period, locale, t)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {selectedPeriod ? (
+        <CardContent>
+          {periodsQuery.isLoading ? (
+            <Skeleton className="h-32" data-testid="periods-loading" />
+          ) : periodsQuery.isError ? (
             <div
-              className="flex flex-wrap items-center gap-3 text-sm"
-              data-testid="selected-vat-filing-period"
+              className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+              data-testid="periods-error"
             >
-              <span className="text-muted-foreground">
-                {formatMessage(t["compliance.autopilotDueOn"], {
-                  date: formatDate(selectedPeriod.dueDate, locale),
-                })}
-              </span>
-              <Badge className={LEVEL_BADGE[selectedPeriod.deadline.level].className}>
-                {t[LEVEL_BADGE[selectedPeriod.deadline.level].labelKey]}
-              </Badge>
-              <Badge variant={STATUS_VARIANT[selectedPeriod.status]}>
-                {t[STATUS_KEY[selectedPeriod.status]]}
-              </Badge>
+              <XCircle className="h-4 w-4 mt-0.5" />
+              <div>
+                <p className="font-medium">
+                  <T k="pageLabels.couldNotLoadVatPeriods" />
+                </p>
+                <p className="text-xs">
+                  {(periodsQuery.error as Error)?.message || t["compliance.autopilotTryAgain"]}
+                </p>
+              </div>
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground" data-testid="selected-vat-period-empty">
-              <T k="pageLabels.noFilingPeriodSelected" />
+          ) : (periodsQuery.data?.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted-foreground" data-testid="periods-empty">
+              <T k="compliance.autopilotNoPeriods" />
             </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <T k="firm.filingType" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="hr.period" />
+                  </TableHead>
+                  <TableHead>{t["compliance.autopilotColDue"]}</TableHead>
+                  <TableHead>
+                    <T k="banking.common.status" />
+                  </TableHead>
+                  <TableHead data-numeric>
+                    <T k="pageLabels.outputVat" />
+                  </TableHead>
+                  <TableHead data-numeric>
+                    <T k="pageLabels.inputVat" />
+                  </TableHead>
+                  <TableHead data-numeric>{t["compliance.autopilotColNet"]}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {periods.map((p) => {
+                  const key = periodKey(p);
+                  const isSelected = key === selectedPeriodKey;
+                  return (
+                    <TableRow
+                      key={`${p.periodStart}-${p.periodEnd}`}
+                      data-testid="row-period"
+                      className={isSelected ? "bg-muted/50" : undefined}
+                    >
+                      <TableCell>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={isSelected ? "default" : "outline"}
+                          onClick={() => {
+                            setSelectedPeriodKey(key);
+                            calcMutation.mutate(p);
+                          }}
+                          disabled={calcMutation.isPending}
+                          aria-pressed={isSelected}
+                          data-testid={`button-select-vat-period-${p.periodStart.slice(0, 10)}`}
+                        >
+                          {calcMutation.isPending && isSelected ? (
+                            <Loader2 className="h-4 w-4 me-2 animate-spin" />
+                          ) : null}
+                          {p.status === "draft"
+                            ? t["compliance.periodsPrepare"]
+                            : t["compliance.periodsReview"]}
+                        </Button>
+                      </TableCell>
+                      <TableCell>
+                        <div className="font-medium">
+                          {formatDate(p.periodStart, locale)} – {formatDate(p.periodEnd, locale)}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {t[FREQUENCY_KEY[p.frequency]]}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {formatDate(p.dueDate, locale)}
+                          <Badge className={LEVEL_BADGE[p.deadline.level].className}>
+                            {t[LEVEL_BADGE[p.deadline.level].labelKey]}
+                          </Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={STATUS_VARIANT[p.status]}>{t[STATUS_KEY[p.status]]}</Badge>
+                      </TableCell>
+                      <TableCell data-numeric>
+                        <Money amount={p.outputVat} />
+                      </TableCell>
+                      <TableCell data-numeric>
+                        <Money amount={p.inputVat} />
+                      </TableCell>
+                      <TableCell data-numeric className=" font-medium">
+                        <Money amount={p.netVatPayable} />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
@@ -675,122 +717,6 @@ export default function VATAutopilot() {
           </CardContent>
         </Card>
       )}
-
-      {/* Periods table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            <T k="pageLabels.periods" />
-          </CardTitle>
-          <CardDescription>
-            <T k="pageLabels.lastSeveralVatFilingWindowsFor" />
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {periodsQuery.isLoading ? (
-            <Skeleton className="h-32" data-testid="periods-loading" />
-          ) : periodsQuery.isError ? (
-            <div
-              className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-              data-testid="periods-error"
-            >
-              <XCircle className="h-4 w-4 mt-0.5" />
-              <div>
-                <p className="font-medium">
-                  <T k="pageLabels.couldNotLoadVatPeriods" />
-                </p>
-                <p className="text-xs">
-                  {(periodsQuery.error as Error)?.message || t["compliance.autopilotTryAgain"]}
-                </p>
-              </div>
-            </div>
-          ) : (periodsQuery.data?.length ?? 0) === 0 ? (
-            <p className="text-sm text-muted-foreground" data-testid="periods-empty">
-              <T k="compliance.autopilotNoPeriods" />
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>
-                    <T k="firm.filingType" />
-                  </TableHead>
-                  <TableHead>
-                    <T k="hr.period" />
-                  </TableHead>
-                  <TableHead>{t["compliance.autopilotColDue"]}</TableHead>
-                  <TableHead>
-                    <T k="banking.common.status" />
-                  </TableHead>
-                  <TableHead data-numeric>
-                    <T k="pageLabels.outputVat" />
-                  </TableHead>
-                  <TableHead data-numeric>
-                    <T k="pageLabels.inputVat" />
-                  </TableHead>
-                  <TableHead data-numeric>{t["compliance.autopilotColNet"]}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {periods.map((p) => {
-                  const key = periodKey(p);
-                  const isSelected = key === selectedPeriodKey;
-                  return (
-                    <TableRow
-                      key={`${p.periodStart}-${p.periodEnd}`}
-                      data-testid="row-period"
-                      className={isSelected ? "bg-muted/50" : undefined}
-                    >
-                      <TableCell>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={isSelected ? "default" : "outline"}
-                          onClick={() => setSelectedPeriodKey(key)}
-                          disabled={calcMutation.isPending}
-                          data-testid={`button-select-vat-period-${p.periodStart.slice(0, 10)}`}
-                        >
-                          {isSelected
-                            ? t["compliance.autopilotSelected"]
-                            : t["compliance.autopilotSelect"]}
-                        </Button>
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">
-                          {formatDate(p.periodStart, locale)} – {formatDate(p.periodEnd, locale)}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {t[FREQUENCY_KEY[p.frequency]]}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          {formatDate(p.dueDate, locale)}
-                          <Badge className={LEVEL_BADGE[p.deadline.level].className}>
-                            {t[LEVEL_BADGE[p.deadline.level].labelKey]}
-                          </Badge>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={STATUS_VARIANT[p.status]}>{t[STATUS_KEY[p.status]]}</Badge>
-                      </TableCell>
-                      <TableCell data-numeric>
-                        <Money amount={p.outputVat} />
-                      </TableCell>
-                      <TableCell data-numeric>
-                        <Money amount={p.inputVat} />
-                      </TableCell>
-                      <TableCell data-numeric className=" font-medium">
-                        <Money amount={p.netVatPayable} />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
 
       {/* Active-company deadlines */}
       <Card>

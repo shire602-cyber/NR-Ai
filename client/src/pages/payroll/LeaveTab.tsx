@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check, Plus, X } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -166,21 +167,15 @@ export function LeaveTab({ companyId }: { companyId: string }) {
           </div>
           <div className="space-y-1">
             <Label htmlFor="leave-start">{tx("hr.startDate")}</Label>
-            <Input
+            <DatePicker
               id="leave-start"
-              type="date"
               value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(value) => setStartDate(value)}
             />
           </div>
           <div className="space-y-1">
             <Label htmlFor="leave-end">{tx("hr.endDate")}</Label>
-            <Input
-              id="leave-end"
-              type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-            />
+            <DatePicker id="leave-end" value={endDate} onChange={(value) => setEndDate(value)} />
           </div>
           <div className="flex items-end">
             <Button

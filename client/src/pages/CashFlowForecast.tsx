@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { DatePicker } from "@/components/ui/date-picker";
 import { format } from "date-fns";
 import { dateFnsOptions } from "@/lib/date-locale";
 import { useState } from "react";
@@ -637,10 +638,9 @@ export default function CashFlowForecast() {
               value={draftItem.amount}
               onChange={(e) => setDraftItem({ ...draftItem, amount: e.target.value })}
             />
-            <Input
-              type="date"
+            <DatePicker
               value={draftItem.dueDate}
-              onChange={(e) => setDraftItem({ ...draftItem, dueDate: e.target.value })}
+              onChange={(value) => setDraftItem({ ...draftItem, dueDate: value })}
             />
             <Button
               onClick={() => addItem.mutate()}
@@ -715,10 +715,9 @@ export default function CashFlowForecast() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-1 gap-2 md:grid-cols-5">
-            <Input
-              type="date"
+            <DatePicker
               value={draftAdjustment.date}
-              onChange={(e) => setDraftAdjustment({ ...draftAdjustment, date: e.target.value })}
+              onChange={(value) => setDraftAdjustment({ ...draftAdjustment, date: value })}
             />
             <Input
               type="number"

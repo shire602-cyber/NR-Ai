@@ -166,5 +166,7 @@
   "compliance.notApplicableHint": "استخدم هذا لالتزام لا ينطبق هنا، مثل فترة سابقة لبدء استخدامك محاسب وقُدّمت في مكان آخر. تُحفظ الملاحظة في سجل التدقيق.",
   "compliance.notApplicableReason": "سبب عدم الانطباق",
   "compliance.markedNotApplicable": "تم التحديد كغير منطبق",
-  "compliance.cancelAction": "إلغاء"
+  "compliance.cancelAction": "إلغاء",
+  "compliance.periodsPrepare": "إعداد",
+  "compliance.periodsReview": "مراجعة"
 }

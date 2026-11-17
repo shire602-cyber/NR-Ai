@@ -1,3 +1,4 @@
+import { DatePicker } from "@/components/ui/date-picker";
 import { T } from "@/components/layout/T";
 import { monthName } from "@/pages/payroll/shared";
 import {
@@ -1395,7 +1396,7 @@ export default function Budgets() {
                       <FormItem>
                         <FormLabel required>{t["forms.budget.startDate"]}</FormLabel>
                         <FormControl>
-                          <Input type="date" dir="ltr" {...field} />
+                          <DatePicker value={field.value ?? ""} onChange={field.onChange} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1408,7 +1409,7 @@ export default function Budgets() {
                       <FormItem>
                         <FormLabel required>{t["forms.budget.endDate"]}</FormLabel>
                         <FormControl>
-                          <Input type="date" dir="ltr" {...field} />
+                          <DatePicker value={field.value ?? ""} onChange={field.onChange} />
                         </FormControl>
                         <FormDescription>{t["forms.budget.periodHelp"]}</FormDescription>
                         <FormMessage />
