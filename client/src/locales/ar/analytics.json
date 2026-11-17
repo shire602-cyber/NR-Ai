@@ -108,5 +108,10 @@
   "analytics.viewAgeing": "الذمم المدينة والدائنة",
   "analytics.viewBudget": "الموازنة مقابل الفعلي",
   "analytics.viewCashFlow": "التدفق النقدي",
-  "analytics.viewComparison": "مقارنة الفترات"
+  "analytics.viewComparison": "مقارنة الفترات",
+  "analytics.noCashTitle": "لا توجد حركة نقدية بعد",
+  "analytics.noCashBody": "يظهر التدفق النقدي هنا بعد ترحيل المدفوعات والمقبوضات إلى حسابات النقد والبنوك.",
+  "analytics.openBankAccounts": "فتح الحسابات البنكية",
+  "analytics.nothingOpenTitle": "لا توجد أرصدة مفتوحة",
+  "analytics.noActivityTitle": "لا يوجد نشاط للمقارنة"
 }

@@ -1,5 +1,7 @@
 // Insights > Receivables and payables ageing (spec 3.11). Figures come from the settlement-based
 // aged receivables / payables kernel (server/reporting/aging.ts), as of the chosen date.
+import { EmptyState } from "@/components/ui/empty-state";
+import { Scale } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -123,164 +125,185 @@ export default function AgeingView({ companyId }: { companyId: string }) {
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <StatCard
-          label={t["analytics.receivablesOpen"]}
-          value={<Money amount={ar?.total} />}
-          hint={t["analytics.receivablesOpenHint"]}
-          loading={receivables.isLoading}
-          testId="stat-insights-receivables"
-        />
-        <StatCard
-          label={t["analytics.receivablesOver90"]}
-          value={<Money amount={ar?.over90} />}
-          hint={t["analytics.over90Hint"]}
-          loading={receivables.isLoading}
-          testId="stat-insights-receivables-90"
-        />
-        <StatCard
-          label={t["analytics.payablesOpen"]}
-          value={<Money amount={ap?.total} />}
-          hint={t["analytics.payablesOpenHint"]}
-          loading={payables.isLoading}
-          testId="stat-insights-payables"
-        />
-        <StatCard
-          label={t["analytics.payablesOver90"]}
-          value={<Money amount={ap?.over90} />}
-          hint={t["analytics.over90Hint"]}
-          loading={payables.isLoading}
-          testId="stat-insights-payables-90"
-        />
-      </div>
-
-      <ChartCard
-        title={t["analytics.ageingByBucket"]}
-        description={t["analytics.ageingByBucketHint"]}
-        testId="insights-ageing-chart"
-        action={
-          <SeriesKey
-            items={[
-              { label: t["analytics.receivables"], color: insightsChart.primary },
-              { label: t["analytics.payables"], color: insightsChart.neutral },
-            ]}
+      {!hasBalances && !receivables.isLoading && !payables.isLoading ? (
+        <div className="rounded-xl border border-border bg-card">
+          <EmptyState
+            icon={Scale}
+            title={t["analytics.nothingOpenTitle"]}
+            description={t["analytics.nothingOpen"]}
+            testId="insights-ageing-empty"
           />
-        }
-      >
-        {!hasBalances ? (
-          <SmallEmpty text={t["analytics.nothingOpen"]} />
-        ) : (
-          <>
-            <div className="h-64" dir="ltr">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={chartData}
-                  barCategoryGap="40%"
-                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                >
-                  <CartesianGrid vertical={false} stroke={insightsChart.grid} />
-                  <XAxis
-                    dataKey="bucket"
-                    tickFormatter={(b: Bucket) => bucketLabel[b]}
-                    tick={insightsChart.axisTick}
-                    axisLine={false}
-                    tickLine={false}
-                    reversed={locale === "ar"}
-                  />
-                  <YAxis
-                    tickFormatter={compactAxisValue}
-                    tick={insightsChart.axisTick}
-                    axisLine={false}
-                    tickLine={false}
-                    width={48}
-                    orientation={locale === "ar" ? "right" : "left"}
-                  />
-                  <Tooltip
-                    cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
-                    content={
-                      <InsightsTooltip
-                        seriesLabel={seriesLabel}
-                        labelFormatter={(b) => bucketLabel[b as Bucket] ?? b}
-                      />
-                    }
-                  />
-                  <Bar
-                    dataKey="receivables"
-                    fill={insightsChart.primary}
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={28}
-                    animationDuration={insightsChart.animationDuration}
-                    isAnimationActive={chartAnimates()}
-                  />
-                  <Bar
-                    dataKey="payables"
-                    fill={insightsChart.neutral}
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={28}
-                    animationDuration={insightsChart.animationDuration}
-                    isAnimationActive={chartAnimates()}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </>
-        )}
-      </ChartCard>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+            <StatCard
+              label={t["analytics.receivablesOpen"]}
+              value={<Money amount={ar?.total} />}
+              hint={t["analytics.receivablesOpenHint"]}
+              loading={receivables.isLoading}
+              testId="stat-insights-receivables"
+            />
+            <StatCard
+              label={t["analytics.receivablesOver90"]}
+              value={<Money amount={ar?.over90} />}
+              hint={t["analytics.over90Hint"]}
+              loading={receivables.isLoading}
+              testId="stat-insights-receivables-90"
+            />
+            <StatCard
+              label={t["analytics.payablesOpen"]}
+              value={<Money amount={ap?.total} />}
+              hint={t["analytics.payablesOpenHint"]}
+              loading={payables.isLoading}
+              testId="stat-insights-payables"
+            />
+            <StatCard
+              label={t["analytics.payablesOver90"]}
+              value={<Money amount={ap?.over90} />}
+              hint={t["analytics.over90Hint"]}
+              loading={payables.isLoading}
+              testId="stat-insights-payables-90"
+            />
+          </div>
 
-      <ChartCard
-        title={side === "receivables" ? t["analytics.topCustomers"] : t["analytics.topSuppliers"]}
-        action={
-          <Tabs value={side} onValueChange={(v) => setSide(v as typeof side)}>
-            <TabsList>
-              <TabsTrigger value="receivables" data-testid="tab-insights-receivables">
-                {t["analytics.receivables"]}
-              </TabsTrigger>
-              <TabsTrigger value="payables" data-testid="tab-insights-payables">
-                {t["analytics.payables"]}
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        }
-        testId="insights-ageing-table"
-      >
-        {rows.length === 0 ? (
-          <SmallEmpty text={t["analytics.nothingOpenSide"]} />
-        ) : (
-          <>
-            <Table density="compact">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t["analytics.colName"]}</TableHead>
-                  {BUCKETS.map((b) => (
-                    <TableHead key={b} className="text-end">
-                      {bucketLabel[b]}
-                    </TableHead>
-                  ))}
-                  <TableHead className="text-end">{t["analytics.colTotal"]}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="max-w-[16rem] truncate font-medium">{row.name}</TableCell>
-                    {BUCKETS.map((b) => (
-                      <MoneyCell key={b} amount={row[b]} showCurrency={false} />
+          <ChartCard
+            title={t["analytics.ageingByBucket"]}
+            description={t["analytics.ageingByBucketHint"]}
+            testId="insights-ageing-chart"
+            action={
+              <SeriesKey
+                items={[
+                  { label: t["analytics.receivables"], color: insightsChart.primary },
+                  { label: t["analytics.payables"], color: insightsChart.neutral },
+                ]}
+              />
+            }
+          >
+            {!hasBalances ? (
+              <SmallEmpty text={t["analytics.nothingOpen"]} />
+            ) : (
+              <>
+                <div className="h-64" dir="ltr">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={chartData}
+                      barCategoryGap="40%"
+                      margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid vertical={false} stroke={insightsChart.grid} />
+                      <XAxis
+                        dataKey="bucket"
+                        tickFormatter={(b: Bucket) => bucketLabel[b]}
+                        tick={insightsChart.axisTick}
+                        axisLine={false}
+                        tickLine={false}
+                        reversed={locale === "ar"}
+                      />
+                      <YAxis
+                        tickFormatter={compactAxisValue}
+                        tick={insightsChart.axisTick}
+                        axisLine={false}
+                        tickLine={false}
+                        width={48}
+                        orientation={locale === "ar" ? "right" : "left"}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
+                        content={
+                          <InsightsTooltip
+                            seriesLabel={seriesLabel}
+                            labelFormatter={(b) => bucketLabel[b as Bucket] ?? b}
+                          />
+                        }
+                      />
+                      <Bar
+                        dataKey="receivables"
+                        fill={insightsChart.primary}
+                        radius={[4, 4, 0, 0]}
+                        maxBarSize={28}
+                        animationDuration={insightsChart.animationDuration}
+                        isAnimationActive={chartAnimates()}
+                      />
+                      <Bar
+                        dataKey="payables"
+                        fill={insightsChart.neutral}
+                        radius={[4, 4, 0, 0]}
+                        maxBarSize={28}
+                        animationDuration={insightsChart.animationDuration}
+                        isAnimationActive={chartAnimates()}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            )}
+          </ChartCard>
+
+          <ChartCard
+            title={
+              side === "receivables" ? t["analytics.topCustomers"] : t["analytics.topSuppliers"]
+            }
+            action={
+              <Tabs value={side} onValueChange={(v) => setSide(v as typeof side)}>
+                <TabsList>
+                  <TabsTrigger value="receivables" data-testid="tab-insights-receivables">
+                    {t["analytics.receivables"]}
+                  </TabsTrigger>
+                  <TabsTrigger value="payables" data-testid="tab-insights-payables">
+                    {t["analytics.payables"]}
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+            }
+            testId="insights-ageing-table"
+          >
+            {rows.length === 0 ? (
+              <SmallEmpty text={t["analytics.nothingOpenSide"]} />
+            ) : (
+              <>
+                <Table density="compact">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t["analytics.colName"]}</TableHead>
+                      {BUCKETS.map((b) => (
+                        <TableHead key={b} className="text-end">
+                          {bucketLabel[b]}
+                        </TableHead>
+                      ))}
+                      <TableHead className="text-end">{t["analytics.colTotal"]}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell className="max-w-[16rem] truncate font-medium">
+                          {row.name}
+                        </TableCell>
+                        {BUCKETS.map((b) => (
+                          <MoneyCell key={b} amount={row[b]} showCurrency={false} />
+                        ))}
+                        <MoneyCell
+                          amount={row.total}
+                          showCurrency={false}
+                          className="font-medium"
+                        />
+                      </TableRow>
                     ))}
-                    <MoneyCell amount={row.total} showCurrency={false} className="font-medium" />
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            <Link
-              href={fullReportHref}
-              className="mt-3 inline-block text-small font-medium text-accent hover:underline"
-              data-testid="link-insights-full-ageing"
-            >
-              {t["analytics.openFullReport"]}
-            </Link>
-          </>
-        )}
-      </ChartCard>
+                  </TableBody>
+                </Table>
+                <Link
+                  href={fullReportHref}
+                  className="mt-3 inline-block text-small font-medium text-accent hover:underline"
+                  data-testid="link-insights-full-ageing"
+                >
+                  {t["analytics.openFullReport"]}
+                </Link>
+              </>
+            )}
+          </ChartCard>
+        </>
+      )}
     </div>
   );
 }

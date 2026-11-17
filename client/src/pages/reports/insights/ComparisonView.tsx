@@ -1,5 +1,7 @@
 // Insights > Period comparison (spec 3.11). One server call (kernel P&L with comparison plus
 // invoice counts): the UI maps metric names to labels and draws current vs prior.
+import { EmptyState } from "@/components/ui/empty-state";
+import { BarChart3 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -141,128 +143,147 @@ export default function ComparisonView({ companyId }: { companyId: string }) {
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        {tile("Total Revenue", "stat-insights-revenue")}
-        {tile("Total Expenses", "stat-insights-expenses")}
-        {tile("Net Profit", "stat-insights-net-profit")}
-        {tile("Invoice Count", "stat-insights-invoice-count")}
-      </div>
-
-      <ChartCard
-        title={t["analytics.comparisonChartTitle"]}
-        description={context}
-        testId="insights-comparison-chart"
-        action={
-          <SeriesKey
-            items={[
-              { label: t["analytics.currentPeriod"], color: insightsChart.primary },
-              { label: t["analytics.previousPeriod"], color: insightsChart.neutral },
-            ]}
+      {!hasActivity && !metrics.some((m) => m.current || m.previous) ? (
+        <div className="rounded-xl border border-border bg-card">
+          <EmptyState
+            icon={BarChart3}
+            title={t["analytics.noActivityTitle"]}
+            description={t["analytics.noActivityInPeriods"]}
+            testId="insights-comparison-empty"
           />
-        }
-      >
-        {!hasActivity ? (
-          <SmallEmpty text={t["analytics.noActivityInPeriods"]} />
-        ) : (
-          <>
-            <div className="h-64" dir="ltr">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={chartData}
-                  barCategoryGap="40%"
-                  margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                >
-                  <CartesianGrid vertical={false} stroke={insightsChart.grid} />
-                  <XAxis
-                    dataKey="metric"
-                    tickFormatter={label}
-                    tick={insightsChart.axisTick}
-                    axisLine={false}
-                    tickLine={false}
-                    reversed={locale === "ar"}
-                  />
-                  <YAxis
-                    tickFormatter={compactAxisValue}
-                    tick={insightsChart.axisTick}
-                    axisLine={false}
-                    tickLine={false}
-                    width={48}
-                    orientation={locale === "ar" ? "right" : "left"}
-                  />
-                  <Tooltip
-                    cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
-                    content={<InsightsTooltip seriesLabel={seriesLabel} labelFormatter={label} />}
-                  />
-                  <Bar
-                    dataKey="current"
-                    fill={insightsChart.primary}
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={28}
-                    animationDuration={insightsChart.animationDuration}
-                    isAnimationActive={chartAnimates()}
-                  />
-                  <Bar
-                    dataKey="previous"
-                    fill={insightsChart.neutral}
-                    radius={[4, 4, 0, 0]}
-                    maxBarSize={28}
-                    animationDuration={insightsChart.animationDuration}
-                    isAnimationActive={chartAnimates()}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </>
-        )}
-      </ChartCard>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+            {tile("Total Revenue", "stat-insights-revenue")}
+            {tile("Total Expenses", "stat-insights-expenses")}
+            {tile("Net Profit", "stat-insights-net-profit")}
+            {tile("Invoice Count", "stat-insights-invoice-count")}
+          </div>
 
-      <ChartCard title={t["analytics.comparisonTableTitle"]} testId="insights-comparison-table">
-        <Table density="compact">
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t["analytics.colMetric"]}</TableHead>
-              <TableHead className="text-end">{t["analytics.currentPeriod"]}</TableHead>
-              <TableHead className="text-end">{t["analytics.previousPeriod"]}</TableHead>
-              <TableHead className="text-end">{t["analytics.colChange"]}</TableHead>
-              <TableHead className="text-end">{t["analytics.colChangePercent"]}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {metrics.map((m) => {
-              const count = COUNT_METRICS.has(m.metric);
-              const fig = (n: number, signed = false) =>
-                count ? (
-                  <span className="money">{n.toLocaleString("en-US")}</span>
-                ) : (
-                  <Money amount={n} showCurrency={false} signDisplay={signed ? "always" : "auto"} />
-                );
-              return (
-                <TableRow key={m.metric}>
-                  <TableCell className="font-medium">{label(m.metric)}</TableCell>
-                  <TableCell data-numeric="" className="text-end">
-                    {fig(m.current)}
-                  </TableCell>
-                  <TableCell data-numeric="" className="text-end text-muted-foreground">
-                    {fig(m.previous)}
-                  </TableCell>
-                  <TableCell data-numeric="" className="text-end">
-                    {fig(m.change, true)}
-                  </TableCell>
-                  <TableCell data-numeric="" className="text-end">
-                    {m.previous ? (
-                      <span className="money" dir="ltr">
-                        {formatPercentDelta(m.changePercent)}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
+          <ChartCard
+            title={t["analytics.comparisonChartTitle"]}
+            description={context}
+            testId="insights-comparison-chart"
+            action={
+              <SeriesKey
+                items={[
+                  { label: t["analytics.currentPeriod"], color: insightsChart.primary },
+                  { label: t["analytics.previousPeriod"], color: insightsChart.neutral },
+                ]}
+              />
+            }
+          >
+            {!hasActivity ? (
+              <SmallEmpty text={t["analytics.noActivityInPeriods"]} />
+            ) : (
+              <>
+                <div className="h-64" dir="ltr">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={chartData}
+                      barCategoryGap="40%"
+                      margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                    >
+                      <CartesianGrid vertical={false} stroke={insightsChart.grid} />
+                      <XAxis
+                        dataKey="metric"
+                        tickFormatter={label}
+                        tick={insightsChart.axisTick}
+                        axisLine={false}
+                        tickLine={false}
+                        reversed={locale === "ar"}
+                      />
+                      <YAxis
+                        tickFormatter={compactAxisValue}
+                        tick={insightsChart.axisTick}
+                        axisLine={false}
+                        tickLine={false}
+                        width={48}
+                        orientation={locale === "ar" ? "right" : "left"}
+                      />
+                      <Tooltip
+                        cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
+                        content={
+                          <InsightsTooltip seriesLabel={seriesLabel} labelFormatter={label} />
+                        }
+                      />
+                      <Bar
+                        dataKey="current"
+                        fill={insightsChart.primary}
+                        radius={[4, 4, 0, 0]}
+                        maxBarSize={28}
+                        animationDuration={insightsChart.animationDuration}
+                        isAnimationActive={chartAnimates()}
+                      />
+                      <Bar
+                        dataKey="previous"
+                        fill={insightsChart.neutral}
+                        radius={[4, 4, 0, 0]}
+                        maxBarSize={28}
+                        animationDuration={insightsChart.animationDuration}
+                        isAnimationActive={chartAnimates()}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            )}
+          </ChartCard>
+
+          <ChartCard title={t["analytics.comparisonTableTitle"]} testId="insights-comparison-table">
+            <Table density="compact">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t["analytics.colMetric"]}</TableHead>
+                  <TableHead className="text-end">{t["analytics.currentPeriod"]}</TableHead>
+                  <TableHead className="text-end">{t["analytics.previousPeriod"]}</TableHead>
+                  <TableHead className="text-end">{t["analytics.colChange"]}</TableHead>
+                  <TableHead className="text-end">{t["analytics.colChangePercent"]}</TableHead>
                 </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </ChartCard>
+              </TableHeader>
+              <TableBody>
+                {metrics.map((m) => {
+                  const count = COUNT_METRICS.has(m.metric);
+                  const fig = (n: number, signed = false) =>
+                    count ? (
+                      <span className="money">{n.toLocaleString("en-US")}</span>
+                    ) : (
+                      <Money
+                        amount={n}
+                        showCurrency={false}
+                        signDisplay={signed ? "always" : "auto"}
+                      />
+                    );
+                  return (
+                    <TableRow key={m.metric}>
+                      <TableCell className="font-medium">{label(m.metric)}</TableCell>
+                      <TableCell data-numeric="" className="text-end">
+                        {fig(m.current)}
+                      </TableCell>
+                      <TableCell data-numeric="" className="text-end text-muted-foreground">
+                        {fig(m.previous)}
+                      </TableCell>
+                      <TableCell data-numeric="" className="text-end">
+                        {fig(m.change, true)}
+                      </TableCell>
+                      <TableCell data-numeric="" className="text-end">
+                        {m.previous ? (
+                          <span className="money" dir="ltr">
+                            {formatPercentDelta(m.changePercent)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </ChartCard>
+        </>
+      )}
     </div>
   );
 }

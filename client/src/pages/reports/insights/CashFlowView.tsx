@@ -1,6 +1,8 @@
 // Insights > Cash flow (spec 3.11): StatCards from the kernel cash-flow statement, the monthly
 // cash position from the bucketed kernel, and an optional 90-day projection from the
 // document-driven forecast (dashed continuation, 8% band). No figure is computed here.
+import { EmptyState } from "@/components/ui/empty-state";
+import { Wallet } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import {
@@ -119,6 +121,10 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
   if (statement.isLoading && buckets.isLoading) return <InsightsSkeleton />;
   const s = statement.data;
   const actualCount = (buckets.data ?? []).length;
+  // Spec 2.6: a company with no cash movement sees guidance, not a KPI row of zeros.
+  const hasCashActivity =
+    Boolean(s && (s.closingCash || s.operating.total || s.investing.total || s.financing.total)) ||
+    (buckets.data ?? []).some((b) => b.endingBalance || b.netCashFlow);
 
   return (
     <div className="space-y-6" data-testid="insights-view-cash-flow">
@@ -158,148 +164,162 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
         }
       />
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <StatCard
-          label={t["analytics.operatingCash"]}
-          value={<Money amount={s?.operating.total} />}
-          hint={t["analytics.operatingCashHint"]}
-          loading={statement.isLoading}
-          testId="stat-insights-operating"
-        />
-        <StatCard
-          label={t["analytics.investingCash"]}
-          value={<Money amount={s?.investing.total} />}
-          hint={t["analytics.investingCashHint"]}
-          loading={statement.isLoading}
-          testId="stat-insights-investing"
-        />
-        <StatCard
-          label={t["analytics.financingCash"]}
-          value={<Money amount={s?.financing.total} />}
-          hint={t["analytics.financingCashHint"]}
-          loading={statement.isLoading}
-          testId="stat-insights-financing"
-        />
-        <StatCard
-          label={t["analytics.closingCash"]}
-          value={<Money amount={s?.closingCash} />}
-          hint={s ? formatDate(window.to, locale) : undefined}
-          loading={statement.isLoading}
-          testId="stat-insights-closing-cash"
-        />
-      </div>
-
-      <ChartCard
-        title={t["analytics.cashPositionTitle"]}
-        description={t["analytics.cashPositionHint"]}
-        testId="insights-cash-chart"
-      >
-        {actualCount < 2 ? (
-          <SmallEmpty text={t["analytics.notEnoughHistory"]} />
-        ) : (
-          <div className="h-64" dir="ltr">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid vertical={false} stroke={insightsChart.grid} />
-                <XAxis
-                  dataKey="key"
-                  tickFormatter={(v: string) => formatMonthYear(v, locale)}
-                  tick={insightsChart.axisTick}
-                  axisLine={false}
-                  tickLine={false}
-                  minTickGap={24}
-                  reversed={locale === "ar"}
-                />
-                <YAxis
-                  tickFormatter={compactAxisValue}
-                  tick={insightsChart.axisTick}
-                  axisLine={false}
-                  tickLine={false}
-                  width={48}
-                  orientation={locale === "ar" ? "right" : "left"}
-                />
-                <Tooltip
-                  content={
-                    <InsightsTooltip
-                      seriesLabel={seriesLabel}
-                      labelFormatter={(v) => formatDate(v, locale)}
-                    />
-                  }
-                />
-                <Area
-                  type="monotone"
-                  dataKey="balance"
-                  stroke={insightsChart.primary}
-                  strokeWidth={1.5}
-                  fill={insightsChart.primary}
-                  fillOpacity={0.08}
-                  dot={false}
-                  activeDot={{ r: 3 }}
-                  animationDuration={insightsChart.animationDuration}
-                  isAnimationActive={chartAnimates()}
-                  connectNulls
-                />
-                {showProjection ? (
-                  <Area
-                    type="monotone"
-                    dataKey="projected"
-                    stroke={insightsChart.primary}
-                    strokeWidth={1.5}
-                    strokeDasharray="4 4"
-                    fill={insightsChart.primary}
-                    fillOpacity={0.08}
-                    dot={false}
-                    activeDot={{ r: 3 }}
-                    animationDuration={insightsChart.animationDuration}
-                    isAnimationActive={chartAnimates()}
-                    connectNulls
-                  />
-                ) : null}
-              </ComposedChart>
-            </ResponsiveContainer>
+      {!hasCashActivity && !statement.isLoading && !buckets.isLoading ? (
+        <div className="rounded-xl border border-border bg-card">
+          <EmptyState
+            icon={Wallet}
+            title={t["analytics.noCashTitle"]}
+            description={t["analytics.noCashBody"]}
+            action={{ label: t["analytics.openBankAccounts"], href: "/bank-accounts" }}
+            testId="insights-cash-empty"
+          />
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+            <StatCard
+              label={t["analytics.operatingCash"]}
+              value={<Money amount={s?.operating.total} />}
+              hint={t["analytics.operatingCashHint"]}
+              loading={statement.isLoading}
+              testId="stat-insights-operating"
+            />
+            <StatCard
+              label={t["analytics.investingCash"]}
+              value={<Money amount={s?.investing.total} />}
+              hint={t["analytics.investingCashHint"]}
+              loading={statement.isLoading}
+              testId="stat-insights-investing"
+            />
+            <StatCard
+              label={t["analytics.financingCash"]}
+              value={<Money amount={s?.financing.total} />}
+              hint={t["analytics.financingCashHint"]}
+              loading={statement.isLoading}
+              testId="stat-insights-financing"
+            />
+            <StatCard
+              label={t["analytics.closingCash"]}
+              value={<Money amount={s?.closingCash} />}
+              hint={s ? formatDate(window.to, locale) : undefined}
+              loading={statement.isLoading}
+              testId="stat-insights-closing-cash"
+            />
           </div>
-        )}
-        {showProjection && forecast.data?.insufficientData ? (
-          <p className="mt-3 text-small text-muted-foreground">
-            {t["analytics.projectionUnavailable"]}
-          </p>
-        ) : null}
-      </ChartCard>
 
-      <ChartCard title={t["analytics.cashByMonth"]} testId="insights-cash-table">
-        {actualCount === 0 ? (
-          <SmallEmpty text={t["analytics.noCashMovement"]} />
-        ) : (
-          <Table density="compact">
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t["analytics.colPeriod"]}</TableHead>
-                <TableHead className="text-end">{t["analytics.colOperatingIn"]}</TableHead>
-                <TableHead className="text-end">{t["analytics.colOperatingOut"]}</TableHead>
-                <TableHead className="text-end">{t["analytics.colInvesting"]}</TableHead>
-                <TableHead className="text-end">{t["analytics.colFinancing"]}</TableHead>
-                <TableHead className="text-end">{t["analytics.colNet"]}</TableHead>
-                <TableHead className="text-end">{t["analytics.colClosing"]}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(buckets.data ?? []).map((b) => (
-                <TableRow key={b.from}>
-                  <TableCell className="whitespace-nowrap">
-                    {formatMonthYear(b.from, locale)}
-                  </TableCell>
-                  <MoneyCell amount={b.operatingInflow} showCurrency={false} />
-                  <MoneyCell amount={b.operatingOutflow} showCurrency={false} />
-                  <InOutCell inflow={b.investingInflow} outflow={b.investingOutflow} />
-                  <InOutCell inflow={b.financingInflow} outflow={b.financingOutflow} />
-                  <MoneyCell amount={b.netCashFlow} showCurrency={false} tone="auto" />
-                  <MoneyCell amount={b.endingBalance} showCurrency={false} />
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </ChartCard>
+          <ChartCard
+            title={t["analytics.cashPositionTitle"]}
+            description={t["analytics.cashPositionHint"]}
+            testId="insights-cash-chart"
+          >
+            {actualCount < 2 ? (
+              <SmallEmpty text={t["analytics.notEnoughHistory"]} />
+            ) : (
+              <div className="h-64" dir="ltr">
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <CartesianGrid vertical={false} stroke={insightsChart.grid} />
+                    <XAxis
+                      dataKey="key"
+                      tickFormatter={(v: string) => formatMonthYear(v, locale)}
+                      tick={insightsChart.axisTick}
+                      axisLine={false}
+                      tickLine={false}
+                      minTickGap={24}
+                      reversed={locale === "ar"}
+                    />
+                    <YAxis
+                      tickFormatter={compactAxisValue}
+                      tick={insightsChart.axisTick}
+                      axisLine={false}
+                      tickLine={false}
+                      width={48}
+                      orientation={locale === "ar" ? "right" : "left"}
+                    />
+                    <Tooltip
+                      content={
+                        <InsightsTooltip
+                          seriesLabel={seriesLabel}
+                          labelFormatter={(v) => formatDate(v, locale)}
+                        />
+                      }
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="balance"
+                      stroke={insightsChart.primary}
+                      strokeWidth={1.5}
+                      fill={insightsChart.primary}
+                      fillOpacity={0.08}
+                      dot={false}
+                      activeDot={{ r: 3 }}
+                      animationDuration={insightsChart.animationDuration}
+                      isAnimationActive={chartAnimates()}
+                      connectNulls
+                    />
+                    {showProjection ? (
+                      <Area
+                        type="monotone"
+                        dataKey="projected"
+                        stroke={insightsChart.primary}
+                        strokeWidth={1.5}
+                        strokeDasharray="4 4"
+                        fill={insightsChart.primary}
+                        fillOpacity={0.08}
+                        dot={false}
+                        activeDot={{ r: 3 }}
+                        animationDuration={insightsChart.animationDuration}
+                        isAnimationActive={chartAnimates()}
+                        connectNulls
+                      />
+                    ) : null}
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+            {showProjection && forecast.data?.insufficientData ? (
+              <p className="mt-3 text-small text-muted-foreground">
+                {t["analytics.projectionUnavailable"]}
+              </p>
+            ) : null}
+          </ChartCard>
+
+          <ChartCard title={t["analytics.cashByMonth"]} testId="insights-cash-table">
+            {actualCount === 0 ? (
+              <SmallEmpty text={t["analytics.noCashMovement"]} />
+            ) : (
+              <Table density="compact">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t["analytics.colPeriod"]}</TableHead>
+                    <TableHead className="text-end">{t["analytics.colOperatingIn"]}</TableHead>
+                    <TableHead className="text-end">{t["analytics.colOperatingOut"]}</TableHead>
+                    <TableHead className="text-end">{t["analytics.colInvesting"]}</TableHead>
+                    <TableHead className="text-end">{t["analytics.colFinancing"]}</TableHead>
+                    <TableHead className="text-end">{t["analytics.colNet"]}</TableHead>
+                    <TableHead className="text-end">{t["analytics.colClosing"]}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(buckets.data ?? []).map((b) => (
+                    <TableRow key={b.from}>
+                      <TableCell className="whitespace-nowrap">
+                        {formatMonthYear(b.from, locale)}
+                      </TableCell>
+                      <MoneyCell amount={b.operatingInflow} showCurrency={false} />
+                      <MoneyCell amount={b.operatingOutflow} showCurrency={false} />
+                      <InOutCell inflow={b.investingInflow} outflow={b.investingOutflow} />
+                      <InOutCell inflow={b.financingInflow} outflow={b.financingOutflow} />
+                      <MoneyCell amount={b.netCashFlow} showCurrency={false} tone="auto" />
+                      <MoneyCell amount={b.endingBalance} showCurrency={false} />
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </ChartCard>
+        </>
+      )}
     </div>
   );
 }

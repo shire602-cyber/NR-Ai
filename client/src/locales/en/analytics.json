@@ -108,5 +108,10 @@
   "analytics.viewAgeing": "Receivables and payables",
   "analytics.viewBudget": "Budget vs actual",
   "analytics.viewCashFlow": "Cash flow",
-  "analytics.viewComparison": "Period comparison"
+  "analytics.viewComparison": "Period comparison",
+  "analytics.noCashTitle": "No cash movement yet",
+  "analytics.noCashBody": "Cash flow appears here once payments and receipts are posted to your cash and bank accounts.",
+  "analytics.openBankAccounts": "Open bank accounts",
+  "analytics.nothingOpenTitle": "Nothing open",
+  "analytics.noActivityTitle": "No activity to compare"
 }
