@@ -277,6 +277,7 @@ export default function SecuritySettings() {
       fail(err);
     }
   };
+  const [confirmLogoutAll, setConfirmLogoutAll] = useState(false);
   const logoutAll = async () => {
     try {
       await securityFetch("POST", "/api/auth/logout-all", {});
@@ -458,9 +459,33 @@ export default function SecuritySettings() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2">
           <CardTitle>{t["security.sessionsTitle"]}</CardTitle>
-          <Button variant="outline" onClick={logoutAll}>
+          <Button
+            variant="outline"
+            onClick={() => setConfirmLogoutAll(true)}
+            data-testid="button-logout-all"
+          >
             {t["security.logoutAll"]}
           </Button>
+          <Dialog open={confirmLogoutAll} onOpenChange={setConfirmLogoutAll}>
+            <DialogContent data-testid="dialog-logout-all">
+              <DialogHeader>
+                <DialogTitle>{t["security.logoutAllConfirmTitle"]}</DialogTitle>
+                <DialogDescription>{t["security.logoutAllConfirmBody"]}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setConfirmLogoutAll(false)}>
+                  {t["security.logoutAllCancel"]}
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => void logoutAll()}
+                  data-testid="button-logout-all-confirm"
+                >
+                  {t["security.logoutAllConfirmAction"]}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </CardHeader>
         <CardContent>
           <ul className="divide-y text-sm">

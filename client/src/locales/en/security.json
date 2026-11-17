@@ -72,5 +72,10 @@
   "security.verifyEmailDone": "Your email address is verified.",
   "security.verifyEmailFailed": "This verification link is invalid or has expired. Sign in and request a new one from Security settings.",
   "security.registerCheckEmail": "Check your email to confirm your address. If you already have an account, sign in instead.",
-  "security.captchaLabel": "Bot check"
+  "security.captchaLabel": "Bot check",
+  "security.registerNoEmail": "Your account is ready. Email delivery is not set up yet, so no confirmation email was sent.",
+  "security.logoutAllConfirmTitle": "Sign out of all devices?",
+  "security.logoutAllConfirmBody": "This signs you out everywhere, including this device. You will need to sign in again.",
+  "security.logoutAllConfirmAction": "Sign out everywhere",
+  "security.logoutAllCancel": "Cancel"
 }

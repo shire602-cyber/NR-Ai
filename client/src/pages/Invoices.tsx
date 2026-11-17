@@ -72,6 +72,7 @@ import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -535,6 +536,22 @@ export default function Invoices() {
           ["/api/companies", selectedCompanyId, "invoices"],
           context.previous
         );
+      }
+      if (error?.body?.code === "SUPPLIER_TRN_REQUIRED") {
+        // The company is VAT registered but has no TRN: say so and link to the fix.
+        toast({
+          variant: "destructive",
+          title: t["invoices.supplierTrnRequiredTitle"],
+          description: t["invoices.supplierTrnRequiredBody"],
+          action: (
+            <ToastAction altText={t["invoices.supplierTrnRequiredLink"]} asChild>
+              <Link href="/company-profile" data-testid="link-company-settings-trn">
+                {t["invoices.supplierTrnRequiredLink"]}
+              </Link>
+            </ToastAction>
+          ),
+        });
+        return;
       }
       toast({
         variant: "destructive",

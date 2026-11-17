@@ -100,7 +100,12 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           setCooldownUntil(currentEpochMs() + seconds * 1000);
           setCooldownSeconds(seconds);
         }
-        throw new Error(error?.message || "Login failed");
+        const failure = new Error(
+          error?.code === "INVALID_CREDENTIALS"
+            ? t["components.authInvalidCredentials"]
+            : error?.message || t["components.authLoginFailed"]
+        );
+        throw failure;
       }
 
       const result = await response.json();
@@ -114,8 +119,8 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Login failed",
-        description: error?.message || "Please check your credentials and try again.",
+        title: t["components.authLoginFailed"],
+        description: error?.message || t["components.authInvalidCredentials"],
       });
     } finally {
       setIsLoading(false);

@@ -543,6 +543,32 @@ async function hasPostedRevenue(tx: LedgerTx, companyId: string, invoiceId: stri
  * entry, in ONE transaction under the invoice's document lock. Parallel calls
  * post exactly once; the losers see the issued state (no-op).
  */
+/**
+ * FTA tax-invoice rule: a VAT-registered supplier (a company with a VAT filing frequency)
+ * must show its own TRN on a standard-rated tax invoice. Refuse to issue one while the
+ * company TRN is missing, with a pointer to the company settings.
+ */
+export async function assertSupplierTrnForTaxInvoice(
+  tx: LedgerTx,
+  inv: Pick<Invoice, "companyId" | "vatAmount">
+): Promise<void> {
+  if (!(Number(inv.vatAmount) > 0)) return;
+  const [co] = await tx
+    .select({ trn: companies.trnVatNumber, freq: companies.vatFilingFrequency })
+    .from(companies)
+    .where(eq(companies.id, inv.companyId));
+  if (!co) return;
+  const registered = Boolean((co.freq ?? "").trim());
+  if (registered && !(co.trn ?? "").trim()) {
+    throw new DomainError(
+      "SUPPLIER_TRN_REQUIRED",
+      422,
+      { settingsPath: "/company-profile", fields: { trnVatNumber: ["Company TRN is required"] } },
+      "Your company is VAT registered but has no Tax Registration Number (TRN). Add the 15-digit TRN in Company settings before issuing a tax invoice with VAT."
+    );
+  }
+}
+
 export async function issueInvoice(
   invoiceId: string,
   companyId: string,
@@ -563,6 +589,7 @@ export async function issueInvoice(
         "Issue credit notes through /api/credit-notes/:id/issue"
       );
     }
+    await assertSupplierTrnForTaxInvoice(tx, inv);
     const row = await transitionRow<Invoice>(
       tx,
       invoices,

@@ -41,6 +41,7 @@ export default function ForgotPassword() {
   const [isLoading, setIsLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [devResetUrl, setDevResetUrl] = useState<string | null>(null);
+  const [emailUnavailable, setEmailUnavailable] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   const form = useForm<ForgotFormData>({
@@ -64,6 +65,9 @@ export default function ForgotPassword() {
       // Server returns devResetUrl outside of production so QA can verify
       // the flow without a wired-up email service.
       if (body?.devResetUrl) setDevResetUrl(body.devResetUrl);
+      // Platform-level flag (the same for every address): never claim a link was sent when
+      // the platform has no email provider.
+      setEmailUnavailable(body?.emailDelivery === "unavailable");
       setSubmitted(true);
     } catch (error: any) {
       toast({
@@ -99,11 +103,17 @@ export default function ForgotPassword() {
             <div className="space-y-4 py-2">
               <div className="flex items-start gap-3 p-3 rounded-lg bg-success-subtle border border-success/30 ">
                 <CheckCircle2 className="w-5 h-5 text-success mt-0.5 shrink-0" />
-                <div className="text-sm">
+                <div className="text-sm" data-testid="text-forgot-result">
                   <p className="font-medium text-success-subtle-foreground ">
-                    <T k="pageLabels.checkYourInbox" />
+                    {emailUnavailable ? (
+                      t["marketing.forgotNoProviderTitle"]
+                    ) : (
+                      <T k="pageLabels.checkYourInbox" />
+                    )}
                   </p>
-                  <p className="text-success mt-0.5">{t["marketing.forgotSent"]}</p>
+                  <p className="text-success mt-0.5">
+                    {emailUnavailable ? t["marketing.forgotNoProvider"] : t["marketing.forgotSent"]}
+                  </p>
                 </div>
               </div>
               {devResetUrl && (

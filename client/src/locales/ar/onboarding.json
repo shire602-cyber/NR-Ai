@@ -146,5 +146,11 @@
   "onboarding.hideReportTools": "إخفاء أتمتة التقارير",
   "onboarding.showReportTools": "عرض أتمتة التقارير",
   "onboarding.openWorkspace": "فتح {name}",
-  "onboarding.booksReadyTitle": "دفاترك جاهزة في 90 ثانية."
+  "onboarding.booksReadyTitle": "دفاترك جاهزة في 90 ثانية.",
+  "onboarding.defaultCompanyName": "شركة {name}",
+  "onboarding.ownerSettingUpTitle": "مالك الحساب ما زال يُعدّ هذه الشركة",
+  "onboarding.ownerSettingUpBody": "يمكن لمالك الشركة وحده إكمال الإعداد الأولي. يمكنك في هذه الأثناء فتح الأقسام التي يسمح بها دورك، وسيكون كل شيء جاهزاً عندما ينتهي المالك.",
+  "onboarding.ownerSettingUpAction": "المتابعة إلى لوحة التحكم",
+  "onboarding.vatRegisteredLabel": "هذه المنشأة مسجّلة في ضريبة القيمة المضافة",
+  "onboarding.trnRequiredVatRegistered": "أدخل رقم التسجيل الضريبي المكوّن من 15 رقماً: يجب على المنشأة المسجّلة في ضريبة القيمة المضافة إظهاره على الفواتير الضريبية."
 }

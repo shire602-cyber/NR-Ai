@@ -735,5 +735,7 @@
   "components.srv.reportDelivery.handoff.blocked": "The latest delivery was blocked and nothing was sent.",
   "components.srv.reportDelivery.handoff.recover": "Recover the latest failed delivery before queueing again.",
   "components.srv.reportDelivery.handoff.reportsReady": "{ready}/{total} reports are ready for this delivery.",
-  "components.srv.reportDelivery.handoff.readiness": "Latest delivery readiness is {status}."
+  "components.srv.reportDelivery.handoff.readiness": "Latest delivery readiness is {status}.",
+  "components.authLoginFailed": "Login failed",
+  "components.authInvalidCredentials": "Invalid email or password. Please check and try again."
 }

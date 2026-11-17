@@ -23,7 +23,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { apiUrl } from "@/lib/api";
 import { UserPlus } from "lucide-react";
 import { OAuthButtons } from "./OAuthButtons";
@@ -73,6 +73,8 @@ export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
       const payload = {
         ...data,
         trn: data.trn?.trim() ? data.trn.trim() : undefined,
+        // Localised default so the onboarding heading is not an English "X's Company".
+        companyName: formatMessage(t["onboarding.defaultCompanyName"], { name: data.name.trim() }),
         ...(captchaToken ? { captchaToken } : {}),
       };
       const response = await fetch(apiUrl("/api/auth/register"), {
@@ -86,7 +88,9 @@ export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
         const error = await response.json();
         throw new Error(error?.message || "Registration failed");
       }
-      await response.json().catch(() => null);
+      const registered = await response.json().catch(() => null);
+      // Platform-level flag: with no email provider no confirmation email exists to check.
+      const noEmail = registered?.emailDelivery === "unavailable";
 
       // W5-E (R17-14): registration never returns a session, so a new and an existing
       // address look the same. Sign in with the password just chosen; if that fails the
@@ -106,7 +110,7 @@ export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
 
       toast({
         title: "Account created!",
-        description: t["security.registerCheckEmail"],
+        description: noEmail ? t["security.registerNoEmail"] : t["security.registerCheckEmail"],
       });
     } catch (error: any) {
       toast({

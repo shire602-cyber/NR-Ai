@@ -1,5 +1,5 @@
 import { Link } from "wouter";
-import { Building2, LifeBuoy, MessageSquare, User } from "lucide-react";
+import { Building2, Languages, LifeBuoy, LogOut, MessageSquare, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useTranslation } from "@/lib/i18n";
+import { useSessionActions } from "@/hooks/useSessionActions";
 
 /** Support mailbox published on the Help centre (client/src/pages/HelpCenter.tsx). */
 export const SUPPORT_EMAIL = "support@muhasib.ai";
@@ -22,6 +23,7 @@ export const SUPPORT_EMAIL = "support@muhasib.ai";
 export function AccountMenu() {
   const { t } = useTranslation();
   const tt = t as Record<string, string>;
+  const { signOut, toggleLanguage, locale } = useSessionActions();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -72,6 +74,17 @@ export function AccountMenu() {
               </span>
             </span>
           </a>
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={toggleLanguage} data-testid="menu-account-language">
+          <Languages aria-hidden />
+          <span lang={locale === "en" ? "ar" : "en"}>
+            {locale === "en" ? "العربية" : "English"}
+          </span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void signOut()} data-testid="menu-account-logout">
+          <LogOut aria-hidden className="rtl:-scale-x-100" />
+          {t.logout}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

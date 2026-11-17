@@ -84,6 +84,17 @@ export class CompanyStorage extends UserStorage {
     return results.map((r) => r.companies);
   }
 
+  /** The user's membership role per company id (direct memberships only). */
+  async getCompanyRolesByUserId(userId: string): Promise<Record<string, string>> {
+    const rows = await db
+      .select({ companyId: companyUsers.companyId, role: companyUsers.role })
+      .from(companyUsers)
+      .where(eq(companyUsers.userId, userId));
+    const out: Record<string, string> = {};
+    for (const r of rows) out[r.companyId] = r.role;
+    return out;
+  }
+
   async createCompany(insertCompany: InsertCompany): Promise<Company> {
     const [company] = await db.insert(companies).values(insertCompany).returning();
     return company;

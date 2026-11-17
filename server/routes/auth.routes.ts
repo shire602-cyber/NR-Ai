@@ -395,11 +395,21 @@ const acceptAdminInvitationSchema = z.object({
  */
 const GENERIC_REGISTER_MESSAGE =
   "Check your email to confirm your address. If you already have an account, sign in instead.";
-const GENERIC_REGISTER_BODY = Object.freeze({
-  message: GENERIC_REGISTER_MESSAGE,
-  verificationRequired: true,
-  next: "login",
-});
+const NO_PROVIDER_REGISTER_MESSAGE =
+  "Your account is ready; you can sign in now. Email delivery is not set up yet, so no confirmation email was sent.";
+/**
+ * The body depends only on whether the platform has an email provider (identical for every
+ * address, so it is no enumeration oracle) and never claims an email was sent when none can be.
+ */
+function genericRegisterBody() {
+  const emailDelivery = hasEmailProvider();
+  return {
+    message: emailDelivery ? GENERIC_REGISTER_MESSAGE : NO_PROVIDER_REGISTER_MESSAGE,
+    verificationRequired: emailDelivery,
+    emailDelivery: emailDelivery ? ("available" as const) : ("unavailable" as const),
+    next: "login",
+  };
+}
 
 function retryAfterBody(message: string, code: string, retryAfterMs: number) {
   return {
@@ -543,7 +553,7 @@ export function registerAuthRoutes(app: Express): void {
             { category: "security", sensitive: true }
           ).catch(() => undefined);
         }
-        return res.json(GENERIC_REGISTER_BODY);
+        return res.json(genericRegisterBody());
       }
 
       // SECURITY: Force userType to 'customer' - never trust client-supplied userType.
@@ -563,7 +573,7 @@ export function registerAuthRoutes(app: Express): void {
           } as Parameters<typeof storage.createUser>[0]);
         }
       } catch (err) {
-        if (isUniqueViolation(err)) return res.json(GENERIC_REGISTER_BODY);
+        if (isUniqueViolation(err)) return res.json(genericRegisterBody());
         throw err;
       }
 
@@ -580,7 +590,7 @@ export function registerAuthRoutes(app: Express): void {
       });
 
       // No session: identical to the existing-account answer (R17-14).
-      res.json(GENERIC_REGISTER_BODY);
+      res.json(genericRegisterBody());
     })
   );
 
@@ -930,8 +940,14 @@ export function registerAuthRoutes(app: Express): void {
       forgotPasswordBudget.recordFailure(key);
 
       const user = await storage.getUserByEmail(email);
+      // Platform-level (not per-account), so it is no enumeration oracle: with no email
+      // provider no reset email can reach anyone, and we say so neutrally.
+      const emailDelivery = hasEmailProvider();
       const genericResponse = {
-        message: "If that email is registered, a reset link has been sent.",
+        message: emailDelivery
+          ? "If that email is registered, a reset link has been sent."
+          : "If an account exists, we'll email a reset link once email delivery is set up. Contact support@muhasib.ai for help.",
+        emailDelivery: emailDelivery ? ("available" as const) : ("unavailable" as const),
       };
 
       if (!user) {

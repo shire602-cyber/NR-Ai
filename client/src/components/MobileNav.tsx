@@ -19,9 +19,12 @@ import {
   Sun,
   Moon,
   Monitor,
+  Languages,
+  LogOut,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSessionActions } from "@/hooks/useSessionActions";
 import { useTheme, type ThemePreference } from "@/lib/theme";
 import { useState, useCallback, useMemo } from "react";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -319,6 +322,7 @@ export function MobileNav() {
     [ct, t]
   );
   const { preference, setPreference } = useTheme();
+  const { signOut, toggleLanguage, locale } = useSessionActions();
   const text = (item: { label: string; labelKey?: string }) =>
     item.labelKey ? t[item.labelKey] || item.label : item.label;
 
@@ -418,6 +422,33 @@ export function MobileNav() {
                   {t[option.labelKey]}
                 </button>
               ))}
+            </div>
+          </div>
+          <div className="mobile-nav-more-section" data-testid="mobile-account-actions">
+            <div className="mobile-nav-theme" role="group" aria-label={t["shell.accountMenu"]}>
+              <button
+                type="button"
+                onClick={toggleLanguage}
+                className="mobile-nav-theme-option"
+                data-testid="mobile-language-toggle"
+              >
+                <Languages className="h-4 w-4" aria-hidden />
+                <span lang={locale === "en" ? "ar" : "en"}>
+                  {locale === "en" ? "العربية" : "English"}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMoreOpen(false);
+                  void signOut();
+                }}
+                className="mobile-nav-theme-option"
+                data-testid="mobile-logout"
+              >
+                <LogOut className="h-4 w-4 rtl:-scale-x-100" aria-hidden />
+                {t.logout}
+              </button>
             </div>
           </div>
           <details className="mobile-nav-more-section">
