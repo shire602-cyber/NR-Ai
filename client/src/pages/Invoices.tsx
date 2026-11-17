@@ -98,7 +98,6 @@ import { EInvoiceHeaderStrip } from "@/components/einvoice/EInvoiceHeaderStrip";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
-import { CustomerDepositsDialog } from "./invoices/CustomerDepositsDialog";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
 import {
   downloadServerFile,
@@ -107,7 +106,6 @@ import {
   prepareInvoicesForExport,
 } from "@/lib/export";
 import { ShareInvoiceDialog } from "@/components/invoices/ShareInvoiceDialog";
-import { WriteOffInvoiceDialog } from "@/components/invoices/WriteOffInvoiceDialog";
 import { evidenceSourceHref } from "@/lib/evidenceLinks";
 import {
   Plus,
@@ -156,6 +154,15 @@ import {
 import { accountDisplayName } from "@/lib/account-name";
 
 // D5b: the bilingual preview is its own chunk (only loaded when the invoice dialog opens).
+// Mounted only while open: the dialogs and their queries stay out of the list's first render.
+const CustomerDepositsDialog = lazy(() =>
+  import("./invoices/CustomerDepositsDialog").then((m) => ({ default: m.CustomerDepositsDialog }))
+);
+const WriteOffInvoiceDialog = lazy(() =>
+  import("@/components/invoices/WriteOffInvoiceDialog").then((m) => ({
+    default: m.WriteOffInvoiceDialog,
+  }))
+);
 const InvoicePreview = lazy(() =>
   import("@/components/invoices/InvoicePreview").then((m) => ({ default: m.InvoicePreview }))
 );
@@ -1276,12 +1283,14 @@ export default function Invoices() {
         }
       />
 
-      {selectedCompanyId && (
-        <CustomerDepositsDialog
-          companyId={selectedCompanyId}
-          open={depositsOpen}
-          onOpenChange={setDepositsOpen}
-        />
+      {selectedCompanyId && depositsOpen && (
+        <Suspense fallback={null}>
+          <CustomerDepositsDialog
+            companyId={selectedCompanyId}
+            open={depositsOpen}
+            onOpenChange={setDepositsOpen}
+          />
+        </Suspense>
       )}
 
       <AlertDialog
@@ -2944,11 +2953,15 @@ export default function Invoices() {
         </DialogContent>
       </Dialog>
 
-      <WriteOffInvoiceDialog
-        invoice={invoiceToWriteOff}
-        companyId={selectedCompanyId}
-        onClose={() => setInvoiceToWriteOff(null)}
-      />
+      {invoiceToWriteOff && (
+        <Suspense fallback={null}>
+          <WriteOffInvoiceDialog
+            invoice={invoiceToWriteOff}
+            companyId={selectedCompanyId}
+            onClose={() => setInvoiceToWriteOff(null)}
+          />
+        </Suspense>
+      )}
       <ShareInvoiceDialog
         invoice={invoiceToShare}
         companyId={selectedCompanyId}

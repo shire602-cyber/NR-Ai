@@ -378,6 +378,8 @@
   "activityLog.action.unusual_timing": "Unusual timing detected",
   "activityLog.action.vat.bad_debt_relief.claim": "VAT bad debt relief claimed",
   "activityLog.action.vat.bad_debt_relief.reverse": "VAT bad debt relief reversed",
+  "activityLog.action.vat.return_settlement.create": "VAT return payment recorded",
+  "activityLog.action.vat.return_settlement.reverse": "VAT return payment reversed",
   "activityLog.action.vat.group.upsert": "VAT group saved",
   "activityLog.action.vat.recovery_rule.upsert": "VAT recovery rule saved",
   "activityLog.action.vat.return_adjustment.add": "VAT return adjustment added",

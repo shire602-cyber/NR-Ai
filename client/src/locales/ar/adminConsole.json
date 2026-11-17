@@ -378,6 +378,8 @@
   "activityLog.action.unusual_timing": "رصد توقيت غير معتاد",
   "activityLog.action.vat.bad_debt_relief.claim": "المطالبة بإعفاء الديون المعدومة من ضريبة القيمة المضافة",
   "activityLog.action.vat.bad_debt_relief.reverse": "عكس إعفاء الديون المعدومة من ضريبة القيمة المضافة",
+  "activityLog.action.vat.return_settlement.create": "تسجيل سداد إقرار ضريبة القيمة المضافة",
+  "activityLog.action.vat.return_settlement.reverse": "عكس سداد إقرار ضريبة القيمة المضافة",
   "activityLog.action.vat.group.upsert": "حفظ مجموعة ضريبة القيمة المضافة",
   "activityLog.action.vat.recovery_rule.upsert": "حفظ قاعدة استرداد ضريبة القيمة المضافة",
   "activityLog.action.vat.return_adjustment.add": "إضافة تسوية إلى إقرار ضريبة القيمة المضافة",

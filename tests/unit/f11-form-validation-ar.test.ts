@@ -256,6 +256,13 @@ const CASES: FormCase[] = [
 ];
 
 describe("[F11] D5b forms show validation messages in Arabic", () => {
+  // Import every page once up front: a cold import of a large page (Invoices) is module-graph
+  // cost, not the behaviour under test, and under a loaded runner it alone neared the 5 s test
+  // timeout. Each case still renders and submits within the default timeout.
+  beforeAll(async () => {
+    for (const c of CASES) await c.load();
+  }, 120_000);
+
   for (const c of CASES) {
     it(`${c.name}: invalid submit shows Arabic-only messages`, async () => {
       if (c.fixtures) setFixtures(c.fixtures);

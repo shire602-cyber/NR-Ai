@@ -147,6 +147,8 @@ describe("[X6a REQUIRED 1] sub-accounts under system posting accounts keep posti
       nationality: "IN",
       joinDate: "2024-01-01",
       basicSalary: "5000.00",
+      // A4 (M10): the first run needs the pre-go-live gratuity stated (0: none existed).
+      openingGratuityProvision: "0.00",
     });
     expect(emp.status, emp.text).toBe(201);
     const run = await t.as.post(`${base(t)}/payroll-runs`, { periodMonth: 8, periodYear: 2026 });
@@ -170,6 +172,12 @@ describe("[X6a REQUIRED 1] sub-accounts under system posting accounts keep posti
     });
     expect(old.status, old.text).toBe(200);
     expect((await issue(old.body.id, t)).status).toBe(200);
+    // A3 (H1): Art. 64(1)(b) relief needs the debt written off in the accounts first.
+    const writeOff = await t.as.post(`${base(t)}/invoices/${old.body.id}/write-off`, {
+      date: "2026-08-18",
+      reason: "Customer stopped trading",
+    });
+    expect(writeOff.status, writeOff.text).toBe(201);
     const relief = await t.as.post(`${base(t)}/vat/bad-debt-relief`, {
       invoiceId: old.body.id,
       claimDate: "2026-08-20",
