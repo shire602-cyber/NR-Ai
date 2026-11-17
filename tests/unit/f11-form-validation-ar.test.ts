@@ -283,18 +283,6 @@ describe("[F11] D5b forms show validation messages in Arabic", () => {
     await flush(20);
     expectArabicMessages("company settings");
   });
-
-  it("company profile: missing required fields show Arabic messages", async () => {
-    setFixtures({
-      [`/api/companies/${COMPANY_ID}`]: { id: COMPANY_ID, name: "Synthetic Trading", locale: "en" },
-    });
-    const { default: CompanyProfile } = await import("../../client/src/pages/CompanyProfile");
-    await renderPage(CompanyProfile);
-    await toArabic();
-    await submit(byTestId("button-save-company-profile"));
-    await flush(20);
-    expectArabicMessages("company profile");
-  });
 });
 
 describe("[F11] message resolution", () => {

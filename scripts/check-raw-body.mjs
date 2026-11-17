@@ -9,9 +9,10 @@
 //
 // Usage: node scripts/check-raw-body.mjs [--root dir] [--baseline file] [--update] [--json]
 
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runGuard } from "./guard-baselines/guard-lib.mjs";
+import { runGuard, walk } from "./guard-baselines/guard-lib.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -19,11 +20,59 @@ const ROUTE_START = /\b(?:router|app|\w+Router)\s*\.\s*(get|post|put|patch|delet
 const VALIDATED =
   /\b(?:strictBody|validate\w*|parsedBody|safeParse|\w+Schema\.parse|\w+Body\.parse|\.parse)\s*\(/;
 
+/** The registration spans (`router.post(...` up to the next registration) of one file. */
+function registrationSpans(content) {
+  const spans = [];
+  const re = new RegExp(ROUTE_START.source, "g");
+  let r;
+  let prev = null;
+  while ((r = re.exec(content))) {
+    if (prev) spans.push({ ...prev, end: r.index });
+    prev = { start: r.index, method: r[1] };
+  }
+  if (prev) spans.push({ ...prev, end: content.length });
+  return spans.map((s) => ({ method: s.method, text: content.slice(s.start, s.end) }));
+}
+
+// Handlers are split out of the route tables (server/routes/ai/*, firm/*), so the
+// registration span of the route file is where validation is visible. Index every
+// write registration once per scanned root, keyed by the identifiers it mentions.
+const registrationIndex = new Map();
+function writeRegistrations(root) {
+  let index = registrationIndex.get(root);
+  if (index) return index;
+  const files = [];
+  walk(join(root, "server"), files);
+  index = [];
+  for (const full of files) {
+    const content = readFileSync(full, "utf8");
+    if (!new RegExp(ROUTE_START.source).test(content)) continue;
+    for (const span of registrationSpans(content)) {
+      if (span.method === "get") continue;
+      index.push({ text: span.text, validated: VALIDATED.test(span.text) });
+    }
+  }
+  registrationIndex.set(root, index);
+  return index;
+}
+
+/** The exported handler (or handler factory) that encloses `index` in a handler module. */
+function enclosingExport(content, index) {
+  const re = /\bexport\s+(?:async\s+)?(?:const|function)\s+(\w+)/g;
+  let name = null;
+  let r;
+  while ((r = re.exec(content)) && r.index <= index) name = r[1];
+  return name;
+}
+
 /**
  * True when the match sits in a write route (post/put/patch/delete) whose registration-to-next-route
  * span never validates the body (strictBody / validate / zod parse). Reads via GET are ignored.
+ *
+ * In a handler module (no registration before the match) it follows the exported handler
+ * identifier to the route files that register it and applies the same test to that span.
  */
-function unvalidatedWriteRoute(content, m) {
+function unvalidatedWriteRoute(content, m, ctx) {
   let start = -1;
   let method = "";
   let next = content.length;
@@ -38,7 +87,13 @@ function unvalidatedWriteRoute(content, m) {
       break;
     }
   }
-  if (start < 0 || method === "get") return false;
+  if (start < 0) {
+    const name = ctx && enclosingExport(content, m.index);
+    if (!name) return false;
+    const word = new RegExp(`\\b${name}\\b`);
+    return writeRegistrations(ctx.root).some((reg) => word.test(reg.text) && !reg.validated);
+  }
+  if (method === "get") return false;
   return !VALIDATED.test(content.slice(start, next));
 }
 

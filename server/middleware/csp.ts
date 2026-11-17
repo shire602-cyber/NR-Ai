@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { z } from "zod";
 import type { Request, Response, NextFunction } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import { isProduction } from "../config/env";
@@ -129,13 +130,20 @@ export function buildCspReportOnlyDirectives() {
   };
 }
 
+const cspReportBodySchema = z.record(z.string(), z.unknown());
+
 /**
  * CSP violation report endpoint. The browser POSTs JSON describing the
  * blocked resource. We log a structured warning so it shows up in pino output
  * and any downstream log aggregator without spamming at error level.
  */
 export function cspReportHandler(req: Request, res: Response): void {
-  const report = (req.body && (req.body["csp-report"] || req.body)) || {};
+  // Browser-generated, unauthenticated and only logged: accept any JSON object, nothing is stored.
+  const parsed = cspReportBodySchema.safeParse(req.body);
+  const body = parsed.success ? parsed.data : {};
+  const nested = body["csp-report"];
+  const report: Record<string, unknown> =
+    nested && typeof nested === "object" ? (nested as Record<string, unknown>) : body;
   log.warn(
     {
       blockedUri: report["blocked-uri"],

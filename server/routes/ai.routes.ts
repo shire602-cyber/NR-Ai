@@ -12,6 +12,16 @@ import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middle
 import { buildLimiter, limiterProfiles } from "../middleware/rateLimit";
 import { getEnv } from "../config/env";
 import { strictBody } from "../http/strict-body";
+import {
+  aiReconcileBody,
+  batchCategorizeBody,
+  cfoAdviceBody,
+  detectAnomaliesBody,
+  nlGatewayBody,
+  parseBankStatementBody,
+  resolveAnomalyAlertBody,
+  smartSuggestBody,
+} from "./ai/bodies";
 import { UUID_RE, forecastCashflowBody, log, manualBankTransactionBody } from "./ai/shared";
 import {
   handlePostAiCategorize,
@@ -26,7 +36,6 @@ import {
 } from "./ai/anomalies";
 import {
   handlePostAiReconcile,
-  handlePostBankTransactionsReconcile,
   handleGetCompaniesBankTransactions,
   handlePostCompaniesBankTransactions,
   handlePostCompaniesBankTransactionsImport,
@@ -120,6 +129,7 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     "/api/ai/parse-bank-statement",
     authMiddleware,
     aiLimiter,
+    strictBody(parseBankStatementBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(handlePostAiParseBankStatement({ getAI }))
   );
 
@@ -131,6 +141,7 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     authMiddleware,
     aiLimiter,
     requireCustomer,
+    strictBody(cfoAdviceBody, { allowServerOwned: ["companyId"] }),
     requireCompanyAccess("body"),
     asyncHandler(handlePostAiCfoAdvice({ getAI }))
   );
@@ -145,6 +156,7 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     authMiddleware,
     aiLimiter,
     requireCustomer,
+    strictBody(batchCategorizeBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(handlePostAiBatchCategorize({ getAI }))
   );
 
@@ -154,6 +166,7 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     authMiddleware,
     aiLimiter,
     requireCustomer,
+    strictBody(detectAnomaliesBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(handlePostAiDetectAnomalies({ getAI }))
   );
 
@@ -170,6 +183,7 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     "/api/anomaly-alerts/:id/resolve",
     authMiddleware,
     requireCustomer,
+    strictBody(resolveAnomalyAlertBody),
     asyncHandler(handlePostAnomalyAlertsResolve)
   );
 
@@ -179,14 +193,8 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     authMiddleware,
     aiLimiter,
     requireCustomer,
+    strictBody(aiReconcileBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(handlePostAiReconcile({ getAI }))
-  );
-
-  // Apply Reconciliation Match
-  app.post(
-    "/api/bank-transactions/:id/reconcile",
-    authMiddleware,
-    asyncHandler(handlePostBankTransactionsReconcile)
   );
 
   // Bank Transactions CRUD
@@ -287,6 +295,7 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     "/api/ai/nl-gateway",
     authMiddleware,
     aiLimiter,
+    strictBody(nlGatewayBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(handlePostAiNlGateway({ getAI }))
   );
 
@@ -332,6 +341,7 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     "/api/ai/smart-suggest",
     authMiddleware,
     aiLimiter,
+    strictBody(smartSuggestBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(handlePostAiSmartSuggest({ getAI }))
   );
 }

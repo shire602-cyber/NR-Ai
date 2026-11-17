@@ -45,7 +45,6 @@ export const commonRoutes = [
   "/news-feed",
   "/notifications",
   "/reminders",
-  "/referrals",
   "/feedback",
   "/analytics",
   "/history",
@@ -67,18 +66,9 @@ export const adminOnlyRoutes = [
   "/admin/activity-logs",
 ];
 
-export const firmOnlyRoutes = [
-  "/firm",
-  "/firm/command-center",
-  "/firm/value-ops",
-  "/firm/clients",
-  "/firm/staff",
-  "/firm/health",
-  "/firm/comms",
-  "/firm/document-chasing",
-  "/firm/analytics",
-  "/firm/pipeline",
-];
+// Every /firm/* page is NR-internal. The prefix match in isFirmOnlyRoute covers
+// current and future firm routes, so this list cannot drift from App.tsx.
+export const firmOnlyRoutes = ["/firm"];
 
 // Helper to check if a path requires customer type
 export function isCustomerOnlyRoute(path: string): boolean {

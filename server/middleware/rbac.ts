@@ -125,6 +125,12 @@ function attachFirmContext(
     res.status(403).json({ message: "Firm staff access required", code: "FIRM_ACCESS_REQUIRED" });
     return;
   }
+  // Accounting-firm management is NR-internal: staff of any other firm are refused on every
+  // /api/firm/* surface, whatever the route-level permission would have said.
+  if (!ctx.isNr) {
+    res.status(403).json({ message: "NRA firm staff access required", code: "NR_FIRM_ONLY" });
+    return;
+  }
   if (!ctx.platformAdmin && !READ_METHODS.has(req.method) && !firmRoleCanWrite(ctx.role)) {
     res.status(403).json({ message: "Your firm role is read-only", code: "FIRM_READ_ONLY" });
     return;
@@ -134,8 +140,8 @@ function attachFirmContext(
 }
 
 /**
- * Practice-tool gate (multi-firm): platform admins, NR staff and members of
- * any *approved* accounting firm. Resolves the caller's firm onto
+ * Firm-workspace gate: platform admins and NR staff only (accounting-firm features are
+ * NR-internal; a member of any other firm gets 403 NR_FIRM_ONLY). Resolves the caller's firm onto
  * res.locals.firmContext (read it with firmContextOf). Viewers are read-only.
  * NR staff and admins resolve synchronously (no DB hit).
  *

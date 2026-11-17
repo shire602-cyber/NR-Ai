@@ -32,6 +32,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { activityActionLabel } from "@/lib/activity-log-labels";
 import { apiUrl } from "@/lib/api";
+import { ChangePasswordCard } from "./security/ChangePasswordCard";
 import { isStepUpRequired, securityFetch, SecurityApiError } from "@/lib/securityApi";
 
 interface MfaStatus {
@@ -319,6 +320,8 @@ export default function SecuritySettings() {
           {t["security.mfaRequiredBy"]}
         </p>
       )}
+
+      <ChangePasswordCard />
 
       <Card>
         <CardHeader>

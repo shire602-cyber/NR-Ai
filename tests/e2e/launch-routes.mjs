@@ -108,7 +108,6 @@ export const ALL_AUTH_ROUTES = [
   "/integrations-hub",
   "/notifications",
   "/reminders",
-  "/referrals",
   "/feedback",
   "/analytics",
   "/bank-reconciliation",

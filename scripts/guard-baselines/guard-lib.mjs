@@ -31,7 +31,7 @@ export function parseArgs(argv) {
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git", ".claude", ".claire", "coverage"]);
 
-function walk(dir, files) {
+export function walk(dir, files) {
   let entries;
   try {
     entries = readdirSync(dir);
@@ -74,7 +74,7 @@ export function scan(cfg) {
       const re = new RegExp(p.re.source, p.re.flags.includes("g") ? p.re.flags : p.re.flags + "g");
       let m;
       while ((m = re.exec(content))) {
-        if (p.accept && !p.accept(content, m)) {
+        if (p.accept && !p.accept(content, m, { rel, root: cfg.root })) {
           if (m[0].length === 0) re.lastIndex++;
           continue;
         }

@@ -245,7 +245,7 @@ describe("W5-D firm practice management", () => {
     expect(row[0].industry).toBe("Retail");
   });
 
-  it("[R15-12] firm B never reads or mutates firm A's clients, staff, alerts or leads; NR-only tools stay NR", async () => {
+  it("[R15-12] accounting-firm tools are NR-internal: an approved non-NR firm is refused on every /api/firm surface", async () => {
     const owner = await nrOwner();
     const admin = await nrStaff("firm_admin", "NRAdmin");
     const a1 = await createClient(owner, "Firm A Secret Client LLC");
@@ -255,63 +255,50 @@ describe("W5-D firm practice management", () => {
       notes: "A lead",
     });
     expect(lead.status, lead.text).toBe(201);
-    const [alert] = await h.sql(
-      `INSERT INTO firm_alerts (firm_id, company_id, alert_type, severity, message)
-       VALUES ($1, $2, 'stale_activity', 'warning', 'Firm A alert') RETURNING id`,
-      [owner.user.id, a1.id]
-    );
     const { owner: b } = await firmB();
-    const b1 = await createClient(b, "Firm B Own Client LLC");
 
+    const refused = async (res: { status: number; text: string; body: { code?: string } }) => {
+      expect(res.status, res.text).toBe(403);
+      expect(res.text).not.toContain(a1.id);
+    };
+    // Same door for every verb and surface: 403 NR_FIRM_ONLY before any handler runs.
     const list = await b.as.get("/api/firm/clients");
-    expect(list.status).toBe(200);
-    expect(list.body.map((c: { id: string }) => c.id)).toEqual([b1.id]);
-    expect(list.text).not.toContain(a1.id);
-    expect((await b.as.get(`/api/firm/clients/${a1.id}/summary`)).status).toBe(403);
-    expect((await b.as.put(`/api/firm/clients/${a1.id}`, { industry: "Hacked" })).status).toBe(403);
-    expect((await b.as.delete(`/api/firm/clients/${a1.id}`)).status).toBe(404);
-    expect([403, 404]).toContain((await b.as.get(`/api/companies/${a1.id}/accounts`)).status);
-    const staff = await b.as.get("/api/firm/staff");
-    expect(staff.text).not.toContain(admin.user.id);
-    expect(staff.body.map((s: { id: string }) => s.id)).toEqual([b.user.id]);
-    expect(
-      (
-        await b.as.post(`/api/firm/clients/${b1.id}/assign-staff`, {
-          staffUserId: admin.user.id,
-          action: "assign",
-        })
-      ).body.code
-    ).toBe("NOT_FIRM_STAFF");
-    expect(
-      (await b.as.patch(`/api/firm/members/${admin.user.id}`, { role: "viewer" })).status
-    ).toBe(404);
-    const leads = await b.as.get("/api/firm/pipeline/leads");
-    expect(leads.body).toEqual([]);
-    expect(
-      (await b.as.put(`/api/firm/pipeline/leads/${lead.body.id}`, { notes: "x" })).status
-    ).toBe(404);
-    expect((await b.as.delete(`/api/firm/pipeline/leads/${lead.body.id}`)).status).toBe(404);
-    const alerts = await b.as.get("/api/firm/command-center/alerts");
-    expect(alerts.text).not.toContain(alert.id);
-    expect((await b.as.patch(`/api/firm/command-center/alerts/${alert.id}/read`)).status).toBe(404);
-    const dash = await b.as.get("/api/firm/command-center/clients/health");
-    expect(dash.text).not.toContain(a1.id);
-    expect((await b.as.get(`/api/firm/command-center/clients/${a1.id}/health`)).status).toBe(403);
-    // NR-only surfaces (WhatsApp, value ops, SaaS prospects, comms) reject firm B.
-    expect((await b.as.get("/api/whatsapp/status")).status).toBe(403);
-    expect((await b.as.get("/api/firm/value-ops")).status).toBe(403);
-    expect((await b.as.get("/api/firm/pipeline/saas-prospects")).status).toBe(403);
-    expect((await b.as.get("/api/firm/comms/log")).status).toBe(403);
+    await refused(list);
+    expect(list.body.code).toBe("NR_FIRM_ONLY");
+    expect((await b.as.post("/api/firm/clients", { name: "B Own Client LLC" })).status).toBe(403);
+    await refused(await b.as.get(`/api/firm/clients/${a1.id}/summary`));
+    await refused(await b.as.put(`/api/firm/clients/${a1.id}`, { industry: "Hacked" }));
+    await refused(await b.as.delete(`/api/firm/clients/${a1.id}`));
+    await refused(await b.as.get("/api/firm/staff"));
+    await refused(
+      await b.as.post(`/api/firm/clients/${a1.id}/assign-staff`, {
+        staffUserId: admin.user.id,
+        action: "assign",
+      })
+    );
+    await refused(await b.as.get("/api/firm/pipeline/leads"));
+    await refused(await b.as.put(`/api/firm/pipeline/leads/${lead.body.id}`, { notes: "x" }));
+    await refused(await b.as.get("/api/firm/command-center/alerts"));
+    await refused(await b.as.get("/api/firm/analytics/revenue"));
+    await refused(await b.as.post("/api/firm/vat-workpapers", { companyId: a1.id }));
+    for (const url of [
+      "/api/whatsapp/status",
+      "/api/firm/value-ops",
+      "/api/firm/pipeline/saas-prospects",
+      "/api/firm/comms/log",
+    ]) {
+      expect((await b.as.get(url)).status, url).toBe(403);
+    }
     // Firm A's data is untouched; NR still sees its own client.
     const nr = await owner.as.get("/api/firm/clients");
+    expect(nr.status).toBe(200);
     expect(nr.body.map((c: { id: string }) => c.id)).toContain(a1.id);
-    expect(nr.text).not.toContain(b1.id);
     const a1Row = await h.sql(`SELECT industry, deleted_at FROM companies WHERE id = $1`, [a1.id]);
     expect(a1Row[0]).toEqual({ industry: null, deleted_at: null });
     expect((await h.sql(`SELECT 1 FROM firm_leads WHERE id = $1`, [lead.body.id])).length).toBe(1);
   });
 
-  it("[R15-12] cross-firm route matrix: firm B probing every /api/firm route with firm A ids gets no A data", async () => {
+  it("[R15-12] route matrix: a non-NR firm probing every /api/firm route gets 403 and no NR data", async () => {
     const owner = await nrOwner();
     const admin = await nrStaff("firm_admin", "MatrixAdmin");
     const a1 = await createClient(owner, "Matrix Firm A Client LLC");
@@ -374,7 +361,7 @@ describe("W5-D firm practice management", () => {
       );
     expect(routes.length).toBeGreaterThan(60);
     const leaks: string[] = [];
-    let reached = 0;
+    const notRefused: string[] = [];
     for (const r of routes) {
       const url = r.path.replace(
         /:(\w+)\??/g,
@@ -383,15 +370,13 @@ describe("W5-D firm practice management", () => {
           (name === "id" && r.path.includes("vat-workpapers") ? ids.workpaperId : randomUUID())
       );
       const res = await b.as.request(r.method, url, r.method === "GET" ? undefined : body);
-      if (res.status >= 200 && res.status < 300) {
-        reached++;
-        const hit = markers.find((m) => res.text.includes(m));
-        if (hit) leaks.push(`${r.method} ${r.path} -> ${res.status} leaks ${hit}`);
-      }
+      if (res.status !== 403) notRefused.push(`${r.method} ${r.path} -> ${res.status}`);
+      const hit = markers.find((m) => res.text.includes(m));
+      if (hit) leaks.push(`${r.method} ${r.path} -> ${res.status} leaks ${hit}`);
     }
     expect(leaks).toEqual([]);
-    // Firm B really reaches the multi-firm handlers (not a blanket 403).
-    expect(reached).toBeGreaterThan(20);
+    // NR-only: every /api/firm route refuses a non-NR firm outright.
+    expect(notRefused).toEqual([]);
     const a1Row = await h.sql(`SELECT name, deleted_at FROM companies WHERE id = $1`, [a1.id]);
     expect(a1Row[0]).toEqual({ name: "Matrix Firm A Client LLC", deleted_at: null });
     const fsa = await h.sql(`SELECT user_id FROM firm_staff_assignments WHERE company_id = $1`, [
@@ -407,7 +392,7 @@ describe("W5-D firm practice management", () => {
   });
 
   it("[R15-12] a client owner accepts a firm invitation and revoking it ends the firm's access immediately", async () => {
-    const { owner: b } = await firmB();
+    const b = await nrOwner();
     const client = await h.createTenant({ name: "ClientOwner" });
     const invite = await b.as.post("/api/firm/client-links", { inviteeEmail: client.email });
     expect(invite.status, invite.text).toBe(201);
@@ -517,7 +502,7 @@ describe("W5-D firm practice management", () => {
   });
 
   it("[R15-11] engagement letter acceptance is recorded; time rolls into WIP and service invoices; recurring billing", async () => {
-    const { owner: b } = await firmB();
+    const b = await nrOwner();
     const client = await h.createTenant({ name: "EngagedClient" });
     const invite = await b.as.post("/api/firm/client-links", { inviteeEmail: client.email });
     await client.as.post(`/api/firm-invitations/${invite.body.link.id}/accept`, {
@@ -620,7 +605,7 @@ describe("W5-D firm practice management", () => {
   });
 
   it("[R15-11] request lists: the firm requests, the client attaches a document, the firm reviews", async () => {
-    const { owner: b } = await firmB();
+    const b = await nrOwner();
     const client = await h.createTenant({ name: "RequestClient" });
     const invite = await b.as.post("/api/firm/client-links", { inviteeEmail: client.email });
     await client.as.post(`/api/firm-invitations/${invite.body.link.id}/accept`, {

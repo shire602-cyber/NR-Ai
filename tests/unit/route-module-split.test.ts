@@ -53,14 +53,13 @@ function routeTable(register: (app: express.Express) => void): string[] {
 /** Registered AI route table, captured from the pre-split ai.routes.ts. */
 const AI_TABLE = [
   "POST /api/ai/categorize [authMiddleware,<anonymous>,requireCustomer,<anonymous>]",
-  "POST /api/ai/parse-bank-statement [authMiddleware,<anonymous>,<anonymous>]",
-  "POST /api/ai/cfo-advice [authMiddleware,<anonymous>,requireCustomer,<anonymous>,<anonymous>]",
-  "POST /api/ai/batch-categorize [authMiddleware,<anonymous>,requireCustomer,<anonymous>]",
-  "POST /api/ai/detect-anomalies [authMiddleware,<anonymous>,requireCustomer,<anonymous>]",
+  "POST /api/ai/parse-bank-statement [authMiddleware,<anonymous>,<anonymous>,<anonymous>]",
+  "POST /api/ai/cfo-advice [authMiddleware,<anonymous>,requireCustomer,<anonymous>,<anonymous>,<anonymous>]",
+  "POST /api/ai/batch-categorize [authMiddleware,<anonymous>,requireCustomer,<anonymous>,<anonymous>]",
+  "POST /api/ai/detect-anomalies [authMiddleware,<anonymous>,requireCustomer,<anonymous>,<anonymous>]",
   "GET /api/companies/:companyId/anomaly-alerts [authMiddleware,requireCustomer,<anonymous>]",
-  "POST /api/anomaly-alerts/:id/resolve [authMiddleware,requireCustomer,<anonymous>]",
-  "POST /api/ai/reconcile [authMiddleware,<anonymous>,requireCustomer,<anonymous>]",
-  "POST /api/bank-transactions/:id/reconcile [authMiddleware,<anonymous>]",
+  "POST /api/anomaly-alerts/:id/resolve [authMiddleware,requireCustomer,<anonymous>,<anonymous>]",
+  "POST /api/ai/reconcile [authMiddleware,<anonymous>,requireCustomer,<anonymous>,<anonymous>]",
   "GET /api/companies/:companyId/bank-transactions [authMiddleware,requireCustomer,<anonymous>]",
   "POST /api/companies/:companyId/bank-transactions [authMiddleware,requireCustomer,<anonymous>,<anonymous>]",
   "POST /api/companies/:companyId/bank-transactions/import [authMiddleware,requireCustomer,<anonymous>,<anonymous>]",
@@ -71,14 +70,14 @@ const AI_TABLE = [
   "GET /api/ai/classifier-stats [authMiddleware,requireCustomer,<anonymous>]",
   "GET /api/ai/classifier-config [authMiddleware,requireCustomer,<anonymous>]",
   "PATCH /api/ai/classifier-config [authMiddleware,requireCustomer,<anonymous>]",
-  "POST /api/ai/nl-gateway [authMiddleware,<anonymous>,<anonymous>]",
+  "POST /api/ai/nl-gateway [authMiddleware,<anonymous>,<anonymous>,<anonymous>]",
   "POST /api/ask|/api/ai/chat [authMiddleware,<anonymous>,<anonymous>]",
   "GET /api/ask/history [authMiddleware,<anonymous>]",
   "GET /api/autocomplete/accounts [authMiddleware,<anonymous>]",
   "GET /api/autocomplete/customers [authMiddleware,<anonymous>]",
   "GET /api/autocomplete/merchants [authMiddleware,<anonymous>]",
   "GET /api/autocomplete/descriptions [authMiddleware,<anonymous>]",
-  "POST /api/ai/smart-suggest [authMiddleware,<anonymous>,<anonymous>]",
+  "POST /api/ai/smart-suggest [authMiddleware,<anonymous>,<anonymous>,<anonymous>]",
 ];
 /** Registered firm route table, captured from the pre-split firm.routes.ts. */
 const FIRM_TABLE = [
@@ -96,7 +95,7 @@ const FIRM_TABLE = [
   "GET /api/firm/health/deadlines [<anonymous>]",
   "POST /api/firm/clients/:companyId/switch [<anonymous>]",
   "DELETE /api/firm/clients/:companyId [<anonymous>,<anonymous>]",
-  "POST /api/firm/clients/import [<anonymous>,<anonymous>]",
+  "POST /api/firm/clients/import [<anonymous>,<anonymous>,<anonymous>]",
   "GET /api/firm/overview [<anonymous>]",
 ];
 

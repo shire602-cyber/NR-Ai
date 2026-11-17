@@ -77,5 +77,22 @@
   "security.logoutAllConfirmTitle": "Sign out of all devices?",
   "security.logoutAllConfirmBody": "This signs you out everywhere, including this device. You will need to sign in again.",
   "security.logoutAllConfirmAction": "Sign out everywhere",
-  "security.logoutAllCancel": "Cancel"
+  "security.logoutAllCancel": "Cancel",
+  "security.changePasswordTitle": "Change password",
+  "security.changePasswordHelp": "Choose a new password. Every other device and session is signed out; this one stays signed in.",
+  "security.currentPassword": "Current password",
+  "security.newPassword": "New password",
+  "security.confirmNewPassword": "Confirm new password",
+  "security.passwordRules": "8+ characters with upper and lower case and a digit; common passwords are refused.",
+  "security.changePasswordSubmit": "Change password",
+  "security.currentPasswordRequired": "Enter your current password.",
+  "security.passwordTooShort": "The new password must be at least 8 characters.",
+  "security.passwordTooLong": "The new password must be at most 256 characters.",
+  "security.passwordComplexity": "The new password needs an upper case letter, a lower case letter and a digit.",
+  "security.passwordsMismatch": "The two new passwords do not match.",
+  "security.passwordUnchanged": "Choose a password different from the current one.",
+  "security.currentPasswordWrong": "The current password is incorrect.",
+  "security.passwordLocked": "Too many failed attempts. Please wait before trying again.",
+  "security.passwordChanged": "Password changed",
+  "security.passwordChangedBody": "Every other session was signed out."
 }

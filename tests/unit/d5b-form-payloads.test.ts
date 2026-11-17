@@ -83,7 +83,8 @@ const COST_CENTER_BODY = {
   parentId: null,
   isActive: true,
 };
-const SETTINGS_BODY = {
+// CL-B: company settings and company profile are one page; one PATCH carries every field.
+const COMPANY_BODY = {
   name: "Synthetic Trading Group",
   legalName: "Synthetic Trading L.L.C.",
   trnVatNumber: "100000000000003",
@@ -100,22 +101,13 @@ const SETTINGS_BODY = {
   logoUrl: "",
   dateFormat: "DD/MM/YYYY",
   locale: "en",
-};
-const PROFILE_BODY = {
-  name: "Synthetic Trading Group",
-  baseCurrency: "AED",
-  locale: "en",
   legalStructure: "LLC",
-  industry: "Trading",
   registrationNumber: "CN-1234567",
   businessAddress: "Office 1204, Bay Square, Dubai",
-  contactPhone: "+971 4 555 0100",
-  contactEmail: "finance@synthetic.example",
   websiteUrl: "https://group.synthetic.example",
-  trnVatNumber: "100000000000003",
   taxRegistrationType: "Standard",
   vatFilingFrequency: "Quarterly",
-  // X5 (J1 L2): the profile now also saves the VAT stagger (default January).
+  // X5 (J1 L2): the form also saves the VAT stagger (default January).
   vatPeriodStartMonth: 1,
   taxRegistrationDate: "2024-01-01T00:00:00.000Z",
   corporateTaxId: "CT-998877",
@@ -660,26 +652,16 @@ const COMPANY_ROW = {
 };
 
 describe("[D5b] company settings forms payload unchanged", () => {
-  it("company preferences PATCH body", async () => {
+  it("company settings PATCH body (settings and profile fields in one request)", async () => {
     setFixtures({ [`/api/companies/${COMPANY_ID}`]: COMPANY_ROW });
     const { default: CompanySettings } = await import("../../client/src/pages/CompanySettings");
     await renderPage(CompanySettings);
     const form = document.querySelector("form")!;
     await type(form.querySelector('[name="name"]'), "Synthetic Trading Group");
     await type(form.querySelector('[name="addressCity"]'), "Abu Dhabi");
-    await submit(byTestId("button-save-company-settings"));
-    expect(body("PATCH", `${C}/preferences`)).toStrictEqual(SETTINGS_BODY);
-  });
-
-  it("company profile PATCH body", async () => {
-    setFixtures({ [`/api/companies/${COMPANY_ID}`]: COMPANY_ROW });
-    const { default: CompanyProfile } = await import("../../client/src/pages/CompanyProfile");
-    await renderPage(CompanyProfile);
-    const form = document.querySelector("form")!;
-    await type(form.querySelector('[name="name"]'), "Synthetic Trading Group");
     await type(form.querySelector('[name="websiteUrl"]'), "https://group.synthetic.example");
-    await submit(byTestId("button-save-company-profile"));
-    expect(body("PATCH", `${C}`)).toStrictEqual(PROFILE_BODY);
+    await submit(byTestId("button-save-company-settings"));
+    expect(body("PATCH", `${C}`)).toStrictEqual(COMPANY_BODY);
   });
 });
 

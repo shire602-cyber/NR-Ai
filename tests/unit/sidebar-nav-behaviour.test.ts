@@ -22,8 +22,11 @@ const user = vi.hoisted(() => ({
 vi.mock("@/hooks/useCurrentUser", () => ({
   useCurrentUser: () => ({ data: user.current }),
 }));
+const activeCompany = vi.hoisted(() => ({
+  current: { addressCountry: "AE" } as { addressCountry: string } | undefined,
+}));
 vi.mock("@/components/ActiveCompanyProvider", () => ({
-  useActiveCompany: () => ({ isFirmContext: false }),
+  useActiveCompany: () => ({ isFirmContext: false, company: activeCompany.current }),
 }));
 vi.mock("@/components/CompanySwitcher", () => ({ CompanySwitcher: () => null }));
 vi.mock("@/components/RTLProvider", () => ({
@@ -67,6 +70,8 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(() => {
+  user.current = { isAdmin: true, userType: "customer", firmRole: "firm_owner" };
+  activeCompany.current = { addressCountry: "AE" };
   act(() => root.unmount());
   container.remove();
   localStorage.clear();
@@ -109,6 +114,31 @@ async function renderSidebar(currentUser: Record<string, unknown> = user.current
 }
 
 describe("AppSidebar navigation (rendered)", () => {
+  it("CL-B: Settings has one company entry and one user-management entry", async () => {
+    const { links } = await renderSidebar({ isAdmin: false, userType: "customer", firmRole: null });
+    expect(links.has("/settings/company")).toBe(true);
+    expect(links.has("/company-profile")).toBe(false);
+    expect(links.has("/team")).toBe(true);
+    expect(links.has("/admin/users")).toBe(false);
+    expect(links.has("/referrals")).toBe(false);
+  });
+
+  it("CL-B: ZATCA settings are listed only for a Saudi company", async () => {
+    const customer = { isAdmin: false, userType: "customer", firmRole: null };
+    activeCompany.current = { addressCountry: "AE" };
+    expect((await renderSidebar(customer)).links.has("/settings/zatca")).toBe(false);
+    act(() => root.unmount());
+    root = createRoot(container);
+    activeCompany.current = { addressCountry: "SA" };
+    expect((await renderSidebar(customer)).links.has("/settings/zatca")).toBe(true);
+    activeCompany.current = { addressCountry: "AE" };
+  });
+
+  it("CL-B: the firm workspace group is NR-only (customers never see /firm links)", async () => {
+    const { links } = await renderSidebar({ isAdmin: false, userType: "customer", firmRole: null });
+    expect([...links.keys()].filter((href) => href.startsWith("/firm/"))).toEqual([]);
+  });
+
   it.each(["en", "ar"] as const)(
     "R18-02: every rendered sidebar label is translated in %s, not a raw key",
     async (locale) => {
