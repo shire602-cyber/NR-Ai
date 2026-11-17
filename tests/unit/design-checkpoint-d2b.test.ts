@@ -26,7 +26,8 @@ describe("D2b CTO checkpoint guards", () => {
   it("2: Arabic stack keeps Latin + digits in Geist and loads only the Arabic Noto subset", () => {
     const css = read("client/src/index.css");
     expect(css).toMatch(/--font-arabic: "Geist Sans", "Noto Sans Arabic"/);
-    expect(css).toMatch(/\[dir="rtl"\] body \{\s*line-height: 1\.6;/);
+    // WP-A (Fable spec 2.1): Arabic body is 15 / 26.
+    expect(css).toMatch(/\[dir="rtl"\] body \{\s*font-size: 0\.9375rem;\s*line-height: 1\.625rem;/);
     expect(read("client/src/components/RTLProvider.tsx")).toContain(
       "@fontsource/noto-sans-arabic/arabic-400.css"
     );
@@ -110,11 +111,14 @@ describe("D2b CTO checkpoint guards", () => {
 
   it("12: expand chevrons never mirror in RTL; KPI figures use the h1 step", () => {
     expect(read("client/src/pages/dashboard/ReportWorkspaceToggle.tsx")).toContain("ChevronDown");
-    expect(read("client/src/styles/mobile.css")).toMatch(
-      /\.mobile-nav-more-summary::after \{[\s\S]*?border-right: 1\.5px/
+    // WP-A: the More sheet's chevrons are lucide ChevronRight with rtl:rotate-180 (they point
+    // into the row in both directions); the old collapsible summary chevron was deleted.
+    expect(read("client/src/components/MobileNav.tsx")).toContain(
+      'ChevronRight className="mobile-nav-more-chevron rtl:rotate-180"'
     );
     const stat = read("client/src/components/ui/stat-card.tsx");
-    expect(stat).toContain("sm:text-h1");
+    // WP-A (Fable spec 2.1/2.7): the KPI figure uses the responsive `text-kpi` step.
+    expect(stat).toContain("text-kpi");
     expect(stat).not.toContain('DeltaIcon className="h-3 w-3 rtl:-scale-x-100"');
   });
 });

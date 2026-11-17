@@ -114,7 +114,8 @@ describe("AppSidebar navigation (rendered)", () => {
     async (locale) => {
       act(() => useI18n.getState().setLocale(locale));
       const { links } = await renderSidebar();
-      expect(links.size).toBeGreaterThan(40);
+      // WP-A regroup (spec 3.5): settings collapsed into one entry; still 35+ destinations.
+      expect(links.size).toBeGreaterThan(35);
       const raw = [...links.values()].filter((label) => /^[A-Za-z]+(\.[A-Za-z]+)*$/.test(label));
       if (locale === "ar") expect(raw).toEqual([]);
       else expect(raw.filter((label) => label.includes("."))).toEqual([]);
@@ -143,12 +144,60 @@ describe("AppSidebar navigation (rendered)", () => {
 
   it("R20-08/R15-09: consolidated pages are reached through one canonical sidebar entry", async () => {
     const { links, groupKeys } = await renderSidebar();
-    expect(links.has("/integrations-hub")).toBe(true);
+    // Integrations moved into the settings sub-nav (SettingsLayout), still one canonical entry.
+    const { SETTINGS_NAV } = await import("../../client/src/components/layout/settings-nav");
+    const settingsHrefs = SETTINGS_NAV.map((item) => item.href);
+    expect(settingsHrefs).toContain("/integrations-hub");
+    expect(settingsHrefs).not.toContain("/integrations");
     expect(links.has("/integrations")).toBe(false);
     expect(links.has("/admin/clients")).toBe(false);
     expect(links.has("/advanced-reports")).toBe(false);
     expect(links.has("/analytics")).toBe(false);
     expect(groupKeys).toContain("ai");
+  });
+
+  it.each(["en", "ar"] as const)(
+    "WP-A (spec 3.5): no group has more than 7 items and no label exceeds 22 characters (%s)",
+    async (locale) => {
+      act(() => useI18n.getState().setLocale(locale));
+      await renderSidebar();
+      const buttons = [...container.querySelectorAll<HTMLElement>('[data-testid^="group-"]')];
+      expect(buttons.length).toBeGreaterThanOrEqual(10);
+      for (const btn of buttons) {
+        // Open only this group (accordion) and count its rendered children.
+        if (!btn.closest("li")?.querySelector("ul")) {
+          await act(async () => {
+            btn.click();
+          });
+        }
+        const label = btn.querySelector("span")?.textContent ?? "";
+        expect(label.length, label).toBeLessThanOrEqual(22);
+        const children = btn.closest("li")?.querySelectorAll("ul a[href]") ?? [];
+        expect(children.length, label).toBeLessThanOrEqual(7);
+        for (const a of children) {
+          expect(
+            (a.getAttribute("title") ?? "").length,
+            a.getAttribute("title")!
+          ).toBeLessThanOrEqual(22);
+        }
+      }
+    }
+  );
+
+  it("WP-A (spec 3.5): Settings is one entry and the tagline is gone", async () => {
+    const { links, text } = await renderSidebar();
+    expect(container.querySelector('[data-testid="group-settings"]')).not.toBeNull();
+    for (const href of [
+      "/team",
+      "/subscription",
+      "/developer-settings",
+      "/notification-preferences",
+    ]) {
+      expect(links.has(href), href).toBe(false);
+    }
+    expect(text).not.toContain(catalogs.en.smartAccounting ?? "Smart Accounting");
+    // ZATCA is hidden for UAE companies (no active Saudi company in this render).
+    expect(links.has("/settings/zatca")).toBe(false);
   });
 
   it("Reports stays one direct /reports item with no children", async () => {

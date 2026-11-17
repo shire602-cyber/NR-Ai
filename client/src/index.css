@@ -119,13 +119,28 @@
 
   /* Charts — brand-led sequence. Also used as text colours by some screens,
      so every step keeps AA (>= 4.5:1) on card and muted surfaces. */
-  --chart-1: var(--brand-600);
-  --chart-2: 214 72% 44%;
-  --chart-3: 30 90% 33%;
-  --chart-4: 268 45% 50%;
-  --chart-5: 190 75% 30%;
-  /* Comparison series (expenses, prior period): neutral, never amber (amber = warning). */
+  /* WP-A (spec 2.3): brand, slate blue, ochre, plum, teal. Money in = chart-1, money out =
+     chart-neutral (never red, never brown). Red is used in charts only for a negative net. */
+  --chart-1: 160 78% 26.5%;
+  --chart-2: 215 45% 45%;
+  --chart-3: 38 72% 40%;
+  --chart-4: 280 24% 48%;
+  --chart-5: 190 55% 34%;
+  /* Comparison series (expenses, prior period, "other"): neutral, never amber (amber = warning). */
   --chart-neutral: var(--neutral-400);
+  --chart-grid: var(--neutral-100);
+  --chart-axis: var(--neutral-500);
+
+  /* WP-A (spec 2.3): one inverse surface for the auth panel, the featured pricing card and
+     marketing dark bands. */
+  --surface-inverse: var(--neutral-900);
+  --surface-inverse-foreground: var(--neutral-50);
+  --surface-inverse-muted: 220 12% 72%;
+  --surface-inverse-border: 222 20% 20%;
+
+  /* Disabled primary/solid button (spec 2.3): neutral, never pale green (reads as loading). */
+  --disabled-surface: var(--neutral-200);
+  --disabled-foreground: var(--neutral-500);
 
   /* ── Typography ── */
   --font-sans:
@@ -151,10 +166,24 @@
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 
-  /* ── Layout ── */
-  --content-max: 1440px;
-  --content-narrow: 960px;
+  /* ── Layout (spec 2.2) ── lists/dashboards 1280 · forms/settings 760 · reading 680 ·
+     marketing container 1120. */
+  --content-max: 1280px;
+  --content-narrow: 760px;
+  --content-reading: 680px;
+  --content-marketing: 1120px;
   --header-height: 3.5rem;
+  /* Height of the fixed mobile bottom nav (0 from 768 px); sticky footers sit above it. */
+  --mobile-nav-height: calc(3.75rem + env(safe-area-inset-bottom, 0px));
+
+  /* ── Type scale (spec 2.1). Sizes that change on mobile are variables so one Tailwind
+     class (`text-display-xl`, `text-display`, `text-kpi`) is responsive. ── */
+  --text-display-xl-size: 2.25rem; /* 36 / 40 mobile → 56 / 60 */
+  --text-display-xl-line: 2.5rem;
+  --text-display-size: 1.875rem; /* 30 / 36 mobile → 40 / 46 */
+  --text-display-line: 2.25rem;
+  --text-kpi-size: 1.375rem; /* 22 / 28 mobile → 28 / 32 */
+  --text-kpi-line: 1.75rem;
 
   /* ── Elevation (light) — low, layered, neutral-tinted ── */
   --shadow-color: 222 30% 12%;
@@ -266,12 +295,24 @@
   --sidebar-accent-foreground: 220 16% 96%;
   --sidebar-ring: var(--brand-400);
 
-  --chart-1: var(--brand-400);
-  --chart-2: 214 80% 64%;
-  --chart-3: 38 90% 60%;
-  --chart-4: 268 55% 70%;
-  --chart-5: 190 60% 55%;
+  --chart-1: 157 48% 49%;
+  --chart-2: 215 60% 66%;
+  --chart-3: 40 80% 60%;
+  --chart-4: 280 40% 70%;
+  --chart-5: 190 55% 58%;
   --chart-neutral: var(--neutral-500);
+  --chart-grid: var(--neutral-800);
+  --chart-axis: var(--neutral-400);
+
+  /* Inverse on dark is not visible as "inverse"; it steps up one surface and the featured
+     card adds a brand-500 hairline (spec 3.1 Dark). */
+  --surface-inverse: var(--neutral-800);
+  --surface-inverse-foreground: var(--neutral-50);
+  --surface-inverse-muted: 220 12% 72%;
+  --surface-inverse-border: 222 18% 26%;
+
+  --disabled-surface: var(--neutral-800);
+  --disabled-foreground: var(--neutral-500);
 
   --shadow-color: 0 0% 0%;
   --shadow-2xs: 0 1px 1px 0 hsl(0 0% 0% / 0.3);
@@ -302,6 +343,18 @@
   color-scheme: dark;
 }
 
+@media (min-width: 768px) {
+  :root {
+    --mobile-nav-height: 0px;
+    --text-display-xl-size: 3.5rem;
+    --text-display-xl-line: 3.75rem;
+    --text-display-size: 2.5rem;
+    --text-display-line: 2.875rem;
+    --text-kpi-size: 1.75rem;
+    --text-kpi-line: 2rem;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -329,8 +382,10 @@
     font-family: var(--font-arabic);
     letter-spacing: normal;
   }
+  /* Spec 2.1: Arabic body 15 / 26. */
   [dir="rtl"] body {
-    line-height: 1.6;
+    font-size: 0.9375rem;
+    line-height: 1.625rem;
   }
   [dir="rtl"] h1,
   [dir="rtl"] h2,
@@ -442,8 +497,8 @@
   }
   /* Latin display figures (KPI values): slight negative tracking (CTO 12). */
   .figure-display {
-    font-size: 1.75rem;
-    line-height: 2.25rem;
+    font-size: var(--text-kpi-size);
+    line-height: var(--text-kpi-line);
     font-weight: 600;
     letter-spacing: -0.02em;
   }
@@ -451,9 +506,10 @@
     letter-spacing: -0.02em;
   }
 
-  /* Small uppercase section label. Arabic gets normal case + no tracking. */
+  /* Small uppercase section label (12 px, 0.08em; spec 2.1). Arabic gets normal case + no
+     tracking. Page and marketing eyebrows add `text-accent` (brand-600). */
   .eyebrow {
-    font-size: 0.6875rem;
+    font-size: 0.75rem;
     line-height: 1rem;
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -479,6 +535,70 @@
       padding-inline: 2rem;
       padding-block: 2rem 3rem;
     }
+  }
+
+  /* Ledger ruling (spec 2.6): the one brand motif. 1 px hairlines on an 8 px pitch with one
+     vertical margin rule in brand-200, faded with a radial mask. `.on-inverse` sets the lines
+     at 6% white for the inverse auth panel and dark bands. Decorative only. */
+  .bg-ledger-ruling {
+    --ledger-line: hsl(var(--neutral-200));
+    --ledger-margin: hsl(var(--brand-200));
+    background-image:
+      linear-gradient(
+        to right,
+        transparent 47px,
+        var(--ledger-margin) 47px,
+        var(--ledger-margin) 48px,
+        transparent 48px
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 7px,
+        var(--ledger-line) 7px,
+        var(--ledger-line) 8px
+      );
+    -webkit-mask-image: radial-gradient(ellipse 70% 65% at 50% 40%, #000 35%, transparent 80%);
+    mask-image: radial-gradient(ellipse 70% 65% at 50% 40%, #000 35%, transparent 80%);
+  }
+  [dir="rtl"] .bg-ledger-ruling {
+    background-image:
+      linear-gradient(
+        to left,
+        transparent 47px,
+        var(--ledger-margin) 47px,
+        var(--ledger-margin) 48px,
+        transparent 48px
+      ),
+      repeating-linear-gradient(
+        to bottom,
+        transparent 0,
+        transparent 7px,
+        var(--ledger-line) 7px,
+        var(--ledger-line) 8px
+      );
+  }
+  .dark .bg-ledger-ruling {
+    --ledger-line: hsl(var(--neutral-800));
+    --ledger-margin: hsl(var(--brand-900));
+  }
+  .bg-ledger-ruling.on-inverse,
+  .dark .bg-ledger-ruling.on-inverse {
+    --ledger-line: hsl(0 0% 100% / 0.06);
+    --ledger-margin: hsl(var(--brand-400) / 0.18);
+  }
+
+  /* Fade the inline edges of a horizontal scroller (ScrollTabs, chip rows). */
+  .scroll-fade-x {
+    scrollbar-width: none;
+  }
+  .scroll-fade-x::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Page content enters once per route change (spec 2.5). */
+  .page-enter {
+    animation: page-in var(--duration-base) var(--ease-out) both;
   }
 
   /* Hairline-divided list surface */
@@ -664,6 +784,17 @@
     }
   }
 
+  @keyframes page-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   @keyframes shimmer-skeleton {
     0% {
       background-position: 200% 0;
@@ -810,7 +941,7 @@
       hsl(var(--muted)) 100%
     );
     background-size: 200% 100%;
-    animation: shimmer-skeleton 2.2s linear infinite;
+    animation: shimmer-skeleton 1.2s linear infinite;
   }
 
   /* Text utilities */
