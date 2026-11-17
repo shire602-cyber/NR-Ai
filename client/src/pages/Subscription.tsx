@@ -1,4 +1,6 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { PlanCard } from "@/components/marketing/PlanCard";
+import { PLANS as MARKETING_PLANS, planNameKey } from "@/components/marketing/plans";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
@@ -20,7 +22,6 @@ import { useToast } from "@/hooks/use-toast";
 import { ApiError } from "@/lib/queryClient";
 import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
 import {
-  CreditCard,
   Check,
   Crown,
   Gem,
@@ -149,11 +150,6 @@ const PLANS = [
     },
   },
 ];
-
-/** Whole-number price in AED for the active locale ("AED 49" / "‏49 د.إ.‏"). */
-function formatCurrency0(amount: number, locale: string): string {
-  return formatMoneyText(amount, "AED", locale, { fractionDigits: 0 });
-}
 
 /** "Contact us to upgrade" link while online checkout is not configured. */
 function contactHref(planName?: string): string {
@@ -499,119 +495,54 @@ export default function Subscription() {
         {/* Plan Cards */}
         <div
           id="subscription-plans"
-          className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 scroll-mt-4"
+          className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-4 scroll-mt-4"
         >
-          {PLANS.map((plan) => {
+          {/* WP-E (spec 3.15): the plan grid reuses the site's PlanCard so the app and the
+              pricing page show plans the same way; only the action differs here. */}
+          {MARKETING_PLANS.map((plan) => {
             const isCurrent = plan.id === tierName;
-            const price = billingCycle === "yearly" ? plan.yearlyPrice : plan.monthlyPrice;
-            const PlanIcon = plan.icon;
-
-            return (
-              <Card
-                key={plan.id}
-                className={`relative overflow-hidden transition-all duration-300 hover:-translate-y-1 ${
-                  plan.popular
-                    ? "border-primary/50 shadow-lg shadow-primary/10"
-                    : isCurrent
-                      ? "border-primary/30 bg-primary/5"
-                      : "border-border"
-                }`}
+            const planName = t[planNameKey(plan.id)];
+            const action = isCurrent ? (
+              <Button variant="outline" className="h-10 w-full" disabled>
+                <T k="pageLabels.currentPlan" />
+              </Button>
+            ) : !checkoutAvailable && canManageBilling ? (
+              <Button
+                className="h-10 w-full"
+                variant={plan.featured ? "default" : "outline"}
+                asChild
+                data-testid={`plan-contact-${plan.id}`}
               >
-                {plan.popular && (
-                  <div className="absolute top-0 end-0 px-3 py-1 bg-primary text-primary-foreground text-xs font-medium rounded-bl-lg">
-                    <T k="pageLabels.mostPopular" />
-                  </div>
-                )}
-
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <div
-                      className={`w-10 h-10 rounded-lg ${plan.color} flex items-center justify-center`}
-                    >
-                      <PlanIcon className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <CardTitle className="text-lg">{t[plan.name]}</CardTitle>
-                    </div>
-                  </div>
-                  <CardDescription>{t[plan.description]}</CardDescription>
-
-                  <div className="pt-3">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-bold">
-                        {price === 0 ? t["pages.subscriptionFree"] : formatCurrency0(price, locale)}
-                      </span>
-                      {price > 0 && (
-                        <span className="text-muted-foreground text-sm">
-                          {t["pages.subscriptionPerMonth"]}
-                        </span>
-                      )}
-                    </div>
-                    {billingCycle === "yearly" && plan.monthlyPrice > 0 && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {formatMessage(t["pages.subscriptionYearlyNote"], {
-                          total: formatCurrency0(plan.yearlyPrice * 12, locale),
-                          saving: formatCurrency0(
-                            (plan.monthlyPrice - plan.yearlyPrice) * 12,
-                            locale
-                          ),
-                        })}
-                      </p>
-                    )}
-                  </div>
-                </CardHeader>
-
-                <CardContent className="space-y-4">
-                  <ul className="space-y-2.5">
-                    {plan.features.map((feature, i) => (
-                      <li key={i} className="flex items-start gap-2 text-sm">
-                        <Check className="w-4 h-4 text-success flex-shrink-0 mt-0.5" />
-                        <span>{t[feature]}</span>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <div className="pt-2">
-                    {isCurrent ? (
-                      <Button variant="outline" className="w-full" disabled>
-                        <T k="pageLabels.currentPlan" />
-                      </Button>
-                    ) : !checkoutAvailable && canManageBilling ? (
-                      <Button
-                        className="w-full"
-                        variant={plan.popular ? "default" : "outline"}
-                        asChild
-                        data-testid={`plan-contact-${plan.id}`}
-                      >
-                        <a href={contactHref(t[plan.name])}>
-                          <CreditCard className="w-4 h-4 me-2" />
-                          {isDowngrade(plan.id)
-                            ? t["pages.subscriptionContactUs"]
-                            : t["pages.subscriptionContactToUpgrade"]}
-                        </a>
-                      </Button>
-                    ) : (
-                      <Button
-                        className={`w-full ${plan.popular ? "hover:" : ""}`}
-                        variant={plan.popular ? "default" : "outline"}
-                        onClick={() => checkoutMutation.mutate(plan.id)}
-                        disabled={checkoutMutation.isPending || !canManageBilling}
-                        title={!canManageBilling ? t["common.noPermission"] : undefined}
-                        data-testid={`plan-upgrade-${plan.id}`}
-                      >
-                        {checkoutMutation.isPending ? (
-                          <Loader2 className="w-4 h-4 me-2 animate-spin" />
-                        ) : (
-                          <CreditCard className="w-4 h-4 me-2" />
-                        )}
-                        {isDowngrade(plan.id)
-                          ? t["pages.subscriptionDowngrade"]
-                          : t["pages.subscriptionUpgrade"]}
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+                <a href={contactHref(planName)}>
+                  {isDowngrade(plan.id)
+                    ? t["pages.subscriptionContactUs"]
+                    : t["pages.subscriptionContactToUpgrade"]}
+                </a>
+              </Button>
+            ) : (
+              <Button
+                className="h-10 w-full"
+                variant={plan.featured ? "default" : "outline"}
+                onClick={() => checkoutMutation.mutate(plan.id)}
+                disabled={checkoutMutation.isPending || !canManageBilling}
+                title={!canManageBilling ? t["common.noPermission"] : undefined}
+                data-testid={`plan-upgrade-${plan.id}`}
+              >
+                {checkoutMutation.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                {isDowngrade(plan.id)
+                  ? t["pages.subscriptionDowngrade"]
+                  : t["pages.subscriptionUpgrade"]}
+              </Button>
+            );
+            return (
+              <PlanCard
+                key={plan.id}
+                plan={plan}
+                cycle={billingCycle}
+                action={action}
+                headingLevel="h3"
+                className={isCurrent ? "ring-1 ring-primary/40" : undefined}
+              />
             );
           })}
         </div>
