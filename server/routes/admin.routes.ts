@@ -533,7 +533,6 @@ export function registerAdminRoutes(app: Express): void {
   // Get all invitations - Admin only
   router.get(
     "/admin/invitations",
-    strictBody(adminCreateInvitationBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
       const invitations = await storage.getInvitations();
       res.json(invitations);

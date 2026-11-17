@@ -77,6 +77,10 @@ describe("[F9] other admin writes", () => {
       email: "f9-invitee@example.com",
     });
     expect(invOk.status, invOk.text).toBe(201);
+    // [CI-C1] the list route is a GET: it must not run the create-body validator (was 400).
+    const list = await admin.as.get(`/api/admin/invitations`);
+    expect(list.status, list.text).toBe(200);
+    expect(Array.isArray(list.body)).toBe(true);
 
     const note = await admin.as.post(`/api/admin/clients/${admin.company.id}/notes`, {
       content: "hello",
