@@ -159,15 +159,11 @@ try {
     }
   }
 
-  // ---- Dashboard quick access ----------------------------------------------------------------
+  // ---- Dashboard -----------------------------------------------------------------------------
+  // WP-C (spec 3.6): the report workspace left the dashboard; reports live under Reports.
   await page.goto(`${BASE}/dashboard`);
-  await page.waitForSelector('[data-testid="dashboard-report-workspace-toggle"]', {
-    timeout: 20000,
-  });
+  await page.waitForSelector('[data-testid="dashboard-title"]', { timeout: 20000 });
   await settle(page, 1500);
-  await page.click('[data-testid="dashboard-report-workspace-toggle"]');
-  await settle(page, 1200);
-  await clickAll(page, 'button[aria-expanded="false"]:not([aria-haspopup]):not([role="combobox"])');
   report("dashboard", await visibleLines(page));
 
   // ---- Command palette report shortcuts (opened on a page with no report content behind it) ----

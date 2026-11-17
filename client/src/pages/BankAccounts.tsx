@@ -286,6 +286,7 @@ export default function BankAccounts() {
                   </TableCell>
                   <TableCell data-cell="actions">
                     <RowActions
+                      maxInline={1}
                       collapseOnMobile
                       menu={
                         <DropdownMenuItem
@@ -369,7 +370,7 @@ export default function BankAccounts() {
                   </TableCell>
                   <TableCell data-cell="actions">
                     {b.status !== "undone" && (
-                      <RowActions collapseOnMobile>
+                      <RowActions maxInline={1} collapseOnMobile>
                         <RowActionButton
                           label={tr("banking.imports.undo")}
                           icon={RotateCcw}

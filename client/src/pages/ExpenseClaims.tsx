@@ -833,6 +833,7 @@ export default function ExpenseClaims() {
                 {showActions && (
                   <TableCell data-cell="actions">
                     <RowActions
+                      maxInline={1}
                       collapseOnMobile
                       menu={
                         canEdit || canPay ? (

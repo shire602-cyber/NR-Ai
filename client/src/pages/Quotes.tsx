@@ -758,6 +758,7 @@ export default function Quotes() {
                 </TableCell>
                 <TableCell data-cell="actions">
                   <RowActions
+                    maxInline={1}
                     collapseOnMobile
                     menu={
                       <>

@@ -935,6 +935,7 @@ export default function PurchaseOrders() {
                 </TableCell>
                 <TableCell data-cell="actions">
                   <RowActions
+                    maxInline={1}
                     collapseOnMobile
                     menu={
                       <>

@@ -1615,6 +1615,7 @@ export default function BillPay() {
                       </TableCell>
                       <TableCell data-cell="actions">
                         <RowActions
+                          maxInline={1}
                           collapseOnMobile
                           menu={
                             <>

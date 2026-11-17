@@ -2427,6 +2427,7 @@ export default function Receipts() {
                         </div>
                       </div>
                       <RowActions
+                        maxInline={1}
                         collapseOnMobile
                         className="-me-2 shrink-0 md:w-[6.5rem]"
                         menu={

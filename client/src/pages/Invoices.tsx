@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { EditorShell } from "@/components/ui/editor-shell";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge, badgeVariants, StatusBadge as InvoiceStatusBadge } from "@/components/ui/badge";
 import { statusBadgeVariant, statusDotClass } from "@/components/ui/status-meta";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -2689,14 +2690,12 @@ export default function Invoices({
               <label className="text-sm font-medium" htmlFor="invoice-payment-date">
                 {t["invoices.payment.date"]}
               </label>
-              <Input
+              <DatePicker
                 id="invoice-payment-date"
-                type="date"
-                ltr
                 data-testid="input-invoice-payment-date"
                 value={paymentDate}
                 max={format(new Date(), "yyyy-MM-dd")}
-                onChange={(e) => setPaymentDate(e.target.value)}
+                onChange={setPaymentDate}
               />
             </div>
 

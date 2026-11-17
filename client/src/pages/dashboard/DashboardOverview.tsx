@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Money } from "@/components/ui/money";
 import { formatMessage } from "@/lib/i18n";
@@ -57,28 +58,18 @@ export function DashboardOverview({ m }: { m: DashboardModel }) {
           ).length;
           if (draftCount === 0 || (stats?.revenue ?? 0) > 0) return null;
           return (
-            <section
-              className="flex flex-col gap-3 rounded-xl border border-warning/25 bg-warning-subtle p-4 md:flex-row md:items-center md:justify-between md:p-5"
+            <Alert
+              tone="warning"
+              title={t["dashboard.draftNotRevenueTitle"]}
               data-testid="card-draft-not-revenue"
+              action={
+                <Button asChild size="sm" variant="outline" data-testid="button-review-drafts">
+                  <Link href="/invoices">{t["dashboard.draftNotRevenueCta"]}</Link>
+                </Button>
+              }
             >
-              <div className="min-w-0">
-                <h2 className="text-h3 text-warning-subtle-foreground">
-                  {t["dashboard.draftNotRevenueTitle"]}
-                </h2>
-                <p className="mt-0.5 max-w-2xl text-small text-warning-subtle-foreground">
-                  {formatMessage(t["dashboard.draftNotRevenueBody"], { count: draftCount })}
-                </p>
-              </div>
-              <Button
-                asChild
-                size="sm"
-                variant="outline"
-                className="shrink-0"
-                data-testid="button-review-drafts"
-              >
-                <Link href="/invoices">{t["dashboard.draftNotRevenueCta"]}</Link>
-              </Button>
-            </section>
+              {formatMessage(t["dashboard.draftNotRevenueBody"], { count: draftCount })}
+            </Alert>
           );
         })()}
 

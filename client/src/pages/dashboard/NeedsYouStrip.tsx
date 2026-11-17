@@ -1,4 +1,6 @@
+import { useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { Link } from "wouter";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
@@ -38,6 +40,8 @@ export function NeedsYouStrip({
   invoices: InvoiceLike[] | undefined;
   compliance: { vatStatus?: VatStatusLike | null } | null | undefined;
 }) {
+  const stripRef = useRef<HTMLElement>(null);
+  const fade = useEdgeFade(stripRef);
   const { t } = useTranslation();
   const tt = t as Record<string, string>;
   const bank = useQuery<BankLineLike[]>({
@@ -66,9 +70,12 @@ export function NeedsYouStrip({
   );
 
   return (
+    // Phones: one scrolling row with a fade on the clipped edge (spec 3.6 / G4).
     <nav
+      ref={stripRef}
+      style={fade}
       aria-label={tt["dashboard.needsYouLabel"]}
-      className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0"
+      className="-mx-4 flex snap-x items-center gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0 [&>*]:snap-start"
       data-testid="dashboard-needs-you"
     >
       {chips.length === 0 ? (

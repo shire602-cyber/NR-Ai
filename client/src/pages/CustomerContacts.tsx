@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/form-layout";
 import { useFormGate } from "@/hooks/use-form-gate";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { PORTAL_LINK_TTL_DAYS } from "@shared/validators/portal";
 import { useState, useCallback } from "react";
@@ -959,9 +960,10 @@ export default function CustomerContacts() {
                   {
                     key: "actions",
                     header: <span className="sr-only">{t["pages.contactsColActions"]}</span>,
-                    width: "112px",
+                    width: "80px",
                     cell: (contact) => (
                       <RowActions
+                        maxInline={1}
                         menu={
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
@@ -973,6 +975,12 @@ export default function CustomerContacts() {
                           </DropdownMenuItem>
                         }
                       >
+                        <RowActionButton
+                          label={t.edit}
+                          icon={Edit}
+                          onClick={() => setEditContact(contact)}
+                          data-testid={`button-edit-contact-${contact.id}`}
+                        />
                         <RowActionButton
                           label={t["screens.portalLink"]}
                           icon={Link2}
@@ -997,12 +1005,6 @@ export default function CustomerContacts() {
                             })
                           }
                           data-testid={`button-portal-access-${contact.id}`}
-                        />
-                        <RowActionButton
-                          label={t.edit}
-                          icon={Edit}
-                          onClick={() => setEditContact(contact)}
-                          data-testid={`button-edit-contact-${contact.id}`}
                         />
                       </RowActions>
                     ),
@@ -1303,7 +1305,7 @@ export default function CustomerContacts() {
                 {formatMessage(t["customerContacts.linkValidUntil"], {
                   days: portalLinkDialog.ttlDays || PORTAL_LINK_TTL_DAYS,
                   date: portalLinkDialog.expiresAt
-                    ? new Date(portalLinkDialog.expiresAt).toLocaleDateString(locale)
+                    ? formatDate(portalLinkDialog.expiresAt, locale)
                     : "",
                 })}
               </p>
@@ -1336,12 +1338,12 @@ export default function CustomerContacts() {
                           </Badge>
                           <span className="ms-2 text-muted-foreground">
                             {formatMessage(t["customerContacts.portalLinkExpires"], {
-                              date: new Date(link.expiresAt).toLocaleDateString(locale),
+                              date: formatDate(link.expiresAt, locale),
                             })}
                             {" · "}
                             {link.lastUsedAt
                               ? formatMessage(t["customerContacts.portalLinkLastUsed"], {
-                                  date: new Date(link.lastUsedAt).toLocaleDateString(locale),
+                                  date: formatDate(link.lastUsedAt, locale),
                                 })
                               : t["customerContacts.portalLinkNeverUsed"]}
                           </span>
