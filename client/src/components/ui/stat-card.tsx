@@ -94,8 +94,13 @@ export function StatCard({
         )}
       </div>
       {/* KPI figure: text-kpi (28/32 desktop, 22/28 mobile), tabular, no count-up (spec 2.5). */}
-      <div className="mt-2 text-kpi text-foreground tabular-nums">
-        {loading ? <Skeleton className="h-8 w-36" /> : value}
+      {/* The figure fits the tile at any width: the wrapper is a size container and the
+          figure scales with it (≈ 14 characters, e.g. "AED 343,532.50", fit in a 2×2 tile at
+          390 px), capped at text-kpi. It never wraps or clips. */}
+      <div className="mt-2 [container-type:inline-size]">
+        <div className="whitespace-nowrap text-kpi text-foreground tabular-nums [font-size:min(var(--text-kpi-size),11.5cqi)] [line-height:min(var(--text-kpi-line),14cqi)]">
+          {loading ? <Skeleton className="h-8 w-36" /> : value}
+        </div>
       </div>
       {hint && !loading && (
         <div className="mt-1 truncate text-small text-muted-foreground">{hint}</div>

@@ -8,7 +8,7 @@ import * as React from "react";
 import { useSearch } from "wouter";
 import {
   Area,
-  AreaChart,
+  ComposedChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -134,10 +134,10 @@ export default function UiGallery() {
 
       <Section id="type" title={L("Type scale", "مقاييس الخطوط")}>
         <div className="space-y-3">
-          <div className="text-display-xl text-foreground">
+          <div className="text-display-xl text-balance text-foreground">
             {L("Books that close themselves.", "دفاتر تُقفل نفسها.")}
           </div>
-          <div className="text-display text-foreground">
+          <div className="text-display text-balance text-foreground">
             {L("One plan for where your books are today.", "خطة واحدة تناسب دفاترك اليوم.")}
           </div>
           <p className="text-lead text-muted-foreground">
@@ -257,7 +257,7 @@ export default function UiGallery() {
       </Section>
 
       <Section id="empty" title="EmptyState">
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid items-start gap-4 lg:grid-cols-2">
           <SectionCard title={L("Payroll runs", "مسيرات الرواتب")}>
             <EmptyState
               size="sm"
@@ -414,7 +414,7 @@ export default function UiGallery() {
           >
             <div className="h-64" dir="ltr">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={SERIES} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <ComposedChart data={SERIES} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid {...chartTheme.grid} />
                   <XAxis dataKey="m" {...chartTheme.xAxis} />
                   <YAxis {...chartTheme.yAxis} tickFormatter={formatAxisCompact} />
@@ -432,7 +432,7 @@ export default function UiGallery() {
                     name={L("Expenses", "المصروفات")}
                     {...chartTheme.comparisonLine}
                   />
-                </AreaChart>
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           </SectionCard>

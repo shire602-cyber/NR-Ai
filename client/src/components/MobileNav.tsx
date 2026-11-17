@@ -169,6 +169,8 @@ export function MobileNav() {
 
   const isActive = (href: string) => {
     if (href === "#") return moreOpen;
+    // While the More sheet is open it is the only active tab.
+    if (moreOpen) return false;
     return location === href || location.startsWith(href + "/") || location.startsWith(href + "?");
   };
 

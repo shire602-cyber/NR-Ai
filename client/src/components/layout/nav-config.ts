@@ -216,6 +216,8 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
     titleKey: "shell.nav.reports",
     icon: BarChart3,
     url: "/reports",
+    // Analytics became the Insights tab of Reports (WP-D); the old routes redirect.
+    matches: ["/analytics", "/advanced-analytics", "/advanced-reports"],
     items: [],
   },
   {
@@ -254,6 +256,7 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
         url: "/compliance-calendar",
         icon: CalendarDays,
         testId: "complianceCalendar",
+        matches: ["/task-center"],
       },
       {
         titleKey: "shell.nav.filedReturns",
