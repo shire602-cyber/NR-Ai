@@ -1,6 +1,6 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0116)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0117)
 
-Owner-run. The first deploy of this branch applies 28 migrations that rewrite some production data
+Owner-run. The first deploy of this branch applies 29 migrations that rewrite some production data
 (users, roles, FX rates, reconciliation rules, portal tokens, audit chain, subscriptions). Do not
 merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived or external items
 (A-Cube, email, Stripe, WPS, GPSSA, FAF) are listed in section 9 and stay off until proven.
@@ -27,7 +27,7 @@ Restore the dump from section 1 (or a Railway snapshot) into a scratch database,
 ```
 export DATABASE_URL=postgres://.../rehearsal   # the restored copy
 \timing on                                     # in psql; or time the command below
-time npm run db:migrate                         # applies 0089-0116; record total and slowest file
+time npm run db:migrate                         # applies 0089-0117; record total and slowest file
 npm run build && PORT=<free port> npm start     # boot check: /health/ready 200, /api/version
 ```
 
@@ -207,3 +207,29 @@ and online payments, WPS SIF (bank acceptance), GPSSA, gratuity and corporate-ta
 sign-off), FAF export (check against the current FTA specification), ZATCA. The e-invoice mandate dates
 and the 14-day reporting window are assumptions shown as guidance in the UI; confirm them with the MoF
 and FTA. The PR description must say so, so "394 fixed" is not read as "certified".
+
+### 9a. Migration 0117 and the e-invoice provider switch
+
+Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
+`einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
+safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
+0089-0117, then run it a second time to confirm it is a no-op.
+
+One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
+provider that is selected but not fully configured stays hidden/"Not connected"):
+
+| `EINVOICE_PROVIDER` | Required env | Optional env |
+|---|---|---|
+| `acube` | `ACUBE_ENV` (`sandbox` or `production`), `ACUBE_EMAIL`, `ACUBE_PASSWORD` | `ACUBE_WEBHOOK_BASE_URL`, `ACUBE_WEBHOOK_TOKEN`, `ACUBE_WEBHOOK_TOKEN_HEADER`, `ACUBE_SIGNATURE_PUBLIC_KEY`, `ACUBE_WEBHOOK_MAX_AGE_SECONDS`, `ACUBE_INVOICE_SUBMIT_PATH`, `ACUBE_CREDIT_NOTE_SUBMIT_PATH`, `ACUBE_TIMEOUT_MS` |
+| `complyance` | `COMPLYANCE_ENV` (`sandbox` or `production`), `COMPLYANCE_API_KEY`, `COMPLYANCE_WEBHOOK_SECRET` (without it the webhook answers 503 and the poll job is the only inbound path) | `COMPLYANCE_BASE_URL`, `COMPLYANCE_SUBMIT_FORMAT` (`gets`/`xml`), `COMPLYANCE_SOURCE_PREFIX`, `COMPLYANCE_SOURCE_VERSION`, `COMPLYANCE_USER_AGENT`, `COMPLYANCE_TIMEOUT_MS`, `COMPLYANCE_POLL_DAYS`, `COMPLYANCE_WEBHOOK_BASE_URL`, `COMPLYANCE_WEBHOOK_ALGORITHM`, `COMPLYANCE_WEBHOOK_MAX_AGE_SECONDS` |
+
+Keep secrets (`ACUBE_PASSWORD`, `COMPLYANCE_API_KEY`, `COMPLYANCE_WEBHOOK_SECRET`) in the secret store.
+Complyance (MoF register no. 112219) is doc-derived: verify in its sandbox before production (list in
+`docs/einvoicing-complyance.md`); sandbox onboarding needs a real authorised TIN. The Complyance
+webhook is `/api/webhooks/einvoice/complyance` (HMAC signed, raw body); the poll job is
+`einvoice.complyancePoll`. To switch provider: change `EINVOICE_PROVIDER`, restart; existing
+submissions keep their stored provider id and are not migrated.
+
+To remove the provider that was not signed, follow `docs/einvoicing-providers.md` ("Discarding A-Cube"
+or "Discarding Complyance"): delete the listed files, edit the listed registrations, locale keys and
+env, and unset that provider's env vars. Migrations stay (0117 is kept either way).
