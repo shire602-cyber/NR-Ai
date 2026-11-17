@@ -17,6 +17,7 @@ import { formatMessage, useTranslation } from "@/lib/i18n";
 import { MarketingLayout } from "@/components/marketing/MarketingLayout";
 import { ClosingCta, FaqSection, SectionHeading } from "@/components/marketing/Sections";
 import { PlanCard } from "@/components/marketing/PlanCard";
+import { Segmented } from "@/components/marketing/Segmented";
 import {
   BILLING_CYCLES,
   COMPARE_GROUPS,
@@ -56,61 +57,6 @@ const EVERY_ICON: Record<(typeof EVERY_PLAN)[number]["id"], LucideIcon> = {
 };
 
 const PLAN_IDS = PLANS.map((p) => p.id);
-
-/** Segmented control (the shared Tabs pill look); a radiogroup so arrow keys and tests work. */
-function Segmented<V extends string>({
-  value,
-  options,
-  onChange,
-  label,
-  testId,
-  optionTestId,
-  className,
-}: {
-  value: V;
-  options: readonly { value: V; label: string }[];
-  onChange: (v: V) => void;
-  label: string;
-  testId?: string;
-  optionTestId?: (v: V) => string;
-  className?: string;
-}) {
-  const move = (dir: 1 | -1) => {
-    const i = options.findIndex((o) => o.value === value);
-    const next = options[(i + dir + options.length) % options.length];
-    onChange(next.value);
-  };
-  return (
-    <div
-      className={`mk-segmented ${className ?? ""}`}
-      role="radiogroup"
-      aria-label={label}
-      data-testid={testId}
-      onKeyDown={(e) => {
-        const rtl = document.documentElement.dir === "rtl";
-        if (e.key === "ArrowRight") move(rtl ? -1 : 1);
-        else if (e.key === "ArrowLeft") move(rtl ? 1 : -1);
-        else return;
-        e.preventDefault();
-      }}
-    >
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          role="radio"
-          aria-checked={value === o.value}
-          tabIndex={value === o.value ? 0 : -1}
-          data-active={value === o.value}
-          data-testid={optionTestId?.(o.value)}
-          onClick={() => onChange(o.value)}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function CellValue({ cell }: { cell: Cell }) {
   const { t } = useTranslation();

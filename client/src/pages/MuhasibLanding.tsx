@@ -94,7 +94,8 @@ function Hero() {
           </div>
           <p className="mk-hero__note mk-rise mk-rise--3">{t["marketing.heroNote"]}</p>
         </div>
-        <div className="mk-hero__visual mk-ruling mk-rise mk-rise--4">
+        <div className="mk-hero__visual mk-rise mk-rise--4">
+          <span className="mk-ruling bg-ledger-ruling" aria-hidden="true" />
           <ProductPreview />
         </div>
         <ul className="mk-facts">

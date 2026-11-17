@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
-import { AlertCircle, CheckCircle2, Info, type LucideIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { Alert } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 
 /*
@@ -11,9 +12,7 @@ import { cn } from "@/lib/utils";
 export function AuthHeader({ title, description }: { title: ReactNode; description?: ReactNode }) {
   return (
     <header className="mb-8">
-      <h1 className="text-[1.5rem] font-semibold leading-8 tracking-[-0.02em] text-foreground text-balance">
-        {title}
-      </h1>
+      <h1 className="text-h1 text-foreground text-balance">{title}</h1>
       {description ? (
         <p className="mt-2 text-small text-muted-foreground text-pretty">{description}</p>
       ) : null}
@@ -21,22 +20,7 @@ export function AuthHeader({ title, description }: { title: ReactNode; descripti
   );
 }
 
-const TONE: Record<"danger" | "success" | "info", { icon: LucideIcon; box: string; ink: string }> =
-  {
-    danger: {
-      icon: AlertCircle,
-      box: "border-danger/25 bg-danger-subtle",
-      ink: "text-danger",
-    },
-    success: {
-      icon: CheckCircle2,
-      box: "border-success/25 bg-success-subtle",
-      ink: "text-success",
-    },
-    info: { icon: Info, box: "border-info/25 bg-info-subtle", ink: "text-info" },
-  };
-
-/** Inline message above the form: subtle surface, 1 px tone border, icon in tone, ink text. */
+/** Inline message above the form: the shared tone Alert, spaced for the auth column. */
 export function AuthAlert({
   tone,
   title,
@@ -48,20 +32,10 @@ export function AuthAlert({
   children?: ReactNode;
   testId?: string;
 }) {
-  const t = TONE[tone];
-  const Icon = t.icon;
   return (
-    <div
-      role={tone === "danger" ? "alert" : "status"}
-      className={cn("mb-6 flex gap-3 rounded-lg border p-3 text-small text-foreground", t.box)}
-      data-testid={testId}
-    >
-      <Icon aria-hidden="true" className={cn("mt-0.5 h-4 w-4 flex-none", t.ink)} />
-      <div className="min-w-0">
-        {title ? <p className="font-semibold">{title}</p> : null}
-        {children ? <div className={title ? "mt-0.5" : undefined}>{children}</div> : null}
-      </div>
-    </div>
+    <Alert tone={tone} title={title} className="mb-6" data-testid={testId}>
+      {children}
+    </Alert>
   );
 }
 
@@ -95,9 +69,7 @@ export function AuthState({
       >
         <Icon aria-hidden="true" className="h-5 w-5" strokeWidth={1.5} />
       </span>
-      <h1 className="mt-5 text-[1.5rem] font-semibold leading-8 tracking-[-0.02em] text-balance">
-        {title}
-      </h1>
+      <h1 className="mt-5 text-h1 text-balance">{title}</h1>
       <p className="mt-2 text-small text-muted-foreground text-pretty">{body}</p>
       {actions ? <div className="mt-6 flex flex-wrap gap-3">{actions}</div> : null}
     </div>

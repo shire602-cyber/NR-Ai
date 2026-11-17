@@ -41,7 +41,7 @@ export function PlanPrice({
     <span
       className={cn(
         "text-caption font-medium",
-        inverse ? "text-neutral-300" : "text-muted-foreground"
+        inverse ? "text-surface-inverse-muted" : "text-muted-foreground"
       )}
     >
       {parts.currency}
@@ -58,7 +58,10 @@ export function PlanPrice({
       </strong>
       {parts.currencyPosition === "end" && code}
       <span
-        className={cn("ms-1 text-small", inverse ? "text-neutral-300" : "text-muted-foreground")}
+        className={cn(
+          "ms-1 text-small",
+          inverse ? "text-surface-inverse-muted" : "text-muted-foreground"
+        )}
       >
         {t["marketing.pricingPerMonth"]}
       </span>
@@ -118,7 +121,7 @@ export function PlanCard({
       className={cn(
         "plan-card flex h-full flex-col rounded-2xl p-6",
         featured
-          ? "bg-neutral-900 text-neutral-50 dark:bg-neutral-800 dark:ring-1 dark:ring-brand-500"
+          ? "bg-surface-inverse text-surface-inverse-foreground dark:bg-neutral-800 dark:ring-1 dark:ring-brand-500"
           : "border border-border bg-card text-card-foreground",
         className
       )}
@@ -139,7 +142,7 @@ export function PlanCard({
       <p
         className={cn(
           "mt-1 line-clamp-2 min-h-10 text-small",
-          featured ? "text-neutral-300" : "text-muted-foreground"
+          featured ? "text-surface-inverse-muted" : "text-muted-foreground"
         )}
       >
         {t[planAudienceKey(plan.id)]}
@@ -148,7 +151,7 @@ export function PlanCard({
       <p
         className={cn(
           "mk-tier__billed mt-1 min-h-4 text-caption",
-          featured ? "text-neutral-300" : "text-muted-foreground"
+          featured ? "text-surface-inverse-muted" : "text-muted-foreground"
         )}
       >
         {total > 0
@@ -165,11 +168,16 @@ export function PlanCard({
       <div className="mt-5">{action ?? defaultAction}</div>
       {compact ? null : (
         <>
-          <hr className={cn("my-5 border-t", featured ? "border-white/10" : "border-border")} />
+          <hr
+            className={cn(
+              "my-5 border-t",
+              featured ? "border-surface-inverse-border" : "border-border"
+            )}
+          />
           <p
             className={cn(
               "text-caption font-medium",
-              featured ? "text-neutral-300" : "text-muted-foreground"
+              featured ? "text-surface-inverse-muted" : "text-muted-foreground"
             )}
           >
             {t[plan.inheritsKey ?? "marketing.prIncludes"]}

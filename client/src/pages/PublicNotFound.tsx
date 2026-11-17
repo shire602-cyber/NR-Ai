@@ -15,7 +15,8 @@ export default function PublicNotFound() {
   const signedIn = hasAuthHint();
   return (
     <MarketingLayout titleKey="marketing.nfSeoTitle" descriptionKey="marketing.nfBody">
-      <section className="mk-section mk-ruling mk-notfound" aria-labelledby="mk-nf-title">
+      <section className="mk-section mk-notfound" aria-labelledby="mk-nf-title">
+        <span className="mk-ruling mk-ruling--fill bg-ledger-ruling" aria-hidden="true" />
         <div className="mk-container">
           <p className="mk-eyebrow">{"404"}</p>
           <h1 id="mk-nf-title" className="mk-h2 mk-notfound__title" data-testid="public-404">

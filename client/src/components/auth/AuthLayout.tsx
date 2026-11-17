@@ -62,7 +62,11 @@ export function AuthLayout({ children, variant }: AuthLayoutProps) {
     <div className="mk-root">
       <SkipLink />
       <div className="mk-auth">
-        <aside className="mk-auth__panel mk-ruling">
+        <aside className="mk-auth__panel">
+          <span
+            className="mk-ruling mk-ruling--fill bg-ledger-ruling on-inverse"
+            aria-hidden="true"
+          />
           <MarketingBrand testId="link-brand-home" />
           <div>
             <p className="mk-eyebrow">{t["marketing.authEyebrow"]}</p>

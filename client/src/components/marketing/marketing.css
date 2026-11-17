@@ -38,9 +38,6 @@
   --band-ink-3: hsl(var(--neutral-400));
   --band-brand: hsl(var(--brand-300));
   --band-hairline: hsl(var(--neutral-0) / 0.1);
-  /* Ledger-ruling motif (spec 2.6). */
-  --ruling-line: hsl(var(--neutral-200));
-  --ruling-margin: hsl(var(--brand-200));
 
   /* Semantic (text on the matching -subtle surface, as the app's badges) */
   --success: hsl(var(--success-subtle-foreground));
@@ -104,8 +101,6 @@
   --ink-2: hsl(var(--neutral-300));
   --band: hsl(var(--sidebar));
   --band-surface: hsl(var(--neutral-900));
-  --ruling-line: hsl(var(--neutral-800));
-  --ruling-margin: hsl(var(--brand-800));
 }
 
 /* Arabic (CTO RTL stack): Latin and digits stay Geist, Arabic is Noto Sans
@@ -399,30 +394,18 @@
 .mk-hero__visual {
   margin-block-start: clamp(3rem, 2rem + 4vw, 5rem);
   position: relative;
-}
-
-/* Brand motif (spec 2.6): ledger ruling. 1 px hairlines on an 8 px pitch with one vertical
-   margin rule, faded out with a radial mask. Behind the hero mock and on the auth panel. */
-.mk-ruling {
-  position: relative;
   isolation: isolate;
 }
-.mk-ruling::before {
-  content: "";
+
+/* Placement of the shared ledger-ruling motif (.bg-ledger-ruling, index.css) behind a block. */
+.mk-ruling {
   position: absolute;
   inset: -3.5rem -4rem -3rem;
   z-index: -1;
   pointer-events: none;
-  background:
-    linear-gradient(var(--ruling-margin), var(--ruling-margin)) 3.5rem 0 / 1px 100% no-repeat,
-    repeating-linear-gradient(to bottom, transparent 0 7px, var(--ruling-line) 7px 8px);
-  -webkit-mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, #000 55%, transparent 100%);
-  mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, #000 55%, transparent 100%);
 }
-[dir="rtl"] .mk-ruling::before {
-  background-position:
-    calc(100% - 3.5rem) 0,
-    0 0;
+.mk-ruling--fill {
+  inset: 0;
 }
 
 .mk-facts {
@@ -1535,14 +1518,6 @@
   font-size: var(--text-micro);
   color: var(--band-ink-3);
 }
-/* The ruling motif at 6% white on the inverse panel. */
-.mk-auth__panel.mk-ruling::before {
-  inset: 0;
-  --ruling-line: hsl(var(--neutral-0) / 0.06);
-  --ruling-margin: hsl(var(--brand-400) / 0.22);
-  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 30% 40%, #000 25%, transparent 80%);
-  mask-image: radial-gradient(ellipse 90% 70% at 30% 40%, #000 25%, transparent 80%);
-}
 .mk-auth__form {
   display: flex;
   flex-direction: column;
@@ -1644,45 +1619,6 @@
 .mk-prhead__billing {
   display: grid;
   gap: 0.5rem;
-}
-
-/* Segmented control: the shared Tabs pill, 36 px. */
-.mk-segmented {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: 2px;
-  block-size: 2.25rem;
-  padding: 3px;
-  border-radius: var(--radius-md);
-  background: hsl(var(--muted));
-}
-.mk-segmented button {
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--ink-2);
-  font: inherit;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  line-height: 1;
-  padding-inline: 0.5rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-  transition:
-    color var(--dur) var(--ease),
-    background var(--dur) var(--ease),
-    box-shadow var(--dur) var(--ease);
-}
-.mk-segmented button:hover {
-  color: var(--ink);
-}
-.mk-segmented button[data-active="true"] {
-  background: var(--surface);
-  color: var(--ink);
-  box-shadow: var(--shadow-1);
 }
 
 .mk-prplans {
@@ -1868,6 +1804,7 @@
 }
 
 .mk-compare-list__picker {
+  background: hsl(var(--muted));
   position: sticky;
   inset-block-start: 4.5rem;
   z-index: 2;
@@ -1944,8 +1881,6 @@
   --surface: var(--band-surface);
   --canvas-sunken: var(--band-surface);
   --hairline-strong: hsl(var(--neutral-0) / 0.16);
-  --ruling-line: hsl(var(--neutral-0) / 0.06);
-  --ruling-margin: hsl(var(--brand-400) / 0.25);
 }
 /* Services "why us" list on the band. */
 .mk-firms {
@@ -2126,4 +2061,24 @@
     grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 1.5rem;
   }
+}
+
+/* ── Public 404 (WP-B) ──────────────────────────────────────────────────── */
+.mk-notfound {
+  position: relative;
+  isolation: isolate;
+  min-block-size: 60vh;
+  display: flex;
+  align-items: center;
+}
+.mk-notfound__title {
+  margin-block-start: 1rem;
+  max-inline-size: 36rem;
+}
+.mk-notfound .mk-lead {
+  margin-block-start: 1rem;
+  max-inline-size: 36rem;
+}
+.mk-notfound .mk-actions {
+  margin-block-start: 2rem;
 }
