@@ -189,9 +189,19 @@ async function main() {
   await page.goto(`${BASE}/dashboard`);
   await page.waitForTimeout(2200);
   const express = page.locator('[data-testid="onboarding-express"]');
+  // The redirect to /onboarding can land after a fixed wait on a cold build.
+  await express.waitFor({ timeout: 10000 }).catch(() => undefined);
   if (await express.count()) {
     await express.click();
     await page.waitForTimeout(3500);
+    // WP-B: onboarding is three screens; skip the starting point, then look around.
+    for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
+      const next = page.locator(`[data-testid="${id}"]`);
+      if (await next.count()) {
+        await next.click();
+        await page.waitForTimeout(1500);
+      }
+    }
   }
 
   // Multi-company variant: once the first company is onboarded, a second one makes the shell
@@ -234,6 +244,14 @@ async function main() {
     if (await page.locator('[data-testid="onboarding-express"]').count()) {
       await page.locator('[data-testid="onboarding-express"]').click();
       await page.waitForTimeout(3500);
+      // WP-B: onboarding is three screens; skip the starting point, then look around.
+      for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
+        const next = page.locator(`[data-testid="${id}"]`);
+        if (await next.count()) {
+          await next.click();
+          await page.waitForTimeout(1500);
+        }
+      }
     }
     // Eleven unread notifications make the bell badge show "9+" (its accessible name must
     // contain that visible text; D4).

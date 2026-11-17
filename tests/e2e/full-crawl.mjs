@@ -189,9 +189,19 @@ async function main() {
   await page.waitForTimeout(3000);
   if (page.url().includes("onboarding")) {
     const express = page.locator('[data-testid="onboarding-express"]');
+    // The redirect to /onboarding can land after a fixed wait on a cold build.
+    await express.waitFor({ timeout: 10000 }).catch(() => undefined);
     if (await express.count()) {
       await express.click();
       await page.waitForTimeout(4000);
+      // WP-B: onboarding is three screens; skip the starting point, then look around.
+      for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
+        const next = page.locator(`[data-testid="${id}"]`);
+        if (await next.count()) {
+          await next.click();
+          await page.waitForTimeout(1500);
+        }
+      }
     }
   }
   if (!page.url().includes("dashboard")) {
@@ -1187,9 +1197,19 @@ async function main() {
     await mPage.waitForTimeout(2500);
     if (mPage.url().includes("onboarding")) {
       const express = mPage.locator('[data-testid="onboarding-express"]');
+      // The redirect to /onboarding can land after a fixed wait on a cold build.
+      await express.waitFor({ timeout: 10000 }).catch(() => undefined);
       if (await express.count()) {
         await express.click();
         await mPage.waitForTimeout(3500);
+        // WP-B: onboarding is three screens; skip the starting point, then look around.
+        for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
+          const next = mPage.locator(`[data-testid="${id}"]`);
+          if (await next.count()) {
+            await next.click();
+            await mPage.waitForTimeout(1500);
+          }
+        }
       }
     }
     const mDb = new pg.Client({ connectionString: process.env.DATABASE_URL });

@@ -45,8 +45,12 @@ describe("R2 final-round fixes", () => {
   });
 
   it("prices and firm amounts go through the money formatter (item 5)", () => {
-    expect(read("client/src/pages/Pricing.tsx")).toContain("formatMoneyText(price");
-    expect(read("client/src/pages/MuhasibLanding.tsx")).toContain("formatMoneyText(plan.price");
+    // WP-B: both pages render plans through the one PlanCard, which formats every price.
+    expect(read("client/src/components/marketing/PlanCard.tsx")).toContain(
+      "formatMoneyParts(amount"
+    );
+    expect(read("client/src/pages/Pricing.tsx")).toContain("<PlanCard");
+    expect(read("client/src/pages/MuhasibLanding.tsx")).toContain("<PlanCard");
     expect(read("client/src/pages/firm/portfolio/helpers.ts")).toContain("formatAedText");
     expect(read("client/src/pages/VATFiling.tsx")).not.toContain("formatCurrency(");
   });
@@ -60,8 +64,10 @@ describe("R2 final-round fixes", () => {
   });
 
   it("segmented tabs fade at the clipped edge and snap (item 15)", () => {
+    // WP-A: the fade lives in the shared useEdgeFade hook that TabsList and ScrollTabs use.
     const src = read("client/src/components/ui/tabs.tsx");
-    expect(src).toContain("maskImage");
+    expect(src).toContain("useEdgeFade");
+    expect(read("client/src/components/ui/use-scroll-fade.ts")).toContain("maskImage");
     expect(src).toContain("snap-x");
   });
 

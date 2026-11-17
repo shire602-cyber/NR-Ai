@@ -74,21 +74,15 @@ try {
   if (login.status() >= 300) throw new Error(`login failed ${login.status()}`);
 
   await page.goto(`${BASE}/onboarding`);
-  await page.waitForSelector('[data-testid="onboarding-start"]', { timeout: 20000 });
-  report("welcome", await visibleLines(page));
-  await click(page, "onboarding-start");
+  // WP-B: three screens (company, starting point, first task).
+  await page.waitForSelector('[data-testid="onboarding-express"]', { timeout: 20000 });
   report("company", await visibleLines(page));
-  // Name and emirate are pre-filled from registration; save and continue.
-  await click(page, "onboarding-next");
-  report("accounts", await visibleLines(page));
-  await click(page, "onboarding-next");
-  report("bank", await visibleLines(page));
-  // Bank form with the validation/saving state.
-  await page.fill('[data-testid="onboarding-bank-name"]', "حساب العمليات").catch(() => {});
-  await click(page, "onboarding-skip-bank");
-  report("first document", await visibleLines(page));
-  await click(page, "onboarding-skip-doc");
-  report("complete", await visibleLines(page));
+  await click(page, "onboarding-express");
+  report("starting point", await visibleLines(page));
+  await click(page, "onboarding-start-migrating");
+  report("starting point (moving)", await visibleLines(page));
+  await click(page, "onboarding-skip");
+  report("first task", await visibleLines(page));
   await context.close();
 } finally {
   await browser.close();

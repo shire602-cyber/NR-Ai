@@ -1,21 +1,12 @@
 import { Link } from "wouter";
-import {
-  ArrowRight,
-  Banknote,
-  CheckCircle2,
-  Download,
-  FileText,
-  Landmark,
-  Receipt,
-  ShieldCheck,
-  Sparkles,
-} from "lucide-react";
+import { ArrowRight, CheckCircle2, Download, Receipt, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { Progress } from "@/components/ui/progress";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
+import { StatCard } from "@/components/ui/stat-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -129,54 +120,45 @@ export default function DemoWorkspace() {
       titleKey="marketing.seoDemoTitle"
       descriptionKey="marketing.seoDemoDescription"
     >
-      <section className="mk-container" style={{ paddingBlock: "2.5rem 4rem" }}>
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl space-y-3">
-            <StatusBadge tone="accent">
-              <T k="pageLabels.sampleCompanyWorkspace" />
-            </StatusBadge>
-            <h1 className="mk-h1">
-              <T k="pageLabels.seeTheSaaSProductWithRealAccountingContext" />
-            </h1>
-            <p className="max-w-2xl text-body text-muted-foreground">{t["marketing.demoLead"]}</p>
+      <header className="mk-pagehead mk-pagehead--split">
+        <div className="mk-container">
+          <div>
+            <p className="mk-eyebrow">{t["marketing.demoEyebrow"]}</p>
+            <h1 className="mk-h1">{t["marketing.demoTitle"]}</h1>
+            <p className="mk-lead">{t["marketing.demoLead"]}</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="mk-actions">
             <Button asChild size="lg">
-              <Link href="/register">
+              <Link href="/register" data-testid="button-demo-start">
                 <T k="pageLabels.createMyWorkspace" />
                 <ArrowRight className="rtl:-scale-x-100" aria-hidden="true" />
               </Link>
             </Button>
-            <Button asChild variant="outline" size="lg">
-              <Link href="/help">
-                <T k="pageLabels.viewHelpDocs" />
-              </Link>
-            </Button>
+            <Link href="/help" className="mk-link">
+              <T k="pageLabels.viewHelpDocs" />
+            </Link>
           </div>
         </div>
-
-        <div className="mt-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+      </header>
+      <section className="mk-container mk-inner-section">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {[
-            { key: "marketing.demoKpiReceivables", amount: 16275, icon: FileText },
-            { key: "marketing.demoKpiBankMatched", percent: 89, icon: Landmark },
-            { key: "marketing.demoKpiVat", amount: 11100, icon: ShieldCheck },
-            { key: "marketing.demoKpiCt", amount: 7425, icon: Banknote },
-          ].map(({ key, amount, percent, icon: Icon }) => (
-            <Card key={key}>
-              <CardContent className="flex items-start justify-between gap-3 p-4 md:p-5">
-                <div className="min-w-0">
-                  <p className="text-small text-muted-foreground">{t[key]}</p>
-                  <p className="mt-1 text-h2 font-semibold">
-                    {amount !== undefined ? (
-                      <Money amount={amount} />
-                    ) : (
-                      <span className="money">{`${percent}%`}</span>
-                    )}
-                  </p>
-                </div>
-                <Icon className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden="true" />
-              </CardContent>
-            </Card>
+            { key: "marketing.demoKpiReceivables", amount: 16275 },
+            { key: "marketing.demoKpiBankMatched", percent: 89 },
+            { key: "marketing.demoKpiVat", amount: 11100 },
+            { key: "marketing.demoKpiCt", amount: 7425 },
+          ].map(({ key, amount, percent }) => (
+            <StatCard
+              key={key}
+              label={t[key]}
+              value={
+                amount !== undefined ? (
+                  <Money amount={amount} />
+                ) : (
+                  <span className="money">{`${percent}%`}</span>
+                )
+              }
+            />
           ))}
         </div>
 
@@ -407,7 +389,7 @@ export default function DemoWorkspace() {
                 <T k="pageLabels.wantYourOwnBooksInThisShape" />
               </p>
               <p className="mt-1 text-sm">{t["marketing.demoOwnBody"]}</p>
-              <Button asChild size="lg" className="mt-4 w-full">
+              <Button asChild variant="outline" className="mt-4">
                 <Link href="/register">
                   <T k="pageLabels.startSetup" />
                 </Link>

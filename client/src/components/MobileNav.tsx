@@ -6,16 +6,7 @@ import {
   Camera,
   BarChart3,
   MoreHorizontal,
-  BookOpen,
-  BookMarked,
-  Users,
-  Package,
-  Landmark,
-  Building2,
-  ArrowLeftRight,
-  Sparkles,
-  FolderLock,
-  Settings,
+  ChevronRight,
   Sun,
   Moon,
   Monitor,
@@ -26,34 +17,11 @@ import {
 import { cn } from "@/lib/utils";
 import { useSessionActions } from "@/hooks/useSessionActions";
 import { useTheme, type ThemePreference } from "@/lib/theme";
-import { useState, useCallback, useMemo } from "react";
-import { formatMessage, useTranslation } from "@/lib/i18n";
-import { useCatalogText, type CatalogText } from "@/lib/reportCatalogText";
-import {
-  readyReportCatalog,
-  reportAutomationTriggerRuleHref,
-  reportAutomationTriggerRules,
-  reportAutomationImpactProfiles,
-  reportAutomationStarterHref,
-  reportAutomationStarters,
-  reportComparisonPresetHref,
-  reportComparisonPresets,
-  reportDecisionShortcutHref,
-  reportDecisionShortcuts,
-  reportDeliverySubscriptionHref,
-  reportDeliverySubscriptions,
-  reportPackTemplateHref,
-  reportPackTemplates,
-  reportPersonaHref,
-  reportPersonaWorkspaces,
-  reportQuickAccessProfiles,
-  reportSavedViewHref,
-  reportSavedViewProfiles,
-  reportSectionHref,
-  reportSuiteHref,
-  reportSuiteProfiles,
-  reportWorkspaceHref,
-} from "@/lib/reportCatalog";
+import { useState, useCallback } from "react";
+import { useTranslation } from "@/lib/i18n";
+import { useNavGroups } from "@/components/layout/useNavGroups";
+import { itemIsActive, type NavGroup } from "@/components/layout/nav-config";
+import { isCustomerOnlyRoute } from "@/lib/route-config";
 
 interface NavItem {
   label: string;
@@ -63,16 +31,6 @@ interface NavItem {
   href: string;
   /** If true, this item opens the "more" sheet instead of navigating */
   isMore?: boolean;
-}
-
-interface MoreLink {
-  key?: string;
-  label: string;
-  labelKey?: string;
-  href: string;
-  description?: string;
-  /** Leading 20px icon for workspace tiles (CTO 12). */
-  icon?: LucideIcon;
 }
 
 const THEME_OPTIONS: { value: ThemePreference; icon: LucideIcon; labelKey: string }[] = [
@@ -89,218 +47,59 @@ const navItems: NavItem[] = [
   { label: "More", labelKey: "shell.navMore", icon: MoreHorizontal, href: "#", isMore: true },
 ];
 
-const MOBILE_REPORTS_PER_PERSONA = 6;
-const MOBILE_REPORT_SECONDARY_LIMIT = 3;
-
-function mobileQuickAccessReportIds(persona: (typeof reportPersonaWorkspaces)[number]["persona"]) {
-  return new Set(
-    reportQuickAccessProfiles.find((profile) => profile.persona === persona)?.reportIds ?? []
-  );
+interface MoreRow {
+  key: string;
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  testId?: string;
+  matches?: string[];
 }
 
-function mobileReportsForWorkspace(workspace: (typeof reportPersonaWorkspaces)[number]) {
-  const quickAccessReportIds = mobileQuickAccessReportIds(workspace.persona);
-  return readyReportCatalog
-    .filter((report) => report.personas.includes(workspace.persona))
-    .filter((report) => quickAccessReportIds.size === 0 || quickAccessReportIds.has(report.id))
-    .slice(0, MOBILE_REPORTS_PER_PERSONA);
+interface MoreSection {
+  key: string;
+  heading: string;
+  rows: MoreRow[];
 }
 
-function buildReportMoreLinks(
-  ct: CatalogText,
-  px: (key: string, values?: Record<string, string | number>) => string
-): MoreLink[] {
-  const mobileSavedViewLinks = Array.from(
-    reportSavedViewProfiles.map((view) => ({
-      label: ct("savedView", view.id, "title", view.title),
-      href: reportSavedViewHref(view),
-      description: `${ct("savedView", view.id, "dateRangePreset", view.dateRangePreset)} - ${ct("savedView", view.id, "comparisonPeriod", view.comparisonPeriod)}`,
+/** Destinations already on the bottom bar are not repeated in the More sheet. */
+const TAB_HREFS = new Set(["/dashboard", "/invoices", "/receipts", "/reports"]);
+
+/**
+ * Spec 3.5: the More sheet lists the sidebar's groups (same headings, same order) as a single
+ * column of 44 px rows — icon, full label, chevron — so no label is ever truncated. Single
+ * destinations (Inventory, Payroll, Assistant, Settings) lead under "Workspace".
+ */
+function buildMoreSections(groups: NavGroup[], label: (key: string) => string): MoreSection[] {
+  const direct: MoreRow[] = groups
+    .filter((g) => g.url && !TAB_HREFS.has(g.url))
+    .map((g) => ({
+      key: g.key,
+      label: label(g.titleKey),
+      href: g.url!,
+      icon: g.icon,
+      testId: `mobile-more-${g.key}`,
+      matches: g.matches,
+    }));
+  const grouped = groups
+    .filter((g) => !g.url)
+    .map((g) => ({
+      key: g.key,
+      heading: label(g.titleKey),
+      rows: g.items
+        .filter((item) => !TAB_HREFS.has(item.url))
+        .map((item) => ({
+          key: item.key ?? item.url,
+          label: label(item.titleKey),
+          href: item.url,
+          icon: item.icon ?? g.icon,
+          testId: `mobile-more-${item.testId ?? item.titleKey}`,
+          matches: item.matches,
+        })),
     }))
-  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
-
-  const mobileReportSuiteLinks = Array.from(
-    reportSuiteProfiles.map((suite) => ({
-      label: ct("suite", suite.id, "title", suite.title),
-      href: reportSuiteHref(suite),
-      description: `${ct("suite", suite.id, "workflow", suite.workflow)} - ${ct("suite", suite.id, "primaryAction", suite.primaryAction)}`,
-    }))
-  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
-
-  const mobileDecisionShortcutLinks = Array.from(
-    reportDecisionShortcuts.map((shortcut) => ({
-      label: ct("shortcut", shortcut.id, "question", shortcut.question),
-      href: reportDecisionShortcutHref(shortcut),
-      description: ct("shortcut", shortcut.id, "answer", shortcut.answer),
-    }))
-  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
-
-  const mobileAutomationTriggerLinks = Array.from(
-    reportAutomationTriggerRules.map((rule) => ({
-      label: ct("rule", rule.id, "title", rule.title),
-      href: reportAutomationTriggerRuleHref(rule),
-      description: `${ct("rule", rule.id, "condition", rule.condition)} - ${ct("rule", rule.id, "actionLabel", rule.actionLabel)}`,
-    }))
-  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
-
-  const mobileDeliverySubscriptionLinks = Array.from(
-    reportDeliverySubscriptions.map((subscription) => ({
-      label: ct("delivery", subscription.id, "title", subscription.title),
-      href: reportDeliverySubscriptionHref(subscription),
-      description: `${ct("delivery", subscription.id, "cadence", subscription.cadence)} - ${ct("delivery", subscription.id, "channel", subscription.channel)}`,
-    }))
-  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
-
-  const mobileAutomationStarterLinks = Array.from(
-    reportAutomationStarters.map((starter) => ({
-      label: ct("starter", starter.id, "title", starter.title),
-      href: reportAutomationStarterHref(starter),
-      description: `${ct("starter", starter.id, "audience", starter.audience)} - ${ct("starter", starter.id, "outcome", starter.outcome)}`,
-    }))
-  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
-
-  const mobilePackTemplateLinks = Array.from(
-    reportPackTemplates.map((template) => ({
-      label: ct("pack", template.id, "title", template.title),
-      href: reportPackTemplateHref(template),
-      description: `${ct("pack", template.id, "cadence", template.cadence)} - ${ct("pack", template.id, "delivery", template.delivery)}`,
-    }))
-  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
-
-  const mobileComparisonPresetLinks = Array.from(
-    reportComparisonPresets.map((preset) => ({
-      label: ct("preset", preset.id, "title", preset.title),
-      href: reportComparisonPresetHref(preset),
-      description: `${ct("preset", preset.id, "baseline", preset.baseline)} - ${ct("preset", preset.id, "automationTrigger", preset.automationTrigger)}`,
-    }))
-  ).slice(0, MOBILE_REPORT_SECONDARY_LIMIT);
-
-  const wsTitle = (workspace: (typeof reportPersonaWorkspaces)[number]) =>
-    ct("workspace", workspace.persona, "title", workspace.title);
-  const wsNav = (workspace: (typeof reportPersonaWorkspaces)[number]) =>
-    ct("workspace", workspace.persona, "navLabel", workspace.navLabel);
-
-  return [
-    ...reportPersonaWorkspaces.map((workspace) => ({
-      label: wsNav(workspace),
-      href: reportWorkspaceHref(workspace),
-      description: ct("workspace", workspace.persona, "focus", workspace.focus),
-    })),
-    ...reportPersonaWorkspaces.map((workspace) => ({
-      label: px("shell.mobileRoleSetup", { workspace: wsTitle(workspace) }),
-      href: reportSectionHref(workspace, "role-setup"),
-      description: px("shell.mobileRoleSetupDesc", { name: wsNav(workspace).toLowerCase() }),
-    })),
-    ...reportPersonaWorkspaces.map((workspace) => ({
-      label: px("shell.mobileReportSuites", { workspace: wsTitle(workspace) }),
-      href: reportSectionHref(workspace, "report-suites"),
-      description: px("shell.mobileReportSuitesDesc", {
-        focus: ct("workspace", workspace.persona, "focus", workspace.focus).toLowerCase(),
-      }),
-    })),
-    ...reportPersonaWorkspaces.map((workspace) => ({
-      label: px("shell.mobileQuickAccess", { workspace: wsTitle(workspace) }),
-      href: reportSectionHref(workspace, "quick-access"),
-      description: ct.cx(
-        reportQuickAccessProfiles.find((profile) => profile.persona === workspace.persona)
-          ?.outcome ?? px("shell.mobileQuickAccessDesc", { name: wsNav(workspace).toLowerCase() })
-      ),
-    })),
-    ...reportPersonaWorkspaces.flatMap((workspace) =>
-      mobileReportsForWorkspace(workspace).flatMap((report) => {
-        const href = reportPersonaHref(report, workspace.persona);
-        return href
-          ? [
-              {
-                key: `report-catalog-${workspace.persona}-${report.id}`,
-                label: `${ct("report", report.id, "name", report.name)} - ${wsTitle(workspace)}`,
-                href,
-                description: `${ct("category", report.category, "label", report.category)} - ${ct("report", report.id, "comparison", report.comparison)} - ${ct("report", report.id, "automation", report.automation)}`,
-              },
-            ]
-          : [];
-      })
-    ),
-    ...reportPersonaWorkspaces.map((workspace) => ({
-      label: px("shell.mobileSavedViews", { workspace: wsTitle(workspace) }),
-      href: reportSectionHref(workspace, "saved-views"),
-      description: px("shell.mobileSavedViewsDesc", { name: wsNav(workspace).toLowerCase() }),
-    })),
-    ...mobileSavedViewLinks,
-    ...mobileReportSuiteLinks,
-    ...reportPersonaWorkspaces.map((workspace) => ({
-      label: px("shell.mobileReportOperations", { workspace: wsTitle(workspace) }),
-      href: reportSectionHref(workspace, "automation-operations"),
-      description: ct(
-        "workspace",
-        workspace.persona,
-        "automationOutcome",
-        workspace.automationOutcome
-      ),
-    })),
-    ...reportPersonaWorkspaces.map((workspace) => ({
-      label: ct("workspace", workspace.persona, "automationNavLabel", workspace.automationNavLabel),
-      href: reportSectionHref(workspace, "automation-command-center"),
-      description: ct(
-        "workspace",
-        workspace.persona,
-        "packSchedule.automation",
-        workspace.packSchedule.automation
-      ),
-    })),
-    ...reportPersonaWorkspaces.map((workspace) => ({
-      label: px("shell.mobileAutomationImpact", { workspace: wsTitle(workspace) }),
-      href: reportSectionHref(workspace, "automation-impact"),
-      description: ct.cx(
-        reportAutomationImpactProfiles.find((profile) => profile.persona === workspace.persona)
-          ?.outcome ??
-          px("shell.mobileAutomationImpactDesc", { name: wsNav(workspace).toLowerCase() })
-      ),
-    })),
-    ...mobileDecisionShortcutLinks,
-    ...mobileAutomationTriggerLinks,
-    ...mobileDeliverySubscriptionLinks,
-    ...mobileAutomationStarterLinks,
-    ...mobilePackTemplateLinks,
-    ...mobileComparisonPresetLinks,
-  ];
+    .filter((section) => section.rows.length > 0);
+  return [{ key: "workspace", heading: label("shell.nav.workspace"), rows: direct }, ...grouped];
 }
-
-const moreLinks: MoreLink[] = [
-  {
-    label: "Accounts",
-    labelKey: "shell.moreAccounts",
-    href: "/chart-of-accounts",
-    icon: BookOpen,
-  },
-  { label: "Journal", labelKey: "shell.moreJournal", href: "/journal", icon: BookMarked },
-  { label: "Contacts", labelKey: "shell.moreContacts", href: "/contacts", icon: Users },
-  { label: "Inventory", labelKey: "shell.moreInventory", href: "/inventory", icon: Package },
-  { label: "VAT Filing", labelKey: "shell.moreVatFiling", href: "/vat-filing", icon: Landmark },
-  {
-    label: "Corporate Tax",
-    labelKey: "shell.moreCorporateTax",
-    href: "/corporate-tax",
-    icon: Building2,
-  },
-  {
-    label: "Bank Reconciliation",
-    labelKey: "shell.moreBankReconciliation",
-    href: "/bank-reconciliation",
-    icon: ArrowLeftRight,
-  },
-  { label: "AI hub", labelKey: "shell.moreAi", href: "/ai", icon: Sparkles },
-  {
-    label: "Document Vault",
-    labelKey: "shell.moreDocumentVault",
-    href: "/document-vault",
-    icon: FolderLock,
-  },
-  { label: "Settings", labelKey: "shell.moreSettings", href: "/company-profile", icon: Settings },
-];
-
-// Translated app destinations lead the sheet; the catalog-driven report
-// shortcuts follow in a collapsible section so the sheet stays scannable.
-const workspaceMoreLinks = moreLinks.filter((link) => link.labelKey);
 
 /**
  * Mobile Bottom Navigation Bar
@@ -313,14 +112,16 @@ export function MobileNav() {
   const [location, setLocation] = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const { t } = useTranslation();
-  const ct = useCatalogText();
-  const reportMoreLinks = useMemo(
-    () =>
-      buildReportMoreLinks(ct, (key, values = {}) =>
-        formatMessage((t as Record<string, string>)[key] ?? key, values)
-      ),
-    [ct, t]
-  );
+  const { allGroups, userType } = useNavGroups();
+  const label = (key: string) => (t as Record<string, string>)[key] ?? key;
+  // Client-portal users only see the shared (non customer-only) destinations.
+  const groups =
+    userType === "client"
+      ? allGroups
+          .filter((g) => !g.url || !isCustomerOnlyRoute(g.url))
+          .map((g) => ({ ...g, items: g.items.filter((i) => !isCustomerOnlyRoute(i.url)) }))
+      : allGroups;
+  const sections = buildMoreSections(groups, label);
   const { preference, setPreference } = useTheme();
   const { signOut, toggleLanguage, locale } = useSessionActions();
   const text = (item: { label: string; labelKey?: string }) =>
@@ -346,32 +147,30 @@ export function MobileNav() {
     [setLocation]
   );
 
-  const renderMoreLink = (link: MoreLink) => {
-    const Icon = link.icon;
+  const renderMoreRow = (row: MoreRow) => {
+    const Icon = row.icon;
+    const active = itemIsActive(location, { url: row.href, matches: row.matches });
     return (
-      <button
-        key={link.key ?? link.href}
-        onClick={() => handleMoreLink(link.href)}
-        className={cn(
-          "mobile-nav-more-item",
-          Icon && "mobile-nav-more-item--tile",
-          location === link.href && "mobile-nav-more-item--active"
-        )}
-        aria-label={link.description ? `${text(link)}: ${link.description}` : text(link)}
-      >
-        {Icon ? <Icon className="mobile-nav-more-icon" aria-hidden /> : null}
-        <span className="mobile-nav-more-text">
-          <span className="mobile-nav-more-label">{text(link)}</span>
-          {link.description ? (
-            <span className="mobile-nav-more-description">{link.description}</span>
-          ) : null}
-        </span>
-      </button>
+      <li key={row.key}>
+        <button
+          type="button"
+          onClick={() => handleMoreLink(row.href)}
+          className={cn("mobile-nav-more-row", active && "mobile-nav-more-row--active")}
+          aria-current={active ? "page" : undefined}
+          data-testid={row.testId}
+        >
+          <Icon className="mobile-nav-more-icon" aria-hidden />
+          <span className="mobile-nav-more-label">{row.label}</span>
+          <ChevronRight className="mobile-nav-more-chevron rtl:rotate-180" aria-hidden />
+        </button>
+      </li>
     );
   };
 
   const isActive = (href: string) => {
     if (href === "#") return moreOpen;
+    // While the More sheet is open it is the only active tab.
+    if (moreOpen) return false;
     return location === href || location.startsWith(href + "/") || location.startsWith(href + "?");
   };
 
@@ -398,9 +197,13 @@ export function MobileNav() {
           className="mobile-nav-more-sheet"
         >
           <div className="mobile-nav-more-handle" />
-          <div className="mobile-nav-more-heading">{t["shell.moreSectionWorkspace"]}</div>
-          <nav className="mobile-nav-more-grid" aria-label={t["shell.moreSectionWorkspace"]}>
-            {workspaceMoreLinks.map((link) => renderMoreLink(link))}
+          <nav aria-label={t["shell.moreSectionWorkspace"]} data-testid="mobile-more-nav">
+            {sections.map((section) => (
+              <section key={section.key} className="mobile-nav-more-group">
+                <h2 className="mobile-nav-more-heading">{section.heading}</h2>
+                <ul className="mobile-nav-more-rows">{section.rows.map(renderMoreRow)}</ul>
+              </section>
+            ))}
           </nav>
           {/* Theme lives here on mobile; the top bar keeps only search, bell and profile (CTO 8). */}
           <div className="mobile-nav-more-section" data-testid="mobile-theme-options">
@@ -425,41 +228,36 @@ export function MobileNav() {
             </div>
           </div>
           <div className="mobile-nav-more-section" data-testid="mobile-account-actions">
-            <div className="mobile-nav-theme" role="group" aria-label={t["shell.accountMenu"]}>
-              <button
-                type="button"
-                onClick={toggleLanguage}
-                className="mobile-nav-theme-option"
-                data-testid="mobile-language-toggle"
-              >
-                <Languages className="h-4 w-4" aria-hidden />
-                <span lang={locale === "en" ? "ar" : "en"}>
-                  {locale === "en" ? "العربية" : "English"}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMoreOpen(false);
-                  void signOut();
-                }}
-                className="mobile-nav-theme-option"
-                data-testid="mobile-logout"
-              >
-                <LogOut className="h-4 w-4 rtl:-scale-x-100" aria-hidden />
-                {t.logout}
-              </button>
-            </div>
+            <ul className="mobile-nav-more-rows" aria-label={t["shell.accountMenu"]}>
+              <li>
+                <button
+                  type="button"
+                  onClick={toggleLanguage}
+                  className="mobile-nav-more-row"
+                  data-testid="mobile-language-toggle"
+                >
+                  <Languages className="mobile-nav-more-icon" aria-hidden />
+                  <span className="mobile-nav-more-label" lang={locale === "en" ? "ar" : "en"}>
+                    {locale === "en" ? "العربية" : "English"}
+                  </span>
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    void signOut();
+                  }}
+                  className="mobile-nav-more-row"
+                  data-testid="mobile-logout"
+                >
+                  <LogOut className="mobile-nav-more-icon rtl:-scale-x-100" aria-hidden />
+                  <span className="mobile-nav-more-label">{t.logout}</span>
+                </button>
+              </li>
+            </ul>
           </div>
-          <details className="mobile-nav-more-section">
-            <summary className="mobile-nav-more-summary">
-              <span>{t["shell.moreSectionReports"]}</span>
-              <span className="mobile-nav-more-count">{reportMoreLinks.length}</span>
-            </summary>
-            <nav className="mobile-nav-more-list" aria-label={t["shell.moreSectionReports"]}>
-              {reportMoreLinks.map((link) => renderMoreLink(link))}
-            </nav>
-          </details>
         </motion.div>
       )}
 
@@ -477,15 +275,9 @@ export function MobileNav() {
               aria-current={active ? "page" : undefined}
               aria-label={text(item)}
             >
+              {/* Spec 3.21: active = brand icon + label; no filled pill behind the icon. */}
               <div className="mobile-nav-tab-icon">
                 <Icon className="h-5 w-5" />
-                {active && (
-                  <motion.div
-                    layoutId="mobile-nav-indicator"
-                    className="mobile-nav-indicator"
-                    transition={{ type: "spring", damping: 30, stiffness: 400 }}
-                  />
-                )}
               </div>
               <span className="mobile-nav-tab-label">{text(item)}</span>
             </button>
