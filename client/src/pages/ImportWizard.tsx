@@ -3,6 +3,7 @@
  * CSV exports from Xero, QuickBooks Online, Zoho Books and Wafeq.
  * Server: /api/companies/:companyId/imports (server/routes/import.routes.ts).
  */
+import { FileDrop } from "@/components/ui/file-drop";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMemo, useState } from "react";
@@ -12,7 +13,6 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -345,12 +345,13 @@ export default function ImportWizard() {
             )}
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="import-file">{c.file}</Label>
-              <Input
+              <FileDrop
                 id="import-file"
-                type="file"
                 accept=".csv,text/csv"
-                data-testid="input-import-file"
-                onChange={(e) => onFile(e.target.files?.[0])}
+                inputTestId="input-import-file"
+                value={file?.name}
+                onFiles={([f]) => onFile(f)}
+                onClear={() => onFile(undefined)}
               />
             </div>
             <div className="flex flex-wrap gap-2 md:col-span-2">

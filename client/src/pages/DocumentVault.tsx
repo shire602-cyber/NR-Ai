@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/page-header";
+import { FileDrop } from "@/components/ui/file-drop";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useState } from "react";
@@ -660,17 +661,17 @@ export default function DocumentVault() {
 
               <div className="space-y-2">
                 <Label>{locale === "ar" ? "الملف" : "File"}</Label>
-                <Input
-                  type="file"
+                <FileDrop
                   accept=".pdf,.jpg,.jpeg,.png,.webp,.gif,.doc,.docx,.xls,.xlsx,.csv,.txt"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                  data-testid="input-document-file"
+                  inputTestId="input-document-file"
+                  value={
+                    selectedFile
+                      ? `${selectedFile.name} (${(selectedFile.size / 1024).toFixed(1)} KB)`
+                      : undefined
+                  }
+                  onFiles={([f]) => setSelectedFile(f ?? null)}
+                  onClear={() => setSelectedFile(null)}
                 />
-                {selectedFile && (
-                  <p className="text-sm text-muted-foreground">
-                    {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
-                  </p>
-                )}
               </div>
             </div>
             <DialogFooter>
