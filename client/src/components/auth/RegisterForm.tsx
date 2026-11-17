@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
@@ -14,19 +14,11 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { apiUrl } from "@/lib/api";
-import { UserPlus } from "lucide-react";
 import { OAuthButtons } from "./OAuthButtons";
+import { AUTH_BUTTON, AUTH_INPUT, AuthAlert, AuthHeader, AuthSwitch } from "./AuthBlocks";
 
 // TRN is optional at sign-up — many users register before they have one — but
 // when supplied it must match the FTA's 15-digit format so the company record
@@ -48,12 +40,15 @@ interface RegisterFormProps {
   onSuccess: (user: any) => void | Promise<void>;
   /** W5-E: Turnstile token when the server requires CAPTCHA. */
   captchaToken?: string | null;
+  /** The CAPTCHA widget, rendered just above the submit button. */
+  captcha?: ReactNode;
 }
 
-export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
+export function RegisterForm({ onSuccess, captchaToken, captcha }: RegisterFormProps) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const form = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
@@ -67,6 +62,7 @@ export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
 
   const onSubmit = async (data: RegisterFormData) => {
     setIsLoading(true);
+    setError(null);
     try {
       // Strip empty optional TRN so the server-side schema doesn't see a
       // sentinel empty string and reject it on the regex check.
@@ -86,7 +82,7 @@ export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error?.message || "Registration failed");
+        throw new Error(error?.message || translateNow("shell.toastPleaseTryAgain"));
       }
       const registered = await response.json().catch(() => null);
       // Platform-level flag: with no email provider no confirmation email exists to check.
@@ -112,142 +108,149 @@ export function RegisterForm({ onSuccess, captchaToken }: RegisterFormProps) {
         title: translateNow("shell.toastAccountCreated"),
         description: noEmail ? t["security.registerNoEmail"] : t["security.registerCheckEmail"],
       });
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: translateNow("shell.toastRegistrationFailed"),
-        description: error?.message || translateNow("shell.toastPleaseTryAgain"),
-      });
+    } catch (failure: any) {
+      // Spec 3.2: errors are inline above the form.
+      setError(failure?.message || translateNow("shell.toastPleaseTryAgain"));
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <Card className="w-full max-w-md border-border/60 shadow-xl">
-      <CardHeader className="space-y-1.5">
-        <CardTitle className="font-display text-[30px] font-normal leading-none tracking-tight">
-          {t["components.authStartBooks"]}
-          <span className="text-accent">.</span>
-        </CardTitle>
-        <CardDescription>{t["components.authRegisterDescription"]}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t.name}</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      placeholder={t["components.authNamePlaceholder"]}
-                      disabled={isLoading}
-                      data-testid="input-name"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t.email}</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      type="email"
-                      placeholder="you@example.com"
-                      disabled={isLoading}
-                      data-testid="input-email"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t.password}</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      type="password"
-                      placeholder="••••••••"
-                      disabled={isLoading}
-                      data-testid="input-password"
-                    />
-                  </FormControl>
-                  <FormDescription>{t["components.authPasswordHint"]}</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="trn"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {t["components.authUaeTrn"]}{" "}
-                    <span className="text-muted-foreground font-normal">
-                      {t["components.authOptional"]}
-                    </span>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      inputMode="numeric"
-                      maxLength={15}
-                      placeholder="100123456700003"
-                      disabled={isLoading}
-                      data-testid="input-trn"
-                    />
-                  </FormControl>
-                  <FormDescription>{t["components.authTrnHelp"]}</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={isLoading}
-              data-testid="button-register"
-            >
-              <UserPlus className="w-4 h-4 mr-2" />
-              {isLoading ? t.loading : t["marketing.startFreeTrial"]}
-            </Button>
-            <p className="text-center text-xs text-muted-foreground" data-testid="text-trial-claim">
-              {t["marketing.trialClaim"]}
-            </p>
-          </form>
-        </Form>
-        <div className="mt-4">
-          <OAuthButtons />
-        </div>
-      </CardContent>
-      <CardFooter className="flex flex-col space-y-4">
-        <div className="text-sm text-muted-foreground text-center">
-          {t.alreadyHaveAccount}{" "}
-          <Link
-            href="/login"
-            className="text-primary hover:underline font-medium"
-            data-testid="link-login"
+    <div className="w-full">
+      <AuthHeader
+        title={t["components.authStartBooks"]}
+        description={t["components.authRegisterDescription"]}
+      />
+      {error ? (
+        <AuthAlert
+          tone="danger"
+          title={translateNow("shell.toastRegistrationFailed")}
+          testId="register-error"
+        >
+          {error}
+        </AuthAlert>
+      ) : null}
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5" noValidate>
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t.name}</FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    autoComplete="name"
+                    placeholder={t["components.authNamePlaceholder"]}
+                    className={AUTH_INPUT}
+                    disabled={isLoading}
+                    data-testid="input-name"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="email"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t.email}</FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    type="email"
+                    autoComplete="email"
+                    placeholder="you@example.com"
+                    className={AUTH_INPUT}
+                    disabled={isLoading}
+                    data-testid="input-email"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t.password}</FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="••••••••"
+                    className={AUTH_INPUT}
+                    disabled={isLoading}
+                    data-testid="input-password"
+                  />
+                </FormControl>
+                <FormDescription>{t["components.authPasswordHint"]}</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="trn"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  {t["components.authUaeTrn"]}{" "}
+                  <span className="font-normal text-muted-foreground">
+                    {t["components.authOptional"]}
+                  </span>
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    {...field}
+                    inputMode="numeric"
+                    dir="ltr"
+                    maxLength={15}
+                    placeholder="100123456700003"
+                    className={`${AUTH_INPUT} text-start tabular-nums`}
+                    disabled={isLoading}
+                    data-testid="input-trn"
+                  />
+                </FormControl>
+                <FormDescription>{t["marketing.authTrnHelp"]}</FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          {captcha}
+          <Button
+            type="submit"
+            className={AUTH_BUTTON}
+            disabled={isLoading}
+            data-testid="button-register"
           >
-            {t.signIn}
-          </Link>
-        </div>
-      </CardFooter>
-    </Card>
+            {isLoading ? t.loading : t["marketing.authCreateAccount"]}
+          </Button>
+          <p className="text-caption text-muted-foreground" data-testid="text-trial-claim">
+            {t["marketing.trialClaim"]}
+          </p>
+        </form>
+      </Form>
+      <div className="mt-6">
+        <OAuthButtons />
+      </div>
+      <AuthSwitch>
+        {t.alreadyHaveAccount}{" "}
+        <Link
+          href="/login"
+          className="inline-flex min-h-11 items-center font-medium text-accent hover:underline md:min-h-0"
+          data-testid="link-login"
+        >
+          {t["marketing.authSignIn"]}
+        </Link>
+      </AuthSwitch>
+    </div>
   );
 }

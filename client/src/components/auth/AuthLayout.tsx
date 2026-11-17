@@ -48,9 +48,10 @@ interface AuthLayoutProps {
 }
 
 /**
- * Split-screen shell for sign-in, registration and password recovery: the
- * midnight brand panel (desktop only) and the form on the public-site canvas.
- * Shares tokens, header controls and SEO handling with the marketing pages.
+ * Split-screen shell for sign-in, registration, password recovery, the OAuth callback and
+ * email verification: the inverse brand panel with the ledger-ruling motif (desktop only) and
+ * the form straight on the page canvas, 400 px wide, no card (spec 3.2). Shares tokens,
+ * header controls and SEO handling with the marketing pages.
  */
 export function AuthLayout({ children, variant }: AuthLayoutProps) {
   const { t } = useTranslation();
@@ -62,6 +63,10 @@ export function AuthLayout({ children, variant }: AuthLayoutProps) {
       <SkipLink />
       <div className="mk-auth">
         <aside className="mk-auth__panel">
+          <span
+            className="mk-ruling mk-ruling--fill bg-ledger-ruling on-inverse"
+            aria-hidden="true"
+          />
           <MarketingBrand testId="link-brand-home" />
           <div>
             <p className="mk-eyebrow">{t["marketing.authEyebrow"]}</p>
@@ -81,7 +86,7 @@ export function AuthLayout({ children, variant }: AuthLayoutProps) {
               ))}
             </ul>
           </div>
-          <span aria-hidden="true" />
+          <p className="mk-auth__panel-foot">{t["components.legalPoweredBy"]}</p>
         </aside>
 
         <div className="mk-auth__form">

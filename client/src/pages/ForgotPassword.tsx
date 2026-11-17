@@ -14,20 +14,19 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
-import { ArrowLeft, CheckCircle2, Mail } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
-import { useTranslation } from "@/lib/i18n";
+import {
+  AUTH_BUTTON,
+  AUTH_INPUT,
+  AuthAlert,
+  AuthHeader,
+  AuthSwitch,
+} from "@/components/auth/AuthBlocks";
+import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 
 const forgotSchema = z.object({
   email: z.string().email("components.validation.emailInvalid"),
@@ -36,12 +35,11 @@ const forgotSchema = z.object({
 type ForgotFormData = z.infer<typeof forgotSchema>;
 
 export default function ForgotPassword() {
-  const { toast } = useToast();
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [devResetUrl, setDevResetUrl] = useState<string | null>(null);
-  const [emailUnavailable, setEmailUnavailable] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   const form = useForm<ForgotFormData>({
@@ -51,6 +49,7 @@ export default function ForgotPassword() {
 
   const onSubmit = async (data: ForgotFormData) => {
     setIsLoading(true);
+    setError(null);
     try {
       const res = await fetch(apiUrl("/api/auth/forgot-password"), {
         method: "POST",
@@ -59,22 +58,17 @@ export default function ForgotPassword() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.message || "Could not start password reset");
+        throw new Error(err?.message || t["marketing.forgotErrorBody"]);
       }
       const body = await res.json();
       // Server returns devResetUrl outside of production so QA can verify
       // the flow without a wired-up email service.
       if (body?.devResetUrl) setDevResetUrl(body.devResetUrl);
-      // Platform-level flag (the same for every address): never claim a link was sent when
-      // the platform has no email provider.
-      setEmailUnavailable(body?.emailDelivery === "unavailable");
+      // Spec 3.2: one customer sentence whatever the delivery set-up; it never claims a link
+      // was sent and never mentions how email is delivered.
       setSubmitted(true);
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: t["marketing.forgotErrorTitle"],
-        description: error?.message || t["marketing.forgotErrorBody"],
-      });
+    } catch (failure: any) {
+      setError(failure?.message || t["marketing.forgotErrorBody"]);
     } finally {
       setIsLoading(false);
     }
@@ -84,99 +78,79 @@ export default function ForgotPassword() {
     <AuthLayout variant="forgot">
       <Link
         href="/login"
-        className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"
+        className="mb-6 inline-flex min-h-11 items-center gap-2 text-small font-medium text-muted-foreground hover:text-foreground md:min-h-0"
         data-testid="button-back-login"
       >
         <ArrowLeft className="h-4 w-4 rtl:-scale-x-100" aria-hidden="true" />
         <T k="pages.backToSignIn" />
       </Link>
-      <Card className="w-full">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-semibold">
-            <T k="pageLabels.forgotPassword" />
-          </CardTitle>
-          <CardDescription>{t["marketing.forgotDescription"]}</CardDescription>
-        </CardHeader>
-
-        <CardContent>
-          {submitted ? (
-            <div className="space-y-4 py-2">
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-success-subtle border border-success/30 ">
-                <CheckCircle2 className="w-5 h-5 text-success mt-0.5 shrink-0" />
-                <div className="text-sm" data-testid="text-forgot-result">
-                  <p className="font-medium text-success-subtle-foreground ">
-                    {emailUnavailable ? (
-                      t["marketing.forgotNoProviderTitle"]
-                    ) : (
-                      <T k="pageLabels.checkYourInbox" />
-                    )}
-                  </p>
-                  <p className="text-success mt-0.5">
-                    {emailUnavailable ? t["marketing.forgotNoProvider"] : t["marketing.forgotSent"]}
-                  </p>
-                </div>
-              </div>
-              {devResetUrl && (
-                <div className="text-xs text-muted-foreground p-3 border rounded-md break-all">
-                  <p className="font-medium mb-1 text-foreground">{t["marketing.forgotDevLink"]}</p>
-                  <a
-                    href={devResetUrl}
-                    className="text-primary underline"
-                    data-testid="link-dev-reset"
-                  >
-                    {devResetUrl}
-                  </a>
-                </div>
-              )}
+      <AuthHeader
+        title={<T k="pageLabels.forgotPassword" />}
+        description={t["marketing.forgotDescription"]}
+      />
+      {error ? (
+        <AuthAlert tone="danger" title={t["marketing.forgotErrorTitle"]}>
+          {error}
+        </AuthAlert>
+      ) : null}
+      {submitted ? (
+        <div data-testid="text-forgot-result">
+          <AuthAlert tone="info" title={t["marketing.forgotDoneTitle"]}>
+            {formatMessage(t["marketing.forgotDoneBody"], { email: UPGRADE_CONTACT_EMAIL })}
+          </AuthAlert>
+          {devResetUrl && (
+            <div className="break-all rounded-lg border border-border p-3 text-caption text-muted-foreground">
+              <p className="mb-1 font-medium text-foreground">{t["marketing.forgotDevLink"]}</p>
+              <a href={devResetUrl} className="text-accent underline" data-testid="link-dev-reset">
+                {devResetUrl}
+              </a>
             </div>
-          ) : (
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="email"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <T k="pages.email" />
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type="email"
-                          autoComplete="email"
-                          placeholder="you@example.com"
-                          disabled={isLoading}
-                          data-testid="input-email"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <TurnstileWidget onToken={setCaptchaToken} />
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isLoading}
-                  data-testid="button-send-reset"
-                >
-                  <Mail className="w-4 h-4 me-2" aria-hidden="true" />
-                  {isLoading ? t["marketing.forgotSending"] : t["marketing.forgotSubmit"]}
-                </Button>
-              </form>
-            </Form>
           )}
-        </CardContent>
-        <CardFooter className="flex flex-col space-y-2">
-          <div className="text-sm text-muted-foreground text-center">
-            {t["marketing.forgotRemembered"]}{" "}
-            <Link href="/login" className="text-primary hover:underline font-medium">
-              <T k="portal.signIn" />
-            </Link>
-          </div>
-        </CardFooter>
-      </Card>
+        </div>
+      ) : (
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5" noValidate>
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>
+                    <T k="pages.email" />
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      {...field}
+                      type="email"
+                      autoComplete="email"
+                      placeholder="you@example.com"
+                      className={AUTH_INPUT}
+                      disabled={isLoading}
+                      data-testid="input-email"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <TurnstileWidget onToken={setCaptchaToken} />
+            <Button
+              type="submit"
+              className={AUTH_BUTTON}
+              disabled={isLoading}
+              data-testid="button-send-reset"
+            >
+              {isLoading ? t["marketing.forgotSending"] : t["marketing.forgotSubmit"]}
+            </Button>
+          </form>
+        </Form>
+      )}
+      <AuthSwitch>
+        {t["marketing.forgotRemembered"]}{" "}
+        <Link href="/login" className="font-medium text-accent hover:underline">
+          {t["marketing.authSignIn"]}
+        </Link>
+      </AuthSwitch>
     </AuthLayout>
   );
 }

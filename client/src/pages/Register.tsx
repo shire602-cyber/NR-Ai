@@ -8,7 +8,14 @@ import { establishAuthenticatedSession } from "@/lib/authSession";
 import { apiRequest } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  AUTH_BUTTON,
+  AUTH_INPUT,
+  AuthAlert,
+  AuthHeader,
+  AuthState,
+} from "@/components/auth/AuthBlocks";
+import { MailX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,6 +43,7 @@ const COPY = {
     ar: "يوجد حساب لهذا البريد. سجّل الدخول به ثم افتح رابط الدعوة مرة أخرى.",
   },
   signIn: { en: "Sign in", ar: "تسجيل الدخول" },
+  invalidTitle: { en: "This invitation has expired", ar: "انتهت صلاحية هذه الدعوة" },
   invalid: {
     en: "This invitation is no longer valid. Ask the person who invited you to resend it.",
     ar: "هذه الدعوة لم تعد صالحة. اطلب من الشخص الذي دعاك إعادة إرسالها.",
@@ -90,11 +98,17 @@ function TeamInviteAccept({ token }: { token: string }) {
 
   if (invalid) {
     return (
-      <Card className="w-full max-w-md">
-        <CardContent className="pt-6 text-sm" data-testid="text-invite-invalid">
-          {tr(COPY.invalid)}
-        </CardContent>
-      </Card>
+      <AuthState
+        icon={MailX}
+        testId="text-invite-invalid"
+        title={tr(COPY.invalidTitle)}
+        body={tr(COPY.invalid)}
+        actions={
+          <Button className="h-11" onClick={() => setLocation("/login")}>
+            {tr(COPY.signIn)}
+          </Button>
+        }
+      />
     );
   }
   if (!preview) return null;
@@ -102,60 +116,70 @@ function TeamInviteAccept({ token }: { token: string }) {
   const needsSignIn = preview.accountExists && !signedIn;
 
   return (
-    <Card className="w-full max-w-md" data-testid="card-team-invite">
-      <CardHeader>
-        <CardTitle>{tr(COPY.inviteTitle)}</CardTitle>
-        <CardDescription>
-          {tr(COPY.inviteBody)} {preview.company?.name} {tr(COPY.asRole)} {roleLabel} (
-          {preview.email})
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {needsSignIn ? (
+    <div className="w-full" data-testid="card-team-invite">
+      <AuthHeader
+        title={tr(COPY.inviteTitle)}
+        description={
           <>
-            <p className="text-sm">{tr(COPY.signInFirst)}</p>
-            <Button onClick={() => setLocation("/login")} data-testid="button-invite-sign-in">
-              {tr(COPY.signIn)}
-            </Button>
+            {tr(COPY.inviteBody)}{" "}
+            <strong className="text-foreground">{preview.company?.name}</strong> {tr(COPY.asRole)}{" "}
+            {roleLabel} (<bdi>{preview.email}</bdi>)
           </>
-        ) : (
-          <>
-            {!preview.accountExists && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="invite-name">{tr(COPY.name)}</Label>
-                  <Input
-                    id="invite-name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    data-testid="input-invite-name"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="invite-password">{tr(COPY.password)}</Label>
-                  <Input
-                    id="invite-password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    data-testid="input-invite-password"
-                  />
-                  <p className="text-xs text-muted-foreground">{tr(COPY.passwordHint)}</p>
-                </div>
-              </>
-            )}
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button
-              onClick={accept}
-              disabled={busy || (!preview.accountExists && (!name || !password))}
-              data-testid="button-accept-invite"
-            >
-              {tr(COPY.accept)}
-            </Button>
-          </>
-        )}
-      </CardContent>
-    </Card>
+        }
+      />
+      {error && <AuthAlert tone="danger">{error}</AuthAlert>}
+      {needsSignIn ? (
+        <div className="space-y-5">
+          <p className="text-small">{tr(COPY.signInFirst)}</p>
+          <Button
+            className={AUTH_BUTTON}
+            onClick={() => setLocation("/login")}
+            data-testid="button-invite-sign-in"
+          >
+            {tr(COPY.signIn)}
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {!preview.accountExists && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="invite-name">{tr(COPY.name)}</Label>
+                <Input
+                  id="invite-name"
+                  autoComplete="name"
+                  className={AUTH_INPUT}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  data-testid="input-invite-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite-password">{tr(COPY.password)}</Label>
+                <Input
+                  id="invite-password"
+                  type="password"
+                  autoComplete="new-password"
+                  className={AUTH_INPUT}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  data-testid="input-invite-password"
+                />
+                <p className="text-small text-muted-foreground">{tr(COPY.passwordHint)}</p>
+              </div>
+            </>
+          )}
+          <Button
+            className={AUTH_BUTTON}
+            onClick={accept}
+            disabled={busy || (!preview.accountExists && (!name || !password))}
+            data-testid="button-accept-invite"
+          >
+            {tr(COPY.accept)}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -200,18 +224,17 @@ export default function Register() {
       {teamInvite ? (
         <TeamInviteAccept token={teamInvite} />
       ) : (
-        <div className="w-full max-w-md">
+        <div className="w-full">
           {notice && (
-            <p
-              className="mb-4 rounded-md border p-3 text-sm"
-              role="status"
-              data-testid="text-register-notice"
-            >
+            <AuthAlert tone="info" testId="text-register-notice">
               {notice}
-            </p>
+            </AuthAlert>
           )}
-          <TurnstileWidget onToken={setCaptchaToken} />
-          <RegisterForm onSuccess={handleSuccess} captchaToken={captchaToken} />
+          <RegisterForm
+            onSuccess={handleSuccess}
+            captchaToken={captchaToken}
+            captcha={<TurnstileWidget onToken={setCaptchaToken} />}
+          />
         </div>
       )}
     </AuthLayout>

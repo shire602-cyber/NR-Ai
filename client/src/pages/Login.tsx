@@ -5,12 +5,12 @@ import { AuthLayout } from "@/components/auth/AuthLayout";
 import { fetchCurrentUser } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import { establishAuthenticatedSession } from "@/lib/authSession";
-import { useTranslation, translateNow } from "@/lib/i18n";
-import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { AUTH_BUTTON, AUTH_INPUT, AuthAlert, AuthHeader } from "@/components/auth/AuthBlocks";
+import { VerifyEmailState } from "@/components/auth/VerifyEmailState";
 
 function safeNextPath(): string {
   const params = new URLSearchParams(window.location.search);
@@ -72,71 +72,58 @@ function MfaChallenge({
     }
   };
   return (
-    <Card className="w-full max-w-md border-border/60 shadow-xl" data-testid="mfa-challenge">
-      <CardHeader>
-        <CardTitle>{t["security.loginMfaTitle"]}</CardTitle>
-        <CardDescription>{t["security.loginMfaHelp"]}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={submit} className="space-y-4">
+    <div data-testid="mfa-challenge">
+      <AuthHeader title={t["security.loginMfaTitle"]} description={t["security.loginMfaHelp"]} />
+      {error && <AuthAlert tone="danger">{error}</AuthAlert>}
+      <form onSubmit={submit} className="space-y-5">
+        <div className="space-y-2">
           <Label htmlFor="mfa-code">{t["security.mfaCode"]}</Label>
           <Input
             id="mfa-code"
             autoComplete="one-time-code"
             inputMode="text"
             autoFocus
+            className={AUTH_INPUT}
             value={code}
             onChange={(e) => setCode(e.target.value)}
             data-testid="input-mfa-code"
           />
-          {error && (
-            <p className="text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          )}
-          <div className="flex gap-2">
-            <Button type="submit" disabled={busy || code.trim().length < 6}>
-              {t["security.verify"]}
-            </Button>
-            <Button type="button" variant="ghost" onClick={onBack}>
-              {t["security.loginMfaBack"]}
-            </Button>
-          </div>
-        </form>
-      </CardContent>
-    </Card>
+        </div>
+        <Button type="submit" className={AUTH_BUTTON} disabled={busy || code.trim().length < 6}>
+          {t["security.verify"]}
+        </Button>
+        <Button type="button" variant="ghost" className="w-full" onClick={onBack}>
+          {t["security.loginMfaBack"]}
+        </Button>
+      </form>
+    </div>
   );
 }
 
-/** W5-E: consumes /verify-email?token=… links. */
-function useEmailVerificationLink(): "idle" | "working" | "done" | "failed" {
-  const [state, setState] = useState<"idle" | "working" | "done" | "failed">(() => {
-    if (typeof window === "undefined" || window.location.pathname !== "/verify-email") {
-      return "idle";
-    }
-    return new URLSearchParams(window.location.search).get("token") ? "working" : "failed";
-  });
-  useEffect(() => {
-    if (window.location.pathname !== "/verify-email") return;
-    const token = new URLSearchParams(window.location.search).get("token");
-    if (!token) return;
-    fetch(apiUrl("/api/auth/verify-email"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ token }),
-    })
-      .then((r) => setState(r.ok ? "done" : "failed"))
-      .catch(() => setState("failed"));
-  }, []);
-  return state;
+function isVerifyEmailPath(): boolean {
+  return typeof window !== "undefined" && window.location.pathname === "/verify-email";
 }
 
 export default function Login() {
+  if (isVerifyEmailPath()) {
+    return (
+      <AuthLayout variant="login">
+        <VerifyEmailState />
+      </AuthLayout>
+    );
+  }
+  return <SignIn />;
+}
+
+function SignIn() {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
   const { t } = useTranslation();
-  const verification = useEmailVerificationLink();
+  // Spec 3.2: a failed social sign-in is an inline alert above the form, not a toast.
+  const [oauthFailed] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("oauth_error") === "1"
+  );
   const [mfa, setMfa] = useState<{ token: string | null } | null>(() =>
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mfa") === "1"
       ? { token: null }
@@ -144,13 +131,7 @@ export default function Login() {
   );
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("oauth_error") === "1") {
-      toast({
-        title: translateNow("shell.toastLoginFailed"),
-        description: translateNow("shell.toastWeCouldNotCompleteSocialLoginPlease"),
-        variant: "destructive",
-      });
+    if (new URLSearchParams(window.location.search).get("oauth_error") === "1") {
       window.history.replaceState({}, "", "/login");
     }
 
@@ -164,7 +145,7 @@ export default function Login() {
         }
       })
       .catch(() => {});
-  }, [setLocation, toast]);
+  }, [setLocation]);
 
   const handleSuccess = async (user: any, result?: Record<string, unknown>) => {
     if (result?.mfaRequired) {
@@ -180,30 +161,25 @@ export default function Login() {
 
   return (
     <AuthLayout variant="login">
-      <div className="w-full max-w-md">
-        {verification !== "idle" && (
-          <p
-            className="mb-4 rounded-md border p-3 text-sm"
-            role="status"
-            data-testid="text-verify-email"
-          >
-            {verification === "working"
-              ? t["security.verifyEmailWorking"]
-              : verification === "done"
-                ? t["security.verifyEmailDone"]
-                : t["security.verifyEmailFailed"]}
-          </p>
-        )}
-        {mfa ? (
-          <MfaChallenge
-            mfaToken={mfa.token}
-            onDone={(user, body) => handleSuccess(user, { ...body, mfaRequired: false })}
-            onBack={() => setMfa(null)}
-          />
-        ) : (
-          <LoginForm onSuccess={handleSuccess} />
-        )}
-      </div>
+      {mfa ? (
+        <MfaChallenge
+          mfaToken={mfa.token}
+          onDone={(user, body) => handleSuccess(user, { ...body, mfaRequired: false })}
+          onBack={() => setMfa(null)}
+        />
+      ) : (
+        <LoginForm
+          onSuccess={handleSuccess}
+          notice={
+            oauthFailed
+              ? {
+                  title: t["marketing.authOauthFailedTitle"],
+                  body: t["marketing.authOauthFailedBody"],
+                }
+              : null
+          }
+        />
+      )}
     </AuthLayout>
   );
 }

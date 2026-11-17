@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { Alert } from "@/components/ui/alert";
 import type { ReactNode } from "react";
 import { useTranslation } from "@/lib/i18n";
 import { MarketingLayout } from "@/components/marketing/MarketingLayout";
@@ -65,9 +66,9 @@ export function LegalLayout({ slug, effectiveDate, children, arabic }: LegalLayo
         </nav>
         <div>
           {locale === "ar" && (
-            <p className="mk-note">
+            <Alert tone="info" className="mb-8">
               {arabic ? t["marketing.legalArabicNotice"] : t["marketing.legalEnglishOnly"]}
-            </p>
+            </Alert>
           )}
           {locale === "ar" && arabic ? (
             <article
