@@ -1,18 +1,8 @@
 import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  CardFooter,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -24,31 +14,25 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { SectionCard } from "@/components/ui/section-card";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { StatCard } from "@/components/ui/stat-card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import {
-  Link2,
-  Plug,
-  RefreshCw,
-  Check,
-  AlertTriangle,
-  Settings,
-  ChevronRight,
-  Loader2,
-  CreditCard,
-  Zap,
-  Clock,
-  Shield,
-  Database,
-  FileText,
-} from "lucide-react";
+import { AlertTriangle, ArrowUpRight, CreditCard, Loader2, RefreshCw } from "lucide-react";
 import { SiStripe, SiShopify } from "react-icons/si";
 import { Link } from "wouter";
+import {
+  connectedCount,
+  isIntegrationConnected,
+  summarizeImportedTransactions,
+} from "@/pages/integrations/summary";
 
 interface EcommerceIntegration {
   id: string;
@@ -82,63 +66,37 @@ interface IntegrationConfig {
   accessToken?: string;
 }
 
-// W5-B (R19-03, R19-09, R19-14): only integrations with real adapters are listed here.
-// Accounting and POS connectors are shown separately with their honest status.
-// R18-02: description/features are translation keys (pages namespace); names are brands.
+interface ConnectorStatusRow {
+  id: string;
+  category?: "accounting" | "pos";
+  label: { en: string; ar: string };
+  purpose: { en: string; ar: string };
+}
+
+// W5-B (R19-03, R19-09, R19-14): only integrations with real adapters can be connected.
+// Accounting and POS systems without a live connection are listed under "By import".
+// R18-02: description keys live in the pages namespace; names are brands.
 const PLATFORMS = [
   {
     id: "stripe_payouts",
     name: "Stripe",
     description: "pages.integrationStripeDescription",
     icon: SiStripe,
-    color: "text-[#635BFF]",
-    bgColor: "bg-[#635BFF]/10",
-    features: [
-      "pages.integrationStripeFeatureBalance",
-      "pages.integrationStripeFeatureFees",
-      "pages.integrationStripeFeaturePayouts",
-      "pages.integrationStripeFeatureIdempotent",
-    ],
-    status: "available",
   },
   {
     id: "shopify",
     name: "Shopify",
     description: "pages.integrationShopifyDescription",
     icon: SiShopify,
-    color: "text-[#95BF47]",
-    bgColor: "bg-[#95BF47]/10",
-    features: [
-      "pages.integrationShopifyFeatureOrders",
-      "pages.integrationShopifyFeatureRefunds",
-      "pages.integrationShopifyFeatureVat",
-      "pages.integrationShopifyFeatureNoDuplicates",
-    ],
-    status: "available",
   },
 ];
 
-const HUB_COPY = {
-  en: {
-    syncDone: "Sync complete",
-    connectorsTitle: "Accounting and POS connectors",
-    connectorsHelp:
-      "Direct connections need an app registered with each provider. Until then, bring data in with the CSV import.",
-    requiresRegistration: "Requires app registration",
-    oauthConfigured: "OAuth configured",
-    useImport: "Use CSV import",
-  },
-  ar: {
-    syncDone: "اكتملت المزامنة",
-    connectorsTitle: "موصلات المحاسبة ونقاط البيع",
-    connectorsHelp:
-      "تتطلب الاتصالات المباشرة تسجيل تطبيق لدى كل مزود. حتى ذلك الحين استورد البيانات عبر CSV.",
-    requiresRegistration: "يتطلب تسجيل تطبيق",
-    oauthConfigured: "تم إعداد OAuth",
-    useImport: "استخدم الاستيراد عبر CSV",
-  },
-};
-
+/**
+ * Settings → Integrations (WP-E, spec 3.15). A plain list of connectors in two groups:
+ * "Available" (connect with your own credentials) and "By import". Imported transactions
+ * and their counters appear only once a platform is connected, and every counter is
+ * computed from rows the server returned — the page never shows a figure it did not load.
+ */
 export default function IntegrationsHub() {
   const { t, locale } = useTranslation();
   const isRTL = locale === "ar";
@@ -148,18 +106,11 @@ export default function IntegrationsHub() {
   const [selectedPlatform, setSelectedPlatform] = useState<(typeof PLATFORMS)[0] | null>(null);
   const [configForm, setConfigForm] = useState<IntegrationConfig>({ platform: "" });
 
-  // Fetch integrations
-  const hubCopy = HUB_COPY[isRTL ? "ar" : "en"];
-  const { data: integrationStatus } = useQuery<{
-    connectors: Array<{
-      id: string;
-      label: { en: string; ar: string };
-      purpose: { en: string; ar: string };
-      status: "requires_external" | "sandbox";
-    }>;
-  }>({ queryKey: ["/api/integrations/status"] });
+  const { data: integrationStatus } = useQuery<{ connectors: ConnectorStatusRow[] }>({
+    queryKey: ["/api/integrations/status"],
+  });
 
-  const { data: integrations, isLoading: _integrationsLoading } = useQuery<EcommerceIntegration[]>({
+  const { data: integrations, isLoading: integrationsLoading } = useQuery<EcommerceIntegration[]>({
     queryKey: ["/api/integrations/ecommerce", companyId],
     queryFn: () => {
       const params = new URLSearchParams({ companyId: companyId ?? "" });
@@ -168,17 +119,17 @@ export default function IntegrationsHub() {
     enabled: !!companyId,
   });
 
-  // Fetch recent transactions
+  const connected = connectedCount(integrations);
+
   const { data: transactions, isLoading: transactionsLoading } = useQuery<EcommerceTransaction[]>({
     queryKey: ["/api/integrations/ecommerce/transactions", companyId],
     queryFn: () => {
       const params = new URLSearchParams({ companyId: companyId ?? "" });
       return apiRequest("GET", `/api/integrations/ecommerce/transactions?${params}`);
     },
-    enabled: !!companyId,
+    enabled: !!companyId && connected > 0,
   });
 
-  // Connect integration mutation
   const connectMutation = useMutation({
     mutationFn: async (config: IntegrationConfig) => {
       return await apiRequest("POST", "/api/integrations/ecommerce/connect", {
@@ -206,7 +157,6 @@ export default function IntegrationsHub() {
     },
   });
 
-  // Sync mutation
   const syncMutation = useMutation({
     mutationFn: async (integrationId: string) => {
       return await apiRequest("POST", `/api/integrations/ecommerce/${integrationId}/sync`, {
@@ -218,7 +168,7 @@ export default function IntegrationsHub() {
       queryClient.invalidateQueries({
         queryKey: ["/api/integrations/ecommerce/transactions", companyId],
       });
-      toast({ title: hubCopy.syncDone });
+      toast({ title: translateNow("integrations.syncDone") });
     },
     onError: (error: any) => {
       toast({
@@ -229,9 +179,7 @@ export default function IntegrationsHub() {
     },
   });
 
-  const getIntegration = (platform: string) => {
-    return integrations?.find((i) => i.platform === platform);
-  };
+  const getIntegration = (platform: string) => integrations?.find((i) => i.platform === platform);
 
   const handleConnect = (platform: (typeof PLATFORMS)[0]) => {
     setSelectedPlatform(platform);
@@ -241,11 +189,9 @@ export default function IntegrationsHub() {
 
   const handleSubmitConnect = (e: React.FormEvent) => {
     e.preventDefault();
-
     if (!selectedPlatform) return;
 
-    // Validate required fields
-    if (selectedPlatform.id === "stripe" && !configForm.apiKey) {
+    if (selectedPlatform.id === "stripe_payouts" && !configForm.apiKey) {
       toast({
         variant: "destructive",
         title: translateNow("toasts.error"),
@@ -266,601 +212,254 @@ export default function IntegrationsHub() {
     connectMutation.mutate(configForm);
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-AE", {
-      day: "numeric",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
+  const summary = summarizeImportedTransactions(transactions);
   const transactionRows = transactions ?? [];
-  const activeIntegrationCount = (integrations ?? []).filter(
-    (integration) => integration.isActive
-  ).length;
-  const today = new Date().toISOString().slice(0, 10);
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const syncedTodayCount = transactionRows.filter(
-    (txn) => txn.transactionDate?.slice(0, 10) === today
-  ).length;
-  const monthlyTransactionValue = transactionRows
-    .filter((txn) => txn.transactionDate?.slice(0, 7) === currentMonth)
-    .reduce((sum, txn) => sum + (Number(txn.amount) || 0), 0);
-  const reconciledPercent =
-    transactionRows.length > 0
-      ? Math.round(
-          (transactionRows.filter((txn) => txn.isReconciled).length / transactionRows.length) * 100
-        )
-      : 0;
+  const byImport = integrationStatus?.connectors ?? [];
+
+  const connectorsView = (
+    <div className="space-y-6">
+      <SectionCard
+        title={<T k="integrations.availableTitle" />}
+        description={<T k="integrations.availableHelp" />}
+        flush
+        testId="integrations-available"
+      >
+        <ul className="divide-y divide-border border-t">
+          {PLATFORMS.map((platform) => {
+            const integration = getIntegration(platform.id);
+            const Icon = platform.icon;
+            // W5-B (R19-03): "connected" only after the platform accepted the credentials.
+            const isConnected = isIntegrationConnected(integration);
+            return (
+              <li
+                key={platform.id}
+                className="flex flex-wrap items-center gap-4 px-5 py-4 md:px-6"
+                data-testid={`integration-row-${platform.id}`}
+              >
+                <div
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-surface-sunken text-foreground"
+                  aria-hidden="true"
+                >
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium text-foreground">{platform.name}</p>
+                    {isConnected && (
+                      <StatusBadge tone="success">
+                        <T k="pages.connected" />
+                      </StatusBadge>
+                    )}
+                  </div>
+                  <p className="text-small text-muted-foreground">{t[platform.description]}</p>
+                  {isConnected && integration && (
+                    <p className="mt-1 text-caption text-muted-foreground">
+                      {t["pages.integrationLastSynced"]}{" "}
+                      {integration.lastSyncAt
+                        ? formatDate(integration.lastSyncAt, locale)
+                        : t["pages.integrationNever"]}
+                    </p>
+                  )}
+                  {isConnected && integration?.syncStatus === "failed" && integration.syncError && (
+                    <p className="mt-1 flex items-center gap-1.5 text-small text-danger">
+                      <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <T k="integrations.lastSyncFailed" />
+                    </p>
+                  )}
+                </div>
+                {isConnected ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => syncMutation.mutate(integration!.id)}
+                    disabled={syncMutation.isPending}
+                    data-testid={`button-sync-${platform.id}`}
+                  >
+                    {syncMutation.isPending ? (
+                      <Loader2 className="me-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="me-2 h-4 w-4" />
+                    )}
+                    <T k="integrations.syncNow" />
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleConnect(platform)}
+                    data-testid={`button-connect-${platform.id}`}
+                  >
+                    <T k="integrations.connect" />
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </SectionCard>
+
+      {byImport.length > 0 && (
+        <SectionCard
+          title={<T k="integrations.byImportTitle" />}
+          description={<T k="integrations.byImportHelp" />}
+          flush
+          testId="integrations-by-import"
+        >
+          <ul className="divide-y divide-border border-t">
+            {byImport.map((cn) => (
+              <li
+                key={cn.id}
+                className="flex flex-wrap items-center gap-4 px-5 py-4 md:px-6"
+                data-testid={`connector-${cn.id}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-foreground">{isRTL ? cn.label.ar : cn.label.en}</p>
+                  <p className="text-small text-muted-foreground">
+                    {isRTL ? cn.purpose.ar : cn.purpose.en}
+                  </p>
+                </div>
+                <Link
+                  href="/import"
+                  className="inline-flex items-center gap-1 text-small font-medium text-primary hover:underline"
+                >
+                  <T k="integrations.importCsv" />
+                  <ArrowUpRight className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden="true" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </SectionCard>
+      )}
+    </div>
+  );
 
   return (
-    <div className="space-y-6" dir={isRTL ? "rtl" : "ltr"}>
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Settings"
         testId="text-integrations-title"
-        title={<T k="pageLabels.cRMAndECommerceIntegrations" />}
-        description={<T k="pageLabels.connectYourBusinessToolsForAutomaticDataSynchronization" />}
+        title={<T k="integrations.title" />}
+        description={<T k="integrations.description" />}
       />
 
-      <Tabs defaultValue="platforms" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="platforms" className="gap-2" data-testid="tab-platforms">
-            <Plug className="w-4 h-4" />
-            <span className="hidden sm:inline">
-              <T k="pageLabels.platforms" />
-            </span>
-          </TabsTrigger>
-          <TabsTrigger value="transactions" className="gap-2" data-testid="tab-transactions">
-            <CreditCard className="w-4 h-4" />
-            <span className="hidden sm:inline">
+      {integrationsLoading && !!companyId ? (
+        <div className="space-y-3" data-testid="integrations-loading">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+      ) : connected === 0 ? (
+        connectorsView
+      ) : (
+        <Tabs defaultValue="platforms" className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="platforms" data-testid="tab-platforms">
+              <T k="integrations.tabConnectors" />
+            </TabsTrigger>
+            <TabsTrigger value="transactions" data-testid="tab-transactions">
               <T k="pageLabels.transactions" />
-            </span>
-          </TabsTrigger>
-          <TabsTrigger value="settings" className="gap-2" data-testid="tab-settings">
-            <Settings className="w-4 h-4" />
-            <span className="hidden sm:inline">
-              <T k="pages.settings" />
-            </span>
-          </TabsTrigger>
-        </TabsList>
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Platforms Tab */}
-        <TabsContent value="platforms" className="space-y-6">
-          {/* Quick Stats */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="hover-elevate">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pages.connected" />
-                </CardTitle>
-                <Link2 className="w-4 h-4 text-success " />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{activeIntegrationCount}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pageLabels.activeIntegrations" />
-                </p>
-              </CardContent>
-            </Card>
+          <TabsContent value="platforms">{connectorsView}</TabsContent>
 
-            <Card className="hover-elevate">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pageLabels.syncedToday" />
-                </CardTitle>
-                <RefreshCw className="w-4 h-4 text-info " />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{syncedTodayCount}</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pageLabels.transactionsImported" />
-                </p>
-              </CardContent>
-            </Card>
+          <TabsContent value="transactions" className="space-y-6">
+            {summary && (
+              <div className="grid gap-4 sm:grid-cols-3" data-testid="integrations-summary">
+                <StatCard
+                  label={<T k="integrations.importedCount" />}
+                  value={summary.total}
+                  testId="integrations-summary-total"
+                />
+                <StatCard
+                  label={<T k="pages.reconciled" />}
+                  value={summary.reconciled}
+                  testId="integrations-summary-reconciled"
+                />
+                <StatCard
+                  label={<T k="pageLabels.pendingReconciliation" />}
+                  value={summary.awaitingReconciliation}
+                  testId="integrations-summary-pending"
+                />
+              </div>
+            )}
 
-            <Card className="hover-elevate">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pageLabels.totalValue" />
-                </CardTitle>
-                <CreditCard className="w-4 h-4 text-chart-5 " />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold tabular-nums">
-                  <Money amount={monthlyTransactionValue} currency={"AED"} />
+            <SectionCard
+              title={<T k="integrations.recentImports" />}
+              description={<T k="pageLabels.recentTransactionsImportedFromConnectedPlatforms" />}
+              flush
+            >
+              {transactionsLoading ? (
+                <div className="space-y-3 border-t p-5">
+                  <Skeleton className="h-11 w-full" />
+                  <Skeleton className="h-11 w-full" />
+                  <Skeleton className="h-11 w-full" />
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pages.thisMonth" />
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="hover-elevate">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pages.reconciled" />
-                </CardTitle>
-                <Check className="w-4 h-4 text-success " />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{reconciledPercent}%</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pageLabels.autoMatched" />
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Platform Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {PLATFORMS.map((platform) => {
-              const integration = getIntegration(platform.id);
-              const Icon = platform.icon;
-              // W5-B (R19-03): "connected" only after the platform accepted the credentials.
-              const isConnected =
-                !!integration?.isActive && integration?.connectionStatus === "connected";
-
-              return (
-                <Card key={platform.id} className="hover-elevate relative overflow-hidden">
-                  <CardHeader>
-                    <div className="flex items-start gap-4">
-                      <div className={`p-3 rounded-lg ${platform.bgColor}`}>
-                        <Icon aria-hidden="true" className={`w-8 h-8 ${platform.color}`} />
-                      </div>
-                      <div className="flex-1">
-                        <CardTitle className="text-lg flex items-center gap-2">
-                          {platform.name}
-                          {isConnected && (
-                            <Badge variant="secondary" className="bg-success-subtle text-success ">
-                              <Check className="w-3 h-3 me-1" />
-                              <T k="pages.connected" />
-                            </Badge>
-                          )}
-                        </CardTitle>
-                        <CardDescription className="mt-1 text-muted-foreground">
-                          {t[platform.description]}
-                        </CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent>
-                    <div className="space-y-3">
-                      <p className="text-xs font-medium text-muted-foreground">
-                        {t["pages.integrationFeaturesLabel"]}
-                      </p>
-                      <div className="flex flex-wrap gap-1">
-                        {platform.features.map((feature, idx) => (
-                          <Badge key={idx} variant="outline" className="text-xs">
-                            {t[feature]}
-                          </Badge>
-                        ))}
-                      </div>
-
-                      {integration && isConnected && (
-                        <div className="pt-3 border-t mt-3">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground">
-                              {t["pages.integrationLastSynced"]}
-                            </span>
-                            <span className="font-medium">
-                              {integration.lastSyncAt
-                                ? formatDate(integration.lastSyncAt)
-                                : t["pages.integrationNever"]}
-                            </span>
-                          </div>
-                          {integration.syncStatus === "failed" && integration.syncError && (
-                            <div className="flex items-center gap-2 mt-2 text-sm text-destructive ">
-                              <AlertTriangle className="w-4 h-4" />
-                              {integration.syncError}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-
-                  <CardFooter className="flex gap-2">
-                    {isConnected ? (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1"
-                          onClick={() => syncMutation.mutate(integration!.id)}
-                          disabled={syncMutation.isPending}
-                          data-testid={`button-sync-${platform.id}`}
-                        >
-                          {syncMutation.isPending ? (
-                            <Loader2 className="w-4 h-4 me-2 animate-spin" />
-                          ) : (
-                            <RefreshCw className="w-4 h-4 me-2" />
-                          )}
-                          Sync Now
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          data-testid={`button-settings-${platform.id}`}
-                        >
-                          <Settings className="w-4 h-4" />
-                        </Button>
-                      </>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        className="w-full gap-2"
-                        onClick={() => handleConnect(platform)}
-                        data-testid={`button-connect-${platform.id}`}
+              ) : transactionRows.length === 0 ? (
+                <div className="border-t">
+                  <EmptyState
+                    icon={CreditCard}
+                    title={t["pageLabels.noImportedTransactionsYet"]}
+                    description={t["integrations.emptyTransactions"]}
+                    compact
+                  />
+                </div>
+              ) : (
+                <ul className="divide-y divide-border border-t">
+                  {transactionRows.map((txn) => {
+                    const platform = PLATFORMS.find((p) => p.id === txn.platform);
+                    const isRefund = txn.transactionType === "refund";
+                    return (
+                      <li
+                        key={txn.id}
+                        className="flex items-center justify-between gap-4 px-5 py-3 md:px-6"
                       >
-                        <Plug className="w-4 h-4" />
-                        {formatMessage(t["pages.integrationConnect"], { name: platform.name })}
-                      </Button>
-                    )}
-                  </CardFooter>
-                </Card>
-              );
-            })}
-          </div>
-
-          {/* Accounting / POS connectors (R19-09): honest status, no "coming soon" */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{hubCopy.connectorsTitle}</CardTitle>
-              <CardDescription>{hubCopy.connectorsHelp}</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {(integrationStatus?.connectors ?? []).map((cn) => (
-                <div
-                  key={cn.id}
-                  className="flex items-start justify-between gap-3 rounded-lg border p-3"
-                  data-testid={`connector-${cn.id}`}
-                >
-                  <div>
-                    <p className="font-medium">{isRTL ? cn.label.ar : cn.label.en}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {isRTL ? cn.purpose.ar : cn.purpose.en}
-                    </p>
-                    <Link href="/import" className="mt-1 inline-block text-xs underline">
-                      {hubCopy.useImport}
-                    </Link>
-                  </div>
-                  <Badge variant="outline" className="shrink-0">
-                    {cn.status === "requires_external"
-                      ? hubCopy.requiresRegistration
-                      : hubCopy.oauthConfigured}
-                  </Badge>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          {/* Benefits Section */}
-          <Card className="border-primary/20">
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <Zap className="w-5 h-5 text-primary" />
-                <T k="pageLabels.whyConnectYourPlatforms" />
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="flex gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10 h-fit">
-                    <Clock className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-medium">
-                      <T k="pageLabels.saveTime" />
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      <T k="pageLabels.automaticTransactionImportEliminatesManualDataEntry" />
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10 h-fit">
-                    <Shield className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-medium">
-                      <T k="pageLabels.reduceErrors" />
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      <T k="pageLabels.aIPoweredMatchingEnsuresAccurateReconciliation" />
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10 h-fit">
-                    <Database className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="font-medium">
-                      <T k="pageLabels.realTimeData" />
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      <T k="pageLabels.alwaysHaveUpToDateFinancialInformation" />
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Transactions Tab */}
-        <TabsContent value="transactions" className="space-y-6">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              <T k="pageLabels.recentTransactionsImportedFromConnectedPlatforms" />
-            </p>
-            <Button variant="outline" size="sm" data-testid="button-export-transactions">
-              <FileText className="w-4 h-4 me-2" />
-              <T k="pages.export" />
-            </Button>
-          </div>
-
-          <Card>
-            <CardContent className="p-0">
-              <ScrollArea className="h-[500px]">
-                <div className="divide-y">
-                  {transactionsLoading && (
-                    <div className="p-6 space-y-3">
-                      <Skeleton className="h-16 w-full" />
-                      <Skeleton className="h-16 w-full" />
-                      <Skeleton className="h-16 w-full" />
-                    </div>
-                  )}
-                  {!transactionsLoading && transactionRows.length === 0 && (
-                    <div className="p-10 text-center text-muted-foreground">
-                      <CreditCard className="w-8 h-8 mx-auto mb-3" />
-                      <p className="font-medium">
-                        <T k="pageLabels.noImportedTransactionsYet" />
-                      </p>
-                      <p className="text-sm">{t["pages.integrationEmptyTransactions"]}</p>
-                    </div>
-                  )}
-                  {!transactionsLoading &&
-                    transactionRows.map((txn) => {
-                      const platform = PLATFORMS.find((p) => p.id === txn.platform);
-                      const Icon = platform?.icon || CreditCard;
-                      const isRefund = txn.transactionType === "refund";
-
-                      return (
-                        <div
-                          key={txn.id}
-                          className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
-                        >
-                          <div className="flex items-center gap-4">
-                            <div className={`p-2 rounded-lg ${platform?.bgColor || "bg-muted"}`}>
-                              <Icon
-                                className={`w-5 h-5 ${platform?.color || "text-muted-foreground"}`}
-                              />
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <p className="font-medium">
-                                  {txn.customerName || "Unknown Customer"}
-                                </p>
-                                <Badge variant="outline" className="text-xs">
-                                  {txn.transactionType}
-                                </Badge>
-                              </div>
-                              <p className="text-sm text-muted-foreground">
-                                {txn.customerEmail} • {formatDate(txn.transactionDate)}
-                              </p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-4">
-                            <div className="text-end">
-                              <p
-                                className={`tabular-nums font-bold ${isRefund ? "text-destructive " : "text-success "}`}
-                              >
-                                {isRefund ? "" : "+"}
-                                <Money amount={txn.amount} currency={txn.currency} />
-                              </p>
-                              <div className="flex items-center gap-1 justify-end">
-                                {txn.isReconciled ? (
-                                  <Badge
-                                    variant="secondary"
-                                    className="bg-success-subtle text-success text-xs"
-                                  >
-                                    <Check className="w-3 h-3 me-1" />
-                                    <T k="pages.reconciled" />
-                                  </Badge>
-                                ) : (
-                                  <Badge
-                                    variant="secondary"
-                                    className="bg-warning-subtle text-warning text-xs"
-                                  >
-                                    <Clock className="w-3 h-3 me-1" />
-                                    <T k="pages.pending" />
-                                  </Badge>
-                                )}
-                              </div>
-                            </div>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
-                              <ChevronRight className="w-4 h-4" />
-                            </Button>
-                          </div>
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-foreground">
+                            {txn.customerName || t["integrations.unnamedCustomer"]}
+                          </p>
+                          <p className="text-small text-muted-foreground">
+                            {platform?.name ?? txn.platform} ·{" "}
+                            {isRefund ? t["integrations.typeRefund"] : t["integrations.typeSale"]} ·{" "}
+                            {formatDate(txn.transactionDate, locale)}
+                          </p>
                         </div>
-                      );
-                    })}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <span className="font-medium tabular-nums">
+                            <Money
+                              amount={isRefund ? -Math.abs(txn.amount) : txn.amount}
+                              currency={txn.currency}
+                            />
+                          </span>
+                          {txn.isReconciled ? (
+                            <StatusBadge tone="success">
+                              <T k="pages.reconciled" />
+                            </StatusBadge>
+                          ) : (
+                            <StatusBadge tone="warning">
+                              <T k="pages.pending" />
+                            </StatusBadge>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </SectionCard>
+          </TabsContent>
+        </Tabs>
+      )}
 
-          {/* Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pageLabels.pendingReconciliation" />
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-warning ">12</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pageLabels.transactionsNeedReview" />
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pageLabels.autoMatched2" />
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-success ">156</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pages.thisMonth" />
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">
-                  <T k="pageLabels.failedImports" />
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-destructive ">3</div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  <T k="pageLabels.requireAttention" />
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        {/* Settings Tab */}
-        <TabsContent value="settings" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                <T k="pageLabels.syncSettings" />
-              </CardTitle>
-              <CardDescription>
-                <T k="pageLabels.configureHowDataIsSynchronizedFromConnectedPlatforms" />
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">
-                    <T k="pageLabels.automaticSync" />
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    <T k="pageLabels.syncNewTransactionsEveryHour" />
-                  </p>
-                </div>
-                <Switch defaultChecked data-testid="switch-auto-sync" />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">
-                    <T k="pageLabels.autoReconciliation" />
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    <T k="pageLabels.automaticallyMatchTransactionsWithInvoices" />
-                  </p>
-                </div>
-                <Switch defaultChecked data-testid="switch-auto-reconcile" />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">
-                    <T k="pageLabels.createJournalEntries" />
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    <T k="pageLabels.automaticallyCreateJournalEntriesForMatchedTransactions" />
-                  </p>
-                </div>
-                <Switch data-testid="switch-auto-journal" />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium">
-                    <T k="pageLabels.importRefunds" />
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    <T k="pageLabels.includeRefundsInTransactionImports" />
-                  </p>
-                </div>
-                <Switch defaultChecked data-testid="switch-import-refunds" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                <T k="pageLabels.accountMapping" />
-              </CardTitle>
-              <CardDescription>
-                <T k="pageLabels.mapPlatformTransactionsToYourChartOfAccounts" />
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm text-muted-foreground">
-                    <T k="pageLabels.stripePayments" />
-                  </Label>
-                  <p className="font-medium">1000 - Cash</p>
-                </div>
-                <div>
-                  <Label className="text-sm text-muted-foreground">
-                    <T k="pageLabels.stripeFees" />
-                  </Label>
-                  <p className="font-medium">5200 - Bank Charges</p>
-                </div>
-                <div>
-                  <Label className="text-sm text-muted-foreground">
-                    <T k="pageLabels.shopifySales" />
-                  </Label>
-                  <p className="font-medium">4000 - Sales Revenue</p>
-                </div>
-                <div>
-                  <Label className="text-sm text-muted-foreground">
-                    <T k="pageLabels.shopifyFees" />
-                  </Label>
-                  <p className="font-medium">5300 - Platform Fees</p>
-                </div>
-              </div>
-              <Button variant="outline" className="w-full" data-testid="button-edit-mapping">
-                <Settings className="w-4 h-4 me-2" />
-                <T k="pageLabels.editAccountMapping" />
-              </Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      {/* Connect Dialog */}
       <Dialog open={connectDialogOpen} onOpenChange={setConnectDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              {selectedPlatform && (
-                <>
-                  <selectedPlatform.icon className={`w-6 h-6 ${selectedPlatform.color}`} />
-                  {formatMessage(t["pages.integrationConnect"], {
-                    name: selectedPlatform.name,
-                  })}
-                </>
-              )}
+            <DialogTitle>
+              {selectedPlatform
+                ? formatMessage(t["pages.integrationConnect"], { name: selectedPlatform.name })
+                : null}
             </DialogTitle>
             <DialogDescription>
-              Enter your API credentials to connect {selectedPlatform?.name} with your bookkeeping
-              system.
+              {formatMessage(t["integrations.connectHelp"], { name: selectedPlatform?.name ?? "" })}
             </DialogDescription>
           </DialogHeader>
 
@@ -874,13 +473,14 @@ export default function IntegrationsHub() {
                   <Input
                     id="apiKey"
                     type="password"
+                    dir="ltr"
                     placeholder="rk_live_..."
                     value={configForm.apiKey || ""}
                     onChange={(e) => setConfigForm({ ...configForm, apiKey: e.target.value })}
                     data-testid="input-api-key"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Find this in your Stripe Dashboard under Developers &gt; API keys
+                  <p className="text-small text-muted-foreground">
+                    <T k="integrations.stripeKeyHelp" />
                   </p>
                 </div>
               )}
@@ -893,6 +493,7 @@ export default function IntegrationsHub() {
                     </Label>
                     <Input
                       id="shopDomain"
+                      dir="ltr"
                       placeholder="mystore.myshopify.com"
                       value={configForm.shopDomain || ""}
                       onChange={(e) => setConfigForm({ ...configForm, shopDomain: e.target.value })}
@@ -906,6 +507,7 @@ export default function IntegrationsHub() {
                     <Input
                       id="accessToken"
                       type="password"
+                      dir="ltr"
                       placeholder="shpat_..."
                       value={configForm.accessToken || ""}
                       onChange={(e) =>
@@ -923,12 +525,8 @@ export default function IntegrationsHub() {
                 <T k="pages.cancel" />
               </Button>
               <Button type="submit" disabled={connectMutation.isPending}>
-                {connectMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
-                ) : (
-                  <Plug className="w-4 h-4 me-2" />
-                )}
-                Connect
+                {connectMutation.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                <T k="integrations.connect" />
               </Button>
             </DialogFooter>
           </form>
