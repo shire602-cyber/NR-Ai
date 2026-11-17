@@ -70,7 +70,7 @@ describe("pdf invoice content", { timeout: 30_000 }, () => {
   it("R03-09 Arabic customer, labels and line descriptions round-trip", async () => {
     const pdf = await generateInvoicePDF(invoice(), lines(), company());
     const text = await pdfToText(pdf);
-    expect(text).toContain("Tax Invoice");
+    expect(text).toContain("Tax invoice");
     expect(text).toContain("فاتورة ضريبية");
     expect(text).toContain("رقم الفاتورة");
     expect(text).toContain("شركة النجمة للتجارة");
@@ -79,11 +79,11 @@ describe("pdf invoice content", { timeout: 30_000 }, () => {
     for (const word of ["دبي", "الإمارات", "العربية", "المتحدة"]) expect(flat).toContain(word);
   });
 
-  it("R03-15 paid invoice shows AMOUNT DUE 0.00 and a PAID stamp", async () => {
+  it("R03-15 paid invoice shows Amount due 0.00 and a paid-in-full line", async () => {
     const pdf = await generateInvoicePDF(invoice({ status: "paid" }), lines(), company());
     const text = await pdfToText(pdf);
-    expect(text.replace(/\s+/g, " ")).toMatch(/AMOUNT DUE[^0-9]*AED 0\.00/);
-    expect(text).toContain("PAID IN FULL");
+    expect(text.replace(/\s+/g, " ")).toMatch(/Amount due[^0-9]*AED 0\.00/);
+    expect(text).toContain("Paid in full");
   });
 
   it("R03-15 partial payments reduce the amount due", () => {
@@ -97,11 +97,11 @@ describe("pdf invoice content", { timeout: 30_000 }, () => {
   it("R03-15 per-line VAT amount, rate and supply date are present", async () => {
     const pdf = await generateInvoicePDF(invoice(), lines(), company());
     const text = (await pdfToText(pdf)).replace(/\s+/g, " ");
-    expect(text).toContain("VAT Amount");
+    expect(text).toContain("VAT amount");
     expect(text).toContain("50.00"); // 5% of 1,000
     expect(text).toContain("5%");
     expect(text).toContain("0%");
-    expect(text).toContain("Date of Supply");
+    expect(text).toContain("Date of supply");
     // supply date falls back to the invoice date
     expect((text.match(/10 Mar 2026/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });

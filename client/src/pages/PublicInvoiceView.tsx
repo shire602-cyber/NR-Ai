@@ -1,21 +1,24 @@
 import { T } from "@/components/layout/T";
 import { useTranslation } from "@/lib/i18n";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatDate } from "@/lib/format-date";
 import { useParams } from "wouter";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Money } from "@/components/ui/money";
+import { Alert } from "@/components/ui/alert";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Download, AlertCircle, Clock, CreditCard, CheckCircle2 } from "lucide-react";
+  LedgerCompany,
+  LedgerFooter,
+  LedgerHeader,
+  LedgerLines,
+  LedgerMeta,
+  LedgerParty,
+  LedgerSheet,
+  LedgerTotals,
+} from "@/components/documents/LedgerSheet";
+import { Download, AlertCircle, Clock, CreditCard, Loader2 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
 
 interface PublicInvoiceData {
@@ -59,21 +62,20 @@ interface PublicInvoiceData {
   };
 }
 
-function getStatusColor(status: string): string {
-  switch (status) {
-    case "paid":
-      return "bg-success-subtle text-success-subtle-foreground";
-    case "sent":
-      return "bg-info-subtle text-info-subtle-foreground";
-    case "draft":
-      return "bg-muted text-foreground";
-    case "void":
-      return "bg-danger-subtle text-danger-subtle-foreground";
-    default:
-      return "bg-muted text-foreground";
-  }
-}
+const PAY_TONE: Record<NonNullable<PublicInvoiceData["invoice"]["paymentStatus"]>, StatusTone> = {
+  paid: "success",
+  partially_paid: "warning",
+  unpaid: "warning",
+  overdue: "danger",
+  void: "neutral",
+};
 
+/**
+ * Public invoice view (/view/invoice/:token): the HTML twin of the "Ledger" invoice PDF
+ * (WP-F). White document card, accent rule, company block, stacked title, meta row, parties,
+ * line table (stacked rows under 480 px), totals with the amount-due row; Download PDF is the
+ * primary action and Pay appears only when a payment gateway is configured.
+ */
 export default function PublicInvoiceView() {
   const { t, locale } = useTranslation();
   const { token } = useParams<{ token: string }>();
@@ -121,302 +123,236 @@ export default function PublicInvoiceView() {
     }
   };
 
-  // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-muted flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin w-10 h-10 border-3 border-info border-t-transparent rounded-full mx-auto mb-4" />
-          <p className="text-muted-foreground">
-            <T k="pageLabels.loadingInvoice" />
-          </p>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="flex items-center gap-2 text-small text-muted-foreground" role="status">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+          <T k="portal.doc.loading" />
+        </p>
       </div>
     );
   }
 
-  // Error state
   if (error || !data) {
     const message = error instanceof Error ? error?.message : "Invoice not found";
     const isExpired = message.includes("expired");
-
+    const Icon = isExpired ? Clock : AlertCircle;
     return (
-      <div className="min-h-screen bg-muted flex items-center justify-center p-4">
-        <Card className="max-w-md w-full">
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            {isExpired ? (
-              <Clock className="w-16 h-16 text-warning mb-4" />
-            ) : (
-              <AlertCircle className="w-16 h-16 text-destructive mb-4" />
-            )}
-            <h2 className="text-xl font-semibold mb-2">
-              {isExpired ? t["portal.invoiceLinkExpired"] : t["portal.invoiceNotFound"]}
-            </h2>
-            <p className="text-muted-foreground">
-              {isExpired
-                ? t["invoices.publicLinkExpiredBody"]
-                : t["invoices.publicLinkInvalidBody"]}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <div className="w-full max-w-md rounded-lg border border-border bg-card px-6 py-12 text-center">
+          <span className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-800">
+            <Icon className="h-5 w-5 text-muted-foreground" aria-hidden />
+          </span>
+          <h1 className="text-h3 font-semibold text-foreground">
+            {isExpired ? t["portal.invoiceLinkExpired"] : t["portal.invoiceNotFound"]}
+          </h1>
+          <p className="mt-2 text-small text-muted-foreground">
+            {isExpired ? t["invoices.publicLinkExpiredBody"] : t["invoices.publicLinkInvalidBody"]}
+          </p>
+        </div>
       </div>
     );
   }
 
   const { invoice, lines, company } = data;
   const isVATRegistered = !!company.trnVatNumber;
+  const isCreditNote = invoice.invoiceType === "credit_note";
+  const isTax = invoice.isTaxInvoice ?? isVATRegistered;
+  const money = (n: number) => <Money amount={n} currency={invoice.currency} />;
+  const contact = [company.contactPhone, company.contactEmail].filter(Boolean) as string[];
 
   return (
-    <div className="min-h-screen bg-muted py-8 px-4">
-      <div className="max-w-3xl mx-auto space-y-6">
-        {/* Header Card */}
-        <Card className="overflow-hidden">
-          {/* Blue Header */}
-          <div className="bg-info text-white p-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <h1 className="text-2xl font-bold">{company.name}</h1>
-                {company.businessAddress && (
-                  <p className="text-info-foreground text-sm mt-1">{company.businessAddress}</p>
-                )}
-                {company.contactPhone && (
-                  <p className="text-info-foreground text-sm">{company.contactPhone}</p>
-                )}
-                {company.contactEmail && (
-                  <p className="text-info-foreground text-sm">{company.contactEmail}</p>
-                )}
-              </div>
-              <div className="text-end">
-                <h2 className="text-lg font-bold uppercase" data-testid="public-invoice-title">
-                  {invoice.invoiceType === "credit_note" ? (
-                    <T k="invoices.publicCreditNote" />
-                  ) : (invoice.isTaxInvoice ?? isVATRegistered) ? (
-                    <T k="invoices.publicTaxInvoice" />
-                  ) : (
-                    <T k="invoices.publicInvoice" />
-                  )}
-                </h2>
-                {isVATRegistered && company.trnVatNumber && (
-                  <p className="text-info-foreground text-sm mt-1">
-                    {t["invoices.publicTrn"]}: <span dir="ltr">{company.trnVatNumber}</span>
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <CardContent className="p-6 space-y-6">
-            {/* Invoice Details */}
-            <div className="flex flex-wrap gap-6 justify-between bg-muted p-4 rounded-lg">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  {(invoice.isTaxInvoice ?? isVATRegistered) ? (
-                    <T k="invoices.publicTaxInvoice" />
-                  ) : (
-                    <T k="invoices.publicInvoice" />
-                  )}
-                </p>
-                <p className="font-semibold text-lg">{invoice.number}</p>
-              </div>
-              {invoice.supplyDate && (
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    <T k="invoices.publicSupplyDate" />
-                  </p>
-                  <p className="font-semibold">{formatDate(invoice.supplyDate, locale)}</p>
-                </div>
-              )}
-              {invoice.dueDate && (
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    <T k="invoices.publicDueDate" />
-                  </p>
-                  <p className="font-semibold" data-testid="public-invoice-due-date">
-                    {formatDate(invoice.dueDate, locale)}
-                  </p>
-                </div>
-              )}
-              {invoice.paymentStatus && (
-                <div>
-                  <p className="text-sm text-muted-foreground">
-                    <T k="invoices.publicPaymentStatus" />
-                  </p>
-                  <Badge
-                    className={getStatusColor(
-                      invoice.paymentStatus === "partially_paid"
-                        ? "partial"
-                        : invoice.paymentStatus === "unpaid"
-                          ? "sent"
-                          : invoice.paymentStatus
-                    )}
-                    data-testid="public-invoice-payment-status"
-                  >
-                    <T k={`invoices.payStatus.${invoice.paymentStatus}`} />
-                  </Badge>
-                </div>
-              )}
-              {invoice.amountDue !== undefined && invoice.invoiceType !== "credit_note" && (
-                <div className="text-end">
-                  <p className="text-sm text-muted-foreground">
-                    <T k="invoices.publicAmountDue" />
-                  </p>
-                  <p className="font-bold text-2xl" data-testid="public-invoice-amount-due">
-                    {formatCurrency(invoice.amountDue, invoice.currency, locale)}
-                  </p>
-                </div>
-              )}
-              <div>
-                <p className="text-sm text-muted-foreground">{t["invoices.publicDate"]}</p>
-                <p className="font-semibold">{formatDate(invoice.date, locale)}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  <T k="pages.status" />
-                </p>
-                <Badge className={getStatusColor(invoice.status)}>
-                  {t[`invoices.statusFilter.${invoice.status}`] ??
-                    invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
-                </Badge>
-              </div>
-            </div>
-
-            {/* Bill To */}
-            <div>
-              <h3 className="text-sm font-semibold text-info uppercase mb-2">
-                <T k="pageLabels.billTo" />
-              </h3>
-              <p className="font-semibold text-lg">{invoice.customerName}</p>
-              {invoice.customerTrn && (
-                <p className="text-sm text-muted-foreground">
-                  {t["invoices.publicTrn"]}: <span dir="ltr">{invoice.customerTrn}</span>
-                </p>
-              )}
-            </div>
-
-            {/* Line Items */}
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-info hover:bg-info">
-                    <TableHead className="text-white font-semibold">
-                      <T k="pages.description" />
-                    </TableHead>
-                    <TableHead className="text-white font-semibold text-center">
-                      {t["invoices.publicQty"]}
-                    </TableHead>
-                    <TableHead className="text-white font-semibold text-center">
-                      <T k="pages.unitPrice" />
-                    </TableHead>
-                    <TableHead className="text-white font-semibold text-center">
-                      {t["invoices.publicVat"]}
-                    </TableHead>
-                    <TableHead className="text-white font-semibold text-end">
-                      <T k="pages.amount" />
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {lines.map((line, index) => {
-                    const lineTotal = line.quantity * line.unitPrice;
-                    const vatPercent = ((line.vatRate ?? 0.05) * 100).toFixed(0);
-                    return (
-                      <TableRow key={index} className={index % 2 === 0 ? "bg-card" : "bg-muted"}>
-                        <TableCell className="font-medium">{line.description}</TableCell>
-                        <TableCell className="text-center">{line.quantity}</TableCell>
-                        <TableCell className="text-center">
-                          {formatCurrency(line.unitPrice, invoice.currency, locale)}
-                        </TableCell>
-                        <TableCell className="text-center">{vatPercent}%</TableCell>
-                        <TableCell className="text-end">
-                          {formatCurrency(lineTotal, invoice.currency, locale)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-
-            {/* Totals */}
-            <div className="flex justify-end">
-              <div className="w-64 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">
-                    <T k="pages.subtotal" />
+    <div className="min-h-screen bg-background px-4 py-6 sm:py-10">
+      <LedgerSheet data-testid="public-invoice">
+        <LedgerHeader
+          titleTestId="public-invoice-title"
+          start={
+            <LedgerCompany
+              name={company.name}
+              lines={[
+                company.trnVatNumber && (
+                  <>
+                    {t["invoices.publicTrn"]} <bdi>{company.trnVatNumber}</bdi>
+                  </>
+                ),
+                company.businessAddress,
+                contact.length > 0 && (
+                  <span className="flex flex-wrap gap-x-3">
+                    {contact.map((c) => (
+                      <bdi key={c} dir="ltr">
+                        {c}
+                      </bdi>
+                    ))}
                   </span>
-                  <span>{formatCurrency(invoice.subtotal, invoice.currency, locale)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">{t["invoices.publicVat"]}</span>
-                  <span>{formatCurrency(invoice.vatAmount, invoice.currency, locale)}</span>
-                </div>
-                <div className="flex justify-between font-bold text-lg pt-2 border-t bg-info text-white -mx-3 px-3 py-2 rounded-lg">
-                  <span>
-                    <T k="pages.total2" />
-                  </span>
-                  <span>{formatCurrency(invoice.total, invoice.currency, locale)}</span>
-                </div>
-              </div>
-            </div>
-
-            {paymentResult === "success" && (
-              <div
-                className="flex items-center gap-2 rounded-lg bg-success-subtle text-success-subtle-foreground p-3"
-                data-testid="public-invoice-payment-success"
+                ),
+              ]}
+            />
+          }
+          title={
+            isCreditNote ? (
+              <T k="portal.doc.taxCreditNote" />
+            ) : isTax ? (
+              <T k="portal.doc.taxInvoice" />
+            ) : (
+              <T k="invoices.publicInvoice" />
+            )
+          }
+          aside={
+            invoice.paymentStatus && (
+              <StatusBadge
+                tone={PAY_TONE[invoice.paymentStatus] ?? "neutral"}
+                data-testid="public-invoice-payment-status"
               >
-                <CheckCircle2 className="w-5 h-5" />
-                <T k="portal.paymentProcessing" />
-              </div>
-            )}
-            {data.einvoice && (
-              <p className="text-sm text-muted-foreground" data-testid="public-invoice-einvoice">
-                <T k="portal.einvoiceStatus" />: {data.einvoice.status}
-              </p>
-            )}
+                <T k={`invoices.payStatus.${invoice.paymentStatus}`} />
+              </StatusBadge>
+            )
+          }
+        />
 
-            {/* Download PDF / Pay now (only when a gateway is live) */}
-            <div className="flex flex-wrap justify-center gap-3 pt-4 border-t">
-              <Button onClick={handleDownloadPDF} className="bg-info hover:bg-info" size="lg">
-                <Download className="w-5 h-5 me-2" />
-                <T k="pages.downloadPdf" />
-              </Button>
-              {data.onlinePayment?.available && (
-                <Button
-                  onClick={handlePay}
-                  disabled={paying}
-                  size="lg"
-                  data-testid="public-invoice-pay-now"
-                >
-                  <CreditCard className="w-5 h-5 me-2" />
-                  <T k="portal.payNow" />
-                  {data.onlinePayment.status === "sandbox" && (
-                    <Badge variant="outline" className="ms-2">
-                      <T k="portal.testMode" />
-                    </Badge>
-                  )}
-                </Button>
-              )}
-            </div>
-            {payError && (
-              <p className="text-sm text-destructive text-center" role="alert">
-                {payError}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        <LedgerMeta
+          items={[
+            {
+              label: isCreditNote ? t["portal.doc.creditNoteNo"] : t["portal.doc.invoiceNo"],
+              value: <bdi>{invoice.number}</bdi>,
+            },
+            { label: t["portal.doc.issueDate"], value: formatDate(invoice.date, locale) },
+            !!invoice.supplyDate && {
+              label: t["invoices.publicSupplyDate"],
+              value: formatDate(invoice.supplyDate, locale),
+            },
+            !!invoice.dueDate && {
+              label: t["portal.doc.dueDate"],
+              value: formatDate(invoice.dueDate, locale),
+              testId: "public-invoice-due-date",
+            },
+            { label: t["portal.doc.currency"], value: invoice.currency },
+          ]}
+        />
 
-        {/* Footer */}
-        <div className="text-center text-sm text-muted-foreground/70 pb-4">
-          <p>
-            <T k="pageLabels.thankYouForYourBusiness" />
-          </p>
-          {isVATRegistered && (
-            <p className="mt-1">
-              <T k="pageLabels.thisIsATaxInvoicePlease" />
-            </p>
-          )}
+        <div className="grid gap-6 sm:grid-cols-2">
+          <LedgerParty
+            label={<T k="portal.doc.from" />}
+            name={company.name}
+            lines={[
+              company.trnVatNumber && (
+                <>
+                  {t["invoices.publicTrn"]} <bdi>{company.trnVatNumber}</bdi>
+                </>
+              ),
+            ]}
+          />
+          <LedgerParty
+            label={<T k="portal.doc.billTo" />}
+            name={invoice.customerName}
+            lines={[
+              invoice.customerTrn && (
+                <>
+                  {t["invoices.publicTrn"]} <bdi>{invoice.customerTrn}</bdi>
+                </>
+              ),
+            ]}
+          />
         </div>
-      </div>
+
+        <LedgerLines
+          primaryKey="description"
+          amountKey="amount"
+          columns={[
+            { key: "description", label: t["portal.doc.description"] },
+            { key: "qty", label: t["portal.doc.qty"], numeric: true, mobile: true },
+            { key: "price", label: t["portal.doc.unitPrice"], numeric: true, mobile: true },
+            { key: "vat", label: t["portal.doc.vat"], numeric: true, mobile: true },
+            { key: "amount", label: t["portal.doc.amount"], numeric: true },
+          ]}
+          rows={lines.map((line) => ({
+            description: <span dir="auto">{line.description}</span>,
+            qty: line.quantity,
+            price: money(line.unitPrice),
+            vat: <bdi>{((line.vatRate ?? 0.05) * 100).toFixed(0)}%</bdi>,
+            amount: money(line.quantity * line.unitPrice),
+          }))}
+        />
+
+        <LedgerTotals
+          rows={[
+            { label: t["portal.doc.subtotal"], value: money(invoice.subtotal) },
+            { label: t["portal.doc.vat"], value: money(invoice.vatAmount) },
+            { label: t["portal.doc.total"], value: money(invoice.total), strong: true },
+            !isCreditNote &&
+              !!invoice.amountPaid &&
+              invoice.amountPaid > 0 && {
+                label: t["portal.doc.paymentsReceived"],
+                value: money(-invoice.amountPaid),
+              },
+          ]}
+          due={
+            invoice.amountDue !== undefined && !isCreditNote
+              ? {
+                  label: t["portal.doc.amountDue"],
+                  value: money(invoice.amountDue),
+                  testId: "public-invoice-amount-due",
+                }
+              : null
+          }
+        />
+
+        {paymentResult === "success" && (
+          <Alert tone="success" data-testid="public-invoice-payment-success">
+            <T k="portal.paymentProcessing" />
+          </Alert>
+        )}
+        {data.einvoice && (
+          <p className="text-small text-muted-foreground" data-testid="public-invoice-einvoice">
+            <T k="portal.doc.einvoice" />
+            {t[`einvoicing.delivery_${data.einvoice.status}`]
+              ? ` · ${t[`einvoicing.delivery_${data.einvoice.status}`]}`
+              : ""}
+          </p>
+        )}
+
+        <div className="flex flex-col-reverse gap-3 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-caption text-muted-foreground">
+            <T k="portal.doc.thankYou" />
+            {isVATRegistered && !isCreditNote && (
+              <>
+                {" "}
+                <T k="portal.doc.keepForRecords" />
+              </>
+            )}
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {data.onlinePayment?.available && (
+              <Button
+                variant="outline"
+                onClick={handlePay}
+                disabled={paying}
+                data-testid="public-invoice-pay-now"
+              >
+                <CreditCard className="h-4 w-4 me-2" aria-hidden />
+                <T k="portal.payNow" />
+                {data.onlinePayment.status === "sandbox" && (
+                  <StatusBadge tone="neutral" className="ms-2">
+                    <T k="portal.testMode" />
+                  </StatusBadge>
+                )}
+              </Button>
+            )}
+            <Button onClick={handleDownloadPDF} data-testid="public-invoice-download">
+              <Download className="h-4 w-4 me-2" aria-hidden />
+              <T k="portal.doc.downloadPdf" />
+            </Button>
+          </div>
+        </div>
+        {payError && (
+          <p className="text-small text-destructive" role="alert">
+            {payError}
+          </p>
+        )}
+      </LedgerSheet>
+      <LedgerFooter>
+        <T k="portal.doc.sentWith" />
+      </LedgerFooter>
     </div>
   );
 }

@@ -3,11 +3,20 @@ import { useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollTabs } from "@/components/ui/scroll-tabs";
+import { StatCard } from "@/components/ui/stat-card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Alert } from "@/components/ui/alert";
+import { FileDrop } from "@/components/ui/file-drop";
+import { Money, MoneyCell } from "@/components/ui/money";
+import { StatementOfAccount } from "@/components/documents/StatementOfAccount";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
+import { RowActionButton, RowActions } from "@/components/ui/row-actions";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -16,20 +25,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Download,
-  FileText,
-  AlertCircle,
-  Clock,
-  Loader2,
-  Receipt,
-  DollarSign,
-  FileCheck,
-  CreditCard,
-  Upload,
-} from "lucide-react";
+import { AlertCircle, Clock, CreditCard, FileDown, FileText, Loader2 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
-import { useTranslation } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 
 /**
  * Customer portal (W4-D: R16-04/06/07/14/15/16/19). Reached with a portal link token
@@ -94,29 +93,12 @@ interface PortalDocument {
 
 const SESSION_KEY = "muhasib.portalSession";
 
-function formatCurrency(amount: number, currency: string = "AED"): string {
-  return new Intl.NumberFormat("en-AE", {
-    style: "currency",
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-}
-
-function formatDate(date: string): string {
-  return new Date(date).toLocaleDateString("en-AE", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-const STATUS_CLASS: Record<PortalInvoice["paymentStatus"], string> = {
-  paid: "bg-success-subtle text-success-subtle-foreground",
-  partially_paid: "bg-warning-subtle text-warning-subtle-foreground",
-  overdue: "bg-danger-subtle text-danger-subtle-foreground",
-  unpaid: "bg-info-subtle text-info-subtle-foreground",
-  credit: "bg-muted text-foreground",
+const STATUS_TONE: Record<PortalInvoice["paymentStatus"], StatusTone> = {
+  paid: "success",
+  partially_paid: "warning",
+  overdue: "danger",
+  unpaid: "warning",
+  credit: "neutral",
 };
 
 async function getJson<T>(path: string): Promise<T> {
@@ -192,7 +174,7 @@ function PortalLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-muted flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="max-w-md w-full">
         <CardHeader>
           <CardTitle>
@@ -260,10 +242,11 @@ export default function CustomerPortal() {
 }
 
 function PortalHome({ token }: { token: string | null }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState<string | null>(null);
   const [signer, setSigner] = useState("");
+  const [uploading, setUploading] = useState(false);
   const base = `/api/portal/${token}`;
 
   const {
@@ -304,20 +287,16 @@ function PortalHome({ token }: { token: string | null }) {
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-muted flex items-center justify-center p-4">
-        <Card className="max-w-md w-full">
-          <CardContent className="py-16 text-center text-muted-foreground">
-            <T k="portal.sessionEnded" />
-          </CardContent>
-        </Card>
-      </div>
+      <PortalMessage icon={Clock}>
+        <T k="portal.sessionEnded" />
+      </PortalMessage>
     );
   }
 
   if (infoLoading) {
     return (
-      <div className="min-h-screen bg-muted flex items-center justify-center">
-        <Loader2 className="w-10 h-10 animate-spin text-info" />
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden />
       </div>
     );
   }
@@ -326,23 +305,12 @@ function PortalHome({ token }: { token: string | null }) {
     const message = infoError instanceof Error ? infoError.message : "";
     const ended = /expired|revoked/i.test(message);
     return (
-      <div className="min-h-screen bg-muted flex items-center justify-center p-4">
-        <Card className="max-w-md w-full">
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            {ended ? (
-              <Clock className="w-16 h-16 text-warning mb-4" />
-            ) : (
-              <AlertCircle className="w-16 h-16 text-destructive mb-4" />
-            )}
-            <h2 className="text-xl font-semibold mb-2">
-              <T k={ended ? "portal.linkEnded" : "portal.linkInvalid"} />
-            </h2>
-            <p className="text-muted-foreground">
-              <T k="portal.linkHelp" />
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <PortalMessage
+        icon={ended ? Clock : AlertCircle}
+        title={<T k={ended ? "portal.linkEnded" : "portal.linkInvalid"} />}
+      >
+        <T k="portal.linkHelp" />
+      </PortalMessage>
     );
   }
 
@@ -350,6 +318,8 @@ function PortalHome({ token }: { token: string | null }) {
   const defaultCurrency = open[0]?.currency ?? "AED";
   const totalOutstanding = open.reduce((s, i) => s + i.amountDue, 0);
   const totalPaid = open.reduce((s, i) => s + (i.total - i.amountDue), 0);
+  const customerName =
+    locale === "ar" && info.customerNameAr ? info.customerNameAr : info.customerName;
 
   const pay = async (invoiceId: string) => {
     try {
@@ -372,204 +342,197 @@ function PortalHome({ token }: { token: string | null }) {
 
   const upload = async (file: File | undefined) => {
     if (!file) return;
-    const form = new FormData();
-    form.append("name", file.name);
-    form.append("file", file, file.name);
-    const res = await fetch(apiUrl(`${base}/documents`), { method: "POST", body: form });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setNotice(body.message || t["portal.uploadFailed"]);
-      return;
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("name", file.name);
+      form.append("file", file, file.name);
+      const res = await fetch(apiUrl(`${base}/documents`), { method: "POST", body: form });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNotice(body.message || t["portal.uploadFailed"]);
+        return;
+      }
+      setNotice(t["portal.uploaded"]);
+      await queryClient.invalidateQueries({ queryKey: ["portal-documents", token] });
+    } finally {
+      setUploading(false);
     }
-    setNotice(t["portal.uploaded"]);
-    await queryClient.invalidateQueries({ queryKey: ["portal-documents", token] });
   };
 
+  const openPdf = (path: string) => window.open(apiUrl(`${base}${path}`), "_blank");
+
   return (
-    <div className="min-h-screen bg-muted">
-      <header className="bg-card border-b shadow-sm">
-        <div className="max-w-5xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <h1 className="truncate text-2xl font-bold text-foreground" dir="auto">
-                {info.companyName}
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                <T k="portal.customerPortal" />
-              </p>
-            </div>
-            <div className="text-end">
-              <p className="text-sm text-muted-foreground">
-                <T k="portal.welcome" />
-              </p>
-              <p className="text-lg font-semibold text-foreground">{info.customerName}</p>
-              {info.customerNameAr && (
-                <p className="text-sm text-muted-foreground" dir="rtl">
-                  {info.customerNameAr}
-                </p>
-              )}
-            </div>
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="border-b border-border bg-card">
+        <div aria-hidden className="h-0.5 bg-primary" />
+        <div className="mx-auto flex max-w-content items-center justify-between gap-4 px-4 py-4 sm:px-8">
+          <div className="min-w-0">
+            <p className="truncate text-h3 font-semibold text-foreground" dir="auto">
+              {info.companyName}
+            </p>
+            <p className="text-caption text-muted-foreground">
+              <T k="portal.doc.customerPortal" />
+            </p>
           </div>
+          <p
+            className="min-w-0 max-w-[45%] truncate text-small font-medium text-foreground"
+            dir="auto"
+            data-testid="portal-customer-name"
+          >
+            {customerName}
+          </p>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-8 sm:px-6 lg:px-8 space-y-6">
+      <main className="mx-auto w-full max-w-content flex-1 space-y-6 px-4 py-6 sm:px-8 sm:py-8">
         {notice && (
-          <div className="rounded-lg bg-info-subtle text-info-subtle-foreground p-3" role="status">
+          <Alert tone="info" role="status">
             {notice}
+          </Alert>
+        )}
+        {open.length > 0 && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <StatCard
+              label={<T k="portal.doc.outstanding" />}
+              value={
+                <Money
+                  amount={totalOutstanding}
+                  currency={defaultCurrency}
+                  className={
+                    open.some((i) => i.paymentStatus === "overdue") ? "text-negative" : undefined
+                  }
+                />
+              }
+              hint={<T k="portal.doc.openInvoicesHint" />}
+              testId="portal-kpi-outstanding"
+            />
+            <StatCard
+              label={<T k="portal.doc.paid" />}
+              value={<Money amount={totalPaid} currency={defaultCurrency} />}
+              testId="portal-kpi-paid"
+            />
+            <StatCard
+              label={<T k="portal.doc.invoices" />}
+              value={<span className="tabular-nums">{open.length}</span>}
+              hint={<T k="portal.doc.issuedHint" />}
+              testId="portal-kpi-invoices"
+            />
           </div>
         )}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="p-6 flex items-center gap-3">
-              <DollarSign className="w-5 h-5 text-destructive" />
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  <T k="pages.totalOutstanding" />
-                </p>
-                <p className="text-xl font-bold text-destructive">
-                  {formatCurrency(totalOutstanding, defaultCurrency)}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-6 flex items-center gap-3">
-              <FileCheck className="w-5 h-5 text-success" />
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  <T k="pages.totalPaid" />
-                </p>
-                <p className="text-xl font-bold text-success">
-                  {formatCurrency(totalPaid, defaultCurrency)}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-6 flex items-center gap-3">
-              <Receipt className="w-5 h-5 text-info" />
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  <T k="pages.totalInvoices" />
-                </p>
-                <p className="text-xl font-bold text-info">{open.length}</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
 
         <Tabs defaultValue="invoices">
-          <TabsList>
+          <ScrollTabs aria-label={t["portal.doc.sections"]}>
             <TabsTrigger value="invoices">
-              <T k="pages.invoices" />
+              <T k="portal.doc.tabInvoices" />
             </TabsTrigger>
             <TabsTrigger value="statement">
-              <T k="portal.statement" />
+              <T k="portal.doc.tabStatement" />
             </TabsTrigger>
             <TabsTrigger value="quotes">
-              <T k="portal.quotes" />
+              <T k="portal.doc.tabQuotes" />
             </TabsTrigger>
             <TabsTrigger value="documents">
-              <T k="portal.documents" />
+              <T k="portal.doc.tabDocuments" />
             </TabsTrigger>
-          </TabsList>
+          </ScrollTabs>
 
           <TabsContent value="invoices">
             <Card>
-              <CardContent className="pt-6">
+              <CardContent className="p-0">
                 {invoicesLoading ? (
-                  <Loader2 className="w-8 h-8 animate-spin text-info mx-auto" />
+                  <div className="flex h-32 items-center justify-center">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
+                  </div>
                 ) : invoices.length === 0 ? (
-                  <p className="py-12 text-center text-muted-foreground">
-                    <T k="portal.noInvoices" />
-                  </p>
+                  <EmptyState
+                    icon={FileText}
+                    title={t["portal.doc.noInvoicesTitle"]}
+                    description={t["portal.doc.noInvoicesBody"]}
+                  />
                 ) : (
-                  <div className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>
-                            <T k="portal.invoiceNumber" />
-                          </TableHead>
-                          <TableHead>
-                            <T k="portal.dueDate" />
-                          </TableHead>
-                          <TableHead data-numeric>
-                            <T k="portal.amountDue" />
-                          </TableHead>
-                          <TableHead>
-                            <T k="pages.status" />
-                          </TableHead>
-                          <TableHead data-numeric>
-                            <T k="pages.actions" />
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {invoices.map((invoice) => (
-                          <TableRow key={invoice.id}>
-                            <TableCell className="font-medium">
-                              {invoice.number}
-                              {invoice.einvoice && (
-                                <Badge variant="outline" className="ms-2">
-                                  <T k="portal.einvoiceStatus" />: {invoice.einvoice.status}
-                                </Badge>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {invoice.dueDate
-                                ? formatDate(invoice.dueDate)
-                                : formatDate(invoice.date)}
-                            </TableCell>
-                            <TableCell data-numeric className=" font-medium">
-                              {formatCurrency(invoice.amountDue, invoice.currency)}
-                            </TableCell>
-                            <TableCell>
-                              <Badge className={STATUS_CLASS[invoice.paymentStatus]}>
-                                <T k={`portal.payStatus.${invoice.paymentStatus}`} />
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-end space-x-2 rtl:space-x-reverse">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  window.open(
-                                    apiUrl(`${base}/invoices/${invoice.id}/pdf`),
-                                    "_blank"
-                                  )
-                                }
-                              >
-                                <Download className="w-4 h-4 me-1" />
-                                PDF
-                              </Button>
-                              {invoice.einvoice?.hasXml && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() =>
-                                    window.open(
-                                      apiUrl(`${base}/invoices/${invoice.id}/einvoice`),
-                                      "_blank"
-                                    )
-                                  }
-                                >
-                                  XML
-                                </Button>
-                              )}
+                  <Table className="row-cards">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>
+                          <T k="portal.doc.invoiceCol" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="portal.doc.dueDate" />
+                        </TableHead>
+                        <TableHead data-numeric>
+                          <T k="portal.doc.amountDue" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="portal.doc.status" />
+                        </TableHead>
+                        <TableHead>
+                          <span className="sr-only">
+                            <T k="portal.doc.actions" />
+                          </span>
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {invoices.map((invoice) => (
+                        <TableRow key={invoice.id}>
+                          <TableCell data-cell="title" className="font-medium">
+                            <bdi>{invoice.number}</bdi>
+                            {invoice.einvoice && (
+                              <span className="ms-2 text-caption text-muted-foreground">
+                                <T k="portal.doc.einvoice" />
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell
+                            data-cell="meta"
+                            data-nowrap=""
+                            className="text-muted-foreground"
+                          >
+                            {formatDate(invoice.dueDate ?? invoice.date, locale)}
+                          </TableCell>
+                          <MoneyCell
+                            amount={invoice.amountDue}
+                            currency={invoice.currency}
+                            className="font-semibold text-foreground"
+                            data-cell="amount"
+                          />
+                          <TableCell data-cell="status" data-nowrap="">
+                            <StatusBadge tone={STATUS_TONE[invoice.paymentStatus]}>
+                              <T k={`portal.payStatus.${invoice.paymentStatus}`} />
+                            </StatusBadge>
+                          </TableCell>
+                          <TableCell data-cell="actions">
+                            <div className="flex items-center justify-end gap-1">
                               {invoice.canPayOnline && (
                                 <Button size="sm" onClick={() => pay(invoice.id)}>
-                                  <CreditCard className="w-4 h-4 me-1" />
+                                  <CreditCard className="h-4 w-4 me-1" aria-hidden />
                                   <T k="portal.payNow" />
                                 </Button>
                               )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                              <RowActions
+                                menu={
+                                  invoice.einvoice?.hasXml ? (
+                                    <DropdownMenuItem
+                                      onSelect={() => openPdf(`/invoices/${invoice.id}/einvoice`)}
+                                    >
+                                      XML
+                                    </DropdownMenuItem>
+                                  ) : undefined
+                                }
+                              >
+                                <RowActionButton
+                                  label={t["portal.doc.downloadPdf"]}
+                                  icon={FileDown}
+                                  onClick={() => openPdf(`/invoices/${invoice.id}/pdf`)}
+                                />
+                              </RowActions>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 )}
               </CardContent>
             </Card>
@@ -577,74 +540,38 @@ function PortalHome({ token }: { token: string | null }) {
 
           <TabsContent value="statement">
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="w-5 h-5" />
-                  <T k="portal.statementOfAccount" />
-                </CardTitle>
+              <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+                <div>
+                  <CardTitle className="text-h3">
+                    <T k="portal.doc.statementOfAccount" />
+                  </CardTitle>
+                  {statement?.asOf && (
+                    <p className="mt-1 text-small text-muted-foreground">
+                      {formatMessage(t["portal.doc.asOfDate"], {
+                        date: formatDate(statement.asOf, locale),
+                      })}
+                    </p>
+                  )}
+                </div>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => window.open(apiUrl(`${base}/statement?format=pdf`), "_blank")}
+                  onClick={() => openPdf("/statement?format=pdf")}
                 >
-                  <Download className="w-4 h-4 me-1" />
-                  PDF
+                  <FileDown className="h-4 w-4 me-1" aria-hidden />
+                  <T k="portal.doc.downloadPdf" />
                 </Button>
               </CardHeader>
               <CardContent className="space-y-6">
+                {(statement?.sections ?? []).length === 0 && (
+                  <EmptyState
+                    size="sm"
+                    title={t["portal.doc.noStatementTitle"]}
+                    description={t["portal.doc.noStatementBody"]}
+                  />
+                )}
                 {(statement?.sections ?? []).map((s) => (
-                  <div key={s.currency} className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>
-                        <T k="portal.openingBalance" />
-                      </span>
-                      <span>{formatCurrency(s.openingBalance, s.currency)}</span>
-                    </div>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>
-                            <T k="portal.date" />
-                          </TableHead>
-                          <TableHead>
-                            <T k="portal.reference" />
-                          </TableHead>
-                          <TableHead data-numeric>
-                            <T k="portal.debit" />
-                          </TableHead>
-                          <TableHead data-numeric>
-                            <T k="portal.credit" />
-                          </TableHead>
-                          <TableHead data-numeric>
-                            <T k="portal.balance" />
-                          </TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {s.lines.map((l, i) => (
-                          <TableRow key={`${l.reference}-${i}`}>
-                            <TableCell>{l.date}</TableCell>
-                            <TableCell>{l.reference}</TableCell>
-                            <TableCell data-numeric>
-                              {l.debit ? formatCurrency(l.debit, s.currency) : ""}
-                            </TableCell>
-                            <TableCell data-numeric>
-                              {l.credit ? formatCurrency(l.credit, s.currency) : ""}
-                            </TableCell>
-                            <TableCell data-numeric>
-                              {formatCurrency(l.balance, s.currency)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                    <div className="flex justify-between font-semibold">
-                      <span>
-                        <T k="portal.closingBalance" />
-                      </span>
-                      <span>{formatCurrency(s.closingBalance, s.currency)}</span>
-                    </div>
-                  </div>
+                  <StatementOfAccount key={s.currency} section={s} />
                 ))}
               </CardContent>
             </Card>
@@ -652,54 +579,75 @@ function PortalHome({ token }: { token: string | null }) {
 
           <TabsContent value="quotes">
             <Card>
-              <CardContent className="pt-6 space-y-4">
-                <div className="max-w-sm">
-                  <Label htmlFor="signer">
-                    <T k="portal.signerName" />
-                  </Label>
-                  <Input id="signer" value={signer} onChange={(e) => setSigner(e.target.value)} />
-                </div>
+              <CardContent className="space-y-4 pt-6">
                 {quotes.length === 0 ? (
-                  <p className="text-muted-foreground">
-                    <T k="portal.noQuotes" />
-                  </p>
+                  <EmptyState
+                    icon={FileText}
+                    title={t["portal.doc.noQuotesTitle"]}
+                    description={t["portal.doc.noQuotesBody"]}
+                  />
                 ) : (
-                  quotes.map((q) => (
-                    <div
-                      key={q.id}
-                      className="flex items-center justify-between border rounded p-3"
-                    >
-                      <div>
-                        <p className="font-medium">{q.number}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {formatCurrency(q.total, q.currency)} · {formatDate(q.date)}
-                        </p>
+                  <>
+                    {quotes.some((q) => q.status === "sent") && (
+                      <div className="max-w-sm space-y-1.5">
+                        <Label htmlFor="signer">
+                          <T k="portal.doc.signer" />
+                        </Label>
+                        <Input
+                          id="signer"
+                          value={signer}
+                          onChange={(e) => setSigner(e.target.value)}
+                        />
                       </div>
-                      {q.status === "sent" ? (
-                        <div className="space-x-2 rtl:space-x-reverse">
-                          <Button
-                            size="sm"
-                            disabled={!signer.trim()}
-                            onClick={() => respond(q.id, "accepted")}
-                          >
-                            <T k="portal.accept" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={!signer.trim()}
-                            onClick={() => respond(q.id, "declined")}
-                          >
-                            <T k="portal.decline" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <Badge variant="outline">
-                          <T k={`portal.quoteStatus.${q.status}`} />
-                        </Badge>
-                      )}
-                    </div>
-                  ))
+                    )}
+                    <ul className="divide-y divide-border rounded-md border border-border">
+                      {quotes.map((q) => (
+                        <li
+                          key={q.id}
+                          className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-medium text-foreground">
+                              <bdi>{q.number}</bdi>
+                            </p>
+                            <p className="text-small text-muted-foreground">
+                              <Money amount={q.total} currency={q.currency} /> ·{" "}
+                              {formatDate(q.date, locale)}
+                            </p>
+                          </div>
+                          {q.status === "sent" ? (
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                disabled={!signer.trim()}
+                                onClick={() => respond(q.id, "accepted")}
+                              >
+                                <T k="portal.accept" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={!signer.trim()}
+                                onClick={() => respond(q.id, "declined")}
+                              >
+                                <T k="portal.decline" />
+                              </Button>
+                            </div>
+                          ) : (
+                            <StatusBadge
+                              tone={
+                                q.status === "accepted" || q.status === "converted"
+                                  ? "success"
+                                  : "neutral"
+                              }
+                            >
+                              <T k={`portal.quoteStatus.${q.status}`} />
+                            </StatusBadge>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </>
                 )}
               </CardContent>
             </Card>
@@ -707,38 +655,69 @@ function PortalHome({ token }: { token: string | null }) {
 
           <TabsContent value="documents">
             <Card>
-              <CardContent className="pt-6 space-y-4">
-                <Label
-                  htmlFor="portal-upload"
-                  className="inline-flex items-center gap-2 cursor-pointer border rounded px-3 py-2"
-                >
-                  <Upload className="w-4 h-4" />
-                  <T k="portal.uploadDocument" />
-                </Label>
-                <input
+              <CardContent className="space-y-4 pt-6">
+                <FileDrop
                   id="portal-upload"
-                  type="file"
-                  className="sr-only"
                   accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.csv,.txt"
-                  onChange={(e) => upload(e.target.files?.[0])}
+                  onFiles={([f]) => upload(f)}
+                  disabled={uploading}
+                  label={t["portal.doc.uploadLabel"]}
+                  hint={t["portal.doc.uploadHint"]}
+                  inputTestId="portal-upload-input"
                 />
-                {documents.map((d) => (
-                  <div key={d.id} className="flex justify-between text-sm border-b py-2">
-                    <span>{d.name}</span>
-                    <span className="text-muted-foreground">{formatDate(d.createdAt)}</span>
-                  </div>
-                ))}
+                {documents.length === 0 ? (
+                  <EmptyState
+                    size="sm"
+                    title={t["portal.doc.noDocumentsTitle"]}
+                    description={t["portal.doc.noDocumentsBody"]}
+                  />
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {documents.map((d) => (
+                      <li key={d.id} className="flex items-center justify-between gap-4 py-2.5">
+                        <span className="min-w-0 truncate text-small text-foreground" dir="auto">
+                          {d.name}
+                        </span>
+                        <span className="shrink-0 text-small text-muted-foreground">
+                          {formatDate(d.createdAt, locale)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
         </Tabs>
       </main>
 
-      <footer className="border-t bg-card mt-12">
-        <div className="max-w-5xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-          <p className="text-center text-sm text-muted-foreground/70">{info.companyName}</p>
-        </div>
+      <footer className="border-t border-border">
+        <p className="mx-auto max-w-content px-4 py-5 text-center text-caption text-muted-foreground sm:px-8">
+          <span dir="auto">{info.companyName}</span> · <T k="portal.doc.sentWith" />
+        </p>
       </footer>
+    </div>
+  );
+}
+
+function PortalMessage({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: typeof Clock;
+  title?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <div className="w-full max-w-md rounded-lg border border-border bg-card px-6 py-12 text-center">
+        <span className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-800">
+          <Icon className="h-5 w-5 text-muted-foreground" aria-hidden />
+        </span>
+        {title && <h1 className="mb-2 text-h3 font-semibold text-foreground">{title}</h1>}
+        <p className="text-small text-muted-foreground">{children}</p>
+      </div>
     </div>
   );
 }

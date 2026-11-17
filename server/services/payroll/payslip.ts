@@ -5,12 +5,11 @@
  * 90-day expiry).
  */
 import crypto from "node:crypto";
-// @ts-expect-error - pdfkit has no type declarations
-import PDFDocument from "pdfkit";
 import { DomainError } from "../../errors";
 import { getEnv } from "../../config/env";
 import { escapeHtml, sendEmail } from "../email.service";
-import { bilingual, pdfLocale, preparePdfDocument } from "../pdf-fonts";
+import { pdfLocale } from "../pdf-fonts";
+import { bi, Ledger, ltr, money, monthYear, type Bi } from "../pdf-ledger";
 import { fromFils } from "../../../shared/money";
 import { dayOf, fils, num, q, q1, type Row } from "./sql";
 
@@ -132,142 +131,127 @@ export async function loadPayslip(itemId: string, companyId?: string): Promise<P
 }
 
 export async function renderPayslipPdf(p: PayslipData): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({
-        size: "A4",
-        margin: 50,
-        info: {
-          Title: `Payslip ${p.employee.name} ${p.run.periodMonth}/${p.run.periodYear}`,
-          Author: p.company.name,
-        },
-      });
-      preparePdfDocument(doc);
-      const chunks: Buffer[] = [];
-      doc.on("data", (c: Buffer) => chunks.push(c));
-      doc.on("end", () => resolve(Buffer.concat(chunks)));
-      doc.on("error", reject);
-      const L = (en: string, ar: string) => bilingual(pdfLocale(p.company), en, ar);
-      const period = `${String(p.run.periodMonth).padStart(2, "0")}/${p.run.periodYear}`;
-      const width = 495;
-
-      doc.rect(0, 0, 595.28, 90).fill("#1E3A8A");
-      doc
-        .fillColor("#FFFFFF")
-        .font("Helvetica-Bold")
-        .fontSize(18)
-        .text(p.company.name, 50, 28, { width: 300 });
-      doc.fontSize(14).text(L("PAYSLIP", "قسيمة الراتب"), 50, 32, { width, align: "right" });
-      doc
-        .fontSize(10)
-        .font("Helvetica")
-        .text(`${L("Period", "الفترة")}: ${period}`, 50, 56, { width, align: "right" });
-
-      let y = 110;
-      doc.fillColor("#111827").font("Helvetica-Bold").fontSize(11);
-      doc.text(
-        p.employee.nameAr ? `${p.employee.name} / ${p.employee.nameAr}` : p.employee.name,
-        50,
-        y,
-        { width }
-      );
-      y += 18;
-      doc.font("Helvetica").fontSize(9).fillColor("#374151");
-      const meta = [
-        p.employee.employeeNumber
-          ? `${L("Employee no.", "رقم الموظف")}: ${p.employee.employeeNumber}`
-          : null,
-        p.employee.designation
-          ? `${L("Designation", "المسمى الوظيفي")}: ${p.employee.designation}`
-          : null,
-        p.employee.department ? `${L("Department", "القسم")}: ${p.employee.department}` : null,
-        p.employee.iban ? `IBAN: ${p.employee.iban}` : null,
-      ].filter(Boolean) as string[];
-      for (const m of meta) {
-        doc.text(m, 50, y, { width });
-        y += 14;
-      }
-
-      const row = (label: string, value: string, bold = false) => {
-        doc
-          .font(bold ? "Helvetica-Bold" : "Helvetica")
-          .fontSize(10)
-          .fillColor("#111827");
-        doc.text(label, 50, y, { width: 330 });
-        doc.text(value, 380, y, { width: 165, align: "right" });
-        y += 18;
-      };
-      const cur = "AED";
-      y += 12;
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(11)
-        .fillColor("#1E3A8A")
-        .text(L("Earnings", "الاستحقاقات"), 50, y);
-      y += 20;
-      row(L("Basic salary", "الراتب الأساسي"), `${cur} ${p.lines.basic}`);
-      row(L("Housing allowance", "بدل السكن"), `${cur} ${p.lines.housing}`);
-      row(L("Transport allowance", "بدل المواصلات"), `${cur} ${p.lines.transport}`);
-      row(L("Other allowances", "بدلات أخرى"), `${cur} ${p.lines.other}`);
-      row(L("Overtime", "العمل الإضافي"), `${cur} ${p.lines.overtime}`);
-      if (Number(p.lines.unpaidLeaveDeduction) > 0) {
-        row(
-          `${L("Unpaid leave", "إجازة بدون راتب")} (${p.lines.unpaidLeaveDays})`,
-          `- ${cur} ${p.lines.unpaidLeaveDeduction}`
-        );
-      }
-      row(L("Gross pay", "إجمالي الراتب"), `${cur} ${p.lines.gross}`, true);
-      y += 8;
-      doc
-        .font("Helvetica-Bold")
-        .fontSize(11)
-        .fillColor("#1E3A8A")
-        .text(L("Deductions", "الاستقطاعات"), 50, y);
-      y += 20;
-      row(
-        L("Pension (GPSSA) employee share", "حصة الموظف في المعاش"),
-        `${cur} ${p.lines.pensionEmployee}`
-      );
-      row(
-        p.lines.deductionNotes
-          ? `${L("Other deductions", "استقطاعات أخرى")} — ${p.lines.deductionNotes}`
-          : L("Other deductions", "استقطاعات أخرى"),
-        `${cur} ${p.lines.deductions}`
-      );
-      y += 8;
-      doc.rect(50, y - 4, width, 26).fill("#EEF2FF");
-      row(L("Net pay", "صافي الراتب"), `${cur} ${p.lines.net}`, true);
-      if (Number(p.lines.expenseReimbursement) > 0) {
-        row(
-          L("Expense claim reimbursement", "تعويض مطالبات المصروفات"),
-          `${cur} ${p.lines.expenseReimbursement}`
-        );
-        row(L("Total paid", "إجمالي المدفوع"), `${cur} ${p.lines.totalPaid}`, true);
-      }
-      if (p.lines.netForeign && p.lines.currency !== "AED") {
-        row(
-          `${L("Contract currency", "عملة العقد")} ${p.lines.currency} @ ${p.lines.exchangeRate}`,
-          `${p.lines.currency} ${p.lines.netForeign}`
-        );
-      }
-      if (p.lines.paidLeaveDays > 0)
-        row(L("Paid leave days", "أيام الإجازة المدفوعة"), String(p.lines.paidLeaveDays));
-      y += 20;
-      doc.font("Helvetica").fontSize(8).fillColor("#6B7280");
-      doc.text(
-        L(
-          "This payslip is generated from the approved payroll run. Salary transfer is made through the employer's WPS agent.",
-          "صدرت هذه القسيمة من مسير الرواتب المعتمد. يتم تحويل الراتب عبر وكيل نظام حماية الأجور لدى صاحب العمل."
-        ),
-        50,
-        y,
-        { width }
-      );
-      doc.end();
-    } catch (err) {
-      reject(err);
-    }
+  const ledger = new Ledger({
+    locale: pdfLocale(p.company),
+    info: {
+      Title: `Payslip ${p.employee.name} ${p.run.periodMonth}/${p.run.periodYear}`,
+      Author: p.company.name,
+    },
   });
+  const period = monthYear(p.run.periodMonth, p.run.periodYear);
+  const cur = "AED";
+  const m = (v: string) => money(v, cur);
+  ledger.header({
+    companyName: p.company.name,
+    details: [],
+    title: bi("Payslip", "قسيمة الراتب"),
+    subtitle: ledger.inline(period),
+  });
+  ledger.meta([
+    { label: bi("Pay period", "فترة الراتب"), value: ledger.pair(period)[0] },
+    { label: bi("Employee no.", "رقم الموظف"), value: ltr(p.employee.employeeNumber) },
+    { label: bi("Designation", "المسمى الوظيفي"), value: p.employee.designation },
+    { label: bi("Department", "القسم"), value: p.employee.department },
+    { label: bi("IBAN", "رقم الحساب المصرفي"), value: ltr(p.employee.iban) },
+  ]);
+  ledger.parties([
+    {
+      label: bi("Employee", "الموظف"),
+      name: p.employee.name,
+      lines: [
+        p.employee.nameAr && p.employee.nameAr !== p.employee.name ? p.employee.nameAr : null,
+      ],
+    },
+  ]);
+
+  const full = { width: ledger.width };
+  ledger.section(bi("Earnings", "الاستحقاقات"));
+  const earnings: Array<{ label: Bi; value: string; bold?: boolean; ruleAbove?: boolean }> = [
+    { label: bi("Basic salary", "الراتب الأساسي"), value: m(p.lines.basic) },
+    { label: bi("Housing allowance", "بدل السكن"), value: m(p.lines.housing) },
+    { label: bi("Transport allowance", "بدل المواصلات"), value: m(p.lines.transport) },
+    { label: bi("Other allowances", "بدلات أخرى"), value: m(p.lines.other) },
+    { label: bi("Overtime", "العمل الإضافي"), value: m(p.lines.overtime) },
+  ];
+  if (Number(p.lines.unpaidLeaveDeduction) > 0) {
+    earnings.push({
+      label: bi(
+        `Unpaid leave (${p.lines.unpaidLeaveDays} days)`,
+        `إجازة بدون راتب (${p.lines.unpaidLeaveDays} يوم)`
+      ),
+      value: `- ${m(p.lines.unpaidLeaveDeduction)}`,
+    });
+  }
+  earnings.push({
+    label: bi("Gross pay", "إجمالي الراتب"),
+    value: m(p.lines.gross),
+    bold: true,
+    ruleAbove: true,
+  });
+  ledger.totals(earnings, undefined, full);
+
+  ledger.section(bi("Deductions", "الاستقطاعات"));
+  ledger.totals(
+    [
+      {
+        label: bi("Pension (GPSSA) employee share", "حصة الموظف في المعاش"),
+        value: m(p.lines.pensionEmployee),
+      },
+      {
+        label: p.lines.deductionNotes
+          ? bi(
+              `Other deductions: ${p.lines.deductionNotes}`,
+              `استقطاعات أخرى: ${p.lines.deductionNotes}`
+            )
+          : bi("Other deductions", "استقطاعات أخرى"),
+        value: m(p.lines.deductions),
+      },
+    ],
+    { label: bi("Net pay", "صافي الراتب"), value: m(p.lines.net) },
+    full
+  );
+
+  const extra: Array<{ label: Bi; value: string; bold?: boolean; ruleAbove?: boolean }> = [];
+  if (Number(p.lines.expenseReimbursement) > 0) {
+    extra.push(
+      {
+        label: bi("Expense claim reimbursement", "تعويض مطالبات المصروفات"),
+        value: m(p.lines.expenseReimbursement),
+      },
+      {
+        label: bi("Total paid", "إجمالي المدفوع"),
+        value: m(p.lines.totalPaid),
+        bold: true,
+        ruleAbove: true,
+      }
+    );
+  }
+  if (p.lines.netForeign && p.lines.currency !== "AED") {
+    extra.push({
+      label: bi(
+        `Contract currency ${p.lines.currency} at ${p.lines.exchangeRate}`,
+        `عملة العقد ${p.lines.currency} بسعر ${p.lines.exchangeRate}`
+      ),
+      value: money(p.lines.netForeign, p.lines.currency),
+    });
+  }
+  if (p.lines.paidLeaveDays > 0) {
+    extra.push({
+      label: bi("Paid leave days", "أيام الإجازة المدفوعة"),
+      value: String(p.lines.paidLeaveDays),
+    });
+  }
+  if (extra.length) ledger.totals(extra, undefined, full);
+
+  ledger.smallPrint([
+    ledger.sentence(
+      bi(
+        "This payslip is generated from the approved payroll run. Salary transfer is made through the employer's WPS agent.",
+        "صدرت هذه القسيمة من مسير الرواتب المعتمد. يتم تحويل الراتب عبر وكيل نظام حماية الأجور لدى صاحب العمل."
+      )
+    ),
+  ]);
+  return ledger.finish();
 }
 
 // ─── Self-service tokens ─────────────────────────────────────────────────────

@@ -47,7 +47,7 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
       company()
     );
     const text = flat(await pdfToText(pdf));
-    expect(text).toContain("CREDIT NOTE");
+    expect(text).toContain("credit note");
     expect(text).toContain("إشعار دائن");
     expect(text).toContain("شركة النجمة للتجارة");
     expect(text).toContain("إرجاع بضاعة");
@@ -74,7 +74,7 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
       company()
     );
     const text = flat(await pdfToText(pdf));
-    expect(text).toContain("QUOTATION");
+    expect(text).toContain("Quotation");
     expect(text).toContain("عرض سعر");
     expect(text).toContain("مؤسسة الأفق");
     expect(text).toContain("الدفع خلال ثلاثين يوما");
@@ -99,7 +99,7 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
       company()
     );
     const text = flat(await pdfToText(pdf));
-    expect(text).toContain("PURCHASE ORDER");
+    expect(text).toContain("Purchase order");
     expect(text).toContain("أمر شراء");
     expect(text).toContain("مورد المواد الكهربائية");
     expect(text).toContain("خدمات استشارية محاسبية");
@@ -123,6 +123,34 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
     );
     const text = flat(await pdfToText(pdf));
     expect(text).toContain("عرض سعر");
-    expect(text).toContain("QUOTATION");
+    expect(text).toContain("Quotation");
+  });
+
+  it("zero-rated lines print 0% VAT, never the 5% default", async () => {
+    const zero = { ...line, description: "Zero rated export", vatRate: 0 };
+    const doc = { currency: "AED", subtotal: 200, vatAmount: 0, total: 200, status: "sent" };
+    const date = new Date("2026-03-10");
+    const pdfs = await Promise.all([
+      generateQuotePDF(
+        { id: "q", number: "Q-9", customerName: "C", date, ...doc } as never,
+        [zero] as never,
+        company()
+      ),
+      generateCreditNotePDF(
+        { id: "c", number: "CN-9", customerName: "C", date, ...doc } as never,
+        [zero] as never,
+        company()
+      ),
+      generatePurchaseOrderPDF(
+        { id: "p", number: "PO-9", vendorName: "V", date, ...doc } as never,
+        [zero] as never,
+        company()
+      ),
+    ]);
+    for (const pdf of pdfs) {
+      const text = flat(await pdfToText(pdf));
+      expect(text).toContain("0%");
+      expect(text).not.toContain("5%");
+    }
   });
 });

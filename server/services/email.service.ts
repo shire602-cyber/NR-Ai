@@ -12,6 +12,7 @@
  * message was not sent; the thrown EmailNotSentError carries the outbox result.
  */
 import type { Invoice, Company } from "../../shared/schema";
+import { DOCUMENT_ACCENT_DEFAULT } from "../../shared/document-accent";
 import { createLogger } from "../config/logger";
 import {
   deliverOutboxMessage,
@@ -165,7 +166,7 @@ function section(dir: "ltr" | "rtl", lang: "en" | "ar", c: BilingualEmailContent
     ? `<p style="text-align:center;margin:18px 0;"><a href="${escapeHtml(
         c.button.url
       )}" style="display:inline-block;background:${
-        c.accent ?? "#1E40AF"
+        c.accent ?? DOCUMENT_ACCENT_DEFAULT
       };color:#ffffff;text-decoration:none;font-size:14px;font-weight:bold;padding:12px 28px;border-radius:6px;">${escapeHtml(
         c.button.label[lang]
       )}</a></p>`
@@ -189,7 +190,7 @@ export function renderBilingualEmail(c: BilingualEmailContent, language: EmailLa
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:32px 0;">
     <tr><td align="center">
       <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;">
-        <tr><td style="background:${c.accent ?? "#1E40AF"};padding:24px 40px;">
+        <tr><td style="background:${c.accent ?? DOCUMENT_ACCENT_DEFAULT};padding:24px 40px;">
           <h1 style="margin:0;color:#ffffff;font-size:20px;font-weight:bold;">${escapeHtml(c.brandName)}</h1>
         </td></tr>
         <tr><td style="padding:28px 40px;">${parts.join("\n")}</td></tr>
@@ -473,7 +474,7 @@ export function buildReminderEmail(i: ReminderEmailInput): {
     {
       brandName: i.company.name,
       footer: companyFooter(i.company),
-      accent: overdue ? "#B91C1C" : "#1E40AF",
+      accent: overdue ? "#B91C1C" : DOCUMENT_ACCENT_DEFAULT,
       heading: overdue
         ? { en: "Overdue invoice", ar: "فاتورة متأخرة السداد" }
         : { en: "Payment reminder", ar: "تذكير بالدفع" },
