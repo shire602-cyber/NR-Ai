@@ -1025,8 +1025,13 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
                 <ul className="text-sm">
                   {data.nonCashTransactions.map((n) => (
                     <li key={n.entryId} className="flex justify-between gap-4 py-1">
-                      <span className="tabular-nums" title={n.memo ?? undefined}>
-                        {n.date}
+                      <span className="min-w-0 truncate">
+                        <span className="tabular-nums">{formatDate(n.date, locale)}</span>
+                        {n.entryNumber || n.memo ? (
+                          <span className="ms-2 text-muted-foreground" dir="auto">
+                            {[n.entryNumber, n.memo].filter(Boolean).join(" · ")}
+                          </span>
+                        ) : null}
                       </span>
                       <span className="tabular-nums">
                         <Money amount={n.amount} currency={"AED"} />

@@ -92,6 +92,14 @@ export function DashboardOverview({ m }: { m: DashboardModel }) {
             }
             deltaContext={vsPrior}
             spark={sparks.revenue.series}
+            hint={
+              stats?.otherIncome ? (
+                <span data-testid="text-other-income">
+                  {tt["dashboard.otherIncomeLabel"]}{" "}
+                  <Money amount={stats.otherIncome} tone="auto" />
+                </span>
+              ) : undefined
+            }
             accent="brand"
             href={stats?.links.revenue}
             isLoading={statsLoading}

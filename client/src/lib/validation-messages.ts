@@ -155,6 +155,8 @@ export function localizeServerIssue(message: string): string {
  * field name with a localised reason; other known codes use `forms.serverErrors.<CODE>`.
  */
 export function localizeApiError(body: Record<string, unknown> | undefined): string | undefined {
+  const guard = localizeLedgerGuard(body);
+  if (guard) return guard;
   if (useI18n.getState().locale !== "ar" || !body) return undefined;
   const code = typeof body.code === "string" ? body.code : undefined;
   const fields = body.fields;
@@ -172,6 +174,45 @@ export function localizeApiError(body: Record<string, unknown> | undefined): str
   if (code) {
     const key = `forms.serverErrors.${code}`;
     if (dict("ar")[key]) return dict("ar")[key];
+  }
+  return undefined;
+}
+
+const CONTROL_LEDGERS = new Set(["receivables", "payables", "inventory", "vat", "grni", "payroll"]);
+
+/**
+ * Ledger-kernel refusals (B1 / B2) in both languages, from the code and its details: every
+ * entry point (bank-line create entry, editors, journal reverse / void, VAT settlement) shows
+ * the same sentence and, for a control account, the sub-ledger flow that records it instead.
+ * The server's English text names internal endpoints, so it is not shown for these codes.
+ */
+export function localizeLedgerGuard(body: Record<string, unknown> | undefined): string | undefined {
+  const code = typeof body?.code === "string" ? body.code : undefined;
+  if (!code) return undefined;
+  const details = (body?.details ?? {}) as Record<string, unknown>;
+  if (code === "CONTROL_ACCOUNT_MANUAL_POSTING") {
+    const parts = [tr("forms.serverErrors.CONTROL_ACCOUNT_MANUAL_POSTING")];
+    const accounts = Array.isArray(details.accounts) ? details.accounts : [];
+    const codes = accounts
+      .map((a) => (a && typeof a === "object" ? (a as { code?: unknown }).code : undefined))
+      .filter((c): c is string => typeof c === "string" && c.length > 0);
+    if (codes.length)
+      parts.push(tr("forms.serverErrors.controlAccounts", { codes: codes.join(", ") }));
+    const paths = Array.isArray(details.paths) ? details.paths : [];
+    for (const p of paths) {
+      const ledger = p && typeof p === "object" ? (p as { ledger?: unknown }).ledger : undefined;
+      if (typeof ledger === "string" && CONTROL_LEDGERS.has(ledger))
+        parts.push(tr(`forms.serverErrors.controlPath.${ledger}`));
+    }
+    return parts.join(" ");
+  }
+  if (code === "SUBLEDGER_ENTRY") {
+    const doc = typeof details.document === "string" ? details.document : "";
+    const key = `forms.serverErrors.SUBLEDGER_ENTRY.${doc}`;
+    return dict("en")[key] ? tr(key) : tr("forms.serverErrors.SUBLEDGER_ENTRY");
+  }
+  if (code === "INVOICE_BILLS_ASSET_DISPOSAL" || code === "VAT_AMENDMENT_NOTHING_TO_SETTLE") {
+    return tr(`forms.serverErrors.${code}`);
   }
   return undefined;
 }

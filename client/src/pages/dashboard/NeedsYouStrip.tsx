@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { uaeToday } from "@shared/uae-date";
 import { useQuery } from "@tanstack/react-query";
 import { useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { Link } from "wouter";
@@ -20,11 +21,6 @@ const TONE_DOT: Record<NeedsYouChip["tone"], string> = {
   warning: "bg-warning",
   info: "bg-info",
 };
-
-function uaeTodayIso(): string {
-  // Asia/Dubai calendar date (UTC+4, no DST), matching the server's uaeToday().
-  return new Date(Date.now() + 4 * 3_600_000).toISOString().slice(0, 10);
-}
 
 /**
  * Linked action chips under the period tabs (replaces the one-line insight sentence).
@@ -64,7 +60,7 @@ export function NeedsYouStrip({
       bankLines: bank.data,
       payrollRuns: payroll.data,
       vatStatus: compliance?.vatStatus ?? null,
-      todayIso: uaeTodayIso(),
+      todayIso: uaeToday(),
     },
     tt
   );

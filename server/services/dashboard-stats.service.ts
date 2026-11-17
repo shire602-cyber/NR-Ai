@@ -489,6 +489,8 @@ export async function getDashboardStats(companyId: string, input: DashboardStats
     period,
     // Period-scoped hero figures (the label always names the selected period).
     revenue: current.revenue,
+    // B2 (NM4): other income sits beside revenue (revenue + otherIncome − expenses = net).
+    otherIncome: current.otherIncome,
     expenses: current.expenses,
     netProfit: current.netProfit,
     margin: current.margin,

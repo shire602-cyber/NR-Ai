@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import {
   Select,
   SelectContent,
@@ -254,152 +255,156 @@ export default function ZatcaSettings() {
   const onboarded = status.data?.onboarded === true;
 
   return (
-    <div className="max-w-narrow space-y-6" dir={lang === "ar" ? "rtl" : "ltr"}>
-      <PageHeader
-        eyebrow={s.eyebrow}
-        title={s.title}
-        description={s.description}
-        secondaryActions={
-          <Button asChild variant="outline">
-            <Link href="/settings/einvoicing">{s.einvoicingLink}</Link>
-          </Button>
-        }
-      />
+    <SettingsLayout>
+      <div className="max-w-narrow space-y-6" dir={lang === "ar" ? "rtl" : "ltr"}>
+        <PageHeader
+          eyebrow={s.eyebrow}
+          title={s.title}
+          description={s.description}
+          secondaryActions={
+            <Button asChild variant="outline">
+              <Link href="/settings/einvoicing">{s.einvoicingLink}</Link>
+            </Button>
+          }
+        />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex flex-wrap items-center gap-3">
-            {s.title}
-            {status.isLoading ? null : onboarded ? (
-              <StatusBadge tone="success" data-testid="zatca-status">
-                {s.onboarded}
-              </StatusBadge>
-            ) : (
-              <StatusBadge tone="neutral" data-testid="zatca-status">
-                {s.notOnboarded}
-              </StatusBadge>
-            )}
-          </CardTitle>
-          <CardDescription>
-            {status.isLoading
-              ? s.loading
-              : configured
-                ? `${s.environment}: ${environmentLabel(status.data?.environment, lang)}`
-                : `${s.notConfigured}.`}
-          </CardDescription>
-        </CardHeader>
-      </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-center gap-3">
+              {s.title}
+              {status.isLoading ? null : onboarded ? (
+                <StatusBadge tone="success" data-testid="zatca-status">
+                  {s.onboarded}
+                </StatusBadge>
+              ) : (
+                <StatusBadge tone="neutral" data-testid="zatca-status">
+                  {s.notOnboarded}
+                </StatusBadge>
+              )}
+            </CardTitle>
+            <CardDescription>
+              {status.isLoading
+                ? s.loading
+                : configured
+                  ? `${s.environment}: ${environmentLabel(status.data?.environment, lang)}`
+                  : `${s.notConfigured}.`}
+            </CardDescription>
+          </CardHeader>
+        </Card>
 
-      {configured ? (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle>{s.egsTitle}</CardTitle>
-            </CardHeader>
-            <CardContent className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{s.name}</TableHead>
-                    <TableHead>{s.status}</TableHead>
-                    <TableHead>{s.icv}</TableHead>
-                    <TableHead>{s.otp}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(status.data?.egsUnits ?? []).length === 0 ? (
+        {configured ? (
+          <>
+            <Card>
+              <CardHeader>
+                <CardTitle>{s.egsTitle}</CardTitle>
+              </CardHeader>
+              <CardContent className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
                     <TableRow>
-                      <TableCell colSpan={4} className="text-muted-foreground">
-                        {s.none}
-                      </TableCell>
+                      <TableHead>{s.name}</TableHead>
+                      <TableHead>{s.status}</TableHead>
+                      <TableHead>{s.icv}</TableHead>
+                      <TableHead>{s.otp}</TableHead>
                     </TableRow>
-                  ) : (
-                    (status.data?.egsUnits ?? []).map((u) => (
-                      <TableRow key={u.id}>
-                        <TableCell>{u.name}</TableCell>
-                        <TableCell>
-                          <StatusBadge tone={u.status === "production" ? "success" : "neutral"}>
-                            {environmentLabel(u.status, lang)}
-                          </StatusBadge>
-                          {u.statusDetail ? (
-                            <div className="text-xs text-muted-foreground">{u.statusDetail}</div>
-                          ) : null}
-                        </TableCell>
-                        <TableCell>{u.icv}</TableCell>
-                        <TableCell>
-                          {u.status === "production" ? (
-                            "—"
-                          ) : (
-                            <div className="flex gap-2">
-                              <Input
-                                aria-label={s.otp}
-                                inputMode="numeric"
-                                maxLength={6}
-                                className="w-28"
-                                value={otp[u.id] ?? ""}
-                                onChange={(e) => setOtp((o) => ({ ...o, [u.id]: e.target.value }))}
-                              />
-                              <Button
-                                size="sm"
-                                disabled={onboard.isPending || !/^\d{6}$/.test(otp[u.id] ?? "")}
-                                onClick={() => onboard.mutate(u.id)}
-                              >
-                                {s.onboard}
-                              </Button>
-                            </div>
-                          )}
+                  </TableHeader>
+                  <TableBody>
+                    {(status.data?.egsUnits ?? []).length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-muted-foreground">
+                          {s.none}
                         </TableCell>
                       </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                    ) : (
+                      (status.data?.egsUnits ?? []).map((u) => (
+                        <TableRow key={u.id}>
+                          <TableCell>{u.name}</TableCell>
+                          <TableCell>
+                            <StatusBadge tone={u.status === "production" ? "success" : "neutral"}>
+                              {environmentLabel(u.status, lang)}
+                            </StatusBadge>
+                            {u.statusDetail ? (
+                              <div className="text-xs text-muted-foreground">{u.statusDetail}</div>
+                            ) : null}
+                          </TableCell>
+                          <TableCell>{u.icv}</TableCell>
+                          <TableCell>
+                            {u.status === "production" ? (
+                              "—"
+                            ) : (
+                              <div className="flex gap-2">
+                                <Input
+                                  aria-label={s.otp}
+                                  inputMode="numeric"
+                                  maxLength={6}
+                                  className="w-28"
+                                  value={otp[u.id] ?? ""}
+                                  onChange={(e) =>
+                                    setOtp((o) => ({ ...o, [u.id]: e.target.value }))
+                                  }
+                                />
+                                <Button
+                                  size="sm"
+                                  disabled={onboard.isPending || !/^\d{6}$/.test(otp[u.id] ?? "")}
+                                  onClick={() => onboard.mutate(u.id)}
+                                >
+                                  {s.onboard}
+                                </Button>
+                              </div>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{s.newEgs}</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              {field("name", s.name)}
-              {field("vatNumber", s.vat, { dir: "ltr" })}
-              {field("organizationName", s.orgName)}
-              {field("organizationUnit", s.orgUnit)}
-              <div className="space-y-2">
-                <Label htmlFor="zatca-types">{s.invoiceTypes}</Label>
-                <Select
-                  value={form.invoiceTypes}
-                  onValueChange={(value) => setForm((f) => ({ ...f, invoiceTypes: value }))}
-                >
-                  <SelectTrigger id="zatca-types">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1100">{s.typesBoth}</SelectItem>
-                    <SelectItem value="1000">{s.typesStandard}</SelectItem>
-                    <SelectItem value="0100">{s.typesSimplified}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {field("locationAddress", s.address)}
-              {field("industry", s.industry)}
-              {field("nameAr", s.sellerAr, { dir: "rtl" })}
-              {field("crn", s.crn, { dir: "ltr" })}
-              {field("street", s.street)}
-              {field("buildingNumber", s.building, { dir: "ltr" })}
-              {field("district", s.district)}
-              {field("city", s.city)}
-              {field("postalZone", s.postal, { dir: "ltr" })}
-              <div className="md:col-span-2">
-                <Button onClick={() => create.mutate()} disabled={create.isPending || !companyId}>
-                  {s.create}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </>
-      ) : null}
-    </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>{s.newEgs}</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                {field("name", s.name)}
+                {field("vatNumber", s.vat, { dir: "ltr" })}
+                {field("organizationName", s.orgName)}
+                {field("organizationUnit", s.orgUnit)}
+                <div className="space-y-2">
+                  <Label htmlFor="zatca-types">{s.invoiceTypes}</Label>
+                  <Select
+                    value={form.invoiceTypes}
+                    onValueChange={(value) => setForm((f) => ({ ...f, invoiceTypes: value }))}
+                  >
+                    <SelectTrigger id="zatca-types">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1100">{s.typesBoth}</SelectItem>
+                      <SelectItem value="1000">{s.typesStandard}</SelectItem>
+                      <SelectItem value="0100">{s.typesSimplified}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {field("locationAddress", s.address)}
+                {field("industry", s.industry)}
+                {field("nameAr", s.sellerAr, { dir: "rtl" })}
+                {field("crn", s.crn, { dir: "ltr" })}
+                {field("street", s.street)}
+                {field("buildingNumber", s.building, { dir: "ltr" })}
+                {field("district", s.district)}
+                {field("city", s.city)}
+                {field("postalZone", s.postal, { dir: "ltr" })}
+                <div className="md:col-span-2">
+                  <Button onClick={() => create.mutate()} disabled={create.isPending || !companyId}>
+                    {s.create}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        ) : null}
+      </div>
+    </SettingsLayout>
   );
 }

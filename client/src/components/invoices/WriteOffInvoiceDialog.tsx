@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { uaeToday } from "@shared/uae-date";
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -40,7 +41,7 @@ function WriteOffInvoiceDialogBody({
 }) {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => uaeToday());
   const [reason, setReason] = useState("");
 
   const writeOff = useMutation({

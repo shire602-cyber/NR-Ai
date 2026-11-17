@@ -387,6 +387,14 @@ describe("B2 NM4: unrealised FX gain is other income", () => {
       ]
     );
     expect(pl.netProfit).toBe(3690);
+    // INTEGRATE-F: the dashboard stats carry other income beside revenue (the revenue tile's
+    // sub-line), so the tiles add up to net profit.
+    const stats = await get(
+      t,
+      `${base(t)}/dashboard/stats?preset=custom&from=2026-10-01&to=2026-10-31`
+    );
+    expect(stats).toMatchObject({ revenue: 3672.5, otherIncome: 17.5, netProfit: 3690 });
+    expect(stats.current).toMatchObject({ revenue: 3672.5, otherIncome: 17.5 });
     const trends = await get(t, `${base(t)}/dashboard/monthly-trends`);
     const octTrend = trends.find((p: { key: string }) => p.key === "2026-10");
     if (octTrend) {

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -376,383 +377,385 @@ export default function EInvoicingSettings() {
   const set = (k: keyof FormState) => (v: string) => setEdits((e) => ({ ...e, [k]: v }));
 
   return (
-    <div className="max-w-narrow space-y-6" dir={locale === "ar" ? "rtl" : "ltr"}>
-      <PageHeader
-        eyebrow={s.eyebrow}
-        title={s.title}
-        description={s.description}
-        icon={FileCheck2}
-        actions={
-          isSaudiCompany(activeCompany) ? (
-            <Button asChild variant="outline">
-              <Link href="/settings/zatca">{s.zatcaLink}</Link>
-            </Button>
-          ) : undefined
-        }
-      />
+    <SettingsLayout>
+      <div className="max-w-narrow space-y-6" dir={locale === "ar" ? "rtl" : "ltr"}>
+        <PageHeader
+          eyebrow={s.eyebrow}
+          title={s.title}
+          description={s.description}
+          icon={FileCheck2}
+          actions={
+            isSaudiCompany(activeCompany) ? (
+              <Button asChild variant="outline">
+                <Link href="/settings/zatca">{s.zatcaLink}</Link>
+              </Button>
+            ) : undefined
+          }
+        />
 
-      {!view ? (
-        <p className="text-muted-foreground">{s.loading}</p>
-      ) : (
-        <>
-          {/* E1/E2: the configured accredited provider's guided connection (or "Not connected"). */}
-          {companyId && <EInvoiceProviderCard companyId={companyId} />}
+        {!view ? (
+          <p className="text-muted-foreground">{s.loading}</p>
+        ) : (
+          <>
+            {/* E1/E2: the configured accredited provider's guided connection (or "Not connected"). */}
+            {companyId && <EInvoiceProviderCard companyId={companyId} />}
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{s.scopeTitle}</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-3">
-              <div className="space-y-2">
-                <Label>{s.scope}</Label>
-                <Select value={form.einvoiceScope} onValueChange={set("einvoiceScope")}>
-                  <SelectTrigger data-testid="einvoice-scope" aria-label={s.scope}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>—</SelectItem>
-                    <SelectItem value="b2b">{s.scopeB2b}</SelectItem>
-                    <SelectItem value="b2g">{s.scopeB2g}</SelectItem>
-                    <SelectItem value="b2b_b2g">{s.scopeBoth}</SelectItem>
-                    <SelectItem value="none">{s.scopeNone}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>{s.band}</Label>
-                <Select
-                  value={form.einvoiceTurnoverBand}
-                  onValueChange={set("einvoiceTurnoverBand")}
-                >
-                  <SelectTrigger data-testid="einvoice-band" aria-label={s.band}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>—</SelectItem>
-                    <SelectItem value="large">{s.bandLarge}</SelectItem>
-                    <SelectItem value="standard">{s.bandStandard}</SelectItem>
-                    <SelectItem value="government">{s.bandGovernment}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="golive">{s.goLiveOverride}</Label>
-                <DatePicker
-                  id="golive"
-                  value={form.einvoiceGoLiveDate}
-                  onChange={(value) => set("einvoiceGoLiveDate")(value)}
-                />
-              </div>
-              <div className="text-sm md:col-span-3">
-                <span className="me-4">
-                  {s.goLive}: <strong>{view.scope.goLiveDate ?? "—"}</strong>
-                </span>
-                <span className="me-4">
-                  {s.appointBy}: <strong>{view.scope.appointAspBy ?? "—"}</strong>
-                </span>
-                <span className="me-4">
-                  {s.daysLeft}: <strong>{view.scope.daysToGoLive ?? "—"}</strong>
-                </span>
-                <Badge variant={view.scope.mandatory ? "destructive" : "outline"}>
-                  {view.scope.mandatory ? s.mandatory : s.notMandatory}
-                </Badge>
-              </div>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>{s.scopeTitle}</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-3">
+                <div className="space-y-2">
+                  <Label>{s.scope}</Label>
+                  <Select value={form.einvoiceScope} onValueChange={set("einvoiceScope")}>
+                    <SelectTrigger data-testid="einvoice-scope" aria-label={s.scope}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>—</SelectItem>
+                      <SelectItem value="b2b">{s.scopeB2b}</SelectItem>
+                      <SelectItem value="b2g">{s.scopeB2g}</SelectItem>
+                      <SelectItem value="b2b_b2g">{s.scopeBoth}</SelectItem>
+                      <SelectItem value="none">{s.scopeNone}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{s.band}</Label>
+                  <Select
+                    value={form.einvoiceTurnoverBand}
+                    onValueChange={set("einvoiceTurnoverBand")}
+                  >
+                    <SelectTrigger data-testid="einvoice-band" aria-label={s.band}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>—</SelectItem>
+                      <SelectItem value="large">{s.bandLarge}</SelectItem>
+                      <SelectItem value="standard">{s.bandStandard}</SelectItem>
+                      <SelectItem value="government">{s.bandGovernment}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="golive">{s.goLiveOverride}</Label>
+                  <DatePicker
+                    id="golive"
+                    value={form.einvoiceGoLiveDate}
+                    onChange={(value) => set("einvoiceGoLiveDate")(value)}
+                  />
+                </div>
+                <div className="text-sm md:col-span-3">
+                  <span className="me-4">
+                    {s.goLive}: <strong>{view.scope.goLiveDate ?? "—"}</strong>
+                  </span>
+                  <span className="me-4">
+                    {s.appointBy}: <strong>{view.scope.appointAspBy ?? "—"}</strong>
+                  </span>
+                  <span className="me-4">
+                    {s.daysLeft}: <strong>{view.scope.daysToGoLive ?? "—"}</strong>
+                  </span>
+                  <Badge variant={view.scope.mandatory ? "destructive" : "outline"}>
+                    {view.scope.mandatory ? s.mandatory : s.notMandatory}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{s.identityTitle}</CardTitle>
-              <CardDescription>
-                {s.participantHint} {view.identity.participantIdFallback ?? "—"}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="pid">{s.participantId}</Label>
-                <Input
-                  id="pid"
-                  inputMode="numeric"
-                  placeholder={view.identity.participantIdFallback ?? ""}
-                  value={form.peppolParticipantId}
-                  onChange={(e) => set("peppolParticipantId")(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="scheme">{s.scheme}</Label>
-                <Input
-                  id="scheme"
-                  value={form.peppolScheme}
-                  onChange={(e) => set("peppolScheme")(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="tl">{s.tradeLicence}</Label>
-                <Input
-                  id="tl"
-                  value={form.tradeLicenceNo}
-                  onChange={(e) => set("tradeLicenceNo")(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="tla">{s.tradeLicenceAuthority}</Label>
-                <Input
-                  id="tla"
-                  value={form.tradeLicenceAuthority}
-                  onChange={(e) => set("tradeLicenceAuthority")(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="iban">{s.iban}</Label>
-                <Input
-                  id="iban"
-                  dir="ltr"
-                  value={form.einvoicePayeeIban}
-                  onChange={(e) => set("einvoicePayeeIban")(e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{s.paymentMeans}</Label>
-                <Select
-                  value={form.einvoicePaymentMeansCode}
-                  onValueChange={set("einvoicePaymentMeansCode")}
-                >
-                  <SelectTrigger aria-label={s.paymentMeans}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>—</SelectItem>
-                    {paymentOptions.map(([code, label]) => (
-                      <SelectItem key={code} value={code}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="md:col-span-2">
-                <Button onClick={() => save.mutate()} disabled={save.isPending || !companyId}>
-                  {s.save}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>{s.identityTitle}</CardTitle>
+                <CardDescription>
+                  {s.participantHint} {view.identity.participantIdFallback ?? "—"}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="pid">{s.participantId}</Label>
+                  <Input
+                    id="pid"
+                    inputMode="numeric"
+                    placeholder={view.identity.participantIdFallback ?? ""}
+                    value={form.peppolParticipantId}
+                    onChange={(e) => set("peppolParticipantId")(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="scheme">{s.scheme}</Label>
+                  <Input
+                    id="scheme"
+                    value={form.peppolScheme}
+                    onChange={(e) => set("peppolScheme")(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tl">{s.tradeLicence}</Label>
+                  <Input
+                    id="tl"
+                    value={form.tradeLicenceNo}
+                    onChange={(e) => set("tradeLicenceNo")(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="tla">{s.tradeLicenceAuthority}</Label>
+                  <Input
+                    id="tla"
+                    value={form.tradeLicenceAuthority}
+                    onChange={(e) => set("tradeLicenceAuthority")(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="iban">{s.iban}</Label>
+                  <Input
+                    id="iban"
+                    dir="ltr"
+                    value={form.einvoicePayeeIban}
+                    onChange={(e) => set("einvoicePayeeIban")(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{s.paymentMeans}</Label>
+                  <Select
+                    value={form.einvoicePaymentMeansCode}
+                    onValueChange={set("einvoicePaymentMeansCode")}
+                  >
+                    <SelectTrigger aria-label={s.paymentMeans}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NONE}>—</SelectItem>
+                      {paymentOptions.map(([code, label]) => (
+                        <SelectItem key={code} value={code}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="md:col-span-2">
+                  <Button onClick={() => save.mutate()} disabled={save.isPending || !companyId}>
+                    {s.save}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{s.validationTitle}</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-2 text-sm sm:grid-cols-3">
-              <div>
-                {s.xsd}: <strong>{view.validation.xsd ? s.available : s.unavailable}</strong>
-              </div>
-              <div>
-                {s.schematron} {view.validation.schematronVersion}:{" "}
-                <strong>{view.validation.schematron ? s.available : s.unavailable}</strong>
-              </div>
-              <div>
-                {s.rules}: <strong>{s.available}</strong>
-              </div>
-            </CardContent>
-          </Card>
-        </>
-      )}
+            <Card>
+              <CardHeader>
+                <CardTitle>{s.validationTitle}</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-2 text-sm sm:grid-cols-3">
+                <div>
+                  {s.xsd}: <strong>{view.validation.xsd ? s.available : s.unavailable}</strong>
+                </div>
+                <div>
+                  {s.schematron} {view.validation.schematronVersion}:{" "}
+                  <strong>{view.validation.schematron ? s.available : s.unavailable}</strong>
+                </div>
+                <div>
+                  {s.rules}: <strong>{s.available}</strong>
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{s.documentsTitle}</CardTitle>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{s.invoice}</TableHead>
-                <TableHead>{s.status}</TableHead>
-                <TableHead>{s.attempts}</TableHead>
-                <TableHead>{s.nextRetry}</TableHead>
-                <TableHead>{s.xsd}</TableHead>
-                <TableHead>{s.schematron}</TableHead>
-                <TableHead>{s.rules}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(documents.data?.items ?? []).length === 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{s.documentsTitle}</CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={7} className="text-muted-foreground">
-                    {s.none}
-                  </TableCell>
+                  <TableHead>{s.invoice}</TableHead>
+                  <TableHead>{s.status}</TableHead>
+                  <TableHead>{s.attempts}</TableHead>
+                  <TableHead>{s.nextRetry}</TableHead>
+                  <TableHead>{s.xsd}</TableHead>
+                  <TableHead>{s.schematron}</TableHead>
+                  <TableHead>{s.rules}</TableHead>
                 </TableRow>
-              ) : (
-                (documents.data?.items ?? []).map((d) => (
-                  <TableRow key={d.id}>
-                    <TableCell>
-                      <Link href="/invoices">{d.invoiceNumber ?? d.invoiceId.slice(0, 8)}</Link>
+              </TableHeader>
+              <TableBody>
+                {(documents.data?.items ?? []).length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-muted-foreground">
+                      {s.none}
                     </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          d.status === "rejected" || d.status === "failed"
-                            ? "destructive"
-                            : "outline"
-                        }
+                  </TableRow>
+                ) : (
+                  (documents.data?.items ?? []).map((d) => (
+                    <TableRow key={d.id}>
+                      <TableCell>
+                        <Link href="/invoices">{d.invoiceNumber ?? d.invoiceId.slice(0, 8)}</Link>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            d.status === "rejected" || d.status === "failed"
+                              ? "destructive"
+                              : "outline"
+                          }
+                        >
+                          {d.status}
+                        </Badge>
+                        {d.lastError ? (
+                          <div className="text-xs text-muted-foreground">{d.lastError}</div>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>{d.attempts}</TableCell>
+                      <TableCell>
+                        {d.nextRetryAt ? new Date(d.nextRetryAt).toLocaleString(locale) : "—"}
+                      </TableCell>
+                      <TableCell>{layerText(d.validation?.xsd, s)}</TableCell>
+                      <TableCell
+                        title={d.validation?.schematron.errors
+                          .map((e) => `${e.id}: ${e.message}`)
+                          .join("\n")}
                       >
-                        {d.status}
-                      </Badge>
-                      {d.lastError ? (
-                        <div className="text-xs text-muted-foreground">{d.lastError}</div>
-                      ) : null}
-                    </TableCell>
-                    <TableCell>{d.attempts}</TableCell>
-                    <TableCell>
-                      {d.nextRetryAt ? new Date(d.nextRetryAt).toLocaleString(locale) : "—"}
-                    </TableCell>
-                    <TableCell>{layerText(d.validation?.xsd, s)}</TableCell>
-                    <TableCell
-                      title={d.validation?.schematron.errors
-                        .map((e) => `${e.id}: ${e.message}`)
-                        .join("\n")}
-                    >
-                      {layerText(d.validation?.schematron, s)}
-                    </TableCell>
-                    <TableCell
-                      title={d.validation?.rules.errors
-                        .map((e) => `${e.id}: ${e.message}`)
-                        .join("\n")}
-                    >
-                      {layerText(d.validation?.rules, s)}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>{s.archiveTitle}</CardTitle>
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{s.invoice}</TableHead>
-                <TableHead>{s.direction}</TableHead>
-                <TableHead>{s.kind}</TableHead>
-                <TableHead>{s.hash}</TableHead>
-                <TableHead>{s.retainUntil}</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(archive.data?.items ?? []).length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-muted-foreground">
-                    {s.none}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                (archive.data?.items ?? []).map((a) => (
-                  <TableRow key={a.id}>
-                    <TableCell>{a.documentNumber}</TableCell>
-                    <TableCell>{a.direction}</TableCell>
-                    <TableCell>{a.kind}</TableCell>
-                    <TableCell className="tabular-nums text-xs" dir="ltr">
-                      {a.sha256.slice(0, 16)}…
-                    </TableCell>
-                    <TableCell>{a.retainUntil}</TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-label={s.download}
-                        onClick={() => companyId && downloadArchive(companyId, a)}
+                        {layerText(d.validation?.schematron, s)}
+                      </TableCell>
+                      <TableCell
+                        title={d.validation?.rules.errors
+                          .map((e) => `${e.id}: ${e.message}`)
+                          .join("\n")}
                       >
-                        <Download className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                        {layerText(d.validation?.rules, s)}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{s.inboundTitle}</CardTitle>
-          <CardDescription>
-            {view?.inbound.enabled ? s.inboundEnabled : s.inboundDisabled}
-          </CardDescription>
-          {/* Spec 3.12: the inbound endpoint is developer detail, collapsed by default. */}
-          {view ? (
-            <details className="mt-2 text-small" data-testid="einvoice-developer-details">
-              <summary className="cursor-pointer text-muted-foreground">
-                {s.developerDetails}
-              </summary>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="text-muted-foreground">{s.endpoint}</span>
-                <bdi className="break-all font-mono text-xs" translate="no">
-                  {view.inbound.endpoint}
-                </bdi>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7"
-                  onClick={() => {
-                    void navigator.clipboard?.writeText(view.inbound.endpoint);
-                    toast({ title: s.copied });
-                  }}
-                >
-                  {s.copy}
-                </Button>
-              </div>
-            </details>
-          ) : null}
-        </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{s.supplier}</TableHead>
-                <TableHead>{s.invoice}</TableHead>
-                <TableHead>{s.status}</TableHead>
-                <TableHead>{s.bill}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(inbound.data?.items ?? []).length === 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>{s.archiveTitle}</CardTitle>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="text-muted-foreground">
-                    {s.none}
-                  </TableCell>
+                  <TableHead>{s.invoice}</TableHead>
+                  <TableHead>{s.direction}</TableHead>
+                  <TableHead>{s.kind}</TableHead>
+                  <TableHead>{s.hash}</TableHead>
+                  <TableHead>{s.retainUntil}</TableHead>
+                  <TableHead />
                 </TableRow>
-              ) : (
-                (inbound.data?.items ?? []).map((d) => (
-                  <TableRow key={d.id}>
-                    <TableCell>{d.supplierName ?? "—"}</TableCell>
-                    <TableCell>{d.documentNumber}</TableCell>
-                    <TableCell>
-                      <Badge variant={d.status === "bill_created" ? "default" : "outline"}>
-                        {d.status}
-                      </Badge>
-                      {d.error ? (
-                        <div className="text-xs text-muted-foreground">{d.error}</div>
-                      ) : null}
-                    </TableCell>
-                    <TableCell>
-                      {d.billId ? <Link href="/bill-pay">{d.billId.slice(0, 8)}</Link> : "—"}
+              </TableHeader>
+              <TableBody>
+                {(archive.data?.items ?? []).length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-muted-foreground">
+                      {s.none}
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </div>
+                ) : (
+                  (archive.data?.items ?? []).map((a) => (
+                    <TableRow key={a.id}>
+                      <TableCell>{a.documentNumber}</TableCell>
+                      <TableCell>{a.direction}</TableCell>
+                      <TableCell>{a.kind}</TableCell>
+                      <TableCell className="tabular-nums text-xs" dir="ltr">
+                        {a.sha256.slice(0, 16)}…
+                      </TableCell>
+                      <TableCell>{a.retainUntil}</TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={s.download}
+                          onClick={() => companyId && downloadArchive(companyId, a)}
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{s.inboundTitle}</CardTitle>
+            <CardDescription>
+              {view?.inbound.enabled ? s.inboundEnabled : s.inboundDisabled}
+            </CardDescription>
+            {/* Spec 3.12: the inbound endpoint is developer detail, collapsed by default. */}
+            {view ? (
+              <details className="mt-2 text-small" data-testid="einvoice-developer-details">
+                <summary className="cursor-pointer text-muted-foreground">
+                  {s.developerDetails}
+                </summary>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="text-muted-foreground">{s.endpoint}</span>
+                  <bdi className="break-all font-mono text-xs" translate="no">
+                    {view.inbound.endpoint}
+                  </bdi>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(view.inbound.endpoint);
+                      toast({ title: s.copied });
+                    }}
+                  >
+                    {s.copy}
+                  </Button>
+                </div>
+              </details>
+            ) : null}
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{s.supplier}</TableHead>
+                  <TableHead>{s.invoice}</TableHead>
+                  <TableHead>{s.status}</TableHead>
+                  <TableHead>{s.bill}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(inbound.data?.items ?? []).length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-muted-foreground">
+                      {s.none}
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  (inbound.data?.items ?? []).map((d) => (
+                    <TableRow key={d.id}>
+                      <TableCell>{d.supplierName ?? "—"}</TableCell>
+                      <TableCell>{d.documentNumber}</TableCell>
+                      <TableCell>
+                        <Badge variant={d.status === "bill_created" ? "default" : "outline"}>
+                          {d.status}
+                        </Badge>
+                        {d.error ? (
+                          <div className="text-xs text-muted-foreground">{d.error}</div>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>
+                        {d.billId ? <Link href="/bill-pay">{d.billId.slice(0, 8)}</Link> : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+    </SettingsLayout>
   );
 }

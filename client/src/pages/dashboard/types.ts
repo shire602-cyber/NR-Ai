@@ -3,6 +3,8 @@ export interface DashboardPeriodSummary {
   from: string | null;
   to: string;
   revenue: number;
+  /** B2 (NM4): interest, disposal and FX gains; not revenue (IAS 1.82(a)). */
+  otherIncome?: number;
   expenses: number;
   netProfit: number;
   margin: number | null;
@@ -26,6 +28,8 @@ export interface DashboardStats {
     label: string;
   };
   revenue: number;
+  /** B2 (NM4): other income of the period, shown beside revenue. */
+  otherIncome?: number;
   expenses: number;
   netProfit: number;
   margin: number | null;

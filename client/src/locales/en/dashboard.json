@@ -194,5 +194,6 @@
   "dashboard.raiseScoreLink": "Raise your score · {count} open",
   "dashboard.viewAll": "View all",
   "dashboard.chartNotEnoughData": "The chart appears once there are two months of activity.",
-  "dashboard.calendarLink": "Calendar"
+  "dashboard.calendarLink": "Calendar",
+  "dashboard.otherIncomeLabel": "Other income"
 }

@@ -1,9 +1,9 @@
 import { accountDisplayName } from "@/lib/account-name";
 import { useState, useMemo } from "react";
-import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FileDrop } from "@/components/ui/file-drop";
 import { Label } from "@/components/ui/label";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -692,8 +692,7 @@ export default function BankReconciliation() {
     });
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleStatementFile = (file: File | undefined) => {
     if (file) {
       setImportFile(file);
       setStatementPreview(null);
@@ -1459,21 +1458,19 @@ export default function BankReconciliation() {
                 </SelectContent>
               </Select>
               {(!bankAccounts || bankAccounts.length === 0) && (
-                <p className="text-xs text-warning">
-                  No bank accounts configured. Create one under Settings → Bank Accounts.
-                </p>
+                <p className="text-xs text-warning">{t["banking.accounts.none"]}</p>
               )}
             </div>
             <div className="space-y-2">
               <Label>
                 <T k="pageLabels.statementFile" />
               </Label>
-              <Input
-                type="file"
+              <FileDrop
                 accept=".csv,.txt,.xlsx,.sta,.mt940,.xml,.ofx,.qfx,.pdf,application/pdf"
-                onChange={handleFileChange}
+                onFiles={(files) => handleStatementFile(files[0])}
                 disabled={isImporting}
-                data-testid="input-bank-statement-file"
+                value={importFile?.name ?? null}
+                inputTestId="input-bank-statement-file"
               />
               {importFile && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">

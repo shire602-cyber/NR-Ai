@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { DatePicker } from "@/components/ui/date-picker";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatDate } from "@/lib/format-date";
+import { uaeToday } from "@shared/uae-date";
 import {
   Dialog,
   DialogContent,
@@ -87,7 +88,7 @@ export function PensionTab({ companyId }: { companyId: string }) {
   const [paying, setPaying] = useState<FundBalance | null>(null);
   const [amount, setAmount] = useState("");
   const [account, setAccount] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => uaeToday());
   const [reference, setReference] = useState("");
 
   const refresh = () => {
@@ -162,6 +163,7 @@ export function PensionTab({ companyId }: { companyId: string }) {
                         onClick={() => {
                           setPaying(f);
                           setAmount(f.outstanding);
+                          setDate(uaeToday());
                           setReference("");
                         }}
                         data-testid={`button-pay-pension-${f.fund}`}

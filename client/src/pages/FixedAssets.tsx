@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   FormActions,
   FormErrorSummary,
@@ -1279,13 +1280,16 @@ export default function FixedAssets() {
                 render={({ field }) => (
                   <FormItem>
                     <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
+                      <Checkbox
                         checked={field.value === true}
-                        onChange={(e) => field.onChange(e.target.checked)}
+                        onCheckedChange={(v) => field.onChange(v === true)}
+                        data-testid="checkbox-dispose-on-credit"
                       />
                       {fa.onCredit}
                     </label>
+                    {disposeOnCredit && (
+                      <p className="text-xs text-muted-foreground">{fa.onCreditHint}</p>
+                    )}
                   </FormItem>
                 )}
               />
@@ -1546,7 +1550,9 @@ const FA_COPY = {
     capitalize: "Capitalise",
     capitalizeHint: "Post the purchase to the ledger so the asset can be depreciated",
     capitalized: "Asset capitalised on the ledger",
-    onCredit: "Sold on credit (debit Accounts Receivable)",
+    onCredit: "Sold on credit",
+    onCreditHint:
+      "A tax invoice is issued to the buyer for the sale price plus VAT; the receivable is collected on that invoice.",
     proceedsAccount: "Proceeds received into",
     cashDefault: "Cash on hand (1010)",
     buyer: "Buyer",
@@ -1564,7 +1570,9 @@ const FA_COPY = {
     capitalize: "رسملة",
     capitalizeHint: "ترحيل الشراء إلى دفتر الأستاذ ليتسنى استهلاك الأصل",
     capitalized: "تمت رسملة الأصل في دفتر الأستاذ",
-    onCredit: "بيع آجل (مدين الذمم المدينة)",
+    onCredit: "بيع آجل",
+    onCreditHint:
+      "تصدر فاتورة ضريبية للمشتري بسعر البيع مع الضريبة، ويُحصَّل المبلغ المستحق على تلك الفاتورة.",
     proceedsAccount: "استلام المتحصلات في",
     cashDefault: "النقد في الصندوق (1010)",
     buyer: "المشتري",

@@ -194,5 +194,6 @@
   "dashboard.raiseScoreLink": "ارفع درجتك · {count} مفتوحة",
   "dashboard.viewAll": "عرض الكل",
   "dashboard.chartNotEnoughData": "يظهر الرسم البياني بعد شهرين من النشاط.",
-  "dashboard.calendarLink": "التقويم"
+  "dashboard.calendarLink": "التقويم",
+  "dashboard.otherIncomeLabel": "إيرادات أخرى"
 }

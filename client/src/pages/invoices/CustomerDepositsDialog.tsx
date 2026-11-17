@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { uaeToday } from "@shared/uae-date";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -94,7 +95,7 @@ export function CustomerDepositsDialog({
     enabled: open,
   });
   const banks = postablePaymentAccounts(accounts);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = uaeToday();
   const [form, setForm] = useState({
     customerName: "",
     date: today,
