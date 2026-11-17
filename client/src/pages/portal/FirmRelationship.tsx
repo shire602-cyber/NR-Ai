@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Money } from "@/components/ui/money";
 import {
   Select,
   SelectContent,
@@ -345,7 +346,7 @@ function EngagementLettersCard({ companyId }: { companyId: string }) {
                 <p className="whitespace-pre-wrap text-sm">{letter.body}</p>
                 {letter.feeAmount != null ? (
                   <p className="text-xs text-muted-foreground" dir="ltr">
-                    AED {Number(letter.feeAmount).toFixed(2)}
+                    <Money amount={Number(letter.feeAmount)} currency="AED" />
                     {letter.billingCycle ? ` / ${letter.billingCycle}` : ""}
                   </p>
                 ) : null}

@@ -39,6 +39,7 @@ import { strictBody } from "../http/strict-body";
 import { DomainError } from "../errors";
 import { toFils } from "../../shared/money";
 import {
+  deleteDraft,
   describeReversal,
   journalLifecycle,
   postDraft,
@@ -651,17 +652,14 @@ export function registerJournalRoutes(app: Express) {
         entry as { createdAt: Date | string; retentionExpiresAt?: Date | string | null },
         "Journal entry"
       );
-      const deleted = await db
-        .delete(journalEntries)
-        .where(
-          and(
-            eq(journalEntries.id, entry.id),
-            eq(journalEntries.companyId, entry.companyId),
-            eq(journalEntries.status, "draft")
-          )
-        )
-        .returning({ id: journalEntries.id });
-      if (deleted.length === 0) throw new DomainError("ENTRY_NOT_DRAFT", 409);
+      // WP6: drafts are deleted only through the ledger kernel (audited,
+      // draft-guarded inside the ledger transaction).
+      const deleted = await deleteDraft(entry.id, {
+        actorId: userId,
+        companyId: entry.companyId,
+        req,
+      });
+      if (!deleted) throw new DomainError("ENTRY_NOT_DRAFT", 409);
       await recordAudit({
         userId,
         companyId: entry.companyId,

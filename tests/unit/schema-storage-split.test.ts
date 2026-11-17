@@ -87,7 +87,20 @@ describe("R20-09 server/storage.ts split", () => {
     expect(duplicates).toEqual([]);
     expect(chain[0]).toBe("DatabaseStorage");
     expect(chain.length).toBeGreaterThan(10);
-    expect(seen.size).toBeGreaterThanOrEqual(418);
+    // WP7 removed 8 dead bypass methods (419 -> 411); they must stay gone.
+    expect(seen.size).toBeGreaterThanOrEqual(411);
+    for (const removed of [
+      "updateJournalEntry",
+      "updateJournalEntryWithLines",
+      "deleteJournalEntry",
+      "createJournalLine",
+      "deleteJournalLinesByEntryId",
+      "getJournalLinesByCompanyId",
+      "createInvoicePayment",
+      "updateBankTransaction",
+    ]) {
+      expect(seen.has(removed), removed).toBe(false);
+    }
     for (const method of [
       "getUser",
       "getCompany",

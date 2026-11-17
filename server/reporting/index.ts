@@ -33,3 +33,4 @@ export * from "./aging";
 export * from "./currency-trial-balance";
 export * from "./settlement";
 export * from "./ifrs-adjustments";
+export * from "./ledger-balance-check";

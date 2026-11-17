@@ -105,22 +105,6 @@ export class BankingStorage extends IntegrationStorage {
       .orderBy(desc(bankTransactions.transactionDate));
   }
 
-  async updateBankTransaction(
-    id: string,
-    companyId: string,
-    data: Partial<InsertBankTransaction>
-  ): Promise<BankTransaction> {
-    const [transaction] = await db
-      .update(bankTransactions)
-      .set(data)
-      .where(and(eq(bankTransactions.id, id), eq(bankTransactions.companyId, companyId)))
-      .returning();
-    if (!transaction) {
-      throw new Error("Bank transaction not found");
-    }
-    return transaction;
-  }
-
   // Bank connections
   private decryptBankConnection<T extends BankConnection | undefined>(connection: T): T {
     if (!connection) return connection;

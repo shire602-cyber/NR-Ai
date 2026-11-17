@@ -9,6 +9,7 @@ import {
 } from "./pdf-fonts";
 import { loadCompanyLogo } from "./pdf-logo";
 import type { Quote, QuoteLine, Company } from "../../shared/schema";
+import { formatMoneyAmount as formatAmount } from "../utils/money-format";
 
 /**
  * Generate a professional quotation/estimate PDF on the server side using PDFKit.
@@ -287,8 +288,4 @@ export async function generateQuotePDF(
       reject(err);
     }
   });
-}
-
-function formatAmount(amount: number, currency: string = "AED"): string {
-  return `${currency} ${amount.toFixed(2)}`;
 }

@@ -121,6 +121,7 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   `tests/db/route-matrix.test.ts` is the cross-tenant route matrix; known gaps live as per-issue
   files in `tests/db/route-matrix-allow/` (the directory is absent when there are no gaps).
 - `npm run check` ends with `scripts/run-guards.mjs`: `check-raw-body.mjs` (raw `req.body` in
-  write routes), `check-ledger-writes.mjs` (direct journal writes outside the ledger service), and
+  write routes), `check-ledger-writes.mjs` (any insert/update/delete, `transitionRow` or raw SQL
+  write on `journal_entries`/`journal_lines` outside `server/ledger/`; baseline 0), and
   `check-i18n-ratchet.mjs` (hard-coded JSX strings). Baselines in `scripts/guard-baselines/` may
   only move down (`--update` after real progress).

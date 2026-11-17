@@ -34,7 +34,9 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   balance, account/period guards, in-transaction numbering under `pg_advisory_xact_lock`,
   idempotency keys and one-reversal-per-entry live there. `storage.createJournalEntry` is a legacy
   adapter over the kernel; new code must not add call sites (ratchet
-  `scripts/guard-baselines/ledger-writes.json`). Reversed/voided originals keep `status = posted`;
+  `scripts/guard-baselines/ledger-writes.json`). Drafts are deleted only with `deleteDraft`
+  (journal delete route, `safeDeleteInvoice` for draft credit notes); a document with posted
+  entries answers 409 and must be voided or reversed. Reversed/voided originals keep `status = posted`;
   use `journalLifecycle` for the lifecycle. Year-end close posts through the kernel
   (`ledgerClosePostingPort`, kind `year_end_close`); FX revaluation posts kind `revaluation` with a
   linked next-day reversal; receipt post/revise use `postJournal` + `reverseBySource`.

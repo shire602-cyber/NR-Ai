@@ -209,7 +209,8 @@ export function registerCreditNoteRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const creditNote = await creditNoteForUser(userOf(req), req.params.id);
+      const userId = userOf(req);
+      const creditNote = await creditNoteForUser(userId, req.params.id);
       if (creditNote.status !== "draft") {
         throw new DomainError(
           "CREDIT_NOTE_ISSUED_IMMUTABLE",
@@ -218,7 +219,7 @@ export function registerCreditNoteRoutes(app: Express) {
           "An issued credit note cannot be deleted; void it instead."
         );
       }
-      await storage.safeDeleteInvoice(creditNote.id);
+      await storage.safeDeleteInvoice(creditNote.id, userId);
       res.json({ message: "Credit note deleted" });
     })
   );

@@ -7,12 +7,11 @@ import {
   bankTransactions,
   companies,
   invoices,
-  journalEntries,
-  journalLines,
   receipts,
   vatReturns,
 } from "../../../shared/schema";
 import { db } from "../../db";
+import { aed, ledgerBalanceCheckByCompany } from "../../reporting";
 import { getAccessibleCompanyIds } from "../../middleware/rbac";
 import {
   type DeadlineStatus,
@@ -153,23 +152,7 @@ export const handleGetFirmHealth = async (req: Request, res: Response) => {
     .where(inArray(bankTransactions.companyId, clientIds))
     .groupBy(bankTransactions.companyId)) as BankRow[];
 
-  type TrialBalanceRow = {
-    companyId: string;
-    totalDebit: string | null;
-    totalCredit: string | null;
-    lastJournalActivity: Date | null;
-  };
-  const trialBalanceRows: TrialBalanceRow[] = (await db
-    .select({
-      companyId: journalEntries.companyId,
-      totalDebit: sum(journalLines.debit),
-      totalCredit: sum(journalLines.credit),
-      lastJournalActivity: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
-    })
-    .from(journalEntries)
-    .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
-    .where(and(inArray(journalEntries.companyId, clientIds), eq(journalEntries.status, "posted")))
-    .groupBy(journalEntries.companyId)) as TrialBalanceRow[];
+  const trialBalanceMap = await ledgerBalanceCheckByCompany(clientIds);
 
   type InvoiceActivityRow = { companyId: string; lastInvoiceActivity: Date | null };
   const invoiceActivityRows: InvoiceActivityRow[] = (await db
@@ -200,9 +183,6 @@ export const handleGetFirmHealth = async (req: Request, res: Response) => {
   );
   const arMap = new Map<string, ArBucketRow>(arRows.map((r: ArBucketRow) => [r.companyId, r]));
   const bankMap = new Map<string, BankRow>(bankRows.map((r: BankRow) => [r.companyId, r]));
-  const trialBalanceMap = new Map<string, TrialBalanceRow>(
-    trialBalanceRows.map((r: TrialBalanceRow) => [r.companyId, r])
-  );
   const invoiceActivityMap = new Map<string, InvoiceActivityRow>(
     invoiceActivityRows.map((r: InvoiceActivityRow) => [r.companyId, r])
   );
@@ -229,14 +209,12 @@ export const handleGetFirmHealth = async (req: Request, res: Response) => {
       unreconciledCount > 10 ? "critical" : unreconciledCount > 0 ? "attention" : "healthy";
 
     const trialBalance = trialBalanceMap.get(company.id);
-    const totalDebit = Number(trialBalance?.totalDebit ?? 0);
-    const totalCredit = Number(trialBalance?.totalCredit ?? 0);
-    const discrepancy = Math.round(Math.abs(totalDebit - totalCredit) * 100) / 100;
+    const discrepancy = aed(trialBalance?.differenceFils ?? 0);
     const trialBalanceStatus: HealthStatus = discrepancy > 0.01 ? "critical" : "healthy";
 
     const lastActivity = mostRecentDate(
       bank?.lastBankDate,
-      trialBalance?.lastJournalActivity,
+      trialBalance?.lastJournalAt,
       invoiceActivityMap.get(company.id)?.lastInvoiceActivity,
       receiptActivityMap.get(company.id)?.lastReceiptActivity,
       vat?.updatedAt,

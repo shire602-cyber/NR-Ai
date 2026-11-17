@@ -1,17 +1,13 @@
-import { pool } from "../db";
+// Test fixture: replays the migration 0081 credit-note consolidation backfill
+// (standalone credit_notes rows -> credit-note invoices + A/R journals) against a
+// harness database so DB tests can pin that VAT 201 and the trial balance are
+// unchanged by it. Moved out of server/services (WP7): nothing in production
+// calls it, and it used to run runtime DDL. The legacy_credit_note_id column and
+// its unique index come from migrations/0081_credit_note_consolidation.sql.
 
 type Queryable = {
   query: (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }>;
 };
-
-const ENSURE_SCHEMA_SQL = `
-  ALTER TABLE "invoices"
-    ADD COLUMN IF NOT EXISTS "legacy_credit_note_id" uuid REFERENCES "credit_notes"("id") ON DELETE SET NULL;
-
-  CREATE UNIQUE INDEX IF NOT EXISTS "invoices_legacy_credit_note_unique"
-    ON "invoices" ("legacy_credit_note_id")
-    WHERE "legacy_credit_note_id" IS NOT NULL;
-`;
 
 const BACKFILL_INVOICES_SQL = `
   WITH migrated AS (
@@ -308,9 +304,8 @@ export interface CreditNoteConsolidationResult {
 }
 
 export async function backfillStandaloneCreditNotes(
-  queryable: Queryable = pool
+  queryable: Queryable
 ): Promise<CreditNoteConsolidationResult> {
-  await queryable.query(ENSURE_SCHEMA_SQL);
   const invoiceRes = await queryable.query(BACKFILL_INVOICES_SQL);
   const lineRes = await queryable.query(BACKFILL_LINES_SQL);
   const fallbackLineRes = await queryable.query(BACKFILL_FALLBACK_LINES_SQL);

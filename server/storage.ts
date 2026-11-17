@@ -15,7 +15,6 @@ export type {
   AuditLogFilter,
   InvoiceSummary,
   IStorage,
-  JournalLineSummary,
   NewUserInput,
   PostReceiptAtomicArgs,
   ReviseReceiptAtomicArgs,

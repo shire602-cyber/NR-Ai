@@ -1,6 +1,7 @@
 import { and, count, desc, eq, gte, inArray, lt, lte, max, ne, sql, sum } from "drizzle-orm";
 
 import { db } from "../db";
+import { aed, ledgerBalanceCheckByCompany } from "../reporting";
 import {
   anomalyAlerts,
   bankTransactions,
@@ -12,8 +13,6 @@ import {
   documents,
   engagements,
   invoices,
-  journalEntries,
-  journalLines,
   receipts,
   serviceInvoices,
   taxReturnArchive,
@@ -653,24 +652,7 @@ export async function buildFirmValueOps(
     .groupBy(anomalyAlerts.companyId)) as AnomalyAggRow[];
   const anomalyMap = new Map(anomalyRows.map((r) => [r.companyId, r]));
 
-  type TrialBalanceRow = {
-    companyId: string;
-    debit: string | null;
-    credit: string | null;
-    lastJournalAt: Date | null;
-  };
-  const trialRows = (await db
-    .select({
-      companyId: journalEntries.companyId,
-      debit: sum(journalLines.debit),
-      credit: sum(journalLines.credit),
-      lastJournalAt: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
-    })
-    .from(journalEntries)
-    .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
-    .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, "posted")))
-    .groupBy(journalEntries.companyId)) as TrialBalanceRow[];
-  const trialMap = new Map(trialRows.map((r) => [r.companyId, r]));
+  const trialMap = await ledgerBalanceCheckByCompany(companyIds);
 
   type EngagementRow = { companyId: string; monthlyFee: number | null };
   const engagementRows = (await db
@@ -740,7 +722,7 @@ export async function buildFirmValueOps(
     const vatOpen = vat ? vat.status !== "filed" && vat.status !== "submitted" : true;
     const vatOverdue = vatOpen && daysToVatDue !== null && daysToVatDue < 0;
     const vatDueSoon = vatOpen && daysToVatDue !== null && daysToVatDue <= 14;
-    const trialDiscrepancy = Math.abs(asNumber(trial?.debit) - asNumber(trial?.credit));
+    const trialDiscrepancy = aed(trial?.differenceFils ?? 0);
     const lastClientActivity = latestDate(
       invoice?.lastInvoiceAt,
       receipt?.lastReceiptAt,
@@ -1673,23 +1655,7 @@ export async function buildFirmReviewQueue(
     .orderBy(documentRequirements.dueDate)
     .limit(80)) as DocumentReviewRow[];
 
-  type TrialReviewRow = {
-    companyId: string;
-    debit: string | null;
-    credit: string | null;
-    lastJournalAt: Date | null;
-  };
-  const trialRows = (await db
-    .select({
-      companyId: journalEntries.companyId,
-      debit: sum(journalLines.debit),
-      credit: sum(journalLines.credit),
-      lastJournalAt: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
-    })
-    .from(journalEntries)
-    .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
-    .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, "posted")))
-    .groupBy(journalEntries.companyId)) as TrialReviewRow[];
+  const trialRows = [...(await ledgerBalanceCheckByCompany(companyIds)).values()];
 
   const items: FirmReviewItem[] = [];
 
@@ -1809,8 +1775,7 @@ export async function buildFirmReviewQueue(
   }
 
   for (const row of trialRows) {
-    const discrepancy =
-      Math.round(Math.abs(asNumber(row.debit) - asNumber(row.credit)) * 100) / 100;
+    const discrepancy = aed(row.differenceFils);
     if (discrepancy <= 0.01) continue;
     items.push({
       id: `trial:${row.companyId}`,

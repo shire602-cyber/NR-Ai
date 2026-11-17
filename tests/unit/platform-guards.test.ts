@@ -119,7 +119,7 @@ describe("check-ledger-writes", () => {
     expect(r.code).toBe(0);
   });
 
-  it("a fixture route with direct journal writes fails; server/ledger and storage.ts are exempt", () => {
+  it("a fixture route with direct journal writes fails; only server/ledger is exempt", () => {
     const writes = `
 await tx.insert(journalEntries).values(entry);
 await db.insert(journalLines).values(lines);
@@ -128,8 +128,9 @@ await storage.createJournalEntry(entry, lines);
     const { root, baselinePath } = fixture({
       "server/routes/evil.routes.ts": writes,
       "server/ledger/post.ts": writes,
+      // WP7: the storage bypass methods are gone, so the storage barrel and the
+      // storage ledger module are no longer exempt.
       "server/storage.ts": writes,
-      // R20-09: the storage split keeps only the ledger adapter module exempt.
       "server/storage/ledger.ts": writes,
       "server/storage/sales.ts": writes,
     });
@@ -143,8 +144,61 @@ await storage.createJournalEntry(entry, lines);
     expect(r.code).toBe(1);
     const result = JSON.parse(r.out.trim().split("\n").pop() as string);
     expect(new Set(result.regressions.map((x: { file: string }) => x.file))).toEqual(
-      new Set(["server/routes/evil.routes.ts", "server/storage/sales.ts"])
+      new Set([
+        "server/routes/evil.routes.ts",
+        "server/storage.ts",
+        "server/storage/ledger.ts",
+        "server/storage/sales.ts",
+      ])
     );
-    expect(result.regressions).toHaveLength(6);
+    expect(result.regressions).toHaveLength(12);
+  });
+
+  it("WP6: deletes, updates, status transitions and raw SQL writes on journal tables fail", () => {
+    const writes = `
+await db.delete(journalEntries).where(eq(journalEntries.id, id));
+await tx.delete(schema.journalLines).where(eq(journalLines.entryId, id));
+await db
+  .update(journalEntries)
+  .set({ status: "draft" });
+await tx.update(journalLines).set({ debit: "0" });
+await transitionRow(tx, journalEntries, id, "posted", "draft");
+await pool.query("DELETE FROM journal_entries WHERE id = $1", [id]);
+await db.execute(sql\`update "journal_lines" set debit = 0\`);
+await client.query('INSERT INTO public.journal_entries (id) VALUES ($1)', [id]);
+await pool.query("TRUNCATE TABLE journal_lines");
+`;
+    const readsOnly = `
+const rows = await db.select().from(journalEntries).where(eq(journalEntries.id, id));
+await db.delete(journalTemplates).where(eq(journalTemplates.id, id));
+await pool.query("SELECT * FROM journal_entries WHERE id = $1", [id]);
+// ON DELETE CASCADE from journal_entries is fine
+`;
+    const { root, baselinePath } = fixture({
+      "server/routes/evil.routes.ts": writes,
+      "server/routes/reads.routes.ts": readsOnly,
+      "server/ledger/kernel.ts": writes,
+    });
+    const r = runScript("check-ledger-writes.mjs", [
+      "--root",
+      root,
+      "--baseline",
+      baselinePath,
+      "--json",
+    ]);
+    expect(r.code).toBe(1);
+    const result = JSON.parse(r.out.trim().split("\n").pop() as string);
+    const byPattern = Object.fromEntries(
+      result.regressions.map((x: { file: string; pattern: string; now: number }) => [
+        `${x.file}#${x.pattern}`,
+        x.now,
+      ])
+    );
+    expect(byPattern).toEqual({
+      "server/routes/evil.routes.ts#delete-journal-tables": 2,
+      "server/routes/evil.routes.ts#update-journal-tables": 2,
+      "server/routes/evil.routes.ts#transition-journal-rows": 1,
+      "server/routes/evil.routes.ts#raw-sql-journal-write": 4,
+    });
   });
 });

@@ -11,20 +11,19 @@ import {
   resolveNrClientVatPeriodStartMonth,
   vatCohortFromPeriodStart,
 } from "../../services/firm-clients.service";
-import { and, count, eq, inArray, max, sql, sum } from "drizzle-orm";
+import { and, count, eq, inArray, max, sql } from "drizzle-orm";
 import {
   bankTransactions,
   companies,
   companyUsers,
   corporateTaxReturns,
   invoices,
-  journalEntries,
-  journalLines,
   receipts,
   users,
   vatReturns,
 } from "../../../shared/schema";
 import { db } from "../../db";
+import { aed, ledgerBalanceCheckByCompany } from "../../reporting";
 import { getAccessibleCompanyIds } from "../../middleware/rbac";
 import {
   type BookkeeperPriority,
@@ -160,12 +159,6 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
     unreconciledCount: string | null;
     latestBankDate: Date | null;
   };
-  type TrialBalanceOpsRow = {
-    companyId: string;
-    totalDebit: string | null;
-    totalCredit: string | null;
-    latestJournalDate: Date | null;
-  };
   type StaffAssignmentRow = {
     companyId: string;
     id: string;
@@ -180,7 +173,7 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
     invoiceRows,
     receiptRows,
     bankRows,
-    trialBalanceRows,
+    trialBalanceMap,
     staffRows,
   ] = await Promise.all([
     db
@@ -251,17 +244,7 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
       .from(bankTransactions)
       .where(inArray(bankTransactions.companyId, clientIds))
       .groupBy(bankTransactions.companyId) as Promise<BankOpsRow[]>,
-    db
-      .select({
-        companyId: journalEntries.companyId,
-        totalDebit: sum(journalLines.debit),
-        totalCredit: sum(journalLines.credit),
-        latestJournalDate: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
-      })
-      .from(journalEntries)
-      .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
-      .where(and(inArray(journalEntries.companyId, clientIds), eq(journalEntries.status, "posted")))
-      .groupBy(journalEntries.companyId) as Promise<TrialBalanceOpsRow[]>,
+    ledgerBalanceCheckByCompany(clientIds),
     db
       .select({
         companyId: companyUsers.companyId,
@@ -284,9 +267,6 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
   const invoiceMap = new Map<string, InvoiceOpsRow>(invoiceRows.map((row) => [row.companyId, row]));
   const receiptMap = new Map<string, ReceiptOpsRow>(receiptRows.map((row) => [row.companyId, row]));
   const bankMap = new Map<string, BankOpsRow>(bankRows.map((row) => [row.companyId, row]));
-  const trialBalanceMap = new Map<string, TrialBalanceOpsRow>(
-    trialBalanceRows.map((row) => [row.companyId, row])
-  );
   const staffMap = new Map<string, StaffAssignmentRow[]>();
   for (const staff of staffRows) {
     const existing = staffMap.get(staff.companyId) ?? [];
@@ -337,15 +317,13 @@ export const handleGetFirmBookkeeperDashboard = async (req: Request, res: Respon
     const totalBankLines = Number(bankOps?.bankCount ?? 0);
     const openAr = Number(invoiceOps?.openAr ?? 0);
 
-    const totalDebit = Number(trialBalance?.totalDebit ?? 0);
-    const totalCredit = Number(trialBalance?.totalCredit ?? 0);
-    const discrepancy = Math.round(Math.abs(totalDebit - totalCredit) * 100) / 100;
+    const discrepancy = aed(trialBalance?.differenceFils ?? 0);
 
     const lastActivity = mostRecentDate(
       invoiceOps?.latestInvoiceDate,
       receiptOps?.latestReceiptDate,
       bankOps?.latestBankDate,
-      trialBalance?.latestJournalDate,
+      trialBalance?.lastJournalAt,
       latestVat?.updatedAt,
       company.createdAt
     );
