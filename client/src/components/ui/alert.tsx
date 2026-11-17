@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
  * Alert — the one semantic surface (spec 2.3). Four tones (+ neutral): background
  * `*-subtle`, 1 px border in the tone at 25%, icon in the tone, text `--foreground`.
  *
- *   <Alert tone="warning" title="VAT period is locked">One sentence of context.</Alert>
+ *   <Alert tone="warning" title={t["x.periodLocked"]}>{t["x.oneSentence"]}</Alert>
  *
  * With `tone` the tone icon is drawn for you (pass `icon={Other}` to swap it or
  * `icon={false}` to hide it) — do not also pass an <svg> child. Without `tone` the legacy

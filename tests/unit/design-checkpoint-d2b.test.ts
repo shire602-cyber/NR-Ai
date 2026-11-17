@@ -110,8 +110,10 @@ describe("D2b CTO checkpoint guards", () => {
 
   it("12: expand chevrons never mirror in RTL; KPI figures use the h1 step", () => {
     expect(read("client/src/pages/dashboard/ReportWorkspaceToggle.tsx")).toContain("ChevronDown");
-    expect(read("client/src/styles/mobile.css")).toMatch(
-      /\.mobile-nav-more-summary::after \{[\s\S]*?border-right: 1\.5px/
+    // WP-A: the More sheet's chevrons are lucide ChevronRight with rtl:rotate-180 (they point
+    // into the row in both directions); the old collapsible summary chevron was deleted.
+    expect(read("client/src/components/MobileNav.tsx")).toContain(
+      'ChevronRight className="mobile-nav-more-chevron rtl:rotate-180"'
     );
     const stat = read("client/src/components/ui/stat-card.tsx");
     // WP-A (Fable spec 2.1/2.7): the KPI figure uses the responsive `text-kpi` step.

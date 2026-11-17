@@ -27,26 +27,26 @@ export function AccountMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
+        {/* Spec 3.5: a 28 px avatar only (no "Profile" text); 44 px hit area on touch. */}
         <Button
           variant="ghost"
-          size="sm"
-          className="ms-0.5 h-9 min-h-9 gap-2 rounded-full ps-1.5 pe-1.5 md:h-8 md:min-h-8 md:ps-1 md:pe-3"
+          size="icon"
+          className="ms-0.5 rounded-full"
           data-testid="button-profile"
-          // The accessible name starts with the visible "Profile" label (axe label-content-name-mismatch).
-          aria-label={`${t.profile} · ${tt["shell.accountMenu"]}`}
+          aria-label={tt["shell.accountMenu"]}
+          title={tt["shell.accountMenu"]}
         >
           <span
             aria-hidden
-            className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground"
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-200 text-neutral-700 dark:bg-neutral-700 dark:text-neutral-100"
           >
-            <User className="!size-3.5" />
+            <User className="!size-4" />
           </span>
-          <span className="hidden text-small font-medium md:inline">{t.profile}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-56" data-testid="menu-account">
         <DropdownMenuItem asChild>
-          <Link href="/company-profile" data-testid="menu-account-profile">
+          <Link href="/settings/company" data-testid="menu-account-profile">
             <Building2 aria-hidden />
             {tt["shell.accountCompanyProfile"]}
           </Link>

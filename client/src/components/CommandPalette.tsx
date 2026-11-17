@@ -1520,16 +1520,22 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
           <>
             {/* Empty state (CTO 17): Recent, then the everyday actions, then pages. */}
             {recents.length > 0 ? (
-              <CommandGroup heading={tt["shell.cmdGroupRecent"]} data-testid="command-group-recent">
+              // Spec 3.5: recent items are chips (still cmdk options, so arrows + Enter work).
+              <CommandGroup
+                heading={tt["shell.cmdGroupRecent"]}
+                data-testid="command-group-recent"
+                className="[&_[cmdk-group-items]]:flex [&_[cmdk-group-items]]:flex-wrap [&_[cmdk-group-items]]:gap-1.5 [&_[cmdk-group-items]]:px-1 [&_[cmdk-group-items]]:pb-1"
+              >
                 {recents.map((recent) => (
                   <CommandItem
                     key={`recent-${recent.id}`}
                     value={`recent ${recent.label} ${recent.id}`}
                     onSelect={() => handleSelectRecent(recent)}
                     data-testid={`command-recent-${recent.id}`}
+                    className="h-8 max-w-full gap-1.5 rounded-full border border-border px-3 py-0 text-small"
                   >
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate" dir="auto">
+                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="min-w-0 max-w-[16rem] truncate" dir="auto">
                       {recent.label}
                     </span>
                     {recent.kind && recent.kind !== "page" ? (
