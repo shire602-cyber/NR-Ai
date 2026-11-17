@@ -143,7 +143,10 @@ export const einvoiceProviderEvents = pgTable(
 );
 export type EInvoiceProviderEvent = typeof einvoiceProviderEvents.$inferSelect;
 
-/** E1 (migration 0116): a company's legal entity at the ASP (A-Cube), linked through EmaraTax. */
+/**
+ * E1 (migration 0116): a company's legal entity at the ASP (A-Cube or, E2, Complyance), linked
+ * through EmaraTax. One row per company / provider / environment.
+ */
 export const einvoiceLegalEntities = pgTable(
   "einvoice_legal_entities",
   {
@@ -172,6 +175,11 @@ export const einvoiceLegalEntities = pgTable(
     registrySyncAt: timestamp("registry_sync_at"),
     lastSyncAt: timestamp("last_sync_at"),
     activatedAt: timestamp("activated_at"),
+    /**
+     * E2 (migration 0117): provider-specific onboarding details that have no column of their own
+     * (Complyance: source name/version, branch id, mapping readiness). Provider-neutral jsonb.
+     */
+    providerDetails: jsonb("provider_details"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

@@ -379,7 +379,8 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
   const handedOver = !!view.transmission.providerDocumentId;
   const failedDelivery = delivery.status === "rejected" || delivery.status === "delivery_failed";
   const providerName =
-    view.transmission.provider === "acube" ? "A-Cube" : (view.transmission.provider ?? "");
+    view.transmission.providerDisplayName ??
+    (view.transmission.provider === "acube" ? "A-Cube" : (view.transmission.provider ?? ""));
   const actionError = (send.error ?? resubmit.error) as
     | (Error & { body?: { code?: string } })
     | null;
@@ -627,7 +628,9 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
               </div>
               {!view.rejection.resubmittable && (
                 <p className="mt-2 text-caption text-muted-foreground">
-                  {t["einvoicing.resubmitBlocked"]}
+                  {view.rejection.newDocumentRequired
+                    ? t["einvoicing.resubmitNewDocument"]
+                    : t["einvoicing.resubmitBlocked"]}
                 </p>
               )}
             </div>

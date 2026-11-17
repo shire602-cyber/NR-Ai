@@ -232,6 +232,7 @@ export async function submitEInvoice(args: {
     uuid: built.uuid,
     xml: built.xml,
     documentType: built.documentType ?? undefined,
+    companyId: company.id,
   });
 
   const docPatch = applyProviderOutcome(result, args.attempts ?? 0, now);
@@ -264,7 +265,15 @@ export async function submitEInvoice(args: {
 }
 
 /** Provider error codes that mean "could not ask", not "the document failed". */
-const TRANSIENT_POLL_CODES = new Set(["TRANSPORT_ERROR", "ACUBE_UNAVAILABLE", "ACUBE_AUTH_FAILED"]);
+const TRANSIENT_POLL_CODES = new Set([
+  "TRANSPORT_ERROR",
+  "ACUBE_UNAVAILABLE",
+  "ACUBE_AUTH_FAILED",
+  // E2: Complyance
+  "COMPLYANCE_UNAVAILABLE",
+  "COMPLYANCE_AUTH_FAILED",
+  "COMPLYANCE_RATE_LIMITED",
+]);
 
 export async function refreshEInvoiceStatus(args: {
   invoice: Invoice;

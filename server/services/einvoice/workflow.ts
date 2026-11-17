@@ -48,7 +48,7 @@ type CompanyExtras = Company & {
   einvoiceScope?: string | null;
 };
 
-/** Does this provider only transmit for a linked legal entity (A-Cube)? */
+/** Does this provider only transmit for a linked legal entity (A-Cube, Complyance)? */
 export function providerRequiresLegalEntity(provider: EInvoiceProvider): boolean {
   return (provider as EInvoiceProvider & { requiresLegalEntity?: boolean }).requiresLegalEntity
     ? true
@@ -69,13 +69,15 @@ export function invoiceReportingRequired(
 }
 
 /**
- * E1 gate for A-Cube: the company's legal entity must be active, and the supplier EndpointID we
- * generate (scheme 0235 + TIN) must be the one A-Cube linked, or A-Cube cannot route it.
+ * E1 gate (A-Cube; E2 Complyance): the company's legal entity must be active, and the supplier
+ * EndpointID we generate (scheme 0235 + TIN) must be the one the provider linked, or it cannot
+ * route it (Complyance answers AE-PEPPOL-008 for the same mismatch).
  */
 async function assertCanTransmit(company: CompanyExtras, provider: EInvoiceProvider) {
   if (!providerRequiresLegalEntity(provider)) return;
   const le = await getLegalEntity(company.id, provider.name, provider.environment);
-  assertLegalEntityCanSend(le);
+  const displayName = provider.displayName ?? provider.name;
+  assertLegalEntityCanSend(le, displayName);
   const scheme = company.peppolScheme?.trim() || PEPPOL_SCHEME_UAE_TIN;
   const tin = companyTin(company);
   if (scheme !== PEPPOL_SCHEME_UAE_TIN || tin !== le?.tin) {
@@ -83,7 +85,7 @@ async function assertCanTransmit(company: CompanyExtras, provider: EInvoiceProvi
       "EINVOICE_SUPPLIER_ENDPOINT_MISMATCH",
       422,
       { expected: `${PEPPOL_SCHEME_UAE_TIN}:${le?.tin ?? ""}`, actual: `${scheme}:${tin ?? ""}` },
-      "The supplier e-invoicing address on the invoice does not match the TIN linked at A-Cube."
+      `The supplier e-invoicing address on the invoice does not match the TIN linked at ${displayName}.`
     );
   }
 }
@@ -257,11 +259,16 @@ export async function refreshAndPersist(args: {
   const required = invoiceReportingRequired(invoice, company);
   const r = result.result;
   const delivery: DeliveryStatus = r.delivery ?? deliveryFromLegacy(r.status);
+  // E2: a provider that reports the FTA track in the status itself (Complyance: final_valid /
+  // final_invalid) is taken at its word; "pending" from a provider never overrides what we know.
+  const providerReporting =
+    r.reporting === "reported" || r.reporting === "report_failed" ? r.reporting : null;
   let reporting: ReportingStatus = !required
     ? "not_required"
-    : r.status === "cleared"
-      ? "reported"
-      : ((existing?.reportingStatus as ReportingStatus | null) ?? "pending");
+    : (providerReporting ??
+      (r.status === "cleared"
+        ? "reported"
+        : ((existing?.reportingStatus as ReportingStatus | null) ?? "pending")));
   if (
     required &&
     delivery === "delivered" &&
@@ -278,7 +285,8 @@ export async function refreshAndPersist(args: {
   }
   // Two-track providers drive the legacy status from the tracks; others report it directly.
   const legacy = r.delivery ? legacyFromTracks(delivery, reporting) : result.update.einvoiceStatus;
-  const failed = delivery === "delivery_failed" || delivery === "rejected";
+  const failed =
+    delivery === "delivery_failed" || delivery === "rejected" || reporting === "report_failed";
   const doc = await applyTracks(
     company.id,
     invoice.id,

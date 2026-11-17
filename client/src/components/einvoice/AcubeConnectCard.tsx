@@ -8,17 +8,9 @@
  * mandate timeline and the scope notes. When A-Cube is not connected on this server it says so
  * and offers nothing that would pretend otherwise.
  */
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  ArrowRight,
-  CheckCircle2,
-  Circle,
-  ExternalLink,
-  Loader2,
-  RefreshCw,
-  XCircle,
-} from "lucide-react";
+import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,8 +20,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { cn } from "@/lib/utils";
-
-type StepState = "done" | "current" | "todo" | "failed";
+import { FiveCorners, Ltr, MandateTimeline, ProviderFacts, ScopeNotes } from "./ProviderCardParts";
+import { STEP_ICON, stepIconClass, type StepState } from "./provider-card-steps";
 
 export interface AcubeConnectionView {
   configured: boolean;
@@ -71,62 +63,15 @@ const STATUS_TONE: Record<string, StatusTone> = {
   inactive: "danger",
 };
 
-const STEP_ICON: Record<StepState, typeof Circle> = {
-  done: CheckCircle2,
-  current: Circle,
-  todo: Circle,
-  failed: XCircle,
-};
-
-function Ltr({ children }: { children: ReactNode }) {
-  return (
-    <span dir="ltr" className="[unicode-bidi:isolate]">
-      {children}
-    </span>
-  );
-}
-
 /** The five corners, in plain words. */
-function FiveCorners() {
+function AcubeFiveCorners() {
   const { t } = useTranslation();
-  const corners = [1, 2, 3, 4].map((n) => ({
-    n,
-    title: t[`einvoicing.corner${n}Title`],
-    body: t[`einvoicing.corner${n}Body`],
-  }));
   return (
-    <div data-testid="acube-five-corners">
-      <ol className="grid gap-2 sm:grid-cols-4 sm:gap-0">
-        {corners.map((c, i) => (
-          <li key={c.n} className="flex items-stretch gap-2 sm:gap-0">
-            <div
-              className={cn(
-                "flex-1 rounded-lg border border-border bg-card p-3",
-                c.n === 2 && "border-brand-300 bg-brand-50 dark:border-brand-800 dark:bg-brand-950"
-              )}
-            >
-              <p className="text-caption text-muted-foreground">
-                {formatMessage(t["einvoicing.cornerLabel"], { n: c.n })}
-              </p>
-              <p className="text-small font-semibold text-foreground">{c.title}</p>
-              <p className="mt-0.5 text-caption text-muted-foreground">{c.body}</p>
-            </div>
-            {i < corners.length - 1 && (
-              <ArrowRight
-                aria-hidden
-                className="hidden h-4 w-4 shrink-0 self-center text-muted-foreground sm:mx-1 sm:block rtl:-scale-x-100"
-              />
-            )}
-          </li>
-        ))}
-      </ol>
-      <p className="mt-2 rounded-lg bg-surface-sunken px-3 py-2 text-caption text-muted-foreground">
-        <span className="font-medium text-foreground">
-          {formatMessage(t["einvoicing.cornerLabel"], { n: 5 })} · {t["einvoicing.corner5Title"]}
-        </span>{" "}
-        — {t["einvoicing.corner5Body"]}
-      </p>
-    </div>
+    <FiveCorners
+      prefix="acube"
+      corner2Title={t["einvoicing.corner2Title"]}
+      corner5Body={t["einvoicing.corner5Body"]}
+    />
   );
 }
 
@@ -194,7 +139,7 @@ export function AcubeConnectCard({ companyId }: { companyId: string }) {
           <h3 id="acube-model-title" className="text-small font-semibold text-foreground">
             {t["einvoicing.modelTitle"]}
           </h3>
-          <FiveCorners />
+          <AcubeFiveCorners />
         </section>
 
         {view.isLoading ? (
@@ -238,16 +183,7 @@ export function AcubeConnectCard({ companyId }: { companyId: string }) {
                     data-testid={`acube-step-${step.key}`}
                     data-state={step.state}
                   >
-                    <Icon
-                      aria-hidden
-                      className={cn(
-                        "mt-0.5 h-4 w-4 shrink-0",
-                        step.state === "done" && "text-success",
-                        step.state === "current" && "text-warning",
-                        step.state === "failed" && "text-danger",
-                        step.state === "todo" && "text-muted-foreground"
-                      )}
-                    />
+                    <Icon aria-hidden className={stepIconClass(step.state)} />
                     <div className="min-w-0 flex-1 space-y-2">
                       <div className="flex flex-wrap items-baseline justify-between gap-2">
                         <p className="text-small font-medium text-foreground">
@@ -428,106 +364,24 @@ export function AcubeConnectCard({ companyId }: { companyId: string }) {
         )}
 
         {v && (
-          <dl className="grid gap-4 border-t border-border pt-5 text-small sm:grid-cols-3">
-            <div>
-              <dt className="text-caption text-muted-foreground">{t["einvoicing.goLive"]}</dt>
-              <dd className="font-medium text-foreground" data-testid="acube-go-live">
-                {v.goLive.goLiveDate
-                  ? formatDate(v.goLive.goLiveDate, locale)
-                  : t["einvoicing.goLiveUnset"]}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-caption text-muted-foreground">
-                {t["einvoicing.accreditation"]}
-              </dt>
-              <dd className="font-medium text-foreground">
-                <Ltr>{v.accreditationNumber}</Ltr>
-              </dd>
-            </div>
-            <div>
-              <dt className="text-caption text-muted-foreground">
-                {t["einvoicing.registerLabel"]}
-              </dt>
-              <dd>
-                <a
-                  href={v.registerUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="inline-flex items-center gap-1 font-medium text-accent underline-offset-4 hover:underline"
-                  data-testid="acube-register-link"
-                >
-                  {t["einvoicing.registerLink"]}
-                  <ExternalLink aria-hidden className="h-3.5 w-3.5 rtl:-scale-x-100" />
-                </a>
-              </dd>
-            </div>
-          </dl>
+          <ProviderFacts
+            prefix="acube"
+            goLiveDate={v.goLive.goLiveDate}
+            accreditationLabel={t["einvoicing.accreditation"]}
+            accreditationNumber={v.accreditationNumber}
+            registerUrl={v.registerUrl}
+          />
         )}
 
         {v && (
-          <section aria-labelledby="acube-timeline-title" className="space-y-2">
-            <h3 id="acube-timeline-title" className="text-small font-semibold text-foreground">
-              {t["einvoicing.timelineTitle"]}
-            </h3>
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <table className="w-full text-small" data-testid="acube-timeline">
-                <thead>
-                  <tr className="border-b border-border text-caption text-muted-foreground">
-                    <th scope="col" className="h-9 px-3 text-start font-medium">
-                      {t["einvoicing.timelineWho"]}
-                    </th>
-                    <th scope="col" className="h-9 px-3 text-start font-medium whitespace-nowrap">
-                      {t["einvoicing.timelineAppoint"]}
-                    </th>
-                    <th scope="col" className="h-9 px-3 text-start font-medium whitespace-nowrap">
-                      {t["einvoicing.timelineGoLive"]}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {(["large", "standard", "government"] as const).map((band) => {
-                    const row = v.goLive.timeline[band];
-                    if (!row) return null;
-                    return (
-                      <tr key={band} className={cn(v.goLive.band === band && "bg-muted/50")}>
-                        <td className="px-3 py-2.5 text-foreground">
-                          {t[`einvoicing.band_${band}`]}
-                        </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          {formatDate(row.appointAspBy, locale)}
-                        </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          {formatDate(row.goLive, locale)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <p className="text-caption text-muted-foreground">{t["einvoicing.timelineSource"]}</p>
-            {v.goLive.reportWindowDays ? (
-              <p className="text-caption text-muted-foreground" data-testid="acube-report-window">
-                {formatMessage(t["einvoicing.reportWindowAssumption"], {
-                  days: v.goLive.reportWindowDays,
-                })}
-              </p>
-            ) : null}
-          </section>
+          <MandateTimeline
+            prefix="acube"
+            goLive={v.goLive}
+            reportWindowText={t["einvoicing.reportWindowAssumption"]}
+          />
         )}
 
-        <section aria-labelledby="acube-scope-title" className="space-y-2">
-          <h3 id="acube-scope-title" className="text-small font-semibold text-foreground">
-            {t["einvoicing.scopeNotesTitle"]}
-          </h3>
-          <ul className="list-disc space-y-1 ps-5 text-small text-muted-foreground">
-            <li>{t["einvoicing.scopeB2b"]}</li>
-            <li>{t["einvoicing.scopeB2c"]}</li>
-            <li>{t["einvoicing.scopeCreditNotes"]}</li>
-            <li>{t["einvoicing.scopeVoid"]}</li>
-          </ul>
-        </section>
+        <ScopeNotes prefix="acube" />
       </div>
     </SectionCard>
   );

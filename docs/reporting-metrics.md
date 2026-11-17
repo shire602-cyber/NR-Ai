@@ -521,6 +521,17 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   `einvoice.providerEvents` job; `einvoice.acubePoll` is the fallback. Contract fixtures in
   `tests/fixtures/pint-ae/asp/acube/` are doc-derived and must be re-recorded in sandbox. Verify with
   `tests/db/einvoice-acube.test.ts` and `tests/unit/einvoice-acube-*.test.ts`.
+- E-invoicing through Complyance (E2, MoF accreditation 112219; `EINVOICE_PROVIDER=complyance`,
+  `server/services/einvoice/providers/complyance*.ts`, notes in
+  [einvoicing-complyance.md](einvoicing-complyance.md)): same two tracks, onboarding table and
+  inbox. Submits GETS JSON derived from our validated PINT AE UBL; `final_valid` = delivered +
+  reported, `final_invalid` splits on `errors[].source`; idempotent by document number (GETS-HEAD-010
+  → `COMPLYANCE_DUPLICATE_NUMBER`, link the id by hand); HMAC-signed webhooks at
+  `/api/webhooks/einvoice/complyance/:environment`; `einvoice.complyancePoll` polls the final outcome.
+  The provider registry exposes only the selected, configured provider; how to switch and which files
+  to delete for each provider: [einvoicing-providers.md](einvoicing-providers.md). Verify with
+  `tests/db/einvoice-complyance.test.ts`, `tests/unit/einvoice-complyance-*.test.ts` and
+  `tests/unit/einvoice-provider-registry.test.ts`.
 - Customer communications (W4-D): every email goes through the durable outbox in `server/outbox/`
   (job `email.outboxDelivery`; with no provider rows stay `blocked_no_provider`, never "sent");
   bounces arrive on `/api/webhooks/email-events/*`. Portal access is bound to one contact via

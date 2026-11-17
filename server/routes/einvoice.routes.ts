@@ -54,9 +54,8 @@ import {
 } from "../services/einvoice/workflow";
 import { einvoiceStatusView } from "../services/einvoice/status-view";
 import { applyTracks, recordValidationEvent } from "../services/einvoice/history";
-import { reportByDate } from "../services/einvoice/tracks";
-import { AcubeEInvoiceProvider } from "../services/einvoice/providers/acube";
-import { runAcubePoll, runProviderEvents } from "../services/einvoice/provider-events";
+import { NEW_DOCUMENT_REQUIRED_CODES, reportByDate } from "../services/einvoice/tracks";
+import { runProviderEvents, runProviderPoll } from "../services/einvoice/provider-events";
 import {
   LEGAL_ID_TYPES,
   PAYMENT_MEANS,
@@ -415,6 +414,14 @@ export function registerEInvoiceRoutes(app: Express) {
           "Only a rejected or failed e-invoice can be resubmitted."
         );
       }
+      if (NEW_DOCUMENT_REQUIRED_CODES.has(doc?.lastErrorCode ?? "")) {
+        throw new DomainError(
+          "EINVOICE_NEW_DOCUMENT_REQUIRED",
+          409,
+          { lastErrorCode: doc?.lastErrorCode ?? null },
+          "This invoice number cannot be sent again. Issue a credit note and a new invoice."
+        );
+      }
       const provider = activeProvider();
       const reset = legacy === "failed" ? { ...invoice, einvoiceStatus: "rejected" } : invoice;
       const result = await submitAndPersist({
@@ -649,10 +656,11 @@ export function registerEInvoiceRoutes(app: Express) {
       if (!provider.capabilities.receive) {
         throw new DomainError("EINVOICE_CAPABILITY_UNSUPPORTED", 501);
       }
-      if (provider instanceof AcubeEInvoiceProvider) {
-        // E1: A-Cube's inbox spans every linked company, so incoming documents go through the
-        // durable event inbox, which routes each one to its own company by legal entity.
-        const poll = await runAcubePoll({ provider });
+      if (provider.listInbound && provider.inboundOwner) {
+        // E1/E2: an accredited provider's inbox spans every linked company, so incoming
+        // documents go through the durable event inbox, which routes each one to its own
+        // company by legal entity.
+        const poll = await runProviderPoll(provider.name, { provider });
         const run = await runProviderEvents({ provider, limit: 50 });
         return res.json({ received: poll.enqueued, results: [], processed: run.processed });
       }

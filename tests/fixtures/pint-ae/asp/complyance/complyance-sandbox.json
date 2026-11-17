@@ -1,0 +1,765 @@
+{
+  "description": "DOC-DERIVED, NOT RECORDED. Request/response shapes for the Complyance UAE API built from docs.complyance.io (read 2026-11-17). Re-record every interaction in the Complyance sandbox (https://prod.gets.complyance.io with a sandbox key and environment=sandbox) before go-live; see README.md.",
+  "baseUrl": "https://prod.gets.complyance.io",
+  "interactions": [
+    {
+      "name": "submit_ok",
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/unify",
+        "headers": {
+          "new-api": "true",
+          "content-type": "application/json"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "documentId": "01K5EXAMPLE00000000000142",
+          "documentNumber": "INV-2026-0001",
+          "message": "Your invoice was validated and is ready for submission.",
+          "Base64XML": "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4="
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/unify/submit-and-retrieve/"
+    },
+    {
+      "name": "submit_validation_422",
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/unify"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "documentId": "01K5EXAMPLE00000000000143",
+          "documentNumber": "INV-2026-0001",
+          "message": "Your invoice could not be validated. Review the errors and try again.",
+          "validationStage": "gets",
+          "errors": [
+            {
+              "code": "IBR-015",
+              "getsPath": "totals.amountDue",
+              "payloadPath": "totals.amountDue",
+              "message": "An Invoice MUST have the Amount due for payment (ibt-115).",
+              "severity": "error",
+              "ruleSet": "ae:tax_invoice"
+            }
+          ]
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/unify/errors/"
+    },
+    {
+      "name": "submit_duplicate_422",
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/unify"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "documentNumber": "INV-2026-0001",
+          "message": "A document with this documentNumber already exists with status COMPLIANT.",
+          "validationStage": "gets",
+          "errors": [
+            {
+              "code": "GETS-HEAD-010",
+              "getsPath": "header.documentNumber",
+              "payloadPath": "header.documentNumber",
+              "message": "A document with this documentNumber already exists with status COMPLIANT.",
+              "severity": "error",
+              "ruleSet": "ae:tax_invoice"
+            }
+          ]
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/unify/submit-and-retrieve/#retries-and-duplicates"
+    },
+    {
+      "name": "submit_mapping_412",
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/unify"
+      },
+      "response": {
+        "status": 412,
+        "body": {
+          "code": "failed_precondition",
+          "message": "Complete all required default mapping testbed scenarios before submitting production invoices.",
+          "reason": "required_scenarios_incomplete"
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/unify/errors/#when-the-mapping-is-not-ready"
+    },
+    {
+      "name": "submit_unauthorized_401",
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/unify"
+      },
+      "response": {
+        "status": 401,
+        "body": {
+          "error": "Unauthorized"
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/authentication/"
+    },
+    {
+      "name": "submit_rate_limited_429",
+      "request": {
+        "method": "POST",
+        "path": "/api/v3/unify"
+      },
+      "response": {
+        "status": 429,
+        "body": {
+          "code": "rate_limited",
+          "message": "Too many requests"
+        },
+        "headers": {
+          "retry-after": "5"
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/unify/submit-and-retrieve/#limits"
+    },
+    {
+      "name": "status_submitted",
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/documents/01K5EXAMPLE00000000000142?type=sales"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "success": true,
+          "data": {
+            "documentId": "01K5EXAMPLE00000000000142",
+            "documentNumber": "INV-2026-0001",
+            "country": "AE",
+            "environment": "sandbox",
+            "state": "submitted",
+            "isTerminal": false,
+            "lastUpdatedAt": "2026-09-22T10:00:04.000Z",
+            "errors": [],
+            "compliance": {
+              "uuid": "19e2c9a3-b000-4fb0-9bd5-a9c4ebda2358",
+              "ftaApprovedStatus": "PENDING",
+              "businessProcessIdentifier": "urn:peppol:bis:billing",
+              "specificationIdentifier": "urn:peppol:pint:billing-1@ae-1"
+            },
+            "validationResults": {
+              "status": "Valid",
+              "validationSteps": [
+                {
+                  "name": "Validation Passed",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Queue Admitted",
+                  "status": "Valid",
+                  "error": null
+                }
+              ]
+            }
+          }
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/unify/documents/"
+    },
+    {
+      "name": "status_processing",
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/documents/01K5EXAMPLE00000000000142?type=sales"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "success": true,
+          "data": {
+            "documentId": "01K5EXAMPLE00000000000142",
+            "documentNumber": "INV-2026-0001",
+            "country": "AE",
+            "environment": "sandbox",
+            "state": "processing",
+            "isTerminal": false,
+            "lastUpdatedAt": "2026-09-22T10:00:04.000Z",
+            "errors": [],
+            "compliance": {
+              "uuid": "19e2c9a3-b000-4fb0-9bd5-a9c4ebda2358",
+              "ftaApprovedStatus": "PENDING",
+              "businessProcessIdentifier": "urn:peppol:bis:billing",
+              "specificationIdentifier": "urn:peppol:pint:billing-1@ae-1"
+            },
+            "validationResults": {
+              "status": "Valid",
+              "validationSteps": [
+                {
+                  "name": "Validation Passed",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Queue Admitted",
+                  "status": "Valid",
+                  "error": null
+                }
+              ]
+            }
+          }
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/unify/documents/"
+    },
+    {
+      "name": "status_delivery_success",
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/documents/01K5EXAMPLE00000000000142?type=sales"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "success": true,
+          "data": {
+            "documentId": "01K5EXAMPLE00000000000142",
+            "documentNumber": "INV-2026-0001",
+            "country": "AE",
+            "environment": "sandbox",
+            "state": "delivery_success",
+            "isTerminal": false,
+            "lastUpdatedAt": "2026-09-22T10:00:04.000Z",
+            "errors": [],
+            "compliance": {
+              "uuid": "19e2c9a3-b000-4fb0-9bd5-a9c4ebda2358",
+              "ftaApprovedStatus": "PENDING",
+              "businessProcessIdentifier": "urn:peppol:bis:billing",
+              "specificationIdentifier": "urn:peppol:pint:billing-1@ae-1"
+            },
+            "validationResults": {
+              "status": "Valid",
+              "validationSteps": [
+                {
+                  "name": "Validation Passed",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Queue Admitted",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Delivery Processing Started",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Delivery Success",
+                  "status": "Valid",
+                  "error": null
+                }
+              ]
+            }
+          }
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/unify/documents/"
+    },
+    {
+      "name": "status_delivery_failed_retrying",
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/documents/01K5EXAMPLE00000000000142?type=sales"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "success": true,
+          "data": {
+            "documentId": "01K5EXAMPLE00000000000142",
+            "documentNumber": "INV-2026-0001",
+            "country": "AE",
+            "environment": "sandbox",
+            "state": "delivery_failed",
+            "isTerminal": false,
+            "lastUpdatedAt": "2026-09-22T10:00:04.000Z",
+            "errors": [
+              {
+                "code": "PEPPOL-DELIVERY",
+                "message": "The buyer's access point did not answer.",
+                "path": [],
+                "source": "delivery"
+              }
+            ],
+            "compliance": {
+              "uuid": "19e2c9a3-b000-4fb0-9bd5-a9c4ebda2358",
+              "ftaApprovedStatus": "PENDING",
+              "businessProcessIdentifier": "urn:peppol:bis:billing",
+              "specificationIdentifier": "urn:peppol:pint:billing-1@ae-1"
+            },
+            "validationResults": {
+              "status": "Valid",
+              "validationSteps": [
+                {
+                  "name": "Validation Passed",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Queue Admitted",
+                  "status": "Valid",
+                  "error": null
+                }
+              ]
+            }
+          }
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/unify/documents/"
+    },
+    {
+      "name": "status_final_valid",
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/documents/01K5EXAMPLE00000000000142?type=sales"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "success": true,
+          "data": {
+            "documentId": "01K5EXAMPLE00000000000142",
+            "documentNumber": "INV-2026-0001",
+            "country": "AE",
+            "environment": "sandbox",
+            "state": "final_valid",
+            "isTerminal": true,
+            "lastUpdatedAt": "2026-09-22T10:00:04.000Z",
+            "errors": [],
+            "compliance": {
+              "uuid": "19e2c9a3-b000-4fb0-9bd5-a9c4ebda2358",
+              "ftaApprovedStatus": "APPROVED",
+              "businessProcessIdentifier": "urn:peppol:bis:billing",
+              "specificationIdentifier": "urn:peppol:pint:billing-1@ae-1"
+            },
+            "validationResults": {
+              "status": "Valid",
+              "validationSteps": [
+                {
+                  "name": "Validation Passed",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Queue Admitted",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Delivery Processing Started",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Final Valid",
+                  "status": "Valid",
+                  "error": null
+                }
+              ]
+            }
+          }
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/unify/documents/"
+    },
+    {
+      "name": "status_final_invalid_fta",
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/documents/01K5EXAMPLE00000000000142?type=sales"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "success": true,
+          "data": {
+            "documentId": "01K5EXAMPLE00000000000142",
+            "documentNumber": "INV-2026-0001",
+            "country": "AE",
+            "environment": "sandbox",
+            "state": "final_invalid",
+            "isTerminal": true,
+            "lastUpdatedAt": "2026-09-22T10:00:04.000Z",
+            "errors": [
+              {
+                "code": "FTA-MLS-RE",
+                "message": "The FTA rejected the tax data document.",
+                "path": ["parties", "buyer", "taxIds"],
+                "source": "government"
+              }
+            ],
+            "compliance": {
+              "uuid": "19e2c9a3-b000-4fb0-9bd5-a9c4ebda2358",
+              "ftaApprovedStatus": "REJECTED",
+              "businessProcessIdentifier": "urn:peppol:bis:billing",
+              "specificationIdentifier": "urn:peppol:pint:billing-1@ae-1"
+            },
+            "validationResults": {
+              "status": "Valid",
+              "validationSteps": [
+                {
+                  "name": "Validation Passed",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Queue Admitted",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Delivery Processing Started",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Delivery Success",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Final Invalid",
+                  "status": "Invalid",
+                  "error": {
+                    "code": "FTA-MLS-RE",
+                    "message": "The FTA rejected the tax data document."
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "source": "https://docs.complyance.io/countries/ae/ (five corners: TDD MLS)"
+    },
+    {
+      "name": "status_final_invalid_buyer",
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/documents/01K5EXAMPLE00000000000142?type=sales"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "success": true,
+          "data": {
+            "documentId": "01K5EXAMPLE00000000000142",
+            "documentNumber": "INV-2026-0001",
+            "country": "AE",
+            "environment": "sandbox",
+            "state": "final_invalid",
+            "isTerminal": true,
+            "lastUpdatedAt": "2026-09-22T10:00:04.000Z",
+            "errors": [
+              {
+                "code": "C3-MLS-RE",
+                "message": "The buyer's ASP rejected the e-invoice.",
+                "path": [],
+                "source": "delivery"
+              }
+            ],
+            "compliance": {
+              "uuid": "19e2c9a3-b000-4fb0-9bd5-a9c4ebda2358",
+              "ftaApprovedStatus": "REJECTED",
+              "businessProcessIdentifier": "urn:peppol:bis:billing",
+              "specificationIdentifier": "urn:peppol:pint:billing-1@ae-1"
+            },
+            "validationResults": {
+              "status": "Valid",
+              "validationSteps": [
+                {
+                  "name": "Validation Passed",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Queue Admitted",
+                  "status": "Valid",
+                  "error": null
+                }
+              ]
+            }
+          }
+        }
+      },
+      "source": "https://docs.complyance.io/countries/ae/ (five corners: invoice MLS)"
+    },
+    {
+      "name": "status_rejected",
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/documents/01K5EXAMPLE00000000000142?type=sales"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "success": true,
+          "data": {
+            "documentId": "01K5EXAMPLE00000000000142",
+            "documentNumber": "INV-2026-0001",
+            "country": "AE",
+            "environment": "sandbox",
+            "state": "rejected",
+            "isTerminal": true,
+            "lastUpdatedAt": "2026-09-22T10:00:04.000Z",
+            "errors": [
+              {
+                "code": "IBR-132-AE",
+                "message": "The TRN must start with 1 and end with 03.",
+                "path": ["parties", "buyer", "taxIds"],
+                "source": "validation"
+              }
+            ],
+            "compliance": {
+              "uuid": "19e2c9a3-b000-4fb0-9bd5-a9c4ebda2358",
+              "ftaApprovedStatus": "REJECTED",
+              "businessProcessIdentifier": "urn:peppol:bis:billing",
+              "specificationIdentifier": "urn:peppol:pint:billing-1@ae-1"
+            },
+            "validationResults": {
+              "status": "Invalid",
+              "validationSteps": [
+                {
+                  "name": "Validation Passed",
+                  "status": "Valid",
+                  "error": null
+                },
+                {
+                  "name": "Queue Admitted",
+                  "status": "Valid",
+                  "error": null
+                }
+              ]
+            }
+          }
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/unify/documents/"
+    },
+    {
+      "name": "status_not_found",
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/documents/01K5EXAMPLE00000000000142?type=sales"
+      },
+      "response": {
+        "status": 404,
+        "body": {
+          "success": false,
+          "code": "NOT_FOUND",
+          "message": "Document not found"
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/unify/documents/#errors"
+    },
+    {
+      "name": "purchases_list",
+      "request": {
+        "method": "GET",
+        "pathPrefix": "/api/v3/documents?type=purchases"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "success": true,
+          "data": {
+            "items": [
+              {
+                "documentId": "01JEXAMPLE0000000000000142",
+                "receivedAt": "2026-09-22T08:15:00.000Z",
+                "storedAt": "2026-09-22T08:15:02.000Z",
+                "status": "purchase.invoice.stored",
+                "country": "AE",
+                "environment": "sandbox",
+                "invoiceNumber": "AE-INV-005",
+                "supplierName": "Gulf Supplies L.L.C.",
+                "issueDate": "2026-09-22"
+              }
+            ],
+            "hasMore": false,
+            "nextCursor": null
+          }
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/purchases/list/"
+    },
+    {
+      "name": "purchase_get",
+      "request": {
+        "method": "GET",
+        "path": "/api/v3/documents/01JEXAMPLE0000000000000142?type=purchases"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "success": true,
+          "data": {
+            "documentId": "01JEXAMPLE0000000000000142",
+            "documentNumber": "AE-INV-005",
+            "country": "AE",
+            "environment": "sandbox",
+            "state": "final_valid",
+            "isTerminal": true,
+            "lastUpdatedAt": "2026-09-22T09:15:00.000Z",
+            "errors": [],
+            "government": {
+              "status": "APPROVED"
+            },
+            "compliance": {
+              "uuid": "4Q2H2R3YSSYZTX5TRWZF2M2K10",
+              "ftaApprovedStatus": "APPROVED",
+              "businessProcessIdentifier": null,
+              "specificationIdentifier": null
+            },
+            "invoice": {
+              "header": {
+                "documentNumber": "AE-INV-005"
+              },
+              "parties": {
+                "buyer": {
+                  "name": "Pearl Trading L.L.C.",
+                  "peppolId": "1001234567"
+                }
+              }
+            },
+            "xml": "<Invoice xmlns=\"urn:oasis:names:specification:ubl:schema:xsd:Invoice-2\"><cbc:ID xmlns:cbc=\"urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2\">AE-INV-005</cbc:ID></Invoice>"
+          }
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/purchases/get/"
+    },
+    {
+      "name": "connect_create_201",
+      "request": {
+        "method": "POST",
+        "path": "/v3/connect/companies",
+        "auth": "X-API-Key"
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "success": true,
+          "data": {
+            "companyId": "66b9f0a1c2d3e4f567890123",
+            "sourceId": "01JABCDEF1234567890SOURCE",
+            "branchId": "66b9f0b2c2d3e4f567890456",
+            "peppolParticipantId": "0235:1001234567",
+            "legalName": "Pearl Trading L.L.C.",
+            "tin": "1001234567",
+            "vatTrn": "100123456700003",
+            "sourceName": "muhasib-00000000-0000-4000-8000-000000000001",
+            "sourceVersion": "v1",
+            "countryCode": "AE",
+            "branchName": "Dubai",
+            "contactPersonEmail": "owner@pearl.example",
+            "platformEnvironment": "sandbox",
+            "userGivenBranchId": "muhasib-00000000-0000-4000-8000-000000000001",
+            "readyForInvoicing": false,
+            "mappingReadiness": {
+              "status": "ACTION_REQUIRED",
+              "code": "CONNECT_MAPPING_INELIGIBLE"
+            },
+            "createdAt": "2026-08-01T12:00:00.000Z",
+            "updatedAt": "2026-08-01T12:00:00.000Z"
+          },
+          "meta": {
+            "requestId": "01JABCDEF1234567890REQUEST",
+            "timestamp": "2026-08-01T12:00:00.000Z",
+            "workspaceId": "66b9e000c2d3e4f567890000"
+          }
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/connect/companies/"
+    },
+    {
+      "name": "connect_asp_linkage_409",
+      "request": {
+        "method": "POST",
+        "path": "/v3/connect/companies",
+        "auth": "X-API-Key"
+      },
+      "response": {
+        "status": 409,
+        "body": {
+          "success": false,
+          "error": {
+            "code": "ASP_LINKAGE_NOT_FOUND",
+            "message": "No pending ASP linkage was found for this company.",
+            "retryable": false
+          },
+          "meta": {
+            "requestId": "01JEXAMPLE0000000000000000",
+            "timestamp": "2026-09-22T10:00:00.000Z"
+          }
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/connect/errors/"
+    },
+    {
+      "name": "connect_list_ready",
+      "request": {
+        "method": "GET",
+        "pathPrefix": "/v3/connect/companies?",
+        "auth": "X-API-Key"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "success": true,
+          "data": [
+            {
+              "companyId": "66b9f0a1c2d3e4f567890123",
+              "sourceName": "muhasib-00000000-0000-4000-8000-000000000001",
+              "sourceVersion": "v1",
+              "legalName": "Pearl Trading L.L.C.",
+              "legalIdentifier": null,
+              "countryCode": "AE",
+              "status": "active",
+              "onboardingStatus": "onboarded",
+              "peppolId": "0235:1001234567",
+              "sourceId": "01JABCDEF1234567890SOURCE",
+              "branchId": "66b9f0a1c2d3e4f567890456",
+              "branchName": "Dubai",
+              "tin": "1001234567",
+              "vatTrn": "100123456700003",
+              "mappingReadiness": {
+                "status": "READY",
+                "templateId": "default-gets-66b9e000c2d3e4f567890000"
+              },
+              "readyForInvoicing": true,
+              "createdAt": "2026-08-01T12:00:00.000Z",
+              "updatedAt": "2026-08-01T12:00:00.000Z"
+            }
+          ],
+          "meta": {
+            "requestId": "01JABCDEF1234567890REQUEST",
+            "timestamp": "2026-08-01T12:00:00.000Z",
+            "workspaceId": "66b9e000c2d3e4f567890000",
+            "pagination": {
+              "page": 1,
+              "limit": 100,
+              "total": 1,
+              "totalPages": 1,
+              "hasMore": false
+            }
+          }
+        }
+      },
+      "source": "https://docs.complyance.io/api-reference/connect/companies/#list-companies"
+    }
+  ]
+}

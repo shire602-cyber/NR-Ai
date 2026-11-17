@@ -145,7 +145,7 @@ Dockerfile re-exports it as a build ARG. It is `null` on a local build and on a 
 that has no git metadata. If it is `null` after deploy, set `COMMIT_SHA=<full or short sha>` as a service
 variable and redeploy. The smoke test below fails when the SHA does not match, so confirm it first.
 
-Feature variables stay unset until proven (section 9): `EINVOICE_PROVIDER`, `ACUBE_*`,
+Feature variables stay unset until proven (section 9): `EINVOICE_PROVIDER`, `ACUBE_*`, `COMPLYANCE_*`,
 `EINVOICE_INBOUND_WEBHOOK_SECRET`, Stripe keys, email provider, `ZATCA_ENV`.
 
 ## 4. Deploy

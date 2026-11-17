@@ -1,6 +1,16 @@
 /**
- * Per-company legal entity at the ASP (E1, A-Cube).
+ * Per-company legal entity at the ASP (E1, A-Cube; provider-neutral since E2).
  *
+ * One row per company / provider / environment (einvoice_legal_entities). Every accredited ASP
+ * needs the taxpayer to authorise it in EmaraTax (UAE PASS); only the API steps around that differ
+ * (A-Cube: reserve the TIN first; Complyance: register the company after the authorisation, see
+ * providers/complyance-onboarding.ts). Status vocabulary for every provider:
+ *   reserved  we hold the request; the taxpayer's EmaraTax step is not done yet
+ *   pending   linked at the provider, not yet able to send (e.g. mapping/readiness pending)
+ *   active    can send
+ *   inactive  delinked / archived: sending is blocked (409)
+ *
+ * A-Cube's flow:
  * A UAE taxpayer cannot be created through the API (FTA rule). The flow is:
  *   1. we reserve the company's TIN at A-Cube (POST /legal-entities {tin}) -> status reserved;
  *   2. the taxpayer (or whoever signs in to EmaraTax for it, with UAE PASS) selects
@@ -15,7 +25,20 @@ import { db } from "../../db";
 import { einvoiceLegalEntities, type EInvoiceLegalEntity } from "../../../shared/schema";
 import { DomainError } from "../../errors";
 import { PEPPOL_SCHEME_UAE_TIN, isUaeTin, tinFromTrn } from "./pint-ae-codes";
-import type { AcubeLegalEntity } from "./providers/acube";
+
+/** Provider legal-entity fields we keep (A-Cube's resource shape; other providers map onto it). */
+export interface LegalEntityFields {
+  legalEntityId?: string;
+  tin?: string;
+  status?: string;
+  nameEn?: string | null;
+  nameAr?: string | null;
+  vatTrn?: string | null;
+  enabledCapabilities?: Array<{ key: string; type?: string; domain?: string }>;
+  smpSyncAt?: string | null;
+  registrySyncAt?: string | null;
+  reservationExpiresAt?: string | null;
+}
 
 export type LegalEntityStatus = "reserved" | "pending" | "active" | "inactive";
 
@@ -81,9 +104,9 @@ export async function findLegalEntitiesByProviderId(
   return [];
 }
 
-/** Fields from A-Cube's legal-entity resource or synchronized event. */
-export function patchFromAcube(
-  le: Partial<AcubeLegalEntity> & { action?: string | null },
+/** Fields from a provider's legal-entity resource or synchronized event (A-Cube's shape). */
+export function legalEntityPatchFrom(
+  le: LegalEntityFields & { action?: string | null },
   now: Date = new Date()
 ): Partial<typeof einvoiceLegalEntities.$inferInsert> {
   const status = le.status !== undefined ? normaliseLegalEntityStatus(le.status) : undefined;
@@ -111,6 +134,9 @@ export function patchFromAcube(
   if (le.action) patch.lastAction = le.action;
   return patch;
 }
+
+/** E1 name, kept for the A-Cube routes. */
+export const patchFromAcube = legalEntityPatchFrom;
 
 export async function upsertLegalEntity(
   companyId: string,
@@ -160,23 +186,27 @@ export function companyTin(company: {
 }
 
 /**
- * Sending gate: A-Cube only transmits for an active legal entity. Reserved / pending means the
- * EmaraTax step is not done; inactive means the taxpayer delinked A-Cube.
+ * Sending gate: an accredited ASP only transmits for an active legal entity. Reserved / pending
+ * means the EmaraTax (or provider readiness) step is not done; inactive means the taxpayer delinked
+ * the provider. `providerName` is the provider's display name for the message.
  */
-export function assertLegalEntityCanSend(le: EInvoiceLegalEntity | undefined): void {
+export function assertLegalEntityCanSend(
+  le: EInvoiceLegalEntity | undefined,
+  providerName = "the e-invoicing provider"
+): void {
   if (le?.status === "active") return;
   if (le?.status === "inactive") {
     throw new DomainError(
       "EINVOICE_LEGAL_ENTITY_DELINKED",
       409,
       { legalEntityStatus: "inactive" },
-      "A-Cube is no longer linked to this company in EmaraTax. Link it again before sending."
+      `${providerName} is no longer linked to this company in EmaraTax. Link it again before sending.`
     );
   }
   throw new DomainError(
     "EINVOICE_LEGAL_ENTITY_NOT_ACTIVE",
     409,
     { legalEntityStatus: le?.status ?? "not_connected" },
-    "Connect this company to A-Cube in EmaraTax before sending e-invoices."
+    `Connect this company to ${providerName} in EmaraTax before sending e-invoices.`
   );
 }

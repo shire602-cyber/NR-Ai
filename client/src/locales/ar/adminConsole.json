@@ -135,6 +135,8 @@
   "activityLog.action.budget.variance_alert": "تنبيه انحراف الميزانية",
   "activityLog.action.company.delete": "حُذفت الشركة",
   "activityLog.action.company.einvoicing_acube_reserve": "حُجز مزود الفوترة الإلكترونية",
+  "activityLog.action.company.einvoicing_complyance_connect": "رُبط مزود الفوترة الإلكترونية",
+  "activityLog.action.invoice.einvoice_complyance_link": "رُبط مستند مزود الفوترة الإلكترونية بالفاتورة",
   "activityLog.action.company.einvoicing_settings": "تغيّرت إعدادات الفوترة الإلكترونية",
   "activityLog.action.company.emirate": "تغيّرت إمارة الشركة",
   "activityLog.action.company.logo_upload": "رُفع شعار الشركة",
