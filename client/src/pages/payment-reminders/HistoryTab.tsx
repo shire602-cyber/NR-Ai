@@ -19,13 +19,7 @@ import { formatDate } from "@/lib/format-date";
 import { apiRequest } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { AutomaticEmailLog } from "../Reminders";
-import {
-  chasingKeys,
-  recordStatusTone,
-  type AgingRow,
-  type ChaseRecord,
-  type Effectiveness,
-} from "./types";
+import { recordStatusTone, type AgingRow, type ChaseRecord, type Effectiveness } from "./types";
 
 /**
  * History (spec 3.7): the former Effectiveness tab becomes three figures above the list of
@@ -34,14 +28,13 @@ import {
 export function HistoryTab({ companyId, rows }: { companyId?: string; rows: AgingRow[] }) {
   const { t, locale } = useTranslation();
   const tt = t as Record<string, string>;
-  const keys = chasingKeys(companyId);
   const historyQuery = useQuery<ChaseRecord[]>({
-    queryKey: keys.history,
+    queryKey: ["/api/chasing/history", companyId],
     queryFn: () => apiRequest("GET", `/api/chasing/history/${companyId}?sinceDays=180`),
     enabled: !!companyId,
   });
   const effQuery = useQuery<Effectiveness>({
-    queryKey: keys.effectiveness,
+    queryKey: ["/api/chasing/effectiveness", companyId],
     queryFn: () => apiRequest("GET", `/api/chasing/effectiveness/${companyId}?sinceDays=180`),
     enabled: !!companyId,
   });

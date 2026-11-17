@@ -26,7 +26,6 @@ import { HistoryTab } from "./payment-reminders/HistoryTab";
 import { BulkResultsDialog, ReminderReadyDialog } from "./payment-reminders/dialogs";
 import {
   AGING_BUCKETS,
-  chasingKeys,
   type AgingBucket,
   type BulkSendResponse,
   type OverdueResponse,
@@ -55,27 +54,26 @@ export default function PaymentChasing() {
   const { t, locale } = useTranslation();
   const tt = t as Record<string, string>;
   const { toast } = useToast();
-  const keys = chasingKeys(companyId);
   const [tab, setTab] = useState<TabId>(initialTab);
   const [ready, setReady] = useState<{ body: string; language: "en" | "ar" } | null>(null);
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkResults, setBulkResults] = useState<BulkSendResponse | null>(null);
 
   const overdueQuery = useQuery<OverdueResponse>({
-    queryKey: keys.overdue,
+    queryKey: ["/api/chasing/overdue", companyId],
     queryFn: () => apiRequest("GET", `/api/chasing/overdue/${companyId}`),
     enabled: !!companyId,
   });
   const queueQuery = useQuery<QueueResponse>({
-    queryKey: keys.queue,
+    queryKey: ["/api/chasing/queue", companyId],
     queryFn: () => apiRequest("GET", `/api/chasing/queue/${companyId}`),
     enabled: !!companyId,
   });
 
   const refreshChasing = () => {
-    queryClient.invalidateQueries({ queryKey: keys.overdue });
-    queryClient.invalidateQueries({ queryKey: keys.queue });
-    queryClient.invalidateQueries({ queryKey: keys.history });
+    queryClient.invalidateQueries({ queryKey: ["/api/chasing/overdue", companyId] });
+    queryClient.invalidateQueries({ queryKey: ["/api/chasing/queue", companyId] });
+    queryClient.invalidateQueries({ queryKey: ["/api/chasing/history", companyId] });
   };
 
   const sendOne = useMutation({
@@ -127,8 +125,8 @@ export default function PaymentChasing() {
     mutationFn: ({ invoiceId, value }: { invoiceId: string; value: boolean }) =>
       apiRequest("PATCH", `/api/chasing/invoice/${invoiceId}/do-not-chase`, { doNotChase: value }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: keys.overdue });
-      queryClient.invalidateQueries({ queryKey: keys.queue });
+      queryClient.invalidateQueries({ queryKey: ["/api/chasing/overdue", companyId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/chasing/queue", companyId] });
     },
   });
 

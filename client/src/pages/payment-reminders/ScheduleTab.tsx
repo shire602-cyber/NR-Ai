@@ -33,7 +33,6 @@ import { splitMessage } from "./tokens";
 import {
   CHASE_FIELDS,
   REMINDER_LEVELS,
-  chasingKeys,
   type ChaseConfig,
   type ReminderLevel,
   type ReminderTemplate,
@@ -75,16 +74,15 @@ export function ScheduleTab({ companyId }: { companyId?: string }) {
   const { t } = useTranslation();
   const tt = t as Record<string, string>;
   const { toast } = useToast();
-  const keys = chasingKeys(companyId);
   const [editing, setEditing] = useState<ReminderTemplate | null>(null);
 
   const configQuery = useQuery<ChaseConfig>({
-    queryKey: keys.config,
+    queryKey: ["/api/chasing/config", companyId],
     queryFn: () => apiRequest("GET", `/api/chasing/config/${companyId}`),
     enabled: !!companyId,
   });
   const templatesQuery = useQuery<ReminderTemplate[]>({
-    queryKey: keys.templates,
+    queryKey: ["/api/chasing/templates", companyId],
     queryFn: () => apiRequest("GET", `/api/chasing/templates/${companyId}`),
     enabled: !!companyId,
   });
@@ -94,8 +92,8 @@ export function ScheduleTab({ companyId }: { companyId?: string }) {
       apiRequest("PATCH", `/api/chasing/config/${companyId}`, patch),
     onSuccess: () => {
       toast({ title: t["hr.settingsSaved"] });
-      queryClient.invalidateQueries({ queryKey: keys.config });
-      queryClient.invalidateQueries({ queryKey: keys.queue });
+      queryClient.invalidateQueries({ queryKey: ["/api/chasing/config", companyId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/chasing/queue", companyId] });
     },
   });
 
@@ -115,7 +113,7 @@ export function ScheduleTab({ companyId }: { companyId?: string }) {
     onSuccess: () => {
       toast({ title: t["pages.chasingTemplateSaved"] });
       setEditing(null);
-      queryClient.invalidateQueries({ queryKey: keys.templates });
+      queryClient.invalidateQueries({ queryKey: ["/api/chasing/templates", companyId] });
     },
     onError: (e: Error) =>
       toast({

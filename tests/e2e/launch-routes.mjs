@@ -64,6 +64,7 @@ export const ALL_AUTH_ROUTES = [
   "/settings/zatca",
   "/chart-of-accounts",
   "/invoices",
+  "/invoices/new",
   "/recurring-invoices",
   "/payment-chasing",
   "/journal",
@@ -166,6 +167,8 @@ export const FIRM_ROUTES = [
 export const PARAM_ROUTES = {
   "/accounts/:id/ledger": "account",
   "/journal/:id": "journal",
+  // WP-C full-page invoice editor; resolved only when the crawl seeds an invoice id.
+  "/invoices/:id/edit": "invoice",
   "/admin/clients/:id": "company",
   "/admin/clients/:id/documents": "company",
   "/admin/clients/:id/tasks": "company",

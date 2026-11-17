@@ -833,7 +833,8 @@ export default function ExpenseClaims() {
                 {showActions && (
                   <TableCell data-cell="actions">
                     <RowActions
-                      maxInline={1}
+                      // A reviewer decides in one click: Approve and Reject stay side by side.
+                      maxInline={canReview ? 2 : 1}
                       collapseOnMobile
                       menu={
                         canEdit || canPay ? (

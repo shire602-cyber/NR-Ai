@@ -108,15 +108,6 @@ export const CHASE_FIELDS = [
   "senderName",
 ] as const;
 
-export const chasingKeys = (companyId: string | undefined) => ({
-  overdue: ["/api/chasing/overdue", companyId] as const,
-  queue: ["/api/chasing/queue", companyId] as const,
-  history: ["/api/chasing/history", companyId] as const,
-  effectiveness: ["/api/chasing/effectiveness", companyId] as const,
-  templates: ["/api/chasing/templates", companyId] as const,
-  config: ["/api/chasing/config", companyId] as const,
-});
-
 /** Badge tone of a sent reminder's status. */
 export function recordStatusTone(status: string): "danger" | "success" | "neutral" {
   return status === "failed" ? "danger" : status === "paid" ? "success" : "neutral";
