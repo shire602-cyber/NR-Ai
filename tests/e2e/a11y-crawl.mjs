@@ -212,15 +212,21 @@ async function main() {
       );
       await db.end();
     }
-    const csrf = await (await page.request.get(`${BASE}/api/csrf-token`)).json();
-    const created = await page.request.post(`${BASE}/api/companies`, {
-      data: { name: "A11y Second Trading LLC" },
-      headers: { "X-CSRF-Token": csrf.csrfToken },
-    });
-    if (created.status() >= 300) {
-      throw new Error(
-        `second company failed: ${created.status()} ${(await created.text()).slice(0, 200)}`
-      );
+    // Created from the page (the browser's own fetch, as the UI does): Playwright's API request
+    // context does not send Secure (__Host-) cookies over plain http, so against a local
+    // production build its POST had no session or CSRF cookie and was refused.
+    const created = await page.evaluate(async (base) => {
+      const csrf = await (await fetch(`${base}/api/csrf-token`, { credentials: "include" })).json();
+      const r = await fetch(`${base}/api/companies`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json", "X-CSRF-Token": csrf.csrfToken },
+        body: JSON.stringify({ name: "A11y Second Trading LLC" }),
+      });
+      return { status: r.status, text: await r.text() };
+    }, BASE);
+    if (created.status >= 300) {
+      throw new Error(`second company failed: ${created.status} ${created.text.slice(0, 200)}`);
     }
     // The new company may become the active one: onboard it too so protected routes render.
     await page.goto(`${BASE}/dashboard`);
@@ -231,12 +237,21 @@ async function main() {
     }
     // Eleven unread notifications make the bell badge show "9+" (its accessible name must
     // contain that visible text; D4).
-    for (let i = 0; i < 11; i += 1) {
-      await page.request.post(`${BASE}/api/notifications`, {
-        data: { type: "system", title: `A11y seed ${i}`, message: "Synthetic notification" },
-        headers: { "X-CSRF-Token": csrf.csrfToken },
-      });
-    }
+    await page.evaluate(async (base) => {
+      const csrf = await (await fetch(`${base}/api/csrf-token`, { credentials: "include" })).json();
+      for (let i = 0; i < 11; i += 1) {
+        await fetch(`${base}/api/notifications`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json", "X-CSRF-Token": csrf.csrfToken },
+          body: JSON.stringify({
+            type: "system",
+            title: `A11y seed ${i}`,
+            message: "Synthetic notification",
+          }),
+        });
+      }
+    }, BASE);
   }
 
   let tourSeen = false;
