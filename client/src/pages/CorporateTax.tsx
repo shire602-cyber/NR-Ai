@@ -1455,12 +1455,10 @@ export default function CorporateTax() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="ct-filed-on">{t["corporateTax.filedOn"]}</Label>
-              <Input
+              <DatePicker
                 id="ct-filed-on"
-                type="date"
-                max={todayIso}
                 value={filedOn}
-                onChange={(e) => setFiledOn(e.target.value)}
+                onChange={(v) => setFiledOn(v > todayIso ? todayIso : v)}
                 data-testid="input-ct-filed-on"
               />
             </div>

@@ -384,5 +384,6 @@
   "activityLog.action.vendor_prepayment.create": "Vendor prepayment created",
   "activityLog.action.zatca.egs_created": "ZATCA EGS unit created",
   "activityLog.action.zatca.egs_onboarded": "ZATCA EGS unit onboarded",
-  "activityLog.action.zatca.invoice_submitted": "Invoice submitted to ZATCA"
+  "activityLog.action.zatca.invoice_submitted": "Invoice submitted to ZATCA",
+  "activityLog.action.payroll.settlement_pay": "Final settlement paid"
 }

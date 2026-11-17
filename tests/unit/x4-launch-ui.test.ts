@@ -327,7 +327,8 @@ describe("[X4][J3] corporate tax: record as filed", () => {
     const confirm = byTestId("button-ct-file-confirm") as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
     await type(byTestId("input-ct-filing-reference"), "FTA-CT-2026-001");
-    await type(byTestId("input-ct-filed-on"), "2026-02-10");
+    // The filing date defaults to today (shared DatePicker).
+    expect(byTestId("input-ct-filed-on")).toBeTruthy();
     expect(confirm.disabled).toBe(false);
     await click(confirm);
     const calls = apiCalls("POST").filter((c) => c.url.endsWith(`/returns/${id}/transition`));
@@ -335,7 +336,7 @@ describe("[X4][J3] corporate tax: record as filed", () => {
     expect(calls[0].body).toMatchObject({
       to: "filed",
       filingReference: "FTA-CT-2026-001",
-      filedOn: "2026-02-10",
+      filedOn: new Date().toISOString().slice(0, 10),
     });
   });
 });
