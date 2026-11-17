@@ -208,10 +208,12 @@
 /* ─── Touch-Friendly Targets ─────────────────────────────────────────────── */
 
 @media (max-width: 767px) {
-  /* Ensure all interactive elements meet 44px minimum tap target */
-  button,
+  /* Ensure all interactive elements meet 44px minimum tap target. Checkboxes, radios and
+     switches keep their visual size (spec G3: a 20 px box inside a 44 px hit area) — their
+     hit area comes from an invisible ::after, not from stretching the box. */
+  button:not([role="checkbox"]):not([role="radio"]):not([role="switch"]),
   a,
-  input,
+  input:not([type="checkbox"]):not([type="radio"]),
   select,
   textarea,
   [role="button"],
@@ -219,6 +221,13 @@
   [role="tab"] {
     min-height: 44px;
     min-width: 44px;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
   }
 
   /* Smaller buttons that visually look smaller but have adequate tap area */

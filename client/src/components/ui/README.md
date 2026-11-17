@@ -72,7 +72,8 @@ only through `Money`; dates only through `formatDate`; digits are tabular.
   route); skeleton shimmer 1.2 s; no KPI count-up; `prefers-reduced-motion`
   turns everything off.
 - `--mobile-nav-height`: height of the fixed bottom nav below 768 px (0 above);
-  sticky footers sit at `bottom-[var(--mobile-nav-height)]`.
+  use it for `fixed` elements. Sticky footers inside the app's scroll area use
+  `bottom-0` (the scroll area already pads for the bottom nav).
 
 ### Brand motif
 
