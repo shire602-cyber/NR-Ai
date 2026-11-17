@@ -64,6 +64,14 @@ interface AccountOption {
 
 type Filter = "all" | "bank" | "checks";
 
+// The classifier's reason is shown only when it explains a suggestion; server notes about
+// configuration (e.g. a provider not being set up) are operator copy and never shown.
+const OPERATOR_NOTE = /openai|not configured|api key|provider|model/i;
+function customerReason(reason: string | null, hasSuggestion: boolean): string | null {
+  if (!reason || !hasSuggestion || OPERATOR_NOTE.test(reason)) return null;
+  return reason;
+}
+
 const CONFIDENCE_TONE: Record<ConfidenceWord, StatusTone> = {
   high: "success",
   medium: "neutral",
@@ -242,6 +250,8 @@ export default function ReviewPanel() {
           {showBank &&
             bankItems.map((item) => {
               const word = confidenceWord(item.ai_confidence);
+              const hasSuggestion = !!item.suggested_account_id;
+              const reason = customerReason(item.ai_reason, hasSuggestion);
               return (
                 <li
                   key={item.id}
@@ -259,31 +269,45 @@ export default function ReviewPanel() {
                       {t["assistant.kindBank"]} · {formatDate(item.transaction_date, locale)}
                     </p>
                     <p className="text-small text-foreground">
-                      {item.suggested_account_name
+                      {hasSuggestion
                         ? formatMessage(t["assistant.suggestAccount"], {
                             account:
-                              `${item.suggested_account_code ?? ""} ${item.suggested_account_name}`.trim(),
+                              `${item.suggested_account_code ?? ""} ${item.suggested_account_name ?? ""}`.trim(),
                           })
                         : t["assistant.noSuggestion"]}
-                      <StatusBadge tone={CONFIDENCE_TONE[word]} className="ms-2 align-middle">
-                        {t[`assistant.confidence.${word}`]}
-                      </StatusBadge>
+                      {hasSuggestion && (
+                        <StatusBadge tone={CONFIDENCE_TONE[word]} className="ms-2 align-middle">
+                          {t[`assistant.confidence.${word}`]}
+                        </StatusBadge>
+                      )}
                     </p>
-                    {item.ai_reason && (
-                      <p className="line-clamp-2 text-small text-muted-foreground">
-                        {item.ai_reason}
-                      </p>
+                    {reason && (
+                      <p className="line-clamp-2 text-small text-muted-foreground">{reason}</p>
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
-                    <Button
-                      size="sm"
-                      onClick={() => accept.mutate(item.id)}
-                      disabled={accept.isPending || !item.suggested_account_id}
-                      data-testid={`button-accept-${item.id}`}
-                    >
-                      {t["pages.accept"]}
-                    </Button>
+                    {hasSuggestion ? (
+                      <Button
+                        size="sm"
+                        onClick={() => accept.mutate(item.id)}
+                        disabled={accept.isPending}
+                        data-testid={`button-accept-${item.id}`}
+                      >
+                        {t["pages.accept"]}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setEditing(item);
+                          setAccountId("");
+                        }}
+                        data-testid={`button-choose-${item.id}`}
+                      >
+                        {t["assistant.editAccount"]}
+                      </Button>
+                    )}
                     <RowActions
                       menu={
                         <>

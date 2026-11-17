@@ -134,7 +134,10 @@ export default function AskPanel() {
             description={t["assistant.askEmptyBody"]}
             testId="assistant-ask-empty"
           />
-          <div className="flex flex-wrap justify-center gap-2" data-testid="assistant-suggestions">
+          <div
+            className="mt-6 flex flex-wrap justify-center gap-2"
+            data-testid="assistant-suggestions"
+          >
             {suggestions.map((text) => (
               <button
                 key={text}

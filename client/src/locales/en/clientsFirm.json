@@ -67,7 +67,7 @@
   "clientProfile.chooseAStaffMember": "Choose a staff member...",
   "emailIntake.everyBankLineInThis": "Every bank line in this period has a matching document. Nothing to chase.",
   "emailIntake.mappingRemoved": "Mapping removed",
-  "emailIntake.emailDocumentIntake": "Email Document Intake",
+  "emailIntake.emailDocumentIntake": "Email document intake",
   "emailIntake.clientsEmailTheirDocumentsThe": "Clients email their documents; the AI extracts and drafts the bookkeeping for your review. Pilot — NRA clients only.",
   "emailIntake.bankLines": "Bank lines",
   "emailIntake.missingPurchases": "Missing purchases",

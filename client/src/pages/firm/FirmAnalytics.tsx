@@ -100,7 +100,6 @@ export default function FirmAnalytics() {
                 }
               : undefined
           }
-          hint={t["firmOps.vsLast30Days"]}
         />
         <StatCard
           label={t["firmOps.statAvgPerClient"]}
