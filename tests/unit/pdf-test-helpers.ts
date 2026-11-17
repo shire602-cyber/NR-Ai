@@ -40,6 +40,8 @@ export interface PdfWord {
   text: string;
   xMin: number;
   yMin: number;
+  xMax: number;
+  yMax: number;
 }
 
 /** Word boxes from `pdftotext -bbox` (visual positions; text is poppler's reading of glyphs). */
@@ -55,10 +57,17 @@ export async function pdfWords(pdf: Buffer): Promise<PdfWord[]> {
       });
     });
     const words: PdfWord[] = [];
-    const re = /<word xMin="([\d.]+)" yMin="([\d.]+)"[^>]*>([^<]*)<\/word>/g;
+    const re =
+      /<word xMin="([\d.]+)" yMin="([\d.]+)" xMax="([\d.]+)" yMax="([\d.]+)"[^>]*>([^<]*)<\/word>/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(html)) !== null) {
-      words.push({ xMin: Number(m[1]), yMin: Number(m[2]), text: m[3] });
+      words.push({
+        xMin: Number(m[1]),
+        yMin: Number(m[2]),
+        xMax: Number(m[3]),
+        yMax: Number(m[4]),
+        text: m[5],
+      });
     }
     return words;
   } finally {

@@ -47,7 +47,7 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
       company()
     );
     const text = flat(await pdfToText(pdf));
-    expect(text).toContain("CREDIT NOTE");
+    expect(text).toContain("credit note");
     expect(text).toContain("إشعار دائن");
     expect(text).toContain("شركة النجمة للتجارة");
     expect(text).toContain("إرجاع بضاعة");
@@ -74,7 +74,7 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
       company()
     );
     const text = flat(await pdfToText(pdf));
-    expect(text).toContain("QUOTATION");
+    expect(text).toContain("Quotation");
     expect(text).toContain("عرض سعر");
     expect(text).toContain("مؤسسة الأفق");
     expect(text).toContain("الدفع خلال ثلاثين يوما");
@@ -99,7 +99,7 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
       company()
     );
     const text = flat(await pdfToText(pdf));
-    expect(text).toContain("PURCHASE ORDER");
+    expect(text).toContain("Purchase order");
     expect(text).toContain("أمر شراء");
     expect(text).toContain("مورد المواد الكهربائية");
     expect(text).toContain("خدمات استشارية محاسبية");
@@ -123,6 +123,6 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
     );
     const text = flat(await pdfToText(pdf));
     expect(text).toContain("عرض سعر");
-    expect(text).toContain("QUOTATION");
+    expect(text).toContain("Quotation");
   });
 });

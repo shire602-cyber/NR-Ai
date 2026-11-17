@@ -5,15 +5,28 @@ import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { UAE_VAT_RATE } from "../constants";
 import { renderEInvoiceQrPng } from "./einvoice-qr.service";
 import {
-  bilingual,
   isArabic,
   isDraftStatus,
   pdfLocale,
   preparePdfDocument,
   stampDraftWatermark,
+  text,
   type PdfDoc,
   type PdfLocale,
 } from "./pdf-fonts";
+import {
+  amount,
+  bi,
+  companyDetails,
+  date as ledgerDate,
+  Ledger,
+  LEDGER_COLORS,
+  ltr,
+  MM,
+  money,
+  trnLine,
+  type Bi,
+} from "./pdf-ledger";
 
 const PAGE_WIDTH = 595.28;
 const NR_GREEN = "#6F9E3A";
@@ -32,7 +45,10 @@ export interface GenerateInvoicePdfOptions {
   supplyDate?: Date | string | null;
   /** Customer details from the linked contact, used when the invoice has none stored. */
   customer?: { name?: string | null; trn?: string | null; address?: string | null };
-  /** W3-A (R03-24): invoice-template branding applied to the standard layout. */
+  /**
+   * W3-A (R03-24): invoice-template branding applied to the standard layout. WP-F: the template
+   * colour is the document accent (top rule, section labels, amount-due row only).
+   */
   branding?: InvoicePdfBranding | null;
 }
 
@@ -49,8 +65,6 @@ export interface InvoicePdfBranding {
   logoUrl?: string | null;
   showLogo?: boolean | null;
 }
-
-const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
 
 export function invoicePdfTemplateForCompany(company: Company): InvoicePdfTemplate {
   return company.companyType === "client" ? "nra" : "standard";
@@ -173,7 +187,6 @@ async function generateStandardInvoicePDF(
   }
 
   const locale = options.locale ?? pdfLocale(company);
-  const rtl = locale === "ar";
   const totals = computeInvoicePdfTotals(invoice, options);
   const customer = {
     name: invoice.customerName || options.customer?.name || "",
@@ -190,462 +203,247 @@ async function generateStandardInvoicePDF(
     fallbackDataUrl: options.branding?.logoUrl ?? null,
     show: options.branding?.showLogo,
   });
+  const brand = options.branding ?? null;
+  const isVATRegistered = !!company.trnVatNumber;
 
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({
-        size: "A4",
-        margin: 50,
-        bufferPages: true,
-        info: {
-          Title: `Invoice ${invoice.number}`,
-          Author: company.name,
-          Subject: "Tax Invoice",
-          Creator: "Muhasib.ai",
-        },
-      });
-      preparePdfDocument(doc);
+  const ledger = new Ledger({
+    locale,
+    accent: brand?.primaryColor,
+    info: {
+      Title: `Invoice ${invoice.number}`,
+      Author: company.name,
+      Subject: "Tax Invoice",
+    },
+  });
+  const m = (n: number) => money(n, totals.currency);
 
-      const chunks: Buffer[] = [];
-      doc.on("data", (chunk: Buffer) => chunks.push(chunk));
-      doc.on("end", () => resolve(Buffer.concat(chunks)));
-      doc.on("error", reject);
+  ledger.header({
+    companyName: company.name,
+    logo,
+    details: [
+      ...companyDetails(ledger, {
+        trn: isVATRegistered ? company.trnVatNumber : null,
+        address: company.businessAddress,
+        phone: company.contactPhone,
+        email: company.contactEmail,
+      }),
+      brand?.headerText ?? "",
+    ],
+    title: isVATRegistered ? bi("Tax invoice", "فاتورة ضريبية") : bi("Invoice", "فاتورة"),
+  });
 
-      const pageWidth = 595.28;
-      const margin = 50;
-      const contentWidth = pageWidth - 2 * margin;
-      const START: "left" | "right" = rtl ? "right" : "left";
-      const END: "left" | "right" = rtl ? "left" : "right";
-      /** Mirror an x offset inside the content box for Arabic-first layouts. */
-      const px = (x: number, w: number) => (rtl ? margin + contentWidth - (x - margin) - w : x);
-      const L = (en: string, ar: string) => bilingual(locale, en, ar);
+  if (invoice.reverseCharge) {
+    ledger.note(
+      bi("Reverse charge", "آلية الاحتساب العكسي"),
+      ledger.rtl
+        ? "تُحتسب ضريبة القيمة المضافة من قبل المستلم بموجب آلية الاحتساب العكسي (قانون ضريبة القيمة المضافة الإماراتي). VAT is to be accounted for by the recipient under the reverse-charge mechanism."
+        : "VAT is to be accounted for by the recipient under the reverse-charge mechanism (UAE VAT law). تُحتسب ضريبة القيمة المضافة من قبل المستلم بموجب آلية الاحتساب العكسي."
+    );
+  }
 
-      const isVATRegistered = !!company.trnVatNumber;
-      const invoiceTitle = isVATRegistered
-        ? L("Tax Invoice", "فاتورة ضريبية")
-        : L("Invoice", "فاتورة");
+  ledger.meta([
+    { label: bi("Invoice no.", "رقم الفاتورة"), value: ltr(invoice.number) },
+    { label: bi("Issue date", "تاريخ الإصدار"), value: formatDate(invoice.date) },
+    { label: bi("Date of supply", "تاريخ التوريد"), value: formatDate(supplyDate) },
+    {
+      label: bi("Due date", "تاريخ الاستحقاق"),
+      value: invoice.dueDate
+        ? formatDate(invoice.dueDate)
+        : paymentTermsLabel(invoice.paymentTerms, invoice.date, locale),
+    },
+    { label: bi("Currency", "العملة"), value: totals.currency },
+  ]);
 
-      const brand = options.branding ?? null;
-      const bandColor =
-        brand?.primaryColor && HEX_COLOR.test(brand.primaryColor) ? brand.primaryColor : "#1E40AF";
-
-      // Header band
-      doc.rect(0, 0, pageWidth, 110).fill(bandColor);
-      if (logo) {
-        try {
-          doc.image(logo, px(margin, 60), 50, { fit: [60, 50] });
-        } catch {
-          // An undecodable logo must never break the tax invoice.
-        }
-      }
-      if (brand?.headerText) {
-        doc.fontSize(8).fillColor("#DBEAFE").font("Helvetica");
-        doc.text(brand.headerText, px(margin + 70, contentWidth * 0.4), 92, {
-          width: contentWidth * 0.4,
-          align: START,
-        });
-      }
-
-      doc.fontSize(22).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text(company.name, px(margin, contentWidth * 0.5), 20, {
-        width: contentWidth * 0.5,
-        align: START,
-      });
-
-      doc.fontSize(17).fillColor("#BFDBFE").font("Helvetica-Bold");
-      doc.text(invoiceTitle, px(margin + contentWidth * 0.5, contentWidth * 0.5), 20, {
-        width: contentWidth * 0.5,
-        align: END,
-      });
-
-      if (isVATRegistered && company.trnVatNumber) {
-        doc.fontSize(9).fillColor("#BFDBFE").font("Helvetica");
-        doc.text(
-          `${L("TRN", "الرقم الضريبي")}: ${company.trnVatNumber}`,
-          px(margin + contentWidth * 0.5, contentWidth * 0.5),
-          46,
-          { width: contentWidth * 0.5, align: END }
-        );
-      }
-
-      doc.fontSize(8).fillColor("#DBEAFE").font("Helvetica");
-      let headerY = 62;
-      for (const detail of [
+  ledger.parties([
+    {
+      label: bi("From", "من"),
+      name: company.legalName || company.name,
+      lines: [
+        trnLine(ledger, isVATRegistered ? company.trnVatNumber : null),
         company.businessAddress,
-        company.contactPhone ? `${L("Tel", "هاتف")}: ${company.contactPhone}` : null,
-        company.contactEmail,
-      ]) {
-        if (!detail) continue;
-        doc.text(detail, px(margin + contentWidth * 0.4, contentWidth * 0.6), headerY, {
-          width: contentWidth * 0.6,
-          align: END,
-        });
-        headerY += 11;
-      }
+      ],
+    },
+    {
+      label: bi("Bill to", "فاتورة إلى"),
+      name: customer.name,
+      lines: [trnLine(ledger, customer.trn), customer.address],
+    },
+  ]);
 
-      let y = 125;
-      if (invoice.reverseCharge) {
-        const bannerH = 40;
-        doc.rect(margin, y, contentWidth, bannerH).fill("#FEF3C7").stroke("#F59E0B");
-        doc.fontSize(9).fillColor("#92400E").font("Helvetica-Bold");
-        doc.text(L("REVERSE CHARGE", "آلية الاحتساب العكسي"), margin + 10, y + 7, {
-          width: contentWidth - 20,
-          align: START,
-        });
-        doc.fontSize(8).fillColor("#78350F").font("Helvetica");
-        doc.text(
-          rtl
-            ? "تُحتسب ضريبة القيمة المضافة من قبل المستلم بموجب آلية الاحتساب العكسي (قانون ضريبة القيمة المضافة الإماراتي). VAT is to be accounted for by the recipient under the reverse-charge mechanism."
-            : "VAT is to be accounted for by the recipient under the reverse-charge mechanism (UAE VAT law).",
-          margin + 10,
-          y + 21,
-          { width: contentWidth - 20, align: START }
-        );
-        y += bannerH + 10;
-      }
-
-      // Meta box: number, issue date, supply date, due date, currency
-      const metaBoxH = 58;
-      doc.rect(margin, y, contentWidth, metaBoxH).fill("#F0F9FF").stroke("#BAE6FD");
-      const metaFields = [
-        { label: L("Invoice No", "رقم الفاتورة"), value: invoice.number },
-        { label: L("Issue Date", "تاريخ الإصدار"), value: formatDate(invoice.date) },
-        { label: L("Date of Supply", "تاريخ التوريد"), value: formatDate(supplyDate) },
-        {
-          label: L("Due Date", "تاريخ الاستحقاق"),
-          value: invoice.dueDate
-            ? formatDate(invoice.dueDate)
-            : paymentTermsLabel(invoice.paymentTerms, invoice.date),
+  ledger.table(
+    [
+      { key: "desc", label: bi("Description", "الوصف"), weight: 2.7 },
+      { key: "qty", label: bi("Qty", "الكمية"), weight: 0.75, align: "end" },
+      { key: "price", label: bi("Unit price", "سعر الوحدة"), weight: 1.25, align: "end" },
+      { key: "net", label: bi("Net amount", "المبلغ الصافي"), weight: 1.35, align: "end" },
+      { key: "type", label: bi("VAT treatment", "المعالجة الضريبية"), weight: 1.65 },
+      { key: "rate", label: bi("Rate", "النسبة"), weight: 0.75, align: "end" },
+      { key: "vat", label: bi("VAT amount", "قيمة الضريبة"), weight: 1.35, align: "end" },
+      { key: "total", label: bi("Total", "الإجمالي"), weight: 1.35, align: "end" },
+    ],
+    lines.map((line) => {
+      const treatment = vatTreatmentForLine(line, !!invoice.reverseCharge);
+      const label = TREATMENT_LABELS[treatment];
+      // Net after line + allocated document discount (W3-A); legacy rows
+      // without net_amount fall back to quantity × unit price.
+      const storedNet = (line as InvoiceLine & { netAmount?: number | null }).netAmount;
+      const net =
+        storedNet !== null && storedNet !== undefined
+          ? Math.abs(Number(storedNet))
+          : line.quantity * line.unitPrice;
+      const rate = line.vatRate ?? UAE_VAT_RATE;
+      const vat = net * rate;
+      const [primary, secondary] = ledger.pair(label);
+      return {
+        cells: {
+          desc: line.description,
+          qty: formatQuantity(line.quantity),
+          price: amount(line.unitPrice),
+          net: amount(net),
+          type: { text: `${primary}\n${secondary}`, size: 7, color: LEDGER_COLORS.muted },
+          rate: `${(rate * 100).toFixed(0)}%`,
+          vat: amount(vat),
+          total: amount(net + vat),
         },
-        { label: L("Currency", "العملة"), value: totals.currency },
-      ];
-      const metaColW = contentWidth / metaFields.length;
-      metaFields.forEach((field, i) => {
-        const cx = px(margin + i * metaColW, metaColW) + 6;
-        doc.fontSize(6.5).fillColor("#6B7280").font("Helvetica");
-        doc.text(field.label, cx, y + 9, { width: metaColW - 10, align: START });
-        doc.fontSize(9).fillColor("#111827").font("Helvetica-Bold");
-        doc.text(String(field.value), cx, y + 32, { width: metaColW - 10, align: START });
-      });
-      y += metaBoxH + 16;
-
-      // Parties
-      const halfW = contentWidth / 2 - 8;
-      const partiesTop = y;
-      const drawParty = (
-        x: number,
-        heading: string,
-        name: string,
-        trn: string | null | undefined,
-        address: string | null | undefined
-      ): number => {
-        let cy = partiesTop;
-        doc.fontSize(8).fillColor("#6B7280").font("Helvetica-Bold");
-        doc.text(heading, x, cy, { width: halfW, align: START });
-        cy += 13;
-        doc.fontSize(11).fillColor("#111827").font("Helvetica-Bold");
-        doc.text(name, x, cy, { width: halfW, align: START });
-        cy += doc.heightOfString(name, { width: halfW }) + 2;
-        doc.fontSize(9).fillColor("#374151").font("Helvetica");
-        if (trn) {
-          doc.text(`${L("TRN", "الرقم الضريبي")}: ${trn}`, x, cy, { width: halfW, align: START });
-          cy += 12;
-        }
-        if (address) {
-          doc.text(address, x, cy, { width: halfW, align: START });
-          cy += doc.heightOfString(address, { width: halfW }) + 2;
-        }
-        return cy;
       };
-      const fromX = px(margin, halfW);
-      const toX = px(margin + halfW + 16, halfW);
-      const fromEnd = drawParty(
-        fromX,
-        L("SUPPLIER", "المورّد"),
-        company.legalName || company.name,
-        isVATRegistered ? company.trnVatNumber : null,
-        company.businessAddress
-      );
-      const toEnd = drawParty(
-        toX,
-        L("CUSTOMER", "العميل"),
-        customer.name,
-        customer.trn,
-        customer.address
-      );
-      y = Math.max(fromEnd, toEnd) + 10;
+    }),
+    { size: 8.5 }
+  );
 
-      // Line table
-      const baseCols = [
-        { key: "desc", w: 140, label: L("Description", "الوصف"), align: START },
-        { key: "qty", w: 30, label: L("Qty", "الكمية"), align: "center" as const },
-        { key: "price", w: 58, label: L("Unit Price", "سعر الوحدة"), align: END },
-        { key: "net", w: 64, label: L("Amount (excl. VAT)", "المبلغ قبل الضريبة"), align: END },
-        { key: "type", w: 62, label: L("VAT Treatment", "المعالجة الضريبية"), align: START },
-        { key: "rate", w: 32, label: L("VAT %", "الضريبة %"), align: "center" as const },
-        { key: "vat", w: 56, label: L("VAT Amount", "قيمة الضريبة"), align: END },
-        { key: "total", w: 53, label: L("Total", "الإجمالي"), align: END },
-      ];
-      // Column geometry: lay out in logical order, mirrored for Arabic-first documents.
-      let acc = margin;
-      const cols = baseCols.map((c) => {
-        const x = px(acc, c.w);
-        acc += c.w;
-        return { ...c, x };
-      });
-      const cell = (key: string) => cols.find((c) => c.key === key)!;
-
-      const drawTableHeader = () => {
-        const headerH = 38;
-        doc.rect(margin, y, contentWidth, headerH).fill(bandColor);
-        doc.fontSize(6.5).fillColor("#FFFFFF").font("Helvetica-Bold");
-        for (const c of cols) {
-          doc.text(c.label, c.x + 2, y + 5, { width: c.w - 4, align: c.align });
-        }
-        y += headerH;
-      };
-      drawTableHeader();
-
-      lines.forEach((line, index) => {
-        const treatment = vatTreatmentForLine(line, !!invoice.reverseCharge);
-        const label = TREATMENT_LABELS[treatment];
-        // Net after line + allocated document discount (W3-A); legacy rows
-        // without net_amount fall back to quantity × unit price.
-        const storedNet = (line as InvoiceLine & { netAmount?: number | null }).netAmount;
-        const net =
-          storedNet !== null && storedNet !== undefined
-            ? Math.abs(Number(storedNet))
-            : line.quantity * line.unitPrice;
-        const rate = line.vatRate ?? UAE_VAT_RATE;
-        const vat = net * rate;
-        doc.fontSize(8).font("Helvetica");
-        const descH = doc.heightOfString(line.description, { width: cell("desc").w - 6 });
-        const rowH = Math.max(26, descH + 10);
-        if (y + rowH > 730) {
-          doc.addPage();
-          y = 50;
-          drawTableHeader();
-        }
-        doc.rect(margin, y, contentWidth, rowH).fill(index % 2 === 0 ? "#FFFFFF" : "#F8FAFC");
-        doc.rect(margin, y, contentWidth, rowH).stroke("#E5E7EB");
-        doc.fillColor("#1F2937").fontSize(8).font("Helvetica");
-        const ty = y + 6;
-        const put = (key: string, value: string) => {
-          const c = cell(key);
-          doc.text(value, c.x + 3, ty, { width: c.w - 6, align: c.align });
+  // VAT breakdown by treatment and rate
+  const buckets = aggregateVatBuckets(lines, !!invoice.reverseCharge);
+  if (buckets.length > 1 || (buckets[0] && buckets[0].treatment !== "standard_rated")) {
+    ledger.section(bi("VAT breakdown", "تفاصيل ضريبة القيمة المضافة"));
+    ledger.table(
+      [
+        { key: "t", label: bi("Treatment", "المعالجة"), weight: 2 },
+        { key: "taxable", label: bi("Taxable amount", "المبلغ الخاضع"), weight: 1, align: "end" },
+        { key: "vat", label: bi("VAT", "الضريبة"), weight: 1, align: "end" },
+        { key: "incl", label: bi("Inclusive total", "الإجمالي"), weight: 1, align: "end" },
+      ],
+      buckets.map((b) => {
+        const lbl = TREATMENT_LABELS[b.treatment];
+        return {
+          cells: {
+            t: `${ledger.rtl ? lbl.ar : lbl.en} ${ltr(`${(b.rate * 100).toFixed(0)}%`)}`,
+            taxable: amount(b.taxable),
+            vat: amount(b.vat),
+            incl: amount(b.taxable + b.vat),
+          },
         };
-        put("desc", line.description);
-        put("qty", formatQuantity(line.quantity));
-        put("price", formatNumber(line.unitPrice));
-        put("net", formatNumber(net));
-        doc.fontSize(6.5);
-        put("type", `${rtl ? label.ar : label.en}\n${rtl ? label.en : label.ar}`);
-        doc.fontSize(8);
-        put("rate", `${(rate * 100).toFixed(0)}%`);
-        put("vat", formatNumber(vat));
-        put("total", formatNumber(net + vat));
-        y += rowH;
-      });
-      doc
-        .moveTo(margin, y)
-        .lineTo(margin + contentWidth, y)
-        .stroke("#E5E7EB");
-      y += 14;
+      }),
+      { size: 8 }
+    );
+  }
 
-      // VAT breakdown by treatment and rate
-      const buckets = aggregateVatBuckets(lines, !!invoice.reverseCharge);
-      if (buckets.length > 1 || (buckets[0] && buckets[0].treatment !== "standard_rated")) {
-        const breakdownH = 22 + buckets.length * 14 + 8;
-        if (y + breakdownH > 730) {
-          doc.addPage();
-          y = 50;
-        }
-        doc.rect(margin, y, contentWidth, breakdownH).fill("#F8FAFC").stroke("#E5E7EB");
-        doc.fontSize(8.5).fillColor("#1E40AF").font("Helvetica-Bold");
-        doc.text(L("VAT Breakdown", "تفاصيل ضريبة القيمة المضافة"), margin + 8, y + 6, {
-          width: contentWidth - 16,
-          align: START,
-        });
-        const bw = (contentWidth - 16) / 4;
-        const bx = (i: number) => px(margin + 8 + i * bw, bw);
-        let by = y + 20;
-        doc.fontSize(7).fillColor("#6B7280").font("Helvetica");
-        [
-          L("Treatment", "المعالجة"),
-          L("Taxable Amount", "المبلغ الخاضع"),
-          L("VAT", "الضريبة"),
-          L("Inclusive Total", "الإجمالي"),
-        ].forEach((h, i) =>
-          doc.text(h, bx(i), by, { width: bw - 4, align: i === 0 ? START : END })
-        );
-        by += 11;
-        doc.fontSize(8).fillColor("#1F2937");
-        for (const b of buckets) {
-          const lbl = TREATMENT_LABELS[b.treatment];
-          [
-            `${rtl ? lbl.ar : lbl.en} ${(b.rate * 100).toFixed(0)}%`,
-            formatNumber(b.taxable),
-            formatNumber(b.vat),
-            formatNumber(b.taxable + b.vat),
-          ].forEach((v, i) =>
-            doc.text(v, bx(i), by, { width: bw - 4, align: i === 0 ? START : END })
-          );
-          by += 14;
-        }
-        y += breakdownH + 10;
+  const discountAmount = Number(
+    (invoice as Invoice & { discountAmount?: number | null }).discountAmount ?? 0
+  );
+  const rows: Array<{ label: Bi; value: string; bold?: boolean; ruleAbove?: boolean }> = [];
+  if (discountAmount > 0)
+    rows.push({ label: bi("Discount", "الخصم"), value: `- ${m(discountAmount)}` });
+  rows.push({ label: bi("Subtotal excl. VAT", "المجموع قبل الضريبة"), value: m(totals.subtotal) });
+  rows.push({
+    label: invoice.reverseCharge
+      ? bi("VAT (reverse charge)", "الضريبة (احتساب عكسي)")
+      : bi("VAT", "ضريبة القيمة المضافة"),
+    value: m(totals.vat),
+  });
+  if (totals.vatAed !== null) {
+    rows.push({
+      label: bi("VAT total (AED)", "إجمالي الضريبة (درهم)"),
+      value: money(totals.vatAed),
+    });
+  }
+  rows.push({
+    label: bi("Total", "الإجمالي"),
+    value: m(totals.total),
+    bold: true,
+    ruleAbove: true,
+  });
+  if (totals.amountPaid > 0) {
+    rows.push({
+      label: bi("Payments received", "المدفوعات المستلمة"),
+      value: `- ${m(totals.amountPaid)}`,
+    });
+  }
+  const totalsW = 78 * MM;
+  const totalsBlock = ledger.totals(rows, {
+    label: bi("Amount due", "المبلغ المستحق"),
+    value: m(totals.amountDue),
+  });
+  const totalsX = ledger.x(ledger.width - totalsW, totalsW);
+  if (totals.vatAed !== null) {
+    text(
+      ledger.doc,
+      `${ledger.inline(bi("Exchange rate", "سعر الصرف"))}: ${ltr(`1 ${totals.currency} = ${totals.exchangeRate.toFixed(4)} AED`)}`,
+      {
+        x: totalsX,
+        y: ledger.y - 8,
+        width: totalsW,
+        size: 7,
+        color: LEDGER_COLORS.muted,
+        align: ledger.end,
       }
+    );
+    ledger.y += 6;
+  }
+  if (totals.paid) {
+    text(ledger.doc, ledger.inline(bi("Paid in full", "مدفوعة بالكامل")), {
+      x: totalsX,
+      y: ledger.y - 6,
+      width: totalsW,
+      size: 8,
+      bold: true,
+      color: LEDGER_COLORS.success,
+      align: ledger.end,
+    });
+    ledger.y += 8;
+  }
 
-      // Totals
-      if (y + 190 > 740) {
-        doc.addPage();
-        y = 50;
-      }
-      const qrReserve = 90;
-      const totalsW = 270;
-      const totalsX = px(margin + contentWidth - totalsW, totalsW);
-      const labelW = 170;
-      const valueW = 100;
-      const labelX = rtl ? totalsX + valueW : totalsX;
-      const valueX = rtl ? totalsX : totalsX + labelW;
-      const totalsTop = y;
-      const totalsRow = (label: string, value: string, bold = false) => {
-        doc
-          .fontSize(9)
-          .fillColor("#374151")
-          .font(bold ? "Helvetica-Bold" : "Helvetica");
-        doc.text(label, labelX, y, { width: labelW, align: START });
-        doc.text(value, valueX, y, { width: valueW, align: END });
-        y += 15;
-      };
-      const money = (n: number) => `${totals.currency} ${formatNumber(n)}`;
-      const discountAmount = Number(
-        (invoice as Invoice & { discountAmount?: number | null }).discountAmount ?? 0
-      );
-      if (discountAmount > 0) {
-        totalsRow(L("Discount", "الخصم"), `- ${money(discountAmount)}`);
-      }
-      totalsRow(L("Subtotal (excl. VAT)", "المجموع قبل الضريبة"), money(totals.subtotal));
-      totalsRow(
-        invoice.reverseCharge
-          ? L("VAT (reverse charge)", "الضريبة (احتساب عكسي)")
-          : L("VAT", "ضريبة القيمة المضافة"),
-        money(totals.vat)
-      );
-      if (totals.vatAed !== null) {
-        totalsRow(
-          L("VAT total (AED)", "إجمالي الضريبة (درهم)"),
-          `AED ${formatNumber(totals.vatAed)}`
-        );
-        doc.fontSize(7).fillColor("#6B7280").font("Helvetica");
-        doc.text(
-          `${L("Exchange rate", "سعر الصرف")}: 1 ${totals.currency} = ${totals.exchangeRate.toFixed(4)} AED`,
-          totalsX,
-          y - 3,
-          { width: totalsW, align: START }
-        );
-        y += 10;
-      }
-      totalsRow(L("Total", "الإجمالي"), money(totals.total), true);
-      if (totals.amountPaid > 0) {
-        totalsRow(L("Payments received", "المدفوعات المستلمة"), `- ${money(totals.amountPaid)}`);
-      }
-      y += 4;
-      doc.rect(totalsX - 6, y - 5, totalsW + 12, 28).fill(totals.paid ? "#15803D" : "#1E40AF");
-      doc.fontSize(11).fillColor("#FFFFFF").font("Helvetica-Bold");
-      doc.text(rtl ? "المبلغ المستحق / AMOUNT DUE" : "AMOUNT DUE / المبلغ المستحق", labelX, y + 3, {
-        width: labelW,
-        align: START,
-      });
-      doc.text(money(totals.amountDue), valueX, y + 3, { width: valueW, align: END });
-      let totalsBottom = y + 28;
-      if (totals.paid) {
-        doc.fontSize(8).fillColor("#15803D").font("Helvetica-Bold");
-        doc.text(L("PAID IN FULL", "مدفوعة بالكامل"), labelX, totalsBottom + 3, {
-          width: labelW + valueW,
-          align: END,
-        });
-        totalsBottom += 14;
+  // QR (24 mm) at the start side level with the totals block; payment terms beside it.
+  const afterTotals = ledger.y;
+  const qrSize = 24 * MM;
+  const qrY = totalsBlock.top;
+  let sideBottom = qrY;
+  if (qrPng) {
+    ledger.doc.image(qrPng, ledger.x(0, qrSize), qrY, { width: qrSize, height: qrSize });
+    sideBottom =
+      text(ledger.doc, ledger.inline(bi("Invoice QR (TLV)", "رمز الفاتورة")), {
+        x: ledger.x(0, qrSize + 60),
+        y: qrY + qrSize + 3,
+        width: qrSize + 60,
+        size: 7,
+        color: LEDGER_COLORS.muted,
+        align: ledger.start,
+      }).endY + 8;
+  }
+  if (invoice.paymentTerms) {
+    const offset = qrPng ? qrSize + 16 : 0;
+    ledger.y = qrY;
+    ledger.note(bi("Payment terms", "شروط الدفع"), paymentTermsText(invoice.paymentTerms, locale), {
+      offset,
+      width: ledger.width - totalsW - offset - 16,
+    });
+    sideBottom = Math.max(sideBottom, ledger.y);
+  }
+  ledger.y = Math.max(afterTotals, sideBottom);
 
-        const stampX = px(margin, 160) + 4;
-        const stampY = totalsTop + 36;
-        doc.save();
-        doc.rotate(-12, { origin: [stampX + 75, stampY + 19] });
-        doc.lineWidth(2).strokeColor("#15803D");
-        doc.roundedRect(stampX, stampY, 150, 38, 4).stroke();
-        doc.fontSize(18).fillColor("#15803D").font("Helvetica-Bold");
-        doc.text(L("PAID", "مدفوعة"), stampX, stampY + 9, { width: 150, align: "center" });
-        doc.restore();
-        doc.lineWidth(1);
-      }
+  if (brand?.termsText) ledger.note(bi("Terms", "الشروط"), brand.termsText);
+  if (brand?.bankDetails)
+    ledger.note(bi("Bank details", "تفاصيل الحساب البنكي"), brand.bankDetails);
 
-      y = totalsBottom + 14;
+  ledger.smallPrint([
+    brand?.footerText || ledger.inline(bi("Thank you for your business.", "شكراً لتعاملكم معنا.")),
+    isVATRegistered
+      ? ledger.rtl
+        ? "هذه فاتورة ضريبية صادرة إلكترونياً وصالحة بدون توقيع. This is a computer-generated tax invoice and is valid without a signature."
+        : "This is a computer-generated tax invoice and is valid without a signature. هذه فاتورة ضريبية صادرة إلكترونياً وصالحة بدون توقيع."
+      : "",
+  ]);
 
-      if (invoice.paymentTerms) {
-        doc.fontSize(8).fillColor("#374151").font("Helvetica");
-        doc.text(
-          `${L("Payment Terms", "شروط الدفع")}: ${paymentTermsText(invoice.paymentTerms)}`,
-          margin,
-          y,
-          { width: contentWidth - qrReserve, align: START }
-        );
-        y += 14;
-      }
-      for (const extra of [brand?.termsText, brand?.bankDetails]) {
-        if (!extra) continue;
-        doc.fontSize(7.5).fillColor("#374151").font("Helvetica");
-        doc.text(extra, margin, y, { width: contentWidth - qrReserve - 10, align: START });
-        y += doc.heightOfString(extra, { width: contentWidth - qrReserve - 10 }) + 6;
-      }
-
-      const qrSize = 72;
-      const qrX = px(margin + contentWidth - qrSize, qrSize);
-      const qrY = Math.min(Math.max(y - 4, totalsBottom + 10), 650);
-      if (qrPng) {
-        doc.image(qrPng, qrX, qrY, { width: qrSize, height: qrSize });
-        doc.fontSize(6).fillColor("#6B7280").font("Helvetica");
-        doc.text(L("Invoice QR (TLV)", "رمز الفاتورة QR"), qrX - 14, qrY + qrSize + 2, {
-          width: qrSize + 28,
-          align: "center",
-        });
-      } else {
-        doc.rect(qrX, qrY, qrSize, qrSize).stroke("#D1D5DB");
-        doc.fontSize(6).fillColor("#9CA3AF").font("Helvetica");
-        doc.text("QR", qrX, qrY + qrSize / 2 - 6, { width: qrSize, align: "center" });
-        doc.text("(N/A)", qrX, qrY + qrSize / 2 + 2, { width: qrSize, align: "center" });
-      }
-
-      const footerY = 765;
-      doc
-        .moveTo(margin, footerY - 8)
-        .lineTo(margin + contentWidth, footerY - 8)
-        .stroke("#E5E7EB");
-      doc.fontSize(8).fillColor("#6B7280").font("Helvetica");
-      doc.text(
-        brand?.footerText || L("Thank you for your business.", "شكراً لتعاملكم معنا."),
-        margin,
-        footerY,
-        {
-          width: contentWidth,
-          align: "center",
-        }
-      );
-      if (isVATRegistered) {
-        doc.fontSize(7).fillColor("#9CA3AF");
-        doc.text(
-          rtl
-            ? "هذه فاتورة ضريبية صادرة إلكترونياً وصالحة بدون توقيع. This is a computer-generated tax invoice and is valid without a signature."
-            : "This is a computer-generated tax invoice and is valid without a signature. هذه فاتورة ضريبية صادرة إلكترونياً وصالحة بدون توقيع.",
-          margin,
-          footerY + 12,
-          { width: contentWidth, align: "center" }
-        );
-      }
-
-      if (isDraftStatus(invoice.status)) stampDraftWatermark(doc);
-      doc.end();
-    } catch (err) {
-      reject(err);
-    }
+  return ledger.finish((doc) => {
+    if (isDraftStatus(invoice.status)) stampDraftWatermark(doc);
   });
 }
 
@@ -921,13 +719,6 @@ function aggregateVatBuckets(lines: InvoiceLine[], reverseCharge: boolean): VatB
   );
 }
 
-function formatNumber(amount: number): string {
-  return Number(amount || 0).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-}
-
 function formatQuantity(quantity: number): string {
   return Number.isInteger(quantity) ? String(quantity) : String(Number(quantity.toFixed(4)));
 }
@@ -949,19 +740,18 @@ function splitLineDescription(description: string): { itemCode: string; descript
   return { itemCode: description, description: "" };
 }
 
-function formatDate(date: Date | string | null | undefined): string {
-  if (!date) return "—";
-  return new Date(date).toLocaleDateString("en-AE", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+function formatDate(value: Date | string | null | undefined): string {
+  return ledgerDate(value);
 }
 
-function paymentTermsLabel(terms: string | null | undefined, invoiceDate: Date | string): string {
+function paymentTermsLabel(
+  terms: string | null | undefined,
+  invoiceDate: Date | string,
+  locale: PdfLocale
+): string {
   if (!terms) return "—";
   const days = paymentTermsDays(terms);
-  if (days === null) return formatPaymentTerms(terms);
+  if (days === null) return formatPaymentTerms(terms, locale);
   const due = new Date(invoiceDate);
   due.setDate(due.getDate() + days);
   return formatDate(due);
@@ -980,21 +770,24 @@ function paymentTermsDays(terms: string): number | null {
   return map[terms.toLowerCase()] ?? null;
 }
 
-function formatPaymentTerms(terms: string): string {
-  const labels: Record<string, string> = {
-    net7: "Net 7 days",
-    net14: "Net 14 days",
-    net30: "Net 30 days",
-    net60: "Net 60 days",
-    net90: "Net 90 days",
-    immediate: "Due Immediately",
-    cod: "Cash on Delivery",
-  };
-  return labels[terms.toLowerCase()] || terms;
+const PAYMENT_TERMS: Record<string, Bi> = {
+  net7: { en: "Net 7 days", ar: "خلال 7 أيام" },
+  net14: { en: "Net 14 days", ar: "خلال 14 يومًا" },
+  net30: { en: "Net 30 days", ar: "خلال 30 يومًا" },
+  net60: { en: "Net 60 days", ar: "خلال 60 يومًا" },
+  net90: { en: "Net 90 days", ar: "خلال 90 يومًا" },
+  immediate: { en: "Due immediately", ar: "مستحقة فورًا" },
+  cod: { en: "Cash on delivery", ar: "الدفع عند التسليم" },
+};
+
+function formatPaymentTerms(terms: string, locale: PdfLocale): string {
+  const label = PAYMENT_TERMS[terms.toLowerCase()];
+  if (!label) return terms;
+  return locale === "ar" ? `${label.ar} / ${label.en}` : `${label.en} / ${label.ar}`;
 }
 
-function paymentTermsText(terms: string): string {
-  return formatPaymentTerms(terms);
+function paymentTermsText(terms: string, locale: PdfLocale): string {
+  return formatPaymentTerms(terms, locale);
 }
 
 function nraTextHeight(doc: PdfDoc, text: string, width: number): number {
@@ -1049,107 +842,67 @@ export async function generateDeliveryNotePDF(
   company: Company,
   options: { locale?: PdfLocale } = {}
 ): Promise<Buffer> {
-  const locale = options.locale ?? pdfLocale(company);
-  const rtl = locale === "ar";
-  const L = (en: string, ar: string) => bilingual(locale, en, ar);
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({
-        size: "A4",
-        margin: 50,
-        info: {
-          Title: `Delivery Note ${invoice.number}`,
-          Author: company.name,
-          Creator: "Muhasib.ai",
-        },
-      });
-      preparePdfDocument(doc);
-      const chunks: Buffer[] = [];
-      doc.on("data", (c: Buffer) => chunks.push(c));
-      doc.on("end", () => resolve(Buffer.concat(chunks)));
-      doc.on("error", reject);
-      const margin = 50;
-      const contentWidth = PAGE_WIDTH - 2 * margin;
-      const START: "left" | "right" = rtl ? "right" : "left";
-      const END: "left" | "right" = rtl ? "left" : "right";
-
-      doc.fontSize(18).fillColor("#111827").font("Helvetica-Bold");
-      doc.text(L("Delivery Note", "إشعار تسليم"), margin, 50, { width: contentWidth, align: END });
-      doc.fontSize(12).text(company.legalName || company.name, margin, 50, {
-        width: contentWidth / 2,
-        align: START,
-      });
-      doc.fontSize(9).font("Helvetica").fillColor("#374151");
-      let y = 80;
-      for (const [label, value] of [
-        [L("Reference invoice", "الفاتورة المرجعية"), invoice.number],
-        [L("Date", "التاريخ"), formatDate(invoice.supplyDate ?? invoice.date)],
-        [L("Deliver to", "التسليم إلى"), invoice.customerName],
-        [L("Address", "العنوان"), invoice.customerAddress || "—"],
-      ] as Array<[string, string]>) {
-        doc.text(`${label}: ${value}`, margin, y, { width: contentWidth, align: START });
-        y += 14;
-      }
-      y += 10;
-      doc.rect(margin, y, contentWidth, 22).fill(HEADER_FILL);
-      doc.fillColor("#111827").font("Helvetica-Bold").fontSize(9);
-      doc.text("#", margin + 6, y + 6, { width: 24, align: START });
-      doc.text(L("Description", "الوصف"), margin + 34, y + 6, {
-        width: contentWidth - 140,
-        align: START,
-      });
-      doc.text(L("Quantity", "الكمية"), margin + contentWidth - 100, y + 6, {
-        width: 94,
-        align: END,
-      });
-      y += 26;
-      doc.font("Helvetica").fontSize(9);
-      lines.forEach((line, i) => {
-        const h = Math.max(
-          18,
-          doc.heightOfString(line.description, { width: contentWidth - 140 }) + 6
-        );
-        if (y + h > 700) {
-          doc.addPage();
-          y = 50;
-        }
-        doc.text(String(i + 1), margin + 6, y, { width: 24, align: START });
-        doc.text(line.description, margin + 34, y, { width: contentWidth - 140, align: START });
-        doc.text(formatQuantity(Math.abs(line.quantity)), margin + contentWidth - 100, y, {
-          width: 94,
-          align: END,
-        });
-        y += h;
-        doc
-          .moveTo(margin, y - 2)
-          .lineTo(margin + contentWidth, y - 2)
-          .stroke("#E5E7EB");
-      });
-      y = Math.max(y + 40, 620);
-      const boxW = contentWidth / 2 - 10;
-      for (const [i, label] of [
-        L("Delivered by", "سُلّم بواسطة"),
-        L("Received by (name, signature, date)", "استلم بواسطة (الاسم، التوقيع، التاريخ)"),
-      ].entries()) {
-        const x = margin + i * (boxW + 20);
-        doc.rect(x, y, boxW, 70).stroke(BORDER);
-        doc
-          .fontSize(8)
-          .fillColor("#6B7280")
-          .text(label, x + 6, y + 6, { width: boxW - 12, align: START });
-      }
-      doc
-        .fontSize(7)
-        .fillColor("#9CA3AF")
-        .text(
-          L("This delivery note is not a tax invoice.", "إشعار التسليم هذا ليس فاتورة ضريبية."),
-          margin,
-          y + 90,
-          { width: contentWidth, align: "center" }
-        );
-      doc.end();
-    } catch (err) {
-      reject(err);
-    }
+  const ledger = new Ledger({
+    locale: options.locale ?? pdfLocale(company),
+    info: { Title: `Delivery Note ${invoice.number}`, Author: company.name },
   });
+  ledger.header({
+    companyName: company.legalName || company.name,
+    details: companyDetails(ledger, {
+      trn: company.trnVatNumber,
+      address: company.businessAddress,
+      phone: company.contactPhone,
+      email: company.contactEmail,
+    }),
+    title: bi("Delivery note", "إشعار تسليم"),
+  });
+  ledger.meta([
+    { label: bi("Reference invoice", "الفاتورة المرجعية"), value: ltr(invoice.number) },
+    { label: bi("Date", "التاريخ"), value: formatDate(invoice.supplyDate ?? invoice.date) },
+  ]);
+  ledger.parties([
+    {
+      label: bi("Deliver to", "التسليم إلى"),
+      name: invoice.customerName,
+      lines: [invoice.customerAddress],
+    },
+  ]);
+  ledger.table(
+    [
+      { key: "n", label: bi("#", "#"), weight: 0.4 },
+      { key: "desc", label: bi("Description", "الوصف"), weight: 5 },
+      { key: "qty", label: bi("Quantity", "الكمية"), weight: 1, align: "end" },
+    ],
+    lines.map((line, i) => ({
+      cells: {
+        n: String(i + 1),
+        desc: line.description,
+        qty: formatQuantity(Math.abs(line.quantity)),
+      },
+    }))
+  );
+  ledger.ensure(110);
+  ledger.y = Math.max(ledger.y + 24, ledger.bottom - 110);
+  const boxW = ledger.width / 2 - 10;
+  [
+    bi("Delivered by", "سُلّم بواسطة"),
+    bi("Received by (name, signature, date)", "استلم بواسطة (الاسم، التوقيع، التاريخ)"),
+  ].forEach((label, i) => {
+    const x = ledger.x(i * (boxW + 20), boxW);
+    ledger.doc
+      .save()
+      .lineWidth(0.5)
+      .rect(x, ledger.y, boxW, 70)
+      .strokeColor(LEDGER_COLORS.hairline)
+      .stroke()
+      .restore();
+    ledger.stacked(label, x + 6, ledger.y + 6, boxW - 12, { size: 7.5 });
+  });
+  ledger.y += 84;
+  ledger.smallPrint([
+    ledger.inline(
+      bi("This delivery note is not a tax invoice.", "إشعار التسليم هذا ليس فاتورة ضريبية.")
+    ),
+  ]);
+  return ledger.finish();
 }

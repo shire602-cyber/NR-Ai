@@ -16,12 +16,10 @@
  * Amounts are summed in integer fils. Registered as services "statements.customer" and
  * "statements.supplier".
  */
-// @ts-expect-error - pdfkit has no type declarations
-import PDFDocument from "pdfkit";
 import { pool } from "../db";
 import { DomainError } from "../errors";
 import { has, provide } from "../platform/service-registry";
-import { preparePdfDocument } from "./pdf-fonts";
+import { amount, bi, companyDetails, date, Ledger, trnLine } from "./pdf-ledger";
 import { payableOpenSql, receivableOpenSql } from "../reporting/settlement";
 import type { Company } from "../../shared/schema";
 
@@ -354,134 +352,96 @@ export async function buildSupplierStatement(args: {
 
 // ─── PDF ────────────────────────────────────────────────────────────────────
 
-const money = (n: number) =>
-  n.toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-/** Bilingual statement PDF (Noto Sans + Noto Naskh Arabic via pdf-fonts). */
+/** Statement of account PDF in the "Ledger" layout (server/services/pdf-ledger.ts). */
 export function renderStatementPdf(st: Statement): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({
-        size: "A4",
-        margin: 40,
-        info: { Title: `Statement of account — ${st.party.name}`, Author: st.company.name },
-      });
-      preparePdfDocument(doc);
-      const chunks: Buffer[] = [];
-      doc.on("data", (c: Buffer) => chunks.push(c));
-      doc.on("end", () => resolve(Buffer.concat(chunks)));
-      doc.on("error", reject);
-
-      const left = 40;
-      const width = 515;
-      doc.rect(0, 0, 595.28, 80).fill("#1E40AF");
-      doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(18);
-      doc.text(st.company.name, left, 22, { width: width * 0.6 });
-      doc.fontSize(12).text("Statement of Account / كشف حساب", left, 28, { width, align: "right" });
-      doc.font("Helvetica").fontSize(9);
-      if (st.company.trn) doc.text(`TRN: ${st.company.trn}`, left, 52, { width: width * 0.6 });
-
-      let y = 96;
-      doc.fillColor("#111827").font("Helvetica-Bold").fontSize(10);
-      doc.text(
-        `${st.kind === "customer" ? "Customer / العميل" : "Supplier / المورد"}: ${st.party.name}`,
-        left,
-        y,
-        { width }
-      );
-      y += 16;
-      doc.font("Helvetica").fontSize(9);
-      doc.text(
-        `${st.from ? `From / من ${st.from}  ` : ""}As of / حتى ${st.asOf}${st.party.trn ? `   TRN: ${st.party.trn}` : ""}`,
-        left,
-        y,
-        { width }
-      );
-      y += 22;
-
-      const cols = [
-        { key: "date", label: "Date / التاريخ", x: left, w: 70 },
-        { key: "reference", label: "Reference / المرجع", x: left + 72, w: 120 },
-        { key: "description", label: "Details / البيان", x: left + 194, w: 120 },
-        { key: "debit", label: "Debit / مدين", x: left + 316, w: 65 },
-        { key: "credit", label: "Credit / دائن", x: left + 383, w: 65 },
-        { key: "balance", label: "Balance / الرصيد", x: left + 450, w: 65 },
-      ];
-      for (const s of st.sections) {
-        if (y > 720) {
-          doc.addPage();
-          y = 40;
-        }
-        doc.font("Helvetica-Bold").fontSize(10).fillColor("#1E40AF");
-        doc.text(`${s.currency}`, left, y);
-        y += 16;
-        doc.rect(left, y - 2, width, 16).fill("#F3F4F6");
-        doc.fillColor("#374151").font("Helvetica-Bold").fontSize(8);
-        for (const c of cols) {
-          doc.text(c.label, c.x + 2, y + 2, {
-            width: c.w - 4,
-            align: ["debit", "credit", "balance"].includes(c.key) ? "right" : "left",
-          });
-        }
-        y += 18;
-        doc.font("Helvetica").fontSize(8).fillColor("#111827");
-        doc.text("Opening balance / الرصيد الافتتاحي", cols[2].x + 2, y, { width: 240 });
-        doc.text(money(s.openingBalance), cols[5].x, y, { width: cols[5].w - 2, align: "right" });
-        y += 14;
-        for (const l of s.lines) {
-          if (y > 760) {
-            doc.addPage();
-            y = 40;
-          }
-          doc.text(l.date, cols[0].x + 2, y, { width: cols[0].w - 4 });
-          doc.text(l.reference, cols[1].x + 2, y, { width: cols[1].w - 4 });
-          doc.text(l.description, cols[2].x + 2, y, { width: cols[2].w - 4 });
-          doc.text(l.debit ? money(l.debit) : "", cols[3].x, y, {
-            width: cols[3].w - 2,
-            align: "right",
-          });
-          doc.text(l.credit ? money(l.credit) : "", cols[4].x, y, {
-            width: cols[4].w - 2,
-            align: "right",
-          });
-          doc.text(money(l.balance), cols[5].x, y, { width: cols[5].w - 2, align: "right" });
-          y += 13;
-        }
-        doc.font("Helvetica-Bold");
-        doc.text("Closing balance / الرصيد الختامي", cols[2].x + 2, y + 2, { width: 240 });
-        doc.text(money(s.closingBalance), cols[5].x, y + 2, {
-          width: cols[5].w - 2,
-          align: "right",
-        });
-        y += 24;
-        const a = s.aging;
-        const agingCols: Array<[string, number]> = [
-          ["Current / جاري", a.current],
-          ["1-30", a.days30],
-          ["31-60", a.days60],
-          ["61-90", a.days90],
-          ["90+", a.over90],
-          ["Total / الإجمالي", a.total],
-        ];
-        doc.rect(left, y - 2, width, 30).fill("#F9FAFB");
-        doc.fillColor("#374151").fontSize(8);
-        agingCols.forEach(([label, value], i) => {
-          const x = left + i * (width / 6);
-          doc
-            .font("Helvetica-Bold")
-            .text(label, x + 2, y, { width: width / 6 - 4, align: "right" });
-          doc
-            .font("Helvetica")
-            .text(money(value), x + 2, y + 13, { width: width / 6 - 4, align: "right" });
-        });
-        y += 40;
-        doc.fillColor("#111827");
-      }
-      doc.end();
-    } catch (err) {
-      reject(err);
-    }
+  const ledger = new Ledger({
+    locale: "en",
+    info: { Title: `Statement of account — ${st.party.name}`, Author: st.company.name },
   });
+  const period = st.from ? `${date(st.from)} – ${date(st.asOf)}` : `As of ${date(st.asOf)}`;
+  ledger.header({
+    companyName: st.company.name,
+    details: companyDetails(ledger, { trn: st.company.trn, address: st.company.address }),
+    title: bi("Statement of account", "كشف حساب"),
+    subtitle: period,
+  });
+  ledger.meta([
+    { label: bi("From", "من"), value: st.from ? date(st.from) : null },
+    { label: bi("As of", "حتى"), value: date(st.asOf) },
+    { label: bi("Currency", "العملة"), value: st.sections.map((s) => s.currency).join(", ") },
+  ]);
+  ledger.parties([
+    {
+      label: st.kind === "customer" ? bi("Customer", "العميل") : bi("Supplier", "المورّد"),
+      name: st.party.name,
+      lines: [trnLine(ledger, st.party.trn)],
+    },
+  ]);
+  for (const s of st.sections) {
+    if (st.sections.length > 1) ledger.section(bi(s.currency, s.currency));
+    ledger.table(
+      [
+        { key: "date", label: bi("Date", "التاريخ"), weight: 1.05 },
+        { key: "reference", label: bi("Reference", "المرجع"), weight: 1.4 },
+        { key: "description", label: bi("Details", "البيان"), weight: 1.9 },
+        { key: "debit", label: bi("Debit", "مدين"), weight: 1.1, align: "end" },
+        { key: "credit", label: bi("Credit", "دائن"), weight: 1.1, align: "end" },
+        { key: "balance", label: bi("Balance", "الرصيد"), weight: 1.2, align: "end" },
+      ],
+      [
+        {
+          cells: {
+            description: ledger.pair(bi("Opening balance", "الرصيد الافتتاحي"))[0],
+            balance: amount(s.openingBalance),
+          },
+        },
+        ...s.lines.map((l) => ({
+          cells: {
+            date: date(l.date),
+            reference: l.reference,
+            description: l.description,
+            debit: l.debit ? amount(l.debit) : "",
+            credit: l.credit ? amount(l.credit) : "",
+            balance: amount(l.balance),
+          },
+        })),
+        {
+          bold: true,
+          cells: {
+            description: ledger.pair(bi("Closing balance", "الرصيد الختامي"))[0],
+            balance: amount(s.closingBalance),
+          },
+        },
+      ],
+      { size: 8.5 }
+    );
+    const a = s.aging;
+    ledger.section(bi("Ageing of open items", "أعمار البنود المفتوحة"));
+    ledger.table(
+      [
+        { key: "current", label: bi("Current", "جاري"), align: "end" },
+        { key: "d30", label: bi("1–30 days", "1–30 يومًا"), align: "end" },
+        { key: "d60", label: bi("31–60 days", "31–60 يومًا"), align: "end" },
+        { key: "d90", label: bi("61–90 days", "61–90 يومًا"), align: "end" },
+        { key: "over", label: bi("Over 90 days", "أكثر من 90 يومًا"), align: "end" },
+        { key: "total", label: bi("Total", "الإجمالي"), align: "end" },
+      ],
+      [
+        {
+          cells: {
+            current: amount(a.current),
+            d30: amount(a.days30),
+            d60: amount(a.days60),
+            d90: amount(a.days90),
+            over: amount(a.over90),
+            total: { text: amount(a.total), bold: true },
+          },
+        },
+      ],
+      { size: 8.5 }
+    );
+  }
+  return ledger.finish();
 }
 
 export type CustomerStatementService = typeof buildCustomerStatement;
