@@ -107,7 +107,16 @@ DATABASE_URL=... node scripts/qa/find-bad-closing-entries.mjs --json    > findin
 DATABASE_URL=... node scripts/qa/find-inverted-rates.mjs                > findings-rates.txt
 DATABASE_URL=... node scripts/qa/find-sales-ledger-drift.mjs            > findings-sales.txt
 DATABASE_URL=... node scripts/qa/find-purchases-ledger-drift.mjs        > findings-purchases.txt
+DATABASE_URL=... npx tsx scripts/qa/repair-misposted-payments.ts --json > findings-payment-accounts.json
 ```
+
+`repair-misposted-payments.ts` (X5) lists bill and invoice payments posted to a header account or
+to the generic `1020 Bank Accounts` while the company has its own bank account GL (those bank lines
+could never be matched). It is read-only unless `--apply --company <uuid>` is passed; the repair
+reverses each unmatched payment through `bills.reversePayment` / `invoices.reversePayment` and
+records it again (same date, amount, rate, reference) on the primary bank account GL. Payments
+already matched to a bank line, or dated in a locked period, are skipped and reported. Run the
+repair only after the owner has reviewed the findings, with a fresh backup.
 
 Run them on the pre-migration snapshot as well, so the owner can compare. Rehearsal table to fill in
 and attach to the PR:

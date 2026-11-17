@@ -735,5 +735,13 @@
   "components.srv.reportDelivery.handoff.blocked": "The latest delivery was blocked and nothing was sent.",
   "components.srv.reportDelivery.handoff.recover": "Recover the latest failed delivery before queueing again.",
   "components.srv.reportDelivery.handoff.reportsReady": "{ready}/{total} reports are ready for this delivery.",
-  "components.srv.reportDelivery.handoff.readiness": "Latest delivery readiness is {status}."
+  "components.srv.reportDelivery.handoff.readiness": "Latest delivery readiness is {status}.",
+  "components.periodLock.title": "This period is closed",
+  "components.periodLock.description": "The books for this date are soft-locked. You can still post it as an owner or accountant if you say why.",
+  "components.periodLock.descriptionThrough": "The books are soft-locked through {date}. You can still post this as an owner or accountant if you say why.",
+  "components.periodLock.reasonLabel": "Reason for posting into the closed period",
+  "components.periodLock.reasonPlaceholder": "For example: supplier invoice received late",
+  "components.periodLock.auditNote": "The reason is saved in the audit trail with your name.",
+  "components.periodLock.cancel": "Cancel",
+  "components.periodLock.post": "Post with this reason"
 }

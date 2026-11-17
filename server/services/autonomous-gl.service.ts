@@ -9,6 +9,7 @@ import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { recordAudit } from "./audit.service";
 import { deleteDraft, postDraft, postJournal } from "../ledger";
+import { AI_QUEUE_STILL_OPEN_SQL } from "./ai-gl-queue-sql";
 import { DomainError, errorCode, errorMessage } from "../errors";
 import {
   applyMatch,
@@ -446,6 +447,7 @@ export async function autoPostHighConfidence(companyId: string): Promise<{
      WHERE q.company_id = $1
        AND q.ai_confidence >= 0.85
        AND q.status = 'pending_review'
+       AND ${AI_QUEUE_STILL_OPEN_SQL}
        AND q.suggested_account_id IS NOT NULL
      ORDER BY q.transaction_date`,
     [companyId]
@@ -976,9 +978,9 @@ export async function getAIGLStats(companyId: string): Promise<{
        COUNT(*) FILTER (WHERE status = 'auto_posted') as auto_posted,
        COUNT(*) FILTER (WHERE status = 'accepted' OR status = 'auto_posted') as accepted,
        COUNT(*) FILTER (WHERE status = 'rejected') as rejected,
-       COUNT(*) FILTER (WHERE status = 'pending_review') as pending_review,
+       COUNT(*) FILTER (WHERE status = 'pending_review' AND ${AI_QUEUE_STILL_OPEN_SQL}) as pending_review,
        COUNT(*) as total
-     FROM ai_gl_queue
+     FROM ai_gl_queue q
      WHERE company_id = $1`,
     [companyId]
   );

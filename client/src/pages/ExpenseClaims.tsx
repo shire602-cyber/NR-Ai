@@ -93,6 +93,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getStoredUser } from "@/lib/auth";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { postablePaymentAccounts } from "@/lib/payment-accounts";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -246,11 +247,8 @@ export default function ExpenseClaims() {
     queryKey: ["/api/companies", companyId, "accounts"],
     enabled: !!companyId,
   });
-  const cashAccounts = ledgerAccounts.filter(
-    (a) =>
-      a.type === "asset" &&
-      (a.subType === "cash" || a.subType === "bank" || ["1010", "1020", "1030"].includes(a.code))
-  );
+  // X5 (J1 D1): only postable cash/bank leaves (a header account never receives postings).
+  const cashAccounts = postablePaymentAccounts(ledgerAccounts);
   const currentUser = getStoredUser();
 
   const [claimDialogOpen, setClaimDialogOpen] = useState(false);

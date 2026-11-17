@@ -4,6 +4,7 @@ import { DomainError } from "../errors";
 import { postJournal } from "../ledger";
 import { describeMonthEndText, type CopyDescriptor } from "@shared/server-copy";
 import { detectAnomalies } from "./anomaly-detection.service";
+import { AI_QUEUE_STILL_OPEN_SQL } from "./ai-gl-queue-sql";
 import { getEffectiveLock, type LockScope, type LockType } from "./period-lock.service";
 import {
   YEAR_END_CLOSE_SOURCE,
@@ -231,12 +232,15 @@ export async function getCloseChecklist(
 
   if (tableCheck.rows[0].exists) {
     const queueResult = await pool.query(
+      // X5 (J1 D6): only suggestions still open (bank line not reconciled / excluded) for
+      // transactions dated in the period count as pending.
       `SELECT COUNT(*) AS pending
-       FROM ai_gl_queue
-       WHERE company_id = $1
-         AND status = 'pending_review'
-         AND created_at >= $2::date
-         AND created_at <= $3::date`,
+       FROM ai_gl_queue q
+       WHERE q.company_id = $1
+         AND q.status = 'pending_review'
+         AND ${AI_QUEUE_STILL_OPEN_SQL}
+         AND COALESCE(q.transaction_date, q.created_at) >= $2::date
+         AND COALESCE(q.transaction_date, q.created_at) < ($3::date + 1)`,
       [companyId, periodStart, periodEnd]
     );
     const pendingCount = parseInt(queueResult.rows[0]?.pending || "0");

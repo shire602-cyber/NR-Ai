@@ -100,6 +100,11 @@ import {
   Ban,
   Search,
 } from "lucide-react";
+import {
+  defaultPaymentAccountId,
+  postablePaymentAccounts,
+  type BankAccountLike,
+} from "@/lib/payment-accounts";
 
 // ===========================
 // W3-B copy (en + ar)
@@ -121,7 +126,7 @@ const COPY = {
     outOfScope: "Out of scope",
     reverseChargeLine: "Reverse charge 5%",
     paymentAccount: "Paid from (bank / cash account)",
-    defaultBank: "Default bank account",
+    defaultBank: "Choose the bank or cash account",
     paymentRate: "Payment-date rate to AED",
     voidBill: "Void",
     rejectBill: "Reject",
@@ -153,7 +158,7 @@ const COPY = {
     outOfScope: "خارج النطاق",
     reverseChargeLine: "احتساب عكسي 5%",
     paymentAccount: "مدفوع من (حساب بنكي / نقدي)",
-    defaultBank: "الحساب البنكي الافتراضي",
+    defaultBank: "اختر الحساب البنكي أو النقدي",
     paymentRate: "سعر الصرف بتاريخ الدفع",
     voidBill: "إلغاء",
     rejectBill: "رفض",
@@ -394,6 +399,12 @@ export default function BillPay() {
 
   const { data: accounts = [] } = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "accounts"],
+    enabled: !!companyId,
+  });
+
+  // X5 (J1 D1): payments default to the primary bank account's GL, never a header account.
+  const { data: bankAccounts = [] } = useQuery<BankAccountLike[]>({
+    queryKey: ["/api/companies", companyId, "bank-accounts"],
     enabled: !!companyId,
   });
 
@@ -783,7 +794,9 @@ export default function BillPay() {
       payment_date: new Date(),
       amount: Number(remaining.toFixed(2)),
       payment_method: "bank_transfer",
-      payment_account_id: "",
+      payment_account_id: defaultPaymentAccountId(accounts, bankAccounts, {
+        currency: bill.currency,
+      }),
       exchange_rate: "",
       reference: "",
       notes: "",
@@ -826,13 +839,7 @@ export default function BillPay() {
   const watchIsImport = billForm.watch("is_import");
   // Reverse charge: VAT is self-assessed, the vendor is owed the subtotal only.
   const totalAmount = watchReverseCharge ? subtotal : subtotal + vatAmount;
-  const cashAccounts = accounts.filter(
-    (a: { type?: string; subType?: string; code?: string }) =>
-      a.type === "asset" &&
-      (a.subType === "cash" ||
-        a.subType === "bank" ||
-        ["1010", "1020", "1030"].includes(a.code ?? ""))
-  );
+  const cashAccounts = postablePaymentAccounts(accounts);
 
   // Expense account options
   const expenseAccounts = accounts.filter((a: any) => a.type === "expense" || a.type === "asset");

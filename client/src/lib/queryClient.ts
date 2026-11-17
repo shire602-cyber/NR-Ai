@@ -4,6 +4,12 @@ import { apiUrl } from "./api";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
 import { isOnline, queueForSync } from "./pwa";
 import { localizeApiError } from "./validation-messages";
+import {
+  PERIOD_LOCK_REASON_HEADER,
+  askLockReason,
+  encodeLockReason,
+  isOverridableSoftLock,
+} from "./period-lock-reason";
 
 /** Error that carries the HTTP status code — used to decide retry behaviour. */
 export class ApiError extends Error {
@@ -151,8 +157,35 @@ export async function apiRequest(
     }
   }
 
+  // X5 (J1 D3): a soft-locked period the user may override: ask for a reason, replay once.
+  if (res.status === 403 && MUTATING_METHODS.has(upperMethod)) {
+    const lockBody = await softLockBody(res);
+    if (lockBody) {
+      const reason = await askLockReason(lockBody);
+      if (reason) {
+        const lockHeaders = await buildRequestHeaders(method, data);
+        lockHeaders[PERIOD_LOCK_REASON_HEADER] = encodeLockReason(reason);
+        res = await fetch(fullUrl, {
+          method,
+          headers: lockHeaders,
+          body,
+          credentials: "include",
+        });
+      }
+    }
+  }
+
   await throwIfResNotOk(res);
   return parseResponseBody(res);
+}
+
+async function softLockBody(res: Response): Promise<Record<string, unknown> | undefined> {
+  try {
+    const json = await res.clone().json();
+    return isOverridableSoftLock(json) ? json : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 const ANONYMOUS_SKIP_KEYS = new Set(["/api/companies", "/api/auth/me"]);

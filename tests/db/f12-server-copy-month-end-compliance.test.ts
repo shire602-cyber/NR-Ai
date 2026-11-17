@@ -77,6 +77,8 @@ describe("F12 compliance calendar legal citations", () => {
           trn_vat_number: "100000000000003",
           vat_filing_frequency: "Quarterly",
           vat_period_start_month: 1,
+          // X5 (J1 D4): returns apply from the books start; this company keeps books since 2025.
+          created_at: "2025-01-01T00:00:00Z",
         },
       });
       const gen = await t.as.post(`/api/companies/${t.company.id}/compliance-calendar/generate`, {

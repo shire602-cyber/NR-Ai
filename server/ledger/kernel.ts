@@ -145,6 +145,31 @@ async function assertAccountsUsable(
       );
     }
   }
+  if (!allowInactive) {
+    // X5 (J1 D1): a header account (one with sub-accounts) summarises its children and never
+    // receives postings, so money always lands on the leaf the bank statement can match.
+    // Reversals (allowInactive) may still mirror an old posting to it.
+    const headers: Array<{ parentId: string | null }> = await tx
+      .select({ parentId: accounts.parentId })
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.companyId, companyId),
+          inArray(accounts.parentId, ids),
+          eq(accounts.isArchived, false)
+        )
+      )
+      .limit(1);
+    const header = headers[0]?.parentId;
+    if (header) {
+      throw new DomainError(
+        "ACCOUNT_IS_HEADER",
+        422,
+        { accountId: header },
+        "Cannot post to a header account that has sub-accounts; choose one of its sub-accounts"
+      );
+    }
+  }
   const ccIds = [...new Set(lines.map((l) => l.costCenterId).filter((x): x is string => !!x))];
   if (ccIds.length) {
     const ccRows: Array<{ id: string }> = await tx

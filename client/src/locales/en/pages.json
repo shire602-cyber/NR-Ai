@@ -973,5 +973,7 @@
   "pages.autopilotStatsError": "We could not load the Autopilot results. Please try again.",
   "pages.autopilotBelowThreshold": "Autopilot's accuracy ({accuracy}%) is below the {threshold}% target, so it is using the AI service for every receipt for now. Turn Autopilot learning back on below once it has seen more of your receipts.",
   "pages.autopilotJudged": "{count} reviewed",
-  "pages.autopilotTotal": "Total {count}"
+  "pages.autopilotTotal": "Total {count}",
+  "pages.receiptsNetPlusVat": "{net} + VAT {vat}",
+  "pages.receiptsInputVatRecoverable": "Dr. VAT recoverable (input VAT)"
 }

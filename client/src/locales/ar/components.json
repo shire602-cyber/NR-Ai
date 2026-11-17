@@ -735,5 +735,13 @@
   "components.srv.reportDelivery.handoff.blocked": "حُظر آخر إرسال ولم يُرسل شيء.",
   "components.srv.reportDelivery.handoff.recover": "عالج آخر إرسال فاشل قبل وضعه في الطابور مجدداً.",
   "components.srv.reportDelivery.handoff.reportsReady": "{ready}/{total} تقارير جاهزة لهذا الإرسال.",
-  "components.srv.reportDelivery.handoff.readiness": "حالة جاهزية آخر إرسال: {status}."
+  "components.srv.reportDelivery.handoff.readiness": "حالة جاهزية آخر إرسال: {status}.",
+  "components.periodLock.title": "هذه الفترة مغلقة",
+  "components.periodLock.description": "دفاتر هذا التاريخ مقفلة إقفالاً مبدئياً. يمكنك بصفتك المالك أو المحاسب الترحيل رغم ذلك إذا ذكرت السبب.",
+  "components.periodLock.descriptionThrough": "الدفاتر مقفلة إقفالاً مبدئياً حتى {date}. يمكنك بصفتك المالك أو المحاسب الترحيل رغم ذلك إذا ذكرت السبب.",
+  "components.periodLock.reasonLabel": "سبب الترحيل في الفترة المغلقة",
+  "components.periodLock.reasonPlaceholder": "مثال: وصلت فاتورة المورد متأخرة",
+  "components.periodLock.auditNote": "يُحفظ السبب في سجل التدقيق مع اسمك.",
+  "components.periodLock.cancel": "إلغاء",
+  "components.periodLock.post": "ترحيل مع هذا السبب"
 }

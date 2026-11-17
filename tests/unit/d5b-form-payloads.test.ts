@@ -115,6 +115,8 @@ const PROFILE_BODY = {
   trnVatNumber: "100000000000003",
   taxRegistrationType: "Standard",
   vatFilingFrequency: "Quarterly",
+  // X5 (J1 L2): the profile now also saves the VAT stagger (default January).
+  vatPeriodStartMonth: 1,
   taxRegistrationDate: "2024-01-01T00:00:00.000Z",
   corporateTaxId: "CT-998877",
 };

@@ -520,6 +520,21 @@ export const invoiceStatusLabels: Record<string, string> = {
 
 export const inactiveInvoiceStatuses = new Set(["void", "cancelled"]);
 
+/**
+ * X5 (J1 L5): an invoice counts as unpaid when it is an issued sales invoice (not a credit note)
+ * with an open balance; the server's settlement balance decides when it is present.
+ */
+export function isUnpaidInvoice(invoice: {
+  status: string;
+  invoiceType?: string | null;
+  openBalanceBase?: number | null;
+}): boolean {
+  if (invoice.invoiceType === "credit_note") return false;
+  if (!["sent", "posted", "partial"].includes(invoice.status)) return false;
+  if (typeof invoice.openBalanceBase === "number") return invoice.openBalanceBase > 0;
+  return true;
+}
+
 export const nonRevenueInvoiceStatuses = new Set(["draft", "void", "cancelled"]);
 
 export const inactiveVendorBillStatuses = new Set(["paid", "void", "cancelled"]);

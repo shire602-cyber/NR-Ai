@@ -131,5 +131,7 @@
   "banking.rulesSelectField": "اختر الحقل",
   "banking.rulesNotePlaceholder": "ملاحظة داخلية لهذه القاعدة",
   "banking.rulesRunAutoMatch": "تشغيل المطابقة التلقائية",
-  "banking.rulesEvaluationOrder": "تُقيَّم القواعد بحسب الأولوية (الرقم الأدنى أولاً). وتُطبَّق أول قاعدة مطابقة."
+  "banking.rulesEvaluationOrder": "تُقيَّم القواعد بحسب الأولوية (الرقم الأدنى أولاً). وتُطبَّق أول قاعدة مطابقة.",
+  "banking.allReconciledTitle": "تمت مطابقة جميع البنود",
+  "banking.allReconciledDescription": "كل بنود كشف الحساب المستوردة مطابقة مع دفاترك. اعرض البنود المطابقة لمراجعتها، أو استورد الكشف التالي."
 }

@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { Card, CardContent } from "@/components/ui/card";
@@ -82,6 +82,8 @@ const companyProfileSchema = z.object({
     .regex(/^\d{15}$/, "forms.errors.trn15Digits"),
   taxRegistrationType: z.string().min(1, "forms.errors.taxRegistrationTypeRequired"),
   vatFilingFrequency: z.string().min(1, "forms.errors.vatFilingFrequencyRequired"),
+  /** X5 (J1 L2): the FTA stagger (month the first quarterly period starts), owner-editable. */
+  vatPeriodStartMonth: z.coerce.number().int().min(1).max(12).default(1),
   taxRegistrationDate: z
     .string()
     .transform((val) => val || undefined)
@@ -124,10 +126,12 @@ export default function CompanyProfile() {
       trnVatNumber: "",
       taxRegistrationType: "",
       vatFilingFrequency: "",
+      vatPeriodStartMonth: 1,
       taxRegistrationDate: "",
       corporateTaxId: "",
     },
   });
+  const vatFrequency = useWatch({ control: form.control, name: "vatFilingFrequency" });
 
   // Load company data into form
   useEffect(() => {
@@ -147,6 +151,7 @@ export default function CompanyProfile() {
         trnVatNumber: company.trnVatNumber || "",
         taxRegistrationType: company.taxRegistrationType || "",
         vatFilingFrequency: company.vatFilingFrequency || "",
+        vatPeriodStartMonth: company.vatPeriodStartMonth || 1,
         taxRegistrationDate: company.taxRegistrationDate
           ? new Date(company.taxRegistrationDate).toISOString().split("T")[0]
           : "",
@@ -577,6 +582,37 @@ export default function CompanyProfile() {
                     </FormItem>
                   )}
                 />
+
+                {vatFrequency === "Quarterly" && (
+                  <FormField
+                    control={form.control}
+                    name="vatPeriodStartMonth"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["onboarding.vatStaggerLabel"]}</FormLabel>
+                        <Select
+                          onValueChange={(v) => field.onChange(Number(v))}
+                          value={String(field.value || 1)}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-vat-stagger">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {[1, 2, 3].map((m) => (
+                              <SelectItem key={m} value={String(m)}>
+                                {t[`onboarding.vatStagger${["Jan", "Feb", "Mar"][m - 1]}`]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>{t["onboarding.vatStaggerHint"]}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
 
                 <FormField
                   control={form.control}

@@ -106,13 +106,41 @@ interface CompanyFacts {
   fiscalYearStartMonth: number;
   corporateTaxId: string | null;
   createdAt: IsoDate;
+  /** VAT registration effective date (companies.tax_registration_date), when recorded. */
+  taxRegistrationDate: IsoDate | null;
+  /**
+   * X5 (J1 D4): first day the books cover — the earliest of the company's creation and its
+   * first posted journal / invoice. Returns for periods that ended before it were never this
+   * company's to file here, so they are not shown as due or overdue.
+   */
+  booksStart: IsoDate;
+}
+
+/**
+ * X5 (J1 D4): the first date from which a periodic return applies: the later of the books
+ * start and any registration / incorporation date. A period applies when it ends on or after it
+ * (the period that contains the start date is the first one).
+ */
+export function obligationsApplyFrom(
+  booksStart: IsoDate,
+  ...dates: Array<IsoDate | null | undefined>
+): IsoDate {
+  return dates.reduce<IsoDate>((m, d) => (d && d > m ? d : m), booksStart);
 }
 
 async function loadCompanyFacts(companyId: string): Promise<CompanyFacts | null> {
   const r = await pool.query(
-    `SELECT id, name, trn_vat_number, vat_filing_frequency, vat_period_start_month,
-            fiscal_year_start_month, corporate_tax_id, created_at
-       FROM companies WHERE id = $1`,
+    `SELECT c.id, c.name, c.trn_vat_number, c.vat_filing_frequency, c.vat_period_start_month,
+            c.fiscal_year_start_month, c.corporate_tax_id, c.created_at,
+            ((c.tax_registration_date + interval '4 hours')::date)::text AS tax_registration_date,
+            LEAST(
+              ((c.created_at + interval '4 hours')::date),
+              (SELECT MIN((je.date + interval '4 hours')::date) FROM journal_entries je
+                WHERE je.company_id = c.id AND je.status = 'posted'),
+              (SELECT MIN((i.date + interval '4 hours')::date) FROM invoices i
+                WHERE i.company_id = c.id)
+            )::text AS books_start
+       FROM companies c WHERE c.id = $1`,
     [companyId]
   );
   const row = r.rows[0];
@@ -126,6 +154,8 @@ async function loadCompanyFacts(companyId: string): Promise<CompanyFacts | null>
     fiscalYearStartMonth: Number(row.fiscal_year_start_month) || 1,
     corporateTaxId: row.corporate_tax_id ?? null,
     createdAt: uaeToday(new Date(row.created_at)),
+    taxRegistrationDate: row.tax_registration_date ?? null,
+    booksStart: row.books_start ?? uaeToday(new Date(row.created_at)),
   };
 }
 
@@ -247,8 +277,11 @@ export async function buildObligationSpecs(
   if (isVatRegistered(company)) {
     const frequency = normalizeVatFrequency(company.vatFilingFrequency);
     const vat = await vatReturnStates(companyId);
+    const vatFrom = obligationsApplyFrom(company.booksStart, company.taxRegistrationDate);
     for (const p of vatPeriodsDueInYear(frequency, company.vatPeriodStartMonth, year)) {
       const state = vat.get(p.periodEnd);
+      // X5 (J1 D4): no return for a period before registration / the books (unless one exists).
+      if (p.periodEnd < vatFrom && !state) continue;
       specs.push({
         key: `vat:${p.periodEnd}`,
         type: "vat_return",
@@ -267,10 +300,13 @@ export async function buildObligationSpecs(
 
   // Corporate tax returns (FDL 47/2022 Art. 53): 9 months after FY end.
   const ct = await ctReturnStates(companyId);
+  const ctFrom = obligationsApplyFrom(company.booksStart, profile.incorporationDate);
   for (const p of ctPeriodsDueInYear(year, company.fiscalYearStartMonth)) {
     // CT applies to financial years starting on or after 1 June 2023.
     if (p.periodEnd < "2024-05-31") continue;
     const state = ct.get(p.periodEnd);
+    // X5 (J1 D4): a financial year that ended before the books / incorporation is not due here.
+    if (p.periodEnd < ctFrom && !state) continue;
     specs.push({
       key: `ct:${p.periodEnd}`,
       type: "corporate_tax_return",

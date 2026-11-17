@@ -146,5 +146,17 @@
   "onboarding.hideReportTools": "إخفاء أتمتة التقارير",
   "onboarding.showReportTools": "عرض أتمتة التقارير",
   "onboarding.openWorkspace": "فتح {name}",
-  "onboarding.booksReadyTitle": "دفاترك جاهزة في 90 ثانية."
+  "onboarding.booksReadyTitle": "دفاترك جاهزة في 90 ثانية.",
+  "onboarding.cityLabel": "المدينة",
+  "onboarding.cityPlaceholder": "مثال: دبي",
+  "onboarding.legalStructureLabel": "الشكل القانوني",
+  "onboarding.legalStructurePlaceholder": "اختر الشكل القانوني",
+  "onboarding.legalStructureLlc": "شركة ذات مسؤولية محدودة",
+  "onboarding.vatFrequencyLabel": "دورية تقديم إقرار ضريبة القيمة المضافة",
+  "onboarding.vatFrequencyPlaceholder": "كما في شهادة التسجيل الضريبي",
+  "onboarding.vatStaggerLabel": "يبدأ أول ربع ضريبي لديك في",
+  "onboarding.vatStaggerJan": "يناير (يناير–مارس، أبريل–يونيو، يوليو–سبتمبر، أكتوبر–ديسمبر)",
+  "onboarding.vatStaggerFeb": "فبراير (فبراير–أبريل، مايو–يوليو، أغسطس–أكتوبر، نوفمبر–يناير)",
+  "onboarding.vatStaggerMar": "مارس (مارس–مايو، يونيو–أغسطس، سبتمبر–نوفمبر، ديسمبر–فبراير)",
+  "onboarding.vatStaggerHint": "تحدد الهيئة الاتحادية للضرائب فتراتك الضريبية. راجع أول فترة في شهادة التسجيل الضريبي على منصة إمارات تاكس."
 }

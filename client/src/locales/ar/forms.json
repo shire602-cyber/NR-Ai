@@ -286,5 +286,9 @@
   "forms.errors.priceGreaterThanZero": "يجب أن يكون السعر أكبر من صفر",
   "forms.errors.emailAddressInvalid": "عنوان البريد الإلكتروني غير صالح",
   "forms.errors.logoTooLarge": "يجب ألا يتجاوز حجم الشعار 1 ميغابايت",
-  "forms.errors.logoFormat": "يجب أن يكون الشعار رابط https أو صورة بصيغة PNG أو JPEG أو GIF أو WebP"
+  "forms.errors.logoFormat": "يجب أن يكون الشعار رابط https أو صورة بصيغة PNG أو JPEG أو GIF أو WebP",
+  "forms.serverErrors.PERIOD_SOFT_LOCKED": "هذه الفترة مغلقة (إقفال مبدئي). اطلب من المالك أو محاسبك ترحيلها أو إعادة فتح الفترة.",
+  "forms.serverErrors.PERIOD_LOCKED": "هذه الفترة مقفلة. أعد فتح الفترة قبل الترحيل فيها.",
+  "forms.serverErrors.ACCOUNT_IS_HEADER": "هذا حساب رئيسي له حسابات فرعية. اختر الحساب البنكي أو النقدي الذي تحركت فيه الأموال فعلاً.",
+  "forms.errors.exchangeRateInvalid": "أدخل سعرًا موجبًا بحد أقصى 6 منازل عشرية."
 }

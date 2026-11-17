@@ -146,5 +146,17 @@
   "onboarding.hideReportTools": "Hide reporting automations",
   "onboarding.showReportTools": "Show reporting automations",
   "onboarding.openWorkspace": "Open {name}",
-  "onboarding.booksReadyTitle": "Books ready in 90 seconds."
+  "onboarding.booksReadyTitle": "Books ready in 90 seconds.",
+  "onboarding.cityLabel": "City",
+  "onboarding.cityPlaceholder": "e.g. Dubai",
+  "onboarding.legalStructureLabel": "Legal structure",
+  "onboarding.legalStructurePlaceholder": "Choose a legal structure",
+  "onboarding.legalStructureLlc": "Limited liability company (LLC)",
+  "onboarding.vatFrequencyLabel": "VAT filing frequency",
+  "onboarding.vatFrequencyPlaceholder": "As on your VAT certificate",
+  "onboarding.vatStaggerLabel": "Your first VAT quarter starts in",
+  "onboarding.vatStaggerJan": "January (Jan–Mar, Apr–Jun, Jul–Sep, Oct–Dec)",
+  "onboarding.vatStaggerFeb": "February (Feb–Apr, May–Jul, Aug–Oct, Nov–Jan)",
+  "onboarding.vatStaggerMar": "March (Mar–May, Jun–Aug, Sep–Nov, Dec–Feb)",
+  "onboarding.vatStaggerHint": "The FTA sets your tax periods (your stagger). Check the first period on your VAT registration certificate in EmaraTax."
 }

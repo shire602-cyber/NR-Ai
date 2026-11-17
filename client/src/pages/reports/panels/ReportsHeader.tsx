@@ -34,6 +34,19 @@ import { T } from "@/components/layout/T";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { evidenceSectionHref } from "@/lib/evidenceLinks";
 import { useReportsPageContext } from "../context";
+import { apiUrl } from "@/lib/api";
+import { format } from "date-fns";
+
+/** Catalog reports the server renders as a PDF (server/services/report-render STATEMENT_KINDS). */
+const SERVER_PDF_REPORTS = new Set([
+  "profit-loss",
+  "balance-sheet",
+  "trial-balance",
+  "cash-flow",
+  "general-ledger",
+  "ar-aging",
+  "ap-aging",
+]);
 
 export default function ReportsHeader() {
   const {
@@ -65,6 +78,13 @@ export default function ReportsHeader() {
     setReportWorkspaceTab,
     t,
   } = useReportsPageContext();
+  const focusedReportId = hasFocusedReportSelection ? activeReportViewerOption?.reportId : null;
+  const pdfKind =
+    focusedReportId && SERVER_PDF_REPORTS.has(focusedReportId) ? focusedReportId : null;
+  const pdfParams = new URLSearchParams();
+  if (dateRange.from) pdfParams.set("from", format(dateRange.from, "yyyy-MM-dd"));
+  if (dateRange.to) pdfParams.set("to", format(dateRange.to, "yyyy-MM-dd"));
+  const pdfRange = pdfParams.toString() ? `&${pdfParams.toString()}` : "";
   return (
     <>
       <PageHeader
@@ -90,6 +110,20 @@ export default function ReportsHeader() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {/* X5 (J1): server-rendered PDF (en/ar) for the focused statement, aging or GL. */}
+                {pdfKind && selectedCompanyId && (
+                  <DropdownMenuItem asChild data-testid="menu-export-pdf">
+                    <a
+                      href={apiUrl(
+                        `/api/companies/${selectedCompanyId}/reports/statements/${pdfKind}?format=pdf${pdfRange}`
+                      )}
+                      download
+                    >
+                      <FileText className="w-4 h-4 me-2" />
+                      <T k="reportCenter.downloadPdf" />
+                    </a>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
                   <FileSpreadsheet className="w-4 h-4 me-2" />
                   <T k="reportCenter.exportToExcel" />

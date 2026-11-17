@@ -26,6 +26,9 @@ const quarterly = {
   trn_vat_number: "100000000000003",
   vat_filing_frequency: "Quarterly",
   vat_period_start_month: 1,
+  // X5 (J1 D4): returns apply from the books start (created_at / first posting); these
+  // fixtures model a company that has kept its books here since 2025.
+  created_at: "2025-01-01T00:00:00Z",
 };
 
 describe("W4-A compliance calendar (R08-03, R08-21)", () => {
