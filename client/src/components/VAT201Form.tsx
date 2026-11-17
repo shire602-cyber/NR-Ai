@@ -60,6 +60,8 @@ interface Props {
     vatStagger?: string;
   };
   readOnly?: boolean;
+  /** Where the sticky 12–14 summary rests (above a page's own sticky action bar). */
+  summaryOffsetClassName?: string;
 }
 
 const EMIRATES = [
@@ -78,6 +80,7 @@ export default function VAT201Form({
   companyInfo,
   periodInfo,
   readOnly = false,
+  summaryOffsetClassName = "bottom-0",
 }: Props) {
   const { locale: _locale } = useTranslation();
 
@@ -290,7 +293,7 @@ export default function VAT201Form({
       </BoxSection>
 
       <section
-        className="sticky bottom-0 z-10 rounded-xl border border-border bg-card/95 p-4 shadow-card-soft backdrop-blur supports-[backdrop-filter]:bg-card/85"
+        className={`sticky ${summaryOffsetClassName} z-10 rounded-xl border border-border bg-card/95 p-4 shadow-card-soft backdrop-blur supports-[backdrop-filter]:bg-card/85`}
         aria-label={SUMMARY_LABELS.section}
         data-testid="vat201-summary"
       >
@@ -338,7 +341,7 @@ function Meta({ en, ar, children }: { en: string; ar: string; children: ReactNod
     <div className="min-w-0">
       <dt className="text-caption text-muted-foreground">
         <span className="block">{en}</span>
-        <span className="block" dir="rtl" lang="ar">
+        <span className="block" lang="ar">
           {ar}
         </span>
       </dt>
@@ -372,7 +375,7 @@ function ColumnCaption({ en, ar }: { en: string; ar: string }) {
   return (
     <span className="text-end">
       <span className="block">{en}</span>
-      <span className="block" dir="rtl" lang="ar">
+      <span className="block" lang="ar">
         {ar}
       </span>
     </span>
@@ -409,7 +412,7 @@ function BoxRow({
         </span>
         <span className="min-w-0">
           <span className="block leading-snug text-foreground">{en}</span>
-          <span className="block text-caption text-muted-foreground" dir="rtl" lang="ar">
+          <span className="block text-caption text-muted-foreground" lang="ar">
             {ar}
           </span>
         </span>
@@ -510,7 +513,7 @@ function SummaryCell({
         <span className="font-semibold text-foreground">{box}</span>
         <span className="min-w-0">
           <span className="block">{en}</span>
-          <span className="block" dir="rtl" lang="ar">
+          <span className="block" lang="ar">
             {ar}
           </span>
         </span>

@@ -897,6 +897,7 @@ export default function VATFiling() {
             ),
           }}
           readOnly={true}
+          summaryOffsetClassName="bottom-[4.5rem]"
         />
         <section className="max-w-[760px] space-y-2">
           <Label htmlFor="vat-return-notes">{locale === "ar" ? "ملاحظات" : "Notes"}</Label>
