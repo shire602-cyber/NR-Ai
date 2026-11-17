@@ -70,7 +70,7 @@ COPY --from=builder /app/package.json ./
 COPY --from=builder /app/shared ./shared
 COPY --from=builder /app/drizzle.config.ts ./
 COPY --from=builder /app/migrations ./migrations
-# PDF fonts (Noto Sans / Noto Naskh Arabic) are read from disk by server/services/pdf-fonts.ts.
+# PDF fonts (Noto Sans / Noto Sans Arabic) are read from disk by server/services/pdf-fonts.ts.
 # server/assets/einvoice holds the vendored UBL 2.1 XSD + OpenPeppol PINT AE schematron (and their
 # NOTICE/licences) read by server/services/einvoice/validate.ts; keep it in the image so production
 # runs full XSD + schematron validation (override the path with EINVOICE_ARTEFACTS_DIR).

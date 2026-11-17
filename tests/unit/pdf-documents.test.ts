@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { generateCreditNotePDF } from "../../server/services/pdf-credit-note.service";
 import { generateQuotePDF } from "../../server/services/pdf-quote.service";
 import { generatePurchaseOrderPDF } from "../../server/services/pdf-purchase-order.service";
+import { lineVatRate } from "../../server/services/pdf-ledger";
 import { pdfToText } from "./pdf-test-helpers";
 import type { Company } from "../../shared/schema";
 
@@ -47,7 +48,7 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
       company()
     );
     const text = flat(await pdfToText(pdf));
-    expect(text).toContain("CREDIT NOTE");
+    expect(text).toContain("credit note");
     expect(text).toContain("إشعار دائن");
     expect(text).toContain("شركة النجمة للتجارة");
     expect(text).toContain("إرجاع بضاعة");
@@ -74,7 +75,7 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
       company()
     );
     const text = flat(await pdfToText(pdf));
-    expect(text).toContain("QUOTATION");
+    expect(text).toContain("Quotation");
     expect(text).toContain("عرض سعر");
     expect(text).toContain("مؤسسة الأفق");
     expect(text).toContain("الدفع خلال ثلاثين يوما");
@@ -99,7 +100,7 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
       company()
     );
     const text = flat(await pdfToText(pdf));
-    expect(text).toContain("PURCHASE ORDER");
+    expect(text).toContain("Purchase order");
     expect(text).toContain("أمر شراء");
     expect(text).toContain("مورد المواد الكهربائية");
     expect(text).toContain("خدمات استشارية محاسبية");
@@ -123,7 +124,79 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
     );
     const text = flat(await pdfToText(pdf));
     expect(text).toContain("عرض سعر");
-    expect(text).toContain("QUOTATION");
+    expect(text).toContain("Quotation");
+  });
+
+  it("zero-rated lines print 0% VAT, never the 5% default", async () => {
+    const zero = { ...line, description: "Zero rated export", vatRate: 0 };
+    const doc = { currency: "AED", subtotal: 200, vatAmount: 0, total: 200, status: "sent" };
+    const date = new Date("2026-03-10");
+    const pdfs = await Promise.all([
+      generateQuotePDF(
+        { id: "q", number: "Q-9", customerName: "C", date, ...doc } as never,
+        [zero] as never,
+        company()
+      ),
+      generateCreditNotePDF(
+        { id: "c", number: "CN-9", customerName: "C", date, ...doc } as never,
+        [zero] as never,
+        company()
+      ),
+      generatePurchaseOrderPDF(
+        { id: "p", number: "PO-9", vendorName: "V", date, ...doc } as never,
+        [zero] as never,
+        company()
+      ),
+    ]);
+    for (const pdf of pdfs) {
+      const text = flat(await pdfToText(pdf));
+      expect(text).toContain("0%");
+      expect(text).not.toContain("5%");
+    }
+  });
+
+  it("INTEGRATE-D: VAT % follows each line's supply type, even when vatRate is null", async () => {
+    const date = new Date("2026-03-10");
+    const doc = { currency: "AED", subtotal: 200, vatAmount: 0, total: 200, status: "sent" };
+    for (const vatSupplyType of ["zero_rated", "exempt", "out_of_scope"]) {
+      // A null rate used to fall back to the 5% default; a stale 5% must not print either.
+      const lines = [
+        { ...line, description: "Null rate", vatRate: null, vatSupplyType },
+        { ...line, description: "Stale rate", vatRate: 0.05, vatSupplyType },
+      ];
+      const pdfs = await Promise.all([
+        generateQuotePDF(
+          { id: "q", number: "Q-8", customerName: "C", date, ...doc } as never,
+          lines as never,
+          company()
+        ),
+        generateCreditNotePDF(
+          { id: "c", number: "CN-8", customerName: "C", date, ...doc } as never,
+          lines as never,
+          company()
+        ),
+        generatePurchaseOrderPDF(
+          { id: "p", number: "PO-8", vendorName: "V", date, ...doc } as never,
+          lines as never,
+          company()
+        ),
+      ]);
+      for (const pdf of pdfs) {
+        const text = flat(await pdfToText(pdf));
+        expect(text, vatSupplyType).toContain("0%");
+        expect(text, vatSupplyType).not.toContain("5%");
+      }
+    }
+  });
+
+  it("INTEGRATE-D: lineVatRate keeps the line rate for standard-rated supplies", () => {
+    expect(lineVatRate({ vatRate: null, vatSupplyType: "standard_rated" })).toBe(0.05);
+    expect(lineVatRate({ vatRate: null })).toBe(0.05);
+    expect(lineVatRate({ vatRate: 0, vatSupplyType: "standard_rated" })).toBe(0);
+    expect(lineVatRate({ vatRate: 0.05, vatSupplyType: "reverse_charge" })).toBe(0.05);
+    expect(lineVatRate({ vatRate: null, vatSupplyType: "Zero-rated" })).toBe(0);
+    expect(lineVatRate({ vatRate: 0.05, vatSupplyType: "exempt" })).toBe(0);
+    expect(lineVatRate({ vatRate: null, vatSupplyType: "out_of_scope" })).toBe(0);
   });
 
   it("WP10: quote, purchase order and credit note print amounts with thousands separators", async () => {
@@ -169,7 +242,9 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
     ];
     for (const pdf of docs) {
       const text = flat(await pdfToText(pdf));
-      expect(text).toContain("AED 4,115.17");
+      // WP-F Ledger layout: line cells print bare grouped amounts (the currency is in the
+      // document header); totals carry the currency.
+      expect(text).toContain("4,115.17");
       expect(text).toContain("AED 12,345.51");
       expect(text).toContain("AED 617.28");
       expect(text).toContain("AED 12,962.79");

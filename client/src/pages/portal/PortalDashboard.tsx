@@ -1,231 +1,197 @@
 import { T } from "@/components/layout/T";
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, AlertCircle, CheckCircle2, FolderOpen, Calendar } from "lucide-react";
+import { Link } from "wouter";
+import { FileText, FolderOpen } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { StatCard } from "@/components/ui/stat-card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
+import { Money, MoneyCell } from "@/components/ui/money";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { apiRequest } from "@/lib/queryClient";
-
-import { Loader2 } from "lucide-react";
-import { Money } from "@/components/ui/money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
-import { formatDate } from "@/lib/format-date";
+import { DateText } from "@/components/documents/DateText";
 
 const PAY_TONE: Record<string, StatusTone> = {
   paid: "success",
   partially_paid: "warning",
   overdue: "danger",
-  unpaid: "info",
+  unpaid: "warning",
   credit: "neutral",
 };
 
-function KpiIcon({ tone, children }: { tone: string; children: React.ReactNode }) {
-  return (
-    <span
-      aria-hidden
-      className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${tone}`}
-    >
-      {children}
-    </span>
-  );
+interface PortalDocumentRow {
+  id: string;
+  name: string;
+  createdAt: string | null;
 }
 
-function VatBadge({ vat }: { vat: { status: string; dueDate: string } | null }) {
-  const { t, locale } = useTranslation();
-  // Captured once per mount so the countdown is stable across re-renders.
-  const [now] = useState(() => Date.now());
-  if (!vat)
-    return (
-      <Badge variant="outline">
-        <T k="pageLabels.noVatReturn" />
-      </Badge>
-    );
-  const due = new Date(vat.dueDate);
-  const days = Math.ceil((due.getTime() - now) / 86400000);
-  if (vat.status === "filed" || vat.status === "submitted") {
-    return (
-      <Badge className="bg-success-subtle text-success-subtle-foreground border-success/30">
-        <T k="pages.filed" />
-      </Badge>
-    );
-  }
-  if (days < 0)
-    return (
-      <Badge variant="danger">
-        <T k="pages.overdue" />
-      </Badge>
-    );
-  if (days <= 14)
-    return (
-      <Badge className="bg-warning-subtle text-warning-subtle-foreground border-warning/30">
-        {formatMessage(t["portal.dueOn"], { date: formatDate(due, locale) })}
-      </Badge>
-    );
-  return (
-    <Badge variant="outline">
-      {formatMessage(t["portal.dueOn"], { date: formatDate(due, locale) })}
-    </Badge>
-  );
-}
-
+/**
+ * Client portal overview (WP-F, spec 3.18): four StatCards, recent invoices as a table and the
+ * documents shared with the accountant. Content width 960, centred.
+ */
 export default function PortalDashboard() {
   const { t, locale } = useTranslation();
   const { data, isLoading } = useQuery({
     queryKey: ["portal-dashboard"],
     queryFn: () => apiRequest("GET", "/api/client-portal/dashboard"),
   });
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-48">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  const { data: documents = [] } = useQuery<PortalDocumentRow[]>({
+    queryKey: ["portal-documents"],
+    queryFn: () => apiRequest("GET", "/api/client-portal/documents"),
+  });
 
   const inv = data?.invoices ?? {};
-  const vatStatus = data?.vatStatus ?? null;
   const recentInvoices: any[] = data?.recentInvoices ?? [];
+  const hasInvoices = (inv.total ?? recentInvoices.length) > 0;
+  const countHint = (n: number) =>
+    n === 1
+      ? t["portal.invoiceCountOne"]
+      : formatMessage(t["portal.invoiceCountMany"], { count: n });
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-semibold text-foreground">
-          <T k="pages.overview" />
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          <T k="pageLabels.yourAccountSummaryAtAGlance" />
-        </p>
-      </div>
+    <div className="mx-auto max-w-[960px] space-y-6">
+      <PageHeader title={t["portal.doc.overview"]} description={t["portal.doc.overviewHint"]} />
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground">
-                  <T k="reportCenter.outstanding" />
-                </p>
-                <p className="mt-1 text-h2 font-semibold tabular-nums text-foreground">
-                  <Money amount={inv.outstandingTotal ?? 0} currency="AED" />
-                </p>
-                <p className="mt-1 text-caption text-muted-foreground">
-                  {inv.outstanding === 1
-                    ? t["portal.invoiceCountOne"]
-                    : formatMessage(t["portal.invoiceCountMany"], { count: inv.outstanding ?? 0 })}
-                </p>
-              </div>
-              <KpiIcon tone="bg-muted text-muted-foreground">
-                <AlertCircle className="h-5 w-5" />
-              </KpiIcon>
-            </div>
-          </CardContent>
-        </Card>
+      {(isLoading || hasInvoices) && (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatCard
+            label={<T k="portal.doc.outstanding" />}
+            value={<Money amount={inv.outstandingTotal ?? 0} currency="AED" />}
+            hint={countHint(inv.outstanding ?? 0)}
+            loading={isLoading}
+            testId="portal-kpi-outstanding"
+          />
+          <StatCard
+            label={<T k="portal.doc.overdue" />}
+            value={<span className="tabular-nums">{inv.overdue ?? 0}</span>}
+            hint={countHint(inv.overdue ?? 0)}
+            loading={isLoading}
+            testId="portal-kpi-overdue"
+          />
+          <StatCard
+            label={<T k="portal.doc.paid" />}
+            value={<Money amount={inv.paidTotal ?? 0} currency="AED" />}
+            hint={countHint(inv.paid ?? 0)}
+            loading={isLoading}
+            testId="portal-kpi-paid"
+          />
+          <StatCard
+            label={<T k="portal.doc.documentsShared" />}
+            value={<span className="tabular-nums">{data?.documents?.total ?? 0}</span>}
+            hint={t["portal.uploadedFiles"]}
+            href="/client-portal/documents"
+            loading={isLoading}
+            testId="portal-kpi-documents"
+          />
+        </div>
+      )}
 
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground">
-                  <T k="pages.totalPaid" />
-                </p>
-                <p className="mt-1 text-h2 font-semibold tabular-nums text-foreground">
-                  <Money amount={inv.paidTotal ?? 0} currency="AED" />
-                </p>
-                <p className="mt-1 text-caption text-muted-foreground">
-                  {inv.paid === 1
-                    ? t["portal.invoiceCountOne"]
-                    : formatMessage(t["portal.invoiceCountMany"], { count: inv.paid ?? 0 })}
-                </p>
-              </div>
-              <KpiIcon tone="bg-muted text-muted-foreground">
-                <CheckCircle2 className="h-5 w-5" />
-              </KpiIcon>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground">
-                  <T k="pages.documents" />
-                </p>
-                <p className="mt-1 text-h2 font-semibold tabular-nums text-foreground">
-                  {data?.documents?.total ?? 0}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">{t["portal.uploadedFiles"]}</p>
-              </div>
-              <KpiIcon tone="bg-muted text-muted-foreground">
-                <FolderOpen className="h-5 w-5" />
-              </KpiIcon>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground">
-                  <T k="pages.vatStatus" />
-                </p>
-                <div className="mt-2">
-                  <VatBadge vat={vatStatus} />
-                </div>
-                {vatStatus?.dueDate && (
-                  <p className="mt-1 text-caption text-muted-foreground">
-                    {formatMessage(t["portal.periodEnd"], {
-                      date: formatDate(vatStatus.periodEnd ?? vatStatus.dueDate, locale),
-                    })}
-                  </p>
-                )}
-              </div>
-              <KpiIcon tone="bg-muted text-muted-foreground">
-                <Calendar className="h-5 w-5" />
-              </KpiIcon>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Recent invoices */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <FileText className="w-4 h-4" />
-            <T k="pages.recentInvoices" />
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+          <CardTitle className="text-h3">
+            <T k="portal.doc.recentInvoices" />
           </CardTitle>
+          {recentInvoices.length > 0 && (
+            <Link href="/client-portal/invoices" className="text-small font-medium text-accent">
+              <T k="portal.doc.viewAll" />
+            </Link>
+          )}
         </CardHeader>
-        <CardContent>
-          {recentInvoices.length === 0 ? (
-            <p className="text-sm text-muted-foreground/70 py-4 text-center">
-              <T k="portal.noInvoices" />
-            </p>
+        <CardContent className="p-0">
+          {!isLoading && recentInvoices.length === 0 ? (
+            <EmptyState
+              icon={FileText}
+              title={t["portal.doc.noInvoicesTitle"]}
+              description={t["portal.doc.noInvoicesBody"]}
+            />
           ) : (
-            <div className="divide-y divide-border">
-              {recentInvoices.map((inv: any) => (
-                <div key={inv.id} className="flex items-center justify-between py-3">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{inv.number}</p>
-                    <p className="text-xs text-muted-foreground/70">
-                      {inv.date ? formatDate(inv.date, locale) : "—"}
-                    </p>
-                  </div>
-                  <div className="text-end">
-                    <p className="text-sm font-semibold tabular-nums text-foreground">
-                      <Money amount={Number(inv.amountDue ?? inv.total) || 0} currency="AED" />
-                    </p>
-                    <StatusBadge tone={PAY_TONE[inv.paymentStatus] ?? "neutral"}>
-                      {t[`portal.payStatus.${inv.paymentStatus}`] ?? inv.paymentStatus}
-                    </StatusBadge>
-                  </div>
-                </div>
+            <Table className="row-cards">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>
+                    <T k="portal.doc.invoiceCol" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="portal.doc.date" />
+                  </TableHead>
+                  <TableHead data-numeric="">
+                    <T k="portal.doc.amountDue" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="portal.doc.status" />
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {recentInvoices.map((row: any) => (
+                  <TableRow key={row.id}>
+                    <TableCell data-cell="title" className="font-medium text-foreground">
+                      <bdi>{row.number}</bdi>
+                    </TableCell>
+                    <TableCell data-cell="meta" data-nowrap="" className="text-muted-foreground">
+                      {row.date ? <DateText value={row.date} locale={locale} /> : "—"}
+                    </TableCell>
+                    <MoneyCell
+                      amount={Number(row.amountDue ?? row.total) || 0}
+                      currency={row.currency ?? "AED"}
+                      className="font-semibold text-foreground"
+                      data-cell="amount"
+                    />
+                    <TableCell data-cell="status" data-nowrap="">
+                      <StatusBadge tone={PAY_TONE[row.paymentStatus] ?? "neutral"}>
+                        {t[`portal.payStatus.${row.paymentStatus}`] ?? t["portal.doc.status"]}
+                      </StatusBadge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+          <CardTitle className="text-h3">
+            <T k="portal.doc.recentDocuments" />
+          </CardTitle>
+          {documents.length > 0 && (
+            <Link href="/client-portal/documents" className="text-small font-medium text-accent">
+              <T k="portal.doc.viewAll" />
+            </Link>
+          )}
+        </CardHeader>
+        <CardContent className={documents.length ? "p-0" : undefined}>
+          {documents.length === 0 ? (
+            <EmptyState
+              size="sm"
+              icon={FolderOpen}
+              title={t["portal.doc.noDocumentsTitle"]}
+              description={t["portal.doc.documentsHint"]}
+              action={{ label: t["portal.doc.upload"], href: "/client-portal/documents" }}
+            />
+          ) : (
+            <ul className="divide-y divide-border">
+              {documents.slice(0, 5).map((d) => (
+                <li key={d.id} className="flex items-center justify-between gap-4 px-5 py-3">
+                  <span className="min-w-0 truncate text-small text-foreground" dir="auto">
+                    {d.name}
+                  </span>
+                  <span className="shrink-0 text-small text-muted-foreground">
+                    {d.createdAt ? <DateText value={d.createdAt} locale={locale} /> : "—"}
+                  </span>
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </CardContent>
       </Card>

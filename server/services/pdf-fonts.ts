@@ -1,13 +1,16 @@
 /**
  * Arabic-capable PDF text engine for PDFKit.
  *
- * - Registers Noto Sans (Latin) and Noto Naskh Arabic (Arabic) with a PDFKit document.
+ * - Registers Noto Sans (Latin) and Noto Sans Arabic (Arabic) with a PDFKit document (WP-F: one
+ *   sans family for every document, including receipts).
  * - Lays text out itself: wraps words, runs the Unicode Bidirectional Algorithm (bidi-js) per
  *   line, orders mixed Arabic/Latin/number runs visually, draws each run with the right font
  *   (per-character fallback) and right-aligns RTL paragraphs.
  * - fontkit shapes Arabic (joining forms, ligatures) when a run is drawn; Arabic runs also get an
  *   `/ActualText` marked-content span so copy/paste and text extraction return the real Unicode
- *   text (Naskh shares dot-less base glyphs between letters, so glyph->Unicode maps are lossy).
+ *   text (Arabic fonts share dot-less base glyphs between letters, so glyph->Unicode maps are lossy).
+ * - Honours bidi isolates (U+2066..U+2069, see `ltr()`) for phone numbers, TRNs, IBANs and other
+ *   Latin values next to Arabic labels; the control characters themselves are never drawn.
  *
  * Reusable by invoice, credit note, quote, purchase order, payslip and statement PDFs:
  *   registerFonts(doc), text(doc, str, opts), isArabic(str)
@@ -91,14 +94,14 @@ const bidi = (bidiFactory as () => BidiEngine)();
 
 export const FONT_SANS = "NR-Sans";
 export const FONT_SANS_BOLD = "NR-Sans-Bold";
-export const FONT_ARABIC = "NR-Naskh";
-export const FONT_ARABIC_BOLD = "NR-Naskh-Bold";
+export const FONT_ARABIC = "NR-Arabic";
+export const FONT_ARABIC_BOLD = "NR-Arabic-Bold";
 
 const FONT_FILES: Record<string, string> = {
   [FONT_SANS]: "noto-sans-latin-400-normal.woff",
   [FONT_SANS_BOLD]: "noto-sans-latin-700-normal.woff",
-  [FONT_ARABIC]: "noto-naskh-arabic-arabic-400-normal.woff",
-  [FONT_ARABIC_BOLD]: "noto-naskh-arabic-arabic-700-normal.woff",
+  [FONT_ARABIC]: "noto-sans-arabic-arabic-400-normal.woff",
+  [FONT_ARABIC_BOLD]: "noto-sans-arabic-arabic-700-normal.woff",
 };
 
 let fontsDirCache: string | null = null;
@@ -124,7 +127,7 @@ function resolveFontsDir(): string {
   throw new Error(`PDF fonts not found. Looked in: ${candidates.join(", ")}`);
 }
 
-/** Registers the Noto Sans + Noto Naskh Arabic families on a PDFKit document. */
+/** Registers the Noto Sans + Noto Sans Arabic families on a PDFKit document. */
 export function registerFonts(doc: PdfDoc): void {
   const dir = resolveFontsDir();
   for (const [name, file] of Object.entries(FONT_FILES)) {
@@ -146,6 +149,18 @@ export function arabicRatio(str: string): number {
   const arabic = (str.match(ARABIC_RE_G) ?? []).length;
   const latin = (str.match(/[A-Za-z]/g) ?? []).length;
   return arabic + latin === 0 ? 0 : arabic / (arabic + latin);
+}
+
+/** Bidi formatting characters: they steer the algorithm but are never drawn. */
+const BIDI_CONTROL_RE = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/;
+
+/**
+ * Wraps a Latin value (phone, TRN, IBAN, email, document number) in a left-to-right isolate so
+ * an Arabic label before it cannot reorder its digits ("+971 4 555 0199", never "0199 555 4 971+").
+ */
+export function ltr(value: string | number | null | undefined): string {
+  const v = value === null || value === undefined ? "" : String(value);
+  return v ? `\u2066${v}\u2069` : "";
 }
 
 function isArabicIndicDigit(ch: string): boolean {
@@ -215,7 +230,17 @@ function classify(ch: string, previous: FontClass, doc: PdfDoc): FontClass {
 
 function directionFor(str: string, rtl: boolean | undefined): "ltr" | "rtl" {
   if (rtl !== undefined) return rtl ? "rtl" : "ltr";
-  // First strong character decides, like the Unicode default (UAX #9 rules P2/P3).
+  // First strong character decides, like the Unicode default (UAX #9 rules P2/P3); text inside
+  // an isolate is skipped.
+  let depth = 0;
+  for (const ch of str) {
+    if (ch >= "\u2066" && ch <= "\u2068") depth++;
+    else if (ch === "\u2069") depth = Math.max(0, depth - 1);
+    if (depth > 0) continue;
+    if (isArabic(ch)) return "rtl";
+    if (/[A-Za-z]/.test(ch)) return "ltr";
+  }
+  // Everything strong sits inside isolates: the first strong character anywhere decides.
   for (const ch of str) {
     if (isArabic(ch)) return "rtl";
     if (/[A-Za-z]/.test(ch)) return "ltr";
@@ -228,11 +253,16 @@ function buildRuns(doc: PdfDoc, line: string, dir: "ltr" | "rtl"): Run[] {
   if (!line) return [];
   const { levels } = bidi.getEmbeddingLevels(line, dir);
   const chars = Array.from(line);
+  if (chars.every((ch) => BIDI_CONTROL_RE.test(ch))) return [];
   // bidi-js indexes by UTF-16 code unit; build per-char level using code unit offsets.
   const runs: Run[] = [];
   let offset = 0;
   let prevClass: FontClass = "sans";
   for (const ch of chars) {
+    if (BIDI_CONTROL_RE.test(ch)) {
+      offset += ch.length;
+      continue;
+    }
     const level = levels[offset] ?? (dir === "rtl" ? 1 : 0);
     const cls = classify(ch, prevClass, doc);
     prevClass = cls;
@@ -287,7 +317,7 @@ function mirror(textRun: string): string {
   return out;
 }
 
-/** Naskh's own space glyph is only 0.22em wide, so Arabic words are placed with this gap. */
+/** Arabic words are placed one by one (fontkit drops edge spaces), with this gap between them. */
 const ARABIC_WORD_GAP = 0.3;
 
 /** Words of an Arabic run in logical order; PDFKit's wordSpacing path breaks RTL order. */
@@ -331,7 +361,13 @@ function drawRun(
   const ascent = (doc._font?.ascender ?? 0) * (size / 1000);
   const runY = y + (baselineRefAscent - ascent);
   const rtlRun = run.level % 2 === 1;
-  const drawable = rtlRun ? mirror(run.text) : run.text;
+  // Odd-level runs outside the Arabic font are neutrals (spaces, slashes, brackets): they are
+  // laid out right-to-left, so their characters go in reverse. fontkit reverses Arabic runs itself.
+  const drawable = rtlRun
+    ? run.cls === "ar"
+      ? mirror(run.text)
+      : Array.from(mirror(run.text)).reverse().join("")
+    : run.text;
   const width = runWidth(doc, run, size, bold);
   if (!drawable.trim()) return width;
 

@@ -1,7 +1,9 @@
 import { T } from "@/components/layout/T";
 import { useQuery } from "@tanstack/react-query";
-import { FileDown, Loader2 } from "lucide-react";
+import { FileDown, FileText, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/ui/page-header";
 import { RowActionButton, RowActions } from "@/components/ui/row-actions";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import {
@@ -13,7 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { apiRequest } from "@/lib/queryClient";
-import { formatDate } from "@/lib/format-date";
+import { DateText } from "@/components/documents/DateText";
 import { MoneyCell } from "@/components/ui/money";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { useTranslation } from "@/lib/i18n";
@@ -22,7 +24,7 @@ import { apiUrl } from "@/lib/api";
 
 const STATUS_TONE: Record<string, StatusTone> = {
   paid: "success",
-  unpaid: "info",
+  unpaid: "warning",
   partially_paid: "warning",
   overdue: "danger",
   credit: "neutral",
@@ -50,15 +52,8 @@ export default function PortalInvoices() {
   });
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold text-foreground">
-          <T k="pages.invoices" />
-        </h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          <T k="pageLabels.viewAndDownloadInvoicesIssuedBy" />
-        </p>
-      </div>
+    <div className="mx-auto max-w-[960px] space-y-6">
+      <PageHeader title={t["portal.doc.invoices"]} description={t["portal.doc.invoicesHint"]} />
 
       <Card>
         <CardContent className="p-0">
@@ -67,27 +62,29 @@ export default function PortalInvoices() {
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
           ) : invoices.length === 0 ? (
-            <p className="text-sm text-muted-foreground/70 text-center py-10">
-              <T k="pageLabels.noInvoicesFound" />
-            </p>
+            <EmptyState
+              icon={FileText}
+              title={t["portal.doc.noInvoicesTitle"]}
+              description={t["portal.doc.noInvoicesBody"]}
+            />
           ) : (
             <Table className="row-cards">
               <TableHeader>
                 <TableRow>
                   <TableHead>
-                    <T k="portal.invoiceNumber" />
+                    <T k="portal.doc.invoiceCol" />
                   </TableHead>
                   <TableHead>
-                    <T k="portal.date" />
+                    <T k="portal.doc.date" />
                   </TableHead>
                   <TableHead>
-                    <T k="pages.dueDate" />
+                    <T k="portal.doc.dueDate" />
                   </TableHead>
                   <TableHead data-numeric="">
-                    <T k="portal.amountDue" />
+                    <T k="portal.doc.amountDue" />
                   </TableHead>
                   <TableHead>
-                    <T k="pages.status" />
+                    <T k="portal.doc.status" />
                   </TableHead>
                   <TableHead>
                     <span className="sr-only">{t.actions}</span>
@@ -106,26 +103,26 @@ export default function PortalInvoices() {
                       data-keep=""
                       className="text-muted-foreground"
                     >
-                      {inv.date ? formatDate(inv.date, locale) : "—"}
+                      {inv.date ? <DateText value={inv.date} locale={locale} /> : "—"}
                     </TableCell>
                     <TableCell data-nowrap="" className="text-muted-foreground">
-                      {inv.dueDate ? formatDate(inv.dueDate, locale) : "—"}
+                      {inv.dueDate ? <DateText value={inv.dueDate} locale={locale} /> : "—"}
                     </TableCell>
                     <MoneyCell
                       amount={Number(inv.amountDue) || 0}
-                      currency="AED"
+                      currency={inv.currency ?? "AED"}
                       className="font-semibold text-foreground"
                       data-cell="amount"
                     />
                     <TableCell data-nowrap="" data-cell="status">
                       <StatusBadge tone={STATUS_TONE[inv.paymentStatus] ?? "neutral"}>
-                        {t[`portal.payStatus.${inv.paymentStatus}`] ?? inv.paymentStatus}
+                        {t[`portal.payStatus.${inv.paymentStatus}`] ?? t["portal.doc.status"]}
                       </StatusBadge>
                     </TableCell>
                     <TableCell data-cell="actions">
                       <RowActions collapseOnMobile>
                         <RowActionButton
-                          label="PDF"
+                          label={t["portal.doc.downloadPdf"]}
                           icon={FileDown}
                           onClick={() => downloadPdf(inv.id, inv.number)}
                         />

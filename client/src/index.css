@@ -126,9 +126,10 @@
   --chart-3: 38 72% 40%;
   --chart-4: 280 24% 48%;
   --chart-5: 190 55% 34%;
-  /* Comparison series (expenses, prior period, "other"): neutral-400 per spec 2.3, never amber
-     (amber = warning). Always dashed or paired with a label/tooltip, never colour alone. */
-  --chart-neutral: var(--neutral-400);
+  /* Comparison series (expenses, prior period, "other"): never amber (amber = warning). Always
+     dashed or paired with a label/tooltip, never colour alone. 220 9% 56% gives 3.40:1 on the
+     card, meeting WCAG 1.4.11 (3:1 for graphics); spec 2.3's neutral-400 is only 2.62:1. */
+  --chart-neutral: 220 9% 56%;
   --chart-grid: var(--neutral-100);
   --chart-axis: var(--neutral-500);
 

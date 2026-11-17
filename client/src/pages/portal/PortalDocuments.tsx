@@ -2,10 +2,13 @@ import { T } from "@/components/layout/T";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Upload, FileText, FileImage, File, Loader2, CheckCircle2 } from "lucide-react";
+import { Upload, FileText, FileImage, File, FolderOpen, Loader2, CheckCircle2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { DateText } from "@/components/documents/DateText";
 import { apiRequest } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
@@ -30,23 +33,22 @@ async function uploadDocument(file: File) {
   return body;
 }
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
 
-const CATEGORY_LABELS: Record<string, string> = {
-  trade_license: "Trade License",
-  contract: "Contract",
-  tax_certificate: "Tax Certificate",
-  audit_report: "Audit Report",
-  bank_statement: "Bank Statement",
-  insurance: "Insurance",
-  visa: "Visa",
-  other: "Other",
-};
+const CATEGORIES = new Set([
+  "trade_license",
+  "contract",
+  "tax_certificate",
+  "audit_report",
+  "bank_statement",
+  "insurance",
+  "visa",
+  "other",
+]);
 
 function fileIcon(mime: string) {
-  if (mime?.startsWith("image/")) return <FileImage className="w-5 h-5 text-info" />;
-  if (mime === "application/pdf") return <FileText className="w-5 h-5 text-destructive" />;
-  return <File className="w-5 h-5 text-muted-foreground/70" />;
+  if (mime?.startsWith("image/")) return FileImage;
+  if (mime === "application/pdf") return FileText;
+  return File;
 }
 
 function formatBytes(bytes: number | null) {
@@ -57,7 +59,7 @@ function formatBytes(bytes: number | null) {
 }
 
 export default function PortalDocuments() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const qc = useQueryClient();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -97,85 +99,80 @@ export default function PortalDocuments() {
     }
   }
 
+  const pick = () => fileRef.current?.click();
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground">
-            <T k="pages.documents" />
-          </h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            <T k="pageLabels.uploadReceiptsAndDocumentsForNr" />
-          </p>
-        </div>
-        <div>
-          <input
-            ref={fileRef}
-            type="file"
-            className="hidden"
-            onChange={handleFileChange}
-            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
-          />
-          <Button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="bg-info hover:bg-info text-white"
-          >
+    <div className="mx-auto max-w-[960px] space-y-6">
+      <input
+        ref={fileRef}
+        type="file"
+        className="hidden"
+        onChange={handleFileChange}
+        accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.txt,.csv"
+      />
+      <PageHeader
+        title={t["pages.documents"]}
+        description={t["portal.doc.documentsHint"]}
+        primaryAction={
+          <Button onClick={pick} disabled={uploading} data-testid="button-portal-upload">
             {uploading ? (
-              <Loader2 className="w-4 h-4 me-2 animate-spin" />
+              <Loader2 className="h-4 w-4 me-2 animate-spin" aria-hidden />
             ) : (
-              <Upload className="w-4 h-4 me-2" />
+              <Upload className="h-4 w-4 me-2" aria-hidden />
             )}
-            Upload Document
+            <T k="portal.doc.upload" />
           </Button>
-        </div>
-      </div>
+        }
+      />
 
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="flex items-center justify-center h-32">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            <div className="flex h-32 items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
             </div>
           ) : documents.length === 0 ? (
-            <div className="text-center py-14">
-              <Upload className="w-10 h-10 text-muted-foreground/70 mx-auto mb-3" />
-              <p className="text-sm font-medium text-muted-foreground">
-                <T k="pageLabels.noDocumentsYet" />
-              </p>
-              <p className="text-xs text-muted-foreground/70 mt-1">
-                <T k="pageLabels.uploadReceiptsOrFilesForYour" />
-              </p>
-            </div>
+            <EmptyState
+              icon={FolderOpen}
+              title={t["portal.doc.noDocumentsTitle"]}
+              description={t["portal.doc.documentsHint"]}
+              action={{ label: t["portal.doc.upload"], onClick: pick }}
+            />
           ) : (
-            <div className="divide-y divide-border">
-              {documents.map((doc: any) => (
-                <div
-                  key={doc.id}
-                  className="flex items-center gap-4 px-4 py-3 hover:bg-muted transition-colors"
-                >
-                  <div className="flex-shrink-0">{fileIcon(doc.mimeType)}</div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{doc.name}</p>
-                    <p className="text-xs text-muted-foreground/70">
-                      {doc.createdAt ? format(new Date(doc.createdAt), "MMM d, yyyy") : "—"}
-                      {doc.fileSize ? ` · ${formatBytes(doc.fileSize)}` : ""}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <Badge variant="outline" className="text-xs">
-                      {CATEGORY_LABELS[doc.category] ?? doc.category}
-                    </Badge>
-                    {doc.uploadedBy && (
-                      <CheckCircle2
-                        className="w-4 h-4 text-success"
-                        aria-label={t["portal.docReceivedByNra"]}
-                      />
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <ul className="divide-y divide-border">
+              {documents.map((doc: any) => {
+                const Icon = fileIcon(doc.mimeType);
+                return (
+                  <li key={doc.id} className="flex items-center gap-4 px-5 py-3">
+                    <Icon className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-small font-medium text-foreground" dir="auto">
+                        {doc.name}
+                      </p>
+                      <p className="text-caption text-muted-foreground">
+                        {doc.createdAt ? <DateText value={doc.createdAt} locale={locale} /> : "—"}
+                        {doc.fileSize ? <bdi> · {formatBytes(doc.fileSize)}</bdi> : null}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <StatusBadge tone="neutral">
+                        {
+                          t[
+                            `portal.doc.category.${CATEGORIES.has(doc.category) ? doc.category : "other"}`
+                          ]
+                        }
+                      </StatusBadge>
+                      {doc.uploadedBy && (
+                        <CheckCircle2
+                          className="h-4 w-4 text-success"
+                          aria-label={t["portal.doc.received"]}
+                        />
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
         </CardContent>
       </Card>
