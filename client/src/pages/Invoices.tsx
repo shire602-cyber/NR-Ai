@@ -3,7 +3,8 @@ import { T } from "@/components/layout/T";
 import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
 import { Link, useLocation, useRoute } from "wouter";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm, useFieldArray, type UseFormReturn } from "react-hook-form";
+import type { TermsFormShape } from "@/components/invoices/InvoiceTermsFields";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
@@ -1743,7 +1744,8 @@ export default function Invoices() {
             >
               <Suspense fallback={<Skeleton className="h-40 w-full rounded-lg" />}>
                 <InvoiceTermsFields
-                  form={form}
+                  // The lazy component loses its generic; the invoice form has the terms fields.
+                  form={form as unknown as UseFormReturn<TermsFormShape>}
                   issued={isIssued}
                   onDueDateTouched={() => setDueDateTouched(true)}
                 />
