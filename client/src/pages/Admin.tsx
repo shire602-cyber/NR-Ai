@@ -5,7 +5,7 @@ import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { Fragment, useState, useEffect } from "react";
-import { formatDate } from "@/lib/format-date";
+import { formatDate, formatDateTime } from "@/lib/format-date";
 import { auditDetailEntries } from "@/pages/admin/audit-details";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -415,29 +415,19 @@ export default function Admin() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
+                {/* Fable P18: the activity-feed row (no empty avatar circles, no coloured icons);
+                    one sentence, entity and a one-line date. */}
                 {auditLogs.slice(0, 5).map((log) => (
-                  <div key={log.id} className="flex items-center gap-4">
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                      {log.action === "create" && <Plus className="w-4 h-4 text-success" />}
-                      {log.action === "update" && <Edit2 className="w-4 h-4 text-info" />}
-                      {log.action === "delete" && <Trash2 className="w-4 h-4 text-destructive" />}
-                      {log.action === "login" && (
-                        <Users className="w-4 h-4 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">
-                        {activityActionLabel(t, log.action)} ·{" "}
+                  <div key={log.id} className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{activityActionLabel(t, log.action)}</p>
+                      <p className="text-xs text-muted-foreground">
                         {activityEntityLabel(t, log.resourceType)}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDate(log.createdAt, locale)}{" "}
-                        {new Date(log.createdAt).toLocaleTimeString(
-                          locale === "ar" ? "ar-AE-u-nu-latn" : "en-GB",
-                          { hour: "2-digit", minute: "2-digit" }
-                        )}
-                      </p>
                     </div>
+                    <time className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+                      {formatDateTime(log.createdAt, locale)}
+                    </time>
                   </div>
                 ))}
                 {auditLogs.length === 0 && (
@@ -660,7 +650,7 @@ export default function Admin() {
                             <T k="firm.linkActive" />
                           </Badge>
                         </TableCell>
-                        <TableCell>{new Date(user.createdAt).toLocaleDateString()}</TableCell>
+                        <TableCell>{formatDate(user.createdAt, locale)}</TableCell>
                         <TableCell data-numeric>
                           <Button
                             variant="ghost"
@@ -794,7 +784,7 @@ export default function Admin() {
                         <TableCell className="font-medium">{company.name}</TableCell>
                         <TableCell>{company.trnVatNumber || "-"}</TableCell>
                         <TableCell>{company.baseCurrency}</TableCell>
-                        <TableCell>{new Date(company.createdAt).toLocaleDateString()}</TableCell>
+                        <TableCell>{formatDate(company.createdAt, locale)}</TableCell>
                         <TableCell data-numeric>
                           <Button
                             variant="ghost"
@@ -1401,13 +1391,7 @@ export default function Admin() {
                           <Fragment key={log.id}>
                             <TableRow>
                               <TableCell className="whitespace-nowrap text-sm tabular-nums">
-                                {formatDate(log.createdAt, locale)}{" "}
-                                <span className="text-muted-foreground">
-                                  {new Date(log.createdAt).toLocaleTimeString(
-                                    locale === "ar" ? "ar-AE-u-nu-latn" : "en-GB",
-                                    { hour: "2-digit", minute: "2-digit" }
-                                  )}
-                                </span>
+                                {formatDateTime(log.createdAt, locale)}
                               </TableCell>
                               <TableCell>
                                 <Badge variant="secondary">

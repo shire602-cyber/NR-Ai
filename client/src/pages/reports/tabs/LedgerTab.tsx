@@ -66,7 +66,7 @@ export default function LedgerTab() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">Debit / Credit Difference</CardTitle>
+            <CardTitle className="text-sm font-medium">Debit / credit difference</CardTitle>
           </CardHeader>
           <CardContent>
             {ledgerLoading ? (

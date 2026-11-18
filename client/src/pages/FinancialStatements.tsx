@@ -966,7 +966,9 @@ function CashFlowTab({
               <CardTitle className="text-lg">
                 <T k="pageLabels.investingActivities" />
               </CardTitle>
-              <CardDescription>Cash from buying/selling long-term assets</CardDescription>
+              <CardDescription>
+                <T k="pageLabels.investingActivitiesHint" />
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {data.investing.breakdown.length === 0 ? (

@@ -171,5 +171,8 @@
   "documentVersions.searchByNumber": "ابحث بالرقم",
   "documentVersions.loadingDocuments": "جارٍ تحميل المستندات…",
   "documentVersions.noDocumentsFound": "لا توجد مستندات مطابقة.",
-  "documentVersions.versionHistory": "سجل الإصدارات"
+  "documentVersions.versionHistory": "سجل الإصدارات",
+  "documentVault.expiryAlert": "{expiring} تنتهي خلال 30 يومًا · {expired} منتهية",
+  "documentVault.noDocumentsYet": "لا توجد مستندات بعد",
+  "documentVault.emptyBody": "تظهر هنا التراخيص والعقود والشهادات التي ترفعها."
 }

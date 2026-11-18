@@ -112,7 +112,7 @@ describe("W5-A statement outputs", () => {
         })
       ).content
     );
-    expect(pdfText).toContain("Profit and Loss");
+    expect(pdfText).toContain("Profit and loss");
     expect(pdfText).toContain("1,234.56");
   });
 

@@ -794,7 +794,7 @@ export default function RecurringInvoices() {
               ? "انشئ قالب فاتورة متكررة للبدء"
               : "Create a recurring invoice template to get started",
           action: {
-            label: locale === "ar" ? "فاتورة متكررة جديدة" : "New Recurring Invoice",
+            label: locale === "ar" ? "فاتورة متكررة جديدة" : "New recurring invoice",
             onClick: openNewRecurring,
           },
         }}

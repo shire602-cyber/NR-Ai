@@ -359,8 +359,8 @@ describe("[D5b] expense claim form payload unchanged", () => {
     await type(named("items.0.amount"), "120");
     await type(named("items.0.vat_amount"), "6");
     await type(named("items.0.supplier_trn"), "100678901200003");
-    await pickNative(0, "Transport");
-    await submit(dialog().querySelector('button[type="submit"]'));
+    await pickNative(0, "Transport", surface());
+    await submit(editorPage().querySelector('button[type="submit"]'));
     expect(body("POST", `${C}/expense-claims`)).toEqual({
       title: "Client visit Abu Dhabi",
       description: "Taxi and lunch",
@@ -415,7 +415,7 @@ describe("[D5b] vendor form payload unchanged", () => {
     setFixtures({ [`${C}/vendors/aging`]: null });
     const { default: Vendors } = await import("../../client/src/pages/Vendors");
     await renderPage(Vendors);
-    await click(buttonByText(/^\s*new vendor\s*$/i));
+    await click(buttonByText(/^\s*new supplier\s*$/i));
     const byId = (id: string) => document.getElementById(id);
     await type(byId("vendor-name"), "Atlas Office Supplies");
     await type(byId("vendor-name_ar"), "أطلس للوازم المكتبية");

@@ -2002,7 +2002,7 @@ export default function Receipts() {
                         {receipt.status === "completed" && receipt.data && (
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div className="space-y-1">
-                              <Label className="text-xs">Merchant / Supplier</Label>
+                              <Label className="text-xs">Merchant / supplier</Label>
                               <Input
                                 value={receipt.data.merchant || ""}
                                 onChange={(e) =>
@@ -2025,7 +2025,7 @@ export default function Receipts() {
 
                             {receipt.data.invoiceNumber && (
                               <div className="space-y-1 col-span-2">
-                                <Label className="text-xs">Invoice / Receipt Number</Label>
+                                <Label className="text-xs">Invoice / receipt number</Label>
                                 <Input
                                   value={receipt.data.invoiceNumber || ""}
                                   onChange={(e) =>

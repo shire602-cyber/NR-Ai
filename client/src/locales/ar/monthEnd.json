@@ -37,7 +37,7 @@
   "monthEnd.itemsCompleteFor": "اكتمل {done}/{total} من البنود لفترة {period}",
   "monthEnd.remainingCount": "{count} متبقٍ",
   "monthEnd.runValidation": "تشغيل التحقق",
-  "monthEnd.runValidationHint": "اضغط على \"تشغيل التحقق\" للحصول على تقييم جاهزية مدعوم بالذكاء الاصطناعي.",
+  "monthEnd.runValidationHint": "شغّل الفحوصات لمعرفة ما تبقى.",
   "monthEnd.validationError": "خطأ في التحقق",
   "monthEnd.errorTitle": "خطأ",
   "monthEnd.eyebrowAccounting": "المحاسبة",

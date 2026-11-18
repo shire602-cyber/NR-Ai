@@ -54,7 +54,8 @@ export function DashboardCharts({ m }: { m: DashboardModel }) {
   const seriesLabel = (key: string) => (key === "revenue" ? t.revenue : t.expenses);
 
   return (
-    <section className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
+    // Fable P20: chart cards in one row share a height (spec 2.2 exception for charts).
+    <section className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3 lg:items-stretch">
       <Card className="lg:col-span-2" data-testid="dashboard-trends">
         <CardHeader className="flex-row flex-wrap items-start justify-between gap-x-4 gap-y-2 space-y-0 pb-2">
           <div className="min-w-0">

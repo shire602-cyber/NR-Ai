@@ -24,12 +24,30 @@ export function toCalendarDate(value: DateInput): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+// English abbreviations are fixed: ICU's en-GB gives "Sept" for September while every
+// other month is three letters, so "30 Sept 2026" sat next to "Sep 2026" (Fable P8).
+const EN_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
 const monthFormatters = new Map<string, Intl.DateTimeFormat>();
 function monthName(date: Date, locale: string): string {
-  const tag = locale === "ar" ? "ar-AE-u-nu-latn" : "en-GB";
+  if (locale !== "ar") return EN_MONTHS[date.getMonth()];
+  const tag = "ar-AE-u-nu-latn";
   let f = monthFormatters.get(tag);
   if (!f) {
-    f = new Intl.DateTimeFormat(tag, { month: locale === "ar" ? "long" : "short" });
+    f = new Intl.DateTimeFormat(tag, { month: "long" });
     monthFormatters.set(tag, f);
   }
   // en-GB abbreviates September as "Sept"; the app uses three letters everywhere (P8).
@@ -110,4 +128,18 @@ export function displayObligationTitle(title: string, locale: string = "en"): st
     return `${m[1]}${locale === "ar" ? "، " : ", "}${formatEmbeddedDates(m[2], locale)}`;
   }
   return formatEmbeddedDates(title, locale);
+}
+
+/** "14:05": 24-hour clock with Latin digits in both languages. */
+export function formatTime(value: DateInput): string {
+  const d = toCalendarDate(value);
+  if (!d) return "";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** "16 Nov 2026, 14:05" / "16 نوفمبر 2026، 14:05": one line, for logs and timestamps. */
+export function formatDateTime(value: DateInput, locale: string = "en"): string {
+  const d = toCalendarDate(value);
+  if (!d) return "";
+  return `${formatDate(d, locale)}${locale === "ar" ? "، " : ", "}${formatTime(d)}`;
 }

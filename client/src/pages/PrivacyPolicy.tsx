@@ -14,7 +14,7 @@ export default function PrivacyPolicy() {
         (PDPL) and applicable Federal Tax Authority (FTA) requirements.
       </p>
 
-      <h2>1. Data We Collect</h2>
+      <h2>1. Data we collect</h2>
       <p>We collect the following categories of personal and business data:</p>
       <ul>
         <li>
@@ -49,7 +49,7 @@ export default function PrivacyPolicy() {
         </li>
       </ul>
 
-      <h2>2. How We Use Your Data</h2>
+      <h2>2. How we use your data</h2>
       <p>We use your data to:</p>
       <ul>
         <li>
@@ -65,14 +65,14 @@ export default function PrivacyPolicy() {
         </li>
       </ul>
 
-      <h2>3. Legal Basis for Processing</h2>
+      <h2>3. Legal basis for processing</h2>
       <p>
         We process personal data on the basis of your consent, performance of our contract with you,
         compliance with legal obligations (including FTA record-keeping rules), and our legitimate
         interests in providing and improving the Service.
       </p>
 
-      <h2>4. Data Retention</h2>
+      <h2>4. Data retention</h2>
       <p>
         Financial records and tax-related data are retained for a minimum of{" "}
         <strong>five (5) years</strong>
@@ -81,7 +81,7 @@ export default function PrivacyPolicy() {
         reasonable period after closure to handle disputes and legal obligations.
       </p>
 
-      <h2>5. Data Sharing</h2>
+      <h2>5. Data sharing</h2>
       <p>We do not sell your personal data. We may share data with:</p>
       <ul>
         <li>
@@ -104,7 +104,7 @@ export default function PrivacyPolicy() {
         </li>
       </ul>
 
-      <h2>6. Data Security</h2>
+      <h2>6. Data security</h2>
       <p>
         We use TLS encryption for data in transit, encrypted storage at rest, role-based access
         controls, and regular security audits. Despite these safeguards, no system is 100% secure;
@@ -112,7 +112,7 @@ export default function PrivacyPolicy() {
         authentication.
       </p>
 
-      <h2>7. Your Rights</h2>
+      <h2>7. Your rights</h2>
       <p>
         Subject to UAE PDPL, you have the right to access, correct, delete, or restrict processing
         of your personal data, to object to certain processing, and to receive a portable copy of
@@ -120,7 +120,7 @@ export default function PrivacyPolicy() {
         <a href="mailto:privacy@muhasib.ai">privacy@muhasib.ai</a>.
       </p>
 
-      <h2>8. International Transfers</h2>
+      <h2>8. International transfers</h2>
       {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
         Customer data is hosted in the United Arab Emirates. Where transfers outside the UAE are
@@ -134,7 +134,7 @@ export default function PrivacyPolicy() {
         not knowingly collect personal data from children.
       </p>
 
-      <h2>10. Changes to This Policy</h2>
+      <h2>10. Changes to this policy</h2>
       <p>
         We may update this Privacy Policy from time to time. Material changes will be notified
         through the Service or by email. The "Effective date" above indicates the latest revision.

@@ -75,8 +75,12 @@ export function StatCard({
     delta?.direction === "up" ? ArrowUpRight : delta?.direction === "down" ? ArrowDownRight : Minus;
   const body = (
     <>
-      <div className="flex items-start justify-between gap-2">
-        <span className="min-w-0 truncate text-caption text-muted-foreground">{label}</span>
+      {/* Under 640 px the delta pill sits on its own line under the label so a 2×2 tile never
+          truncates the label ("Net m…"). */}
+      <div className="flex flex-col items-start gap-1 sm:flex-row sm:justify-between sm:gap-2">
+        <span className="min-w-0 max-w-full truncate text-caption text-muted-foreground">
+          {label}
+        </span>
         {delta && !loading && (
           <span
             className={cn(

@@ -52,7 +52,7 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: "company",
     field: "hasCreatedCompany",
-    title: "Set Up Your Company",
+    title: "Set up your company",
     description: "Add your company details and tax information",
     icon: Building2,
     action: "Set Up Company",
@@ -61,7 +61,7 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: "accounts",
     field: "hasSetupChartOfAccounts",
-    title: "Chart of Accounts",
+    title: "Chart of accounts",
     description: "Review and customize your UAE-focused chart of accounts",
     icon: BookOpen,
     action: "View Accounts",
@@ -70,7 +70,7 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: "invoice",
     field: "hasCreatedFirstInvoice",
-    title: "Create Your First Invoice",
+    title: "Create your first invoice",
     description: "Generate professional VAT-ready invoices",
     icon: FileText,
     action: "Create Invoice",
@@ -79,7 +79,7 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: "receipt",
     field: "hasUploadedFirstReceipt",
-    title: "Upload a Receipt",
+    title: "Upload a receipt",
     description: "Let AI extract and categorize your expenses",
     icon: Receipt,
     action: "Upload Receipt",
@@ -88,16 +88,16 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: "reports",
     field: "hasViewedReports",
-    title: "Explore Reports",
+    title: "Explore reports",
     description: "View financial statements and VAT summaries",
     icon: BarChart3,
-    action: "View Reports",
+    action: "View reports",
     path: "/reports",
   },
   {
     key: "ai",
     field: "hasExploredAI",
-    title: "Meet Your AI CFO",
+    title: "Meet your AI CFO",
     description: "Get insights and recommendations from your AI financial advisor",
     icon: Bot,
     action: "Explore AI Features",
@@ -106,7 +106,7 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     key: "reminders",
     field: "hasConfiguredReminders",
-    title: "Set Up Reminders",
+    title: "Set up reminders",
     description: "Configure automatic payment reminders",
     icon: Bell,
     action: "Configure Reminders",

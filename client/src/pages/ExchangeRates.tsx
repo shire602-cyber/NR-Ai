@@ -3,6 +3,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Alert } from "@/components/ui/alert";
 import { SetupNotice } from "@/components/ui/setup-notice";
 import { StatCard } from "@/components/ui/stat-card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
@@ -766,83 +767,97 @@ export default function ExchangeRates() {
                   </ul>
                 </Alert>
               )}
-              <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-                <StatCard label={s.openExposures} value={exposureRows.length} />
-                <StatCard
-                  label={s.unrealizedGains}
-                  value={<Money amount={fxReport?.totalUnrealizedGain ?? 0} currency={base} />}
-                />
-                <StatCard
-                  label={s.unrealizedLosses}
-                  value={<Money amount={fxReport?.totalUnrealizedLoss ?? 0} currency={base} />}
-                />
-                <StatCard
-                  label={s.net}
-                  value={<Money amount={fxReport?.netUnrealizedGainLoss ?? 0} currency={base} />}
-                />
-              </div>
+              {/* Spec 2.6: no KPI tiles or empty table while nothing is exposed. */}
+              {exposureRows.length === 0 ? (
+                <EmptyState size="sm" title={s.noExposure} testId="fx-exposure-empty" />
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+                    <StatCard label={s.openExposures} value={exposureRows.length} />
+                    <StatCard
+                      label={s.unrealizedGains}
+                      value={<Money amount={fxReport?.totalUnrealizedGain ?? 0} currency={base} />}
+                    />
+                    <StatCard
+                      label={s.unrealizedLosses}
+                      value={<Money amount={fxReport?.totalUnrealizedLoss ?? 0} currency={base} />}
+                    />
+                    <StatCard
+                      label={s.net}
+                      value={
+                        <Money amount={fxReport?.netUnrealizedGainLoss ?? 0} currency={base} />
+                      }
+                    />
+                  </div>
 
-              <div className="rounded-md border overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{s.type}</TableHead>
-                      <TableHead>
-                        <T k="pages.reference" />
-                      </TableHead>
-                      <TableHead>
-                        <T k="pages.counterparty" />
-                      </TableHead>
-                      <TableHead>
-                        <T k="pages.currency" />
-                      </TableHead>
-                      <TableHead className="text-end">{s.foreignAmount}</TableHead>
-                      <TableHead className="text-end">{s.transactionRate}</TableHead>
-                      <TableHead className="text-end">{s.currentRate}</TableHead>
-                      <TableHead className="text-end">{s.gainLoss}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {exposureRows.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                          {s.noExposure}
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      exposureRows.map((row) => (
-                        <TableRow key={`${row.entityType}-${row.entityId}`}>
-                          <TableCell>{s.kinds[row.entityType] ?? row.entityType}</TableCell>
-                          <TableCell className="font-mono text-sm">{row.entityNumber}</TableCell>
-                          <TableCell>{row.counterparty}</TableCell>
-                          <TableCell className="font-medium">{row.currency}</TableCell>
-                          <TableCell className="text-end font-mono">
-                            {formatNumber(row.foreignAmount, locale)}
-                          </TableCell>
-                          <TableCell className="text-end font-mono">
-                            {formatNumber(row.transactionRate, locale)}
-                          </TableCell>
-                          <TableCell className="text-end font-mono">
-                            {formatNumber(row.currentRate, locale)}
-                            {row.stale && (
-                              <Badge variant="outline" className="ms-2" title={s.staleHint}>
-                                {s.stale}
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell
-                            className={`text-end font-mono ${
-                              row.unrealizedGainLoss >= 0 ? "text-success" : "text-destructive"
-                            }`}
-                          >
-                            {formatCurrency(row.unrealizedGainLoss, base, locale)}
-                          </TableCell>
+                  <div className="rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{s.type}</TableHead>
+                          <TableHead>
+                            <T k="pages.reference" />
+                          </TableHead>
+                          <TableHead>
+                            <T k="pages.counterparty" />
+                          </TableHead>
+                          <TableHead>
+                            <T k="pages.currency" />
+                          </TableHead>
+                          <TableHead className="text-end">{s.foreignAmount}</TableHead>
+                          <TableHead className="text-end">{s.transactionRate}</TableHead>
+                          <TableHead className="text-end">{s.currentRate}</TableHead>
+                          <TableHead className="text-end">{s.gainLoss}</TableHead>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
+                      </TableHeader>
+                      <TableBody>
+                        {exposureRows.length === 0 ? (
+                          <TableRow>
+                            <TableCell
+                              colSpan={8}
+                              className="py-8 text-center text-muted-foreground"
+                            >
+                              {s.noExposure}
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          exposureRows.map((row) => (
+                            <TableRow key={`${row.entityType}-${row.entityId}`}>
+                              <TableCell>{s.kinds[row.entityType] ?? row.entityType}</TableCell>
+                              <TableCell className="font-mono text-sm">
+                                {row.entityNumber}
+                              </TableCell>
+                              <TableCell>{row.counterparty}</TableCell>
+                              <TableCell className="font-medium">{row.currency}</TableCell>
+                              <TableCell className="text-end font-mono">
+                                {formatNumber(row.foreignAmount, locale)}
+                              </TableCell>
+                              <TableCell className="text-end font-mono">
+                                {formatNumber(row.transactionRate, locale)}
+                              </TableCell>
+                              <TableCell className="text-end font-mono">
+                                {formatNumber(row.currentRate, locale)}
+                                {row.stale && (
+                                  <Badge variant="outline" className="ms-2" title={s.staleHint}>
+                                    {s.stale}
+                                  </Badge>
+                                )}
+                              </TableCell>
+                              <TableCell
+                                className={`text-end font-mono ${
+                                  row.unrealizedGainLoss >= 0 ? "text-success" : "text-destructive"
+                                }`}
+                              >
+                                {formatCurrency(row.unrealizedGainLoss, base, locale)}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </CardContent>

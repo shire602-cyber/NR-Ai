@@ -3,6 +3,7 @@
 // (server/storage/helpers.ts describeAuditLog). In Arabic mode the UI shows the action and entity
 // as catalog labels and rebuilds the description from the same code, keeping the document
 // number / id from the server text. English mode keeps the server text unchanged.
+import { formatDate } from "@/lib/format-date";
 import { formatMessage } from "@/lib/i18n";
 
 type Translations = Record<string, string>;
@@ -72,4 +73,52 @@ export function activityDescription(t: Translations, log: ActivityLogLike, local
   if (entity) parts.push(activityEntityLabel(t, entity));
   if (log.entityId) parts.push(log.entityId);
   return parts.join(" · ");
+}
+
+const UUID_RE = /\s*\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+/** Spec 3.10: ids live in a details popover, never in the sentence. */
+export function withoutIds(text: string): string {
+  return text
+    .replace(UUID_RE, "")
+    .replace(/\s+([.,;:])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/** The `changes` list from a log row's metadata JSON, joined ("name, rate"); "" otherwise. */
+export function metadataChanges(metadata: string | null | undefined): string {
+  if (!metadata) return "";
+  try {
+    const parsed = JSON.parse(metadata);
+    return Array.isArray(parsed.changes) ? parsed.changes.join(", ") : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The server's generic audit text reads "Company group create on company group"; when the action
+ * has a catalog label ("Company group created") show that instead. Specific sentences
+ * ("Invoice INV-2026-0042 created") are kept.
+ */
+export function readableSentence(sentence: string, actionLabel: string | undefined): string {
+  if (actionLabel && / on [a-z][a-z ]*$/.test(sentence)) return actionLabel;
+  return sentence;
+}
+
+const ISO_DATE_RE = /\b(20\d\d-[01]\d-[0-3]\d)\b/g;
+
+/** ISO dates inside server text ("override on period 2026-08-31") read as display dates. */
+export function withDisplayDates(text: string, locale: string): string {
+  return text.replace(ISO_DATE_RE, (iso) => formatDate(iso, locale) || iso);
+}
+
+/** One sentence for a log row: localised, no ids, display dates, generic server text replaced. */
+export function activitySentence(t: Translations, log: ActivityLogLike, locale: string): string {
+  const sentence = readableSentence(
+    withDisplayDates(withoutIds(activityDescription(t, log, locale)), locale),
+    t[`activityLog.action.${log.action}`]
+  );
+  return sentence || activityActionLabel(t, log.action);
 }

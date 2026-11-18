@@ -20,7 +20,7 @@ export default function TermsOfService() {
         the United Arab Emirates.
       </p>
 
-      <h2>2. Accounts and Security</h2>
+      <h2>2. Accounts and security</h2>
       <ul>
         {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
         <li>
@@ -35,7 +35,7 @@ export default function TermsOfService() {
         </li>
       </ul>
 
-      <h2>3. Subscription and Billing</h2>
+      <h2>3. Subscription and billing</h2>
       <p>
         Paid plans renew automatically at the end of each billing period until cancelled. Fees are
         quoted in AED and exclusive of VAT unless stated otherwise. You may cancel at any time;
@@ -43,7 +43,7 @@ export default function TermsOfService() {
         for unused time except where required by law.
       </p>
 
-      <h2>4. Acceptable Use</h2>
+      <h2>4. Acceptable use</h2>
       <p>You agree not to:</p>
       <ul>
         <li>Use the Service for any unlawful purpose or in breach of UAE law.</li>
@@ -52,7 +52,7 @@ export default function TermsOfService() {
         <li>Attempt to disrupt the Service or gain unauthorised access to other accounts.</li>
       </ul>
 
-      <h2>5. Your Data and Content</h2>
+      <h2>5. Your data and content</h2>
       <p>
         You retain ownership of all data and content you upload (<strong>"Customer Data"</strong>).
         You grant us a limited licence to host, process, and display Customer Data solely as needed
@@ -61,7 +61,7 @@ export default function TermsOfService() {
         vendor information.
       </p>
 
-      <h2>6. Tax and Accounting Disclaimer</h2>
+      <h2>6. Tax and accounting disclaimer</h2>
       {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
         Muhasib.ai provides software tools to assist with bookkeeping, VAT computation, and FTA
@@ -71,14 +71,14 @@ export default function TermsOfService() {
         engaging a qualified tax agent where required.
       </p>
 
-      <h2>7. Service Availability</h2>
+      <h2>7. Service availability</h2>
       <p>
         We strive to keep the Service available 24/7 but do not guarantee uninterrupted access.
         Scheduled maintenance and unforeseen outages may occur. We will provide reasonable advance
         notice of planned downtime where possible.
       </p>
 
-      <h2>8. Intellectual Property</h2>
+      <h2>8. Intellectual property</h2>
       <p>
         The Service, including all software, designs, trademarks, and content (excluding Customer
         Data), is owned by NRA or its licensors and is protected by intellectual property laws.
@@ -93,7 +93,7 @@ export default function TermsOfService() {
         before deletion, subject to our retention obligations under FTA rules.
       </p>
 
-      <h2>10. Limitation of Liability</h2>
+      <h2>10. Limitation of liability</h2>
       <p>
         To the maximum extent permitted by law, NRA's aggregate liability under these Terms shall
         not exceed the fees you paid in the twelve (12) months preceding the event giving rise to
@@ -109,14 +109,14 @@ export default function TermsOfService() {
         whose data you upload.
       </p>
 
-      <h2>12. Governing Law and Dispute Resolution</h2>
+      <h2>12. Governing law and dispute resolution</h2>
       {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
         These Terms are governed by the laws of the United Arab Emirates. Any dispute will be
         submitted to the exclusive jurisdiction of the courts of the Emirate of Dubai.
       </p>
 
-      <h2>13. Changes to These Terms</h2>
+      <h2>13. Changes to these terms</h2>
       {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
         We may update these Terms from time to time. Material changes will be communicated through

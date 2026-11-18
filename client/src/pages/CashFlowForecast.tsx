@@ -37,6 +37,8 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { formatDate, formatDateRange, formatEmbeddedDates } from "@/lib/format-date";
+import { StatCard } from "@/components/ui/stat-card";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   TrendingUp,
   DollarSign,
@@ -45,8 +47,6 @@ import {
   Info,
   RefreshCw,
   Calendar,
-  ArrowUpRight,
-  ArrowDownRight,
   Wallet,
 } from "lucide-react";
 
@@ -288,11 +288,20 @@ export default function CashFlowForecast() {
   const totalProjectedOutflows =
     forecast?.projections.reduce((s, p) => s + p.expectedOutflows, 0) || 0;
 
+  // Spec 2.6: an empty company (no cash on the books, no dated items) sees one empty state,
+  // not three tiles of AED 0.00 and a table of zero weeks.
+  const forecastEmpty =
+    !!forecast &&
+    forecast.items.length === 0 &&
+    forecast.currentBalance === 0 &&
+    totalProjectedInflows === 0 &&
+    totalProjectedOutflows === 0;
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <PageHeader
-        eyebrow="Reports"
+        eyebrow={t["shell.nav.reports"]}
         title={<T k="pages.cashFlowForecast" />}
         description={tr(
           locale,
@@ -353,58 +362,32 @@ export default function CashFlowForecast() {
           <Skeleton className="h-32" />
           <Skeleton className="h-32" />
         </div>
+      ) : forecastEmpty ? (
+        <EmptyState
+          icon={Wallet}
+          title={t["cashFlowForecast.emptyTitle"]}
+          description={t["cashFlowForecast.emptyBody"]}
+          testId="forecast-empty"
+        />
       ) : forecast ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription className="flex items-center gap-2">
-                <Wallet className="h-4 w-4" />
-                <T k="pageLabels.currentBalance" />
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div
-                className={`text-h1 font-semibold ${forecast.currentBalance >= 0 ? "text-foreground" : "text-negative"}`}
-              >
-                <Money amount={forecast.currentBalance} currency={"AED"} />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription className="flex items-center gap-2">
-                <ArrowUpRight className="h-4 w-4" aria-hidden />
-                {tr(locale, "Projected inflows", "التدفقات الداخلة المتوقعة")} ({forecastDays}
-                {tr(locale, "d", " يوم")})
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-h1 font-semibold">
-                <Money amount={totalProjectedInflows} currency={"AED"} />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription className="flex items-center gap-2">
-                <ArrowDownRight className="h-4 w-4" aria-hidden />
-                {tr(locale, "Projected outflows", "التدفقات الخارجة المتوقعة")} ({forecastDays}
-                {tr(locale, "d", " يوم")})
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-h1 font-semibold">
-                <Money amount={totalProjectedOutflows} currency={"AED"} />
-              </div>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <StatCard
+            label={<T k="pageLabels.currentBalance" />}
+            value={<Money amount={forecast.currentBalance} currency={"AED"} tone="auto" />}
+          />
+          <StatCard
+            label={`${tr(locale, "Projected inflows", "التدفقات الداخلة المتوقعة")} (${forecastDays}${tr(locale, "d", " يوم")})`}
+            value={<Money amount={totalProjectedInflows} currency={"AED"} />}
+          />
+          <StatCard
+            label={`${tr(locale, "Projected outflows", "التدفقات الخارجة المتوقعة")} (${forecastDays}${tr(locale, "d", " يوم")})`}
+            value={<Money amount={totalProjectedOutflows} currency={"AED"} />}
+          />
         </div>
       ) : null}
 
       {/* AI Insights */}
-      {forecast && forecast.insights.length > 0 && (
+      {forecast && !forecastEmpty && forecast.insights.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -439,86 +422,88 @@ export default function CashFlowForecast() {
       )}
 
       {/* Projection Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-primary" />
-            <T k="pageLabels.weeklyProjections" />
-          </CardTitle>
-          <CardDescription>
-            {tr(
-              locale,
-              `Projected cash inflows and outflows for the next ${forecastDays} days`,
-              `التدفقات النقدية الداخلة والخارجة المتوقعة خلال ${forecastDays} يومًا القادمة`
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoadingForecast ? (
-            <div className="space-y-2">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </div>
-          ) : forecast && forecast.projections.length > 0 ? (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{tr(locale, "Week", "الأسبوع")}</TableHead>
-                    <TableHead>
-                      <T k="pages.period" />
-                    </TableHead>
-                    <TableHead data-numeric>
-                      <T k="pageLabels.expectedIn" />
-                    </TableHead>
-                    <TableHead data-numeric>
-                      <T k="pageLabels.expectedOut" />
-                    </TableHead>
-                    <TableHead data-numeric>
-                      <T k="pageLabels.projectedBalance2" />
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {forecast.projections.map((proj) => (
-                    <TableRow key={proj.week}>
-                      <TableCell className="font-medium" data-nowrap>
-                        {tr(locale, "Week", "الأسبوع")} {proj.week}
-                      </TableCell>
-                      <TableCell className="text-small text-muted-foreground" data-nowrap>
-                        {formatDateRange(proj.weekStart, proj.weekEnd, locale)}
-                      </TableCell>
-                      <TableCell data-numeric>
-                        <Money amount={proj.expectedInflows} currency={"AED"} />
-                      </TableCell>
-                      <TableCell data-numeric>
-                        <Money amount={proj.expectedOutflows} currency={"AED"} />
-                      </TableCell>
-                      <TableCell data-numeric>
-                        <span
-                          className={`font-semibold ${
-                            proj.projectedBalance >= 0 ? "text-foreground" : "text-negative"
-                          }`}
-                        >
-                          <Money amount={proj.projectedBalance} currency={"AED"} />
-                        </span>
-                      </TableCell>
+      {!forecastEmpty && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Calendar className="h-5 w-5 text-primary" />
+              <T k="pageLabels.weeklyProjections" />
+            </CardTitle>
+            <CardDescription>
+              {tr(
+                locale,
+                `Projected cash inflows and outflows for the next ${forecastDays} days`,
+                `التدفقات النقدية الداخلة والخارجة المتوقعة خلال ${forecastDays} يومًا القادمة`
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoadingForecast ? (
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : forecast && forecast.projections.length > 0 ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{tr(locale, "Week", "الأسبوع")}</TableHead>
+                      <TableHead>
+                        <T k="pages.period" />
+                      </TableHead>
+                      <TableHead data-numeric>
+                        <T k="pageLabels.expectedIn" />
+                      </TableHead>
+                      <TableHead data-numeric>
+                        <T k="pageLabels.expectedOut" />
+                      </TableHead>
+                      <TableHead data-numeric>
+                        <T k="pageLabels.projectedBalance2" />
+                      </TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <p className="text-muted-foreground text-center py-8">
-              {t["cashFlowForecast.noProjectionDataAvailableAdd"]}
-            </p>
-          )}
-        </CardContent>
-      </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {forecast.projections.map((proj) => (
+                      <TableRow key={proj.week}>
+                        <TableCell className="font-medium" data-nowrap>
+                          {tr(locale, "Week", "الأسبوع")} {proj.week}
+                        </TableCell>
+                        <TableCell className="text-small text-muted-foreground" data-nowrap>
+                          {formatDateRange(proj.weekStart, proj.weekEnd, locale)}
+                        </TableCell>
+                        <TableCell data-numeric>
+                          <Money amount={proj.expectedInflows} currency={"AED"} />
+                        </TableCell>
+                        <TableCell data-numeric>
+                          <Money amount={proj.expectedOutflows} currency={"AED"} />
+                        </TableCell>
+                        <TableCell data-numeric>
+                          <span
+                            className={`font-semibold ${
+                              proj.projectedBalance >= 0 ? "text-foreground" : "text-negative"
+                            }`}
+                          >
+                            <Money amount={proj.projectedBalance} currency={"AED"} />
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <p className="text-muted-foreground text-center py-8">
+                {t["cashFlowForecast.noProjectionDataAvailableAdd"]}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Assumptions and the dated items behind every projected figure */}
-      {forecast && (
+      {forecast && !forecastEmpty && (
         <Card data-testid="forecast-items">
           <CardHeader>
             <CardTitle className="text-lg">

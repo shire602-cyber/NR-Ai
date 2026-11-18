@@ -82,7 +82,7 @@ export function BookkeeperCommandCenter({
       },
       {
         key: "week",
-        title: "This Week",
+        title: "This week",
         icon: Clock,
         items: deadlineItems
           .filter((item) => item.daysTilDue !== null && item.daysTilDue > 0 && item.daysTilDue <= 7)
@@ -90,7 +90,7 @@ export function BookkeeperCommandCenter({
       },
       {
         key: "month",
-        title: "Next 28 Days",
+        title: "Next 28 days",
         icon: Calendar,
         items: deadlineItems
           .filter(
@@ -100,7 +100,7 @@ export function BookkeeperCommandCenter({
       },
       {
         key: "blocked",
-        title: "Close Blockers",
+        title: "Close blockers",
         icon: TrendingUp,
         items: sortProductionItems(
           dashboardClients
@@ -214,7 +214,7 @@ export function BookkeeperCommandCenter({
     return [
       {
         key: "vat",
-        title: "VAT Cohorts",
+        title: "VAT cohorts",
         icon: Calendar,
         rows: (dashboard?.vatCohorts ?? []).slice(0, 3).map((cohort) => ({
           label: cohort.label,
@@ -277,7 +277,7 @@ export function BookkeeperCommandCenter({
       },
       {
         key: "bookkeeping",
-        title: "Bookkeeping Close",
+        title: "Bookkeeping close",
         icon: TrendingUp,
         rows: [
           makeRow(
@@ -299,7 +299,7 @@ export function BookkeeperCommandCenter({
       },
       {
         key: "accounting",
-        title: "Accounting Review",
+        title: "Accounting review",
         icon: CheckCircle2,
         rows: [
           makeRow(

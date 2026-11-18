@@ -62,7 +62,9 @@ export function EditorShell({
       data-testid={testId ?? "editor-shell"}
     >
       {/* Rendered inside the app's .page-container; the footer bleeds to its edges. */}
-      <div className="flex-1 space-y-6">
+      {/* Fable P1: an editor without a live preview is one centred 760 px column (header and
+          form together), so the right half of a wide screen is never left blank. */}
+      <div className={cn("flex-1 space-y-6", !preview && "mx-auto w-full max-w-narrow")}>
         <PageHeader
           eyebrow={eyebrow}
           title={title}
@@ -81,7 +83,7 @@ export function EditorShell({
         <div
           className={cn(
             "grid gap-6",
-            preview ? "lg:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]" : "max-w-narrow"
+            preview && "lg:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]"
           )}
         >
           <div className="min-w-0 space-y-6">{children}</div>

@@ -3,6 +3,9 @@ import {
   activityActionLabel,
   activityDescription,
   activityEntityLabel,
+  metadataChanges,
+  readableSentence,
+  withoutIds,
 } from "@/lib/activity-log-labels";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
@@ -347,37 +350,6 @@ export default function History() {
 }
 
 const ACTION_FILTERS = ["all", "create", "update", "delete", "view"] as const;
-
-const UUID_RE = /\s*\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
-
-/** Spec 3.10: ids live in the Details popover, never in the sentence. */
-function withoutIds(text: string): string {
-  return text
-    .replace(UUID_RE, "")
-    .replace(/\s+([.,;:])/g, "$1")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
-function metadataChanges(metadata: string | null | undefined): string {
-  if (!metadata) return "";
-  try {
-    const parsed = JSON.parse(metadata);
-    return Array.isArray(parsed.changes) ? parsed.changes.join(", ") : "";
-  } catch {
-    return "";
-  }
-}
-
-/**
- * The server's generic audit text reads "Company group create on company group"; when the action
- * has a catalog label ("Company group created") show that instead. Specific sentences
- * ("Invoice INV-2026-0042 created") are kept.
- */
-function readableSentence(sentence: string, actionLabel: string | undefined): string {
-  if (actionLabel && / on [a-z][a-z ]*$/.test(sentence)) return actionLabel;
-  return sentence;
-}
 
 /** "3 minutes ago" / "منذ 3 دقائق"; older than a week shows the date. */
 function relativeTime(date: Date, locale: string): string {

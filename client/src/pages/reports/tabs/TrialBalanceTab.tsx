@@ -24,7 +24,7 @@ export default function TrialBalanceTab() {
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">Debit / Credit Status</CardTitle>
+            <CardTitle className="text-sm font-medium">Debit / credit status</CardTitle>
           </CardHeader>
           <CardContent>
             {trialBalanceLoading ? (

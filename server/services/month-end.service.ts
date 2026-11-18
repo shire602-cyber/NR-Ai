@@ -250,7 +250,7 @@ export async function getCloseChecklist(
     const pendingCount = parseInt(queueResult.rows[0]?.pending || "0");
     checklist.push({
       id: 5,
-      title: "AI Inbox Clear",
+      title: "Assistant review clear",
       description: "All AI-suggested entries reviewed and processed",
       status: pendingCount === 0 ? "complete" : "incomplete",
       details:
@@ -272,7 +272,7 @@ export async function getCloseChecklist(
     const pendingCount = parseInt(classResult.rows[0]?.pending || "0");
     checklist.push({
       id: 5,
-      title: "AI Inbox Clear",
+      title: "Assistant review clear",
       description: "All AI-suggested classifications reviewed",
       status: pendingCount === 0 ? "complete" : "incomplete",
       details:

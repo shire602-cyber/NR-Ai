@@ -111,10 +111,10 @@ function fileToBase64(file: File): Promise<string> {
 function VatStatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
     draft: { label: "Draft", cls: "bg-muted text-foreground border-border" },
-    pending_review: { label: "Pending Review", cls: "bg-info-subtle text-info border-info/30" },
+    pending_review: { label: "Pending review", cls: "bg-info-subtle text-info border-info/30" },
     submitted: { label: "Submitted", cls: "bg-warning-subtle text-warning border-warning/30" },
     filed: { label: "Filed", cls: "bg-success-subtle text-success border-success/30" },
-    none: { label: "Not Started", cls: "bg-muted text-muted-foreground border-border" },
+    none: { label: "Not started", cls: "bg-muted text-muted-foreground border-border" },
   };
   const { label, cls } = map[status] ?? map.draft;
   return <Badge className={cls}>{label}</Badge>;

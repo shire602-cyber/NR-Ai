@@ -658,7 +658,8 @@ export default function FixedAssets() {
         }
       />
 
-      {summary && (
+      {/* Spec 2.6: no KPI row of zeros before the first asset exists. */}
+      {summary && assets.length > 0 && (
         <div className="mobile-keep-cols grid grid-cols-2 gap-4 sm:grid-cols-3">
           <StatCard
             label={t["pages.totalCost"]}
@@ -689,24 +690,26 @@ export default function FixedAssets() {
 
       {/* Assets */}
       <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="relative w-full sm:w-80">
-            <Search
-              className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            <Input
-              placeholder={t["screens.searchAssets"]}
-              aria-label={t["screens.searchAssets"]}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 ps-9"
-            />
+        {(assets.length > 0 || searchQuery) && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="relative w-full sm:w-80">
+              <Search
+                className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                placeholder={t["screens.searchAssets"]}
+                aria-label={t["screens.searchAssets"]}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-9 ps-9"
+              />
+            </div>
+            <p className="text-small text-muted-foreground">
+              {formatMessage(t["screens.assetsRegistered"], { count: assets.length })}
+            </p>
           </div>
-          <p className="text-small text-muted-foreground">
-            {formatMessage(t["screens.assetsRegistered"], { count: assets.length })}
-          </p>
-        </div>
+        )}
         <DataTableCard
           status={isLoadingAssets ? "loading" : filteredAssets.length === 0 ? "empty" : "ready"}
           columnLabels={[t["pageLabels.assetName"], t["screens.cost"], t["screens.nbv"], t.status]}

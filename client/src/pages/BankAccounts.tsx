@@ -44,7 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -218,7 +218,7 @@ export default function BankAccounts() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow={tr("banking.feeds.connections")}
+        eyebrow={tr("shell.nav.banking")}
         title={tr("banking.accounts.title")}
         description={tr("banking.accounts.description")}
         actions={
@@ -345,7 +345,10 @@ export default function BankAccounts() {
                   </TableCell>
                   <TableCell data-truncate="" data-cell="title">
                     <span dir="ltr" className="[unicode-bidi:isolate]">
-                      {b.fileName ?? b.source}
+                      {b.fileName ??
+                        formatMessage(tr("banking.imports.sourceImport"), {
+                          format: b.source.toUpperCase(),
+                        })}
                     </span>
                     {b.continuityWarning && (
                       <p className="truncate text-caption text-warning" title={b.continuityWarning}>

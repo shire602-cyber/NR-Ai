@@ -218,7 +218,7 @@
   "hr.duplicate.iban": "Another employee already uses this IBAN",
   "hr.duplicate.emiratesId": "Another employee already uses this Emirates ID",
   "hr.settlementPayFrom": "Pay the settlement",
-  "hr.settlementPayLater": "Later (keep in Salaries Payable)",
+  "hr.settlementPayLater": "Later (keep in salaries payable)",
   "hr.settlementPaid": "Settlement payment recorded",
   "hr.settlementPayHint": "Pay {amount} to {name} from a cash or bank account. This clears Salaries Payable.",
   "hr.settlementFinalSalaryNote": "Salary for the days worked in {month} {year} is paid in that month's payroll run, not in this settlement.",

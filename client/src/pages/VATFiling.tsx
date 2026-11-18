@@ -965,7 +965,7 @@ export default function VATFiling() {
     <div className="space-y-6">
       <PageHeader
         eyebrow={locale === "ar" ? "الامتثال الضريبي" : "Compliance"}
-        title={locale === "ar" ? "إقرار ضريبة القيمة المضافة 201" : "UAE VAT 201 Return"}
+        title={locale === "ar" ? "إقرار ضريبة القيمة المضافة 201" : "UAE VAT 201 return"}
         description={
           locale === "ar"
             ? "إعداد أرقام VAT 201 ومراجعتها وتصديرها لاستخدامها في قناة التقديم الرسمية"
@@ -1636,7 +1636,7 @@ export default function VATFiling() {
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {locale === "ar" ? "عرض الإقرار الضريبي" : "View VAT 201 Return"}
+              {locale === "ar" ? "عرض الإقرار الضريبي" : "View VAT 201 return"}
             </DialogTitle>
             <DialogDescription>
               {selectedReturn && (

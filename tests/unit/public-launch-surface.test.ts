@@ -300,7 +300,7 @@ describe("Public SaaS launch surface", () => {
     }
 
     expect(migrationSource).toContain(
-      "Switch from Mazeed, Wafeq, Zoho Books, or Excel without losing audit trail."
+      "Switch from Mazeed, Wafeq, Zoho Books, or Excel without losing your audit trail."
     );
     expect(migrationText).toContain("Prior-system report packs from Mazeed, Wafeq, Zoho Books");
     expect(helpSource).toContain("Migration review covers Mazeed, Wafeq, Zoho Books, and Excel");

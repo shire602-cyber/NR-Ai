@@ -14,11 +14,12 @@ import {
   Building2,
   Copy,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
@@ -158,16 +159,16 @@ export default function UserInvitations() {
 
     if (invitation.status === "accepted") {
       return (
-        <Badge className="bg-success/10 text-success border-success/20">
+        <StatusBadge tone="success">
           <T k="pages.accepted" />
-        </Badge>
+        </StatusBadge>
       );
     }
     if (invitation.status === "revoked") {
       return (
-        <Badge variant="destructive">
+        <StatusBadge tone="danger">
           <T k="pages.revoked" />
-        </Badge>
+        </StatusBadge>
       );
     }
     if (isExpired) {
@@ -178,9 +179,9 @@ export default function UserInvitations() {
       );
     }
     return (
-      <Badge className="bg-info/10 text-info border-info/20">
+      <StatusBadge tone="info">
         <T k="pages.pending" />
-      </Badge>
+      </StatusBadge>
     );
   };
 
@@ -212,9 +213,6 @@ export default function UserInvitations() {
       </div>
     );
   }
-
-  const pendingCount = invitations.filter((i) => i.status === "pending").length;
-  const acceptedCount = invitations.filter((i) => i.status === "accepted").length;
 
   return (
     <div className="space-y-6">
@@ -321,39 +319,6 @@ export default function UserInvitations() {
           </form>
         </DialogContent>
       </Dialog>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="pageLabels.totalInvitations" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{invitations.length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="pages.pending" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-info">{pendingCount}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">
-              <T k="pages.accepted" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-success">{acceptedCount}</div>
-          </CardContent>
-        </Card>
-      </div>
 
       <Card>
         <CardHeader>

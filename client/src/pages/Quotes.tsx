@@ -791,7 +791,7 @@ export default function Quotes() {
             (t as any).quotesEmptyDesc ??
             "Send a professional quote in minutes — accepted quotes convert to invoices with one click.",
           action: {
-            label: (t as any).newQuote ?? "New Quote",
+            label: (t as any).newQuote ?? "New quote",
             onClick: openNewQuote,
           },
           testId: "empty-quotes",

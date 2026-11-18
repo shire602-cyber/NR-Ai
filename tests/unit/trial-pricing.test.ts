@@ -257,14 +257,16 @@ describe("/subscription", () => {
     expect(text()).toContain("12.5 MB / 500 MB");
   });
 
-  it("aligns plan features with /pricing: OCR coming soon, e-invoicing with provider", async () => {
+  it("aligns plan features with /pricing: AI receipt reading arrives later, e-invoicing with provider", async () => {
     await renderSubscription();
     // WP-E: plan cards are the shared PlanCard; the claims live in the comparison table.
     const cells = (label: string) =>
       [...container.querySelectorAll("tr")].find((r) =>
         r.querySelector("td")?.textContent?.startsWith(label)
       )?.textContent ?? "";
-    expect(cells("OCR receipt scanning")).toContain("Coming soon");
+    // Fable P3: the row uses the pricing page wording, not "OCR ... Coming soon".
+    expect(cells("AI receipt reading")).toContain("Arrives later");
+    expect(text()).not.toContain("Coming soon");
     expect(cells("E-invoicing")).toContain("With provider");
     expect(text()).not.toContain("E-invoicing XML workflow");
   });

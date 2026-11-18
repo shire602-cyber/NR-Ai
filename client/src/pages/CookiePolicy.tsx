@@ -16,7 +16,7 @@ export default function CookiePolicy() {
         .
       </p>
 
-      <h2>1. What Are Cookies?</h2>
+      <h2>1. What are cookies?</h2>
       <p>
         Cookies are small text files placed on your device when you visit a website. They allow the
         site to recognise your device and remember information about your visit, such as your
@@ -24,7 +24,7 @@ export default function CookiePolicy() {
         localStorage) for similar purposes.
       </p>
 
-      <h2>2. Categories of Cookies We Use</h2>
+      <h2>2. Categories of cookies we use</h2>
 
       <h3>
         <T k="pageLabels.strictlyNecessary" />
@@ -54,14 +54,14 @@ export default function CookiePolicy() {
       </h3>
       <p>{t["cookiePolicy.weDoNotCurrentlySet"]}</p>
 
-      <h2>3. Third-Party Cookies</h2>
+      <h2>3. Third-party cookies</h2>
       <p>
         Some pages may load content from trusted third parties (such as Google Fonts) which may set
         their own cookies. We do not control these cookies; please consult the relevant provider's
         privacy policy.
       </p>
 
-      <h2>4. Managing Cookies</h2>
+      <h2>4. Managing cookies</h2>
       <p>
         Most browsers allow you to refuse or delete cookies via their settings. Note that disabling
         strictly necessary cookies will prevent you from signing in or using core features of the
@@ -72,7 +72,7 @@ export default function CookiePolicy() {
         .
       </p>
 
-      <h2>5. Changes to This Policy</h2>
+      <h2>5. Changes to this policy</h2>
       <p>
         We may update this Cookie Policy from time to time to reflect changes in technology or
         regulation. The "Effective date" above shows when this policy was last updated.

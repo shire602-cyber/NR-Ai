@@ -341,7 +341,8 @@ async function generateStandardInvoicePDF(
   );
   const rows: Array<{ label: Bi; value: string; bold?: boolean; ruleAbove?: boolean }> = [];
   if (discountAmount > 0)
-    rows.push({ label: bi("Discount", "الخصم"), value: `- ${m(discountAmount)}` });
+    // Fable P16: a true minus with no space ("−AED 25,000.00"), as in the app.
+    rows.push({ label: bi("Discount", "الخصم"), value: `\u2212${m(discountAmount)}` });
   rows.push({ label: bi("Subtotal excl. VAT", "المجموع قبل الضريبة"), value: m(totals.subtotal) });
   rows.push({
     label: invoice.reverseCharge
@@ -364,7 +365,7 @@ async function generateStandardInvoicePDF(
   if (totals.amountPaid > 0) {
     rows.push({
       label: bi("Payments received", "المدفوعات المستلمة"),
-      value: `- ${m(totals.amountPaid)}`,
+      value: `\u2212${m(totals.amountPaid)}`,
     });
   }
   const totalsW = 78 * MM;
@@ -376,7 +377,8 @@ async function generateStandardInvoicePDF(
   if (totals.vatAed !== null) {
     text(
       ledger.doc,
-      `${ledger.inline(bi("Exchange rate", "سعر الصرف"))}: ${ltr(`1 ${totals.currency} = ${totals.exchangeRate.toFixed(4)} AED`)}`,
+      // Fable P16: label and colon share one isolate so Arabic never reads "AED :Exchange rate".
+      `\u2068${ledger.inline(bi("Exchange rate", "سعر الصرف"))}:\u2069 ${ltr(`1 ${totals.currency} = ${totals.exchangeRate.toFixed(4)} AED`)}`,
       {
         x: totalsX,
         y: ledger.y - 8,

@@ -29,7 +29,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTableCard } from "@/components/ui/data-table";
-import { MoneyCell } from "@/components/ui/money";
+import { Money, MoneyCell } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
@@ -396,10 +396,16 @@ export default function Inventory() {
             <T k="pages.return" />
           </Badge>
         );
+      case "opening":
+        return <Badge variant="outline">{t["pages.movementOpening"]}</Badge>;
       default:
-        return <Badge variant="outline">{type}</Badge>;
+        // G8: never print a raw enum; unknown codes are humanised ("stock_take" -> "Stock take").
+        return <Badge variant="outline">{humaniseCode(type)}</Badge>;
     }
   };
+  // G8: unit codes ("each", "pcs") print through the catalog; free-text units stay as entered.
+  const unitLabel = (unit: string | null | undefined) =>
+    unit ? (t[`pages.unitShort.${unit.toLowerCase()}`] ?? unit) : "";
 
   const getProductName = (productId: string): string => {
     const product = productsList.find((p) => p.id === productId);
@@ -576,7 +582,9 @@ export default function Inventory() {
                         <span className={cn("font-medium", isLowStock && "text-warning")}>
                           {product.currentStock}
                         </span>{" "}
-                        <span className="text-caption text-muted-foreground">{product.unit}</span>
+                        <span className="text-caption text-muted-foreground">
+                          {unitLabel(product.unit)}
+                        </span>
                       </TableCell>
                       <TableCell data-nowrap="" data-cell="status">
                         {isLowStock ? (
@@ -1179,6 +1187,11 @@ export default function Inventory() {
   );
 }
 
+function humaniseCode(code: string): string {
+  const spaced = code.replace(/[._-]+/g, " ").trim();
+  return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : code;
+}
+
 // ─── W4-B: inventory accounting (valuation vs GL, warehouses, stocktake, settings) ──────────
 
 const INVENTORY_COPY = {
@@ -1483,7 +1496,38 @@ function InventoryAccountingTabs({
                 })}
               </Alert>
             )}
-            <Table>
+            {/* Under 640 px the four-column table cannot fit: each product is a two-line row
+                (name over quantity × unit cost, value at the end). */}
+            <ul className="divide-y divide-border sm:hidden" data-testid="valuation-list-mobile">
+              {(v?.rows ?? []).map((r) => (
+                <li key={r.productId} className="flex items-start justify-between gap-3 py-3">
+                  <div className="min-w-0">
+                    <p className="text-small font-medium text-foreground">{nameOf(r)}</p>
+                    <p className="text-caption text-muted-foreground tabular-nums">
+                      <span dir="ltr">{r.quantity}</span> × <Money amount={Number(r.unitCost)} />
+                    </p>
+                  </div>
+                  <Money amount={Number(r.value)} className="shrink-0 text-small" />
+                </li>
+              ))}
+              {v && (
+                <>
+                  <li className="flex items-center justify-between gap-3 py-3 font-semibold">
+                    <span>{c.total}</span>
+                    <Money amount={Number(v.totalValue)} className="text-small" />
+                  </li>
+                  <li className="flex items-center justify-between gap-3 py-3 text-small">
+                    <span>{c.glBalance}</span>
+                    <Money amount={Number(v.glBalance)} />
+                  </li>
+                  <li className="flex items-center justify-between gap-3 py-3 text-small">
+                    <span>{c.difference}</span>
+                    <Money amount={Number(v.difference)} />
+                  </li>
+                </>
+              )}
+            </ul>
+            <Table className="hidden sm:table">
               <TableHeader>
                 <TableRow>
                   <TableHead>{c.product}</TableHead>

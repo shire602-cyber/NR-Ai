@@ -34,7 +34,6 @@ import {
   PiggyBank,
   ReceiptText,
   Repeat,
-  Rss,
   Settings,
   Shield,
   ShieldCheck,
@@ -156,6 +155,9 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
         url: "/bank-accounts",
         icon: Landmark,
         testId: "banking.accounts.title",
+        // Fable P12: no bank-feed provider is available yet, so Bank feeds has no nav item;
+        // the route stays (it says "Not available yet") and highlights Accounts.
+        matches: ["/bank-feeds"],
       },
       {
         titleKey: "shell.nav.reconciliation",
@@ -163,12 +165,6 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
         icon: ArrowLeftRight,
         testId: "bankReconciliation",
         matches: ["/reconciliation-rules", "/auto-reconcile"],
-      },
-      {
-        titleKey: "shell.nav.bankFeeds",
-        url: "/bank-feeds",
-        icon: Rss,
-        testId: "banking.feeds.title",
       },
     ],
   },
@@ -217,7 +213,7 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
     icon: BarChart3,
     url: "/reports",
     // Analytics became the Insights tab of Reports (WP-D); the old routes redirect.
-    matches: ["/analytics", "/advanced-analytics", "/advanced-reports"],
+    matches: ["/analytics", "/advanced-analytics", "/advanced-reports", "/cashflow-forecast"],
     items: [],
   },
   {
