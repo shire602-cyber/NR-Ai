@@ -116,6 +116,24 @@ describe("sweep: Invoices > Customer deposits dialog", () => {
   });
 });
 
+describe("STEP1 F1: deposit dialog sends AED once (server validator converts to fils)", () => {
+  it("create and apply bodies carry the typed AED amount, never fils", async () => {
+    const { depositBody, applyBody } =
+      await import("../../client/src/pages/invoices/CustomerDepositsDialog");
+    const body = depositBody({
+      customerName: "Palm Co",
+      date: "2026-11-01",
+      amount: " 1050 ",
+      vatTreatment: "standard",
+      paymentAccountId: "acc",
+      reference: "",
+    });
+    expect(body.amount).toBe("1050");
+    expect(body.amount).not.toBe(105000);
+    expect(applyBody("inv-1", "525.50")).toEqual({ invoiceId: "inv-1", amount: "525.50" });
+  });
+});
+
 describe("sweep: bill preview decodes the chosen file without fetch (CSP connect-src 'self')", () => {
   it("turns a base64 data URL into a typed Blob with the same bytes", async () => {
     const { dataUrlToBlob } = await import("../../client/src/lib/purchase-files");

@@ -67,7 +67,35 @@ interface Account {
 }
 
 const TREATMENTS = ["standard", "zero_rated", "exempt", "out_of_scope"] as const;
-const toFils = (v: string) => Math.round(Number(v) * 100);
+/**
+ * Money on the wire is a major-unit (AED) decimal string: the server validator `zPositiveFils`
+ * converts it to integer fils exactly once. Never convert to fils here (that booked AED 1,050 as
+ * 105,000 and made "Apply" fail with 409).
+ */
+export const toWireAmount = (v: string) => v.trim();
+
+export function depositBody(form: {
+  customerName: string;
+  date: string;
+  amount: string;
+  vatTreatment: string;
+  paymentAccountId: string;
+  reference: string;
+}) {
+  return {
+    customerName: form.customerName,
+    date: form.date,
+    amount: toWireAmount(form.amount),
+    vatTreatment: form.vatTreatment,
+    paymentAccountId: form.paymentAccountId,
+    reference: form.reference || null,
+  };
+}
+
+export const applyBody = (invoiceId: string, amount: string) => ({
+  invoiceId,
+  amount: toWireAmount(amount),
+});
 
 /**
  * A4 (M1): customer deposits / advances. VAT is due on receipt (FDL 8/2017 Art. 26); applying
@@ -119,14 +147,7 @@ export function CustomerDepositsDialog({
 
   const create = useMutation({
     mutationFn: () =>
-      apiRequest("POST", `/api/companies/${companyId}/customer-deposits`, {
-        customerName: form.customerName,
-        date: form.date,
-        amount: toFils(form.amount),
-        vatTreatment: form.vatTreatment,
-        paymentAccountId: form.paymentAccountId,
-        reference: form.reference || null,
-      }),
+      apiRequest("POST", `/api/companies/${companyId}/customer-deposits`, depositBody(form)),
     onSuccess: () => {
       refresh();
       setForm({ ...form, customerName: "", amount: "", reference: "" });
@@ -140,10 +161,7 @@ export function CustomerDepositsDialog({
       apiRequest(
         "POST",
         `/api/companies/${companyId}/customer-credits/${applying!.creditId}/apply`,
-        {
-          invoiceId,
-          amount: toFils(applyAmount),
-        }
+        applyBody(invoiceId, applyAmount)
       ),
     onSuccess: () => {
       refresh();
