@@ -897,6 +897,13 @@
    "when": 1781430430000,
    "tag": "0128_wq5_einvoice_identity",
    "breakpoints": false
+  },
+  {
+   "idx": 128,
+   "version": "7",
+   "when": 1781430440000,
+   "tag": "0129_wq1_sales_documents",
+   "breakpoints": false
   }
  ]
 }

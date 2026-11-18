@@ -465,5 +465,9 @@
   "activityLog.action.company.einvoicing_appointment_self_confirm": "أكّدت الشركة تعيين شريك الفوترة الإلكترونية",
   "activityLog.action.company.einvoicing_approver_link_create": "أُنشئ رابط موافقة الفوترة الإلكترونية",
   "activityLog.action.company.einvoicing_approver_link_revoke": "سُحب رابط موافقة الفوترة الإلكترونية",
-  "activityLog.action.company.einvoicing_approver_done": "سُجّلت الموافقة على الفوترة الإلكترونية"
+  "activityLog.action.company.einvoicing_approver_done": "سُجّلت الموافقة على الفوترة الإلكترونية",
+  "activityLog.action.invoice.attachment_add": "أُرفق ملف بالفاتورة",
+  "activityLog.action.invoice.attachment_remove": "أُزيل ملف من الفاتورة",
+  "activityLog.action.invoice.receive_payment": "طُبّقت دفعة العميل على الفواتير",
+  "activityLog.action.invoice.cash_sale": "سُجّل بيع نقدي"
 }
