@@ -459,6 +459,7 @@ export function registerQuoteRoutes(app: Express) {
       const built = buildQuoteEmail({
         company,
         customerName: quote.customerName,
+        customerNameAr: customer?.nameAr ?? null,
         quoteNumber: quote.number,
         total: Number(quote.total),
         currency: quote.currency,

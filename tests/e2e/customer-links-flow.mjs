@@ -123,11 +123,36 @@ const htmlToLines = (html) =>
 const hrefsOf = (html) =>
   [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1].replace(/&amp;/g, "&"));
 
+const CUSTOMER_NAME_EN = "Desert Rose Catering LLC";
+const CUSTOMER_NAME_AR = "ديزرت روز للتموين";
+
+/** The greeting follows the language: Arabic name in Arabic, never the English invoice snapshot. */
+function checkGreeting(row, label, expect) {
+  const arGreeting = `عزيزنا <bdi>${CUSTOMER_NAME_AR}</bdi>،`;
+  if (expect === "ar") {
+    check(row.html.includes(arGreeting), `${label}: Arabic greeting uses the Arabic name`);
+    check(
+      !row.html.includes(CUSTOMER_NAME_EN) && !row.text_body.includes(CUSTOMER_NAME_EN),
+      `${label}: no English customer name in the Arabic message`
+    );
+    check(
+      row.text_body.includes(CUSTOMER_NAME_AR),
+      `${label}: plain text greets by the Arabic name`
+    );
+  } else {
+    check(
+      row.html.includes(arGreeting) && row.html.includes(`Dear <bdi>${CUSTOMER_NAME_EN}</bdi>,`),
+      `${label}: bilingual greeting has the English name in English and the Arabic name in Arabic`
+    );
+  }
+}
+
 /** Assert one e-mail: language, absolute resolving links, no English in Arabic, no TRN. */
 async function checkEmail(row, kind, scenario, allow, { expect, links = true }) {
   const label = `${kind} e-mail`;
   check(!!row, `${label} is in the outbox`);
   if (!row) return [];
+  if (/^(invoice|reminder|quote|statement)$/.test(kind)) checkGreeting(row, label, expect);
   const lang = (row.html.match(/<html[^>]*\blang="([a-z]+)"/) || [])[1];
   if (expect === "ar") {
     check(
@@ -313,7 +338,7 @@ async function runScenario(browser, scenario, viewport) {
   const email = `e2e+${RUN}${scenario.id}${viewport}@example.com`;
   const companyName =
     scenario.companyLocale === "ar" ? "شركة النور للتجارة" : "Al Noor Trading LLC";
-  const customerName = "Desert Rose Catering LLC";
+  const customerName = CUSTOMER_NAME_EN;
   const allow = [
     companyName,
     customerName,
@@ -374,7 +399,7 @@ async function runScenario(browser, scenario, viewport) {
     await shot(page, "contacts-list");
     await page.getByTestId("button-add-contact").click();
     await page.getByTestId("input-contact-name").fill(customerName);
-    await page.getByTestId("input-contact-name-ar").fill("ديزرت روز للتموين");
+    await page.getByTestId("input-contact-name-ar").fill(CUSTOMER_NAME_AR);
     await page.getByTestId("input-contact-email").fill(cEmail);
     const sel = page.getByTestId("select-contact-language");
     await sel.scrollIntoViewIfNeeded();
@@ -396,7 +421,7 @@ async function runScenario(browser, scenario, viewport) {
   if (!contactId) {
     const ct = await api("POST", `/api/companies/${cid}/customer-contacts`, tok, {
       name: customerName,
-      nameAr: "ديزرت روز للتموين",
+      nameAr: CUSTOMER_NAME_AR,
       email: cEmail,
       emirate: "dubai",
       ...(scenario.contactLang ? { preferredLanguage: scenario.contactLang } : {}),

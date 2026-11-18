@@ -342,6 +342,7 @@ export function registerInvoiceShareRoutes(app: Express) {
       const result = await sendInvoiceEmail(to, invoice, company, pdfBuffer, subject, message, {
         throwOnFailure: false,
         language: resolveEmailLanguage(language, customer?.preferredLanguage, company.locale),
+        customerNameAr: customer?.nameAr ?? null,
         portalUrl: shareUrl,
         payUrl: shareUrl && paymentsAvailability().available ? shareUrl : null,
       });
@@ -432,6 +433,7 @@ export function registerInvoiceShareRoutes(app: Express) {
           payUrl: paymentsAvailability().available ? shareUrl : null,
           portalUrl: shareUrl,
           language: resolveEmailLanguage(null, customer?.preferredLanguage, company.locale),
+          customerNameAr: customer?.nameAr ?? null,
           throwOnFailure: false,
         }
       );

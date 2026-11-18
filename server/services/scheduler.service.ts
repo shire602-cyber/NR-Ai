@@ -408,6 +408,7 @@ async function dunOne(args: {
       invoice,
       company,
       customerName: contact.name,
+      customerNameAr: contact.nameAr ?? null,
       openFils: Number(inv.open_fils),
       level,
       daysOverdue,
@@ -940,6 +941,7 @@ async function finishGeneratedInvoice(
     const pdf = await generateInvoicePDF(fresh, lines, company);
     // WQ1 (7.13): always through the durable outbox. With no provider the email is queued
     // (blocked_no_provider) and delivered once one is configured — never reported as sent.
+    const contact = fresh.contactId ? await storage.getCustomerContact(fresh.contactId) : null;
     const result = await sendInvoiceEmail(
       template.sendToEmail,
       fresh,
@@ -947,7 +949,10 @@ async function finishGeneratedInvoice(
       pdf,
       undefined,
       undefined,
-      { throwOnFailure: false }
+      {
+        throwOnFailure: false,
+        customerNameAr: contact?.nameAr ?? null,
+      }
     );
     if (!result.sent) {
       return {

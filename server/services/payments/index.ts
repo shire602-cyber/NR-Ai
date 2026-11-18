@@ -623,6 +623,7 @@ async function emailReceipt(link: PaymentLink, amountFils: number) {
   const built = buildReceiptEmail({
     company: company ?? { name: "Muhasib.ai", businessAddress: null, contactEmail: null },
     customerName: contact.name,
+    customerNameAr: contact.nameAr ?? null,
     invoiceNumber: invoice.number,
     amount: Number(fromFils(amountFils)),
     currency: link.currency,

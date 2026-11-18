@@ -241,6 +241,7 @@ export async function sendPaymentReminderEmail(
     payUrl?: string | null;
     portalUrl?: string | null;
     language?: EmailLanguage;
+    customerNameAr?: string | null;
     throwOnFailure?: boolean;
   } = {}
 ): Promise<SendEmailResult> {
@@ -251,6 +252,7 @@ export async function sendPaymentReminderEmail(
     invoice,
     company,
     customerName: invoice.customerName,
+    customerNameAr: opts.customerNameAr ?? null,
     openFils: opts.openFils ?? Math.round(Number(invoice.total) * 100),
     level: reminderNumber,
     daysOverdue,

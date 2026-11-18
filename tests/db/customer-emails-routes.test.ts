@@ -169,3 +169,43 @@ describe("customer e-mails: language follows the customer", () => {
     expect(row.html + row.text_body).not.toMatch(/100123456700003|\bTRN\b/);
   });
 });
+
+describe("customer e-mails: Arabic greeting uses the Arabic name", () => {
+  it("invoice and reminder in Arabic greet by the contact's Arabic name, never the English snapshot", async () => {
+    const t = await h.createTenant();
+    const c = await contact(t, { preferredLanguage: "ar" });
+    const inv = await issued(t, c.id);
+    expect(
+      (await t.as.post(`${base(t)}/invoices/${inv.id}/send-email`, { to: "g1@example.test" }))
+        .status
+    ).toBe(202);
+    const sent = await outbox("invoice", "g1@example.test");
+    expect(sent.html).toContain("عزيزنا <bdi>الخليج للتجزئة</bdi>،");
+    expect(sent.html).not.toContain("Gulf Retail LLC");
+    expect(sent.text_body).toContain("الخليج للتجزئة");
+
+    const rem = await t.as.post(`${base(t)}/invoices/${inv.id}/send-reminder`, {
+      to: "g2@example.test",
+    });
+    expect(rem.status, rem.text).toBeLessThan(300);
+    const reminder = await outbox("reminder", "g2@example.test");
+    expect(reminder.html).toContain("عزيزنا <bdi>الخليج للتجزئة</bdi>،");
+    expect(reminder.html).not.toContain("Gulf Retail LLC");
+  });
+
+  it("with no Arabic name the Arabic greeting is neutral; English keeps the English name", async () => {
+    const t = await h.createTenant();
+    const c = await contact(t, { nameAr: null, preferredLanguage: "ar" });
+    const inv = await issued(t, c.id);
+    await t.as.post(`${base(t)}/invoices/${inv.id}/send-email`, { to: "g3@example.test" });
+    const ar = await outbox("invoice", "g3@example.test");
+    expect(ar.html).toContain("عزيزنا العميل،");
+    expect(ar.html).not.toContain("Gulf Retail LLC");
+    await t.as.post(`${base(t)}/invoices/${inv.id}/send-email`, {
+      to: "g4@example.test",
+      language: "en",
+    });
+    const en = await outbox("invoice", "g4@example.test");
+    expect(en.html).toContain("Dear <bdi>Gulf Retail LLC</bdi>,");
+  });
+});

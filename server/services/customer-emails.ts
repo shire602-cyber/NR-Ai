@@ -75,9 +75,43 @@ function englishDays(n: number): string {
   return n === 1 ? "1 day" : `${n} days`;
 }
 
-const greeting = (name: string): BilingualBlock => ({
+const ARABIC_SCRIPT = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+const LATIN_LETTER = /[A-Za-z\u00C0-\u024F]/;
+
+/** A name fit for an Arabic greeting: has Arabic letters and no Latin-script letters. */
+function arabicOnly(name: string | null | undefined): string | null {
+  const v = name?.trim();
+  return v && ARABIC_SCRIPT.test(v) && !LATIN_LETTER.test(v) ? v : null;
+}
+
+export interface GreetingNames {
+  /** The name on the document (invoice/quote snapshot, contact name). */
+  name?: string | null;
+  /** The contact's Arabic name (customer_contacts.name_ar). */
+  nameAr?: string | null;
+  /** The customer company's Arabic name, when it is a separate field from the contact's. */
+  companyNameAr?: string | null;
+}
+
+/** Neutral Arabic greeting used when no Arabic-script name is known. */
+export const NEUTRAL_AR_GREETING = "عزيزنا العميل،";
+
+/**
+ * The Arabic greeting line: the contact's Arabic name, else an Arabic-script document name,
+ * else the company's Arabic name, else a neutral greeting. A Latin-script name is never used.
+ */
+export function arabicGreeting(names: GreetingNames): string {
+  const who = arabicOnly(names.nameAr) ?? arabicOnly(names.name) ?? arabicOnly(names.companyNameAr);
+  return who ? `عزيزنا ${isolateInline(who)}،` : NEUTRAL_AR_GREETING;
+}
+
+const greeting = (
+  name: string,
+  nameAr?: string | null,
+  companyNameAr?: string | null
+): BilingualBlock => ({
   en: `Dear ${isolateInline(name)},`,
-  ar: `عزيزنا ${isolateInline(name)}،`,
+  ar: arabicGreeting({ name, nameAr, companyNameAr }),
 });
 
 // ─── Invoice ─────────────────────────────────────────────────────
@@ -87,6 +121,8 @@ export interface InvoiceEmailOptions {
   portalUrl?: string | null;
   einvoiceUrl?: string | null;
   language?: EmailLanguage;
+  /** The contact's Arabic name, for the Arabic greeting. */
+  customerNameAr?: string | null;
   /** Throw EmailNotSentError when not sent (default true, the historic contract). */
   throwOnFailure?: boolean;
 }
@@ -113,14 +149,14 @@ export function buildInvoiceEmail(
     },
     paragraphs: {
       en: [
-        greeting(invoice.customerName).en,
+        greeting(invoice.customerName, opts.customerNameAr).en,
         `Please find attached invoice <strong>${number}</strong> from <strong>${co}</strong> for <strong>${escapeHtml(total.en)}</strong>.`,
         ...custom,
         ...(opts.einvoiceUrl ? [`E-invoice status: ${escapeHtml(opts.einvoiceUrl)}`] : []),
         ...(contact ? [`For any queries, please contact ${contact}.`] : []),
       ],
       ar: [
-        greeting(invoice.customerName).ar,
+        greeting(invoice.customerName, opts.customerNameAr).ar,
         `تجدون مرفقاً الفاتورة رقم <strong>${number}</strong> من <strong>${co}</strong> بمبلغ <strong>${escapeHtml(total.ar)}</strong>.`,
         ...(contact ? [`للاستفسار يرجى التواصل عبر ${contact}.`] : []),
       ],
@@ -155,6 +191,8 @@ export interface ReminderEmailInput {
   invoice: Invoice;
   company: Company;
   customerName: string;
+  /** The contact's Arabic name, for the Arabic greeting. */
+  customerNameAr?: string | null;
   openFils: number;
   level: number;
   daysOverdue: number;
@@ -228,7 +266,7 @@ export function buildReminderEmail(i: ReminderEmailInput): BuiltEmail {
   const enBody = i.customTemplate
     ? [renderTemplate(i.customTemplate, vars).replace(/\n/g, "<br>")]
     : [
-        greeting(i.customerName).en,
+        greeting(i.customerName, i.customerNameAr).en,
         overdue
           ? `Invoice <strong>${number}</strong> was due on ${escapeHtml(due.en)} and is now ${englishDays(days)} overdue. The outstanding balance is <strong>${escapeHtml(amount.en)}</strong>.`
           : `This is a friendly reminder that invoice <strong>${number}</strong> for <strong>${escapeHtml(amount.en)}</strong> is due on ${escapeHtml(due.en)}.`,
@@ -236,7 +274,7 @@ export function buildReminderEmail(i: ReminderEmailInput): BuiltEmail {
         "If you have already paid, please disregard this message.",
       ].filter(Boolean);
   const arBody = [
-    greeting(i.customerName).ar,
+    greeting(i.customerName, i.customerNameAr).ar,
     overdue
       ? `استحقت الفاتورة رقم <strong>${number}</strong> بتاريخ ${escapeHtml(due.ar)} وقد مضى على استحقاقها ${arabicDays(days)}. الرصيد المستحق <strong>${escapeHtml(amount.ar)}</strong>.`
       : `نذكّركم بأن الفاتورة رقم <strong>${number}</strong> بمبلغ <strong>${escapeHtml(amount.ar)}</strong> تستحق بتاريخ ${escapeHtml(due.ar)}.`,
@@ -285,6 +323,8 @@ export function buildReminderEmail(i: ReminderEmailInput): BuiltEmail {
 export interface ReceiptEmailInput {
   company: Pick<Company, "name" | "businessAddress" | "contactEmail">;
   customerName: string;
+  /** The contact's Arabic name, for the Arabic greeting. */
+  customerNameAr?: string | null;
   invoiceNumber: string;
   amount: number;
   currency: string;
@@ -309,11 +349,11 @@ export function buildReceiptEmail(i: ReceiptEmailInput): BuiltEmail {
     },
     paragraphs: {
       en: [
-        greeting(i.customerName).en,
+        greeting(i.customerName, i.customerNameAr).en,
         `We received your online payment of <strong>${escapeHtml(amount.en)}</strong> for invoice <strong>${number}</strong>.`,
       ],
       ar: [
-        greeting(i.customerName).ar,
+        greeting(i.customerName, i.customerNameAr).ar,
         `استلمنا دفعتكم الإلكترونية بمبلغ <strong>${escapeHtml(amount.ar)}</strong> عن الفاتورة رقم <strong>${number}</strong>.`,
       ],
     },
@@ -337,6 +377,8 @@ export function buildReceiptEmail(i: ReceiptEmailInput): BuiltEmail {
 export interface QuoteEmailInput {
   company: Company;
   customerName: string;
+  /** The contact's Arabic name, for the Arabic greeting. */
+  customerNameAr?: string | null;
   quoteNumber: string;
   total: number;
   currency: string;
@@ -362,13 +404,13 @@ export function buildQuoteEmail(i: QuoteEmailInput): BuiltEmail {
     },
     paragraphs: {
       en: [
-        greeting(i.customerName).en,
+        greeting(i.customerName, i.customerNameAr).en,
         `Please find attached quote <strong>${number}</strong> from <strong>${co}</strong> for <strong>${escapeHtml(total.en)}</strong>.`,
         ...custom,
         ...(i.portalUrl ? ["You can review it online and accept or decline it there."] : []),
       ],
       ar: [
-        greeting(i.customerName).ar,
+        greeting(i.customerName, i.customerNameAr).ar,
         `تجدون مرفقاً عرض السعر رقم <strong>${number}</strong> من <strong>${co}</strong> بمبلغ <strong>${escapeHtml(total.ar)}</strong>.`,
         ...(i.portalUrl ? ["يمكنكم مراجعته عبر الإنترنت وقبوله أو رفضه من هناك."] : []),
       ],
@@ -400,6 +442,8 @@ export function buildQuoteEmail(i: QuoteEmailInput): BuiltEmail {
 export interface StatementEmailInput {
   company: Pick<Company, "name" | "businessAddress" | "contactEmail">;
   customerName: string;
+  /** The contact's Arabic name, for the Arabic greeting. */
+  customerNameAr?: string | null;
   asOf: string;
   balances: Array<{ currency: string; closingBalance: number }>;
   message?: string | null;
@@ -424,12 +468,12 @@ export function buildStatementEmail(i: StatementEmailInput): BuiltEmail {
     },
     paragraphs: {
       en: [
-        greeting(i.customerName).en,
+        greeting(i.customerName, i.customerNameAr).en,
         `Please find attached your statement of account with <strong>${isolateInline(i.company.name)}</strong> as of ${escapeHtml(asOf.en)}.`,
         ...custom,
       ],
       ar: [
-        greeting(i.customerName).ar,
+        greeting(i.customerName, i.customerNameAr).ar,
         `تجدون مرفقاً كشف حسابكم لدى <strong>${isolateInline(i.company.name)}</strong> حتى ${escapeHtml(asOf.ar)}.`,
       ],
     },

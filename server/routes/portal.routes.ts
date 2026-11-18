@@ -529,6 +529,7 @@ export function registerPortalRoutes(app: Express) {
       const built = buildStatementEmail({
         company: company ?? { name: st.company.name, businessAddress: null, contactEmail: null },
         customerName: st.party.name,
+        customerNameAr: customer?.nameAr ?? null,
         asOf: st.asOf,
         balances: st.sections.map((s) => ({
           currency: s.currency,
