@@ -43,5 +43,13 @@
   "common.status.due_soon": "يستحق قريبًا",
   "common.status.on_track": "على المسار",
   "common.status.review": "قيد المراجعة",
-  "common.preparerCannotApprove": "أنت من أعدّ هذا البند، لذلك يجب أن يعتمده عضو آخر."
+  "common.preparerCannotApprove": "أنت من أعدّ هذا البند، لذلك يجب أن يعتمده عضو آخر.",
+  "common.errorHeading.fields": "راجع الحقول المحددة",
+  "common.errorHeading.permission": "دورك لا يسمح بهذا الإجراء",
+  "common.errorHeading.notFound": "هذا البند لم يعد موجوداً",
+  "common.errorHeading.conflict": "غير ممكن في الحالة الحالية لهذا البند",
+  "common.errorHeading.rule": "لا يمكن الحفظ بهذه الصورة",
+  "common.errorHeading.offline": "أنت غير متصل بالإنترنت",
+  "common.errorHeading.server": "تعذّر على الخادم إكمال هذا الإجراء",
+  "common.errorHeading.generic": "لم يكتمل الإجراء"
 }

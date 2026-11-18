@@ -1,3 +1,4 @@
+import { errorHeading } from "@/lib/error-heading";
 import { T } from "@/components/layout/T";
 import { DatePicker } from "@/components/ui/date-picker";
 import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
@@ -239,7 +240,7 @@ export default function MonthEndClose() {
       refetchChecklist();
     },
     onError: (error: Error) => {
-      toast({ title: t["monthEnd.error"], description: error?.message, variant: "destructive" });
+      toast({ title: errorHeading(error), description: error?.message, variant: "destructive" });
     },
   });
   const reopenRequestMutation = useMutation({
@@ -257,7 +258,7 @@ export default function MonthEndClose() {
       });
     },
     onError: (error: Error) => {
-      toast({ title: t["monthEnd.error"], description: error?.message, variant: "destructive" });
+      toast({ title: errorHeading(error), description: error?.message, variant: "destructive" });
     },
   });
   const reopenDecisionMutation = useMutation({
@@ -274,7 +275,7 @@ export default function MonthEndClose() {
       invalidateClose();
     },
     onError: (error: Error) => {
-      toast({ title: t["monthEnd.error"], description: error?.message, variant: "destructive" });
+      toast({ title: errorHeading(error), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -340,7 +341,7 @@ export default function MonthEndClose() {
     },
     onError: (error: Error) => {
       toast({
-        title: t["monthEnd.errorTitle"],
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -369,7 +370,7 @@ export default function MonthEndClose() {
     },
     onError: (error: Error) => {
       toast({
-        title: t["monthEnd.errorTitle"],
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -386,7 +387,7 @@ export default function MonthEndClose() {
       invalidateClose();
     },
     onError: (error: Error) => {
-      toast({ title: t["monthEnd.error"], description: error?.message, variant: "destructive" });
+      toast({ title: errorHeading(error), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -411,7 +412,7 @@ export default function MonthEndClose() {
     onError: (error: Error) => {
       // X4 (J3): show the rejected field (e.g. reason too short) next to the input.
       setYearEndFieldErrors(apiFieldErrors(error));
-      toast({ title: t["monthEnd.error"], description: error?.message, variant: "destructive" });
+      toast({ title: errorHeading(error), description: error?.message, variant: "destructive" });
     },
   });
 
@@ -422,7 +423,7 @@ export default function MonthEndClose() {
       }),
     onSuccess: invalidateClose,
     onError: (error: Error) => {
-      toast({ title: t["monthEnd.error"], description: error?.message, variant: "destructive" });
+      toast({ title: errorHeading(error), description: error?.message, variant: "destructive" });
     },
   });
 

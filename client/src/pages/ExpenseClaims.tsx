@@ -1005,7 +1005,7 @@ export default function ExpenseClaims() {
 
         <TabsContent value="my-claims" className="space-y-3">
           <p className="text-small text-muted-foreground">
-            {formatMessage(t["screens.claimsSubmittedCount"], { count: myClaims.length })}
+            {formatMessage(t["screens.claimsSubmittedCountPlural"], { count: myClaims.length })}
           </p>
           <ClaimsTable
             claims={myClaims}
@@ -1031,7 +1031,7 @@ export default function ExpenseClaims() {
 
         <TabsContent value="all-claims" className="space-y-3">
           <p className="text-small text-muted-foreground">
-            {formatMessage(t["screens.claimsAcrossCompany"], { count: allClaims.length })}
+            {formatMessage(t["screens.claimsAcrossCompanyPlural"], { count: allClaims.length })}
           </p>
           <ClaimsTable
             claims={allClaims}

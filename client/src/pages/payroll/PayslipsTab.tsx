@@ -1,3 +1,4 @@
+import { errorHeading } from "@/lib/error-heading";
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Download, Link2, Mail } from "lucide-react";
@@ -49,7 +50,7 @@ export function PayslipsTab({ companyId }: { companyId: string }) {
   const { data: rows = [] } = useQuery<PayslipRow[]>({ queryKey: listKey, enabled: !!runId });
   const [results, setResults] = useState<EmailResult[] | null>(null);
   const fail = (err: unknown) =>
-    toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" });
+    toast({ title: errorHeading(err), description: errorMessage(err), variant: "destructive" });
 
   const email = useMutation({
     mutationFn: () => apiRequest("POST", `/api/payroll-runs/${runId}/payslips/email`, {}),

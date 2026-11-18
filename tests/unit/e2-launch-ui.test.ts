@@ -189,3 +189,78 @@ describe("[E2][J3-r2] VAT return after 'ready'", () => {
     expect(btn.title).toMatch(/role does not allow/i);
   });
 });
+
+describe("[E2][J4-r2] a read-only viewer is not offered writes the server refuses", () => {
+  const ASSET = "fa000000-0000-4000-8000-000000000001";
+  const PRODUCT = "pd000000-0000-4000-8000-000000000001";
+
+  async function renderAs(role: CompanyRole, page: string, fixtures: Record<string, unknown> = {}) {
+    setFixtures({ [C]: { ...COMPANY }, ...access(role), ...fixtures });
+    const mod = await import(`../../client/src/pages/${page}.tsx`);
+    await renderPage(mod.default);
+    await flush(5);
+  }
+  const denied = (el: Element | null) => {
+    expect(el, "control rendered").not.toBeNull();
+    expect((el as HTMLButtonElement).disabled).toBe(true);
+    expect((el as HTMLElement).title).toMatch(/role does not allow/i);
+  };
+
+  it("Fixed assets: Add asset, Record depreciation and Edit are disabled with the reason", async () => {
+    const asset = {
+      id: ASSET,
+      asset_name: "Laptop",
+      category: "computers",
+      status: "active",
+      purchase_date: "2026-01-01",
+      purchase_cost: "12000",
+      accumulated_depreciation: "0",
+      net_book_value: "12000",
+    };
+    const fx = {
+      [`${C}/fixed-assets`]: [asset],
+      [`${C}/fixed-assets/summary`]: {
+        totalAssets: 1,
+        totalCost: 12000,
+        totalAccumulatedDepreciation: 0,
+        totalNetBookValue: 12000,
+        byCategory: [],
+      },
+    };
+    await renderAs("viewer", "FixedAssets", fx);
+    denied(byTestId("button-add-asset"));
+    denied(byTestId(`button-record-depreciation-${ASSET}`));
+    await unmountPage();
+    await renderAs("owner", "FixedAssets", fx);
+    expect((byTestId("button-add-asset") as HTMLButtonElement).disabled).toBe(false);
+    // The row action opens a period choice (never a one-click, future-dated posting).
+    await click(byTestId(`button-record-depreciation-${ASSET}`));
+    expect(byTestId("dialog-depreciation")).not.toBeNull();
+    expect(apiCalls("POST")).toHaveLength(0);
+  });
+
+  it("Budgets: New Budget is disabled", async () => {
+    await renderAs("viewer", "Budgets");
+    denied(byTestId("button-new-budget"));
+  });
+
+  it("Inventory: Add product is disabled", async () => {
+    await renderAs("viewer", "Inventory", {
+      [`${C}/products`]: [{ id: PRODUCT, name: "Widget", isActive: true, currentStock: 3 }],
+    });
+    denied(byTestId("button-add-product"));
+  });
+
+  it("Contacts: Add contact is disabled", async () => {
+    await renderAs("viewer", "CustomerContacts");
+    denied(byTestId("button-add-contact"));
+  });
+
+  it("Purchase orders and expense claims: create is disabled", async () => {
+    await renderAs("viewer", "PurchaseOrders");
+    denied(byTestId("button-new-po"));
+    await unmountPage();
+    await renderAs("viewer", "ExpenseClaims");
+    denied(byTestId("button-new-claim"));
+  });
+});

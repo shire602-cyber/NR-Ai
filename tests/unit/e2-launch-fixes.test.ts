@@ -148,3 +148,35 @@ describe("[E2][J3-r2] depreciation period", () => {
     expect(depreciationPeriodEnded(2026, 10, "2026-11-18")).toBe(true);
   });
 });
+
+describe("[E2][J3-r2] specific error headings instead of 'Something went wrong'", () => {
+  it("names the kind of failure from the API error", async () => {
+    const { ApiError } = await import("../../client/src/lib/queryClient");
+    const { errorHeadingKind, errorHeading } = await import("../../client/src/lib/error-heading");
+    const { loadLocale } = await import("../../client/src/lib/i18n");
+    await loadLocale("en");
+    const dup = new ApiError("Duplicate", 409, {
+      code: "EMPLOYEE_DUPLICATE",
+      fields: { emiratesId: ["taken"] },
+    });
+    expect(errorHeadingKind(dup)).toBe("fields");
+    expect(errorHeading(dup)).toBe("Check the highlighted fields");
+    expect(errorHeadingKind(new ApiError("no", 403, { code: "PERMISSION_DENIED" }))).toBe(
+      "permission"
+    );
+    expect(errorHeadingKind(new ApiError("state", 409, { code: "INVALID_TRANSITION" }))).toBe(
+      "conflict"
+    );
+    expect(errorHeadingKind(new ApiError("offline", 0))).toBe("offline");
+    expect(errorHeadingKind(new Error("x"))).toBe("generic");
+    expect(errorHeading(new Error("x"))).not.toMatch(/something went wrong/i);
+  });
+
+  it("claims counts are pluralised ('1 claim', not '1 claims')", async () => {
+    const { formatMessage, loadLocale, t } = await import("../../client/src/lib/i18n");
+    await loadLocale("en");
+    const en = (t as any).en as Record<string, string>;
+    expect(formatMessage(en["screens.claimsSubmittedCountPlural"], { count: 1 })).toBe("1 claim");
+    expect(formatMessage(en["screens.claimsSubmittedCountPlural"], { count: 3 })).toBe("3 claims");
+  });
+});

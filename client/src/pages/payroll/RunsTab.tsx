@@ -1,3 +1,4 @@
+import { errorHeading } from "@/lib/error-heading";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -136,7 +137,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
       queryClient.invalidateQueries({ queryKey: [`/api/payroll-runs/${viewing}/items`] });
   };
   const fail = (err: unknown) =>
-    toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" });
+    toast({ title: errorHeading(err), description: errorMessage(err), variant: "destructive" });
 
   const action = useMutation({
     mutationFn: ({ id, path, body }: { id: string; path: string; body?: unknown }) =>
@@ -694,7 +695,7 @@ function RunDetail({
       toast({ title: tx("hr.itemUpdated") });
     },
     onError: (err) =>
-      toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" }),
+      toast({ title: errorHeading(err), description: errorMessage(err), variant: "destructive" }),
   });
 
   const fmt = (v: string) => formatCurrency(Number(v), "AED", locale);
@@ -728,7 +729,7 @@ function RunDetail({
               onClick={() =>
                 downloadFile(`/api/payroll-runs/${run.id}/gpssa-export`, "gpssa.csv").catch((err) =>
                   toast({
-                    title: tx("hr.error"),
+                    title: errorHeading(err),
                     description: errorMessage(err),
                     variant: "destructive",
                   })

@@ -80,6 +80,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { errorHeading } from "@/lib/error-heading";
 import { depreciationPeriodEnded, lastEndedMonth } from "@/lib/depreciation-period";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
@@ -298,7 +299,7 @@ export default function FixedAssets() {
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -329,7 +330,7 @@ export default function FixedAssets() {
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -356,7 +357,7 @@ export default function FixedAssets() {
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -377,7 +378,7 @@ export default function FixedAssets() {
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -403,7 +404,7 @@ export default function FixedAssets() {
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -440,7 +441,7 @@ export default function FixedAssets() {
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -468,7 +469,7 @@ export default function FixedAssets() {
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });

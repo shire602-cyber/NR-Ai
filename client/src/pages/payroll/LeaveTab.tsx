@@ -1,3 +1,4 @@
+import { errorHeading } from "@/lib/error-heading";
 import { useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -80,7 +81,7 @@ export function LeaveTab({ companyId }: { companyId: string }) {
   });
   const name = (en: string, ar: string | null) => (locale === "ar" && ar ? ar : en);
   const fail = (err: unknown) =>
-    toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" });
+    toast({ title: errorHeading(err), description: errorMessage(err), variant: "destructive" });
 
   const create = useMutation({
     mutationFn: () =>
