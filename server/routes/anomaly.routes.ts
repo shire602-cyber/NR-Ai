@@ -110,10 +110,20 @@ function registerAnomalyJobs(): void {
     description: "Scan every company for rule-based accounting anomalies",
     run: async () => {
       const { rows } = await pool.query(`SELECT id FROM companies`);
+      const { runForCompany } = await import("../platform/company-automations");
       for (const row of rows as Array<{ id: string }>) {
         try {
-          const result = await detectAnomalies(row.id);
-          await persistAnomalies(row.id, result.anomalies);
+          // WQ7: skipped for companies that switched "Anomaly checks" off in Automations.
+          await runForCompany(
+            "anomalyChecks",
+            row.id,
+            async () => {
+              const result = await detectAnomalies(row.id);
+              await persistAnomalies(row.id, result.anomalies);
+              return result.anomalies.length;
+            },
+            (found) => ({ found })
+          );
         } catch (err) {
           log.error({ companyId: row.id, err: (err as Error).message }, "anomaly scan failed");
         }

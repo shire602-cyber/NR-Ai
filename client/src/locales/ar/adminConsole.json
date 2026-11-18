@@ -444,5 +444,20 @@
   "adminConsole.inviteAssignClient": "تعيين إلى عميل (اختياري)",
   "adminConsole.inviteUserType": "نوع المستخدم *",
   "adminConsole.userTypeClient": "عميل (دخول إلى البوابة تديره NR)",
-  "adminConsole.userTypeCustomer": "مشترك (مسك دفاتر كامل عبر المنصة)"
+  "adminConsole.userTypeCustomer": "مشترك (مسك دفاتر كامل عبر المنصة)",
+  "adminConsole.planTitle": "الخطة",
+  "adminConsole.planHelp": "عيّن الخطة التي اختارها العميل ما دام الدفع عبر الإنترنت غير متاح. يُسجَّل التغيير في سجل التدقيق.",
+  "adminConsole.planLabel": "الخطة",
+  "adminConsole.planCycle": "الفوترة",
+  "adminConsole.planNone": "بلا خطة (تجربة ثم قراءة فقط)",
+  "adminConsole.planApply": "تطبيق الخطة",
+  "adminConsole.planExtendTrial": "تمديد التجربة {days} يومًا",
+  "adminConsole.planSaved": "تم تحديث الخطة",
+  "adminConsole.planNow": "الآن: {state}",
+  "adminConsole.planTrialUntil": "تجربة حتى {date}",
+  "adminConsole.planReadOnly": "بلا خطة، للقراءة فقط",
+  "activityLog.action.billing.plan_set": "عيّن مسؤول المنصة الخطة",
+  "activityLog.action.numbering.update": "تم تغيير ترقيم المستندات",
+  "activityLog.action.automation.enable": "تم تشغيل مهمة تلقائية",
+  "activityLog.action.automation.disable": "تم إيقاف مهمة تلقائية"
 }

@@ -199,5 +199,11 @@
   "dashboard.otherIncomeLabel": "Other income",
   "dashboard.bankDiffBooksAhead": "{amount} is posted in your books but is not on the statement yet. Match it when it appears.",
   "dashboard.bankDiffStatementAhead": "{amount} is on the statement but not in your books yet. Create or match the entries.",
-  "dashboard.bankDiffReview": "Review in bank reconciliation"
+  "dashboard.bankDiffReview": "Review in bank reconciliation",
+  "dashboard.gsMinutes": "{count} min",
+  "dashboard.gsMinutesLabel": "About {count} minutes",
+  "dashboard.gsBankLines": "Bring in your bank lines",
+  "dashboard.gsBankLinesHint": "Add a bank account and import a statement, so reconciliation can start.",
+  "dashboard.gsEinvoice": "Get ready for e-invoicing",
+  "dashboard.gsEinvoiceHint": "Check your details against the UAE e-invoicing rules."
 }

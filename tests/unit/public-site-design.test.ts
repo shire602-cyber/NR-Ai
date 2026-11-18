@@ -219,7 +219,8 @@ describe("D1 public site", () => {
     for (const claim of UNSUPPORTED_CLAIMS) {
       expect(text, String(claim)).not.toMatch(claim);
     }
-    expect(container.querySelectorAll('[data-testid^="card-plan-"]').length).toBe(4);
+    // WQ7: three paid plans, no Free plan card (the trial is of the top plan).
+    expect(container.querySelectorAll('[data-testid^="card-plan-"]').length).toBe(3);
     expect(container.querySelector('[data-testid="button-plan-enterprise"]')?.tagName).toBe("A");
   });
 });

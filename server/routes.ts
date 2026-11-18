@@ -84,6 +84,7 @@ import { registerBankRoutes } from "./routes/bank.routes";
 import { registerDocumentVersionRoutes } from "./routes/document-versions.routes";
 import { registerApiKeyRoutes } from "./routes/api-keys.routes";
 import { registerBillingRoutes } from "./routes/billing.routes";
+import { registerCompanyAutomationRoutes } from "./routes/company-automations.routes";
 import { registerPushRoutes } from "./routes/push.routes";
 import { registerWebhookRoutes } from "./routes/webhooks.routes";
 import { registerIntegrationStatusRoutes } from "./routes/integration-status.routes";
@@ -191,6 +192,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerDocumentVersionRoutes(app);
   registerApiKeyRoutes(app);
   registerBillingRoutes(app);
+  registerCompanyAutomationRoutes(app);
   registerPushRoutes(app);
   registerWebhookRoutes(app);
   registerIntegrationStatusRoutes(app);

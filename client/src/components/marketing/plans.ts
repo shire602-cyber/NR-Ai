@@ -1,23 +1,33 @@
 /*
  * Plan data for every surface that shows plans: /pricing, the landing pricing strip and the
- * in-app billing page (WP-E imports PlanCard from this folder). Prices live here once; JSX never
- * holds a figure. Copy is catalog keys (marketing namespace, en + ar). Gated rows mirror
- * TIER_FEATURES in server/middleware/featureGate.ts (tests/unit/commercial-plan-matrix.test.ts).
- * The trial itself (length, no card, "contact us" afterwards) is shared/trial.ts.
+ * in-app billing page. Ids, prices, limits and which plan includes which module come from the one
+ * plan module, shared/plans.ts (also read by the server gates and GET /api/billing/plans); this
+ * file only adds catalog keys (marketing namespace, en + ar). JSX never holds a figure, and a
+ * comparison cell for a gated module is computed from the shared matrix, never typed by hand
+ * (tests/unit/commercial-plan-matrix.test.ts).
  */
+import {
+  BILLING_CYCLES as SHARED_CYCLES,
+  PLAN_DEFINITIONS,
+  UNLIMITED,
+  YEARLY_FREE_MONTHS,
+  planIncludes,
+  planPrice as sharedPlanPrice,
+  type BillingCycle as SharedCycle,
+  type PaidPlanId,
+  type PlanFeature,
+  type PlanLimits,
+} from "@shared/plans";
 
-export type PlanId = "free" | "starter" | "professional" | "enterprise";
-export type BillingCycle = "monthly" | "quarterly" | "yearly";
+export type PlanId = PaidPlanId;
+export type BillingCycle = SharedCycle;
 
-export const BILLING_CYCLES: readonly BillingCycle[] = ["monthly", "quarterly", "yearly"];
-
-/** Months billed together for each cycle. */
-export const CYCLE_MONTHS: Record<BillingCycle, number> = { monthly: 1, quarterly: 3, yearly: 12 };
+export const BILLING_CYCLES: readonly BillingCycle[] = SHARED_CYCLES;
 
 export interface Plan {
   id: PlanId;
-  /** Per-month price in AED for each billing cycle. */
-  price: Record<BillingCycle, number>;
+  /** Price per month in AED when billed monthly. */
+  monthlyPrice: number;
   featured?: boolean;
   /** "trial" opens a workspace (/register); "contact" writes to us. */
   cta: "trial" | "contact";
@@ -27,85 +37,62 @@ export interface Plan {
   bulletKeys: readonly string[];
 }
 
-export const PLANS: readonly Plan[] = [
-  {
-    id: "free",
-    price: { monthly: 0, quarterly: 0, yearly: 0 },
-    cta: "trial",
+const COPY: Record<PlanId, Pick<Plan, "inheritsKey" | "bulletKeys">> = {
+  starter: {
     bulletKeys: [
-      "marketing.prFreeB1",
-      "marketing.prFreeB2",
-      "marketing.prFreeB3",
-      "marketing.prFreeB4",
-      "marketing.prFreeB5",
-    ],
-  },
-  {
-    id: "starter",
-    price: { monthly: 49, quarterly: 44, yearly: 39 },
-    cta: "trial",
-    inheritsKey: "marketing.prInheritsFree",
-    bulletKeys: [
-      "marketing.prStarterB1",
+      "marketing.prStarterB1u",
       "marketing.prStarterB2",
       "marketing.prStarterB3",
       "marketing.prStarterB4",
       "marketing.prStarterB5",
     ],
   },
-  {
-    id: "professional",
-    price: { monthly: 149, quarterly: 134, yearly: 119 },
-    featured: true,
-    cta: "trial",
+  professional: {
     inheritsKey: "marketing.prInheritsStarter",
     bulletKeys: [
-      "marketing.prProB1",
+      "marketing.prProB1u",
       "marketing.prProB2",
-      "marketing.prProB3",
+      "marketing.prProB3w",
       "marketing.prProB4",
       "marketing.prProB5",
     ],
   },
-  {
-    id: "enterprise",
-    price: { monthly: 299, quarterly: 269, yearly: 239 },
-    cta: "contact",
+  enterprise: {
     inheritsKey: "marketing.prInheritsPro",
     bulletKeys: [
       "marketing.prEntB1",
       "marketing.prEntB2",
       "marketing.prEntB3",
-      "marketing.prEntB4",
+      "marketing.prEntB4u",
       "marketing.prEntB5",
     ],
   },
-];
+};
+
+export const PLANS: readonly Plan[] = PLAN_DEFINITIONS.map((p) => ({
+  id: p.id,
+  monthlyPrice: p.monthlyPrice,
+  featured: p.featured,
+  cta: p.cta,
+  ...COPY[p.id],
+}));
 
 /** Catalog keys per plan: name and one-line audience. */
 export const planNameKey = (id: PlanId) => `marketing.prPlan_${id}`;
 export const planAudienceKey = (id: PlanId) => `marketing.prAudience_${id}`;
 
+/** Price for the billing period: a month's, or a year's (10 × monthly). */
 export function planPrice(plan: Plan, cycle: BillingCycle): number {
-  return plan.price[cycle];
+  return sharedPlanPrice(plan.id, cycle);
 }
 
-/** Amount charged per billing period (0 for monthly: nothing extra to state). */
-export function billedTotal(plan: Plan, cycle: BillingCycle): number {
-  return cycle === "monthly" ? 0 : plan.price[cycle] * CYCLE_MONTHS[cycle];
+/** What paying a year up front saves against twelve monthly payments, in AED. */
+export function yearlySaving(plan: Plan): number {
+  return sharedPlanPrice(plan.id, "monthly") * 12 - sharedPlanPrice(plan.id, "yearly");
 }
 
-/**
- * Whole-percent saving a cycle gives against monthly, computed from the paid plans (the smallest
- * one, so the note is true for every plan). 0 for monthly.
- */
-export function cycleSavingPercent(cycle: BillingCycle, plans: readonly Plan[] = PLANS): number {
-  if (cycle === "monthly") return 0;
-  const savings = plans
-    .filter((p) => p.price.monthly > 0)
-    .map((p) => (1 - p.price[cycle] / p.price.monthly) * 100);
-  return savings.length ? Math.floor(Math.min(...savings)) : 0;
-}
+/** Months free when paying yearly (2), for the saving note. */
+export const YEARLY_FREE = YEARLY_FREE_MONTHS;
 
 // ── Comparison table ─────────────────────────────────────────────────────────────────────────
 
@@ -117,8 +104,12 @@ export interface CompareRow {
   key: string;
   /** Optional catalog key of a 12 px qualifier line under the label. */
   noteKey?: string;
-  /** TIER_FEATURES flag enforced by server/middleware/featureGate.ts. */
-  gate?: string;
+  /** Feature flag the server gates (shared/plans.ts); its cells come from the shared matrix. */
+  gate?: PlanFeature;
+  /** Limit the server enforces (shared/plans.ts); its cells come from the shared limits. */
+  limit?: keyof PlanLimits;
+  /** Unit for a numeric limit ("gb" shows megabytes as gigabytes). */
+  unit?: "gb";
   cells: Record<PlanId, Cell>;
 }
 
@@ -129,114 +120,103 @@ export interface CompareGroup {
   rows: CompareRow[];
 }
 
-const all = (v: Cell): Record<PlanId, Cell> => ({
-  free: v,
-  starter: v,
-  professional: v,
-  enterprise: v,
-});
-const from = (tier: PlanId): Record<PlanId, Cell> => {
-  const order: PlanId[] = ["free", "starter", "professional", "enterprise"];
-  const at = order.indexOf(tier);
-  return Object.fromEntries(order.map((id, i) => [id, i >= at])) as Record<PlanId, Cell>;
-};
+const IDS = PLAN_DEFINITIONS.map((p) => p.id);
 
-/** 24 rows at most; rows that are identical on every plan live in "What every plan includes". */
+const gated = (key: string, gate: PlanFeature, noteKey?: string): CompareRow => ({
+  key,
+  gate,
+  noteKey,
+  cells: Object.fromEntries(IDS.map((id) => [id, planIncludes(id, gate)])) as Record<PlanId, Cell>,
+});
+
+const limited = (
+  key: string,
+  limit: keyof PlanLimits,
+  opts: { noteKey?: string; unit?: "gb" } = {}
+): CompareRow => ({
+  key,
+  limit,
+  ...opts,
+  cells: Object.fromEntries(
+    PLAN_DEFINITIONS.map((p) => {
+      const v = p.limits[limit];
+      if (v === UNLIMITED) return [p.id, "marketing.prValUnlimited"];
+      return [p.id, opts.unit === "gb" ? Math.round(v / 1024) : v];
+    })
+  ) as Record<PlanId, Cell>,
+});
+
+const service = (key: string, from: PlanId): CompareRow => ({
+  key,
+  cells: Object.fromEntries(IDS.map((id) => [id, IDS.indexOf(id) >= IDS.indexOf(from)])) as Record<
+    PlanId,
+    Cell
+  >,
+});
+
+/**
+ * Only what the plans differ on (spec 3.1: at most 24 rows; rows identical on every plan live in
+ * "What every plan includes"). Every gated or limited row is enforced by the server.
+ */
 export const COMPARE_GROUPS: readonly CompareGroup[] = [
   {
     key: "marketing.prGroupCore",
     open: true,
     rows: [
-      {
-        key: "marketing.prRowCompanies",
-        cells: {
-          free: 1,
-          starter: 1,
-          professional: 3,
-          enterprise: "marketing.prValUnlimited",
-        },
-      },
-      {
-        key: "marketing.prRowUsers",
-        cells: {
-          free: 1,
-          starter: 3,
-          professional: 10,
-          enterprise: "marketing.prValUnlimited",
-        },
-      },
-      {
-        key: "marketing.prRowDocuments",
+      limited("marketing.prRowCompanies", "maxCompanies"),
+      limited("marketing.prRowDocuments", "maxInvoicesPerMonth", {
         noteKey: "marketing.prRowDocumentsNote",
-        cells: {
-          free: 20,
-          starter: 200,
-          professional: "marketing.prValUnlimited",
-          enterprise: "marketing.prValUnlimited",
-        },
-      },
-      { key: "marketing.prRowMultiCurrency", gate: "multiCurrency", cells: from("starter") },
-      { key: "marketing.prRowFixedAssets", gate: "fixedAssets", cells: from("professional") },
-      { key: "marketing.prRowBudgets", cells: from("professional") },
-      { key: "marketing.prRowMonthEnd", cells: from("professional") },
+      }),
+      limited("marketing.prRowStorage", "maxStorageMb", {
+        unit: "gb",
+        noteKey: "marketing.prRowStorageNote",
+      }),
+      gated("marketing.prRowFixedAssets", "fixedAssets"),
+      gated("marketing.prRowBudgets", "budgets"),
+      gated("marketing.prRowMonthEnd", "monthEnd"),
+      gated("marketing.prRowCostCentres", "costCenters"),
     ],
   },
   {
     key: "marketing.prGroupSales",
     open: true,
     rows: [
-      { key: "marketing.prRowRecurring", gate: "recurringInvoices", cells: from("starter") },
-      { key: "marketing.prRowPaymentLinks", gate: "invoicePayment", cells: from("starter") },
-      { key: "marketing.prRowBillPay", cells: from("starter") },
-      { key: "marketing.prRowInventory", cells: from("starter") },
-      { key: "marketing.prRowExpenseClaims", cells: from("professional") },
-      { key: "marketing.prRowBulkOps", gate: "bulkOps", cells: from("professional") },
-      { key: "marketing.prRowPortal", cells: from("professional") },
+      gated("marketing.prRowPurchaseOrders", "purchaseOrders"),
+      gated("marketing.prRowExpenseClaims", "expenseClaims"),
+      gated("marketing.prRowBulkOps", "bulkOps"),
+      gated("marketing.prRowPortal", "customerPortal"),
     ],
   },
   {
     key: "marketing.prGroupTax",
-    rows: [
-      { key: "marketing.prRowCorporateTax", cells: from("professional") },
-      {
-        key: "marketing.prRowEInvoicing",
-        noteKey: "marketing.prRowEInvoicingNote",
-        cells: from("professional"),
-      },
-    ],
+    rows: [gated("marketing.prRowCorporateTax", "corporateTax")],
   },
   {
     key: "marketing.prGroupPayroll",
-    rows: [{ key: "marketing.prRowPayroll", gate: "payroll", cells: from("professional") }],
+    rows: [gated("marketing.prRowPayroll", "payroll")],
   },
   {
     key: "marketing.prGroupAi",
     rows: [
-      {
-        key: "marketing.prRowAiCategorise",
-        cells: { ...all(true), free: "marketing.prValBasic" },
-      },
-      {
-        key: "marketing.prRowAiReceipts",
-        noteKey: "marketing.prRowAiReceiptsNote",
-        cells: from("starter"),
-      },
-      { key: "marketing.prRowAiAssistant", cells: from("professional") },
-      { key: "marketing.prRowAiPriority", cells: from("enterprise") },
+      gated("marketing.prRowAiAssistantAsk", "aiAssistant"),
+      limited("marketing.prRowAiCredits", "aiCreditsPerMonth", {
+        noteKey: "marketing.prRowAiCreditsNote",
+      }),
     ],
   },
   {
     key: "marketing.prGroupTeam",
     rows: [
-      { key: "marketing.prRowApi", gate: "apiAccess", cells: from("enterprise") },
-      { key: "marketing.prRowWebhooks", gate: "webhooks", cells: from("enterprise") },
-      { key: "marketing.prRowManager", cells: from("enterprise") },
+      gated("marketing.prRowApi", "apiAccess"),
+      gated("marketing.prRowWebhooks", "webhooks"),
+      service("marketing.prRowManager", "enterprise"),
     ],
   },
 ];
 
-/** "What every plan includes": icon name (lucide) + catalog keys. Only claims the landing makes. */
+/** "What every plan includes": icon name (lucide) + catalog keys. Only claims the product makes. */
 export const EVERY_PLAN = [
+  { id: "users", title: "marketing.prEveryUsersTitle", body: "marketing.prEveryUsersBody" },
   {
     id: "invoices",
     title: "marketing.prEveryInvoicesTitle",
@@ -246,5 +226,34 @@ export const EVERY_PLAN = [
   { id: "ledger", title: "marketing.prEveryLedgerTitle", body: "marketing.prEveryLedgerBody" },
   { id: "bilingual", title: "marketing.prEveryArabicTitle", body: "marketing.prEveryArabicBody" },
   { id: "bank", title: "marketing.prEveryBankTitle", body: "marketing.prEveryBankBody" },
+  {
+    id: "currency",
+    title: "marketing.prEveryCurrencyTitle",
+    body: "marketing.prEveryCurrencyBody",
+  },
+  {
+    id: "recurring",
+    title: "marketing.prEveryRecurringTitle",
+    body: "marketing.prEveryRecurringBody",
+  },
+  {
+    id: "inventory",
+    title: "marketing.prEveryInventoryTitle",
+    body: "marketing.prEveryInventoryBody",
+  },
+  {
+    id: "einvoice",
+    title: "marketing.prEveryEinvoiceTitle",
+    body: "marketing.prEveryEinvoiceBody",
+  },
+  { id: "ai", title: "marketing.prEveryAiTitle", body: "marketing.prEveryAiBody" },
   { id: "exports", title: "marketing.prEveryExportsTitle", body: "marketing.prEveryExportsBody" },
 ] as const;
+
+/** Features every plan includes (shown in EVERY_PLAN; gated only after a trial without a plan). */
+export const EVERY_PLAN_FEATURES: readonly PlanFeature[] = [
+  "bookkeeping",
+  "multiCurrency",
+  "recurringInvoices",
+  "invoicePayment",
+];
