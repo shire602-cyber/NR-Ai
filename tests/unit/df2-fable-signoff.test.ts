@@ -42,7 +42,14 @@ vi.mock("../../client/src/hooks/useSubscription", () => ({
   }),
 }));
 vi.mock("../../client/src/hooks/useCompanyPermission", () => ({
-  useCompanyPermission: () => ({ can: () => true, known: true, role: "owner" }),
+  // An owner: every control enabled (E2 added gate / gateApproval to the hook).
+  useCompanyPermission: () => ({
+    can: () => true,
+    gate: () => ({}),
+    gateApproval: () => ({}),
+    known: true,
+    role: "owner",
+  }),
 }));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
