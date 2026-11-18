@@ -23,6 +23,12 @@ vi.mock("../../server/storage", () => ({
   },
 }));
 
+// WQ7: the scan reads the per-company Automations switches; none is switched off here.
+vi.mock("../../server/platform/company-automations", () => ({
+  companiesWithAutomationOff: vi.fn(async () => new Set<string>()),
+  recordAutomationRun: vi.fn(async () => undefined),
+}));
+
 vi.mock("../../server/services/socket.service", () => ({
   createAndEmitNotification: vi.fn(async (data: any) => ({
     id: "notification-1",

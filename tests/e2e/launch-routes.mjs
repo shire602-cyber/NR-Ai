@@ -63,6 +63,8 @@ export const ALL_AUTH_ROUTES = [
   "/settings/security",
   "/settings/einvoicing",
   "/settings/zatca",
+  "/settings/approvals",
+  "/settings/numbering",
   "/chart-of-accounts",
   "/invoices",
   "/invoices/new",
