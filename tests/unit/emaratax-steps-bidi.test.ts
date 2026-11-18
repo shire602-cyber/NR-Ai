@@ -42,11 +42,12 @@ describe("EmaraTaxSteps bidi isolation (ar)", () => {
     );
     const steps = [...container.querySelectorAll("li")].map((li) => li.textContent ?? "");
     expect(steps[0]).toContain(`${FSI}Pearl Trading${PDI}`);
-    expect(steps[2]).toContain(`${FSI}Complyance${PDI}`);
-    expect(steps[2]).toContain(`${FSI}Complyance Electronics L.L.C${PDI}`);
+    // The partner and its legal name are ONE isolate with the brackets inside it: a bracket
+    // between two separate Latin isolates in an Arabic sentence renders on the wrong side.
+    expect(steps[2]).toContain(`${FSI}Complyance (Complyance Electronics L.L.C)${PDI}`);
     expect(steps[2]).toContain(`${FSI}112219${PDI}`);
     // The whole partner label is itself one isolate inside the sentence.
-    expect(steps[2]).toMatch(new RegExp(`${FSI}[^${PDI}]*${FSI}Complyance${PDI}`));
+    expect(steps[2]).toMatch(new RegExp(`${FSI}[^${PDI}]*${FSI}Complyance \\(`));
     await act(async () => root.unmount());
   });
 });
