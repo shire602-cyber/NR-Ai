@@ -222,3 +222,41 @@ describe("F11 item 16: receive payment with no customers", () => {
     }
   });
 });
+
+describe("F11 item 11: invitations form validates in the app, not the browser", () => {
+  it.each(["en", "ar"] as const)("an empty submit shows the in-app error in %s", async (locale) => {
+    routes.push(["GET /api/admin/invitations", () => ({ body: [] })]);
+    const i18n = await import("../../client/src/lib/i18n");
+    await act(async () => i18n.useI18n.getState().setLocale(locale));
+    const { default: UserInvitations } = await import("../../client/src/pages/UserInvitations");
+    await mount(createElement(UserInvitations));
+    await act(async () =>
+      (document.querySelector('[data-testid="button-send-invite"]') as HTMLElement).click()
+    );
+    await flush();
+    await act(async () =>
+      (document.querySelector('[data-testid="button-submit-invite"]') as HTMLElement).click()
+    );
+    await flush();
+    const error = document.querySelector("#invite-email-error");
+    expect(error, "inline validation message").not.toBeNull();
+    if (locale === "ar") expect(error!.textContent).toMatch(/[؀-ۿ]/);
+    const posted = (
+      globalThis.fetch as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls.some((c) => (c[1] as RequestInit | undefined)?.method === "POST");
+    expect(posted).toBe(false);
+  });
+});
+
+describe("F11 item 11: Compliance 'Today' is disabled on the current month", () => {
+  it("renders the Today button disabled while the calendar shows this month", async () => {
+    const { default: ComplianceCalendar } =
+      await import("../../client/src/pages/ComplianceCalendar");
+    await mount(createElement(ComplianceCalendar));
+    const today = [...container.querySelectorAll("button")].find((b) =>
+      /^(Today|اليوم)$/.test(b.textContent?.trim() ?? "")
+    ) as HTMLButtonElement | undefined;
+    expect(today, "Today button").toBeDefined();
+    expect(today!.disabled).toBe(true);
+  });
+});

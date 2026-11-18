@@ -10,6 +10,7 @@ import {
 import { T } from "@/components/layout/T";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { useOpenInvoiceParam } from "@/hooks/use-open-invoice-param";
 import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -668,6 +669,12 @@ export default function Receipts() {
     });
     setEditDialogOpen(true);
   };
+
+  // STEP1: "Receipt uploaded" notifications link to /receipts?open=<id>.
+  useOpenInvoiceParam((id) => {
+    const target = (receipts ?? []).find((r) => r.id === id);
+    if (target) handleEditReceipt(target);
+  }, receipts !== undefined);
 
   const handlePostExpense = (receipt: any) => {
     setPostingReceipt(receipt);

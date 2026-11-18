@@ -1,3 +1,4 @@
+import { receiptHref } from "../../shared/app-links";
 import { type Express, type Request, type Response } from "express";
 import { receiptCheckSimilarBody } from "../../shared/validators/route-bodies";
 import { storage } from "../storage";
@@ -566,7 +567,7 @@ export function registerReceiptRoutes(app: Express) {
         priority: "normal",
         relatedEntityType: "receipt",
         relatedEntityId: receipt.id,
-        actionUrl: "/receipts",
+        actionUrl: receiptHref(receipt.id),
       }).catch(() => {});
 
       res.json(duplicateWarnings.length > 0 ? { ...receipt, duplicateWarnings } : receipt);
