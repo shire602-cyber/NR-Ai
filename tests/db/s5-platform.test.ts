@@ -87,17 +87,26 @@ describe("S5 plan gates fail closed (W5-B FAIL-OPEN)", () => {
     expect(rows).toEqual([{ plan_id: "free" }]);
   });
 
-  it("[S5-1] with enforcement on, a company with NO subscription row is gated as Free (403), a paid plan passes", async () => {
+  it("[S5-1] with enforcement on, a company with NO subscription row is never upgraded: its trial runs from its creation, then writes are refused", async () => {
     process.env.BILLING_ENFORCEMENT = "true";
     const t = await h.createTenant();
     await h.sql(`DELETE FROM subscriptions WHERE company_id = $1`, [t.company.id]);
-    const central = await t.as.get(`/api/companies/${t.company.id}/fixed-assets`);
-    expect(central.status, central.text).toBe(403);
-    expect(central.body).toMatchObject({ code: "TIER_LOCKED", currentTier: "free" });
+    // WQ7: within the company's first 14 days it is on the trial (every module open).
+    const inTrial = await t.as.post(`/api/companies/${t.company.id}/fixed-assets`, {});
+    expect([402, 403]).not.toContain(inTrial.status);
+    await h.sql(`UPDATE companies SET created_at = now() - interval '30 days' WHERE id = $1`, [
+      t.company.id,
+    ]);
+    const central = await t.as.post(`/api/companies/${t.company.id}/fixed-assets`, {});
+    expect(central.status, central.text).toBe(402);
+    expect(central.body).toMatchObject({ code: "PLAN_REQUIRED", currentTier: null });
+    // Reads stay open (data is never hidden).
+    const read = await t.as.get(`/api/companies/${t.company.id}/fixed-assets`);
+    expect(read.status, read.text).toBe(200);
 
     const pro = await h.createTenant({ planId: "professional" });
-    const ok = await pro.as.get(`/api/companies/${pro.company.id}/fixed-assets`);
-    expect(ok.status, ok.text).toBe(200);
+    const ok = await pro.as.post(`/api/companies/${pro.company.id}/fixed-assets`, {});
+    expect([402, 403]).not.toContain(ok.status);
   });
 
   it("[S5-1] route-level requireFeature also fails closed for a company without a row", async () => {
@@ -105,6 +114,9 @@ describe("S5 plan gates fail closed (W5-B FAIL-OPEN)", () => {
     const { requireFeature } = await import("../../server/middleware/featureGate");
     const t = await h.createTenant();
     await h.sql(`DELETE FROM subscriptions WHERE company_id = $1`, [t.company.id]);
+    await h.sql(`UPDATE companies SET created_at = now() - interval '30 days' WHERE id = $1`, [
+      t.company.id,
+    ]);
     let status = 0;
     let body: any = null;
     let passed = false;
@@ -119,21 +131,33 @@ describe("S5 plan gates fail closed (W5-B FAIL-OPEN)", () => {
       },
     };
     await requireFeature("quotes")(
-      { params: { companyId: t.company.id }, body: {} } as never,
+      {
+        method: "POST",
+        headers: {},
+        user: { id: t.user.id, isAdmin: false },
+        params: { companyId: t.company.id },
+        body: {},
+      } as never,
       res as never,
       () => {
         passed = true;
       }
     );
     expect(passed).toBe(false);
-    expect(status).toBe(403);
-    expect(body).toMatchObject({ code: "TIER_LOCKED", currentTier: "free" });
+    expect(status).toBe(402);
+    expect(body).toMatchObject({ code: "PLAN_REQUIRED", feature: "quotes" });
 
     // NR-managed client books are firm-billed: an explicit, documented exemption.
     await h.sql(`UPDATE companies SET company_type = 'client' WHERE id = $1`, [t.company.id]);
     passed = false;
     await requireFeature("quotes")(
-      { params: { companyId: t.company.id }, body: {} } as never,
+      {
+        method: "POST",
+        headers: {},
+        user: { id: t.user.id, isAdmin: false },
+        params: { companyId: t.company.id },
+        body: {},
+      } as never,
       res as never,
       () => {
         passed = true;

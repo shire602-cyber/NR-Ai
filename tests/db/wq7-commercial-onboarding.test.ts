@@ -188,11 +188,11 @@ describe("WQ7 plan gates (enforced)", () => {
 
     // Unlimited users on every plan: invitations are never refused for seats.
     for (const email of ["seat1@harness.test", "seat2@harness.test", "seat3@harness.test"]) {
-      const inv = await t.as.post(`/api/companies/${t.company.id}/team/invitations`, {
+      const inv = await t.as.post(`/api/companies/${t.company.id}/team/invite`, {
         email,
         role: "viewer",
       });
-      expect(inv.status, inv.text).not.toBe(402);
+      expect([200, 201], inv.text).toContain(inv.status);
     }
   });
 

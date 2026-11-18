@@ -27,26 +27,30 @@ async function invoice(t: Tenant) {
 afterEach(() => setEnforcement(undefined));
 
 describe("W5-B usage quotas", () => {
-  it("[R19-04] with enforcement on, the 21st invoice of the month on the free plan is 402", async () => {
+  it("[R19-04] with enforcement on, Starter's 201st invoice of the month is 402 (WQ7 limits)", async () => {
     setEnforcement("true");
-    const t = await h.createTenant();
-    for (let i = 0; i < 20; i++) {
-      const r = await invoice(t);
-      expect(r.status, r.text).toBe(200);
-    }
-    const r21 = await invoice(t);
-    expect(r21.status).toBe(402);
-    expect(r21.body).toMatchObject({
+    const t = await h.createTenant({ planId: "starter" });
+    await h.sql(
+      `INSERT INTO usage_counters (company_id, period, metric, count)
+       SELECT $1, to_char(now() + interval '4 hours', 'YYYY-MM'), 'invoices', 199
+       ON CONFLICT (company_id, period, metric) DO UPDATE SET count = 199`,
+      [t.company.id]
+    );
+    const r200 = await invoice(t);
+    expect(r200.status, r200.text).toBe(200);
+    const r201 = await invoice(t);
+    expect(r201.status).toBe(402);
+    expect(r201.body).toMatchObject({
       code: "USAGE_LIMIT_REACHED",
       resource: "invoices",
-      limit: 20,
+      limit: 200,
     });
     const n = await h.sql(`SELECT count(*)::int AS n FROM invoices WHERE company_id = $1`, [
       t.company.id,
     ]);
-    expect(n[0].n).toBe(20);
+    expect(n[0].n).toBe(1);
     const usage = await t.as.get(`/api/companies/${t.company.id}/billing/usage`);
-    expect(usage.body.usage.invoices).toMatchObject({ used: 20, limit: 20 });
+    expect(usage.body.usage.invoices).toMatchObject({ used: 200, limit: 200 });
   });
 
   it("[R19-04] a failed create does not burn quota, and enforcement off never blocks (but still meters)", async () => {
@@ -81,54 +85,58 @@ describe("W5-B usage quotas", () => {
     expect(after[0].n).toBe(501);
   });
 
-  it("[R19-04] team seats: a second invitation on the free plan (1 user) is 402 when enforced", async () => {
+  it("[R19-04] team seats: unlimited users on every plan, so a second invitation is never 402 (WQ7)", async () => {
     setEnforcement("true");
-    const t = await h.createTenant();
-    const r = await t.as.post(`/api/companies/${t.company.id}/team/invitations`, {
-      email: "seat@harness.test",
-      role: "viewer",
-    });
-    expect(r.status).toBe(402);
-    expect(r.body.resource).toBe("team_members");
+    const t = await h.createTenant({ planId: "starter" });
+    for (const email of ["seat@harness.test", "seat2@harness.test"]) {
+      const r = await t.as.post(`/api/companies/${t.company.id}/team/invite`, {
+        email,
+        role: "viewer",
+      });
+      expect([200, 201], r.text).toContain(r.status);
+    }
   });
 });
 
 describe("W5-B feature gates", () => {
-  it("[R19-05] payroll and fixed assets are Professional+, webhooks/API keys Enterprise — per TIER_FEATURES", async () => {
+  it("[R19-05] payroll and fixed assets are Professional+, webhooks/API keys Enterprise; writes only (WQ7)", async () => {
     setEnforcement("true");
-    const free = await h.createTenant();
+    const starter = await h.createTenant({ planId: "starter" });
     const pro = await h.createTenant({ planId: "professional" });
     const ent = await h.createTenant({ planId: "enterprise" });
+    const post = (t: Tenant, path: string) =>
+      t.as.post(`/api/companies/${t.company.id}/${path}`, {});
 
-    const emp = await free.as.get(`/api/companies/${free.company.id}/employees`);
+    const emp = await post(starter, "employees");
     expect(emp.status).toBe(403);
     expect(emp.body).toMatchObject({
       code: "TIER_LOCKED",
       feature: "payroll",
       requiredTier: "professional",
     });
-    expect((await free.as.get(`/api/companies/${free.company.id}/fixed-assets`)).body.feature).toBe(
-      "fixedAssets"
+    expect((await post(starter, "fixed-assets")).body.feature).toBe("fixedAssets");
+    // Reads stay open: a module outside the plan is read-only, never hidden.
+    expect((await starter.as.get(`/api/companies/${starter.company.id}/employees`)).status).toBe(
+      200
     );
-    expect((await pro.as.get(`/api/companies/${pro.company.id}/employees`)).status).toBe(200);
+    expect([402, 403]).not.toContain((await post(pro, "employees")).status);
 
-    const hooksPro = await pro.as.get(`/api/companies/${pro.company.id}/webhooks`);
+    const hooksPro = await post(pro, "webhooks");
     expect(hooksPro.status).toBe(403);
     expect(hooksPro.body.feature).toBe("webhooks");
-    expect((await ent.as.get(`/api/companies/${ent.company.id}/webhooks`)).status).toBe(200);
-    expect((await pro.as.get(`/api/companies/${pro.company.id}/api-keys`)).status).toBe(403);
-    expect((await ent.as.get(`/api/companies/${ent.company.id}/api-keys`)).status).toBe(200);
+    expect([402, 403]).not.toContain((await post(ent, "webhooks")).status);
+    expect((await post(pro, "api-keys")).status).toBe(403);
+    expect([402, 403]).not.toContain((await post(ent, "api-keys")).status);
 
-    // Multi-currency documents are Starter+: a USD invoice on Free is locked, AED is fine.
-    const usd = await free.as.post(`/api/companies/${free.company.id}/invoices`, {
+    // Multi-currency documents are in every plan now: a USD invoice on Starter is fine.
+    const usd = await starter.as.post(`/api/companies/${starter.company.id}/invoices`, {
       customerName: "FX",
       date: today(),
       currency: "USD",
       exchangeRate: 3.6725,
       lines: [{ description: "Item", quantity: 1, unitPrice: 10, vatRate: 5 }],
     });
-    expect(usd.status).toBe(403);
-    expect(usd.body.feature).toBe("multiCurrency");
+    expect(usd.status, usd.text).toBe(200);
   });
 
   it("[R19-05] with enforcement off every gate passes", async () => {
