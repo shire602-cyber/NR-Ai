@@ -4,7 +4,8 @@ on:
   push:
     branches: [main, refactor/platform-overhaul]
   pull_request:
-    branches: [main, refactor/platform-overhaul]
+    # The release line (PR #67) is stacked work: PRs into it (e.g. #68) get the full suite too.
+    branches: [main, refactor/platform-overhaul, claude/eloquent-maxwell-kjxxjc]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
