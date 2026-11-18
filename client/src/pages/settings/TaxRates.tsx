@@ -118,12 +118,16 @@ export function TaxRatesView({ data }: { data: VatBoxMapResponse }) {
           flush
           testId={`tax-rates-${side}`}
         >
-          <Table>
+          {/* F2: below md the boxes sit under the treatment (no third column to run off the
+              card); `mobile-fit` opts out of the phone-wide 600 px table minimum. */}
+          <Table className="mobile-fit">
             <TableHeader>
               <TableRow>
                 <TableHead>{t["settingsPages.taxRates.treatment"]}</TableHead>
                 <TableHead data-numeric="">{t["settingsPages.taxRates.rate"]}</TableHead>
-                <TableHead className="w-1/2">{t["settingsPages.taxRates.boxes"]}</TableHead>
+                <TableHead className="w-1/2 max-md:hidden">
+                  {t["settingsPages.taxRates.boxes"]}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -136,6 +140,13 @@ export function TaxRatesView({ data }: { data: VatBoxMapResponse }) {
                   >
                     <TableCell className="font-medium">
                       {tr[TREATMENT_KEY[r.treatment] ?? ""] ?? r.treatment}
+                      <span
+                        className="mt-1.5 block font-normal md:hidden"
+                        data-testid="boxes-stacked"
+                      >
+                        <span className="sr-only">{t["settingsPages.taxRates.boxes"]}: </span>
+                        <BoxList boxes={r.boxes} />
+                      </span>
                     </TableCell>
                     <TableCell data-numeric="" className="tabular-nums" dir="ltr">
                       {percent(r.rate)}
@@ -146,7 +157,7 @@ export function TaxRatesView({ data }: { data: VatBoxMapResponse }) {
                           </span>
                         )}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="max-md:hidden">
                       <BoxList boxes={r.boxes} />
                     </TableCell>
                   </TableRow>

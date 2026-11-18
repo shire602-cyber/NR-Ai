@@ -184,7 +184,11 @@ describe("server copy templates", () => {
     expect(view.title).toBe("الفاتورة INV-9 متأخرة السداد");
     expect(view.message).toContain("Acme LLC");
     expect(view.message).toMatch(/[؀-ۿ]/);
-    expect(localizeNotification(row, en)).toEqual({ title: row.title, message: row.message });
+    // F3 (Fable sign-off 2): the stored ISO date reads in the app date format.
+    expect(localizeNotification(row, en)).toEqual({
+      title: row.title,
+      message: row.message.replace("2026-10-01", "1 Oct 2026"),
+    });
     // Unknown rows pass through untouched.
     expect(localizeNotification({ title: "Hello", message: "World" }, ar)).toEqual({
       title: "Hello",

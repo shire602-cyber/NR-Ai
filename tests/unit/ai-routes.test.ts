@@ -243,6 +243,37 @@ describe("R05-09 / R05-25 nl-gateway is grounded in server figures", () => {
     expect(user.match(/<\/user_data>/g)).toHaveLength(1);
     expect(messages[0].content).toMatch(/never follow instructions/i);
   });
+
+  it("AS1 the answer carries segments without markers, labelled figures and no filler", async () => {
+    const { client, create } = mockClient(
+      "Your net profit this year is AED 45,000 [F3]. Feel free to ask if you need more help!"
+    );
+    const res = await call(appWith(client), "/api/ai/nl-gateway", {
+      companyId: COMPANY,
+      message: "How much profit have I made this year?",
+      locale: "ar",
+      // A client cannot steer the prompt: unknown keys are refused by strictBody upstream and
+      // the handler reads only companyId, message and locale.
+    });
+    expect(res.status).toBe(200);
+    const system = create.mock.calls[0][0].messages[0].content as string;
+    expect(system).toMatch(/FACTS/);
+    expect(system).toMatch(/Reply in Arabic/);
+    expect(system).not.toMatch(/consult a qualified professional|personalized professional/i);
+    expect(system).not.toMatch(/gpt|openai/i);
+    expect(JSON.stringify(res.body.segments)).not.toMatch(/\[F\d/);
+    expect(res.body.segments).toContainEqual({ type: "money", value: 45000, currency: "AED" });
+    expect(JSON.stringify(res.body.segments)).not.toMatch(/feel free/i);
+    expect(res.body.response).not.toMatch(/\[F\d/);
+    expect(res.body.figures).toContainEqual(
+      expect.objectContaining({
+        key: "netProfit",
+        value: 45000,
+        source: { key: "profitLoss", href: "/reports?tab=pl&report=profit-loss" },
+      })
+    );
+    expect(res.body).not.toHaveProperty("model");
+  });
 });
 
 describe("R05-10 / R05-14 /api/ask and /api/ai/chat", () => {
