@@ -75,18 +75,69 @@ async function assertCashOrBank(companyId: string, id: string): Promise<void> {
   }
 }
 
+export interface VatReturnSettlementEntry {
+  id: string;
+  entryNumber: string;
+  date: string;
+  reference: string | null;
+  /** E2 (J3-r2): signed cash movement; > 0 paid to the FTA, < 0 refunded by the FTA. */
+  netPayable: number;
+  kind: "payment" | "refund" | "none";
+}
+
 /** The posted, unreversed settlement entry of a return, or null. */
-export async function getVatReturnSettlement(companyId: string, vatReturnId: string) {
+export async function getVatReturnSettlement(
+  companyId: string,
+  vatReturnId: string
+): Promise<VatReturnSettlementEntry | null> {
   await loadReturn(companyId, vatReturnId);
   const { rows } = await pool.query(
-    `SELECT id, entry_number AS "entryNumber", to_char(date, 'YYYY-MM-DD') AS date
-       FROM journal_entries
-      WHERE company_id = $1 AND source = $2 AND source_id = $3 AND status = 'posted'
-        AND reversed_by_entry_id IS NULL
-      ORDER BY created_at DESC LIMIT 1`,
+    `SELECT je.id, je.entry_number AS "entryNumber", to_char(je.date, 'YYYY-MM-DD') AS date,
+            je.reference,
+            COALESCE((SELECT SUM(ROUND(jl.debit * 100) - ROUND(jl.credit * 100))
+                        FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
+                       WHERE jl.entry_id = je.id AND a.code IN ('2020', '1050')), 0)::bigint
+              AS "netFils"
+       FROM journal_entries je
+      WHERE je.company_id = $1 AND je.source = $2 AND je.source_id = $3 AND je.status = 'posted'
+        AND je.reversed_by_entry_id IS NULL
+      ORDER BY je.created_at DESC LIMIT 1`,
     [companyId, VAT_SETTLEMENT_SOURCE, vatReturnId]
   );
-  return (rows[0] as { id: string; entryNumber: string; date: string } | undefined) ?? null;
+  const r = rows[0] as
+    | { id: string; entryNumber: string; date: string; reference: string | null; netFils: string }
+    | undefined;
+  if (!r) return null;
+  const netFils = Number(r.netFils);
+  return {
+    id: r.id,
+    entryNumber: r.entryNumber,
+    date: r.date,
+    reference: r.reference ?? null,
+    netPayable: Number(fromFils(netFils)),
+    kind: netFils > 0 ? "payment" : netFils < 0 ? "refund" : "none",
+  };
+}
+
+/**
+ * E2 (J3-r2): the return's payment fields mirror its live settlement entry (the only writer), so
+ * the Returns list, reports and the ledger agree. `null` clears them after a reversal.
+ */
+async function syncPaymentFields(
+  vatReturnId: string,
+  settled: { date: string; netPayable: number } | null
+): Promise<void> {
+  await pool.query(
+    `UPDATE vat_returns
+        SET payment_status = $2, payment_amount = $3, payment_date = $4, updated_at = now()
+      WHERE id = $1`,
+    [
+      vatReturnId,
+      settled ? "paid" : "unpaid",
+      settled ? settled.netPayable : null,
+      settled ? `${settled.date}T00:00:00Z` : null,
+    ]
+  );
 }
 
 export async function settleVatReturn(input: {
@@ -177,6 +228,7 @@ export async function settleVatReturn(input: {
     },
     { actorId: input.actorId, audit: true }
   );
+  await syncPaymentFields(ret.id, { date: input.date, netPayable: Number(fromFils(netFils)) });
   await recordAudit({
     userId: input.actorId,
     companyId: input.companyId,
@@ -267,6 +319,7 @@ export async function reverseVatReturnSettlement(input: {
       { actorId: input.actorId, req: input.req, companyId: input.companyId, tx }
     );
   });
+  await syncPaymentFields(input.vatReturnId, null);
   await recordAudit({
     userId: input.actorId,
     companyId: input.companyId,
