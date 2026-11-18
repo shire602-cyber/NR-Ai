@@ -34,6 +34,7 @@ import {
   VATSummaryReport,
   VarianceReport,
   VendorBillReportRow,
+  BALANCE_STRIP_REPORT_IDS,
   buildComparisonRanges,
   comparisonParams,
   corporateTaxEstimateStatus,
@@ -737,7 +738,8 @@ export function useReportsDataQueries({
       queryFn: () =>
         apiRequest("GET", `/api/companies/${selectedCompanyId}/reports/balance-summaries`),
       ...reportQueryOptions,
-      enabled: shouldLoadReportData("customer-balances", "vendor-balances"),
+      // E3 (J1-r3): every report that shows the balances KPI strip loads its figures.
+      enabled: shouldLoadReportData(...BALANCE_STRIP_REPORT_IDS),
     });
   const { data: fixedAssets = [], isLoading: fixedAssetsLoading } = useQuery<FixedAssetReportRow[]>(
     {

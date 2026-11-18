@@ -17,7 +17,7 @@ import type { z } from "zod";
 import { sql } from "drizzle-orm";
 import { createInsertSchema, money, rate, vatRateType } from "./columns";
 import { companies } from "./companies";
-import { journalEntries } from "./ledger";
+import { accounts, journalEntries } from "./ledger";
 import { costCenters } from "./integrations";
 import { products } from "./inventory";
 import { customerContacts } from "./contacts";
@@ -155,6 +155,10 @@ export const invoiceLines = pgTable(
       onDelete: "set null",
     }),
     quoteLineId: uuid("quote_line_id"),
+    // E3 (migration 0124): the income account a standard-rated line posts to (null = by item type).
+    revenueAccountId: uuid("revenue_account_id").references((): AnyPgColumn => accounts.id, {
+      onDelete: "set null",
+    }),
     // S1 (migration 0110): profit-margin scheme (Art. 29) — VAT and Box 1 on the margin only.
     marginScheme: boolean("margin_scheme").notNull().default(false),
     marginPurchaseCost: money("margin_purchase_cost"), // line purchase cost, document currency

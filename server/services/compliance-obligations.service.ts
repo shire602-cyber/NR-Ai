@@ -117,7 +117,11 @@ interface CompanyFacts {
 }
 
 // E1: one rule for "does this period belong to the books", shared with the VAT Periods tab.
-import { loadVatApplicabilityFor, obligationsApplyFrom } from "./vat-applicability";
+import {
+  isFiledReturnStatus,
+  loadVatApplicabilityFor,
+  obligationsApplyFrom,
+} from "./vat-applicability";
 export { obligationsApplyFrom };
 
 async function loadCompanyFacts(companyId: string): Promise<CompanyFacts | null> {
@@ -189,13 +193,9 @@ async function vatReturnStates(companyId: string): Promise<Map<string, ReturnSta
   for (const row of r.rows as ReturnStateRow[]) {
     const prev = out.get(row.period_end);
     // Prefer a filed row over a draft for the same period.
-    if (!prev || isFiledVat(row.status)) out.set(row.period_end, row);
+    if (!prev || isFiledReturnStatus(row.status)) out.set(row.period_end, row);
   }
   return out;
-}
-
-function isFiledVat(status: string): boolean {
-  return ["submitted", "filed", "amended", "paid", "accepted"].includes(status);
 }
 
 async function ctReturnStates(companyId: string): Promise<Map<string, ReturnStateRow>> {
@@ -223,6 +223,27 @@ async function hasActiveEmployees(companyId: string): Promise<boolean> {
     return (r.rowCount ?? 0) > 0;
   } catch {
     return false;
+  }
+}
+
+/**
+ * E3 (J3-r3): the first day of the first payroll month: the earliest payroll run's period, else
+ * the month the first employee record was created. Null when neither exists.
+ */
+async function payrollStartDate(companyId: string): Promise<IsoDate | null> {
+  try {
+    const r = await pool.query(
+      `SELECT LEAST(
+          (SELECT MIN(make_date(period_year, period_month, 1)) FROM payroll_runs
+            WHERE company_id = $1 AND status <> 'cancelled'),
+          (SELECT MIN(date_trunc('month', created_at + interval '4 hours')::date) FROM employees
+            WHERE company_id = $1)
+        )::text AS start`,
+      [companyId]
+    );
+    return (r.rows[0]?.start as IsoDate | null) ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -280,7 +301,7 @@ export async function buildObligationSpecs(
         periodStart: p.periodStart,
         periodEnd: p.periodEnd,
         legalSource: "FDL 8/2017 Art. 64; Executive Regulation Art. 59 (28 days)",
-        completed: state ? isFiledVat(state.status) : false,
+        completed: state ? isFiledReturnStatus(state.status) : false,
         relatedEntityId: state?.id ?? null,
         detail: state ? `Return status: ${state.status}` : "No VAT return prepared yet",
       });
@@ -421,7 +442,11 @@ export async function buildObligationSpecs(
     const paid = await paidPayrollPeriods(companyId);
     // E1 (J3-r2): payroll obligations start with the books (company creation / first activity),
     // not before it, unless a run was already paid for the month.
-    const wpsFrom = company.booksStart;
+    // E3 (J3-r3): and not before the payroll did: the first payroll run's month, or the month the
+    // first employee was added when no run exists yet.
+    const payrollStart = await payrollStartDate(companyId);
+    const wpsFrom =
+      payrollStart && payrollStart > company.booksStart ? payrollStart : company.booksStart;
     for (const p of monthlyPeriodsDueInYear(year, (end) => addDays(end, 15))) {
       if (p.periodEnd < wpsFrom && !paid.has(p.periodEnd.slice(0, 7))) continue;
       specs.push({

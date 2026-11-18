@@ -1,4 +1,4 @@
--- 0124_wq7_automations_onboarding_numbering (WQ7 commercial truth, onboarding and approvals):
+-- 0125_wq7_automations_onboarding_numbering (WQ7 commercial truth, onboarding and approvals):
 -- per-company automation switches with their last run, server-side company onboarding progress,
 -- and document numbering settings.
 -- Idempotent: CREATE TABLE IF NOT EXISTS and CREATE INDEX IF NOT EXISTS only, so re-running the

@@ -7,7 +7,6 @@
  *   mode "split"  an unposted upload that holds several receipts becomes separate receipts
  *                 (POST /api/receipts/:id/split { parts }); the parts must add up to the total.
  */
-import { accountDisplayName } from "@/lib/account-name";
 import { withoutControlAccounts } from "@/lib/control-account-options";
 import { useState } from "react";
 import {
@@ -21,13 +20,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { PurchaseAccountOptions } from "@/components/accounts/PurchaseAccountOptions";
 import { Plus } from "lucide-react";
 import {
   FormActions,
@@ -105,7 +99,7 @@ function emptyPart(receipt: ReceiptForSplit | null): ReceiptPartDraft {
 
 export function ReceiptLinesDialog(props: ReceiptLinesDialogProps) {
   const { open, onOpenChange, mode, receipt, accounts, onSaved } = props;
-  const { t, locale } = useTranslation();
+  const { t } = useTranslation();
   const request = props.request ?? apiRequest;
   const [lines, setLines] = useState<ReceiptLineDraft[]>(() =>
     receipt ? linesFromReceipt(receipt) : [emptyLine()]
@@ -248,13 +242,7 @@ export function ReceiptLinesDialog(props: ReceiptLinesDialogProps) {
                             <SelectValue placeholder={t["purchases.chooseAccount"]} />
                           </SelectTrigger>
                           <SelectContent>
-                            {expenseAccounts.map((a) => (
-                              <SelectItem key={a.id} value={a.id}>
-                                {[a.code, accountDisplayName(a, locale)]
-                                  .filter(Boolean)
-                                  .join(" · ")}
-                              </SelectItem>
-                            ))}
+                            <PurchaseAccountOptions accounts={expenseAccounts} withCode />
                           </SelectContent>
                         </Select>
                       </div>

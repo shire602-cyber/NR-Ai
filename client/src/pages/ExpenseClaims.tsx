@@ -84,6 +84,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import type { Permission } from "@/lib/auth";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
@@ -238,7 +239,7 @@ function claimPayload(data: ClaimFormData) {
 export default function ExpenseClaims() {
   const { t, locale } = useTranslation();
   // E2 (J3-r2 / J4-r2): review actions follow the role and the maker-checker rule.
-  const { gate, gateApproval } = useCompanyPermission();
+  const { gate, gateApproval, can } = useCompanyPermission();
   const cc = CLAIM_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -766,7 +767,7 @@ export default function ExpenseClaims() {
     isReview?: boolean;
     emptyTitle?: string;
     emptyDescription?: string;
-    emptyAction?: { label: string; onClick: () => void };
+    emptyAction?: { label: string; onClick: () => void; permission?: Permission };
   }) => (
     <DataTableCard
       status={loading ? "loading" : claims.length === 0 ? "empty" : "ready"}
@@ -778,9 +779,7 @@ export default function ExpenseClaims() {
           emptyDescription ??
           (t as any).expenseClaimsEmptyDesc ??
           "Submit your first reimbursement to get started.",
-        action: emptyAction
-          ? { label: emptyAction.label, onClick: emptyAction.onClick, icon: Plus }
-          : undefined,
+        action: emptyAction ? { ...emptyAction, icon: Plus } : undefined,
         testId: "empty-state-expense-claims",
       }}
     >
@@ -1274,15 +1273,18 @@ export default function ExpenseClaims() {
             <FileText aria-hidden />
             <T k="pages.myClaims" />
           </TabsTrigger>
-          <TabsTrigger value="review">
-            <CheckCircle aria-hidden />
-            {t["screens.review"]}
-            {submittedClaims.length > 0 && (
-              <StatusBadge tone="info" className="ms-1 px-1.5 py-0 text-xs">
-                {submittedClaims.length}
-              </StatusBadge>
-            )}
-          </TabsTrigger>
+          {/* E3 (J3-r3): reviewing claims needs the approve permission (an employee only submits). */}
+          {can("documents.approve") && (
+            <TabsTrigger value="review">
+              <CheckCircle aria-hidden />
+              {t["screens.review"]}
+              {submittedClaims.length > 0 && (
+                <StatusBadge tone="info" className="ms-1 px-1.5 py-0 text-xs">
+                  {submittedClaims.length}
+                </StatusBadge>
+              )}
+            </TabsTrigger>
+          )}
           <TabsTrigger value="all-claims">
             <Receipt aria-hidden />
             <T k="pages.allClaims" />
@@ -1298,7 +1300,11 @@ export default function ExpenseClaims() {
             loading={isLoadingClaims}
             emptyTitle={t["screens.noClaimsYet"]}
             emptyDescription={t["screens.noClaimsYetBody"]}
-            emptyAction={{ label: t["pages.newClaim"], onClick: handleOpenCreateDialog }}
+            emptyAction={{
+              label: t["pages.newClaim"],
+              onClick: handleOpenCreateDialog,
+              permission: "documents.write",
+            }}
           />
         </TabsContent>
 

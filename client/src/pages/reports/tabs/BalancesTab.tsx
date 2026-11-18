@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
+  BALANCE_STRIP_REPORT_IDS,
   depreciationStatusVariant,
   fixedAssetStatusVariant,
   formatReportDate,
@@ -52,17 +53,10 @@ export default function BalancesTab() {
     <>
       <div
         className={reportSectionClass(
-          [
-            "customer-balances",
-            "ap-aging",
-            "vendor-balances",
-            "inventory-valuation",
-            "inventory-movement",
-            "depreciation-schedule",
-            "fixed-asset-register",
-          ],
+          [...BALANCE_STRIP_REPORT_IDS],
           "grid grid-cols-1 gap-6 md:grid-cols-4"
         )}
+        data-testid="balances-kpi-strip"
       >
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">

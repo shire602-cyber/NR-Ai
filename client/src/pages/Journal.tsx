@@ -1000,6 +1000,7 @@ export default function Journal() {
                               aria-label={t["journal.void"]}
                               title={t["journal.void"]}
                               data-testid={`button-void-journal-${entry.id}`}
+                              {...gate("ledger.post")}
                             >
                               <Ban aria-hidden />
                             </Button>

@@ -3,7 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
-import { STATUS_MAP, statusDotClass, type StatusKind } from "./status-meta";
+import { STATUS_MAP, STATUS_NAMESPACES, statusDotClass, type StatusKind } from "./status-meta";
 
 const badgeVariants = cva(
   "whitespace-nowrap inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium leading-4 transition-colors" +
@@ -74,9 +74,10 @@ interface StatusBadgeProps extends Omit<BadgeProps, "variant" | "children"> {
  * case, semantic colour, a dot. Unknown statuses render neutral with the raw value.
  */
 function StatusBadge({ status, label, overdueDays, className, ...props }: StatusBadgeProps) {
-  const { t } = useTranslation();
   const key = (status || "").toLowerCase() as StatusKind;
   const meta = STATUS_MAP[key];
+  // E3: some status labels live in `screens`, which a public route does not load by itself.
+  const { t } = useTranslation(meta?.label.startsWith("screens.") ? STATUS_NAMESPACES : undefined);
   const overdueLabel =
     overdueDays !== undefined && overdueDays > 0
       ? overdueDays === 1

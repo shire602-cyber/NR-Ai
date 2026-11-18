@@ -68,6 +68,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PurchaseAccountOptions } from "@/components/accounts/PurchaseAccountOptions";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
@@ -1331,7 +1332,7 @@ export default function BillPay() {
                         (Number(watchLines[index]?.quantity) || 0) *
                         (Number(watchLines[index]?.unit_price) || 0)
                       }
-                      currency="AED"
+                      currency={watchCurrency || "AED"}
                     />
                   </LineAmount>
                   <FormField
@@ -1370,11 +1371,7 @@ export default function BillPay() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {expenseAccounts.map((acc: any) => (
-                              <SelectItem key={acc.id} value={acc.id}>
-                                {accountDisplayName(acc, locale)}
-                              </SelectItem>
-                            ))}
+                            <PurchaseAccountOptions accounts={expenseAccounts} />
                           </SelectContent>
                         </Select>
                         {index === 0 && (
@@ -1423,16 +1420,16 @@ export default function BillPay() {
               rows={[
                 {
                   label: t["forms.preview.subtotal"],
-                  value: <Money amount={subtotal} currency="AED" />,
+                  value: <Money amount={subtotal} currency={watchCurrency || "AED"} />,
                 },
                 {
                   label: t["forms.col.vat"],
-                  value: <Money amount={vatAmount} currency="AED" />,
+                  value: <Money amount={vatAmount} currency={watchCurrency || "AED"} />,
                 },
               ]}
               total={{
                 label: t["forms.preview.total"],
-                value: <Money amount={totalAmount} currency="AED" />,
+                value: <Money amount={totalAmount} currency={watchCurrency || "AED"} />,
               }}
             />
           </FormSection>
@@ -1641,6 +1638,7 @@ export default function BillPay() {
                             <>
                               {(bill.status === "draft" || bill.status === "rejected") && (
                                 <DropdownMenuItem
+                                  {...gate("documents.write")}
                                   onClick={() =>
                                     billActionMutation.mutate({ id: bill.id, action: "submit" })
                                   }
@@ -1651,6 +1649,7 @@ export default function BillPay() {
                               )}
                               {bill.status === "pending" && (
                                 <DropdownMenuItem
+                                  {...gate("documents.approve")}
                                   onClick={() => {
                                     const reason = window.prompt(c.reasonPrompt);
                                     if (reason)
@@ -1668,6 +1667,7 @@ export default function BillPay() {
                               {["draft", "pending", "approved", "overdue"].includes(bill.status) &&
                                 Number(bill.amount_paid) === 0 && (
                                   <DropdownMenuItem
+                                    {...gate("documents.write")}
                                     onClick={() => {
                                       const reason = window.prompt(c.reasonPrompt);
                                       if (reason)
@@ -1685,6 +1685,7 @@ export default function BillPay() {
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"
+                                {...gate("documents.write")}
                                 onClick={() => {
                                   if (confirm(t["screens.confirmDeleteBill"])) {
                                     deleteBillMutation.mutate(bill.id);
@@ -1702,6 +1703,7 @@ export default function BillPay() {
                               label={t["pages.approve"]}
                               icon={CheckCircle}
                               onClick={() => approveBillMutation.mutate(bill.id)}
+                              {...gate("documents.approve")}
                             />
                           )}
                           {payable && (
@@ -1709,12 +1711,14 @@ export default function BillPay() {
                               label={t["pages.recordPayment"]}
                               icon={DollarSign}
                               onClick={() => handlePayBill(bill)}
+                              {...gate("payments.release")}
                             />
                           )}
                           <RowActionButton
                             label={t.edit}
                             icon={Edit}
                             onClick={() => openBillEditor(bill)}
+                            {...gate("documents.write")}
                           />
                         </RowActions>
                       </TableCell>

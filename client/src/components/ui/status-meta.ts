@@ -43,6 +43,9 @@ export type StatusKind =
   | "credited";
 
 // R18-02: `label` is a translation key (components namespace).
+/** E3: namespaces the labels below read besides `components` (declared by StatusBadge). */
+export const STATUS_NAMESPACES = ["screens"] as const;
+
 export const STATUS_MAP: Record<
   StatusKind,
   { variant: StatusVariant | null | undefined; label: string }

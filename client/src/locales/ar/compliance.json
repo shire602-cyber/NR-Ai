@@ -224,5 +224,9 @@
   "compliance.vatFlow.stepNothing": "لا يوجد مبلغ للدفع أو الاسترداد",
   "compliance.vatFlow.calculated": "احتساب الإقرار",
   "compliance.vatFlow.reviewed": "المراجعة والاعتماد",
-  "compliance.vatFlow.filedStep": "التقديم عبر إمارات تاكس (بواسطتك)"
+  "compliance.vatFlow.filedStep": "التقديم عبر إمارات تاكس (بواسطتك)",
+  "compliance.autopilotStageFiled": "تم التقديم",
+  "compliance.autopilotStagePaid": "مدفوع",
+  "compliance.vatNotRegisteredTitle": "هذه الشركة غير مسجلة في ضريبة القيمة المضافة",
+  "compliance.vatNotRegisteredBody": "لا تفرض الشركة ضريبة القيمة المضافة ولا تقدّم إقرارًا ضريبيًا. ولا يمكن استرداد الضريبة التي يفرضها الموردون، لذلك تُسجَّل ضمن تكلفة كل عملية شراء. عند تسجيل الشركة لدى الهيئة الاتحادية للضرائب، غيّر نوع التسجيل وأضف رقم التسجيل الضريبي في ملف الشركة."
 }

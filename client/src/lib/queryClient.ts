@@ -3,7 +3,8 @@ import { getAuthHeaders, hasAuthHint, refreshSession } from "./auth";
 import { apiUrl } from "./api";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
 import { isOnline, queueForSync } from "./pwa";
-import { localizeApiError } from "./validation-messages";
+import { localizeApiError, VALIDATION_NAMESPACES } from "./validation-messages";
+import { loadNamespaces, useI18n } from "./i18n";
 import { announcePlanLimit } from "./plan-limit";
 import {
   PERIOD_LOCK_REASON_HEADER,
@@ -49,6 +50,8 @@ async function throwIfResNotOk(res: Response) {
     } catch {
       errorMessage = res.statusText;
     }
+    // E3 (J2-r3): the localised error copy lives in `forms`, which public routes do not load.
+    await loadNamespaces(useI18n.getState().locale, VALIDATION_NAMESPACES).catch(() => undefined);
     // WQ7: a plan refusal (402/403 with a plan code) also opens the upgrade prompt.
     announcePlanLimit(body);
     throw new ApiError(localizeApiError(body) ?? errorMessage, res.status, body, errorMessage);

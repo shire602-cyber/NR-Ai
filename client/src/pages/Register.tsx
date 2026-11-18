@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { RegisterForm } from "@/components/auth/RegisterForm";
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { fetchCurrentUser } from "@/lib/auth";
 import { establishAuthenticatedSession } from "@/lib/authSession";
+import { setActiveCompanyIdRaw } from "@/lib/activeCompany";
 import { apiRequest } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
@@ -39,8 +40,8 @@ const COPY = {
   },
   accept: { en: "Accept invitation", ar: "قبول الدعوة" },
   signInFirst: {
-    en: "An account already exists for this email. Sign in with it, then open this invitation link again.",
-    ar: "يوجد حساب لهذا البريد. سجّل الدخول به ثم افتح رابط الدعوة مرة أخرى.",
+    en: "An account already exists for this email. Sign in with it and you join the company straight away.",
+    ar: "يوجد حساب لهذا البريد. سجّل الدخول به وستنضم إلى الشركة مباشرة.",
   },
   signIn: { en: "Sign in", ar: "تسجيل الدخول" },
   invalidTitle: { en: "This invitation has expired", ar: "انتهت صلاحية هذه الدعوة" },
@@ -110,6 +111,8 @@ function InviteAccept({ token, kind }: { token: string; kind: InviteKind }) {
         preview?.accountExists ? {} : { name, password }
       );
       const currentUser = result?.user ? await establishAuthenticatedSession(result.user) : null;
+      // E3 (J4-r3): open the company the person just joined.
+      if (typeof result?.companyId === "string") setActiveCompanyIdRaw(result.companyId);
       setLocation(
         currentUser?.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard"
       );
@@ -119,6 +122,22 @@ function InviteAccept({ token, kind }: { token: string; kind: InviteKind }) {
       setBusy(false);
     }
   };
+
+  // E3 (J4-r3): an existing account signs in and comes straight back here (`accept=1`); the
+  // invitation is then accepted without opening the link again.
+  const inviteParam = kind === "admin" ? "invite" : "teamInvite";
+  const returnPath = `/register?${inviteParam}=${encodeURIComponent(token)}&accept=1`;
+  const signInHref = `/login?next=${encodeURIComponent(returnPath)}`;
+  const autoAccept =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("accept") === "1";
+  const autoTried = useRef(false);
+  useEffect(() => {
+    if (!autoAccept || autoTried.current || !preview?.accountExists || !signedIn) return;
+    autoTried.current = true;
+    void accept();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAccept, preview, signedIn]);
 
   if (invalid) {
     return (
@@ -157,7 +176,7 @@ function InviteAccept({ token, kind }: { token: string; kind: InviteKind }) {
           <p className="text-small">{tr(COPY.signInFirst)}</p>
           <Button
             className={AUTH_BUTTON}
-            onClick={() => setLocation("/login")}
+            onClick={() => setLocation(signInHref)}
             data-testid="button-invite-sign-in"
           >
             {tr(COPY.signIn)}
