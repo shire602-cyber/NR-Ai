@@ -248,6 +248,30 @@ async function settledOnSupersededReturns(
   };
 }
 
+/**
+ * C2 (RL6): returns that amend `vatReturnId` (directly or down the chain) and have a live
+ * settlement, which was computed net of this return's settlement.
+ */
+async function laterSettledAmendments(companyId: string, vatReturnId: string): Promise<string[]> {
+  const { rows } = await pool.query(
+    `WITH RECURSIVE later(id, depth) AS (
+       SELECT id, 0 FROM vat_returns WHERE id = $2 AND company_id = $1
+       UNION ALL
+       SELECT r.id, l.depth + 1
+         FROM vat_returns r JOIN later l ON r.amends_return_id = l.id
+        WHERE r.company_id = $1 AND l.depth < 50
+     )
+     SELECT DISTINCT l.id
+       FROM later l
+       JOIN journal_entries je ON je.company_id = $1 AND je.source = $3 AND je.source_id = l.id
+                              AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL
+                              AND je.entry_kind <> 'reversal'
+      WHERE l.depth > 0`,
+    [companyId, vatReturnId, VAT_SETTLEMENT_SOURCE]
+  );
+  return rows.map((r) => r.id as string);
+}
+
 export async function reverseVatReturnSettlement(input: {
   companyId: string;
   vatReturnId: string;
@@ -258,6 +282,18 @@ export async function reverseVatReturnSettlement(input: {
 }) {
   const settled = await getVatReturnSettlement(input.companyId, input.vatReturnId);
   if (!settled) throw new DomainError("VAT_RETURN_NOT_SETTLED", 409);
+  // C2 (RL6): a later amendment's settlement only settled the difference from this one. Undoing
+  // this one alone would leave that VAT neither paid nor payable on any return (GL 2020 / 1050
+  // off with nothing to re-settle), so reverse the latest settlement first.
+  const later = await laterSettledAmendments(input.companyId, input.vatReturnId);
+  if (later.length) {
+    throw new DomainError(
+      "VAT_SETTLEMENT_COUNTED_BY_AMENDMENT",
+      409,
+      { amendedBy: later },
+      "A later amended return's settlement already counted this payment. Reverse the latest amendment's settlement first, then this one."
+    );
+  }
   await withLedgerTx(async (tx) => {
     await reverseBySource(
       input.companyId,

@@ -375,6 +375,50 @@ export async function writeDownStock(
 }
 
 /**
+ * C2 (NL2, IAS 2.33): the part of earlier write-downs still held in stock on hand. A write-down
+ * lowers the carrying amount of the units then on hand; units issued afterwards carry their
+ * share of it out of stock (into cost of sales), so only the share of the units still on hand
+ * can be reversed. Each write-down (+) and reversal (-) is carried forward and reduced by every
+ * later issue in proportion to the quantity issued (qty after / qty before), the same
+ * proportional relief the weighted-average cost uses.
+ */
+export async function outstandingWriteDownFils(
+  tx: LedgerTx,
+  companyId: string,
+  productId: string
+): Promise<number> {
+  const rows = await q<{
+    type: string | null;
+    quantity: number;
+    total_cost: string | null;
+    source_type: string | null;
+    live: boolean;
+  }>(
+    tx,
+    sql`SELECT type, quantity, total_cost::text AS total_cost, source_type,
+               (reversed_by_movement_id IS NULL) AS live
+          FROM inventory_movements
+         WHERE company_id = ${companyId} AND product_id = ${productId}
+         ORDER BY created_at, id`
+  );
+  let qty = 0;
+  let outstanding = 0;
+  for (const r of rows) {
+    const cost = Math.round(Number(r.total_cost ?? 0) * 100);
+    if (r.live && r.source_type === "write_down") outstanding -= cost;
+    else if (r.live && r.source_type === "write_down_reversal") outstanding -= cost;
+    // Sales, purchases and returns store an unsigned quantity: the value change gives the side.
+    const raw = Number(r.quantity ?? 0);
+    const unsigned = r.type === "sale" || r.type === "purchase" || r.type === "return";
+    const move = !unsigned ? raw : r.type === "sale" || cost < 0 ? -Math.abs(raw) : Math.abs(raw);
+    if (move < 0 && qty > 0)
+      outstanding = Math.round((outstanding * Math.max(0, qty + move)) / qty);
+    qty += move;
+  }
+  return Math.max(0, outstanding);
+}
+
+/**
  * L8 (A4, IAS 2.33-34): reverse an earlier NRV write-down when net realisable value recovers.
  * Limited to the write-downs of this product not yet reversed (never above original cost) and
  * to stock still on hand. Dr 1070 Inventory / Cr 5007 (reduces the inventory expense).
@@ -394,20 +438,12 @@ export async function reverseWriteDown(
     throw new DomainError("INVALID_AMOUNT", 422, { amount: args.amountFils });
   }
   await lockProduct(tx, args.companyId, args.productId);
-  const [sums] = await q<{ down: string; up: string; qty: string }>(
+  const reversibleFils = await outstandingWriteDownFils(tx, args.companyId, args.productId);
+  const [stock] = await q<{ qty: string }>(
     tx,
-    sql`SELECT
-          COALESCE(-SUM(total_cost) FILTER (WHERE source_type = 'write_down'
-                     AND reversed_by_movement_id IS NULL), 0)::text AS down,
-          COALESCE(SUM(total_cost) FILTER (WHERE source_type = 'write_down_reversal'
-                     AND reversed_by_movement_id IS NULL), 0)::text AS up,
-          (SELECT COALESCE(current_stock, 0) FROM products WHERE id = ${args.productId})::text AS qty
-        FROM inventory_movements
-       WHERE company_id = ${args.companyId} AND product_id = ${args.productId}`
+    sql`SELECT COALESCE(current_stock, 0)::text AS qty FROM products WHERE id = ${args.productId}`
   );
-  const reversibleFils =
-    Math.round(Number(sums?.down ?? 0) * 100) - Math.round(Number(sums?.up ?? 0) * 100);
-  if (!(Number(sums?.qty ?? 0) > 0)) {
+  if (!(Number(stock?.qty ?? 0) > 0)) {
     throw new DomainError(
       "NO_STOCK_ON_HAND",
       422,

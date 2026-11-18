@@ -148,7 +148,8 @@ describe("R09-01 gratuity calculator date validation", () => {
   });
 
   it("still computes gratuity for valid dates (8 completed years)", async () => {
-    const r = await invoke(chain, { employeeId: EMPLOYEE_ID, terminationDate: "2026-01-01" });
+    // C2 (NL7): the last working day counts, so 8 whole years end the day before the anniversary.
+    const r = await invoke(chain, { employeeId: EMPLOYEE_ID, terminationDate: "2025-12-31" });
     expect(r.status).toBe(200);
     expect(r.body.completedYears).toBe(8);
     expect(r.body.trailingDays).toBe(0);

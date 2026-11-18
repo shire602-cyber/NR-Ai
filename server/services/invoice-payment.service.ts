@@ -39,7 +39,8 @@ import {
 } from "../ledger";
 import { fromFils, toFils } from "../../shared/money";
 import { emitDomainEvent } from "../platform/domain-events";
-import { has, provide } from "../platform/service-registry";
+import { has, provide, resolve } from "../platform/service-registry";
+import { createLogger } from "../config/logger";
 import {
   getArAccount,
   getFxAccounts,
@@ -61,6 +62,8 @@ import {
   allowanceForDoubtfulDebtsFils,
 } from "../reporting/ifrs-adjustments";
 import { bankCurrencyOf, bankRateOn, cashLegFor } from "./fx/bank-currency";
+
+const log = createLogger("invoice-payment");
 
 export const PAYMENT_ACCOUNT_SUB_TYPES = ["cash", "bank"] as const;
 
@@ -250,6 +253,31 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
     throw err;
   }
   const amountFils = toFils(input.amount, { rounding: "halfUp" });
+  // C2 (NL8): reverse any bad-debt relief claimed on this invoice now (Art. 64(3)), so the VAT
+  // return is right as soon as the receipt is; a failure is returned, not only logged.
+  let badDebtReliefReversal:
+    | { status: "reversed"; claimId: string; date: string }
+    | { status: "failed"; code: string; message: string }
+    | null = null;
+  if (has("vat.reverseReliefOnPayment")) {
+    try {
+      const r = await resolve<ReverseReliefOnPayment>("vat.reverseReliefOnPayment")({
+        companyId: input.companyId,
+        invoiceId: input.invoiceId,
+        paymentId: result.payment.id,
+        actorUserId: input.createdBy,
+      });
+      if (r) badDebtReliefReversal = { status: "reversed", claimId: r.claimId, date: r.date };
+    } catch (err) {
+      const e = err as { code?: string; message?: string };
+      badDebtReliefReversal = {
+        status: "failed",
+        code: e?.code ?? "BAD_DEBT_RELIEF_REVERSAL_FAILED",
+        message: e?.message ?? "The bad-debt relief could not be reversed",
+      };
+      log.error({ err, invoiceId: input.invoiceId }, "bad-debt relief reversal on payment failed");
+    }
+  }
   emitDomainEvent("payment.received", {
     companyId: input.companyId,
     entityId: result.payment.id,
@@ -265,8 +293,15 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
       actorUserId: input.createdBy,
     });
   }
-  return result;
+  return badDebtReliefReversal ? { ...result, badDebtReliefReversal } : result;
 }
+
+type ReverseReliefOnPayment = (p: {
+  companyId: string;
+  invoiceId: string;
+  paymentId: string;
+  actorUserId?: string | null;
+}) => Promise<{ claimId: string; date: string } | null>;
 
 export type RecordInvoicePaymentService = typeof recordInvoicePayment;
 

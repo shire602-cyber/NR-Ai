@@ -20,12 +20,14 @@ export async function getInvoiceBalances(
   const { rows } = await pool.query(
     `WITH calc AS (
        SELECT i.id, ${receivableSettlementPartsSql("i").paid} AS paid,
+              COALESCE((SELECT SUM(wo.amount) FROM invoice_payments wo
+                         WHERE wo.invoice_id = i.id AND wo.method = 'write_off'), 0) AS written_off,
               CASE WHEN ${receivableStatusSql("i")} THEN ${receivableOpenSql("i")} ELSE 0 END AS open,
               COALESCE(NULLIF(i.exchange_rate, 0), 1) AS fx
          FROM invoices i
         WHERE i.company_id = $1 AND ($2::text[] IS NULL OR i.id::text = ANY($2::text[]))
      )
-     SELECT id, paid::float8 AS paid, open::float8 AS open,
+     SELECT id, paid::float8 AS paid, open::float8 AS open, written_off::float8 AS written_off,
             (ROUND(open * fx * 100)::bigint / 100.0)::float8 AS open_base
        FROM calc`,
     [companyId, ids ?? null]
@@ -35,6 +37,7 @@ export async function getInvoiceBalances(
       amountPaid: Number(r.paid),
       openBalance: Number(r.open),
       openBalanceBase: Number(r.open_base),
+      amountWrittenOff: Number(r.written_off),
     });
   }
   return out;

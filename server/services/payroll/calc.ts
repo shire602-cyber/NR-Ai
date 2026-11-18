@@ -254,7 +254,11 @@ export function gratuityEntitlement(
 
   const unpaid = g.excludeUnpaidLeave ? Math.max(0, Math.floor(input.unpaidLeaveDays ?? 0)) : 0;
   const effectiveEnd = addDays(input.endDate, -unpaid);
-  const end = effectiveEnd.getTime() < input.joinDate.getTime() ? input.joinDate : effectiveEnd;
+  const lastDay = effectiveEnd.getTime() < input.joinDate.getTime() ? input.joinDate : effectiveEnd;
+  // C2 (NL7): the last working day is a day of service (Art. 51 counts the service period
+  // through the last day worked), so the period runs to the end of that day.
+  const next = addDays(lastDay, 1);
+  const end = isValidDate(next) ? next : lastDay;
   const { years: completedYears, lastAnniversary } = completedAnniversaries(input.joinDate, end);
   const trailingDays = Math.max(0, daysBetween(lastAnniversary, end));
   const serviceDays = Math.max(0, daysBetween(input.joinDate, end));

@@ -69,8 +69,9 @@ import { invoiceMachine, settlementStatus } from "./invoice-state-machine";
 import { has, resolve } from "../platform/service-registry";
 import { receivableSettlementPartsSql } from "../reporting/settlement";
 
-// W4-B inventory / COGS hooks (provided by server/services/inventory). Called on the document's
-// transaction so stock and cost of sales commit atomically with the revenue entry.
+// W4-B inventory / COGS hooks (provided by server/services/inventory), and C2 the fixed-asset
+// disposal hooks (server/services/fixed-assets/disposal-credit.ts). Called on the document's
+// transaction so stock, cost of sales and the disposal result commit atomically with the entry.
 type InventoryHook = (tx: LedgerTx, args: Record<string, unknown>) => Promise<unknown>;
 async function inventoryHook(name: string, tx: LedgerTx, args: Record<string, unknown>) {
   if (has(name)) await resolve<InventoryHook>(name)(tx, args);
@@ -1312,6 +1313,16 @@ async function issueCreditNoteLocked(
     creditDocFils: cnTotalFils,
     userId,
   });
+  // C2 (RM3): a credit note on a disposal invoice adjusts the disposal result, not revenue.
+  await inventoryHook("fixedAssets.onDisposalInvoiceCredited", tx, {
+    companyId: original.companyId,
+    originalInvoiceId: original.id,
+    creditNoteId: issued.id,
+    creditNoteNumber: issued.number,
+    entryId: posted.entryId,
+    date: dateOnly(issued.date),
+    userId,
+  });
   await inventoryHook("inventory.onCreditNoteIssued", tx, {
     original,
     creditNote: issued,
@@ -1438,6 +1449,12 @@ export async function voidCreditNote(
       { void: true, reason: reason ?? "Credit note voided" },
       { actorId: userId, tx }
     );
+    await inventoryHook("fixedAssets.onDisposalCreditVoided", tx, {
+      companyId,
+      originalInvoiceId: fresh.originalInvoiceId ?? null,
+      creditNoteId,
+      userId,
+    });
     await inventoryHook("inventory.onCreditNoteVoided", tx, {
       companyId,
       creditNoteId,

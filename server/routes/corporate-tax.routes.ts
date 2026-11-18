@@ -27,7 +27,7 @@ import {
   CT_TP_LOCAL_FILE_REVENUE_THRESHOLD,
   CT_TP_MNE_GROUP_REVENUE_THRESHOLD,
   CT_ZERO_RATE_BAND,
-  computeCtLiability,
+  computeCtComputation,
   computeCtTotals,
   sbrAvailableForPeriodEnd,
   type CtWorkpaperRow,
@@ -78,6 +78,7 @@ import {
   ensureCtTagAccounts,
   findOverlappingReturn,
   getCtProfile,
+  ledgerAdjustmentsFromBooks,
   listRelatedParties,
   listTaggedAccounts,
   parseAdjustments,
@@ -655,14 +656,26 @@ export function registerCorporateTaxRoutes(app: Express) {
       );
       const entries = await countPeriodEntries(companyId, range.from!, range.to);
 
-      const totalDeductions = 0;
-      const liability = computeCtLiability({
+      // C2 (NL4): the same bridge as the return: add-backs and exempt income from the tagged
+      // accounts (entertainment 50%, fines, donations, exempt dividends: Arts. 22, 23, 28, 33)
+      // and the net interest of the interest-tagged accounts (Art. 30).
+      const ledgerAdjustments = ledgerAdjustmentsFromBooks(books);
+      const netInterest =
+        Math.round((books.tags.interestExpense - books.tags.interestIncome) * 100) / 100;
+      const liability = computeCtComputation({
         totalRevenue,
         totalExpenses,
-        totalDeductions,
+        totalDeductions: 0,
+        adjustments: ledgerAdjustments,
+        interest:
+          netInterest !== 0
+            ? { netInterestExpense: netInterest, depreciationAmortisation: 0 }
+            : null,
+        taxPeriodEnd: range.to,
         exemptionThreshold: CT_ZERO_RATE_BAND,
         taxRate: CT_STANDARD_RATE,
       });
+      const totalDeductions = liability.totalDeductions;
 
       // Small Business Relief (MD 73/2023): an election, revenue ≤ AED 3M, and
       // only for tax periods ending on or before 31 Dec 2026 (R08-14).
@@ -683,6 +696,8 @@ export function registerCorporateTaxRoutes(app: Express) {
         accountingProfit: Math.round((totalRevenue - totalExpenses) * 100) / 100,
         grossProfit: Math.round((totalRevenue - totalExpenses) * 100) / 100,
         totalDeductions,
+        totalAddBacks: liability.totalAddBacks,
+        ledgerAdjustments,
         taxableIncome: liability.taxableIncome,
         exemptionThreshold: liability.exemptionThreshold,
         taxableAmount: sbrApplied ? 0 : liability.taxableAmount,

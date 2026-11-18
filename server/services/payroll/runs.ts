@@ -747,6 +747,23 @@ interface CostGroup {
   gratuityFils: number;
 }
 
+/**
+ * C2 (NL6): 2032 holds Abu Dhabi Pension Fund contributions as well as GPSSA ones. A chart that
+ * still carries the old default name "Pension Payable - GPSSA" is renamed (only that untouched
+ * default; a user-chosen name is kept) the first time ADPF contributions are accrued, so the
+ * balance sheet and the GL do not present ADPF money as owed to GPSSA.
+ */
+async function alignPensionPayableName(companyId: string, tx: LedgerTx): Promise<void> {
+  await q(
+    `UPDATE accounts
+        SET name_en = 'Pension Payable - GPSSA / ADPF',
+            name_ar = 'المعاشات المستحقة - الهيئة العامة للمعاشات / صندوق أبوظبي للمعاشات'
+      WHERE company_id = $1 AND code = '2032' AND name_en = 'Pension Payable - GPSSA'`,
+    [companyId],
+    tx
+  );
+}
+
 /** Build the balanced accrual lines (split by cost centre — R09-22). Exported for tests. */
 export function buildAccrualLines(
   items: ItemRow[],
@@ -911,6 +928,9 @@ export async function approveRun(
       );
     }
     const accounts = await payrollAccounts(companyId, tx);
+    if (items.some((it) => String(it.pension_fund ?? "") === "adpf")) {
+      await alignPensionPayableName(companyId, tx);
+    }
     const label = periodLabel(run);
     const lines = buildAccrualLines(items, accounts, label);
     const { start, end } = periodBounds(run.period_month, run.period_year);

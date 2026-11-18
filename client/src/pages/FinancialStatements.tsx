@@ -92,6 +92,7 @@ interface BalanceSheetData {
     breakdown: AccountBreakdown[];
     capital?: StatementSection;
     retainedEarningsBroughtForward?: number;
+    retainedEarningsMovements?: number;
     currentYearEarnings?: number;
   };
   totalLiabilitiesAndEquity: number;
@@ -676,6 +677,13 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
                 <SubtotalRow
                   label="statements.retainedEarningsBf"
                   amount={data.equity.retainedEarningsBroughtForward}
+                  locale={locale}
+                />
+              )}
+              {!!data.equity.retainedEarningsMovements && (
+                <SubtotalRow
+                  label="statements.retainedEarningsMovements"
+                  amount={data.equity.retainedEarningsMovements}
                   locale={locale}
                 />
               )}

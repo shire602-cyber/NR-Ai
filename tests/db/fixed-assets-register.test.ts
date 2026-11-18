@@ -131,10 +131,11 @@ describe("W4-B fixed assets", () => {
       buyerName: "Second Hand LLC",
     });
     expect(d.status, d.text).toBe(200);
-    // Catch-up Jan (109.68) + Feb + Mar (200 each) = 509.68 → NBV 11,490.32, loss 2,490.32.
+    // Catch-up Jan (109.68) + Feb + Mar (200 each) and, C2 (RL5), April to the disposal date
+    // (10/30 x 200 = 66.67) = 576.35 → NBV 11,423.65, loss 2,423.65.
     expect(d.body.vatAmount).toBe(450);
-    expect(d.body.netBookValueAtDisposal).toBe(11490.32);
-    expect(d.body.gainLoss).toBe(-2490.32);
+    expect(d.body.netBookValueAtDisposal).toBe(11423.65);
+    expect(d.body.gainLoss).toBe(-2423.65);
     const lines = await h.sql<{ code: string; debit: string; credit: string }>(
       `SELECT a.code, jl.debit::text AS debit, jl.credit::text AS credit
          FROM journal_lines jl JOIN accounts a ON a.id = jl.account_id
@@ -144,8 +145,8 @@ describe("W4-B fixed assets", () => {
     const by = Object.fromEntries(lines.map((l) => [l.code, Number(l.debit) - Number(l.credit)]));
     expect(by["1020"]).toBe(9450);
     expect(by["2020"]).toBe(-450);
-    expect(by["1240"]).toBe(509.68);
-    expect(by["5130"]).toBe(2490.32);
+    expect(by["1240"]).toBe(576.35);
+    expect(by["5130"]).toBe(2423.65);
     // B1 (M3): a "Computer Equipment" asset capitalises to 1230 Computers & Software.
     expect(by["1230"]).toBe(-12000);
     const sum = lines.reduce(
@@ -163,7 +164,8 @@ describe("W4-B fixed assets", () => {
       vatTreatment: "exempt",
     });
     expect(d2.status, d2.text).toBe(200);
-    expect(d2.body).toMatchObject({ vatAmount: 0, gainLoss: 200, gainLossType: "gain" });
+    // Bought 15 Jan, sold 20 Jan: 6 of the 17 days held in January (C2, RL5): 3.23.
+    expect(d2.body).toMatchObject({ vatAmount: 0, gainLoss: 203.23, gainLossType: "gain" });
     expect(await bal(t, "1040")).toBe(120_000);
     const noBuyer = await t.as.post(`/api/fixed-assets/${a.id}/dispose`, {
       disposalDate: "2026-04-10",

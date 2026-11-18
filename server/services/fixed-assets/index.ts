@@ -44,12 +44,15 @@ import {
   depreciationFor,
   disposalSplit,
   monthsThrough,
+  prorateToDay,
   scheduleTo,
   type AssetCalcInput,
   type DepreciationCalc,
 } from "./calc";
 
 export * from "./calc";
+// C2 (RM3): registers the credit-note hooks on disposal invoices.
+import "./disposal-credit";
 
 const log = createLogger("fixed-assets");
 
@@ -672,7 +675,7 @@ export async function depreciateInTx(
   year: number,
   month: number,
   actorId: string,
-  opts: { catchUp?: boolean } = {}
+  opts: { catchUp?: boolean; throughDate?: string } = {}
 ): Promise<DepreciationOutcome> {
   const out = (code: string, extra: Partial<DepreciationOutcome> = {}): DepreciationOutcome => ({
     assetId: a.id,
@@ -691,7 +694,11 @@ export async function depreciateInTx(
     sql`SELECT id FROM depreciation_schedules WHERE asset_id = ${a.id} AND period_year = ${year} AND period_month = ${month}`
   );
   if (already[0]) return out("ALREADY_DEPRECIATED", { scheduleId: already[0].id });
-  const calc = depreciationFor(calcInput(a), year, month);
+  const full = depreciationFor(calcInput(a), year, month);
+  // C2 (RL5): the disposal month is charged up to the disposal date.
+  const calc = opts.throughDate
+    ? prorateToDay(full, a.purchase_iso, year, month, Number(opts.throughDate.slice(8, 10)))
+    : full;
   if (calc.skipped || calc.amountFils <= 0)
     return out(calc.skipReason ?? "FULLY_DEPRECIATED", { calc });
   const claim = await q<{ id: string }>(
@@ -710,9 +717,12 @@ export async function depreciateInTx(
   const acc = await assetAccounts(tx, a);
   // X4 (J3): date the entry at month end, so it never predates an in-month capitalisation.
   const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const date = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-  const suffix =
-    calc.prorationFactor < 1
+  const date =
+    opts.throughDate ??
+    `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  const suffix = opts.throughDate
+    ? ` (${month}/${year}, to disposal on ${opts.throughDate})`
+    : calc.prorationFactor < 1
       ? ` (${month}/${year}, prorated ${(calc.prorationFactor * 100).toFixed(1)}%${opts.catchUp ? ", catch-up" : ""})`
       : ` (${month}/${year}${opts.catchUp ? ", catch-up" : ""})`;
   const entryId = await post(tx, a, {
@@ -1116,7 +1126,9 @@ async function disposeInTx(
   {
     let a = await loadAsset(tx, assetId, { lock: true, companyId });
     await assertDisposable(tx, a, input);
-    // Catch-up depreciation through the month before disposal (full-month convention).
+    // Catch-up depreciation through the month before disposal, then (C2, RL5) the disposal
+    // month up to the disposal date, so the gain or loss is measured against the carrying
+    // amount at derecognition (IAS 16.55, 16.68).
     const [dy, dm] = input.disposalDate.split("-").map(Number);
     const endY = dm === 1 ? dy - 1 : dy;
     const endM = dm === 1 ? 12 : dm - 1;
@@ -1127,6 +1139,20 @@ async function disposeInTx(
       if (!r.skipped && r.calc && r.journalEntryId) {
         catchUp.push({
           ...pm,
+          amount: Number(fromFils(r.calc.amountFils)),
+          journalEntryId: r.journalEntryId,
+        });
+      }
+    }
+    if (input.disposalDate.slice(0, 7) >= a.purchase_iso.slice(0, 7)) {
+      const r = await depreciateInTx(tx, a, dy, dm, input.actorId, {
+        catchUp: true,
+        throughDate: input.disposalDate,
+      });
+      if (!r.skipped && r.calc && r.journalEntryId) {
+        catchUp.push({
+          year: dy,
+          month: dm,
           amount: Number(fromFils(r.calc.amountFils)),
           journalEntryId: r.journalEntryId,
         });
@@ -1388,14 +1414,22 @@ export async function assetRegister(companyId: string, asOf: string) {
   const depBy = new Map(deps.rows.map((r) => [key(r.asset_id, r.account_id), Number(r.f)]));
   const reserveBy = new Map(reserve.rows.map((r) => [r.asset_id as string, Number(r.f)]));
   const recostBy = new Map(recost.rows.map((r) => [r.asset_id as string, Number(r.f)]));
-  const [y, m] = asOf.split("-").map(Number);
+  // C2 (RL4): the tax columns run through the same months as the book columns at asOf: book
+  // depreciation is dated at month end, so a mid-month asOf has not charged its own month yet.
+  const [ay, am, ad] = asOf.split("-").map(Number);
+  const monthEnd = ad >= new Date(Date.UTC(ay, am, 0)).getUTCDate();
+  const y = monthEnd ? ay : am === 1 ? ay - 1 : ay;
+  const m = monthEnd ? am : am === 1 ? 12 : am - 1;
   return (
     rows as Array<AssetRow & { class_code: string | null; cost_center_code: string | null }>
   ).map((a) => {
     const c = calcInput(a);
+    const recostAfter = recostBy.get(a.id) ?? 0;
     const tax = scheduleTo(
       {
         ...c,
+        // C2 (RL4): the tax base at asOf (before any later debit-note re-cost).
+        costFils: c.costFils - recostAfter,
         usefulLifeYears: a.tax_useful_life_years ?? a.useful_life_years,
         method: a.tax_depreciation_method ?? a.depreciation_method,
         revaluationFils: 0,
@@ -1409,7 +1443,6 @@ export async function assetRegister(companyId: string, asOf: string) {
     const accAccount = a.accumulated_account_id ?? byCode.get(FA_CODES.ACCUMULATED);
     const disposed = a.status === "disposed" && !!a.disposal_iso && a.disposal_iso <= asOf;
     const disposedNow = a.status === "disposed";
-    const recostAfter = recostBy.get(a.id) ?? 0;
     const costFils = c.costFils - recostAfter;
     const grossNow = disposedNow ? 0 : c.costFils + (c.revaluationFils ?? 0);
     const accNow = disposedNow ? 0 : c.accumulatedFils + (c.impairmentFils ?? 0);

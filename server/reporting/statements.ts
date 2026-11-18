@@ -25,6 +25,8 @@ import {
   type IsoDate,
 } from "./dates";
 import {
+  ENTRY_LOCAL_DATE_SQL,
+  NOT_CLOSING_SQL,
   accountTotals,
   aed,
   ledgerLines,
@@ -124,6 +126,7 @@ export interface TrialBalance {
 
 export const RETAINED_EARNINGS_BF_ID = "retained-earnings-brought-forward";
 export const CURRENT_YEAR_EARNINGS_ID = "current-year-earnings";
+export const RETAINED_EARNINGS_MOVEMENTS_ID = "retained-earnings-current-year-movements";
 
 /**
  * Balance-sheet accounts carry their cumulative totals through `to`; income
@@ -504,6 +507,12 @@ export interface BalanceSheet {
     /** A3 (H11): revaluation / OCI reserves, a separate component of equity (IAS 1.106(d)). */
     reserves: StatementSection;
     retainedEarningsBroughtForward: number;
+    /**
+     * C2 (NL5): postings to retained earnings in the current fiscal year other than profit
+     * (dividends declared, realised revaluation surplus, prior-period corrections). Not part of
+     * the balance brought forward (IAS 1.106(d)).
+     */
+    retainedEarningsMovements: number;
     currentYearEarnings: number;
     total: number;
     /** Capital lines + reserve lines + synthetic retained earnings b/f + current year earnings. */
@@ -519,6 +528,32 @@ export interface BalanceSheet {
 }
 
 export type BsCompareTo = "prior_year" | "prior_period" | "prior_year_end";
+
+/**
+ * C2 (NL5): current-year postings to the retained-earnings account(s) (dividends, transfers,
+ * corrections), excluding the go-live opening balance (entry_kind 'opening', which is part of the
+ * balance brought forward) and closing entries.
+ */
+async function retainedEarningsMovementsFils(
+  companyId: string,
+  reIds: string[],
+  fyStart: IsoDate,
+  asOf: IsoDate,
+  q: Queryable
+): Promise<Fils> {
+  if (!reIds.length || asOf < fyStart) return 0;
+  const { rows } = await q.query(
+    `SELECT COALESCE(SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100)), 0)::bigint AS f
+       FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+      WHERE je.company_id = $1 AND je.status = 'posted'
+        AND jl.account_id = ANY($2::uuid[])
+        AND ${ENTRY_LOCAL_DATE_SQL} >= $3::date AND ${ENTRY_LOCAL_DATE_SQL} <= $4::date
+        AND ${NOT_CLOSING_SQL}
+        AND COALESCE(je.entry_kind, 'standard') <> 'opening'`,
+    [companyId, reIds, fyStart, asOf]
+  );
+  return Number(rows[0]?.f ?? 0);
+}
 
 async function balanceSheetCore(
   companyId: string,
@@ -577,13 +612,20 @@ async function balanceSheetCore(
       else capital.push([a, net]);
     }
   }
-  const reBf = netIncomeOf(accounts, preFy) + reAccounts;
+  const reMovements = await retainedEarningsMovementsFils(
+    companyId,
+    accounts.filter(isRetainedEarningsAccount).map((a) => a.id),
+    fyStart,
+    asOf,
+    q
+  );
+  const reBf = netIncomeOf(accounts, preFy) + reAccounts - reMovements;
   const cye = netIncomeOf(accounts, cyTotals);
 
   const sum = (xs: Array<[ReportAccount, Fils]>) => xs.reduce((s, [, f]) => s + f, 0);
   const totalAssets = sum(curA) + sum(nonA);
   const totalLiabilities = sum(curL) + sum(nonL);
-  const totalEquity = sum(capital) + sum(reserves) + reBf + cye;
+  const totalEquity = sum(capital) + sum(reserves) + reBf + reMovements + cye;
   const diff = totalAssets - totalLiabilities - totalEquity;
   const capitalSection = section(capital);
   const reserveSection = section(reserves);
@@ -601,6 +643,7 @@ async function balanceSheetCore(
       capital: capitalSection,
       reserves: reserveSection,
       retainedEarningsBroughtForward: aed(reBf),
+      retainedEarningsMovements: aed(reMovements),
       currentYearEarnings: aed(cye),
       total: aed(totalEquity),
       lines: [
@@ -613,6 +656,17 @@ async function balanceSheetCore(
           accountNameAr: "الأرباح المحتجزة المرحلة",
           amount: aed(reBf),
         },
+        ...(reMovements !== 0
+          ? [
+              {
+                accountId: RETAINED_EARNINGS_MOVEMENTS_ID,
+                accountCode: "",
+                accountName: "Dividends and other movements in retained earnings",
+                accountNameAr: "توزيعات الأرباح والحركات الأخرى في الأرباح المحتجزة",
+                amount: aed(reMovements),
+              },
+            ]
+          : []),
         {
           accountId: CURRENT_YEAR_EARNINGS_ID,
           accountCode: "",

@@ -32,24 +32,26 @@ describe("R09-24 gratuity table (report 09 section 3, basic 10,000)", () => {
       unpaidLeaveDays,
     });
 
+  // C2 (NL7): the end date is the last working day and counts as a day of service, so N whole
+  // years end the day before the Nth anniversary.
   it.each([
-    ["1y", "2020-01-01", "2021-01-01", 700_000],
-    ["2y", "2020-01-01", "2022-01-01", 1_400_000],
-    ["5y", "2020-01-01", "2025-01-01", 3_500_000],
-    ["10y", "2010-01-01", "2020-01-01", 8_500_000],
+    ["1y", "2020-01-01", "2020-12-31", 700_000],
+    ["2y", "2020-01-01", "2021-12-31", 1_400_000],
+    ["5y", "2020-01-01", "2024-12-31", 3_500_000],
+    ["10y", "2010-01-01", "2019-12-31", 8_500_000],
   ])("R09-24: %s -> %i fils", (_label, join, end, expected) => {
     expect(g(join, end).totalFils).toBe(expected);
   });
 
   it("R09-24: 6y + 182d = 49,986.30", () => {
-    const r = g("2019-01-01", "2025-07-02");
+    const r = g("2019-01-01", "2025-07-01");
     expect(r.completedYears).toBe(6);
     expect(r.trailingDays).toBe(182);
     expect(r.totalFils).toBe(4_998_630);
   });
 
   it("R09-07: 30 years is capped at 24 months of BASIC (240,000), not total wage", () => {
-    const r = g("1990-01-01", "2020-01-01");
+    const r = g("1990-01-01", "2019-12-31");
     expect(r.uncappedFils).toBe(28_500_000);
     expect(r.capFils).toBe(24_000_000);
     expect(r.totalFils).toBe(24_000_000);
@@ -57,7 +59,7 @@ describe("R09-24 gratuity table (report 09 section 3, basic 10,000)", () => {
   });
 
   it("R09-14: under one year of service earns nothing", () => {
-    const r = g("2020-01-01", "2020-12-31");
+    const r = g("2020-01-01", "2020-12-30");
     expect(r.eligible).toBe(false);
     expect(r.totalFils).toBe(0);
   });
@@ -67,6 +69,15 @@ describe("R09-24 gratuity table (report 09 section 3, basic 10,000)", () => {
     expect(g("2020-01-01", "2021-01-01", 10).totalFils).toBe(0);
     const five = g("2020-01-01", "2025-01-01", 365);
     expect(five.completedYears).toBe(4);
+  });
+
+  it("[NL7] the last working day counts: 1 Jan 2021 to 30 Sep 2026 is 5 years and 273 days", () => {
+    const r = g("2021-01-01", "2026-09-30");
+    expect(r.completedYears).toBe(5);
+    expect(r.trailingDays).toBe(273);
+    expect(r.serviceDays).toBe(2099);
+    // Joined and left on the same day: one day of service.
+    expect(g("2026-05-10", "2026-05-10").serviceDays).toBe(1);
   });
 
   it("R09-14: accrual is a true-up and never negative", () => {
@@ -150,7 +161,7 @@ describe("R09-17 settlement maths", () => {
     const r = calculateSettlement({
       ...wages(basic10k, 300_000),
       joinDate: utcDate("2019-01-01"),
-      terminationDate: utcDate("2025-07-02"),
+      terminationDate: utcDate("2025-07-01"),
       nationality: "IN",
       unpaidLeaveDays: 0,
       noticeDaysInLieu: 30,

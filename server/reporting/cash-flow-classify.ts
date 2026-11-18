@@ -14,13 +14,23 @@
  *    (VAT) stay operating.
  *  - A payment of a supplier bill that capitalised an asset is investing for the bill's asset
  *    share (the bill's asset debit over its payable), the rest operating (IAS 7.16(a)).
+ *  - C2 (RM2): a receipt against the invoice that billed an asset disposal is investing for the
+ *    invoice's net share (net proceeds over the receivable), the output VAT operating
+ *    (IAS 7.16(b)); a reversed receipt reverses the same split.
+ *  - C2 (RL2): a realised exchange difference settled in the same cash entry as a receivable,
+ *    payable or financing balance is folded into that balance's line, so each line shows the
+ *    cash actually received or paid (IAS 7.18(a), 7.25-7.28); the indirect method keeps the
+ *    balance's movement at carrying amount and the difference in profit.
  *  - Lines on equity and on financing liabilities (borrowings, lease liabilities, dividends
  *    payable) in a cash entry are financing (IAS 7.17).
  *  - Every other line of a cash entry is operating.
  *  - Entries with no cash leg that touch a non-current asset, equity or a financing liability
  *    are non-cash investing and financing transactions (an asset bought on credit, a dividend
  *    declared but unpaid, a provision charged to retained earnings at go-live, a revaluation):
- *    they are excluded and disclosed (IAS 7.43). Their profit-or-loss lines (depreciation,
+ *    they are excluded and disclosed (IAS 7.43). C2 (RL3): an entry that also carries a profit
+ *    or loss line (an asset bill with a delivery expense, a disposal on credit) is disclosed for
+ *    its investing / financing part; depreciation and impairment (contra-asset lines only) are
+ *    adjustments, not transactions to disclose. Their profit-or-loss lines (depreciation,
  *    impairment, accrued interest) are the indirect method's non-cash adjustments (IAS 7.20(b)).
  *  - Period-end FX revaluation of cash is the effect of exchange-rate changes (IAS 7.28).
  *
@@ -127,6 +137,7 @@ interface Row {
   f: string;
   pos: string;
   neg: string;
+  has_pl: boolean | null;
 }
 
 /**
@@ -188,6 +199,53 @@ async function billAssetShares(
   return out;
 }
 
+/** C2 (RL2): realised exchange-difference accounts (4090 gain / 5140 loss in the default chart). */
+export function isRealisedFxAccount(a: Pick<ReportAccount, "type" | "subType" | "code">): boolean {
+  if (a.type !== "income" && a.type !== "expense") return false;
+  if (a.code === "4090" || a.code === "5140") return true;
+  const sub = (a.subType ?? "").toLowerCase();
+  return sub === "fx_gain" || sub === "fx_loss" || sub === "realised_fx";
+}
+
+/**
+ * C2 (RM2): receipts (and reversed receipts) in range of an invoice that billed a fixed-asset
+ * disposal: per entry, the asset's cost account and the invoice's net share (net / total).
+ */
+async function disposalReceiptShares(
+  companyId: string,
+  range: { from: IsoDate | null; to: IsoDate },
+  q: Queryable
+): Promise<Map<string, { accountId: string; netFils: Fils; totalFils: Fils }>> {
+  const out = new Map<string, { accountId: string; netFils: Fils; totalFils: Fils }>();
+  const { rows } = await q.query(
+    `SELECT je.id AS entry_id,
+            COALESCE(fa.cost_account_id,
+                     (SELECT a.id FROM accounts a WHERE a.company_id = je.company_id
+                         AND a.code = '1290' LIMIT 1)) AS account_id,
+            ROUND(i.total * 100)::bigint AS total_fils,
+            ROUND(COALESCE(i.vat_amount, 0) * 100)::bigint AS vat_fils
+       FROM journal_entries je
+       JOIN fixed_assets fa
+         ON fa.company_id = je.company_id AND fa.disposal_invoice_id = je.source_id
+       JOIN invoices i ON i.id = fa.disposal_invoice_id
+      WHERE je.company_id = $1 AND je.status = 'posted'
+        AND je.source IN ('payment', 'payment_reversal')
+        AND ($2::date IS NULL OR ${ENTRY_LOCAL_DATE_SQL} >= $2::date)
+        AND ${ENTRY_LOCAL_DATE_SQL} <= $3::date`,
+    [companyId, range.from, range.to]
+  );
+  for (const r of rows) {
+    const total = Number(r.total_fils);
+    if (!r.account_id || total <= 0) continue;
+    out.set(r.entry_id, {
+      accountId: r.account_id,
+      netFils: total - Number(r.vat_fils),
+      totalFils: total,
+    });
+  }
+  return out;
+}
+
 export async function classifyCashFlows(
   companyId: string,
   range: { from: IsoDate | null; to: IsoDate },
@@ -205,8 +263,14 @@ export async function classifyCashFlows(
     .filter((a) => a.type === "income" || a.type === "expense")
     .map((a) => a.id);
 
-  const traced = await billAssetShares(companyId, range, ppeCostIds, cashIds, q);
-  const tracedIds = Array.from(traced.keys());
+  const fxIds = accounts.filter(isRealisedFxAccount).map((a) => a.id);
+  const contraIds = ppeAccounts.filter((a) => isContraAsset(a)).map((a) => a.id);
+
+  const [traced, disposalReceipts] = await Promise.all([
+    billAssetShares(companyId, range, ppeCostIds, cashIds, q),
+    disposalReceiptShares(companyId, range, q),
+  ]);
+  const tracedIds = Array.from(traced.keys()).concat(Array.from(disposalReceipts.keys()));
   const none = [null];
   const { rows } = (await q.query(
     `WITH e AS (
@@ -230,25 +294,30 @@ export async function classifyCashFlows(
                 WHEN bool_or(l.account_id = ANY($4::uuid[])) THEN
                   CASE WHEN bool_or(l.account_id = ANY($5::uuid[]) OR l.account_id = ANY($6::uuid[]))
                          OR l.entry_id = ANY($8::uuid[])
+                         OR bool_or(l.account_id = ANY($9::uuid[]))
                        THEN 'detail' ELSE 'cash' END
                 WHEN bool_or(l.account_id = ANY($5::uuid[]) OR l.account_id = ANY($6::uuid[]))
                   THEN 'noncash_invfin'
                 ELSE 'noncash'
               END AS kind,
-              bool_or(l.account_id = ANY($7::uuid[])) AS has_pl
+              bool_or(l.account_id = ANY($7::uuid[])) AS has_pl,
+              bool_or((l.account_id = ANY($5::uuid[]) AND NOT (l.account_id = ANY($10::uuid[])))
+                      OR l.account_id = ANY($6::uuid[])) AS has_invfin_part
          FROM l JOIN e ON e.id = l.entry_id
         GROUP BY l.entry_id
      )
      SELECT k.kind,
-            CASE WHEN k.kind = 'detail' OR (k.kind = 'noncash_invfin' AND NOT k.has_pl)
+            CASE WHEN k.kind = 'detail'
+                   OR (k.kind = 'noncash_invfin' AND (NOT k.has_pl OR k.has_invfin_part))
                  THEN l.entry_id END AS entry_id,
+            bool_or(k.has_pl) AS has_pl,
             l.account_id,
             SUM(l.f)::bigint AS f,
             SUM(GREATEST(l.f, 0))::bigint AS pos,
             SUM(LEAST(l.f, 0))::bigint AS neg
        FROM l JOIN k ON k.entry_id = l.entry_id
       WHERE k.kind = 'fx' OR NOT (l.account_id = ANY($4::uuid[]))
-      GROUP BY 1, 2, 3`,
+      GROUP BY 1, 2, 4`,
     [
       companyId,
       range.from,
@@ -258,6 +327,8 @@ export async function classifyCashFlows(
       finIds.length ? finIds : none,
       plIds.length ? plIds : none,
       tracedIds.length ? tracedIds : none,
+      fxIds.length ? fxIds : none,
+      contraIds.length ? contraIds : none,
     ]
   )) as { rows: Row[] };
 
@@ -277,6 +348,10 @@ export async function classifyCashFlows(
   const isPl = (a?: ReportAccount) => !!a && (a.type === "income" || a.type === "expense");
   const detail = new Map<string, Array<{ accountId: string; f: Fils }>>();
   const disclosed = new Map<string, Fils>();
+  // C2 (RL3): an entry with a P&L line is disclosed for its investing / financing part only.
+  const disclosedPart = new Map<string, Fils>();
+  const ppeSet = new Set(ppeIds);
+  const finSet = new Set(finIds);
 
   for (const r of rows) {
     const f = Number(r.f);
@@ -291,7 +366,10 @@ export async function classifyCashFlows(
         break;
       case "noncash_invfin":
         if (isPl(a)) bumpN(out.nonCashAdjustments, r.account_id, -f);
-        else if (r.entry_id && f < 0)
+        else if (r.entry_id && r.has_pl) {
+          if (ppeSet.has(r.account_id) || finSet.has(r.account_id))
+            disclosedPart.set(r.entry_id, (disclosedPart.get(r.entry_id) ?? 0) + f);
+        } else if (r.entry_id && f < 0)
           disclosed.set(r.entry_id, (disclosed.get(r.entry_id) ?? 0) - f);
         break;
       case "cash":
@@ -307,13 +385,12 @@ export async function classifyCashFlows(
     }
   }
 
-  const ppeSet = new Set(ppeIds);
   const costSet = new Set(ppeCostIds);
-  const finSet = new Set(finIds);
+  const fxSet = new Set(fxIds);
   const investing = new Map<string, InvestingFlow>();
-  const addInvesting = (accountId: string, fils: Fils) => {
+  const addInvesting = (accountId: string, fils: Fils, forced?: InvestingFlow["kind"]) => {
     if (fils === 0) return;
-    const kind = fils < 0 ? "purchase" : "proceeds";
+    const kind = forced ?? (fils < 0 ? "purchase" : "proceeds");
     const key = `${kind}:${accountId}`;
     const cur = investing.get(key);
     if (cur) cur.fils += fils;
@@ -323,6 +400,11 @@ export async function classifyCashFlows(
     if (f === 0) return;
     bump(out.operatingDirect, accountId, f);
     if (!isPl(byId.get(accountId))) bumpN(out.workingCapital, accountId, f);
+  };
+  /** Direct method: the cash moved; indirect working capital: the balance's movement. */
+  const operatingSplit = (accountId: string, cashF: Fils, movementF: Fils) => {
+    if (cashF !== 0) bump(out.operatingDirect, accountId, cashF);
+    if (!isPl(byId.get(accountId))) bumpN(out.workingCapital, accountId, movementF);
   };
 
   for (const [entryId, lines] of Array.from(detail.entries())) {
@@ -355,16 +437,36 @@ export async function classifyCashFlows(
       if (primary) addInvesting(primary, inv);
       continue;
     }
+    // C2 (RL2): fold a realised exchange difference into the receivable / payable / financing
+    // line it settles, so that line carries the cash actually received or paid.
+    let target: { accountId: string; f: Fils } | null = null;
+    let fxF = 0;
+    if (lines.some((l) => fxSet.has(l.accountId))) {
+      for (const l of lines) {
+        if (fxSet.has(l.accountId)) fxF += l.f;
+        else if (finSet.has(l.accountId) || isTradeControl(byId.get(l.accountId))) {
+          if (!target || Math.abs(l.f) > Math.abs(target.f)) target = l;
+        }
+      }
+    }
+    const receipt = disposalReceipts.get(entryId);
     for (const l of lines) {
-      if (finSet.has(l.accountId)) {
-        bump(out.financing, l.accountId, l.f);
+      const a = byId.get(l.accountId);
+      if (target && fxSet.has(l.accountId)) {
+        // Stays in profit; settling a financing balance takes it out of operating (IAS 7.28).
+        if (finSet.has(target.accountId)) bumpN(out.nonCashAdjustments, l.accountId, -l.f);
         continue;
       }
-      if (share && !isPl(byId.get(l.accountId)) && l.f < 0) {
+      const cashF = l === target ? l.f + fxF : l.f;
+      if (finSet.has(l.accountId)) {
+        bump(out.financing, l.accountId, cashF);
+        continue;
+      }
+      if (share && !isPl(a) && l.f < 0) {
         // Payment of a bill that capitalised an asset: the asset share is investing.
         const ppeTotal = Array.from(share.ppe.values()).reduce((s, x) => s + x, 0);
         const ratio = Math.min(1, ppeTotal / share.apFils);
-        const invPart = Math.round(l.f * ratio);
+        const invPart = Math.round(cashF * ratio);
         const accs = Array.from(share.ppe.entries()).sort((x, y) => y[1] - x[1]);
         let rest = invPart;
         accs.forEach(([acc, amt], i) => {
@@ -372,14 +474,24 @@ export async function classifyCashFlows(
           rest -= part;
           addInvesting(acc, part);
         });
-        operating(l.accountId, l.f - invPart);
+        operatingSplit(l.accountId, cashF - invPart, l.f - invPart);
         continue;
       }
-      operating(l.accountId, l.f);
+      if (receipt && isTradeControl(a) && l.f !== 0) {
+        // C2 (RM2): disposal proceeds received: the invoice's net share is investing (IAS 7.16(b)).
+        const invPart = Math.round((cashF * receipt.netFils) / receipt.totalFils);
+        addInvesting(receipt.accountId, invPart, "proceeds");
+        operatingSplit(l.accountId, cashF - invPart, l.f - invPart);
+        continue;
+      }
+      operatingSplit(l.accountId, cashF, l.f);
     }
   }
   out.investing = Array.from(investing.values());
 
+  for (const [id, f] of Array.from(disclosedPart.entries())) {
+    if (f !== 0 && !disclosed.has(id)) disclosed.set(id, Math.abs(f));
+  }
   if (disclosed.size) {
     const ids = Array.from(disclosed.keys()).slice(0, 200);
     const { rows: meta } = await q.query(
