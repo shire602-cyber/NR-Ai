@@ -753,7 +753,24 @@ export function registerFixedAssetRoutes(app: Express) {
       const companyId = await assetForRequest(req);
       await assertCompanyPermission(actorFromRequest(req), companyId, ["ledger.post"]);
       const body = parsedBody<CapitalizeBody>(req);
+      // E3 (J3-r3): input VAT paid with the asset is recoverable (Dr 1050) for a VAT registered
+      // company, else part of the asset's cost (same rule as creating a paid asset).
+      const paidVatFils = body.paymentAccountId && body.inputVat ? body.inputVat : 0;
+      const vatRegistered = paidVatFils > 0 ? await companyIsVatRegistered(companyId) : true;
       const entryId = await withLedgerTx(async (tx) => {
+        if (paidVatFils > 0) {
+          const vat = fromFils(paidVatFils);
+          await tx.execute(
+            vatRegistered
+              ? sql`UPDATE fixed_assets SET acquisition_vat = ${vat}
+                     WHERE id = ${req.params.id} AND company_id = ${companyId}
+                       AND capitalization_entry_id IS NULL`
+              : sql`UPDATE fixed_assets SET purchase_cost = purchase_cost + ${vat},
+                            net_book_value = net_book_value + ${vat}, acquisition_vat = 0
+                     WHERE id = ${req.params.id} AND company_id = ${companyId}
+                       AND capitalization_entry_id IS NULL`
+          );
+        }
         const a = await loadAsset(tx, req.params.id, { lock: true });
         return capitalizeAsset(tx, a, {
           paymentAccountId: body.paymentAccountId ?? null,

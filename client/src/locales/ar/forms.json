@@ -356,5 +356,8 @@
   "forms.serverErrors.VAT_RETURN_NOTHING_TO_SETTLE": "لا يوجد في هذا الإقرار مبلغ للدفع أو الاسترداد.",
   "forms.errors.depreciationMonthNotEnded": "هذا الشهر لم ينتهِ بعد. اختر شهراً انتهى.",
   "forms.serverErrors.DEPRECIATION_PERIOD_NOT_ENDED": "هذا الشهر لم ينتهِ بعد: يُؤرَّخ الإهلاك بآخر يوم في الشهر ولا يكون بتاريخ مستقبلي أبداً.",
-  "forms.serverErrors.DISPOSAL_BEFORE_DEPRECIATION": "يوجد إهلاك مسجَّل بعد تاريخ الاستبعاد هذا. استبعد الأصل في تاريخ آخر إهلاك أو بعده."
+  "forms.serverErrors.DISPOSAL_BEFORE_DEPRECIATION": "يوجد إهلاك مسجَّل بعد تاريخ الاستبعاد هذا. استبعد الأصل في تاريخ آخر إهلاك أو بعده.",
+  "forms.accountGroupExpenses": "المصروفات",
+  "forms.accountGroupFixedAssets": "الأصول الثابتة",
+  "forms.accountGroupOtherAssets": "أصول أخرى"
 }

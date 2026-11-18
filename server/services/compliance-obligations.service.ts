@@ -226,6 +226,27 @@ async function hasActiveEmployees(companyId: string): Promise<boolean> {
   }
 }
 
+/**
+ * E3 (J3-r3): the first day of the first payroll month: the earliest payroll run's period, else
+ * the month the first employee record was created. Null when neither exists.
+ */
+async function payrollStartDate(companyId: string): Promise<IsoDate | null> {
+  try {
+    const r = await pool.query(
+      `SELECT LEAST(
+          (SELECT MIN(make_date(period_year, period_month, 1)) FROM payroll_runs
+            WHERE company_id = $1 AND status <> 'cancelled'),
+          (SELECT MIN(date_trunc('month', created_at + interval '4 hours')::date) FROM employees
+            WHERE company_id = $1)
+        )::text AS start`,
+      [companyId]
+    );
+    return (r.rows[0]?.start as IsoDate | null) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function paidPayrollPeriods(companyId: string): Promise<Set<string>> {
   try {
     const r = await pool.query(
@@ -421,7 +442,11 @@ export async function buildObligationSpecs(
     const paid = await paidPayrollPeriods(companyId);
     // E1 (J3-r2): payroll obligations start with the books (company creation / first activity),
     // not before it, unless a run was already paid for the month.
-    const wpsFrom = company.booksStart;
+    // E3 (J3-r3): and not before the payroll did: the first payroll run's month, or the month the
+    // first employee was added when no run exists yet.
+    const payrollStart = await payrollStartDate(companyId);
+    const wpsFrom =
+      payrollStart && payrollStart > company.booksStart ? payrollStart : company.booksStart;
     for (const p of monthlyPeriodsDueInYear(year, (end) => addDays(end, 15))) {
       if (p.periodEnd < wpsFrom && !paid.has(p.periodEnd.slice(0, 7))) continue;
       specs.push({

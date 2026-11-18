@@ -381,6 +381,8 @@ export default function BankReconciliation() {
     return tab === "suggestions" || tab === "rules" ? tab : "transactions";
   });
   const [scanRequest, setScanRequest] = useState(0);
+  // E3 (J1-r3): lines with a suggested match from the last "Find matches" search (null = none run).
+  const [scanSuggested, setScanSuggested] = useState<number | null>(null);
   const [matchDialogOpen, setMatchDialogOpen] = useState(false);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<BankTransaction | null>(null);
@@ -476,10 +478,11 @@ export default function BankReconciliation() {
       total: transactions.length,
       reconciled,
       unreconciled: transactions.length - reconciled,
-      suggested,
+      // The search on the Suggestions tab is the live count once it has run.
+      suggested: scanSuggested ?? suggested,
       totalAmount,
     };
-  }, [transactions]);
+  }, [transactions, scanSuggested]);
 
   // ─── Mutations ────────────────────────────────────────────────────────────
 
@@ -1244,7 +1247,11 @@ export default function BankReconciliation() {
           </section>
         </TabsContent>
         <TabsContent value="suggestions" className="mt-0">
-          <MatchSuggestions companyId={companyId} scanRequest={scanRequest} />
+          <MatchSuggestions
+            companyId={companyId}
+            scanRequest={scanRequest}
+            onSuggestedCount={setScanSuggested}
+          />
         </TabsContent>
         <TabsContent value="rules" className="mt-0">
           <ReconciliationRulesPanel />

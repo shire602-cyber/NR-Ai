@@ -90,6 +90,7 @@ import {
 import { EInvoiceListCell } from "@/components/einvoice/EInvoiceListCell";
 import { InvoiceCurrencyFields } from "@/components/invoices/InvoiceCurrencyFields";
 import { LineItemPicker } from "@/components/invoices/LineItemPicker";
+import { LineIncomeAccountPicker } from "@/components/invoices/LineIncomeAccountPicker";
 import { rateToSend } from "@/lib/document-currency";
 import {
   defaultPaymentAccountId,
@@ -141,6 +142,7 @@ import {
 import { STANDARD_VAT_RATES, vatJurisdictionForCountry } from "@shared/vat-classification";
 import {
   blankInvoiceLine,
+  defaultLineIncomeAccountId,
   isUntouchedBlankLine,
   isVatRegisteredCompany,
 } from "@/lib/invoice-defaults";
@@ -192,6 +194,8 @@ const invoiceLineSchema = z.object({
   marginPurchaseCost: z.coerce.number().min(0).default(0),
   // X5 (J1 L1): linked product / service (drives the income account on posting).
   productId: z.string().optional(),
+  // E3 (J1-r3): the income account the line posts to ("" = by item type).
+  revenueAccountId: z.string().optional(),
 });
 
 // S1 (W5-E): form totals come from the pure, tested client/src/lib/invoice-totals.ts, which
@@ -308,7 +312,26 @@ export default function Invoices() {
   const standardRate = STANDARD_VAT_RATES[vatJurisdictionForCountry(company?.addressCountry)];
   // X6a: a company without a TRN is not VAT registered; its new lines start at 0% out of scope.
   const vatRegistered = isVatRegisteredCompany(company);
-  const blankLine = useCallback(() => blankInvoiceLine(vatRegistered), [vatRegistered]);
+  // E3 (J1-r3): a services company's new lines start on Service Revenue, not Product Sales.
+  const { data: lineAccounts = [] } = useQuery<any[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "accounts"],
+    enabled: !!selectedCompanyId,
+  });
+  const { data: lineProducts = [] } = useQuery<
+    Array<{ productType?: string | null; isActive?: boolean | null }>
+  >({
+    queryKey: ["/api/companies", selectedCompanyId, "products"],
+    enabled: !!selectedCompanyId,
+    retry: false,
+  });
+  const defaultIncomeAccountId = useMemo(
+    () => defaultLineIncomeAccountId(lineAccounts, lineProducts),
+    [lineAccounts, lineProducts]
+  );
+  const blankLine = useCallback(
+    () => ({ ...blankInvoiceLine(vatRegistered), revenueAccountId: defaultIncomeAccountId }),
+    [vatRegistered, defaultIncomeAccountId]
+  );
   const [editorOpen, setEditorOpen] = useState(false);
   const [depositsOpen, setDepositsOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
@@ -1001,6 +1024,7 @@ export default function Invoices() {
                 marginScheme?: boolean | null;
                 marginPurchaseCost?: number | string | null;
                 productId?: string | null;
+                revenueAccountId?: string | null;
               }) => ({
                 description: l.description,
                 quantity: Number(l.quantity),
@@ -1017,6 +1041,7 @@ export default function Invoices() {
                 marginScheme: !!l.marginScheme,
                 marginPurchaseCost: Number(l.marginPurchaseCost) || 0,
                 productId: l.productId || undefined,
+                revenueAccountId: l.revenueAccountId || undefined,
               })
             )
           : [blankLine()],
@@ -1075,6 +1100,9 @@ export default function Invoices() {
               }
             : {}),
           ...(line.productId ? { productId: line.productId } : {}),
+          ...(line.revenueAccountId && line.vatSupplyType === "standard_rated"
+            ? { revenueAccountId: line.revenueAccountId }
+            : {}),
         })),
       };
 
@@ -1565,6 +1593,8 @@ export default function Invoices() {
                             return;
                           }
                           form.setValue(`lines.${index}.productId`, p.id, opts);
+                          // E3: a picked item decides the income account (service items post to Service Revenue).
+                          form.setValue(`lines.${index}.revenueAccountId`, undefined, opts);
                           form.setValue(
                             `lines.${index}.description`,
                             (locale === "ar" && p.nameAr) || p.name,
@@ -1581,6 +1611,17 @@ export default function Invoices() {
                             );
                           }
                         }}
+                      />
+                      <LineIncomeAccountPicker
+                        accounts={accounts}
+                        index={index}
+                        value={watchLines[index]?.revenueAccountId}
+                        disabled={watchLines[index]?.vatSupplyType !== "standard_rated"}
+                        onChange={(id) =>
+                          form.setValue(`lines.${index}.revenueAccountId`, id, {
+                            shouldDirty: true,
+                          })
+                        }
                       />
                       <Button
                         type="button"

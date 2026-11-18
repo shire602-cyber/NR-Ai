@@ -68,6 +68,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { PurchaseAccountOptions } from "@/components/accounts/PurchaseAccountOptions";
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
@@ -1331,7 +1332,7 @@ export default function BillPay() {
                         (Number(watchLines[index]?.quantity) || 0) *
                         (Number(watchLines[index]?.unit_price) || 0)
                       }
-                      currency="AED"
+                      currency={watchCurrency || "AED"}
                     />
                   </LineAmount>
                   <FormField
@@ -1370,11 +1371,7 @@ export default function BillPay() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {expenseAccounts.map((acc: any) => (
-                              <SelectItem key={acc.id} value={acc.id}>
-                                {accountDisplayName(acc, locale)}
-                              </SelectItem>
-                            ))}
+                            <PurchaseAccountOptions accounts={expenseAccounts} />
                           </SelectContent>
                         </Select>
                         {index === 0 && (
@@ -1423,16 +1420,16 @@ export default function BillPay() {
               rows={[
                 {
                   label: t["forms.preview.subtotal"],
-                  value: <Money amount={subtotal} currency="AED" />,
+                  value: <Money amount={subtotal} currency={watchCurrency || "AED"} />,
                 },
                 {
                   label: t["forms.col.vat"],
-                  value: <Money amount={vatAmount} currency="AED" />,
+                  value: <Money amount={vatAmount} currency={watchCurrency || "AED"} />,
                 },
               ]}
               total={{
                 label: t["forms.preview.total"],
-                value: <Money amount={totalAmount} currency="AED" />,
+                value: <Money amount={totalAmount} currency={watchCurrency || "AED"} />,
               }}
             />
           </FormSection>

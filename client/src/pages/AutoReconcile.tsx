@@ -68,10 +68,13 @@ function confidenceTone(confidence: number): StatusTone {
 export function MatchSuggestions({
   companyId,
   scanRequest,
+  onSuggestedCount,
 }: {
   companyId?: string;
   /** Incremented by the page's "Find matches" button; each change runs a new search. */
   scanRequest: number;
+  /** E3 (J1-r3): told how many bank lines have a suggested match after each search. */
+  onSuggestedCount?: (count: number) => void;
 }) {
   const { t, locale } = useTranslation();
   const tt = t as Record<string, string>;
@@ -129,6 +132,10 @@ export function MatchSuggestions({
     () => (result?.matches ?? []).filter((m) => !skipped.has(m.bankTransactionId)),
     [result, skipped]
   );
+  // E3 (J1-r3): the page summary counts the lines with a suggestion from this same search.
+  useEffect(() => {
+    if (result) onSuggestedCount?.(new Set(open.map((m) => m.bankTransactionId)).size);
+  }, [result, open, onSuggestedCount]);
   const confident = open.filter((m) => m.confidence >= CONFIDENT);
   const reasons = (raw: string) =>
     raw

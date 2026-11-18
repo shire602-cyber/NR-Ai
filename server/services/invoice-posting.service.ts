@@ -431,10 +431,40 @@ function revenueBuckets(totals: SalesDocumentTotals, lines: RevenueLineHint[]) {
 export async function revenueLineHints(
   tx: LedgerTx,
   companyId: string,
-  lines: Array<{ costCenterId?: string | null; productId?: string | null }>
+  lines: Array<{
+    costCenterId?: string | null;
+    productId?: string | null;
+    revenueAccountId?: string | null;
+  }>
 ): Promise<RevenueLineHint[]> {
+  // E3 (J1-r3): a line that names its income account posts there, when that is still one of the
+  // company's active income accounts; otherwise the item-type rule below applies.
+  const chosenIds = [...new Set(lines.map((l) => l.revenueAccountId).filter(Boolean) as string[])];
+  const chosen = new Set<string>();
+  if (chosenIds.length > 0) {
+    const rows: Array<{ id: string }> = await tx
+      .select({ id: accounts.id })
+      .from(accounts)
+      .where(
+        and(
+          eq(accounts.companyId, companyId),
+          inArray(accounts.id, chosenIds),
+          eq(accounts.type, "income"),
+          eq(accounts.isActive, true),
+          eq(accounts.isArchived, false)
+        )
+      );
+    for (const r of rows) chosen.add(r.id);
+  }
+  const explicit = (l: { revenueAccountId?: string | null }) =>
+    l.revenueAccountId && chosen.has(l.revenueAccountId) ? l.revenueAccountId : null;
   const productIds = [...new Set(lines.map((l) => l.productId).filter(Boolean) as string[])];
-  if (productIds.length === 0) return lines.map((l) => ({ costCenterId: l.costCenterId ?? null }));
+  if (productIds.length === 0) {
+    return lines.map((l) => ({
+      costCenterId: l.costCenterId ?? null,
+      revenueAccountId: explicit(l),
+    }));
+  }
   const products: Array<{ id: string; productType: string | null }> = await tx
     .select({ id: products_.id, productType: products_.productType })
     .from(products_)
@@ -458,7 +488,8 @@ export async function revenueLineHints(
   }
   return lines.map((l) => ({
     costCenterId: l.costCenterId ?? null,
-    revenueAccountId: l.productId && services.has(l.productId) ? serviceAccount : null,
+    revenueAccountId:
+      explicit(l) ?? (l.productId && services.has(l.productId) ? serviceAccount : null),
   }));
 }
 
