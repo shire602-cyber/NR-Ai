@@ -794,6 +794,7 @@ export async function generateDueRecurringInvoices(): Promise<number> {
             discountAmount: Number(fromFils(totals.discountFils)),
             status: "draft",
             invoiceType: "invoice",
+            source: "recurring",
           })
           .returning();
         for (const r of rows) {
@@ -893,10 +894,10 @@ async function finishGeneratedInvoice(
   if (!template.autoSend) {
     return { status: "issued", message: `Issued ${invoice.number}` };
   }
-  if (!template.sendToEmail || !isCapabilityLive("email")) {
+  if (!template.sendToEmail) {
     return {
       status: "issued_not_sent",
-      message: `Issued ${invoice.number}; not emailed: no email provider is configured`,
+      message: `Issued ${invoice.number}; not emailed: the template has no recipient`,
     };
   }
   try {
@@ -905,7 +906,26 @@ async function finishGeneratedInvoice(
     const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
     if (!company || !fresh) throw new Error("invoice or company missing");
     const pdf = await generateInvoicePDF(fresh, lines, company);
-    await sendInvoiceEmail(template.sendToEmail, fresh, company, pdf);
+    // WQ1 (7.13): always through the durable outbox. With no provider the email is queued
+    // (blocked_no_provider) and delivered once one is configured — never reported as sent.
+    const result = await sendInvoiceEmail(
+      template.sendToEmail,
+      fresh,
+      company,
+      pdf,
+      undefined,
+      undefined,
+      { throwOnFailure: false }
+    );
+    if (!result.sent) {
+      return {
+        status: "issued_not_sent",
+        message:
+          result.status === "blocked_no_provider" || !isCapabilityLive("email")
+            ? `Issued ${invoice.number}; email to ${template.sendToEmail} queued: no email provider is configured`
+            : `Issued ${invoice.number}; email to ${template.sendToEmail} queued (${result.status})`,
+      };
+    }
     return {
       status: "sent",
       message: `Issued ${invoice.number} and emailed ${template.sendToEmail}`,

@@ -185,6 +185,12 @@ describe("[D5b] invoice form payload unchanged", () => {
       customerName: "Gulf Horizon Logistics",
       customerTrn: "100123456700003",
       date: "2026-03-15",
+      // WQ1 (7.2b, 7.2g, 7.21): terms give the due date (net 30 by default); empty notes and the
+      // company-default language are sent as null.
+      paymentTerms: "net30",
+      dueDate: "2026-04-14",
+      notes: null,
+      documentLanguage: null,
       currency: "AED",
       lines: [
         {

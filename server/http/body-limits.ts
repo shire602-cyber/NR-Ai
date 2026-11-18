@@ -12,6 +12,7 @@ export const LARGE_JSON_ROUTES: readonly RegExp[] = [
   /^\/api\/companies\/[^/]+\/receipts$/,
   /^\/api\/companies\/[^/]+\/bank-statements\/(import|preview)$/,
   /^\/api\/journal\/[^/]+\/attachments$/,
+  /^\/api\/invoices\/[^/]+\/attachments$/,
   /^\/api\/companies\/[^/]+\/logo$/,
 ];
 

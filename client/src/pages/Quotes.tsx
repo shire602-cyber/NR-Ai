@@ -63,7 +63,17 @@ import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { formatDate } from "@/lib/format";
 import { lineVatRate } from "@/lib/invoice-totals";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, CalendarIcon, Trash2, Download, Edit, FileText, ArrowRightLeft } from "lucide-react";
+import {
+  Plus,
+  CalendarIcon,
+  Trash2,
+  Download,
+  Edit,
+  FileText,
+  ArrowRightLeft,
+  Send,
+} from "lucide-react";
+import { SendQuoteDialog } from "@/components/invoices/SendQuoteDialog";
 import { cn } from "@/lib/utils";
 import { parseCalendarDate } from "@/lib/format-date";
 
@@ -132,8 +142,10 @@ export default function Quotes() {
     enabled: !!selectedCompanyId,
   });
 
+  // WQ1 (7.5): the quote being emailed.
+  const [quoteToSend, setQuoteToSend] = useState<Quote | null>(null);
   const { data: contacts = [] } = useQuery<
-    Array<{ id: string; name: string; trnNumber?: string | null }>
+    Array<{ id: string; name: string; trnNumber?: string | null; email?: string | null }>
   >({
     queryKey: ["/api/companies", selectedCompanyId, "customer-contacts"],
     enabled: !!selectedCompanyId,
@@ -861,6 +873,15 @@ export default function Quotes() {
                     menu={
                       <>
                         <DropdownMenuItem
+                          onClick={() => setQuoteToSend(quote)}
+                          disabled={["declined", "expired", "converted"].includes(quote.status)}
+                          data-testid={`button-send-quote-${quote.id}`}
+                          {...gate("documents.write")}
+                        >
+                          <Send aria-hidden />
+                          {t["invoices.quoteSend.action"]}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
                           onClick={() => convertMutation.mutate(quote.id)}
                           disabled={quote.status === "converted"}
                         >
@@ -899,6 +920,13 @@ export default function Quotes() {
           </TableBody>
         </Table>
       </DataTableCard>
+      <SendQuoteDialog
+        key={quoteToSend?.id ?? "none"}
+        quote={quoteToSend}
+        companyId={selectedCompanyId}
+        defaultEmail={contacts.find((c) => c.id === quoteToSend?.contactId)?.email ?? null}
+        onClose={() => setQuoteToSend(null)}
+      />
     </div>
   );
 }
