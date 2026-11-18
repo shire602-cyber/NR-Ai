@@ -1023,7 +1023,8 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain('data-testid="button-report-proof-trail"');
     expect(reportsSource).toContain('evidenceSourceHref("invoice", invoice.id)');
     expect(vatWorkpaperPanelSource).toContain("components.vwTitle");
-    expect(vatWorkpaperPanelSource).toContain("Excel-like area for the VAT return");
+    // B14: the workpaper description is catalog copy (shown in Arabic too), not inline English.
+    expect(vatWorkpaperPanelSource).toContain('<T k="components.vwDescription" />');
     expect(vatFilingSource).toContain("canGenerateVatReturn");
     expect(vatFilingSource).toContain('href="/company-profile"');
     expect(vatWorkpaperPanelSource).toContain('data-testid="vat-workpaper-panel"');
