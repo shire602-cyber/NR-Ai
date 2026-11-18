@@ -89,7 +89,18 @@ const LINE_FIELDS: Record<string, string> = {
 export function einvoiceFieldHint(field: string): EInvoiceFieldHint {
   const none = { labelKey: null, whereKey: null, href: null, ruleLabel: null };
   if (!field) return none;
-  if (/^(UBL schema|PINT AE)/.test(field)) return { ...none, ruleLabel: field };
+  if (/^(UBL schema|PINT AE)/.test(field)) {
+    // E1 (J1-r2): buyer-identity and buyer-address rules are fixed on the customer's contact.
+    if (/\bibr-(080|144)/i.test(field)) {
+      return {
+        ...none,
+        ruleLabel: field,
+        whereKey: "invoices.einvoiceWhere.customer",
+        href: "/contacts",
+      };
+    }
+    return { ...none, ruleLabel: field };
+  }
   const [scope, rest = ""] = field.split(".", 2);
   if (scope === "company" && COMPANY_FIELDS[rest]) {
     return {

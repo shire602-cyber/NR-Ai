@@ -176,5 +176,6 @@
   "compliance.vatWorkbookTitle": "ورقة عمل الإقرار 201",
   "compliance.periodsAction": "الإجراء",
   "compliance.vatView": "عرض",
-  "compliance.vatEdit": "تحرير"
+  "compliance.vatEdit": "تحرير",
+  "compliance.periodsOpenReturn": "افتح إقرار ضريبة القيمة المضافة"
 }

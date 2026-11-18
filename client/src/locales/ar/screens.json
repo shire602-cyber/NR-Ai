@@ -230,5 +230,6 @@
   "screens.costCenterDialogEditDesc": "حدّث تفاصيل مركز التكلفة.",
   "screens.costCenterDialogNewDesc": "أدخل التفاصيل لإنشاء مركز تكلفة.",
   "screens.invoicesCount": "{count, plural, zero {لا فواتير} one {فاتورة واحدة} two {فاتورتان} few {# فواتير} many {# فاتورة} other {# فاتورة}}",
-  "screens.entryLines": "بنود القيد"
+  "screens.entryLines": "بنود القيد",
+  "screens.statusCredited": "مسدّدة بإشعار دائن"
 }

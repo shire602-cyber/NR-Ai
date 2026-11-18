@@ -137,7 +137,12 @@ describe("W3-B bills: state machine", () => {
 
   it("[R04-05] foreign-currency bills resolve the company rate via fx.getRate; the UI carries RC/FX/bank/import fields", async () => {
     const t = await h.createTenant();
-    const noRate = await createBill(t, { currency: "USD" });
+    // E1: a company with no FX rows books a USD bill at the CBUAE peg.
+    const pegged = await createBill(t, { currency: "USD" });
+    expect(pegged.status, pegged.text).toBe(200);
+    expect(Number(pegged.body.exchange_rate)).toBeCloseTo(3.6725, 6);
+    // Another pair has no default: still a 422.
+    const noRate = await createBill(t, { currency: "GBP" });
     expect(noRate.status).toBe(422);
     expect(noRate.body.code).toBe("NO_EXCHANGE_RATE");
     const r = await t.as.post(`/api/companies/${t.company.id}/exchange-rates`, {

@@ -116,35 +116,20 @@ interface CompanyFacts {
   booksStart: IsoDate;
 }
 
-/**
- * X5 (J1 D4): the first date from which a periodic return applies: the later of the books
- * start and any registration / incorporation date. A period applies when it ends on or after it
- * (the period that contains the start date is the first one).
- */
-export function obligationsApplyFrom(
-  booksStart: IsoDate,
-  ...dates: Array<IsoDate | null | undefined>
-): IsoDate {
-  return dates.reduce<IsoDate>((m, d) => (d && d > m ? d : m), booksStart);
-}
+// E1: one rule for "does this period belong to the books", shared with the VAT Periods tab.
+import { loadVatApplicabilityFor, obligationsApplyFrom } from "./vat-applicability";
+export { obligationsApplyFrom };
 
 async function loadCompanyFacts(companyId: string): Promise<CompanyFacts | null> {
   const r = await pool.query(
     `SELECT c.id, c.name, c.trn_vat_number, c.vat_filing_frequency, c.vat_period_start_month,
-            c.fiscal_year_start_month, c.corporate_tax_id, c.created_at,
-            ((c.tax_registration_date + interval '4 hours')::date)::text AS tax_registration_date,
-            LEAST(
-              ((c.created_at + interval '4 hours')::date),
-              (SELECT MIN((je.date + interval '4 hours')::date) FROM journal_entries je
-                WHERE je.company_id = c.id AND je.status = 'posted'),
-              (SELECT MIN((i.date + interval '4 hours')::date) FROM invoices i
-                WHERE i.company_id = c.id)
-            )::text AS books_start
+            c.fiscal_year_start_month, c.corporate_tax_id, c.created_at
        FROM companies c WHERE c.id = $1`,
     [companyId]
   );
   const row = r.rows[0];
   if (!row) return null;
+  const applicability = await loadVatApplicabilityFor(companyId);
   return {
     id: row.id,
     name: row.name,
@@ -154,8 +139,8 @@ async function loadCompanyFacts(companyId: string): Promise<CompanyFacts | null>
     fiscalYearStartMonth: Number(row.fiscal_year_start_month) || 1,
     corporateTaxId: row.corporate_tax_id ?? null,
     createdAt: uaeToday(new Date(row.created_at)),
-    taxRegistrationDate: row.tax_registration_date ?? null,
-    booksStart: row.books_start ?? uaeToday(new Date(row.created_at)),
+    taxRegistrationDate: applicability?.taxRegistrationDate ?? null,
+    booksStart: applicability?.booksStart ?? uaeToday(new Date(row.created_at)),
   };
 }
 
@@ -430,7 +415,11 @@ export async function buildObligationSpecs(
   // Payroll / WPS: salaries through WPS by the 15th of the following month.
   if (await hasActiveEmployees(companyId)) {
     const paid = await paidPayrollPeriods(companyId);
+    // E1 (J3-r2): payroll obligations start with the books (company creation / first activity),
+    // not before it, unless a run was already paid for the month.
+    const wpsFrom = company.booksStart;
     for (const p of monthlyPeriodsDueInYear(year, (end) => addDays(end, 15))) {
+      if (p.periodEnd < wpsFrom && !paid.has(p.periodEnd.slice(0, 7))) continue;
       specs.push({
         key: `wps:${p.periodEnd.slice(0, 7)}`,
         type: "wps_payroll",

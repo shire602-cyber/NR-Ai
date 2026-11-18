@@ -38,6 +38,9 @@ export default function ForgotPassword() {
   const { t } = useTranslation();
   const [isLoading, setIsLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  // E1 (J2-r2): the API says when no email provider is configured; the page must not promise a
+  // message that cannot arrive.
+  const [emailUnavailable, setEmailUnavailable] = useState(false);
   const [devResetUrl, setDevResetUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
@@ -64,6 +67,7 @@ export default function ForgotPassword() {
       // Server returns devResetUrl outside of production so QA can verify
       // the flow without a wired-up email service.
       if (body?.devResetUrl) setDevResetUrl(body.devResetUrl);
+      setEmailUnavailable(body?.emailDelivery === "unavailable");
       // Spec 3.2: one customer sentence whatever the delivery set-up; it never claims a link
       // was sent and never mentions how email is delivered.
       setSubmitted(true);
@@ -95,9 +99,15 @@ export default function ForgotPassword() {
       ) : null}
       {submitted ? (
         <div data-testid="text-forgot-result">
-          <AuthAlert tone="info" title={t["marketing.forgotDoneTitle"]}>
-            {formatMessage(t["marketing.forgotDoneBody"], { email: UPGRADE_CONTACT_EMAIL })}
-          </AuthAlert>
+          {emailUnavailable ? (
+            <AuthAlert tone="info" title={t["marketing.forgotNoProviderTitle"]}>
+              {t["marketing.forgotNoProvider"]}
+            </AuthAlert>
+          ) : (
+            <AuthAlert tone="info" title={t["marketing.forgotDoneTitle"]}>
+              {formatMessage(t["marketing.forgotDoneBody"], { email: UPGRADE_CONTACT_EMAIL })}
+            </AuthAlert>
+          )}
           {devResetUrl && (
             <div className="break-all rounded-lg border border-border p-3 text-caption text-muted-foreground">
               <p className="mb-1 font-medium text-foreground">{t["marketing.forgotDevLink"]}</p>

@@ -166,9 +166,15 @@ describe("R14-01 tenant-scoped exchange rates", () => {
     expect(bRate.status).toBe(201);
     expect(bRate.body.companyId).toBe(b.company.id);
 
+    // E1: with no row of its own, A gets the CBUAE peg (3.6725), never B's 9.99.
     const none = await a.as.get(`${rates(a)}/lookup?from=USD&to=AED&date=${AS_OF}`);
-    expect(none.status).toBe(422);
-    expect(none.body.code).toBe("NO_EXCHANGE_RATE");
+    expect(none.status).toBe(200);
+    expect(none.body.rate).toBe(3.6725);
+    expect(none.body.source).toBe("peg");
+    // A non-pegged pair with no rate is still a 422.
+    const noGbp = await a.as.get(`${rates(a)}/lookup?from=GBP&to=AED&date=${AS_OF}`);
+    expect(noGbp.status).toBe(422);
+    expect(noGbp.body.code).toBe("NO_EXCHANGE_RATE");
 
     // The legacy global lookup (used by invoices today) only sees system rows.
     const legacy = await a.as.get("/api/exchange-rates/lookup?base=USD&target=AED");

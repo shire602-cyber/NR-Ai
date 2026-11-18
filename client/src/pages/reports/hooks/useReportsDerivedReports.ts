@@ -462,26 +462,31 @@ export function useReportsDerivedReports({
     () => [
       {
         label: "Current",
+        labelKey: "reportCenter.current",
         count: billAgingReport?.current?.count ?? 0,
         amount: billAgingReport?.current?.amount ?? 0,
       },
       {
         label: "1-30",
+        labelKey: "analytics.bucket30",
         count: billAgingReport?.days_1_30?.count ?? 0,
         amount: billAgingReport?.days_1_30?.amount ?? 0,
       },
       {
         label: "31-60",
+        labelKey: "analytics.bucket60",
         count: billAgingReport?.days_31_60?.count ?? 0,
         amount: billAgingReport?.days_31_60?.amount ?? 0,
       },
       {
         label: "61-90",
+        labelKey: "analytics.bucket90",
         count: billAgingReport?.days_61_90?.count ?? 0,
         amount: billAgingReport?.days_61_90?.amount ?? 0,
       },
       {
         label: "90+",
+        labelKey: "analytics.bucketOver90",
         count: billAgingReport?.days_90_plus?.count ?? 0,
         amount: billAgingReport?.days_90_plus?.amount ?? 0,
       },

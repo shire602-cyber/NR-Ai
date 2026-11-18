@@ -195,5 +195,8 @@
   "dashboard.viewAll": "عرض الكل",
   "dashboard.chartNotEnoughData": "يظهر الرسم البياني بعد شهرين من النشاط.",
   "dashboard.calendarLink": "التقويم",
-  "dashboard.otherIncomeLabel": "إيرادات أخرى"
+  "dashboard.otherIncomeLabel": "إيرادات أخرى",
+  "dashboard.bankDiffBooksAhead": "مبلغ {amount} مسجّل في دفاترك لكنه لم يظهر في كشف الحساب بعد. طابقه عند ظهوره.",
+  "dashboard.bankDiffStatementAhead": "مبلغ {amount} ظاهر في كشف الحساب لكنه غير مسجّل في دفاترك بعد. أنشئ القيود أو طابقها.",
+  "dashboard.bankDiffReview": "المراجعة في مطابقة البنك"
 }

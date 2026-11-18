@@ -57,6 +57,8 @@ export interface GetRateOptions {
   rateType?: ExchangeRateType;
   /** Proximity window in days (default 7). */
   maxAgeDays?: number;
+  /** Use the AED/USD peg when no row exists for that pair (default true; the sanity band opts out). */
+  pegDefault?: boolean;
   /** When a closing/average rate is missing, fall back to spot (default true). */
   fallbackToSpot?: boolean;
 }
@@ -223,6 +225,34 @@ function buildResult(
   };
 }
 
+/** The UAE dirham is pegged to the US dollar: 1 USD = 3.6725 AED (Central Bank of the UAE). */
+export const AED_USD_PEG = "3.6725";
+export const PEG_SOURCE = "peg";
+
+export function isPeggedPair(from: string, to: string): boolean {
+  return (from === "USD" && to === "AED") || (from === "AED" && to === "USD");
+}
+
+/** The fixed AED/USD peg as a RateResult (stored orientation (USD, AED, 3.6725)). */
+function pegResult(from: string, asOfIso: string, rateType: ExchangeRateType): RateResult {
+  const stored = new D(AED_USD_PEG).toDecimalPlaces(RATE_DECIMALS, Decimal.ROUND_HALF_UP);
+  const inverse = from !== "USD";
+  const value = inverse ? invertRate(stored) : stored;
+  return {
+    rate: value.toNumber(),
+    rateText: value.toFixed(RATE_DECIMALS),
+    source: PEG_SOURCE,
+    date: asOfIso,
+    stale: false,
+    ageDays: 0,
+    scope: "system",
+    inverse,
+    rateType,
+    rateId: null,
+    storedRate: stored.toFixed(RATE_DECIMALS),
+  };
+}
+
 async function lookup(
   companyId: string | null,
   fromRaw: string,
@@ -271,6 +301,12 @@ async function lookup(
     }
   }
 
+  // E1: the dirham is pegged to the US dollar (CBUAE, 3.6725). When no row exists for that pair
+  // the peg itself is the rate, so a new tenant can book a USD bill without first typing the
+  // number the platform already knows. Any company or system row above still wins.
+  if (opts.pegDefault !== false && isPeggedPair(from, to))
+    return pegResult(from, asOfIso, rateType);
+
   throw new DomainError(
     "NO_EXCHANGE_RATE",
     422,
@@ -302,7 +338,8 @@ export function getSystemRate(
   date?: Date | string,
   opts: GetRateOptions = {}
 ): Promise<RateResult> {
-  return lookup(null, from, to, date, opts);
+  // System rows only means exactly that: the peg default is a company-scoped convenience.
+  return lookup(null, from, to, date, { pegDefault: false, ...opts });
 }
 
 export interface ConvertResult extends RateResult {
@@ -428,10 +465,12 @@ async function previousRate(
       ? await getRate(companyId, v.row.baseCurrency, v.row.targetCurrency, v.date, {
           rateType: v.rateType,
           fallbackToSpot: false,
+          pegDefault: false,
         })
       : await getSystemRate(v.row.baseCurrency, v.row.targetCurrency, v.date, {
           rateType: v.rateType,
           fallbackToSpot: false,
+          pegDefault: false,
         });
     return { rate: new D(r.rateText), date: r.date };
   } catch (err) {

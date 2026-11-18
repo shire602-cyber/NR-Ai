@@ -7,11 +7,11 @@ import { StatusBadge as ToneBadge } from "@/components/ui/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Money } from "@/components/ui/money";
-import { formatMonthKey } from "@/lib/format";
+import { formatCurrency, formatMonthKey } from "@/lib/format";
 import { formatDateRange } from "@/lib/format-date";
 import { formatPercentDelta } from "@/lib/format-money";
 import { apiRequest } from "@/lib/queryClient";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { chartTheme, ChartTooltipContent, formatAxisCompact } from "@/components/ui/chart-theme";
 import { EmptyState } from "@/components/ui/empty-state";
 import { dashboardPeriodLabel } from "./period";
@@ -256,7 +256,7 @@ type BankVsGlAccount = DashboardStats["bankVsGl"]["accounts"][number];
  * difference is labelled and carries the same ties / differs badge as the X6d GL proofs.
  */
 function BankVsLedger({ accounts }: { accounts: BankVsGlAccount[] }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const tt = t as Record<string, string>;
   return (
     <div className="border-t border-border pt-4" data-testid="dashboard-bank-vs-gl">
@@ -329,6 +329,27 @@ function BankVsLedger({ accounts }: { accounts: BankVsGlAccount[] }) {
                     )
                   )}
                 </dl>
+                {!noStatement && !ties ? (
+                  <p
+                    className="text-caption text-muted-foreground"
+                    data-testid={`bank-vs-gl-reason-${a.bankAccountId}`}
+                  >
+                    {formatMessage(
+                      (a.difference ?? 0) > 0
+                        ? tt["dashboard.bankDiffBooksAhead"]
+                        : tt["dashboard.bankDiffStatementAhead"],
+                      {
+                        amount: formatCurrency(Math.abs(a.difference ?? 0), a.currency, locale),
+                      }
+                    )}{" "}
+                    <Link
+                      href="/bank-reconciliation"
+                      className="font-medium text-accent hover:underline"
+                    >
+                      {tt["dashboard.bankDiffReview"]}
+                    </Link>
+                  </p>
+                ) : null}
               </li>
             );
           })}

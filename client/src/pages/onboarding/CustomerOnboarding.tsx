@@ -177,10 +177,13 @@ function Wizard({ company }: { company: Company | null }) {
     const trimmed = name.trim();
     const next: typeof errors = {};
     if (!trimmed) next.name = t["forms.errors.companyNameRequired"];
-    if (vat === "yes" && !/^[0-9]{15}$/.test(trnDigits)) {
-      next.trn = trnDigits
-        ? t["forms.errors.uaeTrn15Digits"]
-        : t["onboarding.trnRequiredVatRegistered"];
+    // E1 (J1-r2): "Yes, registered" needs a real TRN: 15 digits starting with 100 (FTA format).
+    if (vat === "yes" && !/^100[0-9]{12}$/.test(trnDigits)) {
+      next.trn = !trnDigits
+        ? t["onboarding.trnRequiredVatRegistered"]
+        : /^[0-9]{15}$/.test(trnDigits)
+          ? t["forms.errors.uaeTrnPrefix100"]
+          : t["forms.errors.uaeTrn15Digits"];
     }
     setErrors(next);
     if (Object.keys(next).length) return;

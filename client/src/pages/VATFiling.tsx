@@ -1100,7 +1100,7 @@ export default function VATFiling() {
                   </Link>
                 </Button>
               )}
-              <Button asChild variant="ghost" size="sm" data-testid="button-vat-proof-trail">
+              <Button asChild variant="ghost" size="sm" className="min-h-11 md:min-h-8" data-testid="button-vat-proof-trail">
                 <Link href={evidenceSectionHref("proof-drilldown")}>
                   {t["compliance.vatFilingViewProof"]}
                 </Link>

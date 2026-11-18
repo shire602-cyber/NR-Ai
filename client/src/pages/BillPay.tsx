@@ -82,6 +82,7 @@ import {
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { statusLabel } from "@/lib/status-label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -688,8 +689,8 @@ export default function BillPay() {
       toast({
         title: translateNow("toasts.paymentRecorded"),
         description: formatMessage(translateNow("toasts.paymentRecordedBillStatus"), {
-          status: result.bill_status,
-          remaining: formatCurrency(result.remaining, "AED"),
+          status: statusLabel(t, result.bill_status),
+          remaining: formatCurrency(result.remaining, payingBill?.currency || "AED", locale),
         }),
       });
       setPaymentDialogOpen(false);
@@ -1940,14 +1941,18 @@ export default function BillPay() {
                   <T k="pages.billFrom" /> <strong>{payingBill.vendor_name}</strong>
                   {payingBill.bill_number && <> ({payingBill.bill_number})</>}
                   <br />
-                  Total:{" "}
-                  {formatCurrency(Number(payingBill.total_amount), payingBill.currency || "AED")}
-                  {" | "}
-                  Remaining:{" "}
-                  {formatCurrency(
-                    Number(payingBill.total_amount) - Number(payingBill.amount_paid),
-                    payingBill.currency || "AED"
-                  )}
+                  {formatMessage(t["pages.billPayTotalRemaining"], {
+                    total: formatCurrency(
+                      Number(payingBill.total_amount),
+                      payingBill.currency || "AED",
+                      locale
+                    ),
+                    remaining: formatCurrency(
+                      Number(payingBill.total_amount) - Number(payingBill.amount_paid),
+                      payingBill.currency || "AED",
+                      locale
+                    ),
+                  })}
                 </>
               )}
             </DialogDescription>
@@ -1993,7 +1998,7 @@ export default function BillPay() {
                             )}
                           >
                             <CalendarIcon className="h-4 w-4" />
-                            {field.value ? format(field.value, "PPP") : t["pages.pickADate"]}
+                            {field.value ? formatDate(field.value, locale) : t["pages.pickADate"]}
                           </Button>
                         </FormControl>
                       </PopoverTrigger>
