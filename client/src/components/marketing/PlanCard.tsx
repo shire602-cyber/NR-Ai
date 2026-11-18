@@ -7,10 +7,10 @@ import { formatMoneyParts, formatMoneyText } from "@/lib/format-money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
 import {
-  billedTotal,
   planAudienceKey,
   planNameKey,
   planPrice,
+  yearlySaving,
   type BillingCycle,
   type Plan,
 } from "./plans";
@@ -30,10 +30,13 @@ export function PlanPrice({
   amount,
   className,
   inverse,
+  cycle = "monthly",
 }: {
   amount: number;
   className?: string;
   inverse?: boolean;
+  /** "yearly" labels the figure "per year" (the year's price, 10 × monthly). */
+  cycle?: BillingCycle;
 }) {
   const { t, locale } = useTranslation();
   const parts = formatMoneyParts(amount, "AED", locale, { fractionDigits: 0 });
@@ -63,7 +66,7 @@ export function PlanPrice({
           inverse ? "text-surface-inverse-muted" : "text-muted-foreground"
         )}
       >
-        {t["marketing.pricingPerMonth"]}
+        {t[cycle === "yearly" ? "marketing.pricingPerYear" : "marketing.pricingPerMonth"]}
       </span>
     </p>
   );
@@ -92,7 +95,7 @@ export function PlanCard({
   const [expanded, setExpanded] = useState(false);
   const featured = !!plan.featured;
   const price = planPrice(plan, cycle);
-  const total = billedTotal(plan, cycle);
+  const saving = yearlySaving(plan);
   const Heading = headingLevel;
   const name = t[planNameKey(plan.id)];
 
@@ -147,23 +150,21 @@ export function PlanCard({
       >
         {t[planAudienceKey(plan.id)]}
       </p>
-      <PlanPrice amount={price} inverse={featured} className="mt-4" />
+      <PlanPrice amount={price} inverse={featured} cycle={cycle} className="mt-4" />
       <p
         className={cn(
           "mk-tier__billed mt-1 min-h-4 text-caption",
           featured ? "text-surface-inverse-muted" : "text-muted-foreground"
         )}
       >
-        {total > 0
-          ? formatMessage(
-              t[
-                cycle === "yearly"
-                  ? "marketing.pricingBilledYearly"
-                  : "marketing.pricingBilledQuarterly"
-              ],
-              { amount: formatMoneyText(total, "AED", locale, { fractionDigits: 0 }) }
-            )
-          : " "}
+        {formatMessage(t[cycle === "yearly" ? "marketing.prYearlySaves" : "marketing.prOrYearly"], {
+          amount: formatMoneyText(
+            cycle === "yearly" ? saving : planPrice(plan, "yearly"),
+            "AED",
+            locale,
+            { fractionDigits: 0 }
+          ),
+        })}
       </p>
       <div className="mt-5">{action ?? defaultAction}</div>
       {compact ? null : (

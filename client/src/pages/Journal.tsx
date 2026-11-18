@@ -8,7 +8,7 @@ import {
   lineLabelClass,
 } from "@/components/ui/form-layout";
 import { useState, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueries } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { Link } from "wouter";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -85,6 +85,27 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { VirtualList } from "@/components/VirtualList";
+import {
+  blankGridLine,
+  fromStoredLines,
+  gridTotals,
+  hasDetails,
+  isForeign,
+  previewLine,
+  toPayloadLine,
+  type JournalGridLine,
+  type JournalLinePayload,
+  type PreviewContext,
+} from "@/lib/journal-grid";
+import { currencyChoices } from "@/lib/document-currency";
+import {
+  JournalLineDetails,
+  type ContactOption,
+  type CostCenterOption,
+} from "@/components/journal/JournalLineDetails";
+import { STANDARD_VAT_RATES } from "@shared/vat-classification";
+import { useZatcaAvailable } from "@/hooks/useZatcaAvailable";
+import { ChevronDown as DetailsChevron } from "lucide-react";
 import { accountDisplayName } from "@/lib/account-name";
 import { parseCalendarDate } from "@/lib/format-date";
 
@@ -93,28 +114,26 @@ const toFils = (v: unknown) => Math.round((Number(v) || 0) * 100);
 
 const journalLineSchema = z.object({
   accountId: z.string().guid("forms.errors.accountRequired"),
-  debit: z.coerce.number().min(0).default(0),
-  credit: z.coerce.number().min(0).default(0),
+  debit: z.union([z.coerce.number().min(0), z.literal("")]).default(0),
+  credit: z.union([z.coerce.number().min(0), z.literal("")]).default(0),
+  // WQ3 (9.4 / 9.16): per-line details (lib/journal-grid.ts).
+  description: z.string().max(500).default(""),
+  contact: z.string().default(""),
+  costCenterId: z.string().default(""),
+  vatTreatment: z.enum(["", "standard", "zero_rated", "exempt", "out_of_scope"]).default(""),
+  currency: z.string().default(""),
+  ctTreatment: z.enum(["", "deductible", "non_deductible", "exempt_income"]).default(""),
+  ctDisallowedPct: z.union([z.coerce.number().gt(0).max(100), z.literal("")]).default(""),
 });
 
-const journalSchema = z
-  .object({
-    companyId: z.string().guid(),
-    date: z.date(),
-    memo: z.string().optional(),
-    lines: z.array(journalLineSchema).min(2, "forms.errors.twoLineItemsRequired"),
-  })
-  .refine(
-    (data) => {
-      const totalDebit = data.lines.reduce((sum, line) => sum + toFils(line.debit), 0);
-      const totalCredit = data.lines.reduce((sum, line) => sum + toFils(line.credit), 0);
-      return totalDebit === totalCredit;
-    },
-    {
-      message: "forms.errors.debitsEqualCredits",
-      path: ["lines"],
-    }
-  );
+const journalSchema = z.object({
+  companyId: z.string().guid(),
+  date: z.date(),
+  memo: z.string().optional(),
+  lines: z.array(journalLineSchema).min(2, "forms.errors.twoLineItemsRequired"),
+});
+// The debit = credit rule is checked on the previewed base amounts (foreign lines converted,
+// derived VAT legs added: lib/journal-grid.ts gridTotals) and again, exactly, by the ledger.
 
 type JournalFormData = z.infer<typeof journalSchema>;
 
@@ -122,7 +141,7 @@ type JournalFormData = z.infer<typeof journalSchema>;
 interface JournalPayload {
   date: string;
   memo: string | null;
-  lines: Array<{ accountId: string; debit: number; credit: number }>;
+  lines: JournalLinePayload[];
   /** A2 (H8): required when a line hits a control account (A/R, A/P, inventory, VAT …). */
   controlAdjustment?: { reason: string };
 }
@@ -130,7 +149,13 @@ interface JournalPayload {
 export default function Journal() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId: selectedCompanyId } = useDefaultCompany();
+  const { company, companyId: selectedCompanyId } = useDefaultCompany();
+  const baseCurrency: string =
+    (company as { baseCurrency?: string } | undefined)?.baseCurrency || "AED";
+  // 15% KSA only for a Saudi company while ZATCA is enabled (hidden at launch).
+  const zatcaAvailable = useZatcaAvailable(company as { addressCountry?: string } | undefined);
+  const vatRate = STANDARD_VAT_RATES[zatcaAvailable ? "SA" : "AE"];
+  const [openDetails, setOpenDetails] = useState<Set<number>>(new Set());
   const { gate } = useCompanyPermission();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<any>(null);
@@ -141,6 +166,21 @@ export default function Journal() {
   const { data: accounts } = useQuery<any[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts"],
     enabled: !!selectedCompanyId,
+  });
+
+  // WQ3 (9.4): contacts, cost centres and rates for the line details (only while editing).
+  const { data: customers = [] } = useQuery<ContactOption[]>({
+    queryKey: [`/api/companies/${selectedCompanyId}/customer-contacts`],
+    enabled: !!selectedCompanyId && dialogOpen,
+  });
+  const { data: vendors = [] } = useQuery<ContactOption[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "vendors"],
+    enabled: !!selectedCompanyId && dialogOpen,
+  });
+  const { data: costCenters = [] } = useQuery<CostCenterOption[]>({
+    queryKey: [`/api/companies/${selectedCompanyId}/cost-centers`],
+    enabled: !!selectedCompanyId && dialogOpen,
+    retry: false,
   });
 
   const { data: entries, isLoading } = useQuery<any[]>({
@@ -154,10 +194,7 @@ export default function Journal() {
       companyId: selectedCompanyId || "",
       date: new Date(),
       memo: "",
-      lines: [
-        { accountId: "", debit: 0, credit: 0 },
-        { accountId: "", debit: 0, credit: 0 },
-      ],
+      lines: [blankGridLine(), blankGridLine()],
     },
   });
 
@@ -189,10 +226,7 @@ export default function Journal() {
         companyId: selectedCompanyId,
         date: new Date(),
         memo: "",
-        lines: [
-          { accountId: "", debit: 0, credit: 0 },
-          { accountId: "", debit: 0, credit: 0 },
-        ],
+        lines: [blankGridLine(), blankGridLine()],
       });
     },
     onError: (error: any) => {
@@ -219,10 +253,7 @@ export default function Journal() {
         companyId: selectedCompanyId,
         date: new Date(),
         memo: "",
-        lines: [
-          { accountId: "", debit: 0, credit: 0 },
-          { accountId: "", debit: 0, credit: 0 },
-        ],
+        lines: [blankGridLine(), blankGridLine()],
       });
     },
     onError: (error: any) => {
@@ -325,15 +356,18 @@ export default function Journal() {
         companyId: fullEntry.companyId,
         date: parseCalendarDate(fullEntry.date),
         memo: fullEntry.memo || "",
-        lines: fullEntry.lines?.map((line: any) => ({
-          accountId: line.accountId,
-          debit: line.debit || 0,
-          credit: line.credit || 0,
-        })) || [
-          { accountId: "", debit: 0, credit: 0 },
-          { accountId: "", debit: 0, credit: 0 },
-        ],
+        // WQ3: the derived VAT legs (systemVat) are re-derived on save, never edited.
+        lines: (fullEntry.lines?.length
+          ? fromStoredLines(fullEntry.lines, baseCurrency)
+          : null) || [blankGridLine(), blankGridLine()],
       });
+      setOpenDetails(
+        new Set(
+          fromStoredLines(fullEntry.lines ?? [], baseCurrency)
+            .map((l, i) => (hasDetails(l) ? i : -1))
+            .filter((i) => i >= 0)
+        )
+      );
       setDialogOpen(true);
     } catch (error: any) {
       toast({
@@ -359,13 +393,9 @@ export default function Journal() {
     const submitData: JournalPayload = {
       date: format(data.date, "yyyy-MM-dd"),
       memo: data.memo || null,
-      lines: data.lines
+      lines: (data.lines as JournalGridLine[])
         .filter((line) => toFils(line.debit) > 0 || toFils(line.credit) > 0)
-        .map((line) => ({
-          accountId: line.accountId,
-          debit: Number(line.debit) || 0,
-          credit: Number(line.credit) || 0,
-        })),
+        .map((line) => toPayloadLine(line, baseCurrency)),
       ...(touchesControl && controlReason.trim()
         ? { controlAdjustment: { reason: controlReason.trim() } }
         : {}),
@@ -385,25 +415,64 @@ export default function Journal() {
     const a = accounts?.find((x) => x.id === l.accountId);
     return !!a && isControlAccount(a);
   });
-  const totalDebitFils = watchLines.reduce((sum, line) => sum + toFils(line.debit), 0);
-  const totalCreditFils = watchLines.reduce((sum, line) => sum + toFils(line.credit), 0);
+  // WQ3 (9.4): previewed base amounts: foreign lines at the tenant rate, VAT legs added.
+  const watchDate = form.watch("date");
+  const entryDate = watchDate ? format(watchDate, "yyyy-MM-dd") : "";
+  const foreignCurrencies = [
+    ...new Set(
+      (watchLines ?? [])
+        .filter((l) => isForeign(l as JournalGridLine, baseCurrency))
+        .map((l) => String(l.currency).toUpperCase())
+    ),
+  ];
+  const rateQueries = useQueries({
+    queries: foreignCurrencies.map((c) => ({
+      queryKey: [
+        `/api/companies/${selectedCompanyId}/exchange-rates/lookup?from=${c}&to=${baseCurrency}&date=${entryDate}`,
+      ],
+      enabled: !!selectedCompanyId && dialogOpen,
+      retry: false,
+    })),
+  });
+  const rates = new Map<string, number | null>(
+    foreignCurrencies.map((c, i) => {
+      const r = rateQueries[i]?.data as { rate?: number } | undefined;
+      return [c, typeof r?.rate === "number" && r.rate > 0 ? r.rate : null];
+    })
+  );
+  const previewCtx: PreviewContext = {
+    baseCurrency,
+    rateFor: (c) => rates.get(c) ?? null,
+    vatRate,
+    accountType: (id) => accounts?.find((a) => a.id === id)?.type,
+  };
+  const totals = gridTotals((watchLines ?? []) as JournalGridLine[], previewCtx);
+  const totalDebitFils = totals.debitFils;
+  const totalCreditFils = totals.creditFils;
   const totalDebit = totalDebitFils / 100;
   const totalCredit = totalCreditFils / 100;
-  const isBalanced = totalDebitFils === totalCreditFils;
+  // A foreign line with no rate yet cannot be previewed: the server checks that balance.
+  const isBalanced = !totals.known || totalDebitFils === totalCreditFils;
+  const currencies = currencyChoices(baseCurrency);
+  const toggleDetails = (index: number) =>
+    setOpenDetails((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
 
   // Spec 3.10 (WP-D): a journal entry has a lines table, so it is a full-page editor, not a
   // dialog. Same form, same handlers; Cancel (or Back) returns to the list.
   const closeEditor = () => {
+    setOpenDetails(new Set());
     setDialogOpen(false);
     setEditingEntry(null);
     form.reset({
       companyId: selectedCompanyId,
       date: new Date(),
       memo: "",
-      lines: [
-        { accountId: "", debit: 0, credit: 0 },
-        { accountId: "", debit: 0, credit: 0 },
-      ],
+      lines: [blankGridLine(), blankGridLine()],
     });
   };
 
@@ -532,7 +601,7 @@ export default function Journal() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => append({ accountId: "", debit: 0, credit: 0 })}
+                  onClick={() => append(blankGridLine())}
                   data-testid="button-add-line"
                 >
                   <Plus className="h-4 w-4" />
@@ -543,11 +612,12 @@ export default function Journal() {
               <div className="rounded-lg bg-surface-sunken/60">
                 <div
                   aria-hidden
-                  className="hidden grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem] gap-3 border-b border-border px-3 py-2 text-caption font-medium text-muted-foreground sm:grid"
+                  className="hidden grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_8rem_8rem_4.75rem] gap-3 border-b border-border px-3 py-2 text-caption font-medium text-muted-foreground sm:grid"
                 >
                   <span>
                     <T k="consolidation.account" />
                   </span>
+                  <span>{t["journal.line.description"]}</span>
                   <span className="text-end">{t.debit}</span>
                   <span className="text-end">{t.credit}</span>
                   <span />
@@ -556,7 +626,7 @@ export default function Journal() {
                   {fields.map((field, index) => (
                     <li
                       key={field.id}
-                      className="mobile-keep-cols grid grid-cols-2 gap-3 py-3 sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem] sm:items-start"
+                      className="mobile-keep-cols grid grid-cols-2 gap-3 py-3 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_8rem_8rem_4.75rem] sm:items-start"
                     >
                       <FormField
                         control={form.control}
@@ -585,6 +655,27 @@ export default function Journal() {
                               </SelectContent>
                             </Select>
                             <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`lines.${index}.description`}
+                        render={({ field }) => (
+                          <FormItem className="col-span-2 sm:col-span-1">
+                            <FormLabel className={cn(lineLabelClass, "sm:sr-only")}>
+                              {t["journal.line.description"]}
+                            </FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                value={field.value ?? ""}
+                                dir="auto"
+                                maxLength={500}
+                                placeholder={t["journal.line.descriptionPlaceholder"]}
+                                data-testid={`input-line-description-${index}`}
+                              />
+                            </FormControl>
                           </FormItem>
                         )}
                       />
@@ -642,7 +733,32 @@ export default function Journal() {
                           </FormItem>
                         )}
                       />
-                      <div className="col-span-2 flex justify-end sm:col-span-1">
+                      <div className="col-span-2 flex justify-end gap-1 sm:col-span-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground"
+                          aria-expanded={openDetails.has(index)}
+                          aria-controls={`line-details-panel-${index}`}
+                          aria-label={formatMessage(
+                            openDetails.has(index)
+                              ? t["journal.line.hideDetails"]
+                              : t["journal.line.showDetails"],
+                            { n: index + 1 }
+                          )}
+                          onClick={() => toggleDetails(index)}
+                          data-testid={`button-line-details-${index}`}
+                        >
+                          <DetailsChevron
+                            className={cn(
+                              "h-4 w-4 transition-transform duration-fast",
+                              openDetails.has(index) && "rotate-180",
+                              hasDetails(watchLines[index] as JournalGridLine) && "text-primary"
+                            )}
+                            aria-hidden
+                          />
+                        </Button>
                         <Button
                           type="button"
                           variant="ghost"
@@ -658,20 +774,61 @@ export default function Journal() {
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
+                      {openDetails.has(index) && watchLines[index] && (
+                        <div id={`line-details-panel-${index}`} className="col-span-full">
+                          <JournalLineDetails
+                            index={index}
+                            line={watchLines[index] as JournalGridLine}
+                            onChange={(patch) => {
+                              for (const [key, value] of Object.entries(patch)) {
+                                form.setValue(
+                                  `lines.${index}.${key}` as `lines.${number}.description`,
+                                  value as string,
+                                  { shouldDirty: true }
+                                );
+                              }
+                            }}
+                            accountType={
+                              accounts?.find((a) => a.id === watchLines[index]?.accountId)?.type
+                            }
+                            customers={customers}
+                            vendors={vendors}
+                            costCenters={costCenters}
+                            currencies={currencies}
+                            baseCurrency={baseCurrency}
+                            vatRate={vatRate}
+                            preview={previewLine(watchLines[index] as JournalGridLine, previewCtx)}
+                          />
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ol>
-                <div className="mobile-keep-cols grid grid-cols-2 gap-3 border-t border-border-strong px-3 py-3 text-sm font-semibold sm:grid-cols-[minmax(0,1fr)_8.5rem_8.5rem_2.25rem]">
-                  <span className="col-span-2 text-muted-foreground sm:col-span-1">
+                {totals.vatFils > 0 && (
+                  <div
+                    className="flex items-center justify-between gap-3 border-t border-border px-3 py-2 text-small text-muted-foreground"
+                    data-testid="journal-vat-added"
+                  >
+                    <span>{t["journal.vatAddedTotal"]}</span>
+                    <Money amount={totals.vatFils / 100} currency={baseCurrency} />
+                  </div>
+                )}
+                <div className="mobile-keep-cols grid grid-cols-2 gap-3 border-t border-border-strong px-3 py-3 text-sm font-semibold sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_8rem_8rem_4.75rem]">
+                  <span className="col-span-2 text-muted-foreground">
                     {t["forms.preview.total"]}
                   </span>
                   <span className="text-end" data-testid="journal-total-debit">
-                    <Money amount={totalDebit} currency="AED" />
+                    <Money amount={totalDebit} currency={baseCurrency} />
                   </span>
                   <span className="text-end" data-testid="journal-total-credit">
-                    <Money amount={totalCredit} currency="AED" />
+                    <Money amount={totalCredit} currency={baseCurrency} />
                   </span>
                 </div>
+                {!totals.known && (
+                  <p className="px-3 pb-3 text-caption text-muted-foreground">
+                    {t["journal.foreignTotalsNote"]}
+                  </p>
+                )}
               </div>
               <div className="flex items-center justify-end gap-2" aria-live="polite">
                 {isBalanced ? (

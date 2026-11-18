@@ -874,7 +874,21 @@
    "idx": 124,
    "version": "7",
    "when": 1781430400000,
-   "tag": "0125_wq5_einvoice_identity",
+   "tag": "0125_wq7_automations_onboarding_numbering",
+   "breakpoints": false
+  },
+  {
+   "idx": 125,
+   "version": "7",
+   "when": 1781430410000,
+   "tag": "0126_wq3_journal_line_fields",
+   "breakpoints": false
+  },
+  {
+   "idx": 126,
+   "version": "7",
+   "when": 1781430420000,
+   "tag": "0127_wq5_einvoice_identity",
    "breakpoints": false
   }
  ]

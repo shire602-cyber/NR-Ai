@@ -389,14 +389,22 @@ describe("D2 N8: the account master cannot strip control status", () => {
     expect(rename.status, rename.text).toBe(200);
 
     // A sub-account of 1040 is a control account through its parent: its parent is locked.
-    const sub = await t.as.post(`${base(t)}/accounts`, {
+    // WQ3 (C1 on the parent field): the API no longer creates one, so this is a legacy row.
+    const create = await t.as.post(`${base(t)}/accounts`, {
       code: "1041",
       nameEn: "Receivables - branch",
       type: "asset",
       subType: "receivable",
       parentId: ar.id,
     });
-    expect(sub.status, sub.text).toBe(200);
+    expect(create.status, create.text).toBe(422);
+    expect(create.body.code).toBe("CONTROL_ACCOUNT_NOT_ALLOWED");
+    const [legacy] = await h.sql<{ id: string }>(
+      `INSERT INTO accounts (company_id, code, name_en, type, sub_type, parent_id)
+       VALUES ($1, '1041', 'Receivables - branch', 'asset', 'receivable', $2) RETURNING id`,
+      [t.company.id, ar.id]
+    );
+    const sub = { body: { id: legacy.id } };
     const unparent = await put(sub.body.id, { parentId: null });
     expect(unparent.status, unparent.text).toBe(422);
     expect(unparent.body.code).toBe("CONTROL_ACCOUNT_LOCKED");
@@ -407,7 +415,7 @@ describe("D2 N8: the account master cannot strip control status", () => {
       nameEn: "Sundry asset",
       type: "asset",
     });
-    expect(plain.status, plain.text).toBe(200);
+    expect(plain.status, plain.text).toBe(201);
     const toVat = await put(plain.body.id, { isVatAccount: true, vatType: "input" });
     expect(toVat.status, toVat.text).toBe(422);
     expect(toVat.body.code).toBe("CONTROL_ACCOUNT_ROLE_RESERVED");

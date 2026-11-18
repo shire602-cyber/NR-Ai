@@ -9,6 +9,36 @@ import { requirePermission } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { pq } from "../services/connectors/pq";
 import { COA_TEMPLATES, validateTrnFormat } from "../services/migration-import/coa-templates";
+import { onboardingProgressBody, type OnboardingProgressBody } from "../../shared/validators/plans";
+import { zUuid } from "../../shared/validators/primitives";
+
+async function readOnboardingProgress(companyId: string) {
+  const { rows } = await pq<{
+    step: string | null;
+    first_task: string | null;
+    starting_point: string | null;
+    industry: string | null;
+    cutover_date: string | Date | null;
+    dismissed_getting_started: boolean;
+    updated_at: Date | string | null;
+  }>(
+    `SELECT step, first_task, starting_point, industry, to_char(cutover_date, 'YYYY-MM-DD') AS cutover_date,
+            dismissed_getting_started, updated_at
+       FROM company_onboarding_progress WHERE company_id = $1`,
+    [companyId]
+  );
+  const row = rows[0];
+  return {
+    companyId,
+    step: row?.step ?? null,
+    firstTask: row?.first_task ?? null,
+    startingPoint: row?.starting_point ?? null,
+    industry: row?.industry ?? null,
+    cutoverDate: row?.cutover_date ? String(row.cutover_date) : null,
+    dismissedGettingStarted: row?.dismissed_getting_started === true,
+    updatedAt: row?.updated_at ? new Date(row.updated_at).toISOString() : null,
+  };
+}
 
 type OnboardingPatch = z.output<typeof onboardingPatchBody> & {
   showTour?: boolean;
@@ -228,6 +258,67 @@ export function registerOnboardingRoutes(app: Express) {
         added += rowCount;
       }
       res.json({ templateId, added, skipped: template.accounts.length - added });
+    })
+  );
+
+  // WQ7 (1.10): the company setup wizard's progress lives on the server, so the step, the first
+  // task, the starting point, the industry chart and the go-live date survive a device change.
+  app.get(
+    "/api/companies/:companyId/onboarding/progress",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      if (!zUuid.safeParse(companyId).success) {
+        return res.status(404).json({ message: "Company not found", code: "NOT_FOUND" });
+      }
+      if (!(await storage.hasCompanyAccess(req.user!.id, companyId))) {
+        return res.status(404).json({ message: "Company not found", code: "NOT_FOUND" });
+      }
+      res.json(await readOnboardingProgress(companyId));
+    })
+  );
+
+  app.put(
+    "/api/companies/:companyId/onboarding/progress",
+    authMiddleware,
+    requirePermission("settings.company"),
+    strictBody(onboardingProgressBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const body = parsedBody<OnboardingProgressBody>(req);
+      const has = (k: keyof OnboardingProgressBody) => body[k] !== undefined;
+      await pq(
+        `INSERT INTO company_onboarding_progress
+                (company_id, step, first_task, starting_point, industry, cutover_date,
+                 dismissed_getting_started, updated_by, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6::date, COALESCE($7, false), $8, now())
+         ON CONFLICT (company_id) DO UPDATE SET
+           step = CASE WHEN $9 THEN EXCLUDED.step ELSE company_onboarding_progress.step END,
+           first_task = CASE WHEN $10 THEN EXCLUDED.first_task ELSE company_onboarding_progress.first_task END,
+           starting_point = CASE WHEN $11 THEN EXCLUDED.starting_point ELSE company_onboarding_progress.starting_point END,
+           industry = CASE WHEN $12 THEN EXCLUDED.industry ELSE company_onboarding_progress.industry END,
+           cutover_date = CASE WHEN $13 THEN EXCLUDED.cutover_date ELSE company_onboarding_progress.cutover_date END,
+           dismissed_getting_started = CASE WHEN $14 THEN EXCLUDED.dismissed_getting_started
+                                            ELSE company_onboarding_progress.dismissed_getting_started END,
+           updated_by = $8, updated_at = now()`,
+        [
+          companyId,
+          body.step ?? null,
+          body.firstTask ?? null,
+          body.startingPoint ?? null,
+          body.industry ?? null,
+          body.cutoverDate ?? null,
+          body.dismissedGettingStarted ?? null,
+          req.user!.id,
+          has("step"),
+          has("firstTask"),
+          has("startingPoint"),
+          has("industry"),
+          has("cutoverDate"),
+          has("dismissedGettingStarted"),
+        ]
+      );
+      res.json(await readOnboardingProgress(companyId));
     })
   );
 

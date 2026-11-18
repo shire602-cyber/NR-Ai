@@ -119,6 +119,13 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("MUT", "companies/*/einvoicing/partner/**", "settings.company"),
   r("*", "companies/*/einvoicing/approver-links/**", "settings.company"),
   r("POST", "companies/*/einvoicing/tax-ready/shown", "documents.write"),
+  // WQ7: automation switches, document numbering, approval rules and the setup wizard's
+  // progress are company settings.
+  r("MUT", "companies/*/automations/**", "settings.company"),
+  r("MUT", "companies/*/numbering/**", "settings.company"),
+  r("MUT", "companies/*/approval-rules/**", "settings.company"),
+  r("MUT", "companies/*/approval-settings", "settings.company"),
+  r("MUT", "companies/*/onboarding/**", "settings.company"),
 
   // Activity History (J4): the feed merges audit rows (IP address, user agent, before/after
   // metadata), so it is not general reporting data. Same audience as the audit log's finance

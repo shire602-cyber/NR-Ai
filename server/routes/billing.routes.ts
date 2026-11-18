@@ -1,15 +1,18 @@
 import type { Express, Request, Response } from "express";
 import { billingCheckoutBody } from "../../shared/validators/route-bodies";
 import { parsedBody } from "../http/parsed-body";
-import { authMiddleware, requireCustomer } from "../middleware/auth";
+import { adminMiddleware, authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
 import {
   billingEnforced,
+  companyEntitlement,
+  ensureFreeSubscription,
   getAllPlanDefinitions,
   getTierLimits,
   getUsage,
   usagePeriod,
+  type CompanyEntitlement,
 } from "../middleware/featureGate";
 import {
   changeSubscriptionPlan,
@@ -26,18 +29,33 @@ import { pq } from "../services/connectors/pq";
 import { z } from "zod";
 import { createLogger } from "../config/logger";
 import { errorMessage } from "../errors";
-import { TRIAL_DAYS, TRIAL_END_BEHAVIOUR, trialState } from "../../shared/trial";
+import { TRIAL_DAYS, TRIAL_END_BEHAVIOUR, trialState, type TrialState } from "../../shared/trial";
+import { NO_PLAN_ID, PAID_PLAN_IDS } from "../../shared/plans";
+import { adminSetPlanBody, type AdminSetPlanBody } from "../../shared/validators/plans";
+import { zUuid } from "../../shared/validators/primitives";
+import { recordAudit } from "../services/audit.service";
 import { companyStorageBytes } from "../services/storage-usage";
 
 const log = createLogger("billing");
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The trial banner's state for a company without a paid plan (null once on a paid plan). */
+function trialFromEntitlement(ent: CompanyEntitlement): TrialState | null {
+  if (ent.state === "active" || !ent.trialStartedAt) return null;
+  const start = new Date(ent.trialStartedAt).getTime();
+  const end = ent.trialEndsAt ? new Date(ent.trialEndsAt).getTime() : start + TRIAL_DAYS * DAY_MS;
+  const days = Math.max(1, Math.round((end - start) / DAY_MS));
+  return trialState(ent.trialStartedAt, new Date(), days);
+}
+
 export function registerBillingRoutes(app: Express) {
-  // Get available plans (public)
+  // Plans (public): built from shared/plans.ts, the same module the pricing page renders.
   app.get("/api/billing/plans", (_req: Request, res: Response) => {
     res.json(getAllPlanDefinitions());
   });
 
-  // Get current subscription
+  // Current subscription and what the company may do now (trial / active / expired).
   app.get(
     "/api/companies/:companyId/billing/subscription",
     authMiddleware,
@@ -49,43 +67,38 @@ export function registerBillingRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
-      // A company with no subscription row is implicitly on the free tier —
-      // mirror featureGate.getSubscriptionForRequest which defaults to 'free'.
-      // Returning 404 made the billing page error for every unsubscribed
-      // company (i.e. all of them until billing is live).
+      const ent = await companyEntitlement(companyId);
+      // A company with no subscription row has no paid plan (the 0113 trigger normally creates
+      // one); firm-billed client books (ent === null) are billed through the firm engagement.
       const subscription = (await storage.getSubscription(companyId)) ?? {
         companyId,
-        planId: "free",
+        planId: NO_PLAN_ID,
         status: "active",
         isDefault: true,
         invoicesCreatedThisMonth: 0,
         receiptsCreatedThisMonth: 0,
         aiCreditsUsedThisMonth: 0,
       };
-
-      const limits = getTierLimits(subscription.planId);
-      // Mirrors server/middleware/featureGate.ts: until BILLING_ENFORCEMENT=true
-      // the client paywall must fail open too, or the UI blocks features the
-      // API happily serves.
-      const enforcement = billingEnforced();
       res.json({
         subscription,
-        limits,
-        enforcement,
+        limits: ent?.limits ?? getTierLimits(subscription.planId),
+        entitlement: ent
+          ? {
+              state: ent.state,
+              planId: ent.planId,
+              storedPlanId: ent.storedPlanId,
+              features: ent.features,
+              limits: ent.limits,
+              trialEndsAt: ent.trialEndsAt,
+            }
+          : { state: "firm", planId: null, storedPlanId: subscription.planId, features: null },
+        // Plan gates follow server/middleware/featureGate.ts billingEnforced(): the client locks
+        // exactly what the API refuses, and nothing while enforcement is off.
+        enforcement: billingEnforced() && ent !== null,
         trialDays: trialDays(),
-        // X6b: the Upgrade button becomes "Contact us" while checkout cannot work.
+        // The Upgrade button becomes "Contact us" while checkout cannot work.
         checkoutAvailable: isStripeConfigured(),
-        // Free trial (shared/trial.ts): counted from the company's subscription row; only the
-        // free plan is on a trial. Nothing is locked when it ends (TRIAL_END_BEHAVIOUR).
-        trial:
-          subscription.planId === "free"
-            ? trialState(
-                (subscription as { createdAt?: Date | string | null }).createdAt ??
-                  (await storage.getCompany(companyId))?.createdAt,
-                new Date(),
-                TRIAL_DAYS
-              )
-            : null,
+        trial: ent ? trialFromEntitlement(ent) : null,
         trialEndBehaviour: TRIAL_END_BEHAVIOUR,
       });
     })
@@ -103,16 +116,8 @@ export function registerBillingRoutes(app: Express) {
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
 
-      const subscription = (await storage.getSubscription(companyId)) ?? {
-        companyId,
-        planId: "free",
-        status: "active",
-        invoicesCreatedThisMonth: 0,
-        receiptsCreatedThisMonth: 0,
-        aiCreditsUsedThisMonth: 0,
-      };
-
-      const limits = getTierLimits(subscription.planId);
+      const ent = await companyEntitlement(companyId);
+      const limits = ent?.limits ?? getTierLimits(NO_PLAN_ID);
       const storageMb =
         Math.round(((await companyStorageBytes(companyId)) / (1024 * 1024)) * 10) / 10;
       const [invoices, receipts, aiCalls, users] = await Promise.all([
@@ -123,9 +128,10 @@ export function registerBillingRoutes(app: Express) {
       ]);
 
       res.json({
-        plan: subscription.planId,
+        plan: ent?.planId ?? null,
+        planState: ent?.state ?? "firm",
         period: usagePeriod(),
-        enforcement: billingEnforced(),
+        enforcement: billingEnforced() && ent !== null,
         usage: {
           invoices: { used: invoices, limit: limits.maxInvoicesPerMonth },
           receipts: { used: receipts, limit: limits.maxReceiptsPerMonth },
@@ -133,6 +139,81 @@ export function registerBillingRoutes(app: Express) {
           users: { used: users, limit: limits.maxUsers },
           storage: { used: storageMb, limit: limits.maxStorageMb },
         },
+      });
+    })
+  );
+
+  // NR admin: set a company's plan while online checkout is not configured (the "contact us"
+  // path), or remove it ("none": trial if it has not ended, else read-only). Audited.
+  app.put(
+    "/api/admin/companies/:companyId/plan",
+    authMiddleware,
+    adminMiddleware,
+    strictBody(adminSetPlanBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const company = zUuid.safeParse(companyId).success
+        ? await storage.getCompany(companyId)
+        : undefined;
+      if (!company) {
+        return res.status(404).json({ message: "Company not found", code: "NOT_FOUND" });
+      }
+      const body = parsedBody<AdminSetPlanBody>(req);
+      const before = await companyEntitlement(companyId);
+      await ensureFreeSubscription(companyId);
+      const paid = body.planId !== "none";
+      const planId = paid ? body.planId : NO_PLAN_ID;
+      const limits = getTierLimits(planId);
+      await pq(
+        `UPDATE subscriptions
+            SET plan_id = $2, plan_name = $3, status = 'active',
+                billing_cycle = COALESCE($4, billing_cycle),
+                max_users = $5, max_invoices = $6, max_receipts = $7, max_companies = $8,
+                max_storage_mb = $9, ai_credits_per_month = $10,
+                trial_ends_at = CASE WHEN $11::boolean THEN $12::timestamptz ELSE trial_ends_at END,
+                current_period_start = CASE WHEN $13::boolean THEN now() ELSE current_period_start END,
+                updated_at = now()
+          WHERE id = (SELECT id FROM subscriptions WHERE company_id = $1
+                       ORDER BY created_at DESC LIMIT 1)`,
+        [
+          companyId,
+          planId,
+          paid ? planId.charAt(0).toUpperCase() + planId.slice(1) : "Free",
+          body.billingCycle ?? null,
+          limits.maxUsers,
+          limits.maxInvoicesPerMonth,
+          limits.maxReceiptsPerMonth,
+          limits.maxCompanies,
+          limits.maxStorageMb,
+          limits.aiCreditsPerMonth,
+          body.trialEndsAt !== undefined,
+          body.trialEndsAt ?? null,
+          paid,
+        ]
+      );
+      const after = await companyEntitlement(companyId);
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "billing.plan_set",
+        entityType: "subscription",
+        entityId: companyId,
+        before: before ? { planId: before.storedPlanId, state: before.state } : null,
+        after: {
+          planId: after?.storedPlanId ?? planId,
+          state: after?.state ?? null,
+          billingCycle: body.billingCycle ?? null,
+          trialEndsAt: body.trialEndsAt ?? null,
+          note: body.note ?? null,
+        },
+        req,
+      });
+      res.json({
+        companyId,
+        state: after?.state ?? null,
+        planId: after?.planId ?? null,
+        storedPlanId: after?.storedPlanId ?? planId,
+        trialEndsAt: after?.trialEndsAt ?? null,
       });
     })
   );
@@ -178,7 +259,7 @@ export function registerBillingRoutes(app: Express) {
   // Plan / cycle / seat change with proration (R19-16).
   const changePlanBody = z
     .object({
-      planId: z.enum(["starter", "professional", "enterprise"]).optional(),
+      planId: z.enum(PAID_PLAN_IDS).optional(),
       billingCycle: z.enum(["monthly", "yearly"]).optional(),
       seats: z.number().int().min(1).max(1000).optional(),
     })
@@ -230,7 +311,7 @@ export function registerBillingRoutes(app: Express) {
         return res.status(400).json({ message: "planId and billingCycle are required" });
       }
 
-      if (!["starter", "professional", "enterprise"].includes(planId)) {
+      if (!(PAID_PLAN_IDS as readonly string[]).includes(planId)) {
         return res.status(400).json({ message: "Invalid plan" });
       }
 

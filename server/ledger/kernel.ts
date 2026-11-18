@@ -31,6 +31,7 @@ import { assertKernelControlPosting, stampControlAdjustment } from "./control-ac
 import { findPgError, rowsOf, withLedgerTx } from "./tx";
 import type {
   EntryKind,
+  JournalLineAttributes,
   LedgerContext,
   LedgerTx,
   NormalizedEntry,
@@ -216,6 +217,13 @@ function lineRow(entryId: string, l: NormalizedLine) {
     foreignDebit: filsToNumber(l.foreignDebitFils),
     foreignCredit: filsToNumber(l.foreignCreditFils),
     ...(l.exchangeRate ? { exchangeRate: Number(l.exchangeRate) } : {}),
+    // WQ3 (0124): the derived VAT leg and the descriptive per-line attributes.
+    systemVat: l.systemVat === true,
+    contactType: l.attributes?.contactType ?? null,
+    contactId: l.attributes?.contactId ?? null,
+    vatTreatment: l.attributes?.vatTreatment ?? null,
+    ctTreatment: l.attributes?.ctTreatment ?? null,
+    ctDisallowedPct: l.attributes?.ctDisallowedPct ?? null,
   };
 }
 
@@ -411,6 +419,9 @@ export interface LineFils {
   foreignDebitFils: number;
   foreignCreditFils: number;
   exchangeRate: string | null;
+  /** WQ3 (0124): the stored VAT-leg flag and per-line attributes (copied by a reversal). */
+  systemVat: boolean;
+  attributes: JournalLineAttributes;
 }
 
 async function loadEntry(
@@ -433,10 +444,20 @@ export async function loadLinesFils(tx: LedgerTx, entryId: string): Promise<Line
   const res = await tx.execute(sql`
     SELECT id, account_id, cost_center_id, debit::text AS debit, credit::text AS credit,
            description, foreign_currency, COALESCE(foreign_debit, 0)::text AS foreign_debit,
-           COALESCE(foreign_credit, 0)::text AS foreign_credit, exchange_rate::text AS exchange_rate
+           COALESCE(foreign_credit, 0)::text AS foreign_credit, exchange_rate::text AS exchange_rate,
+           system_vat, contact_type, contact_id, vat_treatment, ct_treatment,
+           ct_disallowed_pct::text AS ct_disallowed_pct
       FROM journal_lines WHERE entry_id = ${entryId}
   `);
   return rowsOf<Record<string, string | null>>(res).map((r) => ({
+    systemVat: (r.system_vat as unknown) === true,
+    attributes: compactAttributes({
+      contactType: (r.contact_type as JournalLineAttributes["contactType"]) ?? null,
+      contactId: r.contact_id ?? null,
+      vatTreatment: (r.vat_treatment as JournalLineAttributes["vatTreatment"]) ?? null,
+      ctTreatment: (r.ct_treatment as JournalLineAttributes["ctTreatment"]) ?? null,
+      ctDisallowedPct: r.ct_disallowed_pct ?? null,
+    }),
     id: String(r.id),
     accountId: String(r.account_id),
     costCenterId: r.cost_center_id ?? null,
@@ -448,6 +469,13 @@ export async function loadLinesFils(tx: LedgerTx, entryId: string): Promise<Line
     foreignCreditFils: toFils(r.foreign_credit ?? "0"),
     exchangeRate: r.exchange_rate ?? null,
   }));
+}
+
+/** Drop null attributes so an untouched line mirrors to an untouched line. */
+function compactAttributes(a: JournalLineAttributes): JournalLineAttributes {
+  return Object.fromEntries(
+    Object.entries(a).filter(([, v]) => v !== null && v !== undefined)
+  ) as JournalLineAttributes;
 }
 
 function entryIso(entry: JournalEntry): string {
@@ -646,6 +674,10 @@ async function reverseInTx(
       foreignDebitFils: l.foreignCreditFils,
       foreignCreditFils: l.foreignDebitFils,
       exchangeRate: l.exchangeRate,
+      // WQ3: the reversal carries the same VAT-leg flag and CT treatment, so the CT workpaper
+      // and the VAT engine net the reversed line to zero.
+      ...(l.systemVat ? { systemVat: true } : {}),
+      ...(Object.keys(l.attributes).length ? { attributes: l.attributes } : {}),
     }));
   if (mirrored.length === 0) {
     throw new DomainError(

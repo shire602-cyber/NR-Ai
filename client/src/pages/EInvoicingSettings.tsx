@@ -29,7 +29,7 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
-import { isSaudiCompany } from "@/lib/company-country";
+import { useZatcaAvailable } from "@/hooks/useZatcaAvailable";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
@@ -316,6 +316,8 @@ export default function EInvoicingSettings() {
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const { company: activeCompany } = useActiveCompany();
+  // ZATCA is hidden at launch: the link shows only with the server flag on for a Saudi company.
+  const zatcaAvailable = useZatcaAvailable(activeCompany);
 
   const settings = useQuery<SettingsView>({
     queryKey: ["/api/companies", companyId, "einvoicing", "settings"],
@@ -386,7 +388,7 @@ export default function EInvoicingSettings() {
           description={s.description}
           icon={FileCheck2}
           actions={
-            isSaudiCompany(activeCompany) ? (
+            zatcaAvailable ? (
               <Button asChild variant="outline">
                 <Link href="/settings/zatca">{s.zatcaLink}</Link>
               </Button>

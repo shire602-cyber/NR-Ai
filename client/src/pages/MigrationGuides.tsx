@@ -106,11 +106,17 @@ export default function MigrationGuides() {
               </CardContent>
             </Card>
           </div>
-          <div className="mt-8">
+          <div className="mt-8 flex flex-wrap items-center gap-3">
             <Button asChild size="lg">
               <Link href="/register">
                 <T k="pageLabels.startMigration" />
                 <ArrowRight className="rtl:-scale-x-100" aria-hidden="true" />
+              </Link>
+            </Button>
+            {/* WQ7 (1.4): signed-in customers go straight to the opening-balance import. */}
+            <Button asChild size="lg" variant="outline">
+              <Link href="/import?kind=trial_balance" data-testid="link-opening-balances-import">
+                {t["marketing.migrationOpeningBalancesCta"]}
               </Link>
             </Button>
           </div>

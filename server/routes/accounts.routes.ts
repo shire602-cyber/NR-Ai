@@ -5,6 +5,7 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import type { Account } from "../../shared/schema";
 import { recordAudit } from "../services/audit.service";
+import { vatBoxMap } from "../tax/vat-box-map";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError, errorMessage } from "../errors";
@@ -16,7 +17,11 @@ import {
   type CreateAccountBody,
   type UpdateAccountBody,
 } from "../../shared/validators/accounts";
-import { CONTROL_ACCOUNT_CODES, controlAccountsAmong } from "../ledger/control-accounts";
+import {
+  CONTROL_ACCOUNT_CODES,
+  assertChosenAccountsNotControl,
+  controlAccountsAmong,
+} from "../ledger/control-accounts";
 
 /** The fields that give an account its posting role (code, type, sub-type, VAT flags, parent). */
 const ROLE_FIELDS = ["code", "type", "subType", "isVatAccount", "vatType", "parentId"] as const;
@@ -100,6 +105,33 @@ async function assertAccountRoleUnchanged(
   }
 }
 
+/** WQ3 (9.3): an account code is unique per company; 409 names the field for the drawer. */
+async function assertCodeFree(companyId: string, code: string, selfId?: string): Promise<void> {
+  const { rows } = await pool.query(
+    `SELECT id, name_en FROM accounts WHERE company_id = $1 AND lower(code) = lower($2) LIMIT 1`,
+    [companyId, code]
+  );
+  const hit = rows[0] as { id: string; name_en: string } | undefined;
+  if (hit && hit.id !== selfId) {
+    throw new DomainError(
+      "ACCOUNT_CODE_TAKEN",
+      409,
+      { fields: { code: [`Code ${code} is already used by ${hit.name_en}`] }, accountId: hit.id },
+      `Code ${code} is already used by ${hit.name_en}`
+    );
+  }
+}
+
+/**
+ * WQ3 (9.3) / C1: the parent is an account the user chooses, so it may not be a control account
+ * (or a sub-account of one). A sub-account of A/R, A/P, VAT, inventory, GRNI or payroll would
+ * itself become a control account that only its sub-ledger may post to.
+ * 422 CONTROL_ACCOUNT_NOT_ALLOWED on the parentId field.
+ */
+async function assertParentNotControl(companyId: string, parentId: string): Promise<void> {
+  await assertChosenAccountsNotControl(companyId, [{ field: "parentId", accountId: parentId }]);
+}
+
 async function isManagedBankGlAccount(companyId: string, accountId: string): Promise<boolean> {
   const { rows } = await pool.query(
     `SELECT 1 FROM bank_accounts WHERE company_id = $1 AND gl_account_id = $2 LIMIT 1`,
@@ -180,6 +212,23 @@ async function findAccountForUser(userId: string, accountId: string): Promise<Ac
 }
 
 export function registerAccountRoutes(app: Express) {
+  // WQ3 (9.13): Settings > Tax rates (read-only): each VAT treatment, its rate and the VAT 201
+  // boxes it feeds, read from the VAT engine's own box functions (server/tax/vat-box-map.ts).
+  app.get(
+    "/api/companies/:companyId/tax-rates",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      if (!(await storage.hasCompanyAccess(req.user!.id, companyId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const company = await storage.getCompany(companyId);
+      if (!company) return res.status(404).json({ message: "Company not found" });
+      res.json(vatBoxMap(company));
+    })
+  );
+
   // =====================================
   // Account Routes
   // =====================================
@@ -221,7 +270,19 @@ export function registerAccountRoutes(app: Express) {
       }
 
       const body = parsedBody<CreateAccountBody>(req);
-      if (body.parentId) await assertValidParent(companyId, body.type, body.parentId);
+      await assertCodeFree(companyId, body.code);
+      if (CONTROL_ACCOUNT_CODES[body.code]) {
+        throw new DomainError(
+          "CONTROL_ACCOUNT_ROLE_RESERVED",
+          422,
+          { fields: { code: [`${body.code} is reserved for a control account`] } },
+          `Code ${body.code} is reserved for the ${CONTROL_ACCOUNT_CODES[body.code]} control account.`
+        );
+      }
+      if (body.parentId) {
+        await assertValidParent(companyId, body.type, body.parentId);
+        await assertParentNotControl(companyId, body.parentId);
+      }
 
       const account = await storage.createAccount({
         ...body,
@@ -242,7 +303,7 @@ export function registerAccountRoutes(app: Express) {
         req,
       });
 
-      res.json(account);
+      res.status(201).json(account);
     })
   );
 
@@ -289,7 +350,14 @@ export function registerAccountRoutes(app: Express) {
           `Sub type "${nextSubType}" is not valid for a ${nextType} account`
         );
       }
+      if (body.code !== undefined && body.code !== account.code) {
+        await assertCodeFree(account.companyId, body.code, id);
+      }
       if (body.parentId) await assertValidParent(account.companyId, nextType, body.parentId, id);
+      // WQ3 / C1: moving an account under a control account is refused (unchanged parent is fine).
+      if (body.parentId && body.parentId !== account.parentId) {
+        await assertParentNotControl(account.companyId, body.parentId);
+      }
 
       const updatedAccount = await storage.updateAccount(id, account.companyId, {
         ...body,

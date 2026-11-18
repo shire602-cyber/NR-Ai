@@ -1047,9 +1047,21 @@ export async function scanAndClassifyAllCompanies(): Promise<void> {
     `SELECT DISTINCT company_id FROM bank_transactions WHERE is_reconciled = false`
   );
   const companyIds: string[] = companies.map((r) => r.company_id);
+  const { runForCompany } = await import("../platform/company-automations");
   for (const companyId of companyIds) {
     try {
-      await scanAndClassifyTransactions(companyId);
+      // WQ7: skipped for companies that switched "Categorise bank lines" off in Automations.
+      await runForCompany(
+        "categorise",
+        companyId,
+        () => scanAndClassifyTransactions(companyId),
+        (scan) => {
+          const s = scan as unknown as Record<string, unknown> | undefined;
+          return s && typeof s === "object"
+            ? { classified: Number(s.classified ?? 0), scanned: Number(s.scanned ?? 0) }
+            : null;
+        }
+      );
     } catch (err) {
       // Log per-company failures but continue with others
       const log = (await import("../config/logger")).createLogger("autonomous-gl");
