@@ -14,7 +14,12 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EditorShell } from "@/components/ui/editor-shell";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { useEditorRoute } from "@/hooks/useEditorRoute";
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
+
+// WQ1: the email dialog loads when a quote is sent.
+const SendQuoteDialog = lazy(() =>
+  import("@/components/invoices/SendQuoteDialog").then((m) => ({ default: m.SendQuoteDialog }))
+);
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -73,7 +78,6 @@ import {
   ArrowRightLeft,
   Send,
 } from "lucide-react";
-import { SendQuoteDialog } from "@/components/invoices/SendQuoteDialog";
 import { cn } from "@/lib/utils";
 import { parseCalendarDate } from "@/lib/format-date";
 
@@ -920,13 +924,17 @@ export default function Quotes() {
           </TableBody>
         </Table>
       </DataTableCard>
-      <SendQuoteDialog
-        key={quoteToSend?.id ?? "none"}
-        quote={quoteToSend}
-        companyId={selectedCompanyId}
-        defaultEmail={contacts.find((c) => c.id === quoteToSend?.contactId)?.email ?? null}
-        onClose={() => setQuoteToSend(null)}
-      />
+      {quoteToSend && (
+        <Suspense fallback={null}>
+          <SendQuoteDialog
+            key={quoteToSend.id}
+            quote={quoteToSend}
+            companyId={selectedCompanyId}
+            defaultEmail={contacts.find((c) => c.id === quoteToSend.contactId)?.email ?? null}
+            onClose={() => setQuoteToSend(null)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -92,11 +92,6 @@ import { InvoiceCurrencyFields } from "@/components/invoices/InvoiceCurrencyFiel
 import { LineItemPicker } from "@/components/invoices/LineItemPicker";
 import { LineIncomeAccountPicker } from "@/components/invoices/LineIncomeAccountPicker";
 import { LineCostCentrePicker } from "@/components/invoices/LineCostCentrePicker";
-import { InvoiceTermsFields } from "@/components/invoices/InvoiceTermsFields";
-import { InvoiceAttachments } from "@/components/invoices/InvoiceAttachments";
-import { InvoiceActivityLog } from "@/components/invoices/InvoiceActivityLog";
-import { InvoiceChecksPanel } from "@/components/invoices/InvoiceChecksPanel";
-import { LeaveWithoutSavingDialog } from "@/components/invoices/LeaveWithoutSavingDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCostCentres } from "@/hooks/useCostCentres";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
@@ -174,6 +169,32 @@ const CustomerDepositsDialog = lazy(() =>
 const WriteOffInvoiceDialog = lazy(() =>
   import("@/components/invoices/WriteOffInvoiceDialog").then((m) => ({
     default: m.WriteOffInvoiceDialog,
+  }))
+);
+// WQ1: the editor-only parts load with the editor, not with the list.
+const InvoiceTermsFields = lazy(() =>
+  import("@/components/invoices/InvoiceTermsFields").then((m) => ({
+    default: m.InvoiceTermsFields,
+  }))
+);
+const InvoiceAttachments = lazy(() =>
+  import("@/components/invoices/InvoiceAttachments").then((m) => ({
+    default: m.InvoiceAttachments,
+  }))
+);
+const InvoiceActivityLog = lazy(() =>
+  import("@/components/invoices/InvoiceActivityLog").then((m) => ({
+    default: m.InvoiceActivityLog,
+  }))
+);
+const InvoiceChecksPanel = lazy(() =>
+  import("@/components/invoices/InvoiceChecksPanel").then((m) => ({
+    default: m.InvoiceChecksPanel,
+  }))
+);
+const LeaveWithoutSavingDialog = lazy(() =>
+  import("@/components/invoices/LeaveWithoutSavingDialog").then((m) => ({
+    default: m.LeaveWithoutSavingDialog,
   }))
 );
 const InvoicePreview = lazy(() =>
@@ -1390,11 +1411,13 @@ export default function Invoices() {
             </TabsTrigger>
           </TabsList>
           <TabsContent value="checks" className="mt-0">
-            <InvoiceChecksPanel
-              checks={checks}
-              onFocusField={focusField}
-              checking={einvoiceValidation.isFetching}
-            />
+            <Suspense fallback={null}>
+              <InvoiceChecksPanel
+                checks={checks}
+                onFocusField={focusField}
+                checking={einvoiceValidation.isFetching}
+              />
+            </Suspense>
           </TabsContent>
           <TabsContent value="preview" className="mt-0">
             <Suspense fallback={<Skeleton className="h-96 w-full rounded-xl" />}>
@@ -1708,11 +1731,13 @@ export default function Invoices() {
               title={t["invoices.section.terms"]}
               description={t["invoices.section.termsDesc"]}
             >
-              <InvoiceTermsFields
-                form={form}
-                issued={isIssued}
-                onDueDateTouched={() => setDueDateTouched(true)}
-              />
+              <Suspense fallback={<Skeleton className="h-40 w-full rounded-lg" />}>
+                <InvoiceTermsFields
+                  form={form}
+                  issued={isIssued}
+                  onDueDateTouched={() => setDueDateTouched(true)}
+                />
+              </Suspense>
             </FormSection>
 
             <FormSection
@@ -2021,12 +2046,14 @@ export default function Invoices() {
               title={t["invoices.attachments.title"]}
               description={t["invoices.attachments.desc"]}
             >
-              <InvoiceAttachments
-                invoiceId={editingInvoice?.id}
-                pending={pendingAttachments}
-                onPendingChange={setPendingAttachments}
-                disabled={!canDo("documents.write")}
-              />
+              <Suspense fallback={<Skeleton className="h-16 w-full rounded-lg" />}>
+                <InvoiceAttachments
+                  invoiceId={editingInvoice?.id}
+                  pending={pendingAttachments}
+                  onPendingChange={setPendingAttachments}
+                  disabled={!canDo("documents.write")}
+                />
+              </Suspense>
             </FormSection>
 
             {isIssued && editingInvoice && (
@@ -2034,17 +2061,23 @@ export default function Invoices() {
                 title={t["invoices.activity.title"]}
                 description={t["invoices.activity.desc"]}
               >
-                <InvoiceActivityLog invoiceId={editingInvoice.id} />
+                <Suspense fallback={null}>
+                  <InvoiceActivityLog invoiceId={editingInvoice.id} />
+                </Suspense>
               </FormSection>
             )}
           </div>
         </form>
       </Form>
-      <LeaveWithoutSavingDialog
-        open={leaveGuard.pending}
-        onStay={leaveGuard.cancel}
-        onLeave={leaveGuard.confirm}
-      />
+      {leaveGuard.pending && (
+        <Suspense fallback={null}>
+          <LeaveWithoutSavingDialog
+            open={leaveGuard.pending}
+            onStay={leaveGuard.cancel}
+            onLeave={leaveGuard.confirm}
+          />
+        </Suspense>
+      )}
     </EditorShell>
   );
 

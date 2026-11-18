@@ -227,7 +227,8 @@ async function openNewInvoice() {
   const { default: Invoices } = await import("../../client/src/pages/Invoices");
   await renderPage(Invoices);
   await click(byTestId("button-create-invoice"));
-  await flushUntil(() => !!byTestId("tab-invoice-checks"));
+  // The terms fields load with the editor (lazy chunk).
+  await flushUntil(() => !!byTestId("tab-invoice-checks") && !!byTestId("input-invoice-notes"));
 }
 
 describe("WQ1 invoice editor", () => {
@@ -263,7 +264,7 @@ describe("WQ1 invoice editor", () => {
         new MouseEvent("mousedown", { bubbles: true, button: 0 })
       );
     });
-    await flush();
+    await flushUntil(() => !!byTestId("button-check-fix-customer"));
     await click(byTestId("button-check-fix-customer"));
     expect(document.activeElement).toBe(byTestId("input-customer-name"));
 
@@ -294,10 +295,12 @@ describe("WQ1 invoice editor", () => {
     await type(byTestId("input-customer-name"), "Half-typed customer");
     await flush();
     await click(byTestId("button-cancel-invoice"));
+    await flushUntil(() => !!byTestId("dialog-leave-without-saving"));
     expect(byTestId("dialog-leave-without-saving")).not.toBeNull();
     await click(byTestId("button-stay-on-editor"));
     expect(byTestId("dialog-invoice-form")).not.toBeNull();
     await click(byTestId("button-cancel-invoice"));
+    await flushUntil(() => !!byTestId("button-leave-without-saving"));
     await click(byTestId("button-leave-without-saving"));
     expect(byTestId("dialog-invoice-form")).toBeNull();
     expect(apiCalls("POST").filter((c) => c.url === `${C}/invoices`)).toEqual([]);
