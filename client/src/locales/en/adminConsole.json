@@ -300,6 +300,8 @@
   "activityLog.action.team.invite_revoke": "Team invitation revoked",
   "activityLog.action.team.invite_accept": "Team invitation accepted",
   "activityLog.action.team.remove": "Team member removed",
+  "activityLog.action.platform_owner.grant": "Platform owner granted",
+  "activityLog.action.platform_owner.revoke": "Platform owner revoked",
   "activityLog.action.admin_action": "Administrator action",
   "activityLog.action.SYNC": "Synchronised",
   "activityLog.action.accept": "Accepted",

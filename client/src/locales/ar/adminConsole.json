@@ -300,6 +300,8 @@
   "activityLog.action.team.invite_revoke": "إلغاء دعوة الفريق",
   "activityLog.action.team.invite_accept": "قبول دعوة الفريق",
   "activityLog.action.team.remove": "إزالة عضو من الفريق",
+  "activityLog.action.platform_owner.grant": "منح صلاحية مالك المنصة",
+  "activityLog.action.platform_owner.revoke": "سحب صلاحية مالك المنصة",
   "activityLog.action.admin_action": "إجراء إداري",
   "activityLog.action.SYNC": "تمت المزامنة",
   "activityLog.action.accept": "تم القبول",
