@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ArrowUp, Loader2, MessageSquareText } from "lucide-react";
@@ -9,16 +9,34 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Money } from "@/components/ui/money";
 import { SetupNotice } from "@/components/ui/setup-notice";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatDate, formatDateRange, formatEmbeddedDates } from "@/lib/format-date";
 import { ApiError, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
-import { presentFigure, revealScrollDelta, sourcesFor, type GroundedFigure } from "./model";
+import {
+  answerSegments,
+  factLabelValues,
+  factSources,
+  presentFigure,
+  revealScrollDelta,
+  sourcesFor,
+  type AnswerFigure,
+  type AnswerMissing,
+  type AnswerSegment,
+  type GroundedFigure,
+} from "./model";
 
 interface AskResponse {
   response: string;
   grounded?: boolean;
   insufficientData?: boolean;
   citations?: GroundedFigure[];
+  /** AS1: the answer split into text and amounts (no citation markers). */
+  segments?: AnswerSegment[];
+  /** AS1: the facts the answer rests on, labelled by key. */
+  figures?: AnswerFigure[];
+  /** AS1: what the books do not hold yet, with where to add it. */
+  missing?: AnswerMissing[];
   followUpPrompts?: string[];
   timestamp: string;
 }
@@ -317,16 +335,67 @@ function scrollParent(el: HTMLElement): Element {
   return document.scrollingElement ?? document.documentElement;
 }
 
+/** One figure row: the fact's label in the active language and its amount (A4). */
+interface FigureRow {
+  id: string;
+  label: string;
+  value: number;
+  unit: "AED" | "count";
+}
+
 function Answer({ answer }: { answer: AskResponse }) {
   const { t, locale } = useTranslation();
-  const figures = (answer.citations ?? []).filter((f) => presentFigure(f));
-  const sources = sourcesFor(figures);
+  const catalog = t as unknown as Record<string, string | undefined>;
+  const numberLocale = locale === "ar" ? "ar-AE-u-nu-latn" : "en-GB";
+
+  // AS1: the server sends labelled facts; older answers (and history) only carry citations.
+  let rows: FigureRow[];
+  let sources: Array<{ labelKey: string; href: string }>;
+  if (answer.figures) {
+    rows = answer.figures
+      .map((f) => {
+        const template = catalog[`assistant.fact.${f.key}`];
+        if (!template) return null;
+        const values = factLabelValues(f.params ?? {}, locale, {
+          date: formatDate,
+          range: formatDateRange,
+        });
+        return { id: f.id, label: formatMessage(template, values), value: f.value, unit: f.unit };
+      })
+      .filter((r): r is FigureRow => r !== null);
+    sources = factSources(answer.figures);
+  } else {
+    const legacy = (answer.citations ?? []).filter((f) => presentFigure(f));
+    rows = legacy.map((f) => ({
+      id: f.id,
+      label: catalog[presentFigure(f)!.labelKey] ?? "",
+      value: f.value,
+      unit: f.unit,
+    }));
+    sources = sourcesFor(legacy).map((s) => ({ labelKey: s.sourceKey, href: s.href }));
+  }
+  const missing = (answer.missing ?? []).filter((m) => catalog[`assistant.missing.${m.key}`]);
+
   return (
     <div className="space-y-3" data-testid="assistant-answer">
-      <p className="whitespace-pre-wrap text-body leading-relaxed text-foreground">
-        {answer.response}
+      <p
+        className="whitespace-pre-wrap text-body leading-relaxed text-foreground"
+        data-testid="assistant-answer-text"
+      >
+        {answerSegments(answer).map((seg, i) =>
+          seg.type === "text" ? (
+            <Fragment key={i}>{formatEmbeddedDates(seg.text, locale)}</Fragment>
+          ) : seg.type === "money" ? (
+            // A3: the app's money format; one bidi-isolated, unbreakable unit.
+            <Money key={i} amount={seg.value} currency={seg.currency} />
+          ) : (
+            <span key={i} className="tabular-nums">
+              {seg.value.toLocaleString(numberLocale)}
+            </span>
+          )
+        )}
       </p>
-      {figures.length > 0 && (
+      {rows.length > 0 && (
         // B1: `mobile-fit` opts out of the phone-wide 600 px table minimum, so the figures stay
         // inside the answer column; under 480 px each label sits over its amount.
         <table
@@ -335,26 +404,23 @@ function Answer({ answer }: { answer: AskResponse }) {
         >
           <caption className="sr-only">{t["assistant.figuresUsed"]}</caption>
           <tbody className="divide-y divide-border">
-            {figures.map((f) => {
-              const p = presentFigure(f)!;
-              return (
-                <tr key={f.id} className="max-[479px]:flex max-[479px]:flex-col max-[479px]:py-1.5">
-                  <th
-                    scope="row"
-                    className="break-words py-1.5 pe-4 text-start font-normal text-muted-foreground max-[479px]:p-0"
-                  >
-                    {t[p.labelKey]}
-                  </th>
-                  <td className="w-40 whitespace-nowrap py-1.5 text-end tabular-nums text-foreground max-[479px]:w-auto max-[479px]:p-0 max-[479px]:text-start max-[479px]:font-medium">
-                    {f.unit === "AED" ? (
-                      <Money amount={f.value} currency="AED" />
-                    ) : (
-                      f.value.toLocaleString(locale === "ar" ? "ar-AE-u-nu-latn" : "en-GB")
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+            {rows.map((f) => (
+              <tr key={f.id} className="max-[479px]:flex max-[479px]:flex-col max-[479px]:py-1.5">
+                <th
+                  scope="row"
+                  className="break-words py-1.5 pe-4 text-start font-normal text-muted-foreground max-[479px]:p-0"
+                >
+                  {f.label}
+                </th>
+                <td className="w-40 whitespace-nowrap py-1.5 text-end tabular-nums text-foreground max-[479px]:w-auto max-[479px]:p-0 max-[479px]:text-start max-[479px]:font-medium">
+                  {f.unit === "AED" ? (
+                    <Money amount={f.value} currency="AED" />
+                  ) : (
+                    f.value.toLocaleString(numberLocale)
+                  )}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       )}
@@ -362,20 +428,39 @@ function Answer({ answer }: { answer: AskResponse }) {
         <div className="flex flex-wrap items-center gap-2" data-testid="assistant-sources">
           <span className="text-caption text-muted-foreground">{t["assistant.source"]}</span>
           {sources.map((s) => (
-            <Link
-              key={s.sourceKey}
-              href={s.href}
-              // Fable P19: chip height follows its text; the 44 px tap area comes from ::after.
-              className="relative inline-flex !min-h-0 items-center rounded-full border border-border px-2.5 py-0.5 text-caption font-medium text-primary after:absolute after:inset-x-0 after:-inset-y-2.5 after:content-[''] hover:bg-secondary"
-            >
-              {t[s.sourceKey]}
-            </Link>
+            <SourceChip key={s.href} href={s.href} label={catalog[s.labelKey] ?? ""} />
           ))}
         </div>
       )}
-      {answer.insufficientData && (
+      {missing.length > 0 && (
+        // A1: what the books do not hold yet, and where to add it (no generic advice).
+        <ul className="space-y-1.5" data-testid="assistant-missing">
+          {missing.map((m) => (
+            <li
+              key={m.key}
+              className="flex flex-wrap items-center gap-2 text-small text-muted-foreground"
+            >
+              <span>{catalog[`assistant.missing.${m.key}`]}</span>
+              <SourceChip href={m.href} label={catalog[`assistant.missingLink.${m.key}`] ?? ""} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {answer.insufficientData && missing.length === 0 && (
         <p className="text-small text-muted-foreground">{t["assistant.insufficientData"]}</p>
       )}
     </div>
+  );
+}
+
+function SourceChip({ href, label }: { href: string; label: string }) {
+  return (
+    <Link
+      href={href}
+      // Fable P19: chip height follows its text; the 44 px tap area comes from ::after.
+      className="relative inline-flex !min-h-0 items-center rounded-full border border-border px-2.5 py-0.5 text-caption font-medium text-primary after:absolute after:inset-x-0 after:-inset-y-2.5 after:content-[''] hover:bg-secondary"
+    >
+      {label}
+    </Link>
   );
 }
