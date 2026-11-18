@@ -95,3 +95,28 @@ describe("[E2][J3-r2] budgets: a line needs an income or expense account", () =>
     ).toBe(true);
   });
 });
+
+describe("[E2][J3-r2] VAT filing stage", () => {
+  it("ready -> filed -> paid / refunded; one next step at a time", async () => {
+    const { vatFilingStage, vatNextAction, vatChecklist } =
+      await import("../../client/src/lib/vat-filing-stage");
+    expect(vatNextAction({ status: "draft" })).toBe("review");
+    expect(vatNextAction({ status: "ready" })).toBe("recordFiling");
+    expect(vatNextAction({ status: "submitted" })).toBe("recordFiling");
+    expect(vatNextAction({ status: "filed", box14PayableTax: 80 })).toBe("recordPayment");
+    expect(vatNextAction({ status: "filed", box14PayableTax: -5 })).toBe("recordRefund");
+    expect(vatNextAction({ status: "filed", box14PayableTax: 0 })).toBe("none");
+    expect(vatFilingStage({ status: "filed", paymentStatus: "paid", box14PayableTax: 80 })).toBe(
+      "paid"
+    );
+    expect(vatFilingStage({ status: "filed", paymentStatus: "paid", box14PayableTax: -5 })).toBe(
+      "refunded"
+    );
+    expect(vatChecklist({ status: "ready" })).toMatchObject({ ready: true, filed: false });
+    expect(vatChecklist({ status: "filed", box14PayableTax: 0 })).toMatchObject({
+      filed: true,
+      settled: true,
+      nothingToSettle: true,
+    });
+  });
+});
