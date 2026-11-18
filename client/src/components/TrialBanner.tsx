@@ -13,14 +13,17 @@ import type { TrialState } from "@shared/trial";
 export function TrialBanner({
   trial: given,
   className = "",
+  endedOnly = false,
 }: {
   trial?: TrialState | null;
   className?: string;
+  /** Show only once the trial has ended (settings pages that are read-only after the trial). */
+  endedOnly?: boolean;
 }) {
   const { t } = useTranslation();
   const { trial: fetched } = useSubscription();
   const trial = given === undefined ? fetched : given;
-  if (!trial) return null;
+  if (!trial || (endedOnly && !trial.ended)) return null;
   const Icon = trial.ended ? Lock : Clock;
   return (
     <div

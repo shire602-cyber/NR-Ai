@@ -1,3 +1,4 @@
+import { TrialBanner } from "@/components/TrialBanner";
 import { useMemo, useState } from "react";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -396,17 +397,21 @@ export default function EInvoicingSettings() {
           }
         />
 
+        {/* After the trial the workspace is read-only (edits answer 402): say so up front. */}
+        <TrialBanner endedOnly />
+
         {!view ? (
           <p className="text-muted-foreground">{s.loading}</p>
         ) : (
           <>
-            {/* E1/E2: the configured accredited provider's guided connection (or "Not connected"). */}
-            {companyId && <EInvoiceProviderCard companyId={companyId} />}
-
-            {/* WQ5: choose the accredited partner (no default), appoint it, verify it. */}
+            {/* WQ5: choose the accredited partner (no default), appoint it, verify it. It comes
+                first: it is the self-serve step, and the connection status below follows from it. */}
             {companyId && (
               <EInvoicePartnerCard companyId={companyId} companyName={activeCompany?.name ?? ""} />
             )}
+
+            {/* E1/E2: the configured accredited provider's guided connection (or "Not connected"). */}
+            {companyId && <EInvoiceProviderCard companyId={companyId} />}
 
             <Card>
               <CardHeader>
