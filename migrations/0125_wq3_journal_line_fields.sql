@@ -1,4 +1,4 @@
--- 0125_wq3_journal_line_fields (WQ3 accounting core gaps): per-line contact, VAT and CT treatment on journal lines.
+-- 0125_wq3_journal_line_fields (WQ3 accounting core gaps; W2-A ledger / W4-A corporate tax residual): per-line contact, VAT and CT treatment on journal lines.
 -- Idempotent: ADD COLUMN IF NOT EXISTS and CREATE INDEX IF NOT EXISTS only, so re-running the
 -- file changes nothing.
 --
