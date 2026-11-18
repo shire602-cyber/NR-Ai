@@ -150,7 +150,11 @@ describe("migration 0094", () => {
     const look = await a.as.get(
       `/api/companies/${a.company.id}/exchange-rates/lookup?from=USD&to=AED&date=${DAY}`
     );
-    expect(look.status).toBe(422);
+    // The quarantined 9.99 row is never used. E1: with no trusted USD/AED row the pair resolves
+    // at the CBUAE peg (3.6725, source "peg"), not the untrusted legacy figure.
+    expect(look.status, look.text).toBe(200);
+    expect(look.body).toMatchObject({ rate: 3.6725, source: "peg" });
+    expect(look.body.rate).not.toBe(9.99);
     const sys = await a.as.get(
       `/api/companies/${a.company.id}/exchange-rates/lookup?from=GBP&to=AED&date=${DAY}`
     );
