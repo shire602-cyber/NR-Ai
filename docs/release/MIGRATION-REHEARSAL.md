@@ -51,27 +51,27 @@ It adds two partial indexes, `idx_invoices_original_invoice_id` and `idx_credit_
 They are also declared in `shared/schema/sales.ts`, so `db:push` keeps them. The build is not
 `CONCURRENTLY`, because `drizzle-kit migrate` runs inside one transaction.
 
-Re-rehearsed from scratch on the merged tree: fresh copies of the 1x and 20x pre-0089 databases, the
-full `rehearse.sh`, 0089-0130 (42 files, including the base's 0125-0129; the table below is from that run, when
-our file was still numbered 0130). After the renumber to 0131 on top of the base's
-`0130_cash_sale_numbering`, a fresh-database check migrated through 0131 twice (second run a no-op)
-and both indexes exist and are valid.
+Re-rehearsed from scratch after the renumber to 0131 (2026-11-18, merged tree on top of the base's
+`0130_cash_sale_numbering`): fresh 1x and 20x pre-0089 databases (main's chain 0000-0088 plus
+`ensureCriticalSchema()`, then the seed), the full `rehearse.sh`, 0089-0131 (43 files).
 
 | Check                                           | 1x                                | 20x                                            |
 | ----------------------------------------------- | --------------------------------- | ---------------------------------------------- |
-| `db:migrate` (one transaction)                  | exit 0, 1.92 s                    | exit 0, 9.24 s                                 |
-| 0129 / 0130 (per-file runner)                   | 21 / 6 ms, DDL only               | 64 / 31 ms, DDL only                           |
-| Second `db:migrate`                             | no-op (ledger 130 = 130)          | no-op (ledger 130 = 130)                       |
-| Each 0089+ file re-run by hand                  | 42/42 ok                          | 42/42 ok                                       |
+| `db:migrate` (one transaction)                  | exit 0, 1.55 s                    | exit 0, 8.25 s                                 |
+| 0130 / 0131 (per-file runner)                   | 7 / 6 ms, DDL only                | 37 / 21 ms, DDL only                           |
+| Second `db:migrate`                             | no-op (ledger 131 = 131)          | no-op (ledger 131 = 131)                       |
+| Each 0089+ file re-run by hand                  | 43/43 ok                          | 43/43 ok                                       |
 | Schema, drizzle vs per-file                     | identical                         | identical                                      |
-| Indexes present and valid                       | yes                               | yes (`indisvalid = t`)                         |
+| Indexes present and valid                       | yes (`indisvalid = t`)            | yes (`indisvalid = t`)                         |
 | Rollback restore                                | 0 errors, counts equal, ledger 88 | 0 errors, counts equal, ledger 88              |
-| Open balances, one company with 10,000 invoices | -                                 | **57-99 ms** (was 30-35 s without the indexes) |
-| `find-sales-ledger-drift.mjs`                   | -                                 | under 1 s (was 388 s)                          |
+| Open balances, one company with 10,000 invoices | -                                 | **56-82 ms** (was 30-35 s without the indexes) |
 
-All section 2 counts are unchanged from the earlier runs; the ledger is now at 130 rows. The earlier
-runs with the index migration numbered 0125 (37 files), 0127 (39) and 0129 (41) gave the same
-results.
+The ledger is now at 131 rows. The earlier runs with the index migration numbered 0125 (37 files),
+0127 (39), 0129 (41) and 0130 (42) gave the same results. The open-balances figure is the
+`count(*)` of open invoices for the busiest company (`receivableStatusSql` and
+`receivableOpenBaseFilsSql`, as the app builds it), four runs, warm cache. This re-timing did not
+re-run `find-sales-ledger-drift.mjs` or re-compare the section 2 counts line by line; those figures
+are from the earlier runs and the data and seed are unchanged.
 
 ### Addendum: 0124 (added to the base after the main run)
 
