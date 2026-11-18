@@ -28,6 +28,16 @@ export const SETTINGS_NAV: SettingsNavItem[] = [
     href: "/invoice-templates",
   },
   {
+    key: "numbering",
+    labelKey: "components.ui.settingsNav.numbering",
+    href: "/settings/numbering",
+  },
+  {
+    key: "approvals",
+    labelKey: "components.ui.settingsNav.approvals",
+    href: "/settings/approvals",
+  },
+  {
     key: "notifications",
     labelKey: "components.ui.settingsNav.notifications",
     href: "/notification-preferences",

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { EInvoiceReadinessCard } from "@/components/einvoice/EInvoiceReadinessCard";
 import { Link, useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
   Building2,
@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Receipt,
   Repeat,
+  Scale,
   Sprout,
   UserRoundCheck,
   type LucideIcon,
@@ -43,8 +44,12 @@ import {
 import { isEmail, sendTeamInvite } from "./invite";
 import {
   FIRST_TASK_HREF,
-  writeOnboardingRecord,
+  openingBalancesHref,
+  saveOnboardingProgress,
+  useOnboardingProgress,
   type FirstTask,
+  type OnboardingProgress,
+  type OnboardingProgressPatch,
   type StartingPoint,
 } from "./first-task";
 
@@ -71,16 +76,32 @@ const MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
 
 type VatAnswer = "yes" | "no" | "later";
 
-const STEP_KEY = (companyId: string) => `onboarding_step_${companyId}`;
+/** Industry charts served by GET /api/onboarding/coa-templates (migration-import/coa-templates). */
+interface CoaTemplate {
+  id: string;
+  label: { en: string; ar: string };
+  accounts: number;
+}
+
+/** Save progress on the server; a failure never blocks the wizard (it only costs the resume). */
+function saveProgress(companyId: string | undefined, patch: OnboardingProgressPatch): void {
+  if (!companyId) return;
+  void saveOnboardingProgress(companyId, patch).catch(() => undefined);
+}
 
 export function CustomerOnboarding() {
   const { company, isLoading } = useActiveCompany();
-  if (isLoading) return <OnboardingShell total={TOTAL}>{null}</OnboardingShell>;
+  const progress = useOnboardingProgress(company?.id);
+  if (isLoading || (company?.id && progress.isLoading)) {
+    return <OnboardingShell total={TOTAL}>{null}</OnboardingShell>;
+  }
   if (company && !canRunCompanyOnboarding(company)) {
     return <OwnerStillSettingUp companyName={company.name} />;
   }
   // Keyed by company so switching companies never carries step/form state across tenants.
-  return <Wizard key={company?.id ?? "new"} company={company ?? null} />;
+  return (
+    <Wizard key={company?.id ?? "new"} company={company ?? null} progress={progress.data ?? null} />
+  );
 }
 
 function OwnerStillSettingUp({ companyName }: { companyName: string }) {
@@ -106,32 +127,31 @@ function OwnerStillSettingUp({ companyName }: { companyName: string }) {
   );
 }
 
-function readStep(companyId: string | undefined): 1 | 2 | 3 {
-  if (!companyId) return 1;
-  try {
-    const saved = Number(localStorage.getItem(STEP_KEY(companyId)));
-    return saved === 2 || saved === 3 ? saved : 1;
-  } catch {
-    return 1;
-  }
+/** Resume at the step saved on the server (1.10: survives a device change). */
+function stepFromProgress(progress: OnboardingProgress | null): 1 | 2 | 3 {
+  if (progress?.step === "starting-point") return 2;
+  if (progress?.step === "first-task") return 3;
+  return 1;
 }
 
-function Wizard({ company }: { company: Company | null }) {
-  const { t } = useTranslation();
+const STEP_NAME = { 1: "company", 2: "starting-point", 3: "first-task" } as const;
+
+function Wizard({
+  company,
+  progress,
+}: {
+  company: Company | null;
+  progress: OnboardingProgress | null;
+}) {
+  const { t, locale } = useTranslation();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [step, setStepState] = useState<1 | 2 | 3>(() => readStep(company?.id));
+  const [step, setStepState] = useState<1 | 2 | 3>(() => stepFromProgress(progress));
   const [target, setTarget] = useState<Company | null>(company);
 
   const setStep = (next: 1 | 2 | 3, id = target?.id) => {
     setStepState(next);
-    if (id) {
-      try {
-        localStorage.setItem(STEP_KEY(id), String(next));
-      } catch {
-        /* storage unavailable: the wizard simply starts at step 1 next time */
-      }
-    }
+    saveProgress(id, { step: STEP_NAME[next] });
   };
 
   // ── Step 1 state ───────────────────────────────────────────────────────────
@@ -144,11 +164,14 @@ function Wizard({ company }: { company: Company | null }) {
     company?.vatFilingFrequency === "Monthly" ? "Monthly" : "Quarterly"
   );
   const [errors, setErrors] = useState<{ name?: string; trn?: string; vat?: string }>({});
+  // 1.2: the industry seeds the chart of accounts (POST /companies/:id/onboarding/coa-template).
+  const [industry, setIndustry] = useState<string>(progress?.industry ?? "general");
+  const templates = useQuery<CoaTemplate[]>({ queryKey: ["/api/onboarding/coa-templates"] });
   const [saving, setSaving] = useState(false);
 
   // ── Step 2 state ───────────────────────────────────────────────────────────
-  const [start, setStart] = useState<StartingPoint | null>(null);
-  const [goLive, setGoLive] = useState("");
+  const [start, setStart] = useState<StartingPoint | null>(progress?.startingPoint ?? null);
+  const [goLive, setGoLive] = useState(progress?.cutoverDate ?? "");
   const [accountant, setAccountant] = useState("");
   const [fyStart, setFyStart] = useState<number>(company?.fiscalYearStartMonth ?? 1);
   const [step2Error, setStep2Error] = useState<string | null>(null);
@@ -206,6 +229,14 @@ function Wizard({ company }: { company: Company | null }) {
         saved = await createCompany.mutateAsync(payload);
         setTarget(saved);
       }
+      // Seed the industry's accounts once (idempotent server-side: existing codes are kept).
+      if (industry !== "general" && industry !== progress?.industry) {
+        await apiRequest("POST", `/api/companies/${saved.id}/onboarding/coa-template`, {
+          templateId: industry,
+        });
+        void queryClient.invalidateQueries({ queryKey: ["/api/companies", saved.id, "accounts"] });
+      }
+      saveProgress(saved.id, { industry });
       await queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       setStep(2, saved.id);
     } catch (err) {
@@ -230,6 +261,10 @@ function Wizard({ company }: { company: Company | null }) {
       setStep2Error(t["forms.errors.enterValidEmail"]);
       return;
     }
+    if (start === "opening-balances" && !goLive) {
+      setStep2Error(t["onboarding.wq7CutoverRequired"]);
+      return;
+    }
     setSaving(true);
     setStep2Error(null);
     try {
@@ -242,12 +277,15 @@ function Wizard({ company }: { company: Company | null }) {
       if (start === "accountant" && accountant.trim()) {
         await sendTeamInvite(target.id, accountant.trim(), "accountant");
       }
-      writeOnboardingRecord(target.id, {
-        startingPoint: start ?? undefined,
-        goLiveDate: start === "migrating" && goLive ? goLive : undefined,
-        accountantInvited:
-          start === "accountant" && accountant.trim() ? accountant.trim() : undefined,
-      });
+      const cutover =
+        (start === "migrating" || start === "opening-balances") && goLive ? goLive : null;
+      await saveOnboardingProgress(target.id, { startingPoint: start, cutoverDate: cutover });
+      if (start === "opening-balances") {
+        // 1.4: opening balances are D1's go-live import; finish here and open it at the date.
+        await completeOnboarding(target.id, null);
+        setLocation(openingBalancesHref(cutover));
+        return;
+      }
       setStep(3);
     } catch (err) {
       setStep2Error((err as Error)?.message || t["onboarding.v3SaveFailed"]);
@@ -256,31 +294,24 @@ function Wizard({ company }: { company: Company | null }) {
     }
   }
 
+  /** Mark onboarding complete on the server and in the cache (so the shell never bounces back). */
+  async function completeOnboarding(companyId: string, task: FirstTask | null) {
+    await apiRequest("POST", `/api/companies/${companyId}/onboarding/complete`, {});
+    saveProgress(companyId, task ? { firstTask: task, step: "done" } : { step: "done" });
+    queryClient.setQueryData<Company[]>(["/api/companies"], (old) =>
+      old?.map((c) => (c.id === companyId ? { ...c, onboardingCompleted: true } : c))
+    );
+    void queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
+  }
+
   const finish = useMutation({
     mutationFn: async (task: FirstTask) => {
       if (!target) throw new Error(t["onboarding.v3SaveFailed"]);
-      await apiRequest("POST", `/api/companies/${target.id}/onboarding/complete`, {});
+      await completeOnboarding(target.id, task);
       return task;
     },
-    onSuccess: async (task) => {
-      if (target) {
-        writeOnboardingRecord(target.id, {
-          firstTask: task,
-          completedAt: new Date().toISOString(),
-        });
-        try {
-          localStorage.removeItem(STEP_KEY(target.id));
-        } catch {
-          /* ignore */
-        }
-      }
-      // Mark the company complete in the cache before leaving, so the shell's onboarding
-      // redirect never sees the stale row and bounces back here; then refresh from the server.
-      queryClient.setQueryData<Company[]>(["/api/companies"], (old) =>
-        old?.map((c) => (c.id === target?.id ? { ...c, onboardingCompleted: true } : c))
-      );
+    onSuccess: (task) => {
       setLocation(FIRST_TASK_HREF[task]);
-      void queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
     },
     onError: (err: Error) =>
       toast({
@@ -340,6 +371,27 @@ function Wizard({ company }: { company: Company | null }) {
               disabled={saving}
               data-testid="express-company-name"
             />
+          </Field>
+          <Field label={t["onboarding.wq7Industry"]} help={t["onboarding.wq7IndustryHelp"]}>
+            <Select value={industry} onValueChange={setIndustry} disabled={saving}>
+              <SelectTrigger
+                className="h-10"
+                aria-label={t["onboarding.wq7Industry"]}
+                data-testid="onboarding-industry"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(templates.data?.length
+                  ? templates.data
+                  : [{ id: "general", label: { en: t["onboarding.wq7IndustryGeneral"], ar: t["onboarding.wq7IndustryGeneral"] }, accounts: 0 }]
+                ).map((tpl) => (
+                  <SelectItem key={tpl.id} value={tpl.id} data-testid={`industry-${tpl.id}`}>
+                    {locale === "ar" ? tpl.label.ar : tpl.label.en}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
           <Field label={t["onboarding.v3Emirate"]} help={t["onboarding.v3EmirateHelp"]}>
             <Select value={emirate} onValueChange={setEmirate} disabled={saving}>
@@ -439,6 +491,12 @@ function Wizard({ company }: { company: Company | null }) {
         body: t["onboarding.v3StartMovingBody"],
       },
       {
+        id: "opening-balances",
+        icon: Scale,
+        title: t["onboarding.wq7StartOpening"],
+        body: t["onboarding.wq7StartOpeningBody"],
+      },
+      {
         id: "accountant",
         icon: UserRoundCheck,
         title: t["onboarding.v3StartAccountant"],
@@ -515,6 +573,23 @@ function Wizard({ company }: { company: Company | null }) {
                       <span className="block text-small text-muted-foreground">{body}</span>
                     </span>
                   </button>
+                  {active && id === "opening-balances" ? (
+                    <div className="mb-4 mt-3 ps-4">
+                      <Field
+                        label={t["onboarding.wq7Cutover"]}
+                        htmlFor="ob-cutover"
+                        help={t["onboarding.wq7CutoverHelp"]}
+                      >
+                        <DatePicker
+                          id="ob-cutover"
+                          value={goLive}
+                          onChange={setGoLive}
+                          placeholder={t["onboarding.v3GoLivePlaceholder"]}
+                          data-testid="onboarding-cutover"
+                        />
+                      </Field>
+                    </div>
+                  ) : null}
                   {active && id === "migrating" ? (
                     <div className="mb-4 mt-3 ps-4">
                       <Field

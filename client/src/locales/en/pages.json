@@ -1002,5 +1002,21 @@
   "pages.unitShort.m": "m",
   "pages.unitShort.hr": "hr",
   "pages.unitShort.box": "box",
-  "pages.unitShort.unit": "unit"
+  "pages.unitShort.unit": "unit",
+  "pages.subscriptionUsedOfUnlimited": "{used} · unlimited",
+  "pages.subscriptionTrialOf": "Free trial of {plan}",
+  "pages.subscriptionNoPlan": "No plan",
+  "pages.subscriptionFirmBilled": "Billed through your accounting firm",
+  "pages.subscriptionPlanPageDescription": "Your plan, this month's usage and billing documents.",
+  "pages.subscriptionStateTrial": "Trial",
+  "pages.subscriptionStateReadOnly": "Read-only",
+  "pages.subscriptionTrialEnds": "Trial ends",
+  "pages.subscriptionTrialExplain": "Every module is open during the trial. Choose a plan before it ends to keep working without a break.",
+  "pages.subscriptionExpiredExplain": "Your data is safe and readable. Choose a plan to add and change records again.",
+  "pages.subscriptionUnlimitedUsersNote": "Every plan includes unlimited users.",
+  "pages.subscriptionChooseAPlan": "Choose a plan",
+  "pages.subscriptionChoosePlanContact": "Choose {plan}",
+  "pages.subscriptionChoosePlanNamed": "Choose {plan}",
+  "pages.subscriptionContactNote": "Online payment is not available yet. Choosing a plan sends us an email; we then set up your plan and send a tax invoice.",
+  "pages.subscriptionCompareHelp": "What each plan includes. Modules outside your plan stay readable."
 }

@@ -3,13 +3,19 @@ import { Link } from "wouter";
 import {
   ArrowRight,
   BookOpenCheck,
+  Boxes,
   Check,
   ChevronDown,
+  Coins,
+  FileCheck2,
   FileDown,
   FileText,
   Landmark,
   Languages,
+  Repeat,
   Scale,
+  Sparkles,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,11 +29,12 @@ import {
   COMPARE_GROUPS,
   EVERY_PLAN,
   PLANS,
-  cycleSavingPercent,
+  YEARLY_FREE,
   planNameKey,
   planPrice,
   type BillingCycle,
   type Cell,
+  type CompareRow,
   type PlanId,
 } from "@/components/marketing/plans";
 import { formatAmountDigits, formatMoneyText } from "@/lib/format-money";
@@ -43,11 +50,16 @@ import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
 
 const CYCLE_LABEL: Record<BillingCycle, string> = {
   monthly: "marketing.prCycleMonthly",
-  quarterly: "marketing.pricingQuarterly",
   yearly: "marketing.prCycleYearly",
 };
 
 const EVERY_ICON: Record<(typeof EVERY_PLAN)[number]["id"], LucideIcon> = {
+  users: Users,
+  currency: Coins,
+  recurring: Repeat,
+  inventory: Boxes,
+  einvoice: FileCheck2,
+  ai: Sparkles,
   invoices: FileText,
   vat: Landmark,
   ledger: BookOpenCheck,
@@ -58,7 +70,7 @@ const EVERY_ICON: Record<(typeof EVERY_PLAN)[number]["id"], LucideIcon> = {
 
 const PLAN_IDS = PLANS.map((p) => p.id);
 
-function CellValue({ cell }: { cell: Cell }) {
+function CellValue({ cell, unit }: { cell: Cell; unit?: CompareRow["unit"] }) {
   const { t } = useTranslation();
   if (cell === true) {
     return (
@@ -78,7 +90,11 @@ function CellValue({ cell }: { cell: Cell }) {
   }
   return (
     <span className="mk-ptable__val">
-      {typeof cell === "number" ? formatAmountDigits(cell, 0) : t[cell]}
+      {typeof cell === "number"
+        ? unit === "gb"
+          ? formatMessage(t["marketing.prValGb"], { n: formatAmountDigits(cell, 0) })
+          : formatAmountDigits(cell, 0)
+        : t[cell]}
     </span>
   );
 }
@@ -89,7 +105,7 @@ function PriceShort({ id, cycle }: { id: PlanId; cycle: BillingCycle }) {
   const price = planPrice(plan, cycle);
   return (
     <small>
-      {formatMessage(t["marketing.prPerMonthShort"], {
+      {formatMessage(t[cycle === "yearly" ? "marketing.prPerYearShort" : "marketing.prPerMonthShort"], {
         amount: formatMoneyText(price, "AED", locale, { fractionDigits: 0 }),
       })}
     </small>
@@ -144,7 +160,7 @@ function CompareTable({ cycle }: { cycle: BillingCycle }) {
         return (
           <tbody key={group.key} id={bodyId}>
             <tr className="mk-ptable__group">
-              <th colSpan={5} scope="colgroup">
+              <th colSpan={PLAN_IDS.length + 1} scope="colgroup">
                 <button
                   type="button"
                   aria-expanded={isOpen}
@@ -163,7 +179,7 @@ function CompareTable({ cycle }: { cycle: BillingCycle }) {
                 </td>
                 {PLAN_IDS.map((id) => (
                   <td key={id} data-featured={id === "professional" ? "true" : undefined}>
-                    <CellValue cell={row.cells[id]} />
+                    <CellValue cell={row.cells[id]} unit={row.unit} />
                   </td>
                 ))}
               </tr>
@@ -200,7 +216,7 @@ function CompareList() {
                   {row.noteKey ? <small>{t[row.noteKey]}</small> : null}
                 </dt>
                 <dd>
-                  <CellValue cell={row.cells[plan]} />
+                  <CellValue cell={row.cells[plan]} unit={row.unit} />
                 </dd>
               </div>
             ))}
@@ -212,10 +228,10 @@ function CompareList() {
 }
 
 const FAQ = [
-  ["marketing.prFaqTrialQ", "marketing.pricingTrialFaqAnswer"],
-  ["marketing.prFaqAfterQ", "marketing.prFaqAfterA"],
+  ["marketing.prFaqTrialQ", "marketing.prFaqTrialTopA"],
+  ["marketing.prFaqAfterQ", "marketing.prFaqAfterReadOnlyA"],
   ["marketing.prFaqChangeQ", "marketing.prFaqChangeA"],
-  ["marketing.prFaqBillingQ", "marketing.prFaqBillingA"],
+  ["marketing.prFaqBillingQ", "marketing.prFaqBillingYearlyA"],
   ["marketing.prFaqHelpQ", "marketing.prFaqHelpA"],
   ["marketing.faq7Q", "marketing.faq7A"],
 ] as const;
@@ -224,8 +240,6 @@ export default function Pricing() {
   const { t } = useTranslation();
   const [cycle, setCycle] = useState<BillingCycle>("monthly");
   // Professional first on phones (CSS order), equal-height row from tablet up.
-  const quarterly = cycleSavingPercent("quarterly");
-  const yearly = cycleSavingPercent("yearly");
 
   return (
     <MarketingLayout
@@ -240,7 +254,7 @@ export default function Pricing() {
             <h1 id="mk-pricing-h1" className="mk-h2 mk-prhead__title">
               {t["marketing.prTitle"]}
             </h1>
-            <p className="mk-lead">{t["marketing.pricingBody"]}</p>
+            <p className="mk-lead">{t["marketing.prBodyTrial"]}</p>
           </div>
           <div className="mk-prhead__billing">
             <Segmented
@@ -252,7 +266,7 @@ export default function Pricing() {
               options={BILLING_CYCLES.map((c) => ({ value: c, label: t[CYCLE_LABEL[c]] }))}
             />
             <p className="mk-caption">
-              {formatMessage(t["marketing.prSavingNote"], { quarterly, yearly })}
+              {formatMessage(t["marketing.prYearlyNote"], { months: YEARLY_FREE })}
             </p>
           </div>
         </div>

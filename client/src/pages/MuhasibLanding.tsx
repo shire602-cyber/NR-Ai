@@ -373,8 +373,8 @@ function PricingTeaser() {
         <SectionHeading
           id="mk-pricing-title"
           eyebrow={t["marketing.pricingEyebrow"]}
-          title={t["marketing.pricingTitle"]}
-          body={t["marketing.pricingBody"]}
+          title={t["marketing.pricingTitleTrial"]}
+          body={t["marketing.pricingBodyTrial"]}
         />
         <div className="mk-prplans__row" data-testid="landing-plans">
           {PLANS.map((plan) => (

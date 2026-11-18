@@ -88,6 +88,8 @@ const FirmRelationship = lazyWithReload(() => import("@/pages/portal/FirmRelatio
 const Receipts = lazyWithReload(() => import("@/pages/Receipts"));
 const CompanySettings = lazyWithReload(() => import("@/pages/CompanySettings"));
 const SecuritySettings = lazyWithReload(() => import("@/pages/SecuritySettings"));
+const ApprovalsSettings = lazyWithReload(() => import("@/pages/settings/Approvals"));
+const NumberingSettings = lazyWithReload(() => import("@/pages/settings/Numbering"));
 const EInvoicingSettings = lazyWithReload(() => import("@/pages/EInvoicingSettings"));
 const ZatcaSettings = lazyWithReload(() => import("@/pages/ZatcaSettings"));
 
@@ -201,7 +203,8 @@ import "@/styles/mobile.css";
 
 // Components
 import { canRunCompanyOnboarding } from "@/lib/companyRole";
-import { OnboardingWizard } from "@/components/Onboarding";
+import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
+import { PlanLockBanner } from "@/components/billing/PlanLockBanner";
 import { CommandPaletteProvider } from "@/components/CommandPalette";
 import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
 import { SkipLink } from "@/components/SkipLink";
@@ -360,6 +363,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
             </div>
           </header>
           <FirmContextBanner />
+          <PlanLockBanner />
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
             <div className="page-container">
               <RouteGuard>
@@ -382,7 +386,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
         </div>
       </div>
       <MobileNav />
-      <OnboardingWizard />
+      <PlanLimitDialog />
       <CommandPaletteProvider />
       <GlobalShortcutsProvider />
     </SidebarProvider>
@@ -635,6 +639,8 @@ function Router() {
             <Route path="/firm-relationship" component={FirmRelationship} />
             <Route path="/settings/company" component={CompanySettings} />
             <Route path="/settings/security" component={SecuritySettings} />
+            <Route path="/settings/approvals" component={ApprovalsSettings} />
+            <Route path="/settings/numbering" component={NumberingSettings} />
             <Route path="/settings/einvoicing" component={EInvoicingSettings} />
             <Route path="/settings/zatca" component={ZatcaSettings} />
             {/* Consolidated routes (R18-09, R20-08, R15-09): legacy URLs redirect */}

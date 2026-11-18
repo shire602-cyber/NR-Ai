@@ -198,5 +198,11 @@
   "dashboard.otherIncomeLabel": "إيرادات أخرى",
   "dashboard.bankDiffBooksAhead": "مبلغ {amount} مسجّل في دفاترك لكنه لم يظهر في كشف الحساب بعد. طابقه عند ظهوره.",
   "dashboard.bankDiffStatementAhead": "مبلغ {amount} ظاهر في كشف الحساب لكنه غير مسجّل في دفاترك بعد. أنشئ القيود أو طابقها.",
-  "dashboard.bankDiffReview": "المراجعة في مطابقة البنك"
+  "dashboard.bankDiffReview": "المراجعة في مطابقة البنك",
+  "dashboard.gsMinutes": "{count} د",
+  "dashboard.gsMinutesLabel": "حوالي {count} دقائق",
+  "dashboard.gsBankLines": "استورد حركات البنك",
+  "dashboard.gsBankLinesHint": "أضف حسابًا بنكيًا واستورد كشفًا، لتبدأ المطابقة.",
+  "dashboard.gsEinvoice": "استعد للفوترة الإلكترونية",
+  "dashboard.gsEinvoiceHint": "راجع بياناتك وفق قواعد الفوترة الإلكترونية في الإمارات."
 }

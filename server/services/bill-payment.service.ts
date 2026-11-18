@@ -2002,16 +2002,38 @@ export async function runRecurringBill(
 
 export async function runDueRecurringBills(today = new Date().toISOString().slice(0, 10)) {
   const due = await pool.query(
-    `SELECT id FROM recurring_bills WHERE is_active = true AND next_run_on <= $1::date ORDER BY next_run_on LIMIT 500`,
+    `SELECT id, company_id FROM recurring_bills WHERE is_active = true AND next_run_on <= $1::date ORDER BY next_run_on LIMIT 500`,
     [today]
   );
+  // WQ7: templates of companies that switched "Recurring bills" off in Automations are skipped.
+  const automations = await import("../platform/company-automations");
+  const off = await automations.companiesWithAutomationOff("recurringBills");
+  const runs = new Map<string, { created: number; failed: number; error: string | null }>();
   let created = 0;
   for (const row of due.rows) {
+    const companyId = String(row.company_id);
+    if (off.has(companyId)) continue;
+    const run = runs.get(companyId) ?? { created: 0, failed: 0, error: null };
+    runs.set(companyId, run);
     try {
-      if (await runRecurringBill(row.id)) created++;
+      if (await runRecurringBill(row.id)) {
+        created++;
+        run.created++;
+      }
     } catch (err) {
+      run.failed++;
+      run.error = (err as Error).message;
       log.error({ recurringBillId: row.id, err: (err as Error).message }, "Recurring bill failed");
     }
+  }
+  for (const [companyId, run] of runs) {
+    await automations.recordAutomationRun(
+      "recurringBills",
+      companyId,
+      run.failed > 0 ? "failed" : "ok",
+      { created: run.created, failed: run.failed },
+      run.error
+    );
   }
   return created;
 }

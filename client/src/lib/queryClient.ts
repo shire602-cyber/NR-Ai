@@ -4,6 +4,7 @@ import { apiUrl } from "./api";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
 import { isOnline, queueForSync } from "./pwa";
 import { localizeApiError } from "./validation-messages";
+import { announcePlanLimit } from "./plan-limit";
 import {
   PERIOD_LOCK_REASON_HEADER,
   askLockReason,
@@ -48,6 +49,8 @@ async function throwIfResNotOk(res: Response) {
     } catch {
       errorMessage = res.statusText;
     }
+    // WQ7: a plan refusal (402/403 with a plan code) also opens the upgrade prompt.
+    announcePlanLimit(body);
     throw new ApiError(localizeApiError(body) ?? errorMessage, res.status, body, errorMessage);
   }
 }

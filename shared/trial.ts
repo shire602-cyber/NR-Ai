@@ -1,14 +1,16 @@
-// Free trial (owner decision, X6b): every new company gets a free trial of all features, no card
-// required. The trial start is the company's subscription row creation time (existing companies
-// count from when their row was created). Nothing is locked when the trial ends: the app shows
-// "Your trial has ended — contact us to choose a plan" until the owner decides on enforcement.
-// Cost/abuse caps (AI credits, storage, companies per user) apply regardless of the trial.
+// Free trial (owner decision, 2026-11-18): every new company gets a 14-day free trial of the top
+// plan, no card required. The trial start is the company's subscription row creation time
+// (existing companies count from when their row was created); an NR admin may extend it
+// (subscriptions.trial_ends_at). When it ends without a paid plan the workspace becomes read-only:
+// data stays readable and exportable, nothing is deleted, and new work needs a plan (see
+// shared/plans.ts resolveEntitlement). While online checkout is not configured, choosing a plan
+// means contacting us; an NR admin then sets the plan (PUT /api/admin/companies/:id/plan).
 
 /** Length of the free trial in days. The one place the public claim and the app read. */
 export const TRIAL_DAYS = 14;
 
-/** What happens when the trial ends. "contact" = banner only, no lock and no blocked features. */
-export const TRIAL_END_BEHAVIOUR = "contact" as const;
+/** What happens when the trial ends: the workspace is read-only until a plan is chosen. */
+export const TRIAL_END_BEHAVIOUR = "read_only" as const;
 
 /** Where "Contact us" goes while online checkout is not configured. */
 export const UPGRADE_CONTACT_EMAIL = "support@muhasib.ai";

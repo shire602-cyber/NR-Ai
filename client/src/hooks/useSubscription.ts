@@ -2,6 +2,24 @@ import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../lib/queryClient";
 import { useDefaultCompany } from "./useDefaultCompany";
 import type { TrialState } from "@shared/trial";
+import {
+  FEATURE_MIN_PLAN,
+  type PaidPlanId,
+  type PlanFeature,
+  type PlanLimits,
+  type PlanState,
+} from "@shared/plans";
+
+export interface EntitlementData {
+  /** trial | active | expired; "firm" = NR-managed client books (billed through the firm). */
+  state: PlanState | "firm";
+  /** Plan whose features apply (the top plan during the trial); null when expired. */
+  planId: PaidPlanId | null;
+  storedPlanId: string;
+  features: Record<PlanFeature, boolean> | null;
+  limits?: PlanLimits;
+  trialEndsAt?: string | null;
+}
 
 interface SubscriptionData {
   subscription: {
@@ -17,6 +35,7 @@ interface SubscriptionData {
     aiCreditsUsedThisMonth: number;
   };
   limits: Record<string, number>;
+  entitlement?: EntitlementData;
   enforcement?: boolean;
   /** False while Stripe is not configured: the plan buttons become "Contact us". */
   checkoutAvailable?: boolean;
@@ -24,7 +43,7 @@ interface SubscriptionData {
 }
 
 interface UsageData {
-  plan: string;
+  plan: string | null;
   usage: {
     invoices: { used: number; limit: number };
     receipts: { used: number; limit: number };
@@ -34,95 +53,12 @@ interface UsageData {
   };
 }
 
-const TIER_FEATURES: Record<string, Record<string, boolean>> = {
-  free: {
-    quotes: false,
-    creditNotes: false,
-    purchaseOrders: false,
-    invoiceTemplates: false,
-    bankImport: false,
-    bulkOps: false,
-    advancedReports: false,
-    apiAccess: false,
-    invoicePayment: false,
-    recurringInvoices: false,
-    multiCurrency: false,
-    payroll: false,
-    webhooks: false,
-    fixedAssets: false,
-    costCenters: false,
-  },
-  starter: {
-    quotes: true,
-    creditNotes: true,
-    purchaseOrders: false,
-    invoiceTemplates: true,
-    bankImport: true,
-    bulkOps: false,
-    advancedReports: false,
-    apiAccess: false,
-    invoicePayment: true,
-    recurringInvoices: true,
-    multiCurrency: true,
-    payroll: false,
-    webhooks: false,
-    fixedAssets: false,
-    costCenters: false,
-  },
-  professional: {
-    quotes: true,
-    creditNotes: true,
-    purchaseOrders: true,
-    invoiceTemplates: true,
-    bankImport: true,
-    bulkOps: true,
-    advancedReports: true,
-    apiAccess: false,
-    invoicePayment: true,
-    recurringInvoices: true,
-    multiCurrency: true,
-    payroll: true,
-    webhooks: false,
-    fixedAssets: true,
-    costCenters: true,
-  },
-  enterprise: {
-    quotes: true,
-    creditNotes: true,
-    purchaseOrders: true,
-    invoiceTemplates: true,
-    bankImport: true,
-    bulkOps: true,
-    advancedReports: true,
-    apiAccess: true,
-    invoicePayment: true,
-    recurringInvoices: true,
-    multiCurrency: true,
-    payroll: true,
-    webhooks: true,
-    fixedAssets: true,
-    costCenters: true,
-  },
-};
-
-const FEATURE_MIN_TIER: Record<string, string> = {
-  quotes: "starter",
-  creditNotes: "starter",
-  purchaseOrders: "professional",
-  invoiceTemplates: "starter",
-  bankImport: "starter",
-  bulkOps: "professional",
-  advancedReports: "professional",
-  apiAccess: "enterprise",
-  invoicePayment: "starter",
-  recurringInvoices: "starter",
-  multiCurrency: "starter",
-  payroll: "professional",
-  webhooks: "enterprise",
-  fixedAssets: "professional",
-  costCenters: "professional",
-};
-
+/**
+ * The company's plan as the server enforces it (server/middleware/featureGate.ts, shared/plans.ts).
+ * Feature gates refuse writes only, so a module outside the plan stays open to read:
+ *   canAccess(f)  — may the module be opened? (always true: data is never hidden)
+ *   canWrite(f)   — may records be added or changed? (false → show the locked state)
+ */
 export function useSubscription() {
   const { companyId } = useDefaultCompany();
 
@@ -155,37 +91,47 @@ export function useSubscription() {
     staleTime: 30000,
   });
 
-  // No billing system deployed (endpoint missing/erroring) means features
-  // must fail OPEN — a paywall with a dead upgrade button is worse than no
-  // paywall. Same when the API reports enforcement off (BILLING_ENFORCEMENT
-  // unset server-side): gates only apply once billing is actually live.
+  // No billing module (endpoint missing/erroring) or enforcement off means the client locks
+  // nothing: the UI must never block what the API serves.
   const billingUnavailable = (subError || subData === null) && !subData;
   const enforcementOff = subData ? subData.enforcement !== true : false;
   const gatesOpen = billingUnavailable || enforcementOff;
-  const tierName = subData?.subscription?.planId || "free";
-  const isFreeTier = !gatesOpen && tierName === "free";
+  const entitlement = subData?.entitlement ?? null;
+  const planState = entitlement?.state ?? null;
+  const tierName = entitlement?.planId ?? subData?.subscription?.planId ?? "free";
 
-  function canAccess(feature: string): boolean {
-    if (gatesOpen) return true;
-    const features = TIER_FEATURES[tierName] || TIER_FEATURES.free;
-    return !!features[feature];
+  function canWrite(feature: string): boolean {
+    if (gatesOpen || !entitlement?.features) return true;
+    return entitlement.features[feature as PlanFeature] !== false;
+  }
+
+  /** Reading a module is never gated (WQ7): its data stays visible on every plan. */
+  function canAccess(_feature: string): boolean {
+    return true;
   }
 
   function getRequiredTier(feature: string): string {
-    return FEATURE_MIN_TIER[feature] || "starter";
+    return FEATURE_MIN_PLAN[feature as PlanFeature] ?? "starter";
   }
 
   return {
     subscription: subData?.subscription,
     usage: usageData?.usage,
     limits: subData?.limits,
-    /** Plan limits (invoices, receipts, seats) are enforced only once billing enforcement is on. */
+    entitlement,
+    /** trial | active | expired | firm (null while loading or without billing). */
+    planState,
+    /** Plan limits are enforced (server billingEnforced()). */
     enforcement: subData?.enforcement === true,
     checkoutAvailable: subData?.checkoutAvailable === true,
     trial: subData?.trial ?? null,
     tierName,
-    isFreeTier,
+    /** Trial over without a plan, with enforcement on: the workspace is read-only. */
+    isReadOnly: !gatesOpen && planState === "expired",
+    /** @deprecated there is no free plan; kept for older callers (true = read-only workspace). */
+    isFreeTier: !gatesOpen && planState === "expired",
     canAccess,
+    canWrite,
     getRequiredTier,
     isLoading: subLoading || usageLoading,
   };

@@ -10,6 +10,7 @@ import {
   CalendarDays,
   ListTodo,
   ClipboardList,
+  Lock,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link, useLocation } from "wouter";
@@ -35,6 +36,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CompanySwitcher } from "@/components/CompanySwitcher";
 import { BrandMark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useSubscription } from "@/hooks/useSubscription";
+import { featureForRoute } from "@/lib/plan-routes";
 import {
   ALL_NAV_GROUPS,
   getGroupForRoute,
@@ -78,6 +81,13 @@ const SIDEBAR_LS_KEY = "sidebar-expanded-group";
 export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { t, locale } = useTranslation();
+  // WQ7: modules outside the plan stay in the menu (never hidden) with a lock.
+  const { enforcement, canWrite, isReadOnly } = useSubscription();
+  const lockedRoute = (url: string) => {
+    if (!enforcement) return false;
+    const feature = featureForRoute(url);
+    return feature ? isReadOnly || !canWrite(feature) : false;
+  };
   const { setLocale } = useI18n();
   const { isRTL, rtlValue } = useRTL();
   const queryClient = useQueryClient();
@@ -234,6 +244,15 @@ export function AppSidebar() {
                               </span>
                             ) : null}
                           </span>
+                          {lockedRoute(item.url) ? (
+                            <span
+                              className="shrink-0 text-sidebar-muted"
+                              data-testid={`nav-lock-${item.testId ?? item.titleKey}`}
+                            >
+                              <Lock className="h-3.5 w-3.5" aria-hidden />
+                              <span className="sr-only">{t["components.planLockedNavLabel"]}</span>
+                            </span>
+                          ) : null}
                         </Link>
                       </SidebarMenuSubButton>
                     </SidebarMenuSubItem>

@@ -1,6 +1,15 @@
 import { PageHeader } from "@/components/ui/page-header";
 import { PlanCard } from "@/components/marketing/PlanCard";
-import { PLANS as MARKETING_PLANS, planNameKey } from "@/components/marketing/plans";
+import { Segmented } from "@/components/marketing/Segmented";
+import {
+  COMPARE_GROUPS,
+  PLANS,
+  YEARLY_FREE,
+  planNameKey,
+  type BillingCycle,
+  type Cell,
+  type CompareRow,
+} from "@/components/marketing/plans";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
@@ -11,22 +20,18 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { formatMoneyText } from "@/lib/format-money";
+import { formatMoneyText, formatAmountDigits } from "@/lib/format-money";
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Switch } from "@/components/ui/switch";
-import { TrialBanner } from "@/components/TrialBanner";
 import { useToast } from "@/hooks/use-toast";
 import { ApiError } from "@/lib/queryClient";
 import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
+import { TOP_PLAN_ID, planRank, type PaidPlanId } from "@shared/plans";
 import {
   Check,
-  Crown,
-  Gem,
-  Layers,
-  Zap,
   ExternalLink,
   Loader2,
   Users,
@@ -34,126 +39,20 @@ import {
   Receipt,
   Brain,
   HardDrive,
-  Star,
+  Lock,
+  Clock,
 } from "lucide-react";
 
-// R18-02: plan names, descriptions and features are translation keys (pages namespace).
-const PLANS = [
-  {
-    id: "free",
-    name: "pages.subscriptionFree",
-    monthlyPrice: 0,
-    yearlyPrice: 0,
-    icon: Layers,
-    description: "pages.subscriptionGetStartedWithBasicAccounting",
-    color: "from-gray-500 to-gray-600",
-    features: [
-      "pages.subscription1User",
-      "pages.subscription20InvoicesMonth",
-      "pages.subscription20ReceiptsMonth",
-      "pages.subscription10AiCreditsMonth",
-      "pages.subscriptionBasicDashboard",
-      "pages.subscriptionVatReports",
-      "pages.subscriptionEmailSupport",
-    ],
-    limits: {
-      invoices: 20,
-      receipts: 20,
-      aiCredits: 10,
-      users: 1,
-    },
-  },
-  {
-    id: "starter",
-    name: "pages.subscriptionStarter",
-    monthlyPrice: 49,
-    yearlyPrice: 39,
-    icon: Zap,
-    description: "pages.subscriptionForFreelancersAndSmallTeams",
-    color: "from-blue-500 to-cyan-600",
-    features: [
-      "pages.subscription3Users",
-      "pages.subscription200InvoicesMonth",
-      "pages.subscription200ReceiptsMonth",
-      "pages.subscription50AiCreditsMonth",
-      "pages.subscriptionOcrComingSoon",
-      "pages.subscriptionBankImportsReconciliation",
-      "pages.subscriptionInventoryManagement",
-      "pages.subscriptionQuotesEstimates",
-      "pages.subscriptionCreditNotes",
-      "pages.subscriptionRecurringInvoices",
-      "pages.subscriptionMultiCurrency",
-      "pages.subscriptionPriorityEmailSupport",
-    ],
-    limits: {
-      invoices: 200,
-      receipts: 200,
-      aiCredits: 50,
-      users: 3,
-    },
-  },
-  {
-    id: "professional",
-    name: "pages.subscriptionProfessional",
-    monthlyPrice: 149,
-    yearlyPrice: 119,
-    icon: Crown,
-    description: "pages.subscriptionForGrowingBusinesses",
-    popular: true,
-    color: "from-primary to-violet-600",
-    features: [
-      "pages.subscription10Users",
-      "pages.subscriptionUnlimitedInvoices",
-      "pages.subscriptionUnlimitedReceipts",
-      "pages.subscription500AiCreditsMonth",
-      "pages.subscriptionEverythingInStarter",
-      "pages.subscriptionAiCfoFinancialAdvisor",
-      "pages.subscriptionPurchaseOrders",
-      "pages.subscriptionAdvancedReports",
-      "pages.subscriptionBulkOperations",
-      "pages.subscriptionPayrollIntegration",
-      "pages.subscriptionEInvoicingWithProvider",
-      "pages.subscriptionPhoneChatSupport",
-    ],
-    limits: {
-      invoices: -1,
-      receipts: -1,
-      aiCredits: 500,
-      users: 10,
-    },
-  },
-  {
-    id: "enterprise",
-    name: "pages.subscriptionEnterprise",
-    monthlyPrice: 299,
-    yearlyPrice: 239,
-    icon: Gem,
-    description: "pages.subscriptionForLargeOrganizations",
-    color: "from-amber-500 to-orange-600",
-    features: [
-      "pages.subscriptionUnlimitedUsers",
-      "pages.subscriptionUnlimitedEverything",
-      "pages.subscriptionUnlimitedAiCredits",
-      "pages.subscriptionEverythingInProfessional",
-      "pages.subscriptionApiAccess",
-      "pages.subscriptionWhiteLabelOptions",
-      "pages.subscriptionDedicatedAccountant",
-      "pages.subscriptionCustomIntegrations",
-      "pages.subscriptionEnterpriseSupportTerms",
-      "pages.subscriptionMultiCompanySupport",
-    ],
-    limits: {
-      invoices: -1,
-      receipts: -1,
-      aiCredits: -1,
-      users: -1,
-    },
-  },
-];
+/*
+ * Settings › Billing (WQ7). Plans, prices and limits come from shared/plans.ts through the
+ * marketing plan list, so this page, /pricing, GET /api/billing/plans and the server gates agree.
+ * Status card: trial (days left), active plan, or trial ended (read-only until a plan is chosen).
+ * While online checkout is not configured, choosing a plan writes to us and an NR admin sets it.
+ */
 
 /** "Contact us to upgrade" link while online checkout is not configured. */
 function contactHref(planName?: string): string {
-  const subject = encodeURIComponent(`Muhasib.ai upgrade${planName ? `: ${planName}` : ""}`);
+  const subject = encodeURIComponent(`Muhasib.ai plan${planName ? `: ${planName}` : ""}`);
   return `mailto:${UPGRADE_CONTACT_EMAIL}?subject=${subject}`;
 }
 
@@ -164,9 +63,9 @@ function UsageMeter({
   icon: Icon,
   onUpgrade,
   unit,
-  postOfferLimit,
   canUpgrade = true,
   checkoutAvailable = true,
+  testId,
 }: {
   label: string;
   used: number;
@@ -175,33 +74,32 @@ function UsageMeter({
   onUpgrade?: () => void;
   /** Suffix for used / limit figures (storage: "MB"). */
   unit?: string;
-  /** Launch offer: this limit is not enforced yet; the figure is the limit after the offer. */
-  postOfferLimit?: number;
   canUpgrade?: boolean;
   checkoutAvailable?: boolean;
+  testId?: string;
 }) {
-  const notEnforcedYet = postOfferLimit !== undefined;
-  if (notEnforcedYet) limit = -1;
   const isUnlimited = limit === -1;
-  const percentage = isUnlimited ? 0 : Math.min((used / limit) * 100, 100);
+  const percentage = isUnlimited ? 0 : limit === 0 ? 100 : Math.min((used / limit) * 100, 100);
   const isNearLimit = !isUnlimited && percentage >= 80;
   const isAtLimit = !isUnlimited && percentage >= 100;
   const { t } = useTranslation();
+  const fig = (n: number) => `${formatAmountDigits(n, unit ? 1 : 0)}${unit ? ` ${unit}` : ""}`;
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Icon className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm font-medium">{label}</span>
+    <div className="space-y-2" data-testid={testId}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Icon className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="truncate text-sm font-medium">{label}</span>
         </div>
         <span className="flex items-center gap-3">
           <span
-            className={`text-sm tabular-nums ${isAtLimit ? "text-destructive font-semibold" : isNearLimit ? "text-warning" : "text-muted-foreground"}`}
+            dir="ltr"
+            className={`text-sm tabular-nums ${isAtLimit ? "font-semibold text-destructive" : isNearLimit ? "text-warning" : "text-muted-foreground"}`}
           >
             {isUnlimited
-              ? formatMessage(t["pages.subscriptionUsedCount"], { used })
-              : `${used}${unit ? ` ${unit}` : ""} / ${limit}${unit ? ` ${unit}` : ""}`}
+              ? formatMessage(t["pages.subscriptionUsedOfUnlimited"], { used: fig(used) })
+              : `${fig(used)} / ${fig(limit)}`}
           </span>
           {isAtLimit && onUpgrade && !checkoutAvailable && canUpgrade && (
             <Button type="button" size="sm" variant="outline" asChild data-testid="usage-upgrade">
@@ -223,41 +121,64 @@ function UsageMeter({
           )}
         </span>
       </div>
-      {notEnforcedYet && (
-        <p className="text-xs text-muted-foreground" data-testid="usage-offer-note">
-          {formatMessage(t["pages.subscriptionNoLimitDuringOffer"], {
-            limit: `${postOfferLimit}${unit ? ` ${unit}` : ""}`,
-          })}
-        </p>
-      )}
-      {!isUnlimited && (
+      {!isUnlimited ? (
         <Progress
           value={percentage}
           aria-label={label}
           className={`h-2 ${isAtLimit ? "[&>div]:bg-destructive" : isNearLimit ? "[&>div]:bg-warning" : ""}`}
         />
-      )}
-      {isUnlimited && (
-        <div className="h-2 rounded-full bg-secondary">
-          <div className="h-full rounded-full bg-success/40 w-full" />
+      ) : (
+        <div className="h-2 rounded-full bg-secondary" aria-hidden>
+          <div className="h-full w-full rounded-full bg-success/40" />
         </div>
       )}
     </div>
   );
 }
 
+function CompareCell({ cell, unit }: { cell: Cell; unit?: CompareRow["unit"] }) {
+  const { t } = useTranslation();
+  if (cell === true) {
+    return (
+      <>
+        <Check className="mx-auto h-4 w-4 text-brand-600 dark:text-brand-400" aria-hidden />
+        <span className="sr-only">{t["marketing.prIncluded"]}</span>
+      </>
+    );
+  }
+  if (cell === false) {
+    return (
+      <>
+        <span className="text-muted-foreground" aria-hidden>
+          {"–"}
+        </span>
+        <span className="sr-only">{t["marketing.pricingNotIncluded"]}</span>
+      </>
+    );
+  }
+  if (typeof cell === "number") {
+    return (
+      <span className="font-medium tabular-nums">
+        {unit === "gb"
+          ? formatMessage(t["marketing.prValGb"], { n: formatAmountDigits(cell, 0) })
+          : formatAmountDigits(cell, 0)}
+      </span>
+    );
+  }
+  return <span className="font-medium">{t[cell]}</span>;
+}
+
 export default function Subscription() {
   const { t, locale } = useTranslation();
-  const [billingCycle, setBillingCycle] = useState<"monthly" | "yearly">("monthly");
-  const { subscription, usage, tierName, isLoading, enforcement, checkoutAvailable } =
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+  const { subscription, usage, entitlement, planState, trial, isLoading, checkoutAvailable } =
     useSubscription();
   const { companyId } = useDefaultCompany();
   const { can } = useCompanyPermission();
   const { toast } = useToast();
-  // Trial period: invoices, receipts and seats are metered but not limited until billing enforcement
-  // starts; AI credits, storage and companies are cost caps and always show their limit.
-  const offerOpen = !enforcement;
   const canManageBilling = can("billing.manage");
+  /** The paid plan the company is on (null during the trial and after it). */
+  const paidPlan: PaidPlanId | null = planState === "active" ? (entitlement?.planId ?? null) : null;
 
   const checkoutMutation = useMutation({
     mutationFn: (planId: string) => {
@@ -303,26 +224,30 @@ export default function Subscription() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  const currentPlan = PLANS.find((p) => p.id === tierName) || PLANS[0];
   const scrollToPlans = () =>
     document.getElementById("subscription-plans")?.scrollIntoView({ behavior: "smooth" });
-  const isDowngrade = (planId: string) =>
-    planId === "free" ||
-    PLANS.findIndex((p) => p.id === tierName) > PLANS.findIndex((p) => p.id === planId);
+  const isDowngrade = (planId: PaidPlanId) =>
+    paidPlan !== null && planRank(paidPlan) > planRank(planId);
   const upgradeProps = {
     onUpgrade: scrollToPlans,
     canUpgrade: canManageBilling,
     checkoutAvailable,
   };
-  /** During the launch offer a limit is shown only as the post-offer figure; -1 = unlimited. */
-  const offerNote = (limit: number): number | undefined =>
-    offerOpen && limit !== -1 ? limit : undefined;
+
+  const statusTitle =
+    planState === "trial"
+      ? formatMessage(t["pages.subscriptionTrialOf"], { plan: t[planNameKey(TOP_PLAN_ID)] })
+      : planState === "expired"
+        ? t["pages.subscriptionNoPlan"]
+        : paidPlan
+          ? t[planNameKey(paidPlan)]
+          : t["pages.subscriptionFirmBilled"];
 
   return (
     <SettingsLayout>
@@ -330,87 +255,121 @@ export default function Subscription() {
         <PageHeader
           eyebrow={t["pages.companyProfileEyebrow"]}
           title={t["pages.subscriptionPageTitle"]}
-          description={t["pages.subscriptionPageDescription"]}
+          description={t["pages.subscriptionPlanPageDescription"]}
         />
 
-        <TrialBanner />
+        {planState === "expired" ? (
+          <Alert
+            tone="warning"
+            icon={Lock}
+            title={t["components.planLockTrialEndedTitle"]}
+            data-testid="trial-banner"
+            data-trial-state="ended"
+            action={
+              <Button size="sm" onClick={scrollToPlans} data-testid="button-choose-plan">
+                {t["components.planLockChoosePlan"]}
+              </Button>
+            }
+          >
+            {t["components.planLockTrialEndedBody"]}
+          </Alert>
+        ) : null}
 
-        {/* Current Plan & Usage */}
         <div className="grid gap-6 md:grid-cols-2">
-          {/* Current Plan Card */}
-          <Card>
+          {/* Current plan */}
+          <Card data-testid="card-current-plan" data-plan-state={planState ?? undefined}>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg">
-                  <T k="pageLabels.currentPlan" />
-                </CardTitle>
-                <Badge
-                  variant={tierName === "free" ? "secondary" : "default"}
-                  className={tierName !== "free" ? "" : ""}
-                >
-                  <Star className="w-3 h-3 me-1" />
-                  {t[currentPlan.name]}
-                </Badge>
-              </div>
-              <CardDescription>{t[currentPlan.description]}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {subscription?.status && (
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">
-                    <T k="banking.common.status" />
-                  </span>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <CardDescription>
+                    <T k="pageLabels.currentPlan" />
+                  </CardDescription>
+                  <CardTitle className="mt-1 text-lg" data-testid="text-current-plan">
+                    {statusTitle}
+                  </CardTitle>
+                </div>
+                {planState === "trial" ? (
+                  <Badge dot variant="info">
+                    {t["pages.subscriptionStateTrial"]}
+                  </Badge>
+                ) : planState === "expired" ? (
+                  <Badge dot variant="warning">
+                    {t["pages.subscriptionStateReadOnly"]}
+                  </Badge>
+                ) : subscription?.status ? (
                   <Badge dot variant={subscription.status === "active" ? "success" : "danger"}>
                     {t[`pages.subscriptionStatus_${subscription.status}`] ?? subscription.status}
                   </Badge>
-                </div>
-              )}
-              {subscription?.billingCycle && (
-                <div className="flex items-center justify-between text-sm">
+                ) : null}
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              {planState === "trial" && trial ? (
+                <>
+                  <div className="flex items-center gap-2" data-testid="trial-banner" data-trial-state="active">
+                    <Clock className="h-4 w-4 text-primary" aria-hidden />
+                    <span>{formatMessage(t["marketing.trialDaysLeft"], { count: trial.daysLeft })}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">{t["pages.subscriptionTrialEnds"]}</span>
+                    <span className="font-medium">{formatDisplayDate(trial.endsAt, locale)}</span>
+                  </div>
+                  <p className="text-muted-foreground">{t["pages.subscriptionTrialExplain"]}</p>
+                </>
+              ) : null}
+              {planState === "expired" ? (
+                <p className="text-muted-foreground">{t["pages.subscriptionExpiredExplain"]}</p>
+              ) : null}
+              {paidPlan && subscription?.billingCycle ? (
+                <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">
                     <T k="pageLabels.billingCycle" />
                   </span>
-                  <span className="font-medium capitalize">
+                  <span className="font-medium">
                     {t[`pages.subscriptionCycle_${subscription.billingCycle}`] ??
                       subscription.billingCycle}
                   </span>
                 </div>
-              )}
-              {subscription?.currentPeriodEnd && (
-                <div className="flex items-center justify-between text-sm">
+              ) : null}
+              {paidPlan && subscription?.currentPeriodEnd && subscription.stripeCustomerId ? (
+                <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">
-                    {tierName === "free" ? (
-                      <T k="pages.subscriptionRenewal" />
-                    ) : (
-                      <T k="pageLabels.currentPeriodEnds" />
-                    )}
+                    <T k="pageLabels.currentPeriodEnds" />
                   </span>
                   <span className="font-medium">
-                    {tierName === "free"
-                      ? t["pages.subscriptionNoRenewal"]
-                      : formatDisplayDate(subscription.currentPeriodEnd, locale)}
+                    {formatDisplayDate(subscription.currentPeriodEnd, locale)}
                   </span>
                 </div>
-              )}
-              {subscription?.stripeCustomerId && (
+              ) : null}
+              <p className="text-muted-foreground">{t["pages.subscriptionUnlimitedUsersNote"]}</p>
+              {subscription?.stripeCustomerId ? (
                 <Button
                   variant="outline"
-                  className="w-full mt-2"
+                  className="mt-2 w-full"
                   onClick={() => portalMutation.mutate()}
                   disabled={portalMutation.isPending}
                 >
                   {portalMutation.isPending ? (
-                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                    <Loader2 className="me-2 h-4 w-4 animate-spin" />
                   ) : (
-                    <ExternalLink className="w-4 h-4 me-2" />
+                    <ExternalLink className="me-2 h-4 w-4" />
                   )}
                   {t["pages.subscriptionManageBilling"]}
                 </Button>
-              )}
+              ) : planState !== "active" ? (
+                <Button
+                  className="mt-2 w-full"
+                  variant={planState === "expired" ? "default" : "outline"}
+                  onClick={scrollToPlans}
+                  data-testid="button-see-plans"
+                >
+                  {t["pages.subscriptionChooseAPlan"]}
+                </Button>
+              ) : null}
             </CardContent>
           </Card>
 
-          {/* Usage Card */}
+          {/* Usage */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">
@@ -424,33 +383,33 @@ export default function Subscription() {
               <UsageMeter
                 label={t["pages.subscriptionUsageInvoices"]}
                 used={usage?.invoices?.used ?? 0}
-                limit={usage?.invoices?.limit ?? currentPlan.limits.invoices}
-                postOfferLimit={offerNote(usage?.invoices?.limit ?? currentPlan.limits.invoices)}
+                limit={usage?.invoices?.limit ?? -1}
                 icon={FileText}
+                testId="usage-invoices"
                 {...upgradeProps}
               />
               <UsageMeter
                 label={t["pages.subscriptionUsageReceipts"]}
                 used={usage?.receipts?.used ?? 0}
-                limit={usage?.receipts?.limit ?? currentPlan.limits.receipts}
-                postOfferLimit={offerNote(usage?.receipts?.limit ?? currentPlan.limits.receipts)}
+                limit={usage?.receipts?.limit ?? -1}
                 icon={Receipt}
+                testId="usage-receipts"
                 {...upgradeProps}
               />
               <UsageMeter
                 label={t["pages.subscriptionUsageAiCredits"]}
                 used={usage?.aiCredits?.used ?? 0}
-                limit={usage?.aiCredits?.limit ?? currentPlan.limits.aiCredits}
+                limit={usage?.aiCredits?.limit ?? -1}
                 icon={Brain}
+                testId="usage-ai"
                 {...upgradeProps}
               />
               <UsageMeter
                 label={t["pages.subscriptionUsageTeamMembers"]}
                 used={usage?.users?.used ?? 0}
-                limit={usage?.users?.limit ?? currentPlan.limits.users}
-                postOfferLimit={offerNote(usage?.users?.limit ?? currentPlan.limits.users)}
+                limit={-1}
                 icon={Users}
-                {...upgradeProps}
+                testId="usage-users"
               />
               {usage?.storage && usage.storage.used != null && (
                 <UsageMeter
@@ -459,6 +418,7 @@ export default function Subscription() {
                   limit={usage.storage.limit}
                   unit="MB"
                   icon={HardDrive}
+                  testId="usage-storage"
                   {...upgradeProps}
                 />
               )}
@@ -468,215 +428,118 @@ export default function Subscription() {
 
         {companyId && <BillingDocuments companyId={companyId} />}
 
-        {/* Billing Cycle Toggle */}
-        <div className="flex items-center justify-center gap-4 pt-4">
-          <span
-            className={`text-sm font-medium ${billingCycle === "monthly" ? "text-foreground" : "text-muted-foreground"}`}
+        {/* Plans */}
+        <section aria-labelledby="subscription-plans-title" className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 id="subscription-plans-title" className="text-h3 font-semibold">
+                {t["pages.subscriptionChooseAPlan"]}
+              </h2>
+              <p className="text-small text-muted-foreground">
+                {formatMessage(t["marketing.prYearlyNote"], { months: YEARLY_FREE })}
+              </p>
+            </div>
+            <Segmented
+              value={billingCycle}
+              onChange={setBillingCycle}
+              label={t["marketing.pricingBillingPeriod"]}
+              testId="subscription-cycle"
+              optionTestId={(c) => `subscription-cycle-${c}`}
+              options={[
+                { value: "monthly", label: t["marketing.prCycleMonthly"] },
+                { value: "yearly", label: t["marketing.prCycleYearly"] },
+              ]}
+            />
+          </div>
+          <div
+            id="subscription-plans"
+            className="grid scroll-mt-4 items-stretch gap-4 md:grid-cols-3"
           >
-            <T k="firm.cycleMonthly" />
-          </span>
-          <Switch
-            aria-label={t["pages.subscriptionYearlyBilling"]}
-            checked={billingCycle === "yearly"}
-            onCheckedChange={(checked) => setBillingCycle(checked ? "yearly" : "monthly")}
-          />
-          <span
-            className={`text-sm font-medium ${billingCycle === "yearly" ? "text-foreground" : "text-muted-foreground"}`}
-          >
-            <T k="pageLabels.subscriptionYearly" />
-          </span>
-          {billingCycle === "yearly" && (
-            <Badge variant="secondary" className="bg-success/10 text-success border-success/20">
-              {t["pages.subscriptionSaveUpTo"]}
-            </Badge>
-          )}
-        </div>
-
-        {/* Plan Cards */}
-        <div
-          id="subscription-plans"
-          className="grid items-stretch gap-4 sm:grid-cols-2 scroll-mt-4"
-        >
-          {/* WP-E (spec 3.15): the plan grid reuses the site's PlanCard so the app and the
-              pricing page show plans the same way; only the action differs here. */}
-          {MARKETING_PLANS.map((plan) => {
-            const isCurrent = plan.id === tierName;
-            const planName = t[planNameKey(plan.id)];
-            const action = isCurrent ? (
-              <Button variant="outline" className="h-10 w-full" disabled>
-                <T k="pageLabels.currentPlan" />
-              </Button>
-            ) : !checkoutAvailable && canManageBilling ? (
-              <Button
-                className="h-10 w-full"
-                variant={plan.featured ? "default" : "outline"}
-                asChild
-                data-testid={`plan-contact-${plan.id}`}
-              >
-                <a href={contactHref(planName)}>
+            {/* Spec 3.15: the plan grid reuses the site's PlanCard; only the action differs. */}
+            {PLANS.map((plan) => {
+              const isCurrent = plan.id === paidPlan;
+              const planName = t[planNameKey(plan.id)];
+              const action = isCurrent ? (
+                <Button variant="outline" className="h-10 w-full" disabled>
+                  <T k="pageLabels.currentPlan" />
+                </Button>
+              ) : !checkoutAvailable && canManageBilling ? (
+                <Button
+                  className="h-10 w-full"
+                  variant={plan.featured ? "default" : "outline"}
+                  asChild
+                  data-testid={`plan-contact-${plan.id}`}
+                >
+                  <a href={contactHref(planName)}>
+                    {formatMessage(t["pages.subscriptionChoosePlanContact"], { plan: planName })}
+                  </a>
+                </Button>
+              ) : (
+                <Button
+                  className="h-10 w-full"
+                  variant={plan.featured ? "default" : "outline"}
+                  onClick={() => checkoutMutation.mutate(plan.id)}
+                  disabled={checkoutMutation.isPending || !canManageBilling}
+                  title={!canManageBilling ? t["common.noPermission"] : undefined}
+                  data-testid={`plan-upgrade-${plan.id}`}
+                >
+                  {checkoutMutation.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
                   {isDowngrade(plan.id)
-                    ? t["pages.subscriptionContactUs"]
-                    : t["pages.subscriptionContactToUpgrade"]}
-                </a>
-              </Button>
-            ) : (
-              <Button
-                className="h-10 w-full"
-                variant={plan.featured ? "default" : "outline"}
-                onClick={() => checkoutMutation.mutate(plan.id)}
-                disabled={checkoutMutation.isPending || !canManageBilling}
-                title={!canManageBilling ? t["common.noPermission"] : undefined}
-                data-testid={`plan-upgrade-${plan.id}`}
-              >
-                {checkoutMutation.isPending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
-                {isDowngrade(plan.id)
-                  ? t["pages.subscriptionDowngrade"]
-                  : t["pages.subscriptionUpgrade"]}
-              </Button>
-            );
-            return (
-              <PlanCard
-                key={plan.id}
-                plan={plan}
-                cycle={billingCycle}
-                action={action}
-                headingLevel="h3"
-                className={isCurrent ? "ring-1 ring-primary/40" : undefined}
-              />
-            );
-          })}
-        </div>
+                    ? t["pages.subscriptionDowngrade"]
+                    : paidPlan
+                      ? t["pages.subscriptionUpgrade"]
+                      : formatMessage(t["pages.subscriptionChoosePlanNamed"], { plan: planName })}
+                </Button>
+              );
+              return (
+                <PlanCard
+                  key={plan.id}
+                  plan={plan}
+                  cycle={billingCycle}
+                  action={action}
+                  headingLevel="h3"
+                  className={isCurrent ? "ring-1 ring-primary/40" : undefined}
+                />
+              );
+            })}
+          </div>
+          {!checkoutAvailable ? (
+            <p className="text-small text-muted-foreground" data-testid="checkout-contact-note">
+              {t["pages.subscriptionContactNote"]}
+            </p>
+          ) : null}
+        </section>
 
-        {/* Feature Comparison */}
+        {/* Comparison: the pricing page's rows (shared/plans.ts), so the two never disagree. */}
         <Card>
           <CardHeader>
             <CardTitle>
               <T k="pageLabels.featureComparison" />
             </CardTitle>
-            <CardDescription>
-              <T k="pageLabels.seeWhatEachPlanIncludesAt" />
-            </CardDescription>
+            <CardDescription>{t["pages.subscriptionCompareHelp"]}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" data-testid="subscription-compare">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-start py-3 pe-4 font-medium text-muted-foreground">
+                    <th className="py-3 pe-4 text-start font-medium text-muted-foreground">
                       <T k="pageLabels.feature" />
                     </th>
                     {PLANS.map((plan) => (
-                      <th key={plan.id} className="text-center py-3 px-4 font-medium">
-                        {t[plan.name]}
+                      <th key={plan.id} className="px-4 py-3 text-center font-medium">
+                        {t[planNameKey(plan.id)]}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {[
-                    {
-                      label: "pages.subscriptionInvoicesMonth",
-                      values: [
-                        "20",
-                        "200",
-                        "pages.subscriptionUnlimited",
-                        "pages.subscriptionUnlimited",
-                      ],
-                    },
-                    {
-                      label: "pages.subscriptionReceiptsMonth",
-                      values: [
-                        "20",
-                        "200",
-                        "pages.subscriptionUnlimited",
-                        "pages.subscriptionUnlimited",
-                      ],
-                    },
-                    {
-                      label: "pages.subscriptionAiCreditsMonth",
-                      values: ["10", "50", "500", "pages.subscriptionUnlimited"],
-                    },
-                    {
-                      label: "pages.subscriptionTeamMembers",
-                      values: ["1", "3", "10", "pages.subscriptionUnlimited"],
-                    },
-                    {
-                      label: "pages.subscriptionOcrReceiptScanning",
-                      values: [
-                        false,
-                        "pages.subscriptionArrivesLater",
-                        "pages.subscriptionArrivesLater",
-                        "pages.subscriptionArrivesLater",
-                      ],
-                    },
-                    {
-                      label: "pages.subscriptionBankReconciliation",
-                      values: [true, true, true, true],
-                    },
-                    {
-                      label: "pages.subscriptionEInvoicing",
-                      values: [
-                        false,
-                        false,
-                        "pages.subscriptionWithProvider",
-                        "pages.subscriptionWithProvider",
-                      ],
-                    },
-                    {
-                      label: "pages.subscriptionQuotesEstimates",
-                      values: [false, true, true, true],
-                    },
-                    { label: "pages.subscriptionCreditNotes", values: [false, true, true, true] },
-                    {
-                      label: "pages.subscriptionRecurringInvoices",
-                      values: [false, true, true, true],
-                    },
-                    { label: "pages.subscriptionMultiCurrency", values: [false, true, true, true] },
-                    {
-                      label: "pages.subscriptionPurchaseOrders",
-                      values: [false, false, true, true],
-                    },
-                    {
-                      label: "pages.subscriptionAdvancedReports",
-                      values: [false, false, true, true],
-                    },
-                    {
-                      label: "pages.subscriptionBulkOperations",
-                      values: [false, false, true, true],
-                    },
-                    { label: "pages.subscriptionAiCfoAdvisor", values: [false, false, true, true] },
-                    {
-                      label: "pages.subscriptionPayrollIntegration",
-                      values: [false, false, true, true],
-                    },
-                    {
-                      label: "pages.subscriptionInventoryManagement",
-                      values: [false, true, true, true],
-                    },
-                    { label: "pages.subscriptionApiAccess", values: [false, false, false, true] },
-                    { label: "pages.subscriptionWhiteLabel", values: [false, false, false, true] },
-                    {
-                      label: "pages.subscriptionDedicatedAccountant",
-                      values: [false, false, false, true],
-                    },
-                    {
-                      label: "pages.subscriptionEnterpriseSupportTerms",
-                      values: [false, false, false, true],
-                    },
-                  ].map((row) => (
-                    <tr key={row.label} className="border-b last:border-0">
-                      <td className="py-3 pe-4 text-muted-foreground">{t[row.label]}</td>
-                      {row.values.map((value, i) => (
-                        <td key={i} className="text-center py-3 px-4">
-                          {typeof value === "boolean" ? (
-                            value ? (
-                              <Check className="w-4 h-4 text-success mx-auto" />
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )
-                          ) : (
-                            <span className="font-medium">{t[value] ?? value}</span>
-                          )}
+                  {COMPARE_GROUPS.flatMap((g) => g.rows).map((row) => (
+                    <tr key={row.key} className="border-b last:border-0">
+                      <td className="py-3 pe-4 text-muted-foreground">{t[row.key]}</td>
+                      {PLANS.map((plan) => (
+                        <td key={plan.id} className="px-4 py-3 text-center">
+                          <CompareCell cell={row.cells[plan.id]} unit={row.unit} />
                         </td>
                       ))}
                     </tr>
