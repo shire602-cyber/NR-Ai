@@ -73,9 +73,9 @@ interface TaxReturn {
 }
 
 const RETURN_TYPES = [
-  { value: "vat", labelEn: "VAT Return", labelAr: "إقرار ضريبة القيمة المضافة" },
-  { value: "corporate_tax", labelEn: "Corporate Tax", labelAr: "ضريبة الشركات" },
-  { value: "excise_tax", labelEn: "Excise Tax", labelAr: "الضريبة الانتقائية" },
+  { value: "vat", labelEn: "VAT return", labelAr: "إقرار ضريبة القيمة المضافة" },
+  { value: "corporate_tax", labelEn: "Corporate tax", labelAr: "ضريبة الشركات" },
+  { value: "excise_tax", labelEn: "Excise tax", labelAr: "الضريبة الانتقائية" },
 ];
 
 export default function TaxReturnArchive() {

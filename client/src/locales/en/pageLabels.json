@@ -644,7 +644,7 @@
   "pageLabels.pleaseCreateACompanyFirstTo": "Please create a company first to use month-end close.",
   "pageLabels.pleaseCreateACompanyFirstToUseAutoReconciliation": "Please create a company first to use auto-reconciliation.",
   "pageLabels.pleaseCreateACompanyFirstToUseCashFlowForecasting": "Please create a company first to use cash flow forecasting.",
-  "pageLabels.pleaseCreateACompanyFirstToUseTheAIInbox": "Please create a company first to use the AI Inbox.",
+  "pageLabels.pleaseCreateACompanyFirstToUseTheAIInbox": "Please create a company first to use the assistant.",
   "pageLabels.pleaseSelectACompanyToManage": "Please select a company to manage reconciliation rules.",
   "pageLabels.pleaseSelectACompanyToManageBackups": "Please select a company to manage backups.",
   "pageLabels.pleaseSelectACompanyToViewHistory": "Please select a company to view history.",

@@ -115,15 +115,15 @@ const DOCUMENT_CATEGORIES = [
   { value: "bill", labelEn: "Bill/Expense", labelAr: "فاتورة مصروفات" },
   { value: "receipt", labelEn: "Receipt", labelAr: "إيصال" },
   { value: "quote", labelEn: "Quote/Quotation", labelAr: "عرض سعر" },
-  { value: "purchase_order", labelEn: "Purchase Order", labelAr: "أمر شراء" },
-  { value: "trade_license", labelEn: "Trade License", labelAr: "الرخصة التجارية" },
+  { value: "purchase_order", labelEn: "Purchase order", labelAr: "أمر شراء" },
+  { value: "trade_license", labelEn: "Trade licence", labelAr: "الرخصة التجارية" },
   { value: "contract", labelEn: "Contract", labelAr: "عقد" },
-  { value: "tax_certificate", labelEn: "Tax Certificate", labelAr: "شهادة ضريبية" },
-  { value: "audit_report", labelEn: "Audit Report", labelAr: "تقرير التدقيق" },
-  { value: "bank_statement", labelEn: "Bank Statement", labelAr: "كشف حساب بنكي" },
+  { value: "tax_certificate", labelEn: "Tax certificate", labelAr: "شهادة ضريبية" },
+  { value: "audit_report", labelEn: "Audit report", labelAr: "تقرير التدقيق" },
+  { value: "bank_statement", labelEn: "Bank statement", labelAr: "كشف حساب بنكي" },
   { value: "insurance", labelEn: "Insurance", labelAr: "تأمين" },
   { value: "visa", labelEn: "Visa/Emirates ID", labelAr: "تأشيرة/هوية إماراتية" },
-  { value: "vat_return", labelEn: "VAT Return", labelAr: "إقرار ضريبة القيمة المضافة" },
+  { value: "vat_return", labelEn: "VAT return", labelAr: "إقرار ضريبة القيمة المضافة" },
   { value: "other", labelEn: "Other", labelAr: "أخرى" },
 ];
 
@@ -605,7 +605,7 @@ export default function DocumentVault() {
               </div>
 
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "الوصف (اختياري)" : "Description (Optional)"}</Label>
+                <Label>{locale === "ar" ? "الوصف (اختياري)" : "Description (optional)"}</Label>
                 <Textarea
                   value={newDocument.description}
                   onChange={(e) => setNewDocument({ ...newDocument, description: e.target.value })}

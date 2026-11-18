@@ -42,7 +42,7 @@ import { Building2, Save, Upload } from "lucide-react";
 import { WpsSettingsCard } from "./payroll/WpsTab";
 
 const CURRENCY_OPTIONS = [
-  { value: "AED", label: "AED — UAE Dirham" },
+  { value: "AED", label: "AED — UAE dirham" },
   { value: "USD", label: "USD — US dollar" },
   { value: "EUR", label: "EUR — Euro" },
   { value: "GBP", label: "GBP — British pound" },

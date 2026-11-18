@@ -421,7 +421,7 @@ const baseT = {
 
     // Receipts
     receiptScanner: "Receipt scanner",
-    receiptScannerDescription: "Upload receipts for AI extraction or enter manually",
+    receiptScannerDescription: "Upload receipts or enter an expense",
     addExpenseManually: "Add expense manually",
     uploadReceipts: "Upload receipts",
     uploadReceiptsDescription:

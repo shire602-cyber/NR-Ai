@@ -1,5 +1,5 @@
 {
-  "purchases.costCenter": "Cost centre",
+  "purchases.costCenter": "Cost center",
   "purchases.noCostCenter": "No cost center",
   "purchases.inboundCreditNotes": "Supplier credit notes to review",
   "purchases.inboundCreditNotesHint": "Credit notes received as e-invoices. Review each one and record it as a vendor credit (debit note).",

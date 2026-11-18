@@ -91,7 +91,7 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
     title: "Explore reports",
     description: "View financial statements and VAT summaries",
     icon: BarChart3,
-    action: "View Reports",
+    action: "View reports",
     path: "/reports",
   },
   {
