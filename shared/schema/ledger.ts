@@ -6,6 +6,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   date as pgDate,
   pgTable,
   text,
@@ -191,6 +192,14 @@ export const journalLines = pgTable(
     reconciledAt: timestamp("reconciled_at"),
     reconciledBy: uuid("reconciled_by").references(() => users.id),
     bankTransactionId: uuid("bank_transaction_id"), // Reference to matched bank transaction
+    // WQ3 (migration 0124): per-line contact, VAT and corporate-tax treatment of manual journals.
+    contactType: text("contact_type"), // customer | vendor | null
+    contactId: uuid("contact_id"), // customer_contacts.id or vendors.id (tenant-checked by the route)
+    vatTreatment: text("vat_treatment"), // standard | zero_rated | exempt | out_of_scope | null
+    // The VAT leg a posting service derived from a line's VAT treatment (never request input).
+    systemVat: boolean("system_vat").notNull().default(false),
+    ctTreatment: text("ct_treatment"), // deductible | non_deductible | exempt_income | null
+    ctDisallowedPct: numeric("ct_disallowed_pct", { precision: 5, scale: 2 }), // non_deductible share
   },
   (table) => ({
     entryIdIdx: index("idx_journal_lines_entry_id").on(table.entryId),

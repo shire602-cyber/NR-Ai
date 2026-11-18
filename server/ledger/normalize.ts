@@ -16,6 +16,7 @@ import { MoneyError, toFils, type Rounding } from "../../shared/money";
 import { DomainError } from "../errors";
 import type {
   EntryKind,
+  JournalLineAttributes,
   LedgerAmount,
   NormalizedEntry,
   NormalizedLine,
@@ -230,7 +231,57 @@ export function normalizeLine(
     exchangeRate,
     ...(line.systemVat === true ? { systemVat: true } : {}),
     ...(line.controlLeg ? { controlLeg: line.controlLeg } : {}),
+    ...(line.attributes ? { attributes: normalizeAttributes(line.attributes, p, index) } : {}),
   };
+}
+
+const VAT_TREATMENTS = new Set(["standard", "zero_rated", "exempt", "out_of_scope"]);
+const CT_TREATMENTS = new Set(["deductible", "non_deductible", "exempt_income"]);
+const PCT_RE = /^\d{1,3}(\.\d{1,2})?$/;
+
+/** WQ3: validate the descriptive per-line attributes (enums, a uuid contact, a 0-100 share). */
+function normalizeAttributes(
+  a: JournalLineAttributes,
+  p: string,
+  index: number
+): JournalLineAttributes {
+  const out: JournalLineAttributes = {};
+  if (a.contactId) {
+    if (!isUuid(a.contactId) || (a.contactType !== "customer" && a.contactType !== "vendor")) {
+      fail("CONTACT_NOT_FOUND", `${p}.contactId is not a customer or supplier of this company`, {
+        line: index,
+      });
+    }
+    out.contactType = a.contactType;
+    out.contactId = a.contactId.toLowerCase();
+  }
+  if (a.vatTreatment) {
+    if (!VAT_TREATMENTS.has(a.vatTreatment)) {
+      fail("INVALID_VAT_TREATMENT", `${p}.vatTreatment is not a known VAT treatment`, {
+        line: index,
+      });
+    }
+    out.vatTreatment = a.vatTreatment;
+  }
+  if (a.ctTreatment) {
+    if (!CT_TREATMENTS.has(a.ctTreatment)) {
+      fail("INVALID_CT_TREATMENT", `${p}.ctTreatment is not a known corporate-tax treatment`, {
+        line: index,
+      });
+    }
+    out.ctTreatment = a.ctTreatment;
+    if (a.ctTreatment === "non_deductible") {
+      const raw = a.ctDisallowedPct == null || a.ctDisallowedPct === "" ? "100" : a.ctDisallowedPct;
+      const s = String(raw).trim();
+      if (!PCT_RE.test(s) || Number(s) <= 0 || Number(s) > 100) {
+        fail("INVALID_CT_SHARE", `${p}.ctDisallowedPct must be more than 0 and at most 100`, {
+          line: index,
+        });
+      }
+      out.ctDisallowedPct = s;
+    }
+  }
+  return out;
 }
 
 /** Totals + the exact-balance and same-account rules over normalised lines. */

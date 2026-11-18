@@ -310,7 +310,12 @@ export async function manualEntryControlState(
 ): Promise<{ reason: string | null; accountIds: string[] }> {
   const [head, lines] = await Promise.all([
     pool.query(`SELECT control_adjustment_reason FROM journal_entries WHERE id = $1`, [entryId]),
-    pool.query(`SELECT DISTINCT account_id FROM journal_lines WHERE entry_id = $1`, [entryId]),
+    // WQ3: a VAT leg the server derived from a line's VAT treatment (system_vat) is not a
+    // user-chosen control line; every other line is.
+    pool.query(
+      `SELECT DISTINCT account_id FROM journal_lines WHERE entry_id = $1 AND system_vat = false`,
+      [entryId]
+    ),
   ]);
   return {
     reason:

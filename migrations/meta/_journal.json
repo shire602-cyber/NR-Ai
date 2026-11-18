@@ -862,6 +862,13 @@
    "when": 1781430380000,
    "tag": "0123_b1_posting_guards",
    "breakpoints": false
+  },
+  {
+   "idx": 123,
+   "version": "7",
+   "when": 1781430381000,
+   "tag": "0124_wq3_journal_line_fields",
+   "breakpoints": false
   }
  ]
 }

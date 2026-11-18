@@ -102,15 +102,41 @@ export function ledgerAdjustmentsFromBooks(books: CtBooksSnapshot): CtBridgeAdju
   for (const row of books.rows) {
     if (!row.taxTag) continue;
     const category = CT_TAG_ADJUSTMENT[row.taxTag];
-    if (!category || row.amount <= 0) continue;
+    const amount = row.taggedAmount ?? row.amount;
+    if (!category || amount <= 0) continue;
     out.push({
       id: `ledger-${row.accountId}`,
       category,
-      amount: row.amount,
+      amount,
       label: `${row.label} (${row.notes.replace("Posted net for ", "")})`,
       source: "ledger",
       accountId: row.accountId,
     });
+  }
+  // WQ3 (9.16): journal lines with their own CT treatment. Non-deductible lines add back their
+  // disallowed share (already applied, so "other_addback" at 100%); exempt income is deducted.
+  for (const t of books.lineTreatments ?? []) {
+    if (t.adjustmentFils <= 0) continue;
+    const amount = Math.round(t.adjustmentFils) / 100;
+    if (t.treatment === "non_deductible") {
+      out.push({
+        id: `ledger-line-${t.accountId}-nd-${t.pct}`,
+        category: "other_addback",
+        amount,
+        label: `${t.accountName} (${t.accountCode}): journal lines ${t.pct}% non-deductible`.slice(0, 200),
+        source: "ledger",
+        accountId: t.accountId,
+      });
+    } else if (t.treatment === "exempt_income") {
+      out.push({
+        id: `ledger-line-${t.accountId}-exempt`,
+        category: "exempt_income",
+        amount,
+        label: `${t.accountName} (${t.accountCode}): journal lines marked exempt income`.slice(0, 200),
+        source: "ledger",
+        accountId: t.accountId,
+      });
+    }
   }
   return out;
 }

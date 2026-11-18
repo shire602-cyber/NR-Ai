@@ -36,6 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { companyLogoFileError, companyLogoSrc, uploadCompanyLogo } from "@/lib/company-logo";
+import { vatRateOptionsFor } from "@/lib/company-country";
 import type { Company } from "@shared/schema";
 import { companyPreferencesSchema } from "@shared/schema-values";
 import { Building2, Save, Upload } from "lucide-react";
@@ -229,6 +230,16 @@ export default function CompanySettings() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates local form state from fetched data
     setLogoPreview(companyLogoSrc(company));
   }, [company, form]);
+
+  // WQ3 (12.10): a country change keeps the default VAT rate one that country offers.
+  const watchedCountry = form.watch("addressCountry");
+  useEffect(() => {
+    const allowed = vatRateOptionsFor(watchedCountry, VAT_RATE_OPTIONS);
+    const current = String(form.getValues("defaultVatRate") ?? 0.05);
+    if (!allowed.some((o) => o.value === current)) {
+      form.setValue("defaultVatRate", parseFloat(allowed[allowed.length - 1].value));
+    }
+  }, [watchedCountry, form]);
 
   const updateMutation = useMutation({
     mutationFn: (data: SubmitValues) =>
@@ -625,7 +636,7 @@ export default function CompanySettings() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {VAT_RATE_OPTIONS.map((r) => (
+                            {vatRateOptionsFor(watchedCountry, VAT_RATE_OPTIONS).map((r) => (
                               <SelectItem key={r.value} value={r.value}>
                                 {optionLabel(t, "vat", r.value, r.label)}
                               </SelectItem>
