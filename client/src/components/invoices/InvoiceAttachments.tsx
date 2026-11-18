@@ -37,7 +37,7 @@ export function InvoiceAttachments({
 }) {
   const { t } = useTranslation();
   const { toast } = useToast();
-  const key = ["/api/invoices", invoiceId, "attachments"];
+  const key = [`/api/invoices/${invoiceId}/attachments`];
   const { data: rows = [] } = useQuery<InvoiceAttachmentRow[]>({
     queryKey: key,
     queryFn: () => apiRequest("GET", `/api/invoices/${invoiceId}/attachments`),

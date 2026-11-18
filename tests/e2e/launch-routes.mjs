@@ -68,6 +68,8 @@ export const ALL_AUTH_ROUTES = [
   "/invoices/new",
   "/recurring-invoices",
   "/recurring-invoices/new",
+  "/sales/receive-payment",
+  "/sales/cash-sale",
   "/payment-chasing",
   "/journal",
   "/reports",

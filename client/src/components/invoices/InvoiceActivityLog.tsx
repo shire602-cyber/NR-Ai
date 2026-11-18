@@ -19,7 +19,7 @@ export interface InvoiceActivityItem {
 export function InvoiceActivityLog({ invoiceId }: { invoiceId: string }) {
   const { t, locale } = useTranslation();
   const { data = [], isLoading } = useQuery<InvoiceActivityItem[]>({
-    queryKey: ["/api/invoices", invoiceId, "activity"],
+    queryKey: [`/api/invoices/${invoiceId}/activity`],
     queryFn: () => apiRequest("GET", `/api/invoices/${invoiceId}/activity`),
   });
   if (isLoading) return null;

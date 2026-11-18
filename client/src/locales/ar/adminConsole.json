@@ -444,5 +444,9 @@
   "adminConsole.inviteAssignClient": "تعيين إلى عميل (اختياري)",
   "adminConsole.inviteUserType": "نوع المستخدم *",
   "adminConsole.userTypeClient": "عميل (دخول إلى البوابة تديره NR)",
-  "adminConsole.userTypeCustomer": "مشترك (مسك دفاتر كامل عبر المنصة)"
+  "adminConsole.userTypeCustomer": "مشترك (مسك دفاتر كامل عبر المنصة)",
+  "activityLog.action.invoice.attachment_add": "أُرفق ملف بالفاتورة",
+  "activityLog.action.invoice.attachment_remove": "أُزيل ملف من الفاتورة",
+  "activityLog.action.invoice.receive_payment": "طُبّقت دفعة العميل على الفواتير",
+  "activityLog.action.invoice.cash_sale": "سُجّل بيع نقدي"
 }
