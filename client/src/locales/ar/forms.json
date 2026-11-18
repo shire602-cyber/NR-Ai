@@ -368,7 +368,20 @@
   "forms.serverErrors.FX_RATE_OUTSIDE_BAND": "أحد الأسعار المستخدمة في إعادة التقييم يبعد أكثر من 20% عن السعر المرجعي. صحّح السعر، أو اذكر سبباً إن كان صحيحاً.",
   "forms.serverErrors.FX_RATE_OVERRIDE_ROLE_REQUIRED": "إعادة التقييم بسعر خارج نطاق التحقق متاحة للمالك أو المدير أو المحاسب أو المدير المالي فقط.",
   "forms.serverErrors.FX_RATE_OVERRIDE_REASON_REQUIRED": "اذكر سبباً (5 أحرف على الأقل) لاستخدام سعر خارج نطاق التحقق.",
+  "forms.serverErrors.ACCOUNT_CODE_TAKEN": "رمز الحساب هذا مستخدم بالفعل. اختر رمزاً آخر.",
+  "forms.serverErrors.VAT_RATE_NOT_FOR_COUNTRY": "يجب أن تكون نسبة الضريبة الافتراضية 0% أو النسبة الأساسية في بلد تسجيل الشركة (5% في الإمارات، و15% في السعودية).",
+  "forms.serverErrors.CT_TREATMENT_ACCOUNT_TYPE": "لا تناسب معاملة ضريبة الشركات هذه الحساب: غير القابل للخصم يخص المصروفات، والدخل المعفى يخص حسابات الإيرادات.",
+  "forms.serverErrors.CONTACT_NOT_FOUND": "جهة الاتصال هذه ليست عميلاً أو مورداً لهذه الشركة.",
+  "forms.serverErrors.INVALID_CT_SHARE": "يجب أن تكون الحصة غير القابلة للخصم أكبر من 0% وألا تتجاوز 100%.",
+  "forms.serverErrors.ZATCA_NOT_AVAILABLE": "الفوترة الإلكترونية لهيئة الزكاة والضريبة والجمارك السعودية غير متاحة في هذه الخدمة.",
   "forms.accountGroupExpenses": "المصروفات",
   "forms.accountGroupFixedAssets": "الأصول الثابتة",
-  "forms.accountGroupOtherAssets": "أصول أخرى"
+  "forms.accountGroupOtherAssets": "أصول أخرى",
+  "forms.serverErrors.PLAN_REQUIRED": "انتهت تجربتك المجانية. اختر خطة لإضافة السجلات أو تعديلها؛ تبقى بياناتك متاحة للقراءة.",
+  "forms.serverErrors.USAGE_LIMIT_REACHED_invoices": "استُخدم حد الفواتير الشهري في خطتك. قم بالترقية لفواتير بلا حد.",
+  "forms.serverErrors.USAGE_LIMIT_REACHED_receipts": "استُخدم حد الإيصالات الشهري في خطتك. قم بالترقية لإيصالات بلا حد.",
+  "forms.serverErrors.USAGE_LIMIT_REACHED_ai_calls": "استُخدمت أرصدة الذكاء الاصطناعي لهذا الشهر في خطتك. قم بالترقية للمزيد.",
+  "forms.serverErrors.NUMBERING_BELOW_ISSUED": "يجب أن يكون الرقم التالي أكبر من آخر رقم صادر.",
+  "forms.serverErrors.NUMBERING_PREFIX_IN_USE": "نوع مستند آخر يستخدم هذه البادئة بالفعل.",
+  "forms.serverErrors.AUTOMATION_NOT_FOUND": "هذه المهمة التلقائية غير موجودة."
 }

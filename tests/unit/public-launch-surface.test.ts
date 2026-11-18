@@ -146,7 +146,7 @@ describe("Public SaaS launch surface", () => {
   it("keeps authenticated SaaS chrome and dashboard copy claim-safe", () => {
     const appSource = readRepoFile("client/src/App.tsx");
     const dashboardSource = readDashboardSource();
-    const onboardingWizardSource = readRepoFile("client/src/components/Onboarding.tsx");
+    // WQ7 (3.4): the floating tour (components/Onboarding.tsx) was retired and deleted.
     const onboardingPageSource = readRepoFile("client/src/pages/Onboarding.tsx");
 
     // D2b (CTO checkpoint 10): the "UAE Tax Ready" top-bar chip implied a certification and
@@ -166,7 +166,6 @@ describe("Public SaaS launch surface", () => {
       ],
       ["client/src/App.tsx", appSource],
       ["client/src/pages/Dashboard.tsx", dashboardSource],
-      ["client/src/components/Onboarding.tsx", onboardingWizardSource],
       ["client/src/pages/Onboarding.tsx", onboardingPageSource],
     ] as const) {
       for (const bannedClaim of bannedLaunchClaims) {

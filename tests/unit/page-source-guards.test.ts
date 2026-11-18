@@ -306,16 +306,11 @@ describe("S5 locale catalogs are code-split (source wiring)", () => {
 });
 
 describe("welcome tour and onboarding redirect (source)", () => {
-  it("R18-03: the tour persists a server-side dismissal once per user with a localStorage fallback", () => {
-    const wizard = read("client/src/components/Onboarding.tsx");
-    expect(wizard).toContain("{ tourDismissed: true }");
-    expect(wizard).toContain("tourDismissedAt");
-    expect(wizard).toContain("readLocalTourDismissed");
-    expect(wizard).toContain("muhasib_tour_dismissed:");
-    // never over the onboarding page itself
-    expect(wizard).toContain('location.split("?")[0] === "/onboarding"');
-    // recorded the moment it is shown, not only on an explicit skip
-    expect(wizard).toMatch(/setHasAutoShown\(true\);[\s\S]*skipMutation\.mutate\(\)/);
+  it("WQ7: the old floating tour is retired (Get started on the dashboard replaces it)", () => {
+    // Source check: the retired component must not come back as a file or an App import, and
+    // there is no rendered behaviour left to assert on.
+    expect(existsSync(join(repoRoot, "client/src/components/Onboarding.tsx"))).toBe(false);
+    expect(read("client/src/App.tsx")).not.toMatch(/components\/Onboarding["']/);
   });
 
   it("R18-03: user_onboarding gains tour_dismissed_at in the Drizzle schema", () => {

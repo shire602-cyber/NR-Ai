@@ -31,6 +31,11 @@ import { registerNotificationEngine } from "./notification-engine.service";
 import { purgeExpiredAuthTokens } from "./auth-tokens.service";
 import { scanDueReportDeliveries } from "./report-delivery-scheduler.service";
 import { listJobs, registerJob, startRegisteredJobs } from "../platform/job-registry";
+import {
+  companiesWithAutomationOff,
+  recordAutomationRun,
+  runForCompany,
+} from "../platform/company-automations";
 import { receivableOpenSql } from "../reporting/settlement";
 
 const log = createLogger("scheduler");
@@ -485,7 +490,19 @@ export async function runDunningScan(
       ).rows.map((r: { company_id: string }) => r.company_id);
   for (const companyId of ids) {
     try {
-      await dunCompany(companyId, now, summary);
+      // WQ7: the scheduled scan respects the company's Automations switch; an explicit run for
+      // one company (opts.companyId) is the user asking, so it runs regardless.
+      if (opts.companyId) {
+        await dunCompany(companyId, now, summary);
+      } else {
+        const before = { sent: summary.sent, queued: summary.queued };
+        await runForCompany(
+          "paymentReminders",
+          companyId,
+          () => dunCompany(companyId, now, summary),
+          () => ({ sent: summary.sent - before.sent, queued: summary.queued - before.queued })
+        );
+      }
     } catch (err) {
       log.error({ err, companyId }, "Dunning scan failed for company");
     }
@@ -648,6 +665,16 @@ export async function generateDueRecurringInvoices(): Promise<number> {
   // is recorded honestly on the template (last_run_status / message).
   let processed = 0;
   const seen = new Set<string>();
+  // WQ7: templates of companies that switched "Recurring invoices" off are skipped this tick.
+  const off = await companiesWithAutomationOff("recurringInvoices");
+  if (off.size) {
+    const skipped = await pool.query(
+      `SELECT id FROM recurring_invoices WHERE company_id::text = ANY($1::text[])`,
+      [[...off]]
+    );
+    for (const row of skipped.rows as Array<{ id: string }>) seen.add(String(row.id));
+  }
+  const generatedBy = new Map<string, number>();
 
   while (true) {
     type ProcessResult =
@@ -845,6 +872,7 @@ export async function generateDueRecurringInvoices(): Promise<number> {
     if (result.skipped) continue;
 
     const { template, invoice } = result;
+    generatedBy.set(template.companyId, (generatedBy.get(template.companyId) ?? 0) + 1);
     const outcome = await finishGeneratedInvoice(template, invoice);
     await db
       .update(recurringInvoicesTable)
@@ -856,6 +884,9 @@ export async function generateDueRecurringInvoices(): Promise<number> {
     );
   }
 
+  for (const [companyId, generated] of generatedBy) {
+    await recordAutomationRun("recurringInvoices", companyId, "ok", { generated });
+  }
   log.info({ processed }, "Recurring invoice generation cycle complete");
   return processed;
 }

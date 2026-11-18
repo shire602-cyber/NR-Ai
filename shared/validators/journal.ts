@@ -7,6 +7,11 @@
  */
 import { z } from "zod";
 import { zMoney } from "./primitives";
+import {
+  JOURNAL_LINE_CONTACT_TYPES,
+  JOURNAL_LINE_CT_TREATMENTS,
+  JOURNAL_LINE_VAT_TREATMENTS,
+} from "../journal-line-treatments";
 
 /** number | decimal string; the kernel rejects >2dp, NaN, Infinity, overflow (422). */
 const amount = z
@@ -27,6 +32,16 @@ export const journalLineBody = z
     foreignDebit: amount,
     foreignCredit: amount,
     exchangeRate: amount,
+    // WQ3 (9.4 / 9.16): per-line contact, VAT treatment and corporate-tax treatment. With a
+    // foreign currency and no base amount, the server converts at the tenant rate (fx.convert).
+    contactType: z.enum(JOURNAL_LINE_CONTACT_TYPES).nullable().optional(),
+    contactId: z.string().max(64).nullable().optional(),
+    vatTreatment: z.enum(JOURNAL_LINE_VAT_TREATMENTS).nullable().optional(),
+    ctTreatment: z.enum(JOURNAL_LINE_CT_TREATMENTS).nullable().optional(),
+    ctDisallowedPct: z
+      .union([z.number(), z.string().max(10)])
+      .nullable()
+      .optional(),
   })
   .strict();
 export type JournalLineBody = z.infer<typeof journalLineBody>;

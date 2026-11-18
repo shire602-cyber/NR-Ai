@@ -31,6 +31,7 @@ export { previewEntryNumber } from "./numbering";
 export {
   ENTRY_KINDS,
   type EntryKind,
+  type JournalLineAttributes,
   type LedgerAmount,
   type LedgerContext,
   type LedgerTx,

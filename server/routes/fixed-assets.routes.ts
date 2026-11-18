@@ -66,6 +66,7 @@ import {
   type DepreciationOutcome,
 } from "../services/fixed-assets";
 import { assertAccount, q } from "../services/inventory/store";
+import { registerFixedAssetJobs } from "../services/fixed-assets/monthly-job";
 import { companyIsVatRegistered } from "../tax/vat-registration";
 
 const log = createLogger("fixed-assets");
@@ -218,6 +219,8 @@ async function createAssetRecord(
 }
 
 export function registerFixedAssetRoutes(app: Express) {
+  // WQ3 (9.11): the scheduled monthly depreciation (job registry; listed under Automations).
+  registerFixedAssetJobs();
   // =====================================
   // Asset classes (R10-17)
   // =====================================

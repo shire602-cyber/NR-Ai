@@ -1,4 +1,11 @@
 import { TRIAL_DAYS } from "../../shared/trial";
+import {
+  BILLING_CYCLES,
+  NO_PLAN_LIMITS,
+  PAID_PLAN_IDS,
+  PLAN_DEFINITIONS,
+  type PlanLimits as SharedPlanLimits,
+} from "../../shared/plans";
 import Stripe from "stripe";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
@@ -31,20 +38,24 @@ export function isStripeConfigured(): boolean {
   return !!getStripe();
 }
 
-const PLAN_PRICE_MAP: Record<string, Record<string, string | undefined>> = {
-  starter: {
-    monthly: process.env.STRIPE_PRICE_STARTER_MONTHLY,
-    yearly: process.env.STRIPE_PRICE_STARTER_YEARLY,
-  },
-  professional: {
-    monthly: process.env.STRIPE_PRICE_PROFESSIONAL_MONTHLY,
-    yearly: process.env.STRIPE_PRICE_PROFESSIONAL_YEARLY,
-  },
-  enterprise: {
-    monthly: process.env.STRIPE_PRICE_ENTERPRISE_MONTHLY,
-    yearly: process.env.STRIPE_PRICE_ENTERPRISE_YEARLY,
-  },
-};
+/**
+ * Stripe price ids per paid plan and cycle (shared/plans.ts ids and cycles), from
+ * STRIPE_PRICE_<PLAN>_<CYCLE>. The Stripe prices must carry shared/plans.ts planPrice() amounts.
+ */
+export const PLAN_PRICE_MAP: Record<
+  string,
+  Record<string, string | undefined>
+> = Object.fromEntries(
+  PAID_PLAN_IDS.map((id) => [
+    id,
+    Object.fromEntries(
+      BILLING_CYCLES.map((cycle) => [
+        cycle,
+        process.env[`STRIPE_PRICE_${id.toUpperCase()}_${cycle.toUpperCase()}`],
+      ])
+    ),
+  ])
+);
 
 interface PlanLimits {
   maxUsers: number;
@@ -56,43 +67,23 @@ interface PlanLimits {
   aiCreditsPerMonth: number;
 }
 
+// Limits stored on the subscription row, from the one plan module (shared/plans.ts, WQ7). "free"
+// is the stored id of a company without a paid plan (its trial, then read-only).
+function storedLimits(l: SharedPlanLimits): PlanLimits {
+  return {
+    maxUsers: l.maxUsers,
+    maxInvoices: l.maxInvoicesPerMonth,
+    maxReceipts: l.maxReceiptsPerMonth,
+    aiCreditsRemaining: l.aiCreditsPerMonth,
+    maxCompanies: l.maxCompanies,
+    maxStorageMb: l.maxStorageMb,
+    aiCreditsPerMonth: l.aiCreditsPerMonth,
+  };
+}
+
 const PLAN_LIMITS: Record<string, PlanLimits> = {
-  free: {
-    maxUsers: 1,
-    maxInvoices: 20,
-    maxReceipts: 20,
-    aiCreditsRemaining: 10,
-    maxCompanies: 1,
-    maxStorageMb: 500,
-    aiCreditsPerMonth: 10,
-  },
-  starter: {
-    maxUsers: 3,
-    maxInvoices: 200,
-    maxReceipts: 200,
-    aiCreditsRemaining: 50,
-    maxCompanies: 1,
-    maxStorageMb: 5120,
-    aiCreditsPerMonth: 50,
-  },
-  professional: {
-    maxUsers: 10,
-    maxInvoices: -1,
-    maxReceipts: -1,
-    aiCreditsRemaining: 500,
-    maxCompanies: 3,
-    maxStorageMb: 25600,
-    aiCreditsPerMonth: 500,
-  },
-  enterprise: {
-    maxUsers: -1,
-    maxInvoices: -1,
-    maxReceipts: -1,
-    aiCreditsRemaining: -1,
-    maxCompanies: -1,
-    maxStorageMb: -1,
-    aiCreditsPerMonth: -1,
-  },
+  free: storedLimits(NO_PLAN_LIMITS),
+  ...Object.fromEntries(PLAN_DEFINITIONS.map((p) => [p.id, storedLimits(p.limits)])),
 };
 
 /** Trial length for a company's first paid subscription (STRIPE_TRIAL_DAYS, default 14; 0 = none). */

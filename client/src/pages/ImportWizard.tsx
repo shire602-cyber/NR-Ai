@@ -214,7 +214,14 @@ export default function ImportWizard() {
     kindFromSearch(typeof window === "undefined" ? "" : window.location.search)
   );
   const [source, setSource] = useState<Source>("xero");
-  const [cutOver, setCutOver] = useState("");
+  // WQ7: onboarding's "Opening balances" choice links here with ?cutover=YYYY-MM-DD.
+  const [cutOver, setCutOver] = useState(() => {
+    const v =
+      typeof window === "undefined"
+        ? null
+        : new URLSearchParams(window.location.search).get("cutover");
+    return v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "";
+  });
   const [mode, setMode] = useState<"balance" | "documents">("balance");
   const [file, setFile] = useState<{ name: string; text: string } | null>(null);
   const [job, setJob] = useState<Job | null>(null);

@@ -386,7 +386,24 @@ async function computeSingle(
     counts
   );
   const vatAccounts = await loadVatAccounts(companyId);
-  const gl = await collectLedger(companyId, from, to, vatAccounts, bankEntries);
+  // WQ3 (9.4): manual journal lines with a VAT treatment are ordinary supplies / purchases.
+  const journalVatEntries = await collectJournalLineVat(
+    companyId,
+    from,
+    to,
+    company,
+    vatAccounts,
+    push,
+    issues,
+    counts
+  );
+  const gl = await collectLedger(
+    companyId,
+    from,
+    to,
+    vatAccounts,
+    new Set([...bankEntries, ...journalVatEntries])
+  );
   for (const j of gl.manual) {
     const delta: BoxDelta = {};
     if (j.outputFils !== 0) {
@@ -1451,6 +1468,129 @@ async function collectBankLineEntries(
       ledgerSource: "bank_reconciliation",
       memo: r.memo ?? null,
     });
+  }
+  return reported;
+}
+
+// ─── Manual journal lines with a VAT treatment (WQ3: 9.4) ────────────────
+
+/**
+ * A manual journal line the user marked with a VAT treatment is a supply or a purchase like a
+ * bank-line entry: standard-rated income -> Box 1 of the company's emirate (net + the derived
+ * output VAT leg), zero-rated income -> Box 4, exempt income -> Box 5, standard-rated purchase
+ * (any non-income account) -> Box 9 (net + the derived input VAT leg). Only an entry whose every
+ * VAT-account line is a derived leg (`system_vat`) is reported here; an entry that also carries
+ * a hand-made VAT adjustment stays on the manual-journal path below, so nothing is counted
+ * twice. Reversed entries drop out (their GL lines then report as journal adjustments, which
+ * nets them with the reversal), the same rule as bank-line entries.
+ */
+async function collectJournalLineVat(
+  companyId: string,
+  from: string,
+  to: string,
+  company: VatCompanyConfig,
+  vatAccounts: VatAccount[],
+  push: (c: VatContribution) => void,
+  issues: VatIssue[],
+  counts: Record<string, number>
+): Promise<Set<string>> {
+  const reported = new Set<string>();
+  if (!(await columnExists("journal_lines", "vat_treatment"))) return reported;
+  const inputIds = vatAccounts.filter((a) => a.vatType === "input").map((a) => a.id);
+  const outputIds = vatAccounts.filter((a) => a.vatType === "output").map((a) => a.id);
+  const signed = (cond: string, sign: "dr" | "cr") =>
+    `COALESCE(SUM(CASE WHEN ${cond} THEN ${
+      sign === "dr"
+        ? "ROUND(jl.debit * 100) - ROUND(jl.credit * 100)"
+        : "ROUND(jl.credit * 100) - ROUND(jl.debit * 100)"
+    } ELSE 0 END), 0)::bigint`;
+  const { rows } = await pool.query(
+    `SELECT jl.entry_id, je.entry_number, je.memo, je.source,
+            to_char((je.date + interval '4 hours')::date, 'YYYY-MM-DD') AS d,
+            ${signed("jl.vat_treatment = 'standard' AND a.type = 'income'", "cr")} AS std_sales,
+            ${signed("jl.vat_treatment = 'zero_rated' AND a.type = 'income'", "cr")} AS zero_sales,
+            ${signed("jl.vat_treatment = 'exempt' AND a.type = 'income'", "cr")} AS exempt_sales,
+            ${signed("jl.vat_treatment = 'standard' AND a.type <> 'income'", "dr")} AS std_purchases,
+            ${signed("jl.system_vat AND jl.account_id = ANY($4::uuid[])", "cr")} AS output_vat,
+            ${signed("jl.system_vat AND jl.account_id = ANY($5::uuid[])", "dr")} AS input_vat,
+            bool_and(jl.system_vat OR NOT (jl.account_id = ANY($4::uuid[]) OR jl.account_id = ANY($5::uuid[])))
+              AS only_derived_vat
+       FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.entry_id
+       JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
+      WHERE je.company_id = $1 AND je.status = 'posted' AND je.reversed_by_entry_id IS NULL
+        AND COALESCE(je.entry_kind, 'standard') <> 'reversal'
+        AND (je.date + interval '4 hours')::date >= $2::date
+        AND (je.date + interval '4 hours')::date <= $3::date
+        AND EXISTS (SELECT 1 FROM journal_lines x WHERE x.entry_id = je.id AND x.vat_treatment IS NOT NULL)
+      GROUP BY jl.entry_id, je.entry_number, je.memo, je.source, je.date`,
+    [companyId, from, to, outputIds, inputIds]
+  );
+  for (const r of rows) {
+    if (r.only_derived_vat !== true) continue;
+    const stdSales = Number(r.std_sales);
+    const zeroSales = Number(r.zero_sales);
+    const exemptSales = Number(r.exempt_sales);
+    const stdPurchases = Number(r.std_purchases);
+    const outputVat = Number(r.output_vat);
+    const inputVat = Number(r.input_vat);
+    if ((stdSales !== 0 || outputVat !== 0) && !company.emirate) {
+      issues.push({
+        code: "COMPANY_EMIRATE_MISSING",
+        message:
+          "Set the company's emirate: standard-rated income recorded in a journal is reported in the Box 1 row of that emirate.",
+        documentType: "journal",
+        documentId: r.entry_id,
+        reference: r.entry_number ?? null,
+      });
+      continue;
+    }
+    reported.add(r.entry_id);
+    const base = {
+      sourceType: "journal" as const,
+      sourceId: r.entry_id as string,
+      reference: (r.entry_number as string) ?? null,
+      date: r.d as string,
+      counterparty: null,
+      counterpartyTrn: null,
+      category: categoryForSource(r.source),
+      inLedger: true,
+      ledgerSource: r.source as string,
+      memo: (r.memo as string) ?? null,
+    };
+    if (stdSales !== 0 || outputVat !== 0) {
+      push({
+        ...base,
+        emirate: company.emirate,
+        family: "standard",
+        boxes: salesDelta("standard", company.emirate, stdSales, outputVat),
+      });
+    }
+    if (zeroSales !== 0) {
+      push({
+        ...base,
+        emirate: null,
+        family: "zero_rated",
+        boxes: salesDelta("zero_rated", null, zeroSales, 0),
+      });
+    }
+    if (exemptSales !== 0) {
+      push({
+        ...base,
+        emirate: null,
+        family: "exempt",
+        boxes: salesDelta("exempt", null, exemptSales, 0),
+      });
+    }
+    if (stdPurchases !== 0 || inputVat !== 0) {
+      push({
+        ...base,
+        emirate: null,
+        family: "purchase",
+        boxes: purchaseDelta("standard", stdPurchases, inputVat, inputVat),
+      });
+    }
+    counts.journalVatLines = (counts.journalVatLines ?? 0) + 1;
   }
   return reported;
 }

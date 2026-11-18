@@ -6,14 +6,25 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatMessage } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { readOnboardingRecord } from "../onboarding/first-task";
+import { saveOnboardingProgress, useOnboardingProgress } from "../onboarding/first-task";
+import { useEInvoiceReadiness } from "@/components/einvoice/use-einvoice";
 import type { DashboardModel } from "./useCustomerDashboardModel";
 
 const dismissKey = (companyId: string) => `muhasib.gettingStarted.dismissed.${companyId}`;
 /** The card stays until this many steps are done (spec 3.4). */
 const DONE_THRESHOLD = 3;
 
-type StepId = "invoice" | "customer" | "bank" | "bill" | "vat";
+type StepId = "invoice" | "customer" | "bank" | "bill" | "vat" | "einvoice";
+
+/** Typical minutes each step takes (the time chip on a step that is not done yet). */
+const STEP_MINUTES: Record<StepId, number> = {
+  invoice: 3,
+  customer: 2,
+  bank: 5,
+  bill: 2,
+  vat: 1,
+  einvoice: 5,
+};
 
 interface Step {
   id: StepId;
@@ -58,10 +69,21 @@ export function GettingStarted({
     queryKey: ["/api/companies", companyId, "customer-contacts"],
     enabled,
   });
-  const { data: bankAccounts } = useQuery<unknown[]>({
-    queryKey: ["/api/companies", companyId, "bank-accounts"],
+  // 3.3: the bank step is done when a statement line exists, not just an account.
+  const { data: bankLines } = useQuery<unknown[] | { transactions?: unknown[] }>({
+    queryKey: ["/api/companies", companyId, "bank-transactions"],
     enabled,
   });
+  const bankLineCount = Array.isArray(bankLines)
+    ? bankLines.length
+    : (bankLines?.transactions?.length ?? 0);
+  const einvoice = useEInvoiceReadiness(companyId);
+  const mandate = einvoice.data?.mandate;
+  // Only when the e-invoicing mandate applies to this company.
+  const einvoiceApplies = !!mandate && mandate.scope !== "none";
+  const einvoiceReady =
+    !!einvoice.data && einvoice.data.total > 0 && einvoice.data.done === einvoice.data.total;
+  const progress = useOnboardingProgress(companyId);
   const { data: bills } = useQuery<unknown[]>({
     queryKey: ["/api/companies", companyId, "bills"],
     enabled,
@@ -70,9 +92,11 @@ export function GettingStarted({
     queryKey: ["/api/companies", companyId, "receipts"],
     enabled,
   });
-  const [dismissed, setDismissed] = useState(
+  const [dismissedHere, setDismissed] = useState(
     () => Boolean(companyId) && readStorage(dismissKey(companyId!)) === "1"
   );
+  // Dismissal is saved on the server too, so it holds on every device.
+  const dismissed = dismissedHere || progress.data?.dismissedGettingStarted === true;
 
   const steps = useMemo<Step[]>(() => {
     const list: Step[] = [
@@ -93,10 +117,10 @@ export function GettingStarted({
       },
       {
         id: "bank",
-        done: (bankAccounts?.length ?? 0) > 0,
+        done: bankLineCount > 0,
         href: "/bank-accounts",
-        title: tt["dashboard.gsBank"],
-        hint: tt["dashboard.gsBankHint"],
+        title: tt["dashboard.gsBankLines"],
+        hint: tt["dashboard.gsBankLinesHint"],
       },
       {
         id: "bill",
@@ -113,16 +137,27 @@ export function GettingStarted({
         hint: tt["dashboard.gsVatHint"],
       },
     ];
-    // The first task chosen in onboarding (WP-B) is listed first.
-    const first = FIRST_TASK_STEP[readOnboardingRecord(companyId).firstTask ?? ""];
+    if (einvoiceApplies) {
+      list.push({
+        id: "einvoice",
+        done: einvoiceReady,
+        href: "/settings/einvoicing",
+        title: tt["dashboard.gsEinvoice"],
+        hint: tt["dashboard.gsEinvoiceHint"],
+      });
+    }
+    // The first task chosen in onboarding (saved on the server) is listed first.
+    const first = FIRST_TASK_STEP[progress.data?.firstTask ?? ""];
     if (!first) return list;
     return [...list.filter((s) => s.id === first), ...list.filter((s) => s.id !== first)];
   }, [
     tt,
-    companyId,
+    progress.data?.firstTask,
+    einvoiceApplies,
+    einvoiceReady,
     recentInvoices,
     contacts,
-    bankAccounts,
+    bankLineCount,
     bills,
     receipts,
     company?.trnVatNumber,
@@ -138,6 +173,11 @@ export function GettingStarted({
       // Storage blocked: the card simply hides for this visit.
     }
     setDismissed(true);
+    if (companyId) {
+      void saveOnboardingProgress(companyId, { dismissedGettingStarted: true }).catch(
+        () => undefined
+      );
+    }
   };
 
   return (
@@ -206,6 +246,17 @@ export function GettingStarted({
                   {step.hint}
                 </span>
               </span>
+              {!step.done ? (
+                <span
+                  className="shrink-0 rounded-full border border-border px-2 py-0.5 text-caption tabular-nums text-muted-foreground"
+                  title={formatMessage(tt["dashboard.gsMinutesLabel"], {
+                    count: STEP_MINUTES[step.id],
+                  })}
+                  data-testid={`getting-started-minutes-${step.id}`}
+                >
+                  {formatMessage(tt["dashboard.gsMinutes"], { count: STEP_MINUTES[step.id] })}
+                </span>
+              ) : null}
               <ChevronRight
                 className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-fast group-hover:translate-x-0.5 rtl:rotate-180 rtl:group-hover:-translate-x-0.5"
                 aria-hidden

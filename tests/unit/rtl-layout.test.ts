@@ -20,7 +20,6 @@ const SHELL_FILES = [
   "client/src/components/layout/RouteGuard.tsx",
   "client/src/components/layout/TabbedHub.tsx",
   "client/src/components/MobileNav.tsx",
-  "client/src/components/Onboarding.tsx",
   "client/src/components/SkipLink.tsx",
 ];
 
@@ -71,7 +70,6 @@ describe("RTL shell layout", () => {
 
   it("R18-01: directional arrows in the shell are mirrored in RTL", () => {
     expect(read("client/src/App.tsx")).toContain("rtl:rotate-180");
-    expect(read("client/src/components/Onboarding.tsx")).toContain("rtl:rotate-180");
   });
 
   it("R18-01: the portal layout border and sign-out icon spacing are logical", () => {

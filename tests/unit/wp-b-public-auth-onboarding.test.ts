@@ -57,22 +57,17 @@ async function render(el: ReturnType<typeof createElement>) {
 const text = () => (container.textContent ?? "").replace(/\s+/g, " ");
 
 describe("[WP-B] plan data", () => {
-  it("computes the billing saving note from the plan prices (never hard-coded)", async () => {
-    const { cycleSavingPercent, PLANS, COMPARE_GROUPS } =
+  it("computes yearly prices from the shared plan module (never hard-coded)", async () => {
+    const { PLANS, COMPARE_GROUPS, planPrice, yearlySaving, YEARLY_FREE } =
       await import("../../client/src/components/marketing/plans");
-    expect(cycleSavingPercent("monthly")).toBe(0);
-    expect(cycleSavingPercent("quarterly")).toBe(10);
-    expect(cycleSavingPercent("yearly")).toBe(20);
-    // The note uses the smallest saving, so it stays true for every plan.
-    const cheaper = PLANS.map((p) =>
-      p.id === "starter" ? { ...p, price: { ...p.price, yearly: 29 } } : p
-    );
-    expect(cycleSavingPercent("yearly", cheaper)).toBe(20);
-    const steeper = PLANS.map((p) => ({
-      ...p,
-      price: { ...p.price, yearly: Math.round(p.price.monthly * 0.7) },
-    }));
-    expect(cycleSavingPercent("yearly", steeper)).toBe(30);
+    const shared = await import("../../shared/plans");
+    expect(PLANS.map((p) => p.id)).toEqual([...shared.PAID_PLAN_IDS]);
+    for (const plan of PLANS) {
+      expect(planPrice(plan, "monthly")).toBe(shared.PLAN_MONTHLY_PRICES[plan.id]);
+      expect(planPrice(plan, "yearly")).toBe(shared.PLAN_MONTHLY_PRICES[plan.id] * 10);
+      expect(yearlySaving(plan)).toBe(shared.PLAN_MONTHLY_PRICES[plan.id] * 2);
+    }
+    expect(YEARLY_FREE).toBe(2);
     // Spec 3.1: at most six bullets per plan, at most 24 comparison rows.
     for (const plan of PLANS) expect(plan.bulletKeys.length).toBeLessThanOrEqual(6);
     expect(COMPARE_GROUPS.flatMap((g) => g.rows).length).toBeLessThanOrEqual(24);
@@ -106,7 +101,7 @@ describe("[WP-B] /pricing", () => {
     const featured = container.querySelector("[data-testid=card-plan-professional]");
     expect(featured?.getAttribute("data-featured")).toBe("true");
     expect(featured?.textContent).toContain("Most popular");
-    expect(text()).toContain("Quarterly billing saves 10%, yearly saves 20%.");
+    expect(text()).toContain("Pay yearly and get 2 months free.");
     expect(text()).not.toMatch(/coming soon|A-Cube|Complyance/i);
   });
 
@@ -130,7 +125,7 @@ describe("[WP-B] /pricing", () => {
     act(() => useI18n.getState().setLocale("ar"));
     await renderPricing();
     const price = container.querySelector("[data-testid=card-plan-starter] .mk-tier__price");
-    expect(price?.children[0]?.textContent).toBe("49");
+    expect(price?.children[0]?.textContent).toBe("59");
     expect(price?.children[1]?.textContent).toBe("د.إ");
   });
 });
@@ -227,18 +222,11 @@ describe("[WP-B] onboarding", () => {
     expect(container.querySelectorAll('[role="progressbar"]')).toHaveLength(0);
   });
 
-  it("records the first task and completion for the dashboard Getting started card", async () => {
-    const { readOnboardingRecord, writeOnboardingRecord, FIRST_TASK_HREF } =
+  it("opening balances deep-link to the import wizard at the cut-over date", async () => {
+    const { openingBalancesHref, FIRST_TASK_HREF } =
       await import("../../client/src/pages/onboarding/first-task");
-    writeOnboardingRecord("c1", { startingPoint: "migrating", goLiveDate: "2026-12-01" });
-    writeOnboardingRecord("c1", { firstTask: "invoice", completedAt: "2026-11-17T10:00:00Z" });
-    expect(readOnboardingRecord("c1")).toEqual({
-      startingPoint: "migrating",
-      goLiveDate: "2026-12-01",
-      firstTask: "invoice",
-      completedAt: "2026-11-17T10:00:00Z",
-    });
-    expect(readOnboardingRecord("other")).toEqual({});
+    expect(openingBalancesHref("2026-12-01")).toBe("/import?kind=trial_balance&cutover=2026-12-01");
+    expect(openingBalancesHref(null)).toBe("/import?kind=trial_balance");
     expect(FIRST_TASK_HREF.invoice).toBe("/invoices?new=1");
   });
 });
