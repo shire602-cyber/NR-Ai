@@ -132,8 +132,81 @@ function registerAnomalyJobs(): void {
   });
 }
 
+type RelatedLabel = { label: string; labelAr?: string; date?: string };
+
+/**
+ * Step 1 / F8: the record an alert is about, named for the reader (invoice number, receipt
+ * merchant, journal entry number, bill number, account code and name). Tenant-scoped: an id
+ * that is not this company's resolves to nothing, so the UI shows no link.
+ */
+export async function relatedRecordLabels(
+  companyId: string,
+  alerts: Array<{ relatedEntityType: string | null; relatedEntityId: string | null }>
+): Promise<Map<string, RelatedLabel>> {
+  const out = new Map<string, RelatedLabel>();
+  const idsOf = (type: string) => [
+    ...new Set(
+      alerts
+        .filter((a) => a.relatedEntityType === type && a.relatedEntityId)
+        .map((a) => a.relatedEntityId as string)
+        .filter((id) => UUID_RE.test(id))
+    ),
+  ];
+  const run = async (
+    type: string,
+    sql: string,
+    shape: (row: Record<string, unknown>) => RelatedLabel | null
+  ) => {
+    const ids = idsOf(type);
+    if (!ids.length) return;
+    try {
+      const { rows } = await pool.query(sql, [companyId, ids]);
+      for (const row of rows as Array<Record<string, unknown>>) {
+        const shaped = row?.id ? shape(row) : null;
+        if (shaped) out.set(`${type}:${row.id}`, shaped);
+      }
+    } catch (err) {
+      log.warn({ companyId, type, err: (err as Error).message }, "anomaly record label lookup");
+    }
+  };
+  const day = (value: unknown) =>
+    value ? new Date(value as string).toISOString().slice(0, 10) : undefined;
+  await Promise.all([
+    run(
+      "invoice",
+      `SELECT id, number FROM invoices WHERE company_id = $1 AND id = ANY($2::uuid[])`,
+      (r) => (r.number ? { label: String(r.number) } : null)
+    ),
+    run(
+      "receipt",
+      `SELECT id, merchant, date FROM receipts WHERE company_id = $1 AND id = ANY($2::uuid[])`,
+      (r) => (r.merchant ? { label: String(r.merchant), date: day(r.date) } : null)
+    ),
+    run(
+      "journal_entry",
+      `SELECT id, entry_number FROM journal_entries WHERE company_id = $1 AND id = ANY($2::uuid[])`,
+      (r) => (r.entry_number ? { label: String(r.entry_number) } : null)
+    ),
+    run(
+      "vendor_bill",
+      `SELECT id, COALESCE(NULLIF(bill_number, ''), vendor_name) AS label FROM vendor_bills WHERE company_id = $1 AND id = ANY($2::uuid[])`,
+      (r) => (r.label ? { label: String(r.label) } : null)
+    ),
+    run(
+      "account",
+      `SELECT id, code, name_en, name_ar FROM accounts WHERE company_id = $1 AND id = ANY($2::uuid[])`,
+      (r) => ({
+        label: [r.code, r.name_en].filter(Boolean).join(" "),
+        labelAr: r.name_ar ? [r.code, r.name_ar].filter(Boolean).join(" ") : undefined,
+      })
+    ),
+  ]);
+  return out;
+}
+
 async function listUnresolved(companyId: string) {
   const unresolved = await storage.getUnresolvedAnomalyAlerts(companyId);
+  const labels = await relatedRecordLabels(companyId, unresolved);
   const anomalies = unresolved.map((alert) => ({
     id: alert.id,
     type: alert.type,
@@ -148,6 +221,11 @@ async function listUnresolved(companyId: string) {
     detectedAt: alert.createdAt.toISOString(),
     relatedId: alert.relatedEntityId,
     relatedType: alert.relatedEntityType,
+    // The record's own number / merchant, so the reader can tell which one the alert means.
+    relatedLabel: labels.get(`${alert.relatedEntityType}:${alert.relatedEntityId}`)?.label ?? null,
+    relatedLabelAr:
+      labels.get(`${alert.relatedEntityType}:${alert.relatedEntityId}`)?.labelAr ?? null,
+    relatedDate: labels.get(`${alert.relatedEntityType}:${alert.relatedEntityId}`)?.date ?? null,
   }));
   return {
     anomalies,

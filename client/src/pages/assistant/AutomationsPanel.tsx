@@ -112,7 +112,7 @@ export default function AutomationsPanel() {
   });
 
   const checks = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/ai/detect-anomalies", { companyId }),
+    mutationFn: () => apiRequest("POST", "/api/ai/detect-anomalies", { companyId, locale }),
     onSuccess: (data: { summary?: { totalAnomalies?: number } }) => {
       toast({
         title: translateNow("toasts.scanComplete2"),

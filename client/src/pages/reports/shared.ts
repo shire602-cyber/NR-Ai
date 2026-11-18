@@ -4,3 +4,4 @@ export * from "./model/reportWorkflowFilters";
 export * from "./model/reportWorkspace";
 export * from "./model/reportDocuments";
 export * from "./model/reportComparisons";
+export * from "./model/reportLabels";

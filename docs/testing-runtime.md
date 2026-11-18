@@ -57,9 +57,10 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
 - Broken-path sweep (pre-release, local disposable target only): start a production build on a
   scratch database (`npm run build`, migrate, `NODE_ENV=production ALLOW_LOCAL_STORAGE=true
 BASE_URL=http://localhost:<port> CORS_ORIGIN=http://localhost:<port> node dist/index.js`), then
-  `BASE_URL=http://localhost:<port> DATABASE_URL=<scratch db> npm run e2e:sweep`. It seeds eight
+  `BASE_URL=http://localhost:<port> DATABASE_URL=<scratch db> npm run e2e:sweep`. It seeds nine
   personas (`tests/e2e/lib/sweep-personas.mjs`: trial owner, populated owner via the report audit
-  fixture, accountant, viewer, firm staff, NR admin, client-portal user, visitor), loads every
+  fixture, the same books with Arabic data (`ownerAr`, strict Arabic check, nothing excused),
+  accountant, viewer, firm staff, NR admin, client-portal user, visitor), loads every
   App.tsx route plus every in-app link it finds in en and ar, clicks every enabled control
   (destructive ones skipped), submits opened dialogs empty, walks the command palette and the
   mobile More sheet, and fails on 4xx/5xx, 404 pages, blank pages, console/page errors, failed

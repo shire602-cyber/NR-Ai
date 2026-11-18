@@ -31,8 +31,9 @@ import {
   receiptInDateRange,
   receiptSubtotalAed,
   receiptVatAed,
+  reportDateRange,
+  reportText,
 } from "../shared";
-import { format } from "date-fns";
 import { prepareAgingReportsForExport } from "@/lib/export";
 import { useCallback, useMemo } from "react";
 import type { ReportsDataQueriesState } from "./useReportsDataQueries";
@@ -520,8 +521,8 @@ export function useReportsDerivedReports({
       buildConsolidatedStatementsReport(
         consolidatedStatementSources,
         dateRange.from && dateRange.to
-          ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-          : "All posted activity",
+          ? reportDateRange(dateRange.from, dateRange.to)
+          : reportText("consAllPosted", "All posted activity"),
         "AED"
       ),
     [consolidatedStatementSources, dateRange.from, dateRange.to]
@@ -546,12 +547,18 @@ export function useReportsDerivedReports({
     (entry: JournalEntryReportRow) => {
       const source = (entry.source || "").toLowerCase();
       if (source === "bill" && entry.sourceId) {
-        return vendorBillVendorById.get(entry.sourceId) ?? "Unknown bill vendor";
+        return (
+          vendorBillVendorById.get(entry.sourceId) ??
+          reportText("unknownBillVendor", "Unknown bill vendor")
+        );
       }
       if (source === "receipt" && entry.sourceId) {
-        return receiptVendorById.get(entry.sourceId) ?? "Unknown receipt vendor";
+        return (
+          receiptVendorById.get(entry.sourceId) ??
+          reportText("unknownReceiptVendor", "Unknown receipt vendor")
+        );
       }
-      return "Manual / no vendor";
+      return reportText("manualNoVendor", "Manual / no vendor");
     },
     [receiptVendorById, vendorBillVendorById]
   );
@@ -693,8 +700,10 @@ export function useReportsDerivedReports({
       )
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return {
-      basis:
-        "Posted journal lines where the linked chart-of-account type is expense. Input VAT and unposted receipts are shown separately as source-workflow context.",
+      basis: reportText(
+        "expenseBasis",
+        "Posted journal lines where the linked chart-of-account type is expense. Input VAT and unposted receipts are shown separately as source-workflow context."
+      ),
       entryCount: expenseEntryIds.size,
       lineCount: expenseByCategory.reduce((sum, row) => sum + row.lineCount, 0),
       receiptCount: reportReceipts.length,

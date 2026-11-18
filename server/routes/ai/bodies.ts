@@ -6,7 +6,9 @@ import { z } from "zod";
 
 const companyId = z.string().min(1).max(64);
 
-export const detectAnomaliesBody = z.object({ companyId }).strict();
+export const detectAnomaliesBody = z
+  .object({ companyId, locale: z.string().max(16).optional() })
+  .strict();
 
 export const resolveAnomalyAlertBody = z.object({ note: z.string().max(2000).nullish() }).strict();
 

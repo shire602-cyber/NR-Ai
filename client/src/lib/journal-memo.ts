@@ -49,6 +49,57 @@ const SHAPES: MemoShape[] = [
     params: ["party"],
   },
   { pattern: /^AI GL \(reviewed\): (.*)$/, key: "journal.memo.aiReviewed", params: ["party"] },
+  // Step 1 / F9: system memos of inventory, capitalisation, expense claims, credit-note reversals
+  // and payment-gateway fees (server/services/inventory, fixed-assets, expense-claims.routes,
+  // invoice-posting, payments). The reversal shape must match before the generic credit note.
+  {
+    pattern: /^Credit Note (\S+) - reversal of Invoice (\S+)$/,
+    key: "journal.memo.creditNoteReversal",
+    params: ["ref", "invoice"],
+  },
+  {
+    pattern: /^Inventory purchase - (.*)$/,
+    key: "journal.memo.inventoryPurchase",
+    params: ["ref"],
+  },
+  { pattern: /^Inventory sale - (.*)$/, key: "journal.memo.inventorySale", params: ["ref"] },
+  {
+    pattern: /^Inventory adjustment - (.*)$/,
+    key: "journal.memo.inventoryAdjustment",
+    params: ["ref"],
+  },
+  { pattern: /^Inventory opening - (.*)$/, key: "journal.memo.inventoryOpening", params: ["ref"] },
+  {
+    pattern: /^Inventory write-down reversal - (.*?): (.*)$/,
+    key: "journal.memo.inventoryWriteDownReversal",
+    params: ["ref", "reason"],
+  },
+  {
+    pattern: /^Inventory write-down - (.*?): (.*)$/,
+    key: "journal.memo.inventoryWriteDown",
+    params: ["ref", "reason"],
+  },
+  {
+    pattern: /^Inventory reversal adjustment - (.*)$/,
+    key: "journal.memo.inventoryReversalAdjustment",
+    params: ["ref"],
+  },
+  { pattern: /^Capitalization: (.*)$/, key: "journal.memo.capitalization", params: ["ref"] },
+  {
+    pattern: /^Expense claim (\S+) approved$/,
+    key: "journal.memo.expenseClaimApproved",
+    params: ["ref"],
+  },
+  {
+    pattern: /^Expense claim (\S+) reimbursed$/,
+    key: "journal.memo.expenseClaimReimbursed",
+    params: ["ref"],
+  },
+  {
+    pattern: /^Payment gateway fee \((\w+)\) for link \S+$/,
+    key: "journal.memo.gatewayFee",
+    params: ["provider"],
+  },
   {
     pattern: /^Credit note (\S+) - (.*)$/i,
     key: "journal.memo.creditNote",
@@ -160,6 +211,12 @@ const METHOD_KEYS: Record<string, string> = {
   cheque: "journal.memo.method.cheque",
   online: "journal.memo.method.online",
   card: "journal.memo.method.card",
+  bank_reconciliation: "journal.memo.method.bank_reconciliation",
+  bank_transfer: "journal.memo.method.bank_transfer",
+  credit_card: "journal.memo.method.credit_card",
+  wire: "journal.memo.method.wire",
+  customer_deposit: "journal.memo.method.customer_deposit",
+  credit_note: "journal.memo.method.credit_note",
 };
 
 export function localizeJournalMemo(
