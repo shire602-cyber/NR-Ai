@@ -74,7 +74,13 @@ export async function recordAutomationRun(
        VALUES ($1, $2, true, now(), $3, $4::jsonb, $5, now())
        ON CONFLICT (company_id, automation_key)
        DO UPDATE SET last_run_at = now(), last_status = $3, last_summary = $4::jsonb, last_error = $5`,
-      [companyId, key, status, summary ? JSON.stringify(summary) : null, error?.slice(0, 500) ?? null]
+      [
+        companyId,
+        key,
+        status,
+        summary ? JSON.stringify(summary) : null,
+        error?.slice(0, 500) ?? null,
+      ]
     );
   } catch (err) {
     log.warn({ err, key, companyId }, "Could not record automation run");

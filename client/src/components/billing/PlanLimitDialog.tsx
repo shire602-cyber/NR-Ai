@@ -36,9 +36,7 @@ export function PlanLimitDialog() {
 
   if (!detail) return null;
   const plan = detail.requiredPlan ? t[`marketing.prPlan_${detail.requiredPlan}`] : undefined;
-  const module = detail.feature
-    ? t[planFeatureLabelKey(detail.feature as PlanFeature)]
-    : undefined;
+  const module = detail.feature ? t[planFeatureLabelKey(detail.feature as PlanFeature)] : undefined;
 
   const title =
     detail.code === "PLAN_REQUIRED"
@@ -58,8 +56,8 @@ export function PlanLimitDialog() {
           ? t["components.planLimitStorageBody"]
           : detail.code === "COMPANY_LIMIT_REACHED"
             ? t["components.planLimitCompaniesBody"]
-            : t[`components.planLimitUsageBody_${detail.resource ?? "default"}`] ??
-              t["components.planLimitUsageBody_default"];
+            : (t[`components.planLimitUsageBody_${detail.resource ?? "default"}`] ??
+              t["components.planLimitUsageBody_default"]);
 
   const subject = encodeURIComponent(`Muhasib.ai plan${plan ? `: ${plan}` : ""}`);
 

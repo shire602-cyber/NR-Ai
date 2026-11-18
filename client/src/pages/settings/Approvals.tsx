@@ -222,7 +222,11 @@ function JournalThreshold({ companyId, disabled }: { companyId: string; disabled
       });
     },
     onError: (e: Error) =>
-      toast({ title: translateNow("toasts.error"), description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.error"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
   const on = current !== null && current !== undefined;
   return (
@@ -260,7 +264,11 @@ function JournalThreshold({ companyId, disabled }: { companyId: string; disabled
               data-testid="input-journal-threshold"
             />
           </div>
-          <Button type="submit" disabled={disabled || save.isPending} data-testid="button-save-journal-threshold">
+          <Button
+            type="submit"
+            disabled={disabled || save.isPending}
+            data-testid="button-save-journal-threshold"
+          >
             {t["settingsPages.approvalsSave"]}
           </Button>
           {on ? (
@@ -299,7 +307,11 @@ export default function ApprovalsSettings() {
         queryKey: ["/api/companies", companyId, "approval-rules"],
       }),
     onError: (e: Error) =>
-      toast({ title: translateNow("toasts.error"), description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.error"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const selfApproval = useMutation({
@@ -335,7 +347,9 @@ export default function ApprovalsSettings() {
         {RULE_DOC_TYPES.map((docType) => {
           const list = (rules.data?.rules ?? [])
             .filter((r) => r.document_type === docType)
-            .sort((a, b) => a.step_order - b.step_order || Number(a.min_amount) - Number(b.min_amount));
+            .sort(
+              (a, b) => a.step_order - b.step_order || Number(a.min_amount) - Number(b.min_amount)
+            );
           return (
             <Card key={docType} data-testid={`approvals-${docType}`}>
               <CardHeader>
@@ -344,7 +358,9 @@ export default function ApprovalsSettings() {
                     <CardTitle className="text-h4">
                       {t[`settingsPages.approvalsDoc_${docType}`]}
                     </CardTitle>
-                    <CardDescription>{t[`settingsPages.approvalsDocHelp_${docType}`]}</CardDescription>
+                    <CardDescription>
+                      {t[`settingsPages.approvalsDocHelp_${docType}`]}
+                    </CardDescription>
                   </div>
                   <Badge dot variant={list.length ? "success" : "neutral"}>
                     {list.length

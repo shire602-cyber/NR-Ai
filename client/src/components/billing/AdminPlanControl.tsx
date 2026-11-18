@@ -45,7 +45,11 @@ export function AdminPlanControl({ companyId }: { companyId: string }) {
       toast({ title: translateNow("adminConsole.planSaved") });
     },
     onError: (e: Error) =>
-      toast({ title: translateNow("toasts.error"), description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.error"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   const stateText = (r: PlanResult) =>
@@ -103,7 +107,9 @@ export function AdminPlanControl({ companyId }: { companyId: string }) {
           size="sm"
           disabled={apply.isPending}
           onClick={() =>
-            apply.mutate(plan === "none" ? { planId: "none" } : { planId: plan, billingCycle: cycle })
+            apply.mutate(
+              plan === "none" ? { planId: "none" } : { planId: plan, billingCycle: cycle }
+            )
           }
           data-testid="admin-plan-apply"
         >

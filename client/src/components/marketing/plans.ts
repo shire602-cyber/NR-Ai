@@ -148,9 +148,10 @@ const limited = (
 
 const service = (key: string, from: PlanId): CompareRow => ({
   key,
-  cells: Object.fromEntries(
-    IDS.map((id) => [id, IDS.indexOf(id) >= IDS.indexOf(from)])
-  ) as Record<PlanId, Cell>,
+  cells: Object.fromEntries(IDS.map((id) => [id, IDS.indexOf(id) >= IDS.indexOf(from)])) as Record<
+    PlanId,
+    Cell
+  >,
 });
 
 /**

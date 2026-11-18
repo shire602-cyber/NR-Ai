@@ -460,9 +460,19 @@ export const PLAN_FEATURE_RULES: readonly GateRule[] = [
   { methods: "POST", pattern: "ai/batch-categorize", feature: "bulkOps" },
   // Multi-currency documents (every plan)
   mut("companies/*/exchange-rates/**", "multiCurrency"),
-  { methods: "POST", pattern: "companies/*/invoices", feature: "multiCurrency", when: foreignCurrency },
+  {
+    methods: "POST",
+    pattern: "companies/*/invoices",
+    feature: "multiCurrency",
+    when: foreignCurrency,
+  },
   { methods: "PUT|PATCH", pattern: "invoices/*", feature: "multiCurrency", when: foreignCurrency },
-  { methods: "POST", pattern: "companies/*/quotes", feature: "multiCurrency", when: foreignCurrency },
+  {
+    methods: "POST",
+    pattern: "companies/*/quotes",
+    feature: "multiCurrency",
+    when: foreignCurrency,
+  },
   // Online invoice payment links (every plan)
   mut("companies/*/invoices/*/payment-links", "invoicePayment"),
   mut("companies/*/payment-links/**", "invoicePayment"),
@@ -717,7 +727,8 @@ export async function usageLimitPolicy(
     const metric = rule.metric;
     // AI credits are a cost cap and stay enforced whenever cost caps are on.
     const limitsOn = billingEnforced() || (metric === "ai_calls" && costCapsEnforced());
-    const ent = limitsOn && !(await isExemptCaller(req)) ? await companyEntitlement(companyId) : null;
+    const ent =
+      limitsOn && !(await isExemptCaller(req)) ? await companyEntitlement(companyId) : null;
     const limit = ent ? ent.limits[METRIC_LIMIT_KEY[metric]] : UNLIMITED;
 
     if (metric === "team_members") {

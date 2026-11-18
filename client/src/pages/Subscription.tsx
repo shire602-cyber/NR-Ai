@@ -83,7 +83,8 @@ function UsageMeter({
   const isNearLimit = !isUnlimited && percentage >= 80;
   const isAtLimit = !isUnlimited && percentage >= 100;
   const { t } = useTranslation();
-  const fig = (n: number) => `${formatAmountDigits(n, unit ? 1 : 0)}${unit ? ` ${unit}` : ""}`;
+  const fig = (n: number) =>
+    `${formatAmountDigits(n, Number.isInteger(n) ? 0 : 1)}${unit ? ` ${unit}` : ""}`;
 
   return (
     <div className="space-y-2" data-testid={testId}>
@@ -306,12 +307,20 @@ export default function Subscription() {
             <CardContent className="space-y-4 text-sm">
               {planState === "trial" && trial ? (
                 <>
-                  <div className="flex items-center gap-2" data-testid="trial-banner" data-trial-state="active">
+                  <div
+                    className="flex items-center gap-2"
+                    data-testid="trial-banner"
+                    data-trial-state="active"
+                  >
                     <Clock className="h-4 w-4 text-primary" aria-hidden />
-                    <span>{formatMessage(t["marketing.trialDaysLeft"], { count: trial.daysLeft })}</span>
+                    <span>
+                      {formatMessage(t["marketing.trialDaysLeft"], { count: trial.daysLeft })}
+                    </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">{t["pages.subscriptionTrialEnds"]}</span>
+                    <span className="text-muted-foreground">
+                      {t["pages.subscriptionTrialEnds"]}
+                    </span>
                     <span className="font-medium">{formatDisplayDate(trial.endsAt, locale)}</span>
                   </div>
                   <p className="text-muted-foreground">{t["pages.subscriptionTrialExplain"]}</p>

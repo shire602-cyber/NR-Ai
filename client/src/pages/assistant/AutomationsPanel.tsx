@@ -84,7 +84,11 @@ export default function AutomationsPanel() {
       });
     },
     onError: (error: Error) =>
-      toast({ title: translateNow("toasts.error"), description: error?.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      }),
   });
 
   const categorise = useMutation({
@@ -254,11 +258,16 @@ export default function AutomationsPanel() {
         })}
       </ul>
       <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-        <li className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center" data-testid="automation-matches">
+        <li
+          className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center"
+          data-testid="automation-matches"
+        >
           <div className="min-w-0 flex-1">
             <p className="font-medium text-foreground">{t["assistant.autoMatchesTitle"]}</p>
             <p className="text-small text-muted-foreground">{t["assistant.autoMatchesBody"]}</p>
-            <p className="mt-1 text-caption text-muted-foreground">{t["assistant.inReconciliation"]}</p>
+            <p className="mt-1 text-caption text-muted-foreground">
+              {t["assistant.inReconciliation"]}
+            </p>
           </div>
           <Button variant="outline" size="sm" asChild>
             <Link href="/bank-reconciliation" data-testid="button-bank-reconciliation">
@@ -266,7 +275,10 @@ export default function AutomationsPanel() {
             </Link>
           </Button>
         </li>
-        <li className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center" data-testid="automation-receipts">
+        <li
+          className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center"
+          data-testid="automation-receipts"
+        >
           <div className="min-w-0 flex-1">
             <p className="font-medium text-foreground">{t["assistant.autoReceiptsTitle"]}</p>
             <p className="text-small text-muted-foreground">{t["assistant.autoReceiptsBody"]}</p>

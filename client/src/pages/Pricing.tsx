@@ -105,9 +105,12 @@ function PriceShort({ id, cycle }: { id: PlanId; cycle: BillingCycle }) {
   const price = planPrice(plan, cycle);
   return (
     <small>
-      {formatMessage(t[cycle === "yearly" ? "marketing.prPerYearShort" : "marketing.prPerMonthShort"], {
-        amount: formatMoneyText(price, "AED", locale, { fractionDigits: 0 }),
-      })}
+      {formatMessage(
+        t[cycle === "yearly" ? "marketing.prPerYearShort" : "marketing.prPerMonthShort"],
+        {
+          amount: formatMoneyText(price, "AED", locale, { fractionDigits: 0 }),
+        }
+      )}
     </small>
   );
 }
