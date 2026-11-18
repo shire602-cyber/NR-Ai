@@ -125,7 +125,7 @@ describe("[WP-B] /pricing", () => {
     act(() => useI18n.getState().setLocale("ar"));
     await renderPricing();
     const price = container.querySelector("[data-testid=card-plan-starter] .mk-tier__price");
-    expect(price?.children[0]?.textContent).toBe("49");
+    expect(price?.children[0]?.textContent).toBe("59");
     expect(price?.children[1]?.textContent).toBe("د.إ");
   });
 });

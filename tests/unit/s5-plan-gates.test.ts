@@ -191,7 +191,7 @@ describe("WQ7 entitlement resolution", () => {
       expect(p.pricing.yearly).toBe(PLAN_MONTHLY_PRICES[p.id] * 10);
       expect(p.limits.maxUsers).toBe(-1);
     }
-    expect(PLAN_MONTHLY_PRICES).toEqual({ starter: 49, professional: 149, enterprise: 299 });
+    expect(PLAN_MONTHLY_PRICES).toEqual({ starter: 59, professional: 119, enterprise: 229 });
     expect(cat.trial).toMatchObject({ days: 14, planId: "enterprise", cardRequired: false });
     expect(getTierLimits("free").maxInvoicesPerMonth).toBe(0);
     expect(getTierFeatures("free").bookkeeping).toBe(false);
