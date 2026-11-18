@@ -9,7 +9,7 @@ import { DomainError } from "../errors";
 import { assertChosenAccountsNotControl } from "../ledger/control-accounts";
 import { vendors, type Vendor } from "../../shared/schema";
 import { scopedGet } from "../tenancy";
-import { agedPayables, type AgingReport } from "../reporting";
+import { agedPayablesWithVendors, type AgingReport } from "../reporting";
 import { fromFils, toFils } from "../../shared/money";
 import type { VendorCreateInput, VendorUpdateInput } from "../../shared/validators/vendors";
 
@@ -355,14 +355,7 @@ export interface PayablesAging extends AgingReport {
  */
 export async function payablesAging(companyId: string, asOf: string): Promise<PayablesAging> {
   // The kernel aging already nets unapplied debit notes into its reconciliation (D5c).
-  const base = await agedPayables({ companyId, asOf });
-  const ids = await pool.query(
-    `SELECT id, vendor_id FROM vendor_bills WHERE company_id = $1 AND vendor_id IS NOT NULL`,
-    [companyId]
-  );
-  const vendorOf = new Map<string, string>(
-    (ids.rows as Array<{ id: string; vendor_id: string }>).map((r) => [r.id, r.vendor_id])
-  );
+  const { report: base, vendorOf } = await agedPayablesWithVendors({ companyId, asOf });
   const byVendor = new Map<string, { vendorId: string | null; name: string; fils: number }>();
   for (const d of base.documents) {
     const vid = vendorOf.get(d.documentId) ?? null;
