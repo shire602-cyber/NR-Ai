@@ -28,6 +28,7 @@ import {
   ENTRY_LOCAL_DATE_SQL,
   NOT_CLOSING_SQL,
   accountTotals,
+  accountTotalsByBucket,
   aed,
   ledgerLines,
   loadAccounts,
@@ -52,7 +53,11 @@ import {
   type PlSection,
 } from "./classify";
 import { gratuityCurrentPortionFils, otherComprehensiveIncome } from "./ifrs-adjustments";
-import { classifyCashFlows, type ClassifiedCashFlows } from "./cash-flow-classify";
+import {
+  classifyCashFlows,
+  classifyCashFlowsByBucket,
+  type ClassifiedCashFlows,
+} from "./cash-flow-classify";
 
 /**
  * @deprecated W5-C (R14-19): statements are labelled in the company's base (functional)
@@ -408,12 +413,16 @@ export async function profitAndLoss(
 ): Promise<ProfitAndLoss> {
   const { companyId, to } = args;
   const from = args.from ?? null;
+  // PERF-DASH: the reads are independent once the chart is loaded; run them together.
   const accounts = await loadAccounts(companyId, q);
-  const totals = await accountTotals(companyId, { from, to }, q);
-  const oci = await otherComprehensiveIncome(companyId, accounts, { from, to }, q);
+  const [totals, oci, reportCurrency] = await Promise.all([
+    accountTotals(companyId, { from, to }, q),
+    otherComprehensiveIncome(companyId, accounts, { from, to }, q),
+    reportCurrencyOf(companyId, q),
+  ]);
   const main = plFromAmounts(accounts, (a) => plAmount(a, totals.get(a.id)), oci);
   const result: ProfitAndLoss = {
-    reportCurrency: await reportCurrencyOf(companyId, q),
+    reportCurrency,
     from,
     to,
     ...main.totals,
@@ -1024,7 +1033,16 @@ export async function cashFlowBuckets(
   const { companyId, from, to } = args;
   const accounts = await loadAccounts(companyId, q);
   const cashIds = new Set(accounts.filter(isCashAccount).map((a) => a.id));
-  const opening = await accountTotals(companyId, { to: addDays(from, -1) }, q);
+  const periods = buckets(from, to, args.granularity);
+  // PERF-DASH: no bucket's reads depend on the running balance, so every bucket is read at once
+  // (classification and go-live opening totals grouped by bucket in SQL), then the running
+  // balance is folded in bucket order: the same figures as reading bucket by bucket.
+  const ranges = periods.map((b) => ({ from: b.from, to: b.to }));
+  const [opening, classified, openingOnly] = await Promise.all([
+    accountTotals(companyId, { to: addDays(from, -1) }, q),
+    classifyCashFlowsByBucket(companyId, ranges, accounts, q),
+    accountTotalsByBucket(companyId, ranges, { opening: "only" }, q),
+  ]);
   let running = 0;
   for (const id of Array.from(cashIds)) {
     const t = opening.get(id);
@@ -1033,11 +1051,12 @@ export async function cashFlowBuckets(
   const openingCash = running;
   const out = [];
   // B2 (NC2): each bucket classifies its cash legs exactly as the cash-flow statement does.
-  for (const b of buckets(from, to, args.granularity)) {
-    const c = await classifyCashFlows(companyId, { from: b.from, to: b.to }, accounts, q);
+  for (let i = 0; i < periods.length; i++) {
+    const b = periods[i];
+    const c = classified[i];
+    const oe = openingOnly[i];
     // D1 (N2): go-live opening entries in the bucket move the balance, not the flows.
     let openingBalanceFils = 0;
-    const oe = await accountTotals(companyId, { from: b.from, to: b.to, opening: "only" }, q);
     for (const id of Array.from(cashIds)) {
       const t = oe.get(id);
       if (t) openingBalanceFils += t.debit - t.credit;

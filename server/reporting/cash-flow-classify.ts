@@ -65,7 +65,7 @@ import {
   type CashFlowActivity,
 } from "./classify";
 import { FX_REVALUATION_SOURCES } from "./ifrs-adjustments";
-import type { IsoDate } from "./dates";
+import { addDays, type IsoDate } from "./dates";
 
 const FX_SOURCES_SQL = FX_REVALUATION_SOURCES.map((s) => `'${s}'`).join(", ");
 
@@ -262,6 +262,69 @@ export async function classifyCashFlows(
   accounts: ReportAccount[],
   q: Queryable = pool
 ): Promise<ClassifiedCashFlows> {
+  const ctx = accountSets(accounts);
+  const [traced, disposalReceipts] = await Promise.all([
+    billAssetShares(companyId, range, ctx.ppeCostIds, ctx.cashIds, q),
+    disposalReceiptShares(companyId, range, q),
+  ]);
+  const { rows } = (await q.query(
+    classificationSql(false),
+    classificationParams(companyId, range, ctx, traced, disposalReceipts)
+  )) as { rows: Row[] };
+  return finishClassification(companyId, rows, ctx, traced, disposalReceipts, q);
+}
+
+/**
+ * PERF-DASH: classifyCashFlows for several contiguous ranges (bucket i+1 starts the day after
+ * bucket i ends) in three queries instead of three per range. Classification is a property of
+ * the entry (every entry falls in exactly one bucket, and the bill / disposal shares are looked
+ * up per entry), so each bucket's result is the one classifyCashFlows returns for that range.
+ */
+export async function classifyCashFlowsByBucket(
+  companyId: string,
+  ranges: Array<{ from: IsoDate; to: IsoDate }>,
+  accounts: ReportAccount[],
+  q: Queryable = pool
+): Promise<ClassifiedCashFlows[]> {
+  if (ranges.length === 0) return [];
+  const contiguous = ranges.every(
+    (r, i) => r.from <= r.to && (i === 0 || r.from === addDays(ranges[i - 1].to, 1))
+  );
+  if (!contiguous) {
+    return Promise.all(ranges.map((r) => classifyCashFlows(companyId, r, accounts, q)));
+  }
+  const whole = { from: ranges[0].from, to: ranges[ranges.length - 1].to };
+  const ctx = accountSets(accounts);
+  const [traced, disposalReceipts] = await Promise.all([
+    billAssetShares(companyId, whole, ctx.ppeCostIds, ctx.cashIds, q),
+    disposalReceiptShares(companyId, whole, q),
+  ]);
+  const { rows } = (await q.query(classificationSql(true), [
+    ...classificationParams(companyId, whole, ctx, traced, disposalReceipts),
+    ranges.map((r) => r.from),
+  ])) as { rows: Array<Row & { b: number }> };
+  const perBucket: Row[][] = ranges.map(() => []);
+  for (const r of rows) perBucket[Number(r.b)].push(r);
+  return Promise.all(
+    perBucket.map((bucketRows) =>
+      finishClassification(companyId, bucketRows, ctx, traced, disposalReceipts, q)
+    )
+  );
+}
+
+interface ClassificationContext {
+  byId: Map<string, ReportAccount>;
+  cash: Set<string>;
+  cashIds: string[];
+  ppeIds: string[];
+  ppeCostIds: string[];
+  finIds: string[];
+  plIds: string[];
+  fxIds: string[];
+  contraIds: string[];
+}
+
+function accountSets(accounts: ReportAccount[]): ClassificationContext {
   const byId = new Map(accounts.map((a) => [a.id, a]));
   const cash = new Set(accounts.filter(isCashAccount).map((a) => a.id));
   const cashIds = Array.from(cash);
@@ -275,16 +338,45 @@ export async function classifyCashFlows(
 
   const fxIds = accounts.filter(isRealisedFxAccount).map((a) => a.id);
   const contraIds = ppeAccounts.filter((a) => isContraAsset(a)).map((a) => a.id);
+  return { byId, cash, cashIds, ppeIds, ppeCostIds, finIds, plIds, fxIds, contraIds };
+}
 
-  const [traced, disposalReceipts] = await Promise.all([
-    billAssetShares(companyId, range, ppeCostIds, cashIds, q),
-    disposalReceiptShares(companyId, range, q),
-  ]);
+type BillShares = Map<string, { ppe: Map<string, Fils>; apFils: Fils }>;
+type DisposalShares = Map<string, { accountId: string; netFils: Fils; totalFils: Fils }>;
+
+function classificationParams(
+  companyId: string,
+  range: { from: IsoDate | null; to: IsoDate },
+  ctx: ClassificationContext,
+  traced: BillShares,
+  disposalReceipts: DisposalShares
+): unknown[] {
   const tracedIds = Array.from(traced.keys()).concat(Array.from(disposalReceipts.keys()));
   const none = [null];
-  const { rows } = (await q.query(
-    `WITH e AS (
-       SELECT je.id, (je.source IN (${FX_SOURCES_SQL})) AS is_fx
+  return [
+    companyId,
+    range.from,
+    range.to,
+    ctx.cashIds.length ? ctx.cashIds : none,
+    ctx.ppeIds.length ? ctx.ppeIds : none,
+    ctx.finIds.length ? ctx.finIds : none,
+    ctx.plIds.length ? ctx.plIds : none,
+    tracedIds.length ? tracedIds : none,
+    ctx.fxIds.length ? ctx.fxIds : none,
+    ctx.contraIds.length ? ctx.contraIds : none,
+  ];
+}
+
+/**
+ * The classification query. `bucketed` adds the entry's bucket index `b` (0-based position of
+ * its UAE date among the bucket start dates in $11) to the grouping; nothing else changes.
+ */
+function classificationSql(bucketed: boolean): string {
+  const bucketCol = bucketed
+    ? `, (width_bucket(${ENTRY_LOCAL_DATE_SQL}, $11::date[]) - 1) AS b`
+    : "";
+  return `WITH e AS (
+       SELECT je.id, (je.source IN (${FX_SOURCES_SQL})) AS is_fx${bucketCol}
          FROM journal_entries je
         WHERE je.company_id = $1 AND je.status = 'posted'
           AND ($2::date IS NULL OR ${ENTRY_LOCAL_DATE_SQL} >= $2::date)
@@ -294,9 +386,9 @@ export async function classifyCashFlows(
      ),
      l AS (
        SELECT jl.entry_id, jl.account_id,
-              SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100))::bigint AS f
+              SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100))::bigint AS f${bucketed ? ", e.b" : ""}
          FROM journal_lines jl JOIN e ON e.id = jl.entry_id
-        GROUP BY jl.entry_id, jl.account_id
+        GROUP BY jl.entry_id, jl.account_id${bucketed ? ", e.b" : ""}
      ),
      k AS (
        SELECT l.entry_id,
@@ -325,24 +417,22 @@ export async function classifyCashFlows(
             l.account_id,
             SUM(l.f)::bigint AS f,
             SUM(GREATEST(l.f, 0))::bigint AS pos,
-            SUM(LEAST(l.f, 0))::bigint AS neg
+            SUM(LEAST(l.f, 0))::bigint AS neg${bucketed ? ", l.b" : ""}
        FROM l JOIN k ON k.entry_id = l.entry_id
       WHERE k.kind = 'fx' OR NOT (l.account_id = ANY($4::uuid[]))
-      GROUP BY 1, 2, 4`,
-    [
-      companyId,
-      range.from,
-      range.to,
-      cashIds.length ? cashIds : none,
-      ppeIds.length ? ppeIds : none,
-      finIds.length ? finIds : none,
-      plIds.length ? plIds : none,
-      tracedIds.length ? tracedIds : none,
-      fxIds.length ? fxIds : none,
-      contraIds.length ? contraIds : none,
-    ]
-  )) as { rows: Row[] };
+      GROUP BY 1, 2, 4${bucketed ? ", l.b" : ""}`;
+}
 
+/** Turns the classification rows of one range into its cash flows (no query but the disclosure). */
+async function finishClassification(
+  companyId: string,
+  rows: Row[],
+  ctx: ClassificationContext,
+  traced: BillShares,
+  disposalReceipts: DisposalShares,
+  q: Queryable
+): Promise<ClassifiedCashFlows> {
+  const { byId, cash, ppeIds, ppeCostIds, finIds, fxIds } = ctx;
   const out: ClassifiedCashFlows = {
     operatingDirect: new Map(),
     investing: [],

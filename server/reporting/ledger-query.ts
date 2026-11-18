@@ -8,10 +8,33 @@ import type { QueryResultRow } from "pg";
 import { pool } from "../db";
 import { DomainError } from "../errors";
 import { baseCurrencyOf } from "../ledger/currency";
-import type { IsoDate } from "./dates";
+import { addDays, type IsoDate } from "./dates";
 
 export interface Queryable {
   query: (text: string, params?: unknown[]) => Promise<{ rows: QueryResultRow[] }>;
+}
+
+/**
+ * PERF-DASH: a request-scoped read cache over a Queryable. A composite read (the dashboard)
+ * calls several kernel functions that each load the chart of accounts, the company settings
+ * and the same as-of trial balance; through this wrapper an identical query (same SQL text and
+ * parameters) runs once and every caller receives its own copy of the rows. Use it only for a
+ * single read-only request: it never sees writes made after the first read.
+ */
+export function memoQueryable(q: Queryable = pool): Queryable {
+  const cache = new Map<string, Promise<{ rows: QueryResultRow[] }>>();
+  return {
+    query(text: string, params?: unknown[]) {
+      const key = `${text}\u0000${JSON.stringify(params ?? [])}`;
+      let hit = cache.get(key);
+      if (!hit) {
+        hit = q.query(text, params);
+        cache.set(key, hit);
+        hit.catch(() => cache.delete(key));
+      }
+      return hit.then((r) => ({ ...r, rows: r.rows.map((row) => ({ ...row })) }));
+    },
+  };
 }
 
 /** Journal sources that mark closing / year-end entries. */
@@ -165,6 +188,57 @@ export async function accountTotals(
   const out = new Map<string, AccountTotals>();
   for (const r of rows)
     out.set(r.account_id, { debit: Number(r.d), credit: Number(r.c), hasForeign: r.f === true });
+  return out;
+}
+
+/**
+ * PERF-DASH: accountTotals for several contiguous ranges (range i+1 starts the day after range
+ * i ends) in one query: element i is exactly accountTotals(companyId, { ...opts, ...ranges[i] }).
+ */
+export async function accountTotalsByBucket(
+  companyId: string,
+  ranges: Array<{ from: IsoDate; to: IsoDate }>,
+  opts: Omit<TotalsOptions, "from" | "to"> = {},
+  q: Queryable = pool
+): Promise<Array<Map<string, AccountTotals>>> {
+  const out = ranges.map(() => new Map<string, AccountTotals>());
+  if (ranges.length === 0) return out;
+  const contiguous = ranges.every(
+    (r, i) => r.from <= r.to && (i === 0 || r.from === addDays(ranges[i - 1].to, 1))
+  );
+  if (!contiguous) {
+    return Promise.all(ranges.map((r) => accountTotals(companyId, { ...opts, ...r }, q)));
+  }
+  const { rows } = await q.query(
+    `SELECT width_bucket(${ENTRY_LOCAL_DATE_SQL}, $5::date[]) - 1 AS b,
+            jl.account_id,
+            COALESCE(SUM(ROUND(jl.debit * 100)), 0)::bigint AS d,
+            COALESCE(SUM(ROUND(jl.credit * 100)), 0)::bigint AS c,
+            COALESCE(bool_or(UPPER(COALESCE(jl.foreign_currency, '')) NOT IN
+              ('', (SELECT UPPER(c.base_currency) FROM companies c WHERE c.id = $1))), false) AS f
+       FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.entry_id
+      WHERE je.company_id = $1
+        AND je.status = 'posted'
+        AND ${ENTRY_LOCAL_DATE_SQL} >= $2::date
+        AND ${ENTRY_LOCAL_DATE_SQL} <= $3::date
+        AND ($4::boolean OR ${NOT_CLOSING_SQL})
+        ${opts.opening === "exclude" ? `AND NOT ${OPENING_ENTRY_SQL}` : opts.opening === "only" ? `AND ${OPENING_ENTRY_SQL}` : ""}
+      GROUP BY 1, jl.account_id`,
+    [
+      companyId,
+      ranges[0].from,
+      ranges[ranges.length - 1].to,
+      opts.includeClosing === true,
+      ranges.map((r) => r.from),
+    ]
+  );
+  for (const r of rows)
+    out[Number(r.b)].set(r.account_id, {
+      debit: Number(r.d),
+      credit: Number(r.c),
+      hasForeign: r.f === true,
+    });
   return out;
 }
 

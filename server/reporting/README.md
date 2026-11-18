@@ -37,6 +37,11 @@ should sum `journal_lines` for a financial statement.
 | `accountTotals`, `ledgerLines`, `loadAccounts`, `loadCompany`                                                                              | Low-level, closing-excluded ledger reads for other modules (corporate tax, close).                                                                                                                                                                                                                                                                                                                               |
 | `readRange`, `readAsOf`, `parseReportDate`                                                                                                 | Unified params: `from/to`, `startDate/endDate`, `periodStart/periodEnd`; bad dates → 400 `INVALID_REPORT_DATE`.                                                                                                                                                                                                                                                                                                  |
 
+Composite reads (the dashboard) pass one `memoQueryable(pool)` as `q` to every kernel call:
+identical queries in the request (the chart, the company, the as-of trial balance) then run
+once. `accountTotalsByBucket` and `classifyCashFlowsByBucket` read several contiguous ranges
+in one pass and return exactly what the per-range calls return.
+
 `http.ts` (not re-exported from the index) holds route helpers: access check,
 `Deprecation` headers for legacy aliases, and xlsx/csv output with numeric cells.
 

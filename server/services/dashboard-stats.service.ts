@@ -23,6 +23,7 @@ import {
   fiscalYearStart,
   loadAccounts,
   loadCompany,
+  memoQueryable,
   monthEnd,
   monthStart,
   naturalBalance,
@@ -157,16 +158,17 @@ export interface MonthlyTrendPoint {
 export async function getMonthlyTrends(
   companyId: string,
   today: IsoDate = uaeToday(),
-  count = 6
+  count = 6,
+  q: Queryable = db
 ): Promise<MonthlyTrendPoint[]> {
   const keys = lastMonthKeys(today, count);
   const from = `${keys[0].key}-01`;
   // B2 (NM4): revenue is the P&L revenue section only (IFRS 15); other income (interest,
   // disposal gains, realised and unrealised FX gains) is its own series, as on the P&L.
-  const accounts = await loadAccounts(companyId, db);
-  const sectionOf = new Map(accounts.map((a) => [a.id, plSection(a)]));
-  const { rows } = await db.query(
-    `SELECT to_char(${ENTRY_LOCAL_DATE_SQL}, 'YYYY-MM') AS ym, a.id AS account_id, a.type,
+  const [accounts, { rows }] = await Promise.all([
+    loadAccounts(companyId, q),
+    q.query(
+      `SELECT to_char(${ENTRY_LOCAL_DATE_SQL}, 'YYYY-MM') AS ym, a.id AS account_id, a.type,
             COALESCE(SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100)), 0)::bigint AS cr
        FROM journal_lines jl
        JOIN journal_entries je ON je.id = jl.entry_id
@@ -176,8 +178,10 @@ export async function getMonthlyTrends(
         AND ${NOT_CLOSING_SQL}
         AND a.type IN ('income', 'expense')
       GROUP BY 1, 2, 3`,
-    [companyId, from, monthEnd(today)]
-  );
+      [companyId, from, monthEnd(today)]
+    ),
+  ]);
+  const sectionOf = new Map(accounts.map((a) => [a.id, plSection(a)]));
   const byKey = new Map<string, { rev: number; oi: number; exp: number }>();
   for (const r of rows) {
     const cur = byKey.get(r.ym) ?? { rev: 0, oi: 0, exp: 0 };
@@ -262,9 +266,13 @@ export interface BankVsGlItem {
   difference: number | null;
 }
 
-async function bankVersusGl(companyId: string, today: IsoDate): Promise<BankVsGlItem[]> {
-  const [{ rows }, { rows: lineRows }, accounts] = await Promise.all([
-    db.query(
+async function bankVersusGl(
+  companyId: string,
+  today: IsoDate,
+  q: Queryable = db
+): Promise<BankVsGlItem[]> {
+  const [{ rows }, { rows: lineRows }, accounts, reportCurrency] = await Promise.all([
+    q.query(
       `SELECT ba.id, ba.name_en, ba.bank_name, ba.currency, ba.gl_account_id,
               ROUND(COALESCE(ba.opening_balance, 0) * 100)::bigint AS opening_fils
          FROM bank_accounts ba
@@ -272,7 +280,7 @@ async function bankVersusGl(companyId: string, today: IsoDate): Promise<BankVsGl
         ORDER BY ba.created_at`,
       [companyId]
     ),
-    db.query(
+    q.query(
       `SELECT bt.bank_statement_account_id AS account_id,
               to_char(bt.transaction_date, 'YYYY-MM-DD') AS date,
               ROUND(bt.amount * 100)::bigint AS amount_fils,
@@ -283,7 +291,8 @@ async function bankVersusGl(companyId: string, today: IsoDate): Promise<BankVsGl
         WHERE ba.company_id = $1 AND ba.is_active = true AND bt.deleted_at IS NULL`,
       [companyId]
     ),
-    loadAccounts(companyId),
+    loadAccounts(companyId, q),
+    reportCurrencyOf(companyId, q),
   ]);
   const accountById = new Map(accounts.map((a) => [a.id, a]));
   const linesByAccount = new Map<
@@ -303,49 +312,54 @@ async function bankVersusGl(companyId: string, today: IsoDate): Promise<BankVsGl
   // currency (a USD account compares USD statement lines with the USD amounts on its GL lines).
   // X6a (council REQUIRED 7): with no statement imported there is nothing to compare, so no
   // statement balance and no difference are reported ("no statement imported").
-  const baseCurrency = (await reportCurrencyOf(companyId)).toUpperCase();
-  const totalsAt = new Map<string, Awaited<ReturnType<typeof accountTotals>>>();
-  const glAt = async (date: IsoDate) => {
-    if (!totalsAt.has(date)) totalsAt.set(date, await accountTotals(companyId, { to: date }));
-    return totalsAt.get(date)!;
-  };
-  const items: BankVsGlItem[] = [];
-  for (const r of rows) {
-    const statementLines = linesByAccount.get(r.id as string) ?? [];
-    const currency = String(r.currency || baseCurrency).toUpperCase();
-    const isForeign = currency !== baseCurrency;
-    const closing = statementClosingFils(Number(r.opening_fils), statementLines);
-    const hasStatement = statementLines.length > 0;
-    const asOf = (closing.date && closing.date < today ? closing.date : today) as IsoDate;
-    const gl = r.gl_account_id ? accountById.get(r.gl_account_id) : undefined;
-    let glFils: number | null = null;
-    if (gl) {
-      glFils = isForeign
-        ? await accountBalanceInCurrency({ companyId, accountId: gl.id, currency, to: asOf })
-        : naturalBalance("asset", (await glAt(asOf)).get(gl.id));
+  const baseCurrency = reportCurrency.toUpperCase();
+  const totalsAt = new Map<string, ReturnType<typeof accountTotals>>();
+  const glAt = (date: IsoDate) => {
+    let totals = totalsAt.get(date);
+    if (!totals) {
+      totals = accountTotals(companyId, { to: date }, q);
+      totalsAt.set(date, totals);
     }
-    items.push({
-      bankAccountId: r.id as string,
-      name: r.name_en as string,
-      bankName: r.bank_name as string,
-      currency,
-      isForeign,
-      glAccountId: (r.gl_account_id as string | null) ?? null,
-      hasStatement,
-      statementDate: hasStatement ? closing.date : null,
-      statementBalance: hasStatement ? aed(closing.fils) : null,
-      glBalance: glFils === null ? null : aed(glFils),
-      difference: hasStatement && glFils !== null ? aed(closing.fils - glFils) : null,
-    });
-  }
-  return items;
+    return totals;
+  };
+  // PERF-DASH: the accounts are read together (no query per account in turn); order is kept.
+  return Promise.all(
+    rows.map(async (r): Promise<BankVsGlItem> => {
+      const statementLines = linesByAccount.get(r.id as string) ?? [];
+      const currency = String(r.currency || baseCurrency).toUpperCase();
+      const isForeign = currency !== baseCurrency;
+      const closing = statementClosingFils(Number(r.opening_fils), statementLines);
+      const hasStatement = statementLines.length > 0;
+      const asOf = (closing.date && closing.date < today ? closing.date : today) as IsoDate;
+      const gl = r.gl_account_id ? accountById.get(r.gl_account_id) : undefined;
+      let glFils: number | null = null;
+      if (gl) {
+        glFils = isForeign
+          ? await accountBalanceInCurrency({ companyId, accountId: gl.id, currency, to: asOf }, q)
+          : naturalBalance("asset", (await glAt(asOf)).get(gl.id));
+      }
+      return {
+        bankAccountId: r.id as string,
+        name: r.name_en as string,
+        bankName: r.bank_name as string,
+        currency,
+        isForeign,
+        glAccountId: (r.gl_account_id as string | null) ?? null,
+        hasStatement,
+        statementDate: hasStatement ? closing.date : null,
+        statementBalance: hasStatement ? aed(closing.fils) : null,
+        glBalance: glFils === null ? null : aed(glFils),
+        difference: hasStatement && glFils !== null ? aed(closing.fils - glFils) : null,
+      };
+    })
+  );
 }
 
 /** Output / input VAT from the ledger VAT accounts (as of today). */
-async function vatWidget(companyId: string, today: IsoDate) {
+async function vatWidget(companyId: string, today: IsoDate, q: Queryable = db) {
   const [accounts, totals] = await Promise.all([
-    loadAccounts(companyId),
-    accountTotals(companyId, { to: today }),
+    loadAccounts(companyId, q),
+    accountTotals(companyId, { to: today }, q),
   ]);
   let output = 0;
   let input = 0;
@@ -371,7 +385,10 @@ export interface DashboardStatsInput {
 
 export async function getDashboardStats(companyId: string, input: DashboardStatsInput = {}) {
   const today = uaeToday();
-  const company = await loadCompany(companyId);
+  // PERF-DASH: one request-scoped read cache for every widget below. The widgets each load the
+  // chart, the company and the as-of-today trial balance; through `q` each runs once.
+  const q = memoQueryable(db);
+  const company = await loadCompany(companyId, q);
   const period = resolveDashboardPeriod(input, today, company.fiscalYearStartMonth);
   const prior = priorPeriod(period.from, period.to);
   const prevYear = priorYear(period.from, period.to);
@@ -395,25 +412,28 @@ export async function getDashboardStats(companyId: string, input: DashboardStats
     vat,
     counts,
   ] = await Promise.all([
-    profitAndLoss({ companyId, from: period.from, to: period.to }),
-    profitAndLoss({ companyId, from: prior.from, to: prior.to }),
-    profitAndLoss({ companyId, from: prevYear.from, to: prevYear.to }),
-    profitAndLoss({ companyId, from: thisMonthFrom, to: today }),
-    profitAndLoss({ companyId, from: ytdFrom, to: today }),
-    profitAndLoss({ companyId, from: trailingFrom, to: today }),
-    agedReceivables({ companyId, asOf: today }),
-    agedPayables({ companyId, asOf: today }),
-    cashAccounts(companyId, today),
-    getMonthlyTrends(companyId, today, 6),
-    cashFlowBuckets({
-      companyId,
-      from: addMonths(monthStart(today), -5),
-      to: monthEnd(today),
-      granularity: "month",
-    }),
-    bankVersusGl(companyId, today),
-    vatWidget(companyId, today),
-    db.query(
+    profitAndLoss({ companyId, from: period.from, to: period.to }, q),
+    profitAndLoss({ companyId, from: prior.from, to: prior.to }, q),
+    profitAndLoss({ companyId, from: prevYear.from, to: prevYear.to }, q),
+    profitAndLoss({ companyId, from: thisMonthFrom, to: today }, q),
+    profitAndLoss({ companyId, from: ytdFrom, to: today }, q),
+    profitAndLoss({ companyId, from: trailingFrom, to: today }, q),
+    agedReceivables({ companyId, asOf: today }, q),
+    agedPayables({ companyId, asOf: today }, q),
+    cashAccounts(companyId, today, q),
+    getMonthlyTrends(companyId, today, 6, q),
+    cashFlowBuckets(
+      {
+        companyId,
+        from: addMonths(monthStart(today), -5),
+        to: monthEnd(today),
+        granularity: "month",
+      },
+      q
+    ),
+    bankVersusGl(companyId, today, q),
+    vatWidget(companyId, today, q),
+    q.query(
       `SELECT
          (SELECT COUNT(*) FROM invoices WHERE company_id = $1)::int AS invoices,
          (SELECT COUNT(*) FROM journal_entries WHERE company_id = $1 AND status = 'posted')::int AS entries,
