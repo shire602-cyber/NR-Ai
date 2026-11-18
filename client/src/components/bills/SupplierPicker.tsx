@@ -133,7 +133,7 @@ export const SupplierPicker = React.forwardRef<
         </PopoverPrimitive.Anchor>
         <PopoverContent
           align="start"
-          className="w-[--radix-popover-trigger-width] min-w-72 p-1"
+          className="w-[--radix-popover-trigger-width] min-w-80 p-1"
           // A list of options, not a dialog: the combobox input keeps focus.
           role="presentation"
           onOpenAutoFocus={(e) => e.preventDefault()}
@@ -171,7 +171,13 @@ export const SupplierPicker = React.forwardRef<
                   {label(s)}
                 </span>
                 {s.trn && (
-                  <span className="text-xs tabular-nums text-muted-foreground" dir="ltr">
+                  <span
+                    className={cn(
+                      "text-xs tabular-nums",
+                      i === active ? "opacity-80" : "text-muted-foreground"
+                    )}
+                    dir="ltr"
+                  >
                     {s.trn}
                   </span>
                 )}
