@@ -384,7 +384,16 @@ function Wizard({
               <SelectContent>
                 {(templates.data?.length
                   ? templates.data
-                  : [{ id: "general", label: { en: t["onboarding.wq7IndustryGeneral"], ar: t["onboarding.wq7IndustryGeneral"] }, accounts: 0 }]
+                  : [
+                      {
+                        id: "general",
+                        label: {
+                          en: t["onboarding.wq7IndustryGeneral"],
+                          ar: t["onboarding.wq7IndustryGeneral"],
+                        },
+                        accounts: 0,
+                      },
+                    ]
                 ).map((tpl) => (
                   <SelectItem key={tpl.id} value={tpl.id} data-testid={`industry-${tpl.id}`}>
                     {locale === "ar" ? tpl.label.ar : tpl.label.en}

@@ -236,12 +236,8 @@ describe("WQ7 planFeaturePolicy", () => {
         .passed
     ).toBe(true);
     expect(
-      (
-        await run(
-          planFeaturePolicy,
-          req("POST", `/api/companies/${ID.expired}/billing/checkout`)
-        )
-      ).passed
+      (await run(planFeaturePolicy, req("POST", `/api/companies/${ID.expired}/billing/checkout`)))
+        .passed
     ).toBe(true);
   });
 
@@ -253,8 +249,7 @@ describe("WQ7 planFeaturePolicy", () => {
       (await run(planFeaturePolicy, req("POST", `/api/companies/${ID.pro}/payroll-runs`))).passed
     ).toBe(true);
     expect(
-      (await run(planFeaturePolicy, req("POST", `/api/companies/${ID.client}/payroll-runs`)))
-        .passed
+      (await run(planFeaturePolicy, req("POST", `/api/companies/${ID.client}/payroll-runs`))).passed
     ).toBe(true);
     caller = { firmRole: "firm_admin" };
     expect(

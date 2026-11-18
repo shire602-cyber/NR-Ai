@@ -42,7 +42,10 @@ export function isStripeConfigured(): boolean {
  * Stripe price ids per paid plan and cycle (shared/plans.ts ids and cycles), from
  * STRIPE_PRICE_<PLAN>_<CYCLE>. The Stripe prices must carry shared/plans.ts planPrice() amounts.
  */
-const PLAN_PRICE_MAP: Record<string, Record<string, string | undefined>> = Object.fromEntries(
+export const PLAN_PRICE_MAP: Record<
+  string,
+  Record<string, string | undefined>
+> = Object.fromEntries(
   PAID_PLAN_IDS.map((id) => [
     id,
     Object.fromEntries(

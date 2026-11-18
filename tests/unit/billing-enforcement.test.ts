@@ -156,9 +156,7 @@ describe("BILLING_ENFORCEMENT=true", () => {
     const res = await call(app, "POST", `/api/companies/${ID.norow}/purchase-orders`);
     expect(res.status).toBe(402);
     expect(res.body.code).toBe("PLAN_REQUIRED");
-    expect((await call(app, "GET", `/api/companies/${ID.norow}/purchase-orders`)).status).toBe(
-      200
-    );
+    expect((await call(app, "GET", `/api/companies/${ID.norow}/purchase-orders`)).status).toBe(200);
     expect((await call(app, "POST", `/api/companies/${ID.expired}/payroll`)).status).toBe(402);
   });
 

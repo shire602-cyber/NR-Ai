@@ -260,7 +260,9 @@ describe("/subscription", () => {
     expect(text()).not.toMatch(/not enforced/i);
     expect(text()).toContain(`100 / ${TRIAL_LIMITS.aiCreditsPerMonth}`);
     expect(text()).toContain("12.5 MB / 1,024 MB");
-    expect(container.querySelector("[data-testid=usage-users]")?.textContent).toContain("unlimited");
+    expect(container.querySelector("[data-testid=usage-users]")?.textContent).toContain(
+      "unlimited"
+    );
   });
 
   it("compares plans with the pricing page's rows (shared plan module)", async () => {
@@ -325,4 +327,86 @@ describe("/subscription", () => {
     expect(document.body.textContent).toContain("Could not start checkout");
     expect(document.body.textContent).toContain("Online checkout is not available yet");
   });
+});
+
+/*
+ * WQ7: the owner-approved prices (2026-11-18), written out as literals on purpose so a change to
+ * shared/plans.ts that was not approved fails here. Every surface reads the one plan module.
+ */
+describe("owner-approved prices on every surface (en and ar)", () => {
+  const MONTHLY = { starter: "59", professional: "119", enterprise: "229" } as const;
+  const YEARLY = { starter: "590", professional: "1,190", enterprise: "2,290" } as const;
+  const IDS = ["starter", "professional", "enterprise"] as const;
+  const figure = (id: string) =>
+    container.querySelector(`[data-testid=card-plan-${id}] .mk-tier__price strong`)?.textContent;
+
+  it("the shared module, the server catalogue and the server gates agree", async () => {
+    const { PLAN_MONTHLY_PRICES, publicPlanCatalog } = await import("../../shared/plans");
+    const { getAllPlanDefinitions } = await import("../../server/middleware/featureGate");
+    expect(PLAN_MONTHLY_PRICES).toEqual({ starter: 59, professional: 119, enterprise: 229 });
+    expect(getAllPlanDefinitions()).toEqual(publicPlanCatalog());
+    expect(getAllPlanDefinitions().plans.map((p) => [p.id, p.pricing])).toEqual([
+      ["starter", { monthly: 59, yearly: 590, currency: "AED" }],
+      ["professional", { monthly: 119, yearly: 1190, currency: "AED" }],
+      ["enterprise", { monthly: 229, yearly: 2290, currency: "AED" }],
+    ]);
+    for (const id of IDS) {
+      expect(planPrice(id, "monthly")).toBe(Number(MONTHLY[id]));
+      expect(planPrice(id, "yearly")).toBe(Number(YEARLY[id].replace(",", "")));
+    }
+  });
+
+  it.each(["en", "ar"] as const)(
+    "/pricing shows 59 / 119 / 229 and 590 / 1,190 / 2,290 (%s)",
+    async (loc) => {
+      const { useI18n } = await import("../../client/src/lib/i18n");
+      act(() => useI18n.getState().setLocale(loc));
+      await renderPricing();
+      for (const id of IDS) expect(figure(id)).toBe(MONTHLY[id]);
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>("[data-testid=billing-cycle-yearly]")!.click();
+      });
+      for (const id of IDS) expect(figure(id)).toBe(YEARLY[id]);
+      expect(text()).not.toMatch(/\b(49|149|299|1,490|2,990)\b/);
+    }
+  );
+
+  it.each(["en", "ar"] as const)(
+    "/subscription plan cards show the same prices (%s)",
+    async (loc) => {
+      const { useI18n } = await import("../../client/src/lib/i18n");
+      act(() => useI18n.getState().setLocale(loc));
+      await renderSubscription();
+      for (const id of IDS) expect(figure(id)).toBe(MONTHLY[id]);
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>("[data-testid=subscription-cycle-yearly]")!
+          .click();
+      });
+      for (const id of IDS) expect(figure(id)).toBe(YEARLY[id]);
+    }
+  );
+
+  it.each(["en", "ar"] as const)(
+    "the landing strip's PlanCard shows the same prices (%s)",
+    async (loc) => {
+      const { useI18n } = await import("../../client/src/lib/i18n");
+      act(() => useI18n.getState().setLocale(loc));
+      const { PlanCard } = await import("../../client/src/components/marketing/PlanCard");
+      const { PLANS } = await import("../../client/src/components/marketing/plans");
+      const { Router } = await import("wouter");
+      for (const cycle of ["monthly", "yearly"] as const) {
+        await act(async () => {
+          root.render(
+            createElement(
+              Router,
+              null,
+              ...PLANS.map((plan) => createElement(PlanCard, { key: plan.id, plan, cycle }))
+            )
+          );
+        });
+        for (const id of IDS) expect(figure(id)).toBe((cycle === "monthly" ? MONTHLY : YEARLY)[id]);
+      }
+    }
+  );
 });
