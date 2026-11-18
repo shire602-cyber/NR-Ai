@@ -229,6 +229,7 @@
   "forms.errors.expenseItemRequired": "يلزم بند مصروف واحد على الأقل",
   "forms.errors.reviewNotesRequired": "ملاحظات المراجعة مطلوبة",
   "forms.errors.quantityPositive": "يجب أن تكون الكمية أكبر من صفر",
+  "forms.errors.paidFromRequired": "اختر الحساب الذي دُفعت منه قيمة الشراء",
   "forms.errors.priceNonNegative": "يجب ألا يكون السعر سالباً",
   "forms.errors.pricePositive": "يجب ألا يكون السعر سالباً",
   "forms.errors.vendorNameRequired": "اسم المورّد مطلوب",

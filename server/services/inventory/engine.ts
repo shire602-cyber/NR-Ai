@@ -484,6 +484,8 @@ export async function postInventoryJournal(
     idempotencyKey: string;
     lines: DraftLine[];
     actorId: string;
+    /** D1 (N2): "opening" for go-live opening stock (not a transaction of the period). */
+    kind?: "opening";
   }
 ): Promise<string | null> {
   const lines = toKernelLines(args.lines);
@@ -498,6 +500,7 @@ export async function postInventoryJournal(
       sourceId: args.sourceId,
       idempotencyKey: args.idempotencyKey,
       allowFutureDate: true,
+      ...(args.kind ? { kind: args.kind } : {}),
       lines,
     },
     { actorId: args.actorId, tx }

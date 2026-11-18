@@ -8,6 +8,7 @@ import { createLogger } from "../../config/logger";
 import { fromFils, sumFils, toFils } from "../../../shared/money";
 import type { EmployeeCreateBody, EmployeePatchBody } from "../../../shared/validators/payroll";
 import { fils, q, q1, type Row } from "./sql";
+import { syncOpeningGratuity } from "./opening-gratuity";
 
 const log = createLogger("payroll-employees");
 
@@ -171,6 +172,29 @@ function withOpeningGratuityDate(values: Record<string, unknown>): void {
   }
 }
 
+/** The body sets the opening gratuity provision or its date. */
+function touchesOpeningGratuity(values: Record<string, unknown>): boolean {
+  return values.openingGratuityProvision !== undefined || values.openingGratuityAsOf !== undefined;
+}
+
+/**
+ * D1 (N1): an opening provision saved on the employee is booked in the GL at once (the opening
+ * gratuity seam posts the difference to the opening 2036), so the form and the ledger cannot
+ * drift apart. When the posting is refused (a locked period) the employee change is undone.
+ */
+async function bookOpeningProvision(
+  companyId: string,
+  actorId: string,
+  undo: () => Promise<unknown>
+): Promise<void> {
+  try {
+    await syncOpeningGratuity(companyId, actorId);
+  } catch (err) {
+    await undo();
+    throw err;
+  }
+}
+
 function totalSalary(values: Record<string, unknown>): string {
   return fromFils(sumFils(SALARY_KEYS.map((k) => fils(values[k] ?? "0"))));
 }
@@ -211,6 +235,15 @@ export async function createEmployee(
       actorId,
     ]
   );
+  if (touchesOpeningGratuity(values)) {
+    await bookOpeningProvision(companyId, actorId, () =>
+      q(
+        `UPDATE employees SET opening_gratuity_provision = NULL, opening_gratuity_as_of = NULL
+          WHERE id = $1 AND company_id = $2`,
+        [employee!.id, companyId]
+      )
+    );
+  }
   log.info({ employeeId: employee!.id, companyId }, "Employee created");
   return employee!;
 }
@@ -281,6 +314,15 @@ export async function updateEmployee(
         body.salaryChangeReason ?? null,
         actorId,
       ]
+    );
+  }
+  if (touchesOpeningGratuity(patch)) {
+    await bookOpeningProvision(companyId, actorId, () =>
+      q(
+        `UPDATE employees SET opening_gratuity_provision = $3, opening_gratuity_as_of = $4
+          WHERE id = $1 AND company_id = $2`,
+        [employeeId, companyId, current.opening_gratuity_provision, current.opening_gratuity_as_of]
+      )
     );
   }
   return updated!;

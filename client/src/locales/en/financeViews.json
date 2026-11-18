@@ -51,6 +51,8 @@
   "inventory.thisWillPermanentlyDeleteThis": "This will permanently delete this product from inventory. This action cannot be undone.",
   "inventory.recordInventoryMovement": "Record inventory movement",
   "inventory.recordMovement": "Record movement",
+  "inventory.paidFrom": "Paid from",
+  "inventory.paidFromHelp": "The bank or cash account the goods were paid from. Goods bought on credit are received against a purchase order or entered on the supplier's bill.",
   "dashboardHero.newInvoice": "New invoice",
   "dashboardPlanning.nextDue": "Next due",
   "dashboardPlanning.filingPulse": "Filing pulse",

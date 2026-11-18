@@ -33,6 +33,11 @@
  *    adjustments, not transactions to disclose. Their profit-or-loss lines (depreciation,
  *    impairment, accrued interest) are the indirect method's non-cash adjustments (IAS 7.20(b)).
  *  - Period-end FX revaluation of cash is the effect of exchange-rate changes (IAS 7.28).
+ *  - D1 (N2): go-live opening-balance entries (OPENING_ENTRY_SQL: the opening trial balance,
+ *    opening documents, opening stock, the register's opening capitalisation, the opening
+ *    gratuity) are not cash flows of any section. They are the position the books start from:
+ *    the statement adds their cash to the opening cash (IAS 7.45) and leaves them out of net
+ *    income and the working-capital changes, so direct and indirect agree.
  *
  * The indirect method's operating section is the reconciliation from profit: net income, the
  * non-cash adjustments and the working-capital changes, where a working-capital change is the
@@ -46,6 +51,7 @@ import { pool } from "../db";
 import {
   ENTRY_LOCAL_DATE_SQL,
   NOT_CLOSING_SQL,
+  OPENING_ENTRY_SQL,
   type Fils,
   type Queryable,
   type ReportAccount,
@@ -280,6 +286,7 @@ export async function classifyCashFlows(
           AND ($2::date IS NULL OR ${ENTRY_LOCAL_DATE_SQL} >= $2::date)
           AND ${ENTRY_LOCAL_DATE_SQL} <= $3::date
           AND ${NOT_CLOSING_SQL}
+          AND NOT ${OPENING_ENTRY_SQL}
      ),
      l AS (
        SELECT jl.entry_id, jl.account_id,

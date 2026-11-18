@@ -254,12 +254,15 @@ describe("[C1][RH2] stock-movement counter account", () => {
     const q4 = await vat(t, "2026-10-01", "2026-12-31");
     expect(q4.boxes.box12TotalDueTax ?? 0).toBe(0);
 
-    const grni = await move();
-    expect(grni.status, grni.text).toBe(200);
-    expect(await linesOf(grni.body.journalEntryId)).toEqual({
-      "1070": [10000, 0],
-      "2015": [0, 10000],
-    });
+    // D1 (N7): no GRNI default and no GRNI counter (no purchase order line could clear it).
+    const none = await move();
+    expect(none.status, none.text).toBe(422);
+    expect(none.body.code).toBe("COUNTER_ACCOUNT_REQUIRED");
+    const grniAccount = await h.sql<{ id: string }>(
+      `SELECT id FROM accounts WHERE company_id = $1 AND code = '2015'`,
+      [t.company.id]
+    );
+    if (grniAccount[0]) expectRefused(await move(grniAccount[0].id), "counterAccountId");
     const bank = await move((await accountByCode(t, "1020")).id);
     expect(bank.status, bank.text).toBe(200);
     expect(await linesOf(bank.body.journalEntryId)).toEqual({

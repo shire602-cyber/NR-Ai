@@ -446,7 +446,16 @@ describe("C2 NL2: NRV reversal cap follows the units on hand", () => {
     expect(p.status, p.text).toBe(200);
     const mv = (body: Record<string, unknown>) =>
       t.as.post(`/api/products/${p.body.id}/movements`, body);
-    expect((await mv({ type: "purchase", quantity: 7, unitCost: 100 })).status).toBeLessThan(300);
+    expect(
+      (
+        await mv({
+          type: "purchase",
+          quantity: 7,
+          unitCost: 100,
+          counterAccountId: (await accountByCode(t, "1020")).id,
+        })
+      ).status
+    ).toBeLessThan(300);
     const down = await t.as.post(`/api/products/${p.body.id}/write-down`, {
       amount: 70,
       reason: "NRV below cost",

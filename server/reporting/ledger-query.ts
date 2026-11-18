@@ -28,6 +28,24 @@ export const YEAR_END_CLOSE_SOURCE = "year_end_close";
 export const CLOSING_ENTRY_SQL = `(je.source IN ('year_end_close','closing','period_close') OR (je.source = 'system' AND COALESCE(je.memo, '') LIKE 'Closing entries for %'))`;
 export const NOT_CLOSING_SQL = `NOT ${CLOSING_ENTRY_SQL}`;
 
+/**
+ * D1 (N2): SQL predicate (alias `je`) that is TRUE for a go-live opening-balance entry: the opening
+ * trial balance, the opening documents (open invoices / bills), the opening stock, the asset
+ * register's opening capitalisation and the opening gratuity provision. They are all posted with
+ * `entry_kind = 'opening'`; opening stock and opening register capitalisations posted before
+ * D1 carry kind 'standard' and are recognised by their Opening Balance Equity (3040) leg. A
+ * reversal of an opening entry is part of the opening position too. These entries are the
+ * position the books start from, not transactions of the period: the cash-flow statement treats
+ * them as the opening position (IAS 7.45: opening cash is the cash at the start).
+ */
+export const OPENING_ENTRY_SQL = `(je.entry_kind = 'opening'
+  OR (je.source IN ('inventory', 'fixed_asset') AND EXISTS (
+        SELECT 1 FROM journal_lines ol JOIN accounts oa ON oa.id = ol.account_id
+         WHERE ol.entry_id = je.id AND oa.code = '3040'))
+  OR (je.source = 'reversal' AND EXISTS (
+        SELECT 1 FROM journal_entries oe
+         WHERE oe.reversed_by_entry_id = je.id AND oe.entry_kind = 'opening')))`;
+
 /** UAE-local calendar date of a journal entry (stored as UTC wall-clock). */
 export const ENTRY_LOCAL_DATE_SQL = `((je.date + interval '4 hours')::date)`;
 
@@ -114,6 +132,11 @@ export interface TotalsOptions {
   to?: IsoDate | null;
   /** Default false: closing entries are excluded from statements. */
   includeClosing?: boolean;
+  /**
+   * D1 (N2): "exclude" leaves out the go-live opening-balance entries (OPENING_ENTRY_SQL),
+   * "only" keeps just them; default: every entry.
+   */
+  opening?: "exclude" | "only";
 }
 
 /** Posted debit/credit totals (fils) per account for the range. */
@@ -135,6 +158,7 @@ export async function accountTotals(
         AND ($2::date IS NULL OR ${ENTRY_LOCAL_DATE_SQL} >= $2::date)
         AND ($3::date IS NULL OR ${ENTRY_LOCAL_DATE_SQL} <= $3::date)
         AND ($4::boolean OR ${NOT_CLOSING_SQL})
+        ${opts.opening === "exclude" ? `AND NOT ${OPENING_ENTRY_SQL}` : opts.opening === "only" ? `AND ${OPENING_ENTRY_SQL}` : ""}
       GROUP BY jl.account_id`,
     [companyId, opts.from ?? null, opts.to ?? null, opts.includeClosing === true]
   );

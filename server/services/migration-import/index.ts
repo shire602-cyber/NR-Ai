@@ -17,6 +17,15 @@
  *                      (Dr 3040 / Cr A/P). Control totals are checked against the
  *                      trial balance so the opening balance is never counted twice.
  *
+ * D1 (go-live model, docs/platform-rules.md "Go-live"): every account with a sub-ledger is posted
+ * by that sub-ledger's own opening seam (open invoices / bills, opening stock, the asset
+ * register's opening import, the employees' opening gratuity provisions), each against Opening
+ * Balance Equity 3040. The opening trial balance checks its line for such an account against the
+ * sub-ledger and moves it to 3040 instead of posting it, so 3040 nets to zero once every opening
+ * document is in, and nothing is counted twice whatever the order. VAT of the tax period that
+ * contains the cut-over date may sit on the VAT accounts: that period's return reports it and
+ * its settlement clears it.
+ *
  * Column layouts of Xero, QuickBooks Online, Zoho Books and Wafeq exports are
  * mapped in ./mappers.ts. All money is integer fils.
  */
@@ -37,6 +46,7 @@ import { controlAccountsAmong, type ControlLedger } from "../../ledger/control-a
 import { emitDomainEvent } from "../../platform/domain-events";
 import { txRows } from "../bill-posting.service";
 import { pq } from "../connectors/pq";
+import { syncOpeningGratuity } from "../payroll/opening-gratuity";
 import { isSubTypeForType } from "../../../shared/validators/accounts";
 import {
   csvEscape,
@@ -465,6 +475,102 @@ async function openingGratuityFils(companyId: string, cutOver: string | null): P
 
 const GRATUITY_CODE = "2036";
 
+/**
+ * D1 (N3): property, plant and equipment accounts carried by the asset register: every
+ * fixed-asset sub-type account (cost and accumulated depreciation in the default chart) and every
+ * account an asset or asset class posts to.
+ */
+async function ppeAccountIds(companyId: string): Promise<Set<string>> {
+  const { rows } = await pq<{ id: string }>(
+    `SELECT id FROM accounts WHERE company_id = $1 AND sub_type = 'fixed_asset'
+     UNION SELECT cost_account_id FROM fixed_assets
+      WHERE company_id = $1 AND cost_account_id IS NOT NULL
+     UNION SELECT accumulated_account_id FROM fixed_assets
+      WHERE company_id = $1 AND accumulated_account_id IS NOT NULL
+     UNION SELECT cost_account_id FROM fixed_asset_classes
+      WHERE company_id = $1 AND cost_account_id IS NOT NULL
+     UNION SELECT accumulated_account_id FROM fixed_asset_classes
+      WHERE company_id = $1 AND accumulated_account_id IS NOT NULL`,
+    [companyId]
+  );
+  return new Set(rows.map((r) => r.id));
+}
+
+/**
+ * D1 (N3): the asset register's opening capitalisations per account (net debit, fils): the
+ * register entries posted against Opening Balance Equity (entry kind 'opening'; before D1 they
+ * were 'standard' and are recognised by their 3040 leg).
+ */
+async function registerOpeningFils(companyId: string): Promise<Map<string, number>> {
+  const { rows } = await pq<{ account_id: string; f: string }>(
+    `SELECT jl.account_id, SUM(ROUND(jl.debit * 100) - ROUND(jl.credit * 100))::bigint::text AS f
+       FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.entry_id
+       JOIN accounts a ON a.id = jl.account_id
+      WHERE je.company_id = $1 AND je.status = 'posted' AND je.source = 'fixed_asset'
+        AND a.code <> '3040'
+        AND (je.entry_kind = 'opening' OR EXISTS (
+              SELECT 1 FROM journal_lines ol JOIN accounts oa ON oa.id = ol.account_id
+               WHERE ol.entry_id = je.id AND oa.code = '3040'))
+      GROUP BY jl.account_id`,
+    [companyId]
+  );
+  const out = new Map<string, number>();
+  for (const r of rows) if (Number(r.f) !== 0) out.set(r.account_id, Number(r.f));
+  return out;
+}
+
+/**
+ * D1 (N4): whether `date` is the last day of one of the company's VAT tax periods (monthly,
+ * quarterly from vat_period_start_month, or annual). A cut-over strictly inside a period leaves
+ * that period's return to be filed here.
+ */
+async function isVatPeriodEnd(companyId: string, date: string): Promise<boolean> {
+  const { rows } = await pq<{ freq: string | null; start: number | null }>(
+    `SELECT vat_filing_frequency AS freq, vat_period_start_month AS start FROM companies WHERE id = $1`,
+    [companyId]
+  );
+  const d = new Date(`${date}T00:00:00Z`);
+  const next = new Date(d.getTime() + 86_400_000);
+  if (next.getUTCDate() !== 1) return false; // not a month end
+  const month = d.getUTCMonth() + 1;
+  const start = rows[0]?.start && rows[0].start >= 1 && rows[0].start <= 12 ? rows[0].start : 1;
+  const freq = String(rows[0]?.freq ?? "quarterly").toLowerCase();
+  const offset = (month - start + 12) % 12;
+  if (freq.startsWith("month")) return true;
+  if (freq.startsWith("annual") || freq.startsWith("year")) return offset === 11;
+  return offset % 3 === 2;
+}
+
+/**
+ * D1 (N3): an opening trial balance is committed. The asset register's opening import is then
+ * refused: the trial balance already set the opening position (with the register's PPE in it).
+ */
+export async function openingTrialBalanceCommitted(companyId: string): Promise<boolean> {
+  const { rows } = await pq<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM import_jobs
+      WHERE company_id = $1 AND kind = 'trial_balance' AND status = 'committed'`,
+    [companyId]
+  );
+  return Number(rows[0]?.n ?? 0) > 0;
+}
+
+/**
+ * D1 (N14): balances a documents-mode opening trial balance moved to Opening Balance Equity for
+ * open invoices / bills that have not been imported yet (fils; zero when complete).
+ */
+export async function pendingOpeningDocuments(
+  companyId: string
+): Promise<{ cutOver: string; receivablesFils: number; payablesFils: number } | null> {
+  const state = await openingState(companyId);
+  if (!state.tb || state.tb.mode !== "documents") return null;
+  return {
+    cutOver: state.tb.cutOver,
+    receivablesFils: state.tb.arFils - state.invoicesFils,
+    payablesFils: state.tb.apFils - state.billsFils,
+  };
+}
+
 function isReceivableAccount(acct: AccountRow | undefined, ledger: ControlLedger | undefined) {
   return !!acct && (acct.sub_type === "receivable" || ledger === "receivables");
 }
@@ -619,6 +725,9 @@ export async function validateImport(companyId: string, jobId: string): Promise<
       const existing = await companyAccounts(companyId);
       const state = await openingState(companyId);
       const inventoryIds = await inventoryAccountIds(companyId);
+      const ppeIds = await ppeAccountIds(companyId);
+      const ppeByAccount = new Map<string, number>();
+      let vatFils = 0;
       const ledgers = await tbControlLedgers(
         companyId,
         rows.map((r) => existing.get(String(r.code))?.id ?? "")
@@ -631,7 +740,10 @@ export async function validateImport(companyId: string, jobId: string): Promise<
       let apFils = 0;
       let inventoryFils = 0;
       const perCode = new Map<string, number>();
-      rows.forEach((r, i) => {
+      let periodEnd: boolean | null = null;
+      const vatCutOverIsPeriodEnd = async () =>
+        (periodEnd ??= cutOver ? await isVatPeriodEnd(companyId, cutOver) : true);
+      for (const [i, r] of rows.entries()) {
         const code = String(r.code);
         const acct = existing.get(code);
         if (!acct)
@@ -650,9 +762,15 @@ export async function validateImport(companyId: string, jobId: string): Promise<
         const ledger = acct ? ledgers.get(acct.id) : undefined;
         if (isReceivableAccount(acct, ledger)) arFils += d - c;
         if (isPayableAccount(acct, ledger)) apFils += c - d;
+        if (acct && ppeIds.has(acct.id) && !inventoryIds.has(acct.id)) {
+          ppeByAccount.set(acct.id, (ppeByAccount.get(acct.id) ?? 0) + d - c);
+        }
+        if (acct && ledger === "vat") vatFils += c - d;
         if (acct && d !== c && !inventoryIds.has(acct.id)) {
           if (ledger === "payroll" && code === GRATUITY_CODE) gratuityFils += c - d;
-          else if (ledger === "payroll" || ledger === "vat" || ledger === "grni") {
+          else if (ledger === "vat" && cutOver && !(await vatCutOverIsPeriodEnd())) {
+            // D1 (N4): checked below; the cut-over is inside an open tax period.
+          } else if (ledger === "payroll" || ledger === "vat" || ledger === "grni") {
             const set = otherControl.get(ledger) ?? new Set<string>();
             set.add(code);
             otherControl.set(ledger, set);
@@ -666,7 +784,7 @@ export async function validateImport(companyId: string, jobId: string): Promise<
             `Account ${code} is a P&L account: its year-to-date balance is posted on the cut-over date`
           );
         }
-      });
+      }
       if (debit !== credit) {
         err(
           null,
@@ -738,12 +856,66 @@ export async function validateImport(companyId: string, jobId: string): Promise<
           );
         }
       }
+      if (gratuityFils === 0) {
+        const employeesFils = await openingGratuityFils(companyId, cutOver);
+        if (employeesFils !== 0) {
+          warn(
+            null,
+            "GRATUITY_NOT_IN_TB",
+            `Your employees carry opening gratuity provisions of ${fromFils(employeesFils)}, already booked to 2036 against Opening Balance Equity 3040; this trial balance has no 2036 balance, so 3040 keeps that amount.`
+          );
+        }
+      }
+      // D1 (N3): property, plant and equipment is carried by the asset register's opening import
+      // (cost and accumulated depreciation per asset, so it is depreciated and derecognised from
+      // the register). The trial balance's PPE must equal the register per account; the register
+      // posts it and the trial balance moves its lines to 3040.
+      const register = await registerOpeningFils(companyId);
+      const ppeTb = [...ppeByAccount.entries()].filter(([, f]) => f !== 0);
+      if (ppeTb.length) {
+        const codeOf = new Map([...existing.values()].map((a) => [a.id, a.code]));
+        const ids = new Set([...ppeTb.map(([id]) => id), ...register.keys()]);
+        const diffs = [...ids]
+          .map((id) => ({ id, tb: ppeByAccount.get(id) ?? 0, reg: register.get(id) ?? 0 }))
+          .filter((x) => x.tb !== x.reg)
+          .map(
+            (x) =>
+              `${codeOf.get(x.id) ?? x.id}: trial balance ${fromFils(x.tb)}, register ${fromFils(x.reg)}`
+          );
+        if (diffs.length) {
+          err(
+            null,
+            register.size ? "PPE_REGISTER_MISMATCH" : "PPE_WITHOUT_REGISTER",
+            `Property, plant and equipment in the trial balance must equal the opening balances of your fixed-asset register (${diffs.join("; ")}). ` +
+              "Import the asset register first (Fixed assets, import, with opening balances: cost and accumulated depreciation per asset); the register then carries these balances and depreciates them."
+          );
+        } else if (!existing.has(OBE_CODE)) {
+          warn(null, "OBE_CREATED", "Account 3040 Opening Balance Equity will be created");
+        }
+      } else if (register.size) {
+        warn(
+          null,
+          "PPE_NOT_IN_TB",
+          "Your fixed-asset register already carries opening balances against Opening Balance Equity 3040; this trial balance has no property, plant and equipment, so 3040 keeps them."
+        );
+      }
+      // D1 (N4): VAT of the tax period that contains the cut-over date (not yet filed) may sit on
+      // the VAT accounts: that period's return here reports it in the adjustment column (Box 1 /
+      // Box 9 of the company's emirate) and its settlement clears it, so 2020 / 1050 return to 0.
+      if (vatFils !== 0 && cutOver && !(await vatCutOverIsPeriodEnd())) {
+        warn(
+          null,
+          "VAT_OPENING_IN_RETURN",
+          `The VAT balance in this trial balance (net output ${fromFils(vatFils)}) is the VAT of the tax period that contains the cut-over date ${cutOver}. ` +
+            "That period's VAT return here reports it as an adjustment and its payment or refund clears it; do not add a return adjustment for it as well. VAT of returns already filed before go-live belongs on 2040 Accrued Expenses."
+        );
+      }
       // VAT, goods received not invoiced and the payroll payables have no opening document: the
       // VAT return, the purchase-order receipts and the payroll runs are their only writers.
       const guidance: Record<string, [string, string]> = {
         vat: [
           "VAT_IN_OPENING",
-          "VAT owed to or reclaimable from the FTA for returns filed before go-live is not part of a return kept here. Carry it on a non-VAT current liability or asset (for example 2040 Accrued Expenses) and pay or receive it from there.",
+          "At this cut-over date (the end of a VAT tax period) the VAT balance belongs to a return filed outside Muhasib, not to a return kept here. Carry it on a non-VAT current liability or asset (for example 2040 Accrued Expenses) and pay or receive it from there. (With a cut-over inside a tax period, that period's VAT may stay on the VAT accounts: its return here reports and settles it.)",
         ],
         grni: [
           "GRNI_IN_OPENING",
@@ -1052,6 +1224,9 @@ async function commitTrialBalance(
   }
   let deferred = 0; // net debit moved to Opening Balance Equity
   let deferredInventory = 0; // B1 (NM5): carried by the opening stock already recorded
+  let deferredGratuity = 0; // D1 (N1): carried by the employees' opening provisions
+  let deferredPpe = 0; // D1 (N3): carried by the asset register's opening import
+  const ppeIds = await ppeAccountIds(companyId);
   const ledgers = await tbControlLedgers(
     companyId,
     [...net.keys()].map((code) => existing.get(code)?.id ?? "")
@@ -1072,9 +1247,17 @@ async function commitTrialBalance(
       deferredInventory += fils;
       continue;
     }
-    // C1 (RM4): validateImport refused every other control balance; the gratuity provision is
-    // carried by the employees' opening provisions it was checked against.
-    const leg = ledger === "payroll" && code === GRATUITY_CODE ? { controlLeg: ledger } : {};
+    if (ledger === "payroll" && code === GRATUITY_CODE) {
+      deferredGratuity += fils;
+      continue;
+    }
+    if (ppeIds.has(acct.id)) {
+      deferredPpe += fils;
+      continue;
+    }
+    // C1 (RM4): validateImport refused every other control balance. D1 (N4): VAT of the open
+    // tax period is posted on the VAT accounts as their own opening leg (the return settles it).
+    const leg = ledger === "vat" ? { controlLeg: ledger } : {};
     lines.push(
       fils > 0
         ? { accountId: acct.id, debitFils: fils, description: "Opening balance", ...leg }
@@ -1113,26 +1296,49 @@ async function commitTrialBalance(
           }
     );
   }
-  const { entry, lines: posted } = await postJournal(
-    {
-      companyId,
-      date: String(job.cut_over_date).slice(0, 10),
-      memo: `Opening balances (${job.source_system} trial balance${job.file_name ? `: ${job.file_name}` : ""})`,
-      source: "opening_balance",
-      sourceId: job.id,
-      idempotencyKey: `import:opening-balance:${companyId}`,
-      status: "posted",
-      kind: "opening",
-      lines,
-    },
-    { actorId: userId, audit: true }
-  );
-  return {
-    entryId: entry.id,
-    entryNumber: entry.entryNumber,
-    lines: posted.length,
-    arApMode: mode,
-  };
+  const moved: Array<[number, string]> = [
+    [deferredGratuity, "Gratuity provision carried by the employees' opening provisions"],
+    [deferredPpe, "Property, plant and equipment carried by the asset register"],
+  ];
+  for (const [amount, description] of moved) {
+    if (amount === 0) continue;
+    if (!existing.has(OBE_CODE)) {
+      await ensureObe(companyId);
+      existing = await companyAccounts(companyId);
+    }
+    const obe = existing.get(OBE_CODE)!;
+    lines.push(
+      amount > 0
+        ? { accountId: obe.id, debitFils: amount, description }
+        : { accountId: obe.id, creditFils: -amount, description }
+    );
+  }
+  return withLedgerTx(async (tx) => {
+    const { entry, lines: posted } = await postJournal(
+      {
+        companyId,
+        date: String(job.cut_over_date).slice(0, 10),
+        memo: `Opening balances (${job.source_system} trial balance${job.file_name ? `: ${job.file_name}` : ""})`,
+        source: "opening_balance",
+        sourceId: job.id,
+        idempotencyKey: `import:opening-balance:${companyId}`,
+        status: "posted",
+        kind: "opening",
+        lines,
+      },
+      { actorId: userId, audit: true, tx }
+    );
+    // D1 (N1): the employees' opening provisions post the 2036 the trial balance moved to 3040
+    // (only what is not booked yet), in the same transaction.
+    const gratuity = await syncOpeningGratuity(companyId, userId, tx);
+    return {
+      entryId: entry.id,
+      entryNumber: entry.entryNumber,
+      lines: posted.length,
+      arApMode: mode,
+      openingGratuityEntries: gratuity.map((g) => g.journalEntryId),
+    };
+  });
 }
 
 async function commitContacts(

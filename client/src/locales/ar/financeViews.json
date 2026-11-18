@@ -51,6 +51,8 @@
   "inventory.thisWillPermanentlyDeleteThis": "سيؤدي هذا إلى حذف هذا المنتج من المخزون نهائياً. لا يمكن التراجع عن هذا الإجراء.",
   "inventory.recordInventoryMovement": "تسجيل حركة مخزون",
   "inventory.recordMovement": "تسجيل الحركة",
+  "inventory.paidFrom": "مدفوع من",
+  "inventory.paidFromHelp": "الحساب البنكي أو النقدي الذي دُفعت منه قيمة البضاعة. تُستلم البضاعة المشتراة بالآجل مقابل أمر شراء أو تُدخل في فاتورة المورد.",
   "dashboardHero.newInvoice": "فاتورة جديدة",
   "dashboardPlanning.nextDue": "الاستحقاق القادم",
   "dashboardPlanning.filingPulse": "نبض الإقرارات",

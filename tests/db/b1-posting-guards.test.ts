@@ -642,15 +642,9 @@ describe("[B1][NM3][NM5] month-end sub-ledger ties", () => {
       openingGratuityAsOf: "2026-09-30",
     });
     expect(emp.status, emp.text).toBe(201);
-    // The go-live provision is booked as a reasoned adjustment (Dr 3020 / Cr 2036).
-    await postJournalEntry(t, {
-      date: "2026-09-30",
-      description: "Opening gratuity provision",
-      lines: [
-        { code: "3020", debit: 50000 },
-        { code: "2036", credit: 50000 },
-      ],
-    });
+    // D1 (N1): the go-live provision is booked from the employee record when it is saved
+    // (Dr 3040 / Cr 2036, the opening gratuity seam).
+    expect(await bal(t, "2036")).toBe(-50000);
     const s = await t.as.post(`${base(t)}/payroll/settlements`, {
       employeeId: emp.body.id,
       terminationDate: "2026-10-31",
@@ -723,6 +717,7 @@ describe("[B1][NM3][NM5] month-end sub-ledger ties", () => {
       type: "purchase",
       quantity: 5,
       unitCost: 100,
+      counterAccountId: (await accountByCode(t, "1020")).id,
     });
     expect(move.status, move.text).toBe(200);
     const oct = await checklistTie(t, "2026-10", "inventory");

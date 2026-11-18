@@ -54,28 +54,28 @@ describe("E2 (J3-r2) opening gratuity provision", () => {
       openingGratuityProvision: "40000.00",
       openingGratuityAsOf: "2026-09-30",
     });
+    // D1 (N1): saving the provision on the employee books it (one source of truth).
     const before = await t.as.get(`${c}/payroll/opening-gratuity`);
     expect(before.status, before.text).toBe(200);
-    expect(before.body).toMatchObject({ provision: 40000, booked: 0, outstanding: 40000 });
-
-    const booked = await t.as.post(`${c}/payroll/opening-gratuity/book`, {});
-    expect(booked.status, booked.text).toBe(201);
-    expect(booked.body.posted).toHaveLength(1);
-    expect(booked.body.posted[0]).toMatchObject({ asOf: "2026-09-30", amount: 40000 });
+    expect(before.body).toMatchObject({ provision: 40000, booked: 40000, outstanding: 0 });
     expect(await gl(t, "2036")).toBe(40000);
     expect(await gl(t, "3040")).toBe(-40000);
     const again = await t.as.post(`${c}/payroll/opening-gratuity/book`, {});
     expect(again.status).toBe(409);
     expect(again.body.code).toBe("OPENING_GRATUITY_NOTHING_TO_BOOK");
 
-    // A corrected provision books only the difference.
+    // A corrected provision books only the difference, on save.
     await t.as.patch(`/api/employees/${emp.id}`, {
       openingGratuityProvision: "39000.00",
       openingGratuityAsOf: "2026-09-30",
     });
-    const fix = await t.as.post(`${c}/payroll/opening-gratuity/book`, {});
-    expect(fix.status, fix.text).toBe(201);
-    expect(fix.body.posted[0].amount).toBe(-1000);
+    const lines = await h.sql<{ d: string }>(
+      `SELECT jl.debit::text AS d FROM journal_lines jl
+         JOIN journal_entries je ON je.id = jl.entry_id JOIN accounts a ON a.id = jl.account_id
+        WHERE je.company_id = $1 AND je.source = 'opening_balance' AND a.code = '2036' AND jl.debit > 0`,
+      [t.company.id]
+    );
+    expect(lines.map((l) => Number(l.d))).toEqual([1000]);
     expect(await gl(t, "2036")).toBe(39000);
 
     // The October run, approved: gratuity GL ties to opening + accrued.

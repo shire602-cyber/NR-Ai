@@ -781,6 +781,13 @@ export interface CashFlowStatement {
     opening: number;
     closing: number;
   }>;
+  /**
+   * D1 (N2): go-live opening-balance entries dated inside the period (opening trial balance,
+   * opening documents, stock, register and gratuity). They are the opening position, not cash
+   * flows (IAS 7.45): their cash is part of `openingCash` and their profit or loss lines (a
+   * year-to-date P&L in the opening trial balance) are not in `netIncome`. Null when none.
+   */
+  openingPosition: { cash: number; netIncome: number } | null;
 }
 
 export const NET_INCOME_LINE_ID = "net-income";
@@ -913,19 +920,25 @@ export async function cashFlow(
   const accounts = await loadAccounts(companyId, q);
   const byId = new Map(accounts.map((a) => [a.id, a]));
   const cashIds = new Set(accounts.filter(isCashAccount).map((a) => a.id));
-  const [range, opening] = await Promise.all([
-    accountTotals(companyId, { from, to }, q),
+  // D1 (N2): the go-live opening entries in range are the opening position, not flows.
+  const [range, opening, openingEntries] = await Promise.all([
+    accountTotals(companyId, { from, to, opening: "exclude" }, q),
     from ? accountTotals(companyId, { to: addDays(from, -1) }, q) : Promise.resolve(new Map()),
+    accountTotals(companyId, { from, to, opening: "only" }, q),
   ]);
 
   let openFils = 0;
   let moveFils = 0;
+  let openingEntryCash = 0;
   const cashAccounts: CashFlowStatement["cashAccounts"] = [];
   for (const id of Array.from(cashIds)) {
     const a = byId.get(id)!;
     const o = opening.get(id);
     const r = range.get(id);
-    const of = o ? o.debit - o.credit : 0;
+    const oe = openingEntries.get(id);
+    const oeFils = oe ? oe.debit - oe.credit : 0;
+    openingEntryCash += oeFils;
+    const of = (o ? o.debit - o.credit : 0) + oeFils;
     const mv = r ? r.debit - r.credit : 0;
     openFils += of;
     moveFils += mv;
@@ -994,6 +1007,9 @@ export async function cashFlow(
       isBalanced: moveFils === computedNet,
     },
     cashAccounts,
+    openingPosition: openingEntries.size
+      ? { cash: aed(openingEntryCash), netIncome: aed(netIncomeOf(accounts, openingEntries)) }
+      : null,
   };
 }
 
@@ -1019,6 +1035,13 @@ export async function cashFlowBuckets(
   // B2 (NC2): each bucket classifies its cash legs exactly as the cash-flow statement does.
   for (const b of buckets(from, to, args.granularity)) {
     const c = await classifyCashFlows(companyId, { from: b.from, to: b.to }, accounts, q);
+    // D1 (N2): go-live opening entries in the bucket move the balance, not the flows.
+    let openingBalanceFils = 0;
+    const oe = await accountTotals(companyId, { from: b.from, to: b.to, opening: "only" }, q);
+    for (const id of Array.from(cashIds)) {
+      const t = oe.get(id);
+      if (t) openingBalanceFils += t.debit - t.credit;
+    }
     const flows = { operating: [0, 0], investing: [0, 0], financing: [0, 0] } as Record<
       CashFlowActivity,
       [number, number]
@@ -1045,7 +1068,7 @@ export async function cashFlowBuckets(
       flows.investing[1] +
       flows.financing[0] -
       flows.financing[1];
-    running += net;
+    running += openingBalanceFils + net;
     out.push({
       period: b.label,
       from: b.from,
@@ -1057,6 +1080,7 @@ export async function cashFlowBuckets(
       financingInflow: aed(flows.financing[0]),
       financingOutflow: aed(flows.financing[1]),
       netCashFlow: aed(net),
+      openingBalanceCash: aed(openingBalanceFils),
       endingBalance: aed(running),
     });
   }

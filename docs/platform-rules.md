@@ -132,3 +132,36 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   auth pages) and `formatMessage` for values. `tests/unit/x6b-first-hour-ux.test.ts` fails on a
   literal. Counted nouns use the ICU-style `{count, plural, one {# bill} other {# bills}}` form that
   `formatMessage` understands (Arabic has zero/one/two/few/many).
+
+## Go-live (opening balances)
+
+One model for every migrating company (D1, accounting re-audit 3: N1-N4, N7, N14).
+
+- Every account with a sub-ledger is posted by that sub-ledger's own opening seam, each against
+  Opening Balance Equity 3040 and each with `entry_kind = 'opening'`: open invoices / bills
+  (A/R 1040, A/P 2010, documents mode), opening stock (1070), the asset register's opening import
+  (PPE cost and accumulated depreciation, fixed-asset sub-type accounts) and the employees'
+  opening gratuity provisions (2036, `server/services/payroll/opening-gratuity.ts`).
+- The opening trial balance (`server/services/migration-import`) is one opening entry on the
+  cut-over date. Its line for a sub-ledger account is checked against the sub-ledger and moved to
+  3040 instead of being posted, so 3040 nets to zero once every opening document is in and
+  nothing is counted twice whatever the order. Stock, assets and employees come first (the trial
+  balance is refused when they differ); open invoices / bills may follow, and until they arrive
+  the month-end checklist step `opening_balances` stays incomplete.
+- Gratuity: the employee records are the one source. Saving an opening provision on the employee
+  form books it at once; the seam posts only the difference between the employees' provisions and
+  every opening entry on 2036 (whatever posted it), so a doubled 2036 is reversed, not repeated.
+- PPE: the register carries it. After an opening trial balance is committed an opening register
+  import is refused (409 `OPENING_TB_ALREADY_COMMITTED`); later assets are bought with a payment
+  account or on a bill. Month end ties PPE on the GL to the register (`fixed_assets` tie).
+- VAT: at a cut-over that ends a tax period the VAT balance belongs to a return filed outside
+  Muhasib and is carried on 2040. With a cut-over inside a tax period, that period's pre-go-live
+  VAT may stay on 2020 / 1050 (a `vat` control leg of the opening entry): the period's return
+  reports it in the adjustment column and its settlement clears it, so 2020 / 1050 end at 0.
+- GRNI (2015) is written only by purchase-order receipts and their bills; a manual stock
+  purchase names the account it was paid from (422 `COUNTER_ACCOUNT_REQUIRED`). Month end ties
+  2015 to the receipts not yet billed (`grni` tie).
+- Cash flow: opening entries (`OPENING_ENTRY_SQL` in `server/reporting/ledger-query.ts`) are not
+  cash flows of any section (IAS 7.45). When go-live falls inside the period their cash is part
+  of the opening cash (`openingPosition` on the statement) and their profit-or-loss lines are not
+  in the indirect method's net income, so direct and indirect agree.
