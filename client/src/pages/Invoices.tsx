@@ -6,7 +6,7 @@ import { Link, useLocation, useRoute } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
-import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from "date-fns";
+import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -150,6 +150,7 @@ import {
   type InvoiceStatusFilter,
 } from "@/lib/invoice-filters";
 import { accountDisplayName } from "@/lib/account-name";
+import { parseCalendarDate } from "@/lib/format-date";
 
 // D5b: the bilingual preview is its own chunk (only loaded when the invoice dialog opens).
 // Mounted only while open: the dialogs and their queries stay out of the list's first render.
@@ -982,7 +983,7 @@ export default function Invoices() {
         customerTrn: fullInvoice.customerTrn || "",
         contactId: fullInvoice.contactId || undefined,
         placeOfSupplyEmirate: fullInvoice.placeOfSupplyEmirate || undefined,
-        date: new Date(fullInvoice.date),
+        date: parseCalendarDate(fullInvoice.date),
         currency: fullInvoice.currency || baseCurrency,
         exchangeRate:
           fullInvoice.currency && fullInvoice.currency !== baseCurrency
@@ -1129,7 +1130,9 @@ export default function Invoices() {
       if (!invoice.date) return false;
 
       const invoiceDate =
-        typeof invoice.date === "string" ? parseISO(invoice.date) : new Date(invoice.date);
+        typeof invoice.date === "string"
+          ? parseCalendarDate(invoice.date)
+          : parseCalendarDate(invoice.date);
 
       if (fromDate && toDate) {
         return isWithinInterval(invoiceDate, { start: fromDate, end: toDate });

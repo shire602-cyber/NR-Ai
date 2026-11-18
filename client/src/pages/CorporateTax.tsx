@@ -50,7 +50,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatDate as formatDisplayDate, formatDateRange } from "@/lib/format-date";
+import {
+  formatDate as formatDisplayDate,
+  formatDateRange,
+  parseCalendarDate,
+} from "@/lib/format-date";
 import {
   FileCheck,
   Calculator,
@@ -1403,8 +1407,8 @@ export default function CorporateTax() {
             <DialogDescription>
               {viewReturn && (
                 <>
-                  Period: {format(new Date(viewReturn.taxPeriodStart), "dd MMM yyyy")} &mdash;{" "}
-                  {format(new Date(viewReturn.taxPeriodEnd), "dd MMM yyyy")}
+                  Period: {format(parseCalendarDate(viewReturn.taxPeriodStart), "dd MMM yyyy")}{" "}
+                  &mdash; {format(parseCalendarDate(viewReturn.taxPeriodEnd), "dd MMM yyyy")}
                 </>
               )}
             </DialogDescription>

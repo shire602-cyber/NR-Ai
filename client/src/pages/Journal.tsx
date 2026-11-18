@@ -86,6 +86,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { VirtualList } from "@/components/VirtualList";
 import { accountDisplayName } from "@/lib/account-name";
+import { parseCalendarDate } from "@/lib/format-date";
 
 /** Integer fils: balance is compared exactly, never with a 0.01 tolerance. */
 const toFils = (v: unknown) => Math.round((Number(v) || 0) * 100);
@@ -322,7 +323,7 @@ export default function Journal() {
       setEditingEntry(fullEntry);
       form.reset({
         companyId: fullEntry.companyId,
-        date: new Date(fullEntry.date),
+        date: parseCalendarDate(fullEntry.date),
         memo: fullEntry.memo || "",
         lines: fullEntry.lines?.map((line: any) => ({
           accountId: line.accountId,

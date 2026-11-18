@@ -70,6 +70,8 @@ import {
   receiptToExportRow,
 } from "../services/excel-export.service";
 import { renderReceiptPdf, renderReceiptsExportPdf } from "../services/pdf-receipt.service";
+import { attachmentDisposition, downloadFileName } from "../utils/download-filename";
+import { calendarDateKey } from "../../shared/uae-date";
 
 const log = createLogger("receipts");
 
@@ -1091,9 +1093,22 @@ export function registerReceiptRoutes(app: Express) {
 
       const pdfBuffer = await renderReceiptPdf(receipt, company);
 
+      // P-f: named by the receipt's journal entry number once posted, else merchant and date,
+      // never an id fragment ("receipt-8e671e03.pdf").
+      const entry = receipt.journalEntryId
+        ? await storage.getJournalEntry(receipt.journalEntryId, companyId)
+        : undefined;
+      const fileName = downloadFileName(
+        "receipt",
+        entry?.entryNumber
+          ? [entry.entryNumber]
+          : [receipt.merchant, receipt.date ? calendarDateKey(receipt.date) : null],
+        "pdf"
+      );
+
       res.set({
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="receipt-${id.slice(0, 8)}.pdf"`,
+        "Content-Disposition": attachmentDisposition(fileName),
         "Content-Length": pdfBuffer.length.toString(),
       });
       res.send(pdfBuffer);

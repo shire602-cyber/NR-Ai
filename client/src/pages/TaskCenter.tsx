@@ -1,5 +1,5 @@
 import { DatePicker } from "@/components/ui/date-picker";
-import { displayObligationTitle, formatDate } from "@/lib/format-date";
+import { displayObligationTitle, formatDate, parseCalendarDate } from "@/lib/format-date";
 import { localizeServerText } from "@shared/server-copy";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
@@ -7,7 +7,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { cn } from "@/lib/utils";
 import { T } from "@/components/layout/T";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { parseISO, differenceInDays, isBefore } from "date-fns";
+import { differenceInDays, isBefore } from "date-fns";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -319,8 +319,8 @@ export function TaskListPanel() {
 
   const getTaskStatus = (task: ComplianceTask) => {
     if (task.status === "completed") return "completed";
-    if (isBefore(parseISO(task.dueDate), new Date())) return "overdue";
-    const daysLeft = differenceInDays(parseISO(task.dueDate), new Date());
+    if (isBefore(parseCalendarDate(task.dueDate), new Date())) return "overdue";
+    const daysLeft = differenceInDays(parseCalendarDate(task.dueDate), new Date());
     if (daysLeft <= 3) return "due_soon";
     return "pending";
   };
@@ -354,7 +354,7 @@ export function TaskListPanel() {
     dueThisWeek:
       tasks?.filter((t) => {
         if (t.status === "completed") return false;
-        const days = differenceInDays(parseISO(t.dueDate), new Date());
+        const days = differenceInDays(parseCalendarDate(t.dueDate), new Date());
         return days >= 0 && days <= 7;
       }).length || 0,
     total: tasks?.length || 0,
@@ -476,7 +476,7 @@ export function TaskListPanel() {
               {filteredTasks.map((task) => {
                 const status = getTaskStatus(task);
                 const category = CATEGORIES.find((c) => c.value === task.category);
-                const daysLeft = differenceInDays(parseISO(task.dueDate), new Date());
+                const daysLeft = differenceInDays(parseCalendarDate(task.dueDate), new Date());
 
                 return (
                   <div

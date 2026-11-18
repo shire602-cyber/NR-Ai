@@ -97,6 +97,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { postablePaymentAccounts } from "@/lib/payment-accounts";
 import { accountDisplayName } from "@/lib/account-name";
+import { parseCalendarDate } from "@/lib/format-date";
 
 // ─── Types ────────────────────────────────────────────────
 
@@ -583,7 +584,7 @@ export default function ExpenseClaims() {
           fullClaim.items && fullClaim.items.length > 0
             ? fullClaim.items.map((item: ExpenseClaimItem) => ({
                 expense_date: item.expense_date
-                  ? format(new Date(item.expense_date), "yyyy-MM-dd")
+                  ? format(parseCalendarDate(item.expense_date), "yyyy-MM-dd")
                   : "",
                 category: item.category,
                 description: item.description,

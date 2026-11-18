@@ -5,7 +5,7 @@ import { FileDrop } from "@/components/ui/file-drop";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, parseISO } from "date-fns";
+import { format } from "date-fns";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,6 +53,7 @@ import {
   Clock,
   AlertCircle,
 } from "lucide-react";
+import { parseCalendarDate } from "@/lib/format-date";
 
 interface TaxReturn {
   id: string;
@@ -175,13 +176,16 @@ export default function TaxReturnArchive() {
   };
 
   const years = [
-    ...new Set(taxReturns?.map((r) => new Date(r.periodEnd).getFullYear()) || []),
+    ...new Set(taxReturns?.map((r) => parseCalendarDate(r.periodEnd).getFullYear()) || []),
   ].sort((a, b) => b - a);
 
   const filteredReturns =
     taxReturns?.filter((ret) => {
       if (typeFilter !== "all" && ret.returnType !== typeFilter) return false;
-      if (yearFilter !== "all" && new Date(ret.periodEnd).getFullYear().toString() !== yearFilter)
+      if (
+        yearFilter !== "all" &&
+        parseCalendarDate(ret.periodEnd).getFullYear().toString() !== yearFilter
+      )
         return false;
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -325,8 +329,8 @@ export default function TaxReturnArchive() {
                         <TableCell>
                           <div className="font-medium">{ret.periodLabel}</div>
                           <div className="text-xs text-muted-foreground">
-                            {format(parseISO(ret.periodStart), "dd MMM")} -{" "}
-                            {format(parseISO(ret.periodEnd), "dd MMM yyyy")}
+                            {format(parseCalendarDate(ret.periodStart), "dd MMM")} -{" "}
+                            {format(parseCalendarDate(ret.periodEnd), "dd MMM yyyy")}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -337,7 +341,7 @@ export default function TaxReturnArchive() {
                         <TableCell>
                           <div className="flex items-center gap-1">
                             <Calendar className="w-3 h-3" />
-                            {format(parseISO(ret.filingDate), "dd MMM yyyy")}
+                            {format(parseCalendarDate(ret.filingDate), "dd MMM yyyy")}
                           </div>
                         </TableCell>
                         <TableCell>{ret.ftaReferenceNumber || "-"}</TableCell>

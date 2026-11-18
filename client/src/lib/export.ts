@@ -3,6 +3,7 @@ import { apiRequest } from "./queryClient";
 import { apiUrl } from "./api";
 import { getAuthHeaders } from "./auth";
 import { withCsrfHeader } from "./csrf";
+import { parseCalendarDate } from "./format-date";
 
 // Shape of one row in the OCR-format Excel export. Matches the server-side
 // schema in `server/services/excel-export.service.ts` so the request body and
@@ -221,7 +222,9 @@ export function ocrDataToExportRow(data: {
 
 export function formatDateForExport(date: Date | string | null | undefined): string {
   if (!date) return "";
-  const d = typeof date === "string" ? new Date(date) : date;
+  // Business dates are calendar days, not instants in the browser's zone (N1).
+  const d = parseCalendarDate(date);
+  if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleDateString("en-GB", {
     day: "2-digit",
     month: "short",

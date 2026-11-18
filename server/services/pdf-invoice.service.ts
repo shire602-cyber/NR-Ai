@@ -1,6 +1,7 @@
 // @ts-expect-error - pdfkit has no type declarations
 import PDFDocument from "pdfkit";
 import { loadCompanyLogo } from "./pdf-logo";
+import { calendarParts } from "../../shared/uae-date";
 import type { Invoice, InvoiceLine, Company } from "../../shared/schema";
 import { renderEInvoiceQrPng } from "./einvoice-qr.service";
 import {
@@ -815,11 +816,11 @@ function drawNraSingleLineCellText(doc: PdfDoc, text: string, x: number, y: numb
 }
 
 function formatNraInvoiceDate(date: Date | string | null | undefined): string {
-  if (!date) return "";
-  const d = new Date(date);
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${month}/${day}/${d.getFullYear()}`;
+  const p = calendarParts(date);
+  if (!p) return "";
+  const month = String(p.month).padStart(2, "0");
+  const day = String(p.day).padStart(2, "0");
+  return `${month}/${day}/${p.year}`;
 }
 
 function formatNraQuantity(quantity: number): string {

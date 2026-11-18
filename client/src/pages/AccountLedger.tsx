@@ -60,6 +60,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import { accountDisplayName } from "@/lib/account-name";
+import { parseCalendarDate } from "@/lib/format-date";
 
 interface LedgerEntry {
   id: string;
@@ -202,7 +203,7 @@ export default function AccountLedger() {
     const exportEntries = ledger.allEntries || ledger.entries;
     const headers = ["Date", "Entry #", "Description", "Debit", "Credit", "Balance"];
     const rows = exportEntries.map((entry) => [
-      format(new Date(entry.date), "yyyy-MM-dd"),
+      format(parseCalendarDate(entry.date), "yyyy-MM-dd"),
       entry.entryNumber,
       entry.description || entry.memo || "",
       entry.debit.toFixed(2),
@@ -285,7 +286,7 @@ export default function AccountLedger() {
 
         xPos = 14;
         const rowData = [
-          format(new Date(entry.date), "MMM dd"),
+          format(parseCalendarDate(entry.date), "MMM dd"),
           entry.entryNumber.slice(-8),
           (entry.description || entry.memo || "").slice(0, 40),
           entry.debit > 0 ? entry.debit.toFixed(2) : "-",

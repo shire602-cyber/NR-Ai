@@ -43,6 +43,9 @@ import { chromium } from "playwright-core";
 import { LAUNCH_ROUTES } from "./launch-routes.mjs";
 
 const BASE = (process.env.BASE_URL || "http://127.0.0.1:5000").replace(/\/$/, "");
+// Fable N1: browse in UAE time so a business date formatted as a browser-zone instant (a 30 Sep
+// period end shown as 1 Oct) shows up here. Override with E2E_TIMEZONE.
+const BROWSER_TIMEZONE = process.env.E2E_TIMEZONE || "Asia/Dubai";
 const RTL_MODE = process.argv.includes("--rtl");
 const MULTI_COMPANY =
   process.argv.includes("--multi-company") || process.env.A11Y_MULTI_COMPANY === "true";
@@ -132,7 +135,10 @@ async function main() {
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || undefined,
   });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    timezoneId: BROWSER_TIMEZONE,
+  });
   const page = await context.newPage();
   const failures = [];
   const report = {

@@ -5,6 +5,7 @@ import {
   activityEntityLabel,
   metadataChanges,
   readableSentence,
+  withDisplayDates,
   withoutIds,
 } from "@/lib/activity-log-labels";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -253,7 +254,7 @@ export default function History() {
           <ul className="divide-y divide-border/70" data-testid="history-feed">
             {filteredLogs.map((log) => {
               const sentence = readableSentence(
-                withoutIds(activityDescription(t, log, locale)),
+                withDisplayDates(withoutIds(activityDescription(t, log, locale)), locale),
                 t[`activityLog.action.${log.action}`]
               );
               const changes = metadataChanges(log.metadata);
@@ -315,7 +316,7 @@ export default function History() {
                             <div>
                               <dt className="text-muted-foreground">{t["history.details"]}</dt>
                               <dd className="mt-0.5 text-foreground">
-                                {activityDescription(t, log, locale)}
+                                {withDisplayDates(activityDescription(t, log, locale), locale)}
                               </dd>
                             </div>
                             <div>

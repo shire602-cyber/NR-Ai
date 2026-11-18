@@ -64,6 +64,7 @@ import { lineVatRate } from "@/lib/invoice-totals";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, CalendarIcon, Trash2, Download, Edit, FileText, ArrowRightLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { parseCalendarDate } from "@/lib/format-date";
 
 const QUOTE_SUPPLY_TYPES = ["standard_rated", "zero_rated", "exempt", "out_of_scope"] as const;
 
@@ -272,8 +273,8 @@ export default function Quotes() {
         contactId: fullQuote.contactId || "",
         customerName: fullQuote.customerName,
         customerTrn: fullQuote.customerTrn || "",
-        date: new Date(fullQuote.date),
-        expiryDate: new Date(fullQuote.expiryDate),
+        date: parseCalendarDate(fullQuote.date),
+        expiryDate: parseCalendarDate(fullQuote.expiryDate),
         currency: fullQuote.currency,
         notes: fullQuote.notes || "",
         lines: (fullQuote.lines as Quote["lines"] | undefined)?.map((l) => ({

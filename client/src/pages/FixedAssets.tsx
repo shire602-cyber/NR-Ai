@@ -94,6 +94,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { accountDisplayName } from "@/lib/account-name";
+import { parseCalendarDate } from "@/lib/format-date";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -504,7 +505,9 @@ export default function FixedAssets() {
       assetNameAr: asset.asset_name_ar || "",
       assetNumber: asset.asset_number || "",
       category: asset.category,
-      purchaseDate: asset.purchase_date ? format(new Date(asset.purchase_date), "yyyy-MM-dd") : "",
+      purchaseDate: asset.purchase_date
+        ? format(parseCalendarDate(asset.purchase_date), "yyyy-MM-dd")
+        : "",
       purchaseCost: parseFloat(asset.purchase_cost),
       salvageValue: parseFloat(asset.salvage_value || "0"),
       usefulLifeYears: asset.useful_life_years,

@@ -4,8 +4,8 @@ import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { differenceInDays, parseISO } from "date-fns";
-import { formatDate } from "@/lib/format-date";
+import { differenceInDays } from "date-fns";
+import { formatDate, parseCalendarDate } from "@/lib/format-date";
 import { Alert } from "@/components/ui/alert";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -257,7 +257,7 @@ export default function DocumentVault() {
 
   const getExpiryStatus = (expiryDate: string | null) => {
     if (!expiryDate) return null;
-    const days = differenceInDays(parseISO(expiryDate), new Date());
+    const days = differenceInDays(parseCalendarDate(expiryDate), new Date());
     if (days < 0) return { status: "expired", color: "destructive", days: Math.abs(days) };
     if (days <= 30) return { status: "expiring_soon", color: "warning", days };
     return { status: "valid", color: "default", days };
@@ -281,14 +281,14 @@ export default function DocumentVault() {
   const expiringDocs =
     documents?.filter((doc) => {
       if (!doc.expiryDate || doc.isArchived) return false;
-      const days = differenceInDays(parseISO(doc.expiryDate), new Date());
+      const days = differenceInDays(parseCalendarDate(doc.expiryDate), new Date());
       return days >= 0 && days <= 30;
     }) || [];
 
   const expiredDocs =
     documents?.filter((doc) => {
       if (!doc.expiryDate || doc.isArchived) return false;
-      return differenceInDays(parseISO(doc.expiryDate), new Date()) < 0;
+      return differenceInDays(parseCalendarDate(doc.expiryDate), new Date()) < 0;
     }) || [];
 
   if (isLoadingCompany || isLoading) {
