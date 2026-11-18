@@ -3,6 +3,21 @@
 Scope: this file applies to the whole repository. It is a concise index; detail lives in `docs/`
 (links below). Keep this file under 250 lines and move new detail into the linked docs.
 
+## Model roles (all agents, owner rule)
+
+Sonnet 5.5 (`claude-sonnet-5-5`) is the builder: it does all the hands-on work. The higher-tier
+models (Opus, Fable: the "council") only plan, audit, review and decide. Owner decision, to keep
+the week's token budget for the work that needs it.
+
+- Council: scope the task, write the plan and a self-contained brief, review the result (diff, test
+  output, evidence), make the final call, and talk to the owner. It does not do the work in between.
+- Builder: everything between plan and review. Code edits, tests, migrations, running gates and
+  fixing CI, merges and conflict resolution, data gathering, rehearsals, drafting docs.
+- Delegate with the `builder` agent (`.claude/agents/builder.md`, pinned to Sonnet) or the Agent
+  tool with `model: "sonnet"`. Brief it with the goal, files, rules from this file, and what done
+  looks like; the council then reviews what came back before anything is pushed or reported.
+- Small lookups a review needs (one file, one grep) may stay with the council.
+
 ## Project layout
 
 - `client/` React/Vite frontend (`@` aliases `client/src`). UI copy lives in namespaced catalogs
