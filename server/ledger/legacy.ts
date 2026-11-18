@@ -43,6 +43,10 @@ function legacyFils(value: unknown, field: string): number {
   }
 }
 
+function legacyControlLeg(l: LegacyLine): PostJournalLineInput["controlLeg"] {
+  return (l as { controlLeg?: PostJournalLineInput["controlLeg"] }).controlLeg;
+}
+
 /** Net each legacy line onto one side and drop zero lines. Exported for tests. */
 export function legacyLinesToInput(lines: LegacyLine[]): PostJournalLineInput[] {
   const out: PostJournalLineInput[] = [];
@@ -72,6 +76,7 @@ export function legacyLinesToInput(lines: LegacyLine[]): PostJournalLineInput[] 
       foreignCredit: fNet < 0 ? fromFils(-fNet) : null,
       exchangeRate: (l.exchangeRate as number | string | null | undefined) ?? null,
       ...((l as { systemVat?: boolean }).systemVat === true ? { systemVat: true } : {}),
+      ...(legacyControlLeg(l) ? { controlLeg: legacyControlLeg(l) } : {}),
     });
   });
   return out;

@@ -8,6 +8,7 @@
  *                 (POST /api/receipts/:id/split { parts }); the parts must add up to the total.
  */
 import { accountDisplayName } from "@/lib/account-name";
+import { withoutControlAccounts } from "@/lib/control-account-options";
 import { useState } from "react";
 import {
   Dialog,
@@ -67,6 +68,9 @@ export interface AccountOption {
   nameEn?: string | null;
   name?: string | null;
   type?: string | null;
+  parentId?: string | null;
+  isVatAccount?: boolean | null;
+  vatType?: string | null;
 }
 
 export interface ReceiptLinesDialogProps {
@@ -122,7 +126,8 @@ export function ReceiptLinesDialog(props: ReceiptLinesDialogProps) {
     setError(null);
   }
 
-  const expenseAccounts = accounts.filter(
+  // C1: control accounts (A/R, A/P, inventory, VAT, payroll) are posted by their own module.
+  const expenseAccounts = withoutControlAccounts(accounts).filter(
     (a) => !a.type || a.type === "expense" || a.type === "asset"
   );
   const totals = linesTotals(lines);

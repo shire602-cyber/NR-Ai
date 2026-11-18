@@ -15,6 +15,7 @@ import { sql } from "drizzle-orm";
 import { DomainError } from "../../errors";
 import { fromFils, mulRate, toFils } from "../../../shared/money";
 import type { LedgerTx } from "../../ledger";
+import { assertChosenAccountsNotControl } from "../../ledger/control-accounts";
 import {
   currentUnitCost,
   postInventoryJournal,
@@ -92,6 +93,31 @@ export async function recordManualMovement(
   const lines: DraftLine[] = [];
   let r: MoveResult;
   let valueFils: number;
+  // C1 (RH2): a purchase's counter account is the user's choice. It may clear goods received not
+  // invoiced (the default) or be a bank, equity or other account, never another control account
+  // (Cr 2020 would land in VAT 201 Box 1, Cr 1040 / 2010 would break the aging). Checked before
+  // any stock moves.
+  let purchaseCounter: { id: string; grni: boolean } | null = null;
+  if (input.type === "purchase") {
+    if (input.counterAccountId) {
+      const chosen = await assertAccount(tx, input.companyId, input.counterAccountId, [
+        "asset",
+        "liability",
+        "equity",
+      ]);
+      await assertChosenAccountsNotControl(
+        input.companyId,
+        [{ field: "counterAccountId", accountId: chosen.id }],
+        { tx, allow: ["grni"] }
+      );
+      purchaseCounter = { id: chosen.id, grni: chosen.code === INVENTORY_CODES.GRNI };
+    } else {
+      purchaseCounter = {
+        id: await ensureAccountByCode(tx, input.companyId, INVENTORY_CODES.GRNI),
+        grni: true,
+      };
+    }
+  }
   if (inbound) {
     const unit =
       input.unitCostFils ?? (await currentUnitCost(tx, input.companyId, input.productId));
@@ -99,16 +125,8 @@ export async function recordManualMovement(
     const type = input.type === "adjustment" ? "adjustment" : input.type;
     r = await stockIn(tx, input.productId, qty, valueFils, ctx, type);
     let counter: string;
-    if (input.type === "purchase") {
-      counter = input.counterAccountId
-        ? (
-            await assertAccount(tx, input.companyId, input.counterAccountId, [
-              "asset",
-              "liability",
-              "equity",
-            ])
-          ).id
-        : await ensureAccountByCode(tx, input.companyId, INVENTORY_CODES.GRNI);
+    if (purchaseCounter) {
+      counter = purchaseCounter.id;
     } else if (input.type === "return") {
       counter = r.accounts.cogs;
     } else {
@@ -116,10 +134,16 @@ export async function recordManualMovement(
     }
     lines.push({
       accountId: r.accounts.inventory,
+      controlLeg: "inventory",
       fils: valueFils,
       description: `${label} - stock in`,
     });
-    lines.push({ accountId: counter, fils: -valueFils, description: label });
+    lines.push({
+      accountId: counter,
+      fils: -valueFils,
+      description: label,
+      ...(purchaseCounter?.grni ? { controlLeg: "grni" as const } : {}),
+    });
     lines.push(...trueUpLines(r, valueFils, null, label));
   } else {
     const type = input.type === "adjustment" ? "adjustment" : "sale";
@@ -132,6 +156,7 @@ export async function recordManualMovement(
     lines.push({ accountId: expense, fils: r.costFils, description: label });
     lines.push({
       accountId: r.accounts.inventory,
+      controlLeg: "inventory",
       fils: -r.costFils,
       description: `${label} - stock out`,
     });
@@ -197,7 +222,12 @@ export async function recordOpeningStock(
     sourceId: r.movementId,
     idempotencyKey: `inventory:opening:${args.productId}`,
     lines: [
-      { accountId: r.accounts.inventory, fils: valueFils, description: "Opening stock" },
+      {
+        accountId: r.accounts.inventory,
+        controlLeg: "inventory",
+        fils: valueFils,
+        description: "Opening stock",
+      },
       { accountId: equity, fils: -valueFils, description: "Opening stock" },
     ],
     actorId: args.actorId,
@@ -315,6 +345,7 @@ export async function applyOpeningBackfill(
       lines: [
         {
           accountId: r.accounts.inventory,
+          controlLeg: "inventory",
           fils: r.stockDeltaFils,
           description: "Opening stock valuation backfill",
         },
@@ -361,7 +392,12 @@ export async function writeDownStock(
     idempotencyKey: `inventory:movement:${r.movementId}`,
     lines: [
       { accountId: expense, fils: args.amountFils, description: `Write-down - ${args.reason}` },
-      { accountId: r.accounts.inventory, fils: -args.amountFils, description: "Write-down" },
+      {
+        accountId: r.accounts.inventory,
+        controlLeg: "inventory",
+        fils: -args.amountFils,
+        description: "Write-down",
+      },
     ],
     actorId: args.actorId,
   });
@@ -442,6 +478,7 @@ export async function reverseWriteDown(
     lines: [
       {
         accountId: r.accounts.inventory,
+        controlLeg: "inventory",
         fils: args.amountFils,
         description: "Write-down reversal",
       },
@@ -543,6 +580,7 @@ export async function postStocktake(
         movementIds.push(r.movementId);
         draft.push({
           accountId: r.accounts.inventory,
+          controlLeg: "inventory",
           fils: valueFils,
           description: "Stocktake surplus",
         });
@@ -558,6 +596,7 @@ export async function postStocktake(
         draft.push({ accountId: adj, fils: r.costFils, description: "Stocktake shortage" });
         draft.push({
           accountId: r.accounts.inventory,
+          controlLeg: "inventory",
           fils: -r.costFils,
           description: "Stocktake shortage",
         });

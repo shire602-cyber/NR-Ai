@@ -174,6 +174,8 @@ export type FilsJournalLine = {
   debitFils?: number;
   creditFils?: number;
   description: string;
+  /** C1: the recoverable input VAT this plan derives (the kernel lets it sit on 1050). */
+  systemVat?: boolean;
 };
 
 /**
@@ -249,6 +251,7 @@ export function buildExpenseClaimApprovalLines(args: {
     lines.push({
       accountId: vat,
       debitFils: recoverable,
+      systemVat: true,
       description: "Expense claim — recoverable input VAT",
     });
   }

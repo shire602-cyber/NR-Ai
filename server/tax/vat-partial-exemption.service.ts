@@ -85,10 +85,20 @@ export async function postPartialExemptionForPeriod(input: {
                 debitFils: amount,
                 description: "Irrecoverable input VAT",
               },
-              { accountId: inputVat.id, creditFils: amount, description: "Input VAT apportioned" },
+              {
+                accountId: inputVat.id,
+                creditFils: amount,
+                systemVat: true,
+                description: "Input VAT apportioned",
+              },
             ]
           : [
-              { accountId: inputVat.id, debitFils: amount, description: "Input VAT apportioned" },
+              {
+                accountId: inputVat.id,
+                debitFils: amount,
+                systemVat: true,
+                description: "Input VAT apportioned",
+              },
               {
                 accountId: costAccountId,
                 creditFils: amount,

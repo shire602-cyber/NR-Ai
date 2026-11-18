@@ -166,6 +166,61 @@ export async function assertManualControlPosting(args: {
   return hits;
 }
 
+/** A user-chosen account field of a document (a bill line's account, a counter account, ...). */
+export interface ChosenAccountField {
+  /** Request field path, echoed in the 422 (e.g. "line_items[2].account_id"). */
+  field: string;
+  accountId: string | null | undefined;
+}
+
+/**
+ * C1 (RH1 / RH2 / RM1 / RL1): refuse, before anything is written, a document whose user-chosen
+ * account field names a control account (or a sub-account of one). The control legs of a
+ * document are derived by its posting service (the bill's payable, the stock line's inventory,
+ * the VAT of the VAT rate); an account the user picks is the other side of the transaction.
+ * 422 CONTROL_ACCOUNT_NOT_ALLOWED names each field, the account and the module that owns it.
+ * `allow` lists ledgers a field may legitimately name (a stock receipt may clear GRNI).
+ */
+export async function assertChosenAccountsNotControl(
+  companyId: string,
+  fields: readonly ChosenAccountField[],
+  opts: { tx?: LedgerTx; allow?: readonly ControlLedger[] } = {}
+): Promise<void> {
+  const ids = fields.map((f) => f.accountId).filter((v): v is string => !!v);
+  if (!ids.length) return;
+  const hits = opts.tx
+    ? await controlAccountsAmongTx(opts.tx, companyId, ids)
+    : await controlAccountsAmong(companyId, ids);
+  const allow = new Set(opts.allow ?? []);
+  const byId = new Map(hits.filter((h) => !allow.has(h.ledger)).map((h) => [h.accountId, h]));
+  if (!byId.size) return;
+  const bad = fields
+    .filter((f) => f.accountId && byId.has(String(f.accountId).toLowerCase()))
+    .map((f) => ({ field: f.field, hit: byId.get(String(f.accountId).toLowerCase())! }));
+  if (!bad.length) return;
+  const first = bad[0].hit;
+  throw new DomainError(
+    "CONTROL_ACCOUNT_NOT_ALLOWED",
+    422,
+    {
+      fields: bad.map((b) => b.field),
+      accounts: bad.map((b) => ({
+        field: b.field,
+        accountId: b.hit.accountId,
+        code: b.hit.code,
+        ledger: b.hit.ledger,
+      })),
+      paths: [...new Set(bad.map((b) => b.hit.ledger))].map((ledger) => ({
+        ledger,
+        ...SUBLEDGER_PATHS[ledger],
+      })),
+    },
+    `${bad[0].field}: ${first.code} ${first.name ?? ""} is a control account kept by ` +
+      `${OWNER_TEXT[first.ledger]}, so it cannot be chosen here. Pick an expense, asset, bank or ` +
+      "other account: stock goes through a product, VAT through the VAT rate."
+  );
+}
+
 /** Where each control account's transactions are recorded instead of a generic journal. */
 const SUBLEDGER_PATHS: Record<ControlLedger, { action: string; endpoint: string }> = {
   receivables: {
@@ -271,10 +326,10 @@ export const MANUAL_SOURCES = new Set(["manual", "journal_template"]);
 /**
  * B1 (NC1): journal sources that ARE the sub-ledger of the control accounts they post to. Each
  * one records its document (invoice, bill, payment, payroll run, stock movement, VAT return, ...)
- * in the same transaction, so the aging, valuation, payroll or VAT figures move with the GL. Any
- * other source (manual journals, templates, bank-line entries, imports, AI postings, receipts, a
- * source added later) is generic: the kernel refuses its lines on a control account unless the
- * entry is an explicit, reasoned control-account adjustment by a permitted role.
+ * in the same transaction, so the aging, valuation, payroll or VAT figures move with the GL.
+ * C1: this list no longer opens the kernel gate (a source is trusted only for the control legs it
+ * marks with `controlLeg` / `systemVat`); it documents which sources own a control ledger and is
+ * pinned by tests so a new sub-ledger is a deliberate addition.
  */
 export const SUBLEDGER_SOURCES: ReadonlySet<string> = new Set([
   // Receivables
@@ -310,8 +365,6 @@ export const SUBLEDGER_SOURCES: ReadonlySet<string> = new Set([
   "vat_return_settlement",
   "vat_bad_debt_relief",
   "vat_partial_exemption",
-  // NR firm VAT workpaper rows post the documents the firm's VAT file reports.
-  "vat_workpaper_row",
   // Fixed assets (capitalisation input VAT, disposal output VAT)
   "fixed_asset",
   // FX revaluation of the control accounts' foreign balances (and its reversal / undo)
@@ -326,12 +379,29 @@ export const SUBLEDGER_SOURCES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * B1 (NC1): the single control-account gate of the posting kernel. Called for every new entry
- * (draft or posted) and every draft edit whose source is not a sub-ledger; reversals mirror an
- * entry that already passed it. A line flagged `systemVat` (VAT the posting service derived from
- * a VAT treatment) may sit on a VAT account; every other control-account line needs
- * `ctx.controlAdjustment` (role and reason checked here) or a reason already stamped on the
- * draft. Returns the reason to stamp on the entry (null when no control account is touched).
+ * C1 (RH1 / RH2 / RM1): a line is a sub-ledger's own control leg when the posting service derived
+ * its account itself and says so: `controlLeg` names the ledger (it must be the ledger of the
+ * account the line sits on, so a misconfigured default cannot land a receivable on 2020), and
+ * `systemVat` is the VAT a service derived from a VAT treatment. A line with neither carries an
+ * account somebody chose (a bill line's expense account, a stock movement's counter account, a
+ * fixed asset's payment account, a payroll mapping) whatever the entry's source.
+ */
+export function isDerivedControlLeg(
+  line: Pick<NormalizedLine, "systemVat" | "controlLeg">,
+  ledger: ControlLedger
+): boolean {
+  if (line.systemVat === true && ledger === "vat") return true;
+  return line.controlLeg === "any" || line.controlLeg === ledger;
+}
+
+/**
+ * B1 (NC1) / C1: the single control-account gate of the posting kernel. Called for every new
+ * entry (draft or posted) and every draft edit, whatever its source; reversals mirror an entry
+ * that already passed it. A sub-ledger's own derived control legs (`isDerivedControlLeg`) pass;
+ * every other control-account line needs `ctx.controlAdjustment` (role and reason checked here)
+ * or a reason already stamped on the draft. Being a sub-ledger source is not enough: those
+ * services also post accounts their caller chose (RH1: a bill line coded to 1040). Returns the
+ * reason to stamp on the entry (null when no control account is touched).
  */
 export async function assertKernelControlPosting(
   tx: LedgerTx,
@@ -343,7 +413,6 @@ export async function assertKernelControlPosting(
     stampedReason?: string | null;
   }
 ): Promise<string | null> {
-  if (SUBLEDGER_SOURCES.has(args.source ?? "")) return null;
   const all = await controlAccountsAmongTx(
     tx,
     args.companyId,
@@ -355,7 +424,7 @@ export async function assertKernelControlPosting(
   for (const l of args.lines) {
     const hit = ledgerOf.get(l.accountId);
     if (!hit) continue;
-    if (l.systemVat === true && hit.ledger === "vat") continue;
+    if (isDerivedControlLeg(l, hit.ledger)) continue;
     userHits.set(hit.accountId, hit);
   }
   if (!userHits.size) return null;

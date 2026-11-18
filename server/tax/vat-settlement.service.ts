@@ -144,9 +144,19 @@ export async function settleVatReturn(input: {
   const side = (fils: number) => (fils >= 0 ? { debitFils: fils } : { creditFils: -fils });
   const lines: PostJournalLineInput[] = [];
   if (outputFils !== 0)
-    lines.push({ accountId: output, ...side(outputFils), description: `${label}: output VAT` });
+    lines.push({
+      accountId: output,
+      ...side(outputFils),
+      systemVat: true,
+      description: `${label}: output VAT`,
+    });
   if (inputFils !== 0)
-    lines.push({ accountId: inputVat, ...side(-inputFils), description: `${label}: input VAT` });
+    lines.push({
+      accountId: inputVat,
+      ...side(-inputFils),
+      systemVat: true,
+      description: `${label}: input VAT`,
+    });
   if (netFils !== 0)
     lines.push({
       accountId: input.paymentAccountId,

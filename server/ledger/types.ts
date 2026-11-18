@@ -4,6 +4,7 @@
 import type { Request } from "express";
 import type { JournalEntry, JournalLine } from "../../shared/schema";
 import type { db } from "../db";
+import type { ControlLedger } from "../../shared/control-accounts";
 
 /** A drizzle transaction (or the db handle) the kernel can run statements on. */
 export type LedgerTx = typeof db;
@@ -44,6 +45,17 @@ export interface PostJournalLineInput {
    * and is held to the control-account rule. Never set from request input.
    */
   systemVat?: boolean;
+  /**
+   * C1 (RH1 / RH2 / RM1): the posting service derived this line's account itself as one of its
+   * own control legs (the invoice's receivable, the bill's payable, the stock movement's inventory
+   * account, the payroll run's payables, a revaluation of a control balance). It names the control
+   * ledger the leg belongs to ("any" only for a flow whose every line is a control balance it
+   * computed itself, such as an FX revaluation). The kernel lets such a line sit on a control
+   * account of that ledger. Every other line, on every source, carries an account somebody chose
+   * and may not touch a control account unless the entry is a reasoned control-account adjustment.
+   * Never set from request input.
+   */
+  controlLeg?: ControlLedger | "any";
 }
 
 export interface PostJournalInput {
@@ -111,6 +123,8 @@ export interface NormalizedLine {
   exchangeRate: string | null;
   /** See PostJournalLineInput.systemVat. */
   systemVat?: boolean;
+  /** See PostJournalLineInput.controlLeg. */
+  controlLeg?: ControlLedger | "any";
 }
 
 export interface NormalizedEntry {

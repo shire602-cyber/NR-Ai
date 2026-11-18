@@ -223,8 +223,26 @@ describe("[B1][NC1] control accounts take lines only from their sub-ledger", () 
         code: "CONTROL_ACCOUNT_MANUAL_POSTING",
       });
     }
-    // A sub-ledger source posts (the invoice service, here exercised directly).
-    await expect(post("invoice", ar.id)).resolves.toMatchObject({ replayed: false });
+    // C1: a sub-ledger source posts only the control leg it derived itself (the invoice service
+    // marks its receivable); an unmarked line on the same source is a user-chosen account.
+    await expect(post("invoice", ar.id)).rejects.toMatchObject({
+      code: "CONTROL_ACCOUNT_MANUAL_POSTING",
+    });
+    await expect(
+      postJournal(
+        {
+          companyId: t.company.id,
+          date: "2026-11-02",
+          status: "posted",
+          source: "invoice",
+          lines: [
+            { accountId: ar.id, debitFils: 10_000, controlLeg: "receivables" },
+            { accountId: bank.id, creditFils: 10_000 },
+          ],
+        },
+        { actorId: t.user.id }
+      )
+    ).resolves.toMatchObject({ replayed: false });
 
     // A reasoned adjustment: refused for a viewer, posted and stamped for an accountant.
     await expect(

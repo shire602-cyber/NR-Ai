@@ -506,6 +506,7 @@ export function buildRevenueLines(args: {
     out.push({
       accountId: acc.vatOutput,
       creditFils: base,
+      systemVat: true,
       description: `VAT output - ${invoice.number}`,
       ...fx(totals.vatFils, "credit"),
     });
@@ -513,6 +514,7 @@ export function buildRevenueLines(args: {
   out.unshift({
     accountId: acc.ar,
     debitFils: creditBase,
+    controlLeg: "receivables",
     description: `Invoice ${invoice.number} - ${invoice.customerName}${foreign ? ` (${cur} ${fromFils(totals.totalFils)} @ ${rate})` : ""}`,
     ...fx(totals.totalFils, "debit"),
   });
@@ -974,6 +976,7 @@ async function postCreditNoteInTx(args: {
     accountId: d.leg.accountId,
     debitFils: d.base,
     costCenterId: d.leg.costCenterId,
+    ...(d.leg.kind === "vat" ? { systemVat: true } : {}),
     description:
       d.leg.kind === "vat"
         ? `Reverse VAT - ${creditNote.number}`
@@ -984,6 +987,7 @@ async function postCreditNoteInTx(args: {
     jl.push({
       accountId: arId,
       creditFils: arBase,
+      controlLeg: "receivables",
       description: `Reduce A/R - ${creditNote.number}`,
       ...(foreign && arDocFils > 0 ? fx(arDocFils, "credit") : {}),
     });

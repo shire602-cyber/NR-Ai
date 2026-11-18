@@ -27,11 +27,7 @@ import {
 import { allocateEntryNumber, lockIdempotencyKey } from "./numbering";
 import { journalMachine, transitionRow } from "./state-machines";
 import { assertVatPeriodOpen } from "./vat-lock";
-import {
-  SUBLEDGER_SOURCES,
-  assertKernelControlPosting,
-  stampControlAdjustment,
-} from "./control-accounts";
+import { assertKernelControlPosting, stampControlAdjustment } from "./control-accounts";
 import { findPgError, rowsOf, withLedgerTx } from "./tx";
 import type {
   EntryKind,
@@ -826,23 +822,20 @@ export async function updateDraftEntry(
   await assertPeriodNotLocked(pre.companyId, n.dateAt);
   return withLedgerTx(async (tx) => {
     await assertAccountsUsable(tx, pre.companyId, n.lines, false);
-    // B1 (NC1): an edited draft is held to the control-account rule like a new entry.
-    let controlReason: string | null = null;
-    const generic = !SUBLEDGER_SOURCES.has(pre.source ?? "");
-    if (generic) {
-      const stamped = rowsOf<{ r: string | null }>(
-        await tx.execute(
-          sql`SELECT control_adjustment_reason AS r FROM journal_entries WHERE id = ${entryId}`
-        )
-      )[0]?.r;
-      controlReason = await assertKernelControlPosting(tx, {
-        companyId: pre.companyId,
-        source: pre.source ?? null,
-        lines: n.lines,
-        ctx,
-        stampedReason: stamped ?? null,
-      });
-    }
+    // B1 (NC1) / C1: an edited draft is held to the control-account rule like a new entry,
+    // whatever its source: the edited lines are the user's, never a service's derived legs.
+    const stamped = rowsOf<{ r: string | null }>(
+      await tx.execute(
+        sql`SELECT control_adjustment_reason AS r FROM journal_entries WHERE id = ${entryId}`
+      )
+    )[0]?.r;
+    const controlReason = await assertKernelControlPosting(tx, {
+      companyId: pre.companyId,
+      source: pre.source ?? null,
+      lines: n.lines,
+      ctx,
+      stampedReason: stamped ?? null,
+    });
     const rows: JournalEntry[] = await tx
       .update(journalEntries)
       .set({
@@ -868,7 +861,7 @@ export async function updateDraftEntry(
       .insert(journalLines)
       .values(n.lines.map((l) => lineRow(entryId, l)))
       .returning();
-    if (generic) await stampControlAdjustment(tx, entryId, controlReason, actorId);
+    await stampControlAdjustment(tx, entryId, controlReason, actorId);
     await writeAudit(
       tx,
       ctx,

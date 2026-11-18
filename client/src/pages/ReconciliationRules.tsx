@@ -1,4 +1,5 @@
 import { accountDisplayName } from "@/lib/account-name";
+import { withoutControlAccounts } from "@/lib/control-account-options";
 import { T } from "@/components/layout/T";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
@@ -18,6 +19,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import {
   Dialog,
@@ -95,6 +97,9 @@ interface RuleAccountOption {
   type: string;
   subType: string | null;
   isActive: boolean;
+  parentId?: string | null;
+  isVatAccount?: boolean | null;
+  vatType?: string | null;
 }
 
 const ruleFormSchema = z.object({
@@ -138,7 +143,8 @@ export function ReconciliationRulesPanel() {
     queryKey: ["/api/companies", selectedCompanyId, "reconciliation-rules", "suggestions"],
     enabled: !!selectedCompanyId,
   });
-  const postableAccounts = (ruleAccounts ?? []).filter(
+  // C1 (RL1): a rule never codes bank lines to a control account (the server refuses it).
+  const postableAccounts = withoutControlAccounts(ruleAccounts ?? []).filter(
     (a) => a.isActive && !(a.type === "asset" && a.subType === "bank")
   );
 
@@ -670,6 +676,7 @@ export function ReconciliationRulesPanel() {
                         ))}
                       </SelectContent>
                     </Select>
+                    <FormDescription>{t["forms.controlAccountsHidden"]}</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

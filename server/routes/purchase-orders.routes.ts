@@ -49,6 +49,7 @@ import { nextDocNumber, createBill, resolveDocRate } from "../services/bill-paym
 import { computeBillTotals, txRows } from "../services/bill-posting.service";
 import { resolveVendor } from "../services/vendor.service";
 import { assertRefsOwned } from "../tenancy";
+import { assertChosenAccountsNotControl } from "../ledger/control-accounts";
 import {
   actorFromRequest,
   assertCompanyPermission,
@@ -269,6 +270,11 @@ export function registerPurchaseOrderRoutes(app: Express) {
         account: body.lines.map((l) => l.accountId),
         product: body.lines.map((l) => l.productId),
       });
+      // C1 (RH1): a PO line's account becomes its bill line's account; no control accounts.
+      await assertChosenAccountsNotControl(
+        companyId,
+        body.lines.map((l, i) => ({ field: `lines[${i}].accountId`, accountId: l.accountId }))
+      );
       const totals = poTotals(body.lines);
       const po = await withLedgerTx(async (tx) => {
         const number = await allocatePoNumber(tx, companyId);
@@ -346,6 +352,10 @@ export function registerPurchaseOrderRoutes(app: Express) {
           account: body.lines.map((l) => l.accountId),
           product: body.lines.map((l) => l.productId),
         });
+        await assertChosenAccountsNotControl(
+          po.companyId,
+          body.lines.map((l, i) => ({ field: `lines[${i}].accountId`, accountId: l.accountId }))
+        );
         const t = poTotals(body.lines);
         patch.subtotal = Number(t.subtotal);
         patch.vatAmount = Number(t.vatAmount);

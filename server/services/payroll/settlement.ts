@@ -156,6 +156,7 @@ export function settlementLines(
   if (provision > 0) {
     lines.push({
       accountId: requireAccount(accounts, "gratuityProvision"),
+      controlLeg: "payroll",
       debitFils: provision,
       description: `Gratuity provision cleared - ${who}`,
     });
@@ -184,6 +185,7 @@ export function settlementLines(
   if (r.deductionsFils > 0) {
     lines.push({
       accountId: requireAccount(accounts, "deductionsPayable"),
+      controlLeg: "payroll",
       creditFils: r.deductionsFils,
       description: `Final settlement deductions - ${who}`,
     });
@@ -192,6 +194,7 @@ export function settlementLines(
     lines.push({
       accountId: creditAccountId,
       creditFils: r.netFils,
+      ...(creditAccountId === accounts.salariesPayable ? { controlLeg: "payroll" as const } : {}),
       description: `Final settlement payable - ${who}`,
     });
   }
@@ -386,6 +389,7 @@ export async function paySettlement(
           lines: [
             {
               accountId: requireAccount(accounts, "salariesPayable"),
+              controlLeg: "payroll",
               debitFils: netFils,
               description: `Final settlement paid - ${s.full_name}`,
             },

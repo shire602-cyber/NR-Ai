@@ -1,4 +1,5 @@
 import { accountDisplayName } from "@/lib/account-name";
+import { withoutControlAccounts } from "@/lib/control-account-options";
 import { MiddleTruncate } from "@/components/ui/middle-truncate";
 import { T } from "@/components/layout/T";
 import {
@@ -885,7 +886,10 @@ export default function BillPay() {
   const cashAccounts = postablePaymentAccounts(accounts);
 
   // Expense account options
-  const expenseAccounts = accounts.filter((a: any) => a.type === "expense" || a.type === "asset");
+  // C1 (RH1): control accounts (A/R, A/P, inventory, VAT, payroll) are posted by their own module.
+  const expenseAccounts = withoutControlAccounts(accounts).filter(
+    (a: any) => a.type === "expense" || a.type === "asset"
+  );
   const costCenterList = Array.isArray(costCenters) ? costCenters : [];
 
   // ===========================
@@ -1372,6 +1376,9 @@ export default function BillPay() {
                             ))}
                           </SelectContent>
                         </Select>
+                        {index === 0 && (
+                          <FormDescription>{t["forms.controlAccountsHidden"]}</FormDescription>
+                        )}
                       </FormItem>
                     )}
                   />

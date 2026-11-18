@@ -294,6 +294,8 @@
   "forms.serverErrors.COMPANY_EMIRATE_REQUIRED": "Set the company's emirate in company settings first: the VAT return reports this supply in that emirate's Box 1 row.",
   "forms.serverErrors.ACCOUNT_IS_HEADER": "This is a header account with sub-accounts. Choose the bank or cash account the money actually moved through.",
   "forms.serverErrors.CONTROL_ACCOUNT_MANUAL_POSTING": "This line is on a control account (receivables, payables, inventory, VAT, goods received not invoiced or payroll payables). Record it in its own module, or post it as a control-account adjustment with a reason.",
+  "forms.serverErrors.CONTROL_ACCOUNT_NOT_ALLOWED": "A control account (receivables, payables, inventory, VAT, goods received not invoiced or payroll payables) cannot be chosen here: its own module posts it. Pick an expense, asset, bank or other account; stock goes through a product and VAT through the VAT rate.",
+  "forms.controlAccountsHidden": "Control accounts (receivables, payables, inventory, VAT, payroll) are not listed: their own modules post them.",
   "forms.serverErrors.CONTROL_ADJUSTMENT_ROLE_REQUIRED": "Only an owner, admin, accountant or CFO can adjust a control account directly.",
   "forms.serverErrors.CONTROL_ADJUSTMENT_REASON_REQUIRED": "Give a reason for the control-account adjustment.",
   "forms.serverErrors.BANK_CURRENCY_RATE_REQUIRED": "This bank account holds a different currency. Add its exchange rate for the payment date, or choose an account in the document's currency.",

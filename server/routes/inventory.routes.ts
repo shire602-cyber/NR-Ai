@@ -10,6 +10,7 @@ import { createLogger } from "../config/logger";
 import { DomainError } from "../errors";
 import { pool } from "../db";
 import { withLedgerTx } from "../ledger";
+import { assertChosenAccountsNotControl } from "../ledger/control-accounts";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { actorFromRequest, assertCompanyPermission } from "../services/approval-rules.service";
 import { fromFils, toFils } from "../../shared/money";
@@ -99,6 +100,16 @@ async function validateProductAccounts(
     if (body.inventoryAccountId)
       await assertAccount(tx, companyId, body.inventoryAccountId, ["asset"]);
     if (body.cogsAccountId) await assertAccount(tx, companyId, body.cogsAccountId, ["expense"]);
+    // C1: a product's inventory account is its stock control account (1070 or an inventory
+    // account of its own); it may not be another sub-ledger's control account (1040, 1050, ...).
+    await assertChosenAccountsNotControl(
+      companyId,
+      [
+        { field: "inventoryAccountId", accountId: body.inventoryAccountId },
+        { field: "cogsAccountId", accountId: body.cogsAccountId },
+      ],
+      { tx, allow: ["inventory"] }
+    );
   });
 }
 

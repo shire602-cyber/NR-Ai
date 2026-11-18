@@ -766,6 +766,7 @@ export class SalesStorage extends LedgerStorage {
                   }
                 : {}),
               ...(isCash ? cashTag(l.debit) : {}),
+              ...(isAr ? { controlLeg: "receivables" as const } : {}),
             };
           }),
         },

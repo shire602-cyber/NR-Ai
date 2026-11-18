@@ -190,8 +190,8 @@ export function localizeLedgerGuard(body: Record<string, unknown> | undefined): 
   const code = typeof body?.code === "string" ? body.code : undefined;
   if (!code) return undefined;
   const details = (body?.details ?? {}) as Record<string, unknown>;
-  if (code === "CONTROL_ACCOUNT_MANUAL_POSTING") {
-    const parts = [tr("forms.serverErrors.CONTROL_ACCOUNT_MANUAL_POSTING")];
+  if (code === "CONTROL_ACCOUNT_MANUAL_POSTING" || code === "CONTROL_ACCOUNT_NOT_ALLOWED") {
+    const parts = [tr(`forms.serverErrors.${code}`)];
     const accounts = Array.isArray(details.accounts) ? details.accounts : [];
     const codes = accounts
       .map((a) => (a && typeof a === "object" ? (a as { code?: unknown }).code : undefined))

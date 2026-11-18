@@ -253,6 +253,7 @@ export async function createCustomerDeposit(input: CreateDepositInput) {
       lines.push({
         accountId: output,
         creditFils: vatFils,
+        systemVat: true,
         description: `${label} (VAT on receipt)`,
       });
     }
@@ -360,6 +361,7 @@ export async function depositConsumptionLines(
     lines.push({
       accountId: output,
       debitFils: vatFils,
+      systemVat: true,
       description: `${label} (advance VAT reversed: charged on the invoice)`,
     });
   }

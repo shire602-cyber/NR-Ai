@@ -15,6 +15,7 @@ import type { Request } from "express";
 import { eq } from "drizzle-orm";
 import { db, pool } from "../db";
 import { assertRefsOwned } from "../tenancy";
+import { assertChosenAccountsNotControl } from "../ledger/control-accounts";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
@@ -405,6 +406,13 @@ async function prepareBill(
         account: src.map((l) => l.accountId),
         product: src.map((l) => l.productId),
       });
+      // C1 (RH1): a bill line's account is the expense / asset the user codes it to. A control
+      // account (1040, 1050, 1070, 2010, 2020, 2036, ...) is refused here: stock goes through the
+      // line's product, VAT through its VAT rate, the payable is the bill itself.
+      await assertChosenAccountsNotControl(
+        companyId,
+        src.map((l, i) => ({ field: `line_items[${i}].account_id`, accountId: l.accountId }))
+      );
     }
     const totals = computeBillTotals({
       lines: src ?? [],
@@ -930,10 +938,11 @@ export async function recordBillPayment(
     );
     const payment = inserted[0];
     const billRef = billReference(bill);
-    const lines = [
+    const lines: PostJournalLineInput[] = [
       {
         accountId: ap.id,
         debitFils: apBase,
+        controlLeg: "payables",
         description: `Settle A/P - Bill ${billRef} - ${bill.vendor_name}`.slice(0, 255),
         ...(foreign
           ? {
@@ -1281,10 +1290,11 @@ export async function applyPrepayment(args: {
         args.actorId,
       ]
     );
-    const lines = [
+    const lines: PostJournalLineInput[] = [
       {
         accountId: ap.id,
         debitFils: apBase,
+        controlLeg: "payables",
         description: `Prepayment applied - ${bill.vendor_name}`,
       },
       {
@@ -1401,6 +1411,11 @@ export async function createDebitNote(args: {
     }
     return { ...l, vatFils: vat, accountId: l.account_id ?? general.id };
   });
+  // C1 (RM1): a debit-note line credits the expense / asset it reverses, never a control account.
+  await assertChosenAccountsNotControl(
+    companyId,
+    input.lines.map((l, i) => ({ field: `lines[${i}].account_id`, accountId: l.account_id }))
+  );
   const subtotal = sumFils(lineCalcs.map((l) => l.amount));
   const vatPlan = planDebitNoteVat(
     lineCalcs.map((l) => ({ amountFils: l.amount, vatFils: l.vatFils })),
@@ -1483,6 +1498,7 @@ export async function createDebitNote(args: {
       credits.push({
         accountId: inputVat.id,
         creditFils: recoverableBase,
+        systemVat: true,
         description: `Input VAT reversal - ${number}`,
       });
     }
@@ -1495,6 +1511,7 @@ export async function createDebitNote(args: {
             {
               accountId: outputVat.id,
               debitFils: rcOutputBase,
+              systemVat: true,
               description: `Reverse-charge output VAT reversal - ${number}`,
             },
           ]
@@ -1517,6 +1534,7 @@ export async function createDebitNote(args: {
           {
             accountId: ap.id,
             debitFils: apDebit,
+            controlLeg: "payables",
             description: `A/P - debit note ${number}`,
             ...(foreign
               ? { foreignCurrency: currency, foreignDebit: fromFils(total), exchangeRate: rate }
@@ -1756,10 +1774,10 @@ export async function applyDebitNote(args: {
             fxDiff > 0
               ? [
                   { accountId: fx.loss.id, debitFils: fxDiff },
-                  { accountId: ap.id, creditFils: fxDiff },
+                  { accountId: ap.id, creditFils: fxDiff, controlLeg: "payables" as const },
                 ]
               : [
-                  { accountId: ap.id, debitFils: -fxDiff },
+                  { accountId: ap.id, debitFils: -fxDiff, controlLeg: "payables" as const },
                   { accountId: fx.gain.id, creditFils: -fxDiff },
                 ],
         },
@@ -1906,6 +1924,14 @@ export async function createRecurringBill(
   actorId: string,
   input: RecurringBillCreateInput
 ) {
+  // C1 (RH1): every occurrence becomes a bill; refuse a control account on the template up front.
+  await assertChosenAccountsNotControl(
+    companyId,
+    (input.template.line_items ?? []).map((l, i) => ({
+      field: `template.line_items[${i}].account_id`,
+      accountId: l.account_id,
+    }))
+  );
   const r = await pool.query(
     `INSERT INTO recurring_bills (company_id, name, template, frequency, next_run_on, end_on, created_by)
      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,

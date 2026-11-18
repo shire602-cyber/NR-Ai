@@ -13,6 +13,7 @@ import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { withLedgerTx } from "../ledger";
+import { assertChosenAccountsNotControl } from "../ledger/control-accounts";
 import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
 import { actorFromRequest, assertCompanyPermission } from "../services/approval-rules.service";
@@ -152,6 +153,19 @@ async function createAssetRecord(
         throw new DomainError("COST_CENTER_NOT_FOUND", 422, { costCenterId: body.costCenterId });
     }
     if (body.paymentAccountId) await assertAccount(tx, companyId, body.paymentAccountId);
+    // C1 (RM1): every account on the asset is the user's choice. A control account (cost 1040 / 1070,
+    // payment 2010 / 1040 / 2020) would post a receivable, payable, stock or VAT balance that no
+    // invoice, bill, stock movement or return carries. Refused before the asset is written.
+    await assertChosenAccountsNotControl(
+      companyId,
+      [
+        { field: "costAccountId", accountId: body.costAccountId },
+        { field: "accumulatedAccountId", accountId: body.accumulatedAccountId },
+        { field: "expenseAccountId", accountId: body.expenseAccountId },
+        { field: "paymentAccountId", accountId: body.paymentAccountId },
+      ],
+      { tx }
+    );
     const cost = fromFils(body.purchaseCost);
     const [row] = await q<{ id: string }>(
       tx,
@@ -227,6 +241,15 @@ export function registerFixedAssetRoutes(app: Express) {
           if (id) await assertAccount(tx, companyId, id, ["asset"]);
         }
         if (b.expenseAccountId) await assertAccount(tx, companyId, b.expenseAccountId, ["expense"]);
+        await assertChosenAccountsNotControl(
+          companyId,
+          [
+            { field: "costAccountId", accountId: b.costAccountId },
+            { field: "accumulatedAccountId", accountId: b.accumulatedAccountId },
+            { field: "expenseAccountId", accountId: b.expenseAccountId },
+          ],
+          { tx }
+        );
         const depreciable = b.isDepreciable !== false;
         if (depreciable && !b.usefulLifeYears) {
           throw new DomainError("USEFUL_LIFE_REQUIRED", 400, { field: "usefulLifeYears" });

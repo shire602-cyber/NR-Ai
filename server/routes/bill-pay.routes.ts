@@ -792,7 +792,7 @@ export function registerBillPayRoutes(app: Express) {
                 idempotencyKey: `bill_payment:${p.id}`,
                 allowFutureDate: true,
                 lines: [
-                  { accountId: ap.id, debitFils: amount },
+                  { accountId: ap.id, debitFils: amount, controlLeg: "payables" },
                   { accountId: cash.id, creditFils: amount },
                 ],
               },

@@ -484,6 +484,7 @@ export async function applyCustomerCredit(args: {
       {
         accountId: ar,
         creditFils: arBase,
+        controlLeg: "receivables",
         description: label,
         ...(foreign
           ? {
@@ -812,6 +813,7 @@ export async function writeOffInvoice(input: WriteOffInput) {
     lines.push({
       accountId: ar,
       creditFils: base,
+      controlLeg: "receivables",
       description: label,
       ...(foreign
         ? {
