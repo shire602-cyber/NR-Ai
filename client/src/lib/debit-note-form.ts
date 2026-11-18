@@ -3,7 +3,6 @@
  * the totals are unit-tested. The figures shown are a preview: the server recomputes VAT from the
  * bill's VAT treatment (blocked / partial recovery / reverse charge) when the note is posted.
  */
-import { fromFils, toFils } from "@shared/money";
 
 export interface DebitNoteDraftLine {
   description: string;
@@ -16,11 +15,12 @@ export interface DebitNoteDraftLine {
   quantity: number;
 }
 
+// A UI preview: plain integer fils (shared/money would pull decimal.js into the page chunk).
 const filsOrZero = (v: string | number | null | undefined) => {
-  const s = String(v ?? "").trim();
-  if (!s || !Number.isFinite(Number(s)) || Number(s) < 0) return 0;
-  return toFils(s, { rounding: "halfUp" });
+  const n = Number(String(v ?? "").trim());
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
 };
+const fromFils = (f: number) => (f / 100).toFixed(2);
 
 /** One credit line per bill line, at the bill line's net amount (the user lowers it). */
 export function linesFromBill(

@@ -12,7 +12,6 @@ import {
   readFileAsDataUrl,
 } from "@/lib/purchase-files";
 import type { BillCaptureField, BillCaptureResult, ConfidenceBand } from "@shared/bill-capture";
-import { BILL_CAPTURE_FIELDS } from "@shared/bill-capture";
 
 /** A file chosen in the editor; uploaded as the bill attachment when the bill is saved. */
 export interface PendingBillFile {
@@ -20,6 +19,17 @@ export interface PendingBillFile {
   type: string;
   dataUrl: string;
 }
+
+/** Same order as BILL_CAPTURE_FIELDS (shared/bill-capture.ts, kept out of the bundle: it pulls in decimal.js). */
+const BILL_CAPTURE_FIELDS: readonly BillCaptureField[] = [
+  "supplier",
+  "billNumber",
+  "billDate",
+  "currency",
+  "lines",
+  "vatTreatment",
+  "total",
+];
 
 const BAND_VARIANT: Record<ConfidenceBand, "success" | "warning" | "danger"> = {
   high: "success",
