@@ -1,6 +1,7 @@
 // zod 3-compatible validation messages for forms (R17-27). Installed by the app root
 // (and by the public pages' providers) rather than main.tsx, so the landing page does
 // not download zod before its first paint (D1b).
+import { landingPathFor, skipsOnboardingRedirect } from "@/lib/app-landing";
 import "@shared/zod-config";
 import { useCallback, useEffect, Suspense } from "react";
 import { lazyWithReload, clearChunkReloadGuards } from "@/lib/lazyWithReload";
@@ -277,11 +278,9 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const pathname = pathnameOnly(location);
 
   useEffect(() => {
-    if (companyLoading || pathname === "/onboarding") return;
-
-    // Broken-path sweep: the NR console (/admin, /firm) is staff work, guarded by its own role
-    // checks; an admin's or staffer's own unfinished company must not bounce them to onboarding.
-    if (/^\/(admin|firm)(\/|$)/.test(pathname)) return;
+    // The wizard itself and the NR console (/admin, /firm: staff work with its own role checks)
+    // never bounce to onboarding (broken-path sweep).
+    if (companyLoading || skipsOnboardingRedirect(pathname)) return;
 
     // Skip the customer-onboarding redirect when a firm staffer is operating
     // inside a client workspace — the client's onboarding state is the firm's
@@ -516,7 +515,7 @@ function Router() {
   // Redirect authenticated users from landing to their home (portal or main dashboard)
   useEffect(() => {
     if (pathname === "/" && user) {
-      setLocation(user.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard");
+      setLocation(landingPathFor(user));
     }
   }, [pathname, user, setLocation]);
 

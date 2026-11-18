@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { landingPathFor } from "@/lib/app-landing";
 import { useLocation } from "wouter";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { AuthLayout } from "@/components/auth/AuthLayout";
@@ -139,8 +140,7 @@ function SignIn() {
     fetchCurrentUser()
       .then((user) => {
         if (user) {
-          const fallback =
-            user.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard";
+          const fallback = landingPathFor(user);
           const next = safeNextPath();
           setLocation(next === "/dashboard" ? fallback : next);
         }
@@ -154,8 +154,7 @@ function SignIn() {
       return;
     }
     const currentUser = await establishAuthenticatedSession(user);
-    const fallback =
-      currentUser?.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard";
+    const fallback = landingPathFor(currentUser);
     const next = result?.mfaEnrollmentRequired ? "/settings/security" : safeNextPath();
     setLocation(next === "/dashboard" ? fallback : next);
   };
