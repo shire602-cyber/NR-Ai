@@ -345,7 +345,9 @@ export function registerSalesReceiptRoutes(app: Express) {
       } as CreateInvoiceInput);
 
       const result = await withLedgerTx(async (tx) => {
-        const number = await allocateInvoiceNumber(companyId, "invoice", invoiceDate, tx);
+        // CASH-SERIES: cash sales take numbers only from their own series (Settings › Numbering),
+        // allocated inside this transaction, so a failed save rolls the counter back too.
+        const number = await allocateInvoiceNumber(companyId, "cash_sale", invoiceDate, tx);
         const [inserted] = await tx
           .insert(invoicesTable)
           .values({

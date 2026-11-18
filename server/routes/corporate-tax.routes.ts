@@ -27,9 +27,7 @@ import {
   CT_TP_LOCAL_FILE_REVENUE_THRESHOLD,
   CT_TP_MNE_GROUP_REVENUE_THRESHOLD,
   CT_ZERO_RATE_BAND,
-  computeCtComputation,
   computeCtTotals,
-  sbrAvailableForPeriodEnd,
   type CtWorkpaperRow,
 } from "../../shared/ct-workpaper";
 import {
@@ -56,7 +54,7 @@ import {
 import { zUuid } from "../../shared/validators/primitives";
 import { isNraFirmRole } from "../../shared/access";
 import { normalizeCompanyRole, roleHasPermission, type Permission } from "../../shared/permissions";
-import { ENTRY_LOCAL_DATE_SQL, NOT_CLOSING_SQL, profitAndLoss, readRange } from "../reporting";
+import { ENTRY_LOCAL_DATE_SQL, NOT_CLOSING_SQL, readRange } from "../reporting";
 import type { CorporateTaxReturn } from "../../shared/schema";
 import {
   accrueCtReturn,
@@ -72,17 +70,16 @@ import {
   auditCtReturn,
   booksOverrides,
   confirmCtAdviserReview,
+  ctLedgerPreview,
   createRelatedParty,
   ctFilingDeadline,
   deleteRelatedParty,
   ensureCtTagAccounts,
   findOverlappingReturn,
   getCtProfile,
-  ledgerAdjustmentsFromBooks,
   listRelatedParties,
   listTaggedAccounts,
   parseAdjustments,
-  readCtBooks,
   recomputeAndSave,
   setAccountTaxTag,
   transitionCtReturn,
@@ -643,44 +640,14 @@ export function registerCorporateTaxRoutes(app: Express) {
       }
       await requireAccess(req, companyId);
 
-      // R08-02: reporting-kernel P&L — posted entries only, closing excluded.
-      // Corporate tax expense itself is not deductible (Art. 33(9)).
-      const [pl, books] = await Promise.all([
-        profitAndLoss({ companyId, from: range.from, to: range.to }),
-        readCtBooks(companyId, range.from!, range.to),
+      // R08-02 / C2 / R08-14: the ledger preview is shared with the Assistant (AS1).
+      const [preview, entries] = await Promise.all([
+        ctLedgerPreview(companyId, range.from!, range.to),
+        countPeriodEntries(companyId, range.from!, range.to),
       ]);
-      const totalRevenue = Math.max(0, pl.totalIncome);
-      const totalExpenses = Math.max(
-        0,
-        Math.round((pl.totalExpenses - books.tags.corporateTaxExpenseExcluded) * 100) / 100
-      );
-      const entries = await countPeriodEntries(companyId, range.from!, range.to);
-
-      // C2 (NL4): the same bridge as the return: add-backs and exempt income from the tagged
-      // accounts (entertainment 50%, fines, donations, exempt dividends: Arts. 22, 23, 28, 33)
-      // and the net interest of the interest-tagged accounts (Art. 30).
-      const ledgerAdjustments = ledgerAdjustmentsFromBooks(books);
-      const netInterest =
-        Math.round((books.tags.interestExpense - books.tags.interestIncome) * 100) / 100;
-      const liability = computeCtComputation({
-        totalRevenue,
-        totalExpenses,
-        totalDeductions: 0,
-        adjustments: ledgerAdjustments,
-        interest:
-          netInterest !== 0
-            ? { netInterestExpense: netInterest, depreciationAmortisation: 0 }
-            : null,
-        taxPeriodEnd: range.to,
-        exemptionThreshold: CT_ZERO_RATE_BAND,
-        taxRate: CT_STANDARD_RATE,
-      });
+      const { totalRevenue, totalExpenses, ledgerAdjustments, liability, withinSunset } = preview;
       const totalDeductions = liability.totalDeductions;
-
-      // Small Business Relief (MD 73/2023): an election, revenue ≤ AED 3M, and
-      // only for tax periods ending on or before 31 Dec 2026 (R08-14).
-      const withinSunset = sbrAvailableForPeriodEnd(range.to);
-      const sbrEligible = totalRevenue <= CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP && withinSunset;
+      const sbrEligible = preview.sbrEligible;
       const sbrElected = String(req.query.sbrElected ?? "").toLowerCase() === "true";
       const sbrApplied = sbrEligible && sbrElected;
 
