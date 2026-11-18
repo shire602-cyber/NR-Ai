@@ -68,7 +68,8 @@ function BoxList({ boxes }: { boxes: VatBoxRef[] }) {
       {[...byBox.entries()].map(([box, parts]) => (
         <Badge key={box} variant="neutral" className="gap-1 font-normal" data-testid={`box-${box}`}>
           <span className="font-medium tabular-nums">
-            {formatMessage(t["settingsPages.taxRates.box"], { box })}
+            {/* Isolate the box id so "1b" stays one left-to-right token inside Arabic text. */}
+            {formatMessage(t["settingsPages.taxRates.box"], { box: `\u2066${box}\u2069` })}
           </span>
           <span className="text-muted-foreground">
             {parts
