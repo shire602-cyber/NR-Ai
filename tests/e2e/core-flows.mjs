@@ -16,7 +16,7 @@
  * GET /api/billing/plans in both languages.
  *
  * A flow fails on a failed assertion, a page error, a console error or a 5xx response. Steps in
- * areas still being built are tagged `wip` (FLOWS_WIP, default "AS1"; WQ1 has merged) and reported as
+ * areas still being built are tagged `wip` (FLOWS_WIP, empty by default: WQ1 and AS1 have merged) and reported as
  * "in progress" without failing the run; FLOWS_STRICT_WIP=true makes them count.
  *
  * Environment: BASE_URL, DATABASE_URL (local scratch only; the admin flow promotes one user),
@@ -34,7 +34,7 @@ assertLocal(BASE);
 const TZ = process.env.E2E_TIMEZONE || "Asia/Dubai";
 const LANGS = (process.env.FLOWS_LANGS || "en,ar").split(",").map((s) => s.trim());
 const ONLY = process.env.FLOWS ? process.env.FLOWS.split(",").map((s) => s.trim()) : null;
-const WIP = new Set((process.env.FLOWS_WIP ?? "AS1").split(",").filter(Boolean));
+const WIP = new Set((process.env.FLOWS_WIP ?? "").split(",").filter(Boolean));
 const STRICT_WIP = process.env.FLOWS_STRICT_WIP === "true";
 const api = apiClient(BASE);
 const results = [];
@@ -551,6 +551,12 @@ const FLOWS = [
         expect(/1,050|1050/.test(text), "public invoice view does not show the total");
         expect(!visitor.errors.length, visitor.errors.join(" | "));
       });
+      await h.step("sent and viewed log records the customer's view", async () => {
+        await goto(page, `/invoices/${invoiceId}/edit`);
+        expect(await visible(page, "invoice-activity"), "no Sent and viewed section");
+        const text = await tid(page, "invoice-activity").innerText();
+        expect(!(await tid(page, "invoice-activity-empty").count()), `activity empty: ${text}`);
+      });
       await h.step("record a payment on the invoice", async () => {
         await goto(page, "/invoices");
         await rowAction(page, `button-add-payment-${invoiceId}`);
@@ -692,6 +698,64 @@ const FLOWS = [
         invs.some((i) => i.customerName === "Desert Rose"),
         "no invoice from the quote"
       );
+    });
+  }),
+
+  flow("quote-email", "Quote sent by e-mail (outbox; queued without a provider)", async (h) => {
+    const owner = await newOwner("qmail", h.lang);
+    const page = await h.signIn(owner);
+    await h.step("send a quote by e-mail from the row menu", async () => {
+      const q = await api(owner.token, "POST", `/api/companies/${owner.companyId}/quotes`, {
+        customerName: "Desert Rose",
+        date: today(),
+        expiryDate: today(),
+        currency: "AED",
+        lines: [{ description: "Design work", quantity: 1, unitPrice: 800, vatRate: 0.05 }],
+      });
+      const quote = q.body.quote ?? q.body;
+      await goto(page, "/quotes");
+      await rowAction(page, `button-send-quote-${quote.id}`);
+      expect(await visible(page, "dialog-send-quote"), "send dialog did not open");
+      await fill(page, "input-send-quote-to", "rose@example.com");
+      const [res] = await Promise.all([
+        page.waitForResponse((r) => /\/send-email$/.test(r.url()), { timeout: 15000 }),
+        click(page, "button-send-quote"),
+      ]);
+      expect(res.status() < 300, `send-email ${res.status()}`);
+      const after = (await api(owner.token, "GET", `/api/quotes/${quote.id}`)).body;
+      const status = after.quote?.status ?? after.status;
+      expect(status === "draft", `quote ${status}: nothing is "sent" without a provider`);
+    });
+  }),
+
+  flow("cash-sale", "Cash sale with its own CS numbering; Settings > Numbering", async (h) => {
+    const owner = await newOwner("cash", h.lang);
+    const page = await h.signIn(owner);
+    await h.step("record a cash sale: CS number, paid at once", async () => {
+      await goto(page, "/sales/cash-sale");
+      const next = (await tid(page, "cash-sale-next-number").innerText()).trim();
+      expect(/^CS/.test(next), `next number ${next}`);
+      await fill(page, "input-cash-line-description-0", h.ar ? "بيع نقدي" : "Counter sale");
+      await fill(page, "input-cash-line-quantity-0", "1");
+      await fill(page, "input-cash-line-price-0", "100");
+      await click(page, "button-record-cash-sale");
+      await settle(page, 1500);
+      const all = listOf(
+        (await api(owner.token, "GET", `/api/companies/${owner.companyId}/invoices?all=true`)).body
+      );
+      const sale = all.find((i) => /^CS/.test(i.number ?? ""));
+      expect(sale, `no CS invoice (${all.map((i) => i.number).join(", ")})`);
+      expect(sale.status === "paid", `cash sale ${sale.status}`);
+    });
+    await h.step("Settings > Numbering changes a prefix", async () => {
+      await goto(page, "/settings/numbering");
+      expect(await visible(page, "numbering-cash_sale"), "no cash sale row");
+      await fill(page, "numbering-prefix-quote", "QTX");
+      await click(page, "numbering-save-quote");
+      await settle(page, 800);
+      const rows = (await api(owner.token, "GET", `/api/companies/${owner.companyId}/numbering`))
+        .body;
+      expect(JSON.stringify(rows).includes("QTX"), "prefix not saved");
     });
   }),
 
@@ -1103,7 +1167,7 @@ const FLOWS = [
         ]);
         expect(ok === "answer", `assistant ${ok}`);
       },
-      { wip: "AS1" }
+      {}
     );
     await h.step("Review scan runs", async () => {
       await goto(page, "/assistant");

@@ -25,7 +25,10 @@ const files = args.length ? args : [path.join(ART, "broken-path-sweep-last-run.j
 const norm = (route) =>
   route
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ":id")
-    .replace(/\/(view\/invoice|portal\/einvoicing-approve|portal)\/[A-Za-z0-9_-]{16,}/, "/$1/:token");
+    .replace(
+      /\/(view\/invoice|portal\/einvoicing-approve|portal)\/[A-Za-z0-9_-]{16,}/,
+      "/$1/:token"
+    );
 const keyOf = (p) =>
   `${norm(p.route)}${p.viewport && p.viewport !== "desktop" ? ` (${p.viewport})` : ""}`;
 
@@ -83,7 +86,9 @@ for (const [route, row] of [...rows].sort((a, b) => a[0].localeCompare(b[0]))) {
 }
 for (const [route, problems] of before) {
   if (rows.has(route)) continue;
-  lines.push(`| \`${route}\` | – | – | – | fixed (${[...problems].join(", ")}; no longer linked) |`);
+  lines.push(
+    `| \`${route}\` | – | – | – | fixed (${[...problems].join(", ")}; no longer linked) |`
+  );
   fixed += 1;
 }
 console.log(lines.join("\n"));
