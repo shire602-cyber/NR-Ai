@@ -456,7 +456,7 @@
   "adminConsole.planNow": "الآن: {state}",
   "adminConsole.planTrialUntil": "تجربة حتى {date}",
   "adminConsole.planReadOnly": "بلا خطة، للقراءة فقط",
-  "activityLog.action.billing.plan_set": "تم تعيين الخطة من Muhasib.ai",
+  "activityLog.action.billing.plan_set": "عيّن مسؤول المنصة الخطة",
   "activityLog.action.numbering.update": "تم تغيير ترقيم المستندات",
   "activityLog.action.automation.enable": "تم تشغيل مهمة تلقائية",
   "activityLog.action.automation.disable": "تم إيقاف مهمة تلقائية"

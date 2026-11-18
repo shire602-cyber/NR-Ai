@@ -456,7 +456,7 @@
   "adminConsole.planNow": "Now: {state}",
   "adminConsole.planTrialUntil": "trial until {date}",
   "adminConsole.planReadOnly": "no plan, read-only",
-  "activityLog.action.billing.plan_set": "Plan set by Muhasib.ai",
+  "activityLog.action.billing.plan_set": "Plan set by an administrator",
   "activityLog.action.numbering.update": "Document numbering changed",
   "activityLog.action.automation.enable": "Automation switched on",
   "activityLog.action.automation.disable": "Automation switched off"
