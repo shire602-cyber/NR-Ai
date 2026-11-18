@@ -13,6 +13,8 @@ import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
 const TRN = "100000000000003";
+/** WQ2 (4.7): a supplier's TRN differs from the company's own (a self-TRN bill is refused). */
+const SUPPLIER_TRN = "100222333400003";
 const VAT_CO = { trn_vat_number: TRN, emirate: "dubai" };
 const today = () => new Date().toISOString().slice(0, 10);
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
@@ -182,7 +184,7 @@ describe("A2 purchase returns", () => {
     const p = await product(t);
     const b = await t.as.post(`/api/companies/${t.company.id}/bills`, {
       vendor_name: "Stock Supplier LLC",
-      vendor_trn: TRN,
+      vendor_trn: SUPPLIER_TRN,
       bill_number: "B-M4",
       bill_date: today(),
       line_items: [
@@ -554,7 +556,7 @@ describe("A2 fixed assets bought on a bill", () => {
     const office = await accountByCode(t, "1210");
     const b = await t.as.post(`/api/companies/${t.company.id}/bills`, {
       vendor_name: "Office Supplies LLC",
-      vendor_trn: TRN,
+      vendor_trn: SUPPLIER_TRN,
       bill_number: "FA-1",
       bill_date: "2026-01-15",
       line_items: [
@@ -628,7 +630,7 @@ describe("A2 fixed assets bought on a bill", () => {
     const office = await accountByCode(t, "1210");
     const b = await t.as.post(`/api/companies/${t.company.id}/bills`, {
       vendor_name: "Office Supplies LLC",
-      vendor_trn: TRN,
+      vendor_trn: SUPPLIER_TRN,
       bill_number: "FA-2",
       bill_date: "2026-01-15",
       line_items: [

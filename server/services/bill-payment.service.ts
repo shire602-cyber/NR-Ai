@@ -59,6 +59,7 @@ import {
   type BillState,
 } from "./bill-posting.service";
 import { resolveVendor } from "./vendor.service";
+import { assertNotOwnTrn } from "./bill-capture.service";
 import { recostBillAssetsForDebitNote } from "./fixed-assets/index";
 import { afterBillPosted, planPurchaseReturnStock } from "./inventory/documents";
 import { planDebitNoteVat, type DebitNoteBillVat } from "./debit-note-vat";
@@ -457,6 +458,8 @@ async function prepareBill(
     | string
     | null
     | undefined;
+  // WQ2 (4.7): one of our own sales invoices is never a purchase.
+  await assertNotOwnTrn(companyId, trn);
   if (!trn && !(header.reverse_charge as boolean)) {
     warnings.push({
       code: "VENDOR_TRN_MISSING",

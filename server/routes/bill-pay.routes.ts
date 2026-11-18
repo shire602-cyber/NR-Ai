@@ -72,6 +72,7 @@ import {
   applyCreditSchema,
   batchPaymentExportSchema,
   billAttachmentSchema,
+  billCaptureSchema,
   billCreateSchema,
   billOptionalReasonSchema,
   billPaymentSchema,
@@ -94,7 +95,9 @@ import { fromFils, toFils } from "../../shared/money";
 import { receipts } from "../../shared/schema";
 import { scopedGet } from "../tenancy";
 import { parseReportDate, uaeToday } from "../reporting";
-import { readReceiptImage, saveReceiptImage } from "../services/fileStorage";
+import { readReceiptImage } from "../services/fileStorage";
+import { captureBillFromDocument, storePurchaseFile } from "../services/bill-capture.service";
+import { billApprovalQueue } from "../services/bill-approval-queue";
 import { docRateSql, payableOpenSql, payableSettledSql } from "../reporting/settlement";
 
 const log = createLogger("bill-pay");
@@ -146,7 +149,13 @@ async function billWithLines(billId: string) {
     ),
   ]);
   const bill = b.rows[0];
-  return { ...bill, ...displayStatus(bill), line_items: l.rows, payments: p.rows };
+  return {
+    ...bill,
+    ...displayStatus(bill),
+    has_attachment: !!bill.attachment_path,
+    line_items: l.rows,
+    payments: p.rows,
+  };
 }
 
 export function registerBillPayRoutes(app: Express) {
@@ -189,7 +198,11 @@ export function registerBillPayRoutes(app: Express) {
       query += ` ORDER BY bill_date DESC, created_at DESC`;
       const result = await pool.query(query, params);
       res.json(
-        (result.rows as Array<Record<string, unknown>>).map((b) => ({ ...b, ...displayStatus(b) }))
+        (result.rows as Array<Record<string, unknown>>).map((b) => ({
+          ...b,
+          ...displayStatus(b),
+          has_attachment: !!b.attachment_path,
+        }))
       );
     })
   );
@@ -694,10 +707,11 @@ export function registerBillPayRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const bill = await loadBill(req);
       const { file, filename } = req.body as { file: string; filename?: string | null };
-      const path = await saveReceiptImage(file);
+      // WQ2: the upload guard checks the bytes; a rejected file is a 4xx, never a 500.
+      const path = await storePurchaseFile(file);
       await pool.query(
-        `UPDATE vendor_bills SET attachment_path = $2, attachment_name = $3 WHERE id = $1`,
-        [bill.id, path, filename ?? null]
+        `UPDATE vendor_bills SET attachment_path = $2, attachment_name = $3 WHERE id = $1 AND company_id = $4`,
+        [bill.id, path, filename ?? null, bill.company_id]
       );
       res.json({ attachment_name: filename ?? null, has_attachment: true });
     })
@@ -714,7 +728,35 @@ export function registerBillPayRoutes(app: Express) {
       if (!file) throw new DomainError("ATTACHMENT_NOT_FOUND", 404);
       res.setHeader("Content-Type", file.contentType);
       res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "private, no-store");
       res.send(file.buffer);
+    })
+  );
+
+  // ── WQ2 (8.2): read a supplier invoice into a bill draft (writes nothing) ──
+  app.post(
+    "/api/companies/:companyId/bills/capture",
+    authMiddleware,
+    requireCustomer,
+    strictBody(billCaptureSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      const { file } = parsedBody<{ file: string }>(req);
+      const result = await captureBillFromDocument({ companyId, userId: req.user!.id, file });
+      res.json(result);
+    })
+  );
+
+  // ── WQ2 (8.15): pending bills and whether the caller may sign the next step ──
+  app.get(
+    "/api/companies/:companyId/bills/approval-queue",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      res.json(await billApprovalQueue(companyId, actorFromRequest(req)));
     })
   );
 

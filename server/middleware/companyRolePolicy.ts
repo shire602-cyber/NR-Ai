@@ -187,6 +187,12 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("POST", "companies/*/receipts/*/review-decision", "documents.approve"),
   r("POST", "companies/*/ai-gl/queue/*/*", "documents.approve"),
 
+  // WQ2: reading a supplier invoice spends AI credits and stores nothing; purchase files
+  // (bill attachments, claim receipts) are document writes. Viewers are refused.
+  r("POST", "companies/*/bills/capture", "documents.write"),
+  r("POST", "bills/*/attachment", "documents.write"),
+  r("POST", "companies/*/expense-claims/receipts", "documents.write"),
+
   // Payment release
   r("POST", "bills/*/payments", "payments.release"),
   r("POST", "expense-claims/*/mark-paid", "payments.release"),
