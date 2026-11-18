@@ -1,8 +1,8 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0124)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0125)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
-Owner-run. The first deploy of this branch applies 36 migrations (0089-0124) that rewrite some production data
+Owner-run. The first deploy of this branch applies 37 migrations (0089-0125) that rewrite some production data
 (users, roles, FX rates, reconciliation rules, portal tokens, audit chain, subscriptions). Do not
 merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived or external items
 (A-Cube, email, Stripe, WPS, GPSSA, FAF) are listed in section 9 and stay off until proven.
@@ -29,7 +29,7 @@ Restore the dump from section 1 (or a Railway snapshot) into a scratch database,
 ```
 export DATABASE_URL=postgres://.../rehearsal   # the restored copy
 \timing on                                     # in psql; or time the command below
-time npm run db:migrate                         # applies 0089-0124; record total and slowest file
+time npm run db:migrate                         # applies 0089-0125; record total and slowest file
 npm run build && PORT=<free port> npm start     # boot check: /health/ready 200, /api/version
 ```
 
@@ -227,7 +227,8 @@ network (SSH) once a key is registered.
   invitations with a new token that is never shown. Inviters must re-send pending invitations.
 - **Reconciliation rules (0097):** rules with an unknown match type or no GL account were
   deactivated. Rules created before this release have no GL account, so on the first deploy that is
-  every active rule. Tenants choose an account for each in Banking and re-enable it.
+  every active rule. Tenants choose an account for each in Banking and re-enable it. Customer notice (EN and AR, owner
+  sends; draft only): [CUSTOMER-NOTICE-0097.md](CUSTOMER-NOTICE-0097.md).
 - **Customer portal links (0103):** existing links keep working but expire within 90 days.
 - **Roles (0092):** free-text roles were mapped (`cfo`/`manager` to admin, read-only to viewer,
   anything else to employee). Tell owners to review team roles.
@@ -263,7 +264,7 @@ and FTA. The PR description must say so, so "394 fixed" is not read as "certifie
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
 `einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
 safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
-0089-0124, then run it a second time to confirm it is a no-op.
+0089-0125, then run it a second time to confirm it is a no-op.
 
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):

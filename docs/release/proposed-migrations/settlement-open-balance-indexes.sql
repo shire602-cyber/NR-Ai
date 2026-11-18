@@ -1,5 +1,6 @@
--- PROPOSED, NOT A MIGRATION. Owner decision (PR #68). Lives in docs/, outside migrations/, so
--- the Drizzle migrator never runs it. See settlement-open-balance-indexes.md for the evidence.
+-- SUPERSEDED by migrations/0125_settlement_open_balance_indexes.sql (owner-approved exception,
+-- PR #68). Optional only: an operator may pre-build the same indexes CONCURRENTLY before the deploy,
+-- after which 0125's IF NOT EXISTS is a no-op. Lives in docs/, so the migrator never runs it.
 --
 -- The settlement rule (server/reporting/settlement.ts, receivableSettlementPartsSql "credited")
 -- runs, for every invoice it reads, correlated subqueries on

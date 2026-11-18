@@ -1,8 +1,11 @@
 # Proposed: indexes for the settlement rule (owner decision)
 
-Status: **proposed, not applied, not a migration.** AGENTS.md forbids adding migration numbers on
-this line, so nothing in `migrations/` changes. The statements are in
-[settlement-open-balance-indexes.sql](settlement-open-balance-indexes.sql).
+Status: **approved by the owner (2026-11-18) and shipped as migration
+`migrations/0125_settlement_open_balance_indexes.sql`**, an explicit exception to the frozen-migration
+rule (see [MIGRATION-REHEARSAL.md](../MIGRATION-REHEARSAL.md)). This page keeps the evidence. The
+`CONCURRENTLY` variant in [settlement-open-balance-indexes.sql](settlement-open-balance-indexes.sql) is
+no longer the plan. It stays for reference, or for an operator who pre-builds the indexes
+concurrently before the deploy; 0125's `IF NOT EXISTS` then makes the migration a no-op.
 
 ## What it fixes
 

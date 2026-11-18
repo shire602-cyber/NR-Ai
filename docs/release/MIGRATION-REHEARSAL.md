@@ -1,4 +1,4 @@
-# Migration rehearsal: main (0000-0088) to #67 (0089-0124)
+# Migration rehearsal: main (0000-0088) to #67 (0089-0125)
 
 Rehearsed on 2026-11-18 on branch `launch/hardening-on-67` (PR #67 head `ea6d1bd` plus this
 branch's changes), following [DEPLOY-RUNBOOK.md](DEPLOY-RUNBOOK.md) sections 1, 2 and 7. **This is a
@@ -14,6 +14,54 @@ A second `db:migrate` was a no-op. Re-running each 0089+ file by hand succeeded 
 (idempotent). The app booted on the migrated database (`/health/ready` 200, `/api/version` 200).
 The rollback restore reproduced the pre-0089 database exactly. Findings that need the owner are listed
 at the end.
+
+## Open launch risk: no production-data rehearsal
+
+**The owner decided to skip the production-data rehearsal for now (2026-11-18).** Every result in this
+document comes from synthetic data seeded on main's schema. Real production data can hold shapes the
+seed does not, for example:
+
+- roles or emails the 0092 rewrite does not expect;
+- FX rows that 0094 cannot classify;
+- more duplicates than 0118 tolerates;
+- an `audit_logs` volume that makes 0109 (about 0.12 ms per row, inside the single `db:migrate`
+  transaction) hold its lock for minutes.
+
+Until `rehearse.sh` has run on a restored production dump, treat the first production migrate as
+**unrehearsed**:
+
+- take and verify the section 1 backup immediately before the deploy;
+- record the production `audit_logs` count to size 0109;
+- keep the dump-restore rollback (section 7) ready.
+
+This stays open until the owner runs it.
+
+## Owner exception: migration 0125 (settlement indexes)
+
+AGENTS.md freezes the migration chain ("never edit `migrations/meta/_journal.json` or add new numbers").
+**The owner approved an explicit exception on 2026-11-18 (PR #68)** for
+`0125_settlement_open_balance_indexes`. It is the next free number after the base's 0124: journal idx
+124, `when` +10 s as the migrations test requires, with the header and `IF NOT EXISTS` rules followed.
+It adds two partial indexes, `idx_invoices_original_invoice_id` and `idx_credit_notes_invoice_id`.
+They are also declared in `shared/schema/sales.ts`, so `db:push` keeps them. The build is not
+`CONCURRENTLY`, because `drizzle-kit migrate` runs inside one transaction.
+
+Re-rehearsed from scratch with 0125 included: fresh copies of the 1x and 20x pre-0089 databases,
+the full `rehearse.sh`, 0089-0125 (37 files).
+
+| Check                                           | 1x                                | 20x                                             |
+| ----------------------------------------------- | --------------------------------- | ----------------------------------------------- |
+| `db:migrate` (one transaction)                  | exit 0, 1.51 s                    | exit 0, 8.33 s                                  |
+| 0125 alone (per-file runner)                    | 5 ms                              | 28 ms                                           |
+| Second `db:migrate`                             | no-op (ledger 125 = 125)          | no-op (ledger 125 = 125)                        |
+| Each 0089+ file re-run by hand                  | 37/37 ok                          | 37/37 ok                                        |
+| Schema, drizzle vs per-file                     | identical                         | identical                                       |
+| Indexes present and valid                       | yes                               | yes (`indisvalid = t`)                          |
+| Rollback restore                                | 0 errors, counts equal, ledger 88 | 0 errors, counts equal, ledger 88               |
+| Open balances, one company with 10,000 invoices | -                                 | **61-115 ms** (was 30-35 s without the indexes) |
+| `find-sales-ledger-drift.mjs`                   | -                                 | under 1 s (was 388 s)                           |
+
+All other counts in section 2 are unchanged from the earlier run. The ledger is now at 125 rows.
 
 ### Addendum: 0124 (added to the base after the main run)
 
@@ -172,16 +220,15 @@ on the migrated schema. Treat it as unverified. The data-preserving rollback is 
 
 ## Findings for the owner
 
-1. **Missing indexes make the settlement rule quadratic (launch-blocking at volume).**
-   `invoices.original_invoice_id` and `credit_notes.invoice_id` have no index. The settlement rule
+1. **Missing indexes made the settlement rule quadratic. Fixed by migration 0125 (owner exception).**
+   `invoices.original_invoice_id` and `credit_notes.invoice_id` had no index. The settlement rule
    (`server/reporting/settlement.ts`, used by the invoice list balances, ageing, dashboard,
-   statements and now payment chasing) runs a correlated subquery on each.
+   statements and payment chasing) runs a correlated subquery on each.
 
-   On the 20x data, open balances for one company with 10,000 invoices took **35 s**. With the first
-   index alone it took 1.7 s, and with both 0.45 s. `find-sales-ledger-drift.mjs` took 388 s for the
-   same reason. AGENTS.md forbids adding migration numbers on this line, so this branch does not add
-   one. The proposal, with `CREATE INDEX CONCURRENTLY` statements and the measurements (re-measured:
-   30-32 s without, 0.39-0.42 s with both), is in
+   On the 20x data, open balances for one company with 10,000 invoices took 35 s; with both
+   indexes, 0.45 s, and after 0125 on the re-rehearsed database 61-115 ms.
+   `find-sales-ledger-drift.mjs` went from 388 s to under 1 s. See "Owner exception: migration
+   0125" above, and the evidence in
    [proposed-migrations/settlement-open-balance-indexes.md](proposed-migrations/settlement-open-balance-indexes.md).
 
 2. **0097 deactivates every reconciliation rule on main data.** `reconciliation_rules.account_id`
