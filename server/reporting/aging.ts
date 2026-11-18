@@ -20,15 +20,16 @@ import {
 } from "./settlement";
 import {
   ENTRY_LOCAL_DATE_SQL,
-  accountTotals,
+  NOT_CLOSING_SQL,
   aed,
-  loadAccounts,
   reportCurrencyOf,
   type Fils,
   type Queryable,
 } from "./ledger-query";
 import type { IsoDate } from "./dates";
-import { allowanceForDoubtfulDebtsFils, controlAccountFxRevaluationFils } from "./ifrs-adjustments";
+import { FX_REVALUATION_SOURCES, allowanceForDoubtfulDebtsFils } from "./ifrs-adjustments";
+
+const FX_SOURCES_SQL = FX_REVALUATION_SOURCES.map((s) => `'${s}'`).join(", ");
 
 export interface AgingDocument {
   documentId: string;
@@ -133,37 +134,55 @@ async function controlBalance(
   fxFils: Fils;
   adjustmentsFils: Fils;
 }> {
-  const accounts = await loadAccounts(companyId, q);
   const code = kind === "receivable" ? "1040" : "2010";
-  const re = kind === "receivable" ? /receivable/i : /payable/i;
-  const acct =
-    accounts.find((a) => a.code === code) ??
-    accounts.find(
-      (a) =>
-        a.type === (kind === "receivable" ? "asset" : "liability") &&
-        re.test(a.nameEn) &&
-        !/vat|tax/i.test(a.nameEn)
-    );
-  if (!acct) return { id: null, code: null, name: null, fils: 0, fxFils: 0, adjustmentsFils: 0 };
-  const [all, fxDr, adj] = await Promise.all([
-    accountTotals(companyId, { to: asOf }, q),
-    controlAccountFxRevaluationFils(companyId, acct.id, asOf, q),
-    // A2 (H8): manual control-account adjustments posted with a reason.
-    q.query(
-      `SELECT COALESCE(SUM(ROUND(jl.debit * 100) - ROUND(jl.credit * 100)), 0)::text AS fils
-         FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
-        WHERE je.company_id = $1 AND je.status = 'posted' AND jl.account_id = $2
-          AND je.control_adjustment_reason IS NOT NULL
-          AND ${ENTRY_LOCAL_DATE_SQL} <= $3::date`,
-      [companyId, acct.id, asOf]
-    ),
-  ]);
-  const t = all.get(acct.id);
-  const fils = t ? (kind === "receivable" ? t.debit - t.credit : t.credit - t.debit) : 0;
+  // PERF-AGING: the control account is picked in SQL (the code, else the first account by
+  // code / name of the right type whose name matches, VAT / tax accounts excluded: the order
+  // loadAccounts returns and the old JS `find` walked) and its own lines are summed in the same
+  // statement (was a chart load, a whole-ledger trial balance and two more scans). Each figure
+  // keeps the predicates of the query it replaces: the balance and the FX revaluation exclude
+  // closing entries, the manual adjustments do not.
+  const { rows } = await q.query(
+    `WITH acct AS (
+       SELECT a.id, a.code, a.name_en
+         FROM accounts a
+        WHERE a.company_id = $1
+          AND (a.code = $2
+               OR (a.type = $3 AND a.name_en ~* $4 AND a.name_en !~* 'vat|tax'))
+        ORDER BY (a.code = $2) DESC, a.code, a.name_en
+        LIMIT 1)
+     SELECT acct.id, acct.code, acct.name_en, s.d, s.c, s.fx, s.adj
+       FROM acct
+       CROSS JOIN LATERAL (
+         SELECT COALESCE(SUM(ROUND(jl.debit * 100)) FILTER (WHERE ${NOT_CLOSING_SQL}), 0)::bigint AS d,
+                COALESCE(SUM(ROUND(jl.credit * 100)) FILTER (WHERE ${NOT_CLOSING_SQL}), 0)::bigint AS c,
+                COALESCE(SUM(ROUND(jl.debit * 100) - ROUND(jl.credit * 100))
+                  FILTER (WHERE ${NOT_CLOSING_SQL} AND je.source IN (${FX_SOURCES_SQL})), 0)::bigint AS fx,
+                COALESCE(SUM(ROUND(jl.debit * 100) - ROUND(jl.credit * 100))
+                  FILTER (WHERE je.control_adjustment_reason IS NOT NULL), 0)::bigint AS adj
+           FROM journal_lines jl
+           JOIN journal_entries je ON je.id = jl.entry_id
+          WHERE je.company_id = $1 AND je.status = 'posted' AND jl.account_id = acct.id
+            AND ${ENTRY_LOCAL_DATE_SQL} <= $5::date) s`,
+    [
+      companyId,
+      code,
+      kind === "receivable" ? "asset" : "liability",
+      kind === "receivable" ? "receivable" : "payable",
+      asOf,
+    ]
+  );
+  const r = rows[0] as
+    | { id: string; code: string; name_en: string; d: string; c: string; fx: string; adj: string }
+    | undefined;
+  if (!r) return { id: null, code: null, name: null, fils: 0, fxFils: 0, adjustmentsFils: 0 };
+  const debit = Number(r.d);
+  const credit = Number(r.c);
+  const fils = kind === "receivable" ? debit - credit : credit - debit;
+  const fxDr = Number(r.fx);
   const fxFils = kind === "receivable" ? fxDr : -fxDr;
-  const net = Number((adj.rows[0] as { fils?: string } | undefined)?.fils ?? 0);
+  const net = Number(r.adj);
   const adjustmentsFils = kind === "receivable" ? net : -net;
-  return { id: acct.id, code: acct.code, name: acct.nameEn, fils, fxFils, adjustmentsFils };
+  return { id: r.id, code: r.code, name: r.name_en, fils, fxFils, adjustmentsFils };
 }
 
 /** Open-document rows the aging SQL returns (typed at the driver boundary). */
@@ -297,7 +316,7 @@ export async function agedReceivables(
   q: Queryable = pool
 ): Promise<AgingReport> {
   const { companyId, asOf } = args;
-  const [{ rows }, control, unapplied, allowance] = await Promise.all([
+  const [{ rows }, control, unapplied, allowance, reportCurrency] = await Promise.all([
     q.query(
       `SELECT i.id, i.number, COALESCE(NULLIF(TRIM(i.customer_name), ''), 'Unknown Customer') AS name,
               ${LOCAL("i.date")}::text AS date,
@@ -317,13 +336,14 @@ export async function agedReceivables(
     controlBalance(companyId, asOf, "receivable", q),
     unappliedFils(unappliedReceivableCreditsFilsSql("$1", AS_OF), companyId, asOf, q),
     allowanceForDoubtfulDebtsFils(companyId, asOf, q),
+    reportCurrencyOf(companyId, q),
   ]);
   return build(
     "receivable",
     asOf,
     rows as AgingDocRows,
     control,
-    await reportCurrencyOf(companyId, q),
+    reportCurrency,
     unapplied,
     allowance
   );
@@ -333,10 +353,22 @@ export async function agedPayables(
   args: { companyId: string; asOf: IsoDate },
   q: Queryable = pool
 ): Promise<AgingReport> {
+  return (await agedPayablesWithVendors(args, q)).report;
+}
+
+/**
+ * agedPayables plus the vendor id of each aged bill (document id -> vendor id, bills with a
+ * vendor record only). The vendor id rides the aging query itself, so the by-vendor A/P view
+ * needs no second read of the bills table (PERF-AGING).
+ */
+export async function agedPayablesWithVendors(
+  args: { companyId: string; asOf: IsoDate },
+  q: Queryable = pool
+): Promise<{ report: AgingReport; vendorOf: Map<string, string> }> {
   const { companyId, asOf } = args;
-  const [{ rows }, control, unapplied] = await Promise.all([
+  const [{ rows }, control, unapplied, reportCurrency] = await Promise.all([
     q.query(
-      `SELECT b.id, b.bill_number AS number, COALESCE(NULLIF(TRIM(b.vendor_name), ''), 'Unknown Vendor') AS name,
+      `SELECT b.id, b.vendor_id, b.bill_number AS number, COALESCE(NULLIF(TRIM(b.vendor_name), ''), 'Unknown Vendor') AS name,
               ${LOCAL("b.bill_date")}::text AS date,
               COALESCE(${LOCAL("b.due_date")}, ${LOCAL("b.bill_date")})::text AS due,
               COALESCE(b.currency, co.base_currency) AS currency,
@@ -352,13 +384,14 @@ export async function agedPayables(
     ),
     controlBalance(companyId, asOf, "payable", q),
     unappliedFils(unappliedPayableCreditsFilsSql("$1", AS_OF), companyId, asOf, q),
+    reportCurrencyOf(companyId, q),
   ]);
-  return build(
-    "payable",
-    asOf,
-    rows as AgingDocRows,
-    control,
-    await reportCurrencyOf(companyId, q),
-    unapplied
-  );
+  const vendorOf = new Map<string, string>();
+  for (const r of rows as Array<{ id: string; vendor_id: string | null }>) {
+    if (r.vendor_id) vendorOf.set(r.id, r.vendor_id);
+  }
+  return {
+    report: build("payable", asOf, rows as AgingDocRows, control, reportCurrency, unapplied),
+    vendorOf,
+  };
 }
