@@ -1,4 +1,4 @@
-# Migration rehearsal: main (0000-0088) to #67 (0089-0123)
+# Migration rehearsal: main (0000-0088) to #67 (0089-0124)
 
 Rehearsed on 2026-11-18 on branch `launch/hardening-on-67` (PR #67 head `ea6d1bd` plus this
 branch's changes), following [DEPLOY-RUNBOOK.md](DEPLOY-RUNBOOK.md) sections 1, 2 and 7. **This is a
@@ -14,6 +14,14 @@ A second `db:migrate` was a no-op. Re-running each 0089+ file by hand succeeded 
 (idempotent). The app booted on the migrated database (`/health/ready` 200, `/api/version` 200).
 The rollback restore reproduced the pre-0089 database exactly. Findings that need the owner are listed
 at the end.
+
+### Addendum: 0124 (added to the base after the main run)
+
+The base branch then gained `0124_e3_invoice_line_income` (one nullable `invoice_lines.revenue_account_id`
+column, `ADD COLUMN IF NOT EXISTS`). It was applied with the per-file runner on top of both migrated
+snapshots. At 1x it took 598 ms, the first statement after a Postgres restart, so the cache was cold.
+At 20x it took 301 ms. It changed no rows. A second run by hand was a no-op (notice: column already
+exists). Both ledgers ended at 124 rows. The runbook now names 0089-0124.
 
 ## Environment and method
 
@@ -172,12 +180,9 @@ on the migrated schema. Treat it as unverified. The data-preserving rollback is 
    On the 20x data, open balances for one company with 10,000 invoices took **35 s**. With the first
    index alone it took 1.7 s, and with both 0.45 s. `find-sales-ledger-drift.mjs` took 388 s for the
    same reason. AGENTS.md forbids adding migration numbers on this line, so this branch does not add
-   one. Proposed SQL for the owner to approve, as the next migration or a release-phase step:
-
-   ```sql
-   CREATE INDEX IF NOT EXISTS idx_invoices_original_invoice_id ON invoices (original_invoice_id) WHERE original_invoice_id IS NOT NULL;
-   CREATE INDEX IF NOT EXISTS idx_credit_notes_invoice_id ON credit_notes (invoice_id) WHERE invoice_id IS NOT NULL;
-   ```
+   one. The proposal, with `CREATE INDEX CONCURRENTLY` statements and the measurements (re-measured:
+   30-32 s without, 0.39-0.42 s with both), is in
+   [proposed-migrations/settlement-open-balance-indexes.md](proposed-migrations/settlement-open-balance-indexes.md).
 
 2. **0097 deactivates every reconciliation rule on main data.** `reconciliation_rules.account_id`
    only exists from 0097 on, so every active rule from main has no GL account, and 0097 switches all
