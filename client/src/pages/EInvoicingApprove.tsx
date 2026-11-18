@@ -1,6 +1,6 @@
 /**
  * WQ5: the no-login page for whoever approves the e-invoicing partner in EmaraTax.
- * /einvoicing/approve/:token — a single-purpose, expiring (14 days), revocable link.
+ * /portal/einvoicing-approve/:token — a single-purpose, expiring (14 days), revocable link.
  *
  * It shows only the company's display name, the partner and the numbered steps, and a Done
  * button that tells the company owner (through the email outbox). Owner decision pending:

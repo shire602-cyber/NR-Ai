@@ -47,7 +47,8 @@ export interface ContactFormState {
 export function initialRegistrations(contact?: ContactRow | null): Registration[] {
   const typed = (contact?.taxRegistrations ?? []) as Registration[];
   if (typed.length) return typed;
-  return contact?.trnNumber ? [{ type: "vat", number: contact.trnNumber }] : [];
+  // A new contact starts with one empty VAT TRN row (the common case).
+  return [{ type: "vat", number: contact?.trnNumber ?? "" }];
 }
 
 /** The request body the form sends. */

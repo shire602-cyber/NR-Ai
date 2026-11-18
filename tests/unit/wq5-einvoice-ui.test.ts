@@ -305,7 +305,7 @@ describe("partner card", () => {
         id: "l1",
         state: "active",
         expiresAt: "2026-12-02T00:00:00Z",
-        url: "https://app.example/einvoicing/approve/abc",
+        url: "https://app.example/portal/einvoicing-approve/abc",
         emailQueued: false,
       },
     });
@@ -320,7 +320,7 @@ describe("partner card", () => {
     const shown = container.querySelector(
       '[data-testid="approver-link-created"] input'
     ) as HTMLInputElement;
-    expect(shown.value).toBe("https://app.example/einvoicing/approve/abc");
+    expect(shown.value).toBe("https://app.example/portal/einvoicing-approve/abc");
   });
 });
 

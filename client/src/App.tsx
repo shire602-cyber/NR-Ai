@@ -575,8 +575,7 @@ function Router() {
     pathname === "/terms" ||
     pathname === "/cookies" ||
     pathname.startsWith("/view/invoice/") ||
-    pathname.startsWith("/portal/") ||
-    pathname.startsWith("/einvoicing/approve/")
+    pathname.startsWith("/portal/")
   ) {
     return (
       <AnimatePresence mode="wait">
@@ -597,8 +596,9 @@ function Router() {
               <Route path="/verify-email" component={Login} />
               <Route path="/services" component={Services} />
               <Route path="/view/invoice/:token" component={PublicInvoiceView} />
+              {/* WQ5: no-login e-invoicing approver page (before /portal/:token). */}
+              <Route path="/portal/einvoicing-approve/:token" component={EInvoicingApprove} />
               <Route path="/portal/:token" component={CustomerPortal} />
-              <Route path="/einvoicing/approve/:token" component={EInvoicingApprove} />
               <Route path="/pricing" component={Pricing} />
               <Route path="/trust" component={TrustSecurity} />
               <Route path="/help" component={HelpCenter} />

@@ -69,7 +69,7 @@ function appBaseUrl(): string {
 }
 
 export function approverPageUrl(token: string): string {
-  return `${appBaseUrl()}/einvoicing/approve/${token}`;
+  return `${appBaseUrl()}/portal/einvoicing-approve/${token}`;
 }
 
 async function loadCompany(companyId: string): Promise<Company> {

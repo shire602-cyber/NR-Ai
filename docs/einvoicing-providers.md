@@ -43,7 +43,7 @@ yet verified" (`einvoice_appointment_confirmed_at`).
   PO box, Arabic legal name and address. The EndpointID is the ASP participant id, else the stored
   TIN, else the CT TRN's (then the VAT TRN's) first 10 digits.
 - Approver link: `einvoice_approver_links` (hashed 256-bit token, 14-day expiry, revocable,
-  single-purpose). The no-login page `/einvoicing/approve/:token` shows the company's display name,
+  single-purpose). The no-login page `/portal/einvoicing-approve/:token` shows the company's display name,
   the chosen partner and the EmaraTax steps, never the TRN or TIN (owner decision pending), and
   Done notifies the owner through the email outbox.
 - Code: `server/services/einvoice/identity.ts`, `server/routes/einvoice-identity.routes.ts`,

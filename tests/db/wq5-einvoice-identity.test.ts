@@ -187,7 +187,7 @@ describe("WQ5 no-login approver link", () => {
     });
     expect(created.status, created.text).toBe(201);
     expect(created.body.state).toBe("active");
-    const token = String(created.body.url).split("/einvoicing/approve/")[1];
+    const token = String(created.body.url).split("/portal/einvoicing-approve/")[1];
     expect(token.length).toBeGreaterThan(30);
     // Only the hash is stored.
     const [stored] = await h.sql(`SELECT token_hash FROM einvoice_approver_links WHERE id = $1`, [
@@ -226,7 +226,7 @@ describe("WQ5 no-login approver link", () => {
 
     // Revoke a second link; then it is 410.
     const second = await t.as.post(`${base(t)}/approver-links`, {});
-    const token2 = String(second.body.url).split("/einvoicing/approve/")[1];
+    const token2 = String(second.body.url).split("/portal/einvoicing-approve/")[1];
     const revoked = await t.as.post(`${base(t)}/approver-links/${second.body.id}/revoke`, {});
     expect(revoked.status, revoked.text).toBe(200);
     expect(revoked.body.state).toBe("revoked");
@@ -239,7 +239,7 @@ describe("WQ5 no-login approver link", () => {
 
     // Expiry (14 days): an expired link is 410 too.
     const third = await t.as.post(`${base(t)}/approver-links`, {});
-    const token3 = String(third.body.url).split("/einvoicing/approve/")[1];
+    const token3 = String(third.body.url).split("/portal/einvoicing-approve/")[1];
     expect(new Date(third.body.expiresAt).getTime() - Date.now()).toBeGreaterThan(
       13.9 * 86_400_000
     );

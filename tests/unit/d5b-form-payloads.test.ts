@@ -406,6 +406,25 @@ describe("[D5b] contact form payload unchanged", () => {
       country: "United Arab Emirates",
       emirate: "ajman",
       paymentTerms: 45,
+      // WQ5: one record for customer and/or supplier, typed registrations, structured address,
+      // buyer ID and defaults (the legacy fields above keep their values).
+      nameAr: null,
+      taxRegistrations: [{ type: "vat", number: "100123456700003" }],
+      addressStreet: "Unit 4, Al Jurf",
+      addressBuilding: null,
+      addressDistrict: null,
+      postalCode: null,
+      isCustomer: true,
+      isSupplier: false,
+      partyType: "business",
+      freeZone: false,
+      legalIdType: null,
+      legalId: null,
+      legalIdCountry: null,
+      defaultRevenueAccountId: null,
+      defaultExpenseAccountId: null,
+      defaultVatTreatment: null,
+      defaultCostCenterId: null,
     });
   });
 });
