@@ -227,7 +227,7 @@ describe("WP-A primitives", () => {
     render(h(Router, { hook }, h(SettingsLayout, null, h("p", null, "body"))));
     const current = container.querySelector('[aria-current="page"]');
     expect(current?.getAttribute("data-testid")).toBe("settings-nav-data");
-    expect(container.querySelectorAll("nav a[href]").length).toBe(10);
+    expect(container.querySelectorAll("nav a[href]").length).toBe(11); // WQ3 added Settings › Tax rates
   });
 
   it("EditorShell renders the form, a labelled preview and a sticky footer", async () => {
