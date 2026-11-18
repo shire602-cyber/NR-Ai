@@ -1,7 +1,7 @@
 // Formatting utilities for currency and numbers
 import { formatMoneyText } from "./format-money";
 import { useI18n } from "./i18n";
-import { formatDate as formatDisplayDate } from "./format-date";
+import { formatDate as formatDisplayDate, parseCalendarDate } from "./format-date";
 
 /**
  * Display money as a string. Delegates to the one money formatter (lib/format-money.ts):
@@ -50,7 +50,8 @@ export function formatDate(date: Date | string, locale: string = "en"): string {
 /** Raw Intl date string for PDF/print renderers only. */
 export function formatDatePlain(date: Date | string, locale: string = "en"): string {
   const formatLocale = locale === "ar" ? "ar-AE" : "en-AE";
-  const dateObj = typeof date === "string" ? new Date(date) : date;
+  // Business dates are calendar days, not instants in the browser's zone (N1).
+  const dateObj = parseCalendarDate(date);
 
   return new Intl.DateTimeFormat(formatLocale, {
     year: "numeric",

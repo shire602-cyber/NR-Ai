@@ -110,6 +110,7 @@ import {
   postablePaymentAccounts,
   type BankAccountLike,
 } from "@/lib/payment-accounts";
+import { parseCalendarDate } from "@/lib/format-date";
 
 // ===========================
 // W3-B copy (en + ar)
@@ -757,8 +758,8 @@ export default function BillPay() {
         vendor_name: detail.vendor_name,
         vendor_trn: detail.vendor_trn || "",
         bill_number: detail.bill_number || "",
-        bill_date: new Date(detail.bill_date),
-        due_date: detail.due_date ? new Date(detail.due_date) : undefined,
+        bill_date: parseCalendarDate(detail.bill_date),
+        due_date: detail.due_date ? parseCalendarDate(detail.due_date) : undefined,
         currency: detail.currency || "AED",
         exchange_rate:
           detail.currency && detail.currency !== "AED" ? String(detail.exchange_rate ?? "") : "",

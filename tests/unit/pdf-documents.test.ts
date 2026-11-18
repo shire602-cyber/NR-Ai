@@ -155,10 +155,13 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
     }
   });
 
-  it("INTEGRATE-D: VAT % follows each line's supply type, even when vatRate is null", async () => {
-    const date = new Date("2026-03-10");
-    const doc = { currency: "AED", subtotal: 200, vatAmount: 0, total: 200, status: "sent" };
-    for (const vatSupplyType of ["zero_rated", "exempt", "out_of_scope"]) {
+  // One test per supply type (3 PDFs each): nine renders in one test came within the 30 s budget
+  // under coverage on a loaded CI runner.
+  it.each(["zero_rated", "exempt", "out_of_scope"])(
+    "INTEGRATE-D: VAT rate follows each line's supply type (%s), even when vatRate is null",
+    async (vatSupplyType) => {
+      const date = new Date("2026-03-10");
+      const doc = { currency: "AED", subtotal: 200, vatAmount: 0, total: 200, status: "sent" };
       // A null rate used to fall back to the 5% default; a stale 5% must not print either.
       const lines = [
         { ...line, description: "Null rate", vatRate: null, vatSupplyType },
@@ -187,7 +190,7 @@ describe("pdf credit note / quote / purchase order (R03-09, R14-21)", { timeout:
         expect(text, vatSupplyType).not.toContain("5%");
       }
     }
-  });
+  );
 
   it("INTEGRATE-D: lineVatRate keeps the line rate for standard-rated supplies", () => {
     expect(lineVatRate({ vatRate: null, vatSupplyType: "standard_rated" })).toBe(0.05);

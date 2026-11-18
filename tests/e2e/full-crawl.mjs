@@ -20,6 +20,9 @@ import { chromium } from "playwright-core";
 import pg from "pg";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
+// Fable N1: browse in UAE time so a business date formatted as a browser-zone instant (a 30 Sep
+// period end shown as 1 Oct) shows up here. Override with E2E_TIMEZONE.
+const BROWSER_TIMEZONE = process.env.E2E_TIMEZONE || "Asia/Dubai";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SHOT_DIR = path.join(__dirname, ".artifacts");
 
@@ -145,7 +148,10 @@ async function main() {
     executablePath: await resolveExecutablePath(),
     args: ["--no-sandbox"],
   });
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const ctx = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    timezoneId: BROWSER_TIMEZONE,
+  });
   await ctx.addInitScript(() => {
     // The client only probes the cookie session when this non-secret sign-in hint is set (R18-04).
     localStorage.setItem("muhasib_auth_hint", "1");
@@ -1158,7 +1164,10 @@ async function main() {
   //     reports must render with no admin/firm assumptions leaking in.
   // (b) 'client_portal' userType: the separate portal layout.
   async function crawlAs(label, userType, matrixRoutes) {
-    const mCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const mCtx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      timezoneId: BROWSER_TIMEZONE,
+    });
     await mCtx.addInitScript(() => {
       // The client only probes the cookie session when this non-secret sign-in hint is set (R18-04).
       localStorage.setItem("muhasib_auth_hint", "1");
@@ -1299,6 +1308,54 @@ async function main() {
     "/client-portal/statements",
     "/client-portal/messages",
   ]);
+
+  // ── 10b. Time-zone probe (Fable N1): business dates are calendar days ─────
+  // A VAT period end is stored as 23:59:59.999Z; formatted as a browser-zone instant it read
+  // "1 Oct" for a 30 Sep quarter in UAE time. Generate the last completed quarter's return and
+  // require /vat-filing to show the same dates in this (UAE-time) browser as in a UTC one.
+  try {
+    const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
+    const companyId = companies?.[0]?.id;
+    const now = new Date();
+    const qStartMonth = Math.floor(now.getUTCMonth() / 3) * 3 - 3;
+    const qStart = new Date(Date.UTC(now.getUTCFullYear(), qStartMonth, 1));
+    const qEnd = new Date(Date.UTC(qStart.getUTCFullYear(), qStart.getUTCMonth() + 3, 0));
+    const ymd = (d) => d.toISOString().slice(0, 10);
+    await page.request.post(`${BASE}/api/companies/${companyId}/vat-returns/generate`, {
+      headers: { "x-csrf-token": csrfToken ?? "" },
+      data: { periodStart: ymd(qStart), periodEnd: ymd(qEnd) },
+    });
+    const DATE_TEXT = /\b\d{1,2}(?:[–-]\d{1,2})? [A-Z][a-z]{2} \d{4}\b|\b[A-Z][a-z]{2} \d{4}\b/g;
+    const datesOn = async (p) => {
+      await p.goto(`${BASE}/vat-filing`, { timeout: 45000 });
+      await p.waitForTimeout(2500);
+      const text = await p
+        .locator("main")
+        .innerText()
+        .catch(() => "");
+      return [...new Set(text.match(DATE_TEXT) ?? [])].sort();
+    };
+    const utcCtx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      timezoneId: "UTC",
+      storageState: await ctx.storageState(),
+    });
+    const utcPage = await utcCtx.newPage();
+    const utcDates = await datesOn(utcPage);
+    await utcCtx.close();
+    const localDates = await datesOn(page);
+    const endLabel = `${qEnd.getUTCDate()} ${qEnd.toLocaleString("en-GB", { month: "short", timeZone: "UTC" }).slice(0, 3)} ${qEnd.getUTCFullYear()}`;
+    const shown = localDates.some((d) => d.includes(endLabel.split(" ").slice(1).join(" ")));
+    if (JSON.stringify(utcDates) !== JSON.stringify(localDates) || !shown) {
+      await fail(`timezone probe /vat-filing (${BROWSER_TIMEZONE})`, {
+        utc: utcDates.slice(0, 12),
+        local: localDates.slice(0, 12),
+        expectedPeriodEnd: endLabel,
+      });
+    }
+  } catch (e) {
+    await fail("timezone-probe", { crash: e.message.slice(0, 150) });
+  }
 
   // ── 11. Arabic / RTL smoke: the bilingual promise must hold ───────────────
   // Switch the persisted locale to Arabic, crawl key routes, and assert the

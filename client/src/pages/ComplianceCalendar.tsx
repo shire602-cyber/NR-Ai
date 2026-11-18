@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/ui/page-header";
 import { dateFnsOptions } from "@/lib/date-locale";
-import { displayObligationTitle, formatDate } from "@/lib/format-date";
+import { displayObligationTitle, formatDate, parseCalendarDate } from "@/lib/format-date";
 import { lazy, Suspense, useState, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,7 +15,6 @@ import {
   isSameDay,
   addMonths,
   subMonths,
-  parseISO,
   isToday,
   isBefore,
   differenceInDays,
@@ -153,7 +152,7 @@ export default function ComplianceCalendar() {
     tasks?.forEach((task) => {
       events.push({
         id: task.id,
-        date: parseISO(task.dueDate),
+        date: parseCalendarDate(task.dueDate),
         title: displayObligationTitle(
           locale === "ar" && task.titleAr ? task.titleAr : task.title,
           locale
@@ -168,7 +167,7 @@ export default function ComplianceCalendar() {
       if (o.status === "dismissed") return;
       events.push({
         id: o.id,
-        date: parseISO(o.dueDate),
+        date: parseCalendarDate(o.dueDate),
         title: displayObligationTitle(locale === "ar" && o.titleAr ? o.titleAr : o.title, locale),
         category: obligationCategory(o),
         status: o.status,

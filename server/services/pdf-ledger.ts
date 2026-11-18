@@ -23,6 +23,7 @@
 import PDFDocument from "pdfkit";
 import { resolveDocumentAccent } from "../../shared/document-accent";
 import { formatFils, tryToFils } from "../../shared/money";
+import { calendarParts } from "../../shared/uae-date";
 import { formatMoneyAmount } from "../utils/money-format";
 import { UAE_VAT_RATE } from "../constants";
 import {
@@ -749,13 +750,11 @@ const MONTHS_AR = [
 /** "17 Nov 2026" (the app's date format); "—" when absent. ISO date strings are read as dates. */
 export function date(value: Date | string | null | undefined): string {
   if (!value) return "—";
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [y, m, d] = value.split("-").map(Number);
-    return `${d} ${MONTHS_EN[m - 1].slice(0, 3)} ${y}`;
-  }
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return String(value);
-  return d.toLocaleDateString("en-AE", { year: "numeric", month: "short", day: "numeric" });
+  // The calendar day of a business date, whatever the server's TZ (N1): a period end stored as
+  // 2026-09-30T23:59:59.999Z is "30 Sep 2026", never "1 Oct 2026".
+  const p = calendarParts(value);
+  if (!p) return String(value);
+  return `${p.day} ${MONTHS_EN[p.month - 1].slice(0, 3)} ${p.year}`;
 }
 
 /** "September 2026" / "سبتمبر 2026". */

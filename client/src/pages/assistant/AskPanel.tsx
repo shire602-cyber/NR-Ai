@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ArrowUp, Loader2, MessageSquareText } from "lucide-react";
@@ -12,7 +12,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useTranslation } from "@/lib/i18n";
 import { ApiError, apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
-import { presentFigure, sourcesFor, type GroundedFigure } from "./model";
+import { presentFigure, revealScrollDelta, sourcesFor, type GroundedFigure } from "./model";
 
 interface AskResponse {
   response: string;
@@ -75,7 +75,8 @@ export default function AskPanel() {
   const [input, setInput] = useState("");
   const [recent, setRecent] = useState<string[]>(() => readRecent());
   const [unavailable, setUnavailable] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLOListElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
 
   const { data: stats } = useQuery<{ outstanding?: number }>({
     queryKey: ["/api/companies", companyId, "dashboard/stats"],
@@ -89,8 +90,29 @@ export default function AskPanel() {
   });
   const switchedOff = unavailable || aiStatus?.configured === false;
 
-  useEffect(() => {
-    endRef.current?.scrollIntoView?.({ block: "end" });
+  // N3: after each question and each answer, scroll the newest turn to just above the docked
+  // composer. `scrollIntoView({ block: "end" })` aligned it with the bottom of the scroll area,
+  // which sits behind the composer and the phone tab bar, so from the second answer on the
+  // figures ended up hidden. Measured again on the next frame, once the answer has laid out.
+  useLayoutEffect(() => {
+    const reveal = () => {
+      const latest = threadRef.current?.lastElementChild as HTMLElement | null;
+      const dock = dockRef.current;
+      if (!latest || !dock) return;
+      const scroller = scrollParent(latest);
+      const turn = latest.getBoundingClientRect();
+      const delta = revealScrollDelta({
+        turnTop: turn.top,
+        turnBottom: turn.bottom,
+        composerTop: dock.getBoundingClientRect().top,
+        visibleTop:
+          scroller === document.scrollingElement ? 0 : scroller.getBoundingClientRect().top,
+      });
+      if (delta > 0) scroller.scrollBy?.({ top: delta });
+    };
+    reveal();
+    const frame = window.requestAnimationFrame(reveal);
+    return () => window.cancelAnimationFrame(frame);
   }, [turns]);
 
   const ask = useMutation({
@@ -195,7 +217,12 @@ export default function AskPanel() {
           )}
         </div>
       ) : (
-        <ol className="flex-1 space-y-6 pb-4" aria-live="polite" data-testid="assistant-thread">
+        <ol
+          ref={threadRef}
+          className="flex-1 space-y-6 pb-4"
+          aria-live="polite"
+          data-testid="assistant-thread"
+        >
           {turns.map((turn) => (
             <li key={turn.id} className="space-y-3">
               <p className="ms-auto w-fit max-w-[85%] rounded-lg bg-secondary px-4 py-2.5 text-body text-foreground">
@@ -215,57 +242,79 @@ export default function AskPanel() {
               )}
             </li>
           ))}
-          <div ref={endRef} />
         </ol>
       )}
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit(input);
-        }}
+      {/* N3: the dock sticks to the bottom of the scroll area. `<main>` already keeps its
+          bottom padding clear of the phone tab bar, so the dock needs no offset of its own (the
+          old 3.75rem offset left a strip of thread showing under the composer). Its background
+          also reaches down through that padding (::after) to the tab bar or the window edge, and
+          a short fade above it lets text slide under instead of being cut. */}
+      <div
+        ref={dockRef}
         className={cn(
-          "sticky z-10 mt-4 flex items-end gap-2 rounded-xl border border-border bg-card p-2 shadow-card-soft",
-          "bottom-[calc(3.75rem_+_env(safe-area-inset-bottom,0px)_+_0.5rem)] md:bottom-4"
+          "sticky bottom-0 z-10 mt-4 bg-background pb-2 pt-2 md:pb-4",
+          "before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-4 before:bg-gradient-to-t before:from-background before:to-transparent",
+          "after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-[var(--mobile-nav-height)] after:bg-background md:after:h-8"
         )}
-        data-testid="assistant-composer"
+        data-testid="assistant-composer-dock"
       >
-        <label htmlFor="assistant-input" className="sr-only">
-          {t["assistant.composerLabel"]}
-        </label>
-        <Textarea
-          id="assistant-input"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              submit(input);
-            }
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit(input);
           }}
-          placeholder={t["assistant.composerPlaceholder"]}
-          disabled={switchedOff}
-          rows={1}
-          className="min-h-11 flex-1 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
-          data-testid="assistant-input"
-        />
-        <Button
-          type="submit"
-          size="icon"
-          className="h-11 w-11 shrink-0"
-          disabled={!input.trim() || ask.isPending || !companyId || switchedOff}
-          aria-label={t["assistant.send"]}
-          data-testid="assistant-send"
+          className="flex items-end gap-2 rounded-xl border border-border bg-card p-2 shadow-card-soft"
+          data-testid="assistant-composer"
         >
-          {ask.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <ArrowUp className="h-4 w-4" aria-hidden="true" />
-          )}
-        </Button>
-      </form>
+          <label htmlFor="assistant-input" className="sr-only">
+            {t["assistant.composerLabel"]}
+          </label>
+          <Textarea
+            id="assistant-input"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submit(input);
+              }
+            }}
+            placeholder={t["assistant.composerPlaceholder"]}
+            disabled={switchedOff}
+            rows={1}
+            className="min-h-11 flex-1 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+            data-testid="assistant-input"
+          />
+          <Button
+            type="submit"
+            size="icon"
+            className="h-11 w-11 shrink-0"
+            disabled={!input.trim() || ask.isPending || !companyId || switchedOff}
+            aria-label={t["assistant.send"]}
+            data-testid="assistant-send"
+          >
+            {ask.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <ArrowUp className="h-4 w-4" aria-hidden="true" />
+            )}
+          </Button>
+        </form>
+      </div>
     </div>
   );
+}
+
+/** The nearest ancestor that scrolls (the app's `<main>`), else the document. */
+function scrollParent(el: HTMLElement): Element {
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const { overflowY } = window.getComputedStyle(node);
+    if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight) {
+      return node;
+    }
+  }
+  return document.scrollingElement ?? document.documentElement;
 }
 
 function Answer({ answer }: { answer: AskResponse }) {

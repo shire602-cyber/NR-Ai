@@ -33,6 +33,7 @@ import {
   bilingualDate,
   bilingualMoney,
   formatIsoDate,
+  label,
   periodLabel,
   type Bilingual,
   type RenderColumn,
@@ -53,10 +54,11 @@ const L = {
   description: { en: "Description", ar: "البيان" },
   name: { en: "Name", ar: "الاسم" },
   current: { en: "Current", ar: "غير مستحق" },
-  d30: { en: "1–30 days", ar: "١–٣٠ يومًا" },
-  d60: { en: "31–60 days", ar: "٣١–٦٠ يومًا" },
-  d90: { en: "61–90 days", ar: "٦١–٩٠ يومًا" },
-  over90: { en: "Over 90 days", ar: "أكثر من ٩٠ يومًا" },
+  // P15: Latin digits, like every amount and date in the document (one digit system).
+  d30: { en: "1–30 days", ar: "1–30 يومًا" },
+  d60: { en: "31–60 days", ar: "31–60 يومًا" },
+  d90: { en: "61–90 days", ar: "61–90 يومًا" },
+  over90: { en: "Over 90 days", ar: "أكثر من 90 يومًا" },
   total: { en: "Total", ar: "الإجمالي" },
   item: { en: "Item", ar: "البند" },
   value: { en: "Value", ar: "القيمة" },
@@ -121,12 +123,18 @@ function sectionRows(
     })),
     {
       cells: {
-        account: `${locale === "ar" ? "إجمالي" : "Total"} ${locale === "ar" ? title.ar : title.en}`,
+        // P15: sentence case ("Total revenue", "Total current assets"); acronyms ("VAT") stay.
+        account: locale === "ar" ? `إجمالي ${title.ar}` : `Total ${lowerFirstWord(title.en)}`,
         amount: sign * section.total,
       },
       style: "subtotal" as const,
     },
   ];
+}
+
+/** "Revenue" -> "revenue", "Cost of sales" -> "cost of sales"; "VAT" and "UAE" are kept. */
+export function lowerFirstWord(text: string): string {
+  return /^[A-Z][a-z]/.test(text) ? text[0].toLowerCase() + text.slice(1) : text;
 }
 
 function totalRow(text: Bilingual, amount: number, locale: "en" | "ar"): RenderRow {
@@ -400,7 +408,11 @@ export async function renderGeneralLedger(
     rows.push({
       cells: {
         date: account.accountCode,
-        description: account.accountName,
+        // P15: the Arabic general ledger names accounts in Arabic when the chart has a name.
+        description:
+          company.locale === "ar" && account.accountNameAr
+            ? account.accountNameAr
+            : account.accountName,
         balance: account.openingBalance,
       },
       style: "heading",
@@ -469,7 +481,11 @@ export async function renderGeneralLedger(
   };
 }
 
-function agingReport(kind: "ar-aging" | "ap-aging", report: AgingReport): RenderedReport {
+function agingReport(
+  kind: "ar-aging" | "ap-aging",
+  report: AgingReport,
+  locale: "en" | "ar"
+): RenderedReport {
   const rows: RenderRow[] = report.rows.map((r) => ({
     cells: {
       name: r.name,
@@ -481,7 +497,7 @@ function agingReport(kind: "ar-aging" | "ap-aging", report: AgingReport): Render
       total: r.total,
     },
   }));
-  rows.push({ cells: { name: "Total", ...report.totals }, style: "total" });
+  rows.push({ cells: { name: label(locale, L.total), ...report.totals }, style: "total" });
   const rec = report.reconciliation;
   // A3 (H6, H1): reconciling items between the document aging and the control account.
   if (report.unappliedCredits) {
@@ -551,11 +567,19 @@ function agingReport(kind: "ar-aging" | "ap-aging", report: AgingReport): Render
 }
 
 export async function renderAgedReceivables(company: RenderCompany, asOf: string) {
-  return agingReport("ar-aging", await agedReceivables({ companyId: company.id, asOf }));
+  return agingReport(
+    "ar-aging",
+    await agedReceivables({ companyId: company.id, asOf }),
+    company.locale
+  );
 }
 
 export async function renderAgedPayables(company: RenderCompany, asOf: string) {
-  return agingReport("ap-aging", await agedPayables({ companyId: company.id, asOf }));
+  return agingReport(
+    "ap-aging",
+    await agedPayables({ companyId: company.id, asOf }),
+    company.locale
+  );
 }
 
 // ─── Statement of changes in equity ──────────────────────────────────────────

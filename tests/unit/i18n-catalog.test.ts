@@ -120,6 +120,33 @@ describe("i18n catalogs", () => {
     expect(missing).toEqual([]);
   });
 
+  // Fable N2: `t["cashFlowForecast.emptyTitle"]` rendered an empty state with no text because
+  // the key was in neither catalog. The check above only sees keys whose first segment is a
+  // namespace file name; this one covers every lookup form (`t["…"]`, `t("…")`, `k="…"`,
+  // `translateNow("…")`) for any key prefix the catalogs use, in both languages.
+  it("N2: every key looked up from client source exists in the en and ar catalogs", () => {
+    const enKeys = new Set(Object.values(en).flatMap((catalog) => Object.keys(catalog)));
+    const arKeys = new Set(Object.values(ar).flatMap((catalog) => Object.keys(catalog)));
+    const lookup =
+      /(?:\bt\[\s*|\bt\(\s*|\btranslateNow\(\s*|\bk=\{?\s*)["'`]([A-Za-z][A-Za-z0-9]*\.[A-Za-z0-9.]*[A-Za-z0-9])["'`]/g;
+    const missing: string[] = [];
+    for (const file of walk(join(repoRoot, "client", "src"))) {
+      if (file.includes(`${join("client", "src", "locales")}`)) continue;
+      // Doc-comment usage examples (` * <Alert title={t["x.title"]}>`) are not lookups.
+      const source = readFileSync(file, "utf8")
+        .split("\n")
+        .filter((line) => !/^\s*(\*|\/\/)/.test(line))
+        .join("\n");
+      for (const match of source.matchAll(lookup)) {
+        const key = match[1];
+        const where = `${file.replace(repoRoot + "/", "")}: ${key}`;
+        if (!enKeys.has(key)) missing.push(`${where} (en)`);
+        if (!arKeys.has(key)) missing.push(`${where} (ar)`);
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
   it("R18-02: dynamic onboarding step keys resolve for every step in both locales", () => {
     for (const step of [
       "welcome",

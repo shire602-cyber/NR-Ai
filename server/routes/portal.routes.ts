@@ -10,6 +10,7 @@ import { zDate, zMoney, zText, zUuid } from "../../shared/validators/primitives"
 import { recordAudit } from "../services/audit.service";
 import { assertNoServerOwned } from "../http/strict-body";
 import { resolve } from "../platform/service-registry";
+import { attachmentDisposition, downloadFileName } from "../utils/download-filename";
 import {
   addVaultVersion,
   contentDisposition,
@@ -466,7 +467,10 @@ export function registerPortalRoutes(app: Express) {
       const pdf = await renderStatementPdf(st);
       res.set({
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="statement-${st.party.name.replace(/[^\w-]+/g, "_")}-${st.asOf}.pdf"`,
+        // P-f: the customer's name stays readable in any script (never "statement-_-…").
+        "Content-Disposition": attachmentDisposition(
+          downloadFileName("statement", [st.party.name, st.asOf], "pdf")
+        ),
       });
       return res.send(pdf);
     }

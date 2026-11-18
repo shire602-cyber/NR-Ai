@@ -4,6 +4,7 @@ import type { BadgeProps } from "@/components/ui/badge";
 import { translateNow } from "@/lib/i18n";
 import type { DateRange } from "@/components/DateRangeFilter";
 import { format } from "date-fns";
+import { parseCalendarDate } from "@/lib/format-date";
 import type {
   ActivityLogReportRow,
   ActivityLogRiskLevel,
@@ -557,7 +558,7 @@ export function journalSourceLabel(source?: string | null): string {
 
 export function formatReportDate(value?: string | null): string {
   if (!value) return "-";
-  const date = new Date(value);
+  const date = parseCalendarDate(value);
   return Number.isNaN(date.getTime()) ? "-" : format(date, "MMM dd, yyyy");
 }
 
