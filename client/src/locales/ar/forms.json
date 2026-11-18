@@ -335,5 +335,11 @@
   "forms.serverErrors.SUBLEDGER_ENTRY.fiscal_year": "هذا القيد يقفل سنة مالية. أعد فتح السنة المالية بدلاً من ذلك.",
   "forms.serverErrors.SUBLEDGER_ENTRY.vat_workpaper": "هذا القيد سُجّل من ورقة عمل ضريبة القيمة المضافة. صحّح السطر هناك.",
   "forms.serverErrors.INVOICE_BILLS_ASSET_DISPOSAL": "هذه الفاتورة تخص بيع أصل ثابت. أصدر إشعاراً دائناً لتغيير السعر؛ أما الاستبعاد نفسه فيبقى في سجل الأصول الثابتة.",
-  "forms.serverErrors.VAT_AMENDMENT_NOTHING_TO_SETTLE": "الإقرار المعدَّل لا يغيّر شيئاً مما سُدّد أو استُرد من قبل، لذلك لا يوجد ما يُسوّى."
+  "forms.serverErrors.VAT_AMENDMENT_NOTHING_TO_SETTLE": "الإقرار المعدَّل لا يغيّر شيئاً مما سُدّد أو استُرد من قبل، لذلك لا يوجد ما يُسوّى.",
+  "forms.budget.account": "الحساب",
+  "forms.budget.accountHelp": "تُقرأ القيم الفعلية لهذا البند من حساب الإيرادات أو المصروفات هذا في دفاترك.",
+  "forms.budget.noAccount": "لا يوجد حساب مرتبط: لا يمكن قراءة القيم الفعلية. عدّل البند واختر حساباً.",
+  "forms.budget.totalIncome": "إجمالي الإيرادات",
+  "forms.budget.totalExpenses": "إجمالي المصروفات",
+  "forms.budget.netTotal": "الصافي (الإيرادات ناقص المصروفات)"
 }

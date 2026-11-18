@@ -90,7 +90,16 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import { Money } from "@/components/ui/money";
-import { summariseBudget } from "@/lib/budget-summary";
+import {
+  budgetAccountOptions,
+  planMonths,
+  signedLineTotals,
+  summariseBudget,
+  type PlanMonth,
+} from "@/lib/budget-summary";
+import { isControlAccount } from "@shared/control-accounts";
+import { accountDisplayName } from "@/lib/account-name";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { fiscalYearContaining } from "@/lib/fiscal-year";
 
 // ─── Types ───────────────────────────────────────────────
@@ -131,6 +140,16 @@ interface BudgetLine {
   created_at: string;
 }
 
+interface LedgerAccount {
+  id: string;
+  code: string;
+  nameEn?: string | null;
+  nameAr?: string | null;
+  type: string;
+  isActive?: boolean | null;
+  isVatAccount?: boolean | null;
+}
+
 interface VarianceMonth {
   budget: number;
   actual: number;
@@ -162,6 +181,8 @@ interface VarianceData {
     endDate: string;
     status: string;
   };
+  /** Year-months the plan covers; `months` of each line holds only these columns. */
+  periods?: string[];
   varianceLines: VarianceLine[];
 }
 
@@ -194,6 +215,8 @@ const budgetFormSchema = z
 type BudgetFormData = z.infer<typeof budgetFormSchema>;
 
 const budgetLineFormSchema = z.object({
+  // E2 (J3-r2): the account decides the actuals and whether the line is income or expense.
+  accountId: z.string().min(1, "forms.errors.accountRequired"),
   category: z.string().min(1, "forms.errors.categoryRequired"),
   description: z.string().optional().nullable(),
   jan: z.coerce.number().min(0).optional(),
@@ -226,20 +249,6 @@ const MONTH_KEYS = [
   "nov",
   "dec",
 ] as const;
-const MONTH_LABELS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
 
 const BUDGET_CATEGORIES = [
   "Revenue",
@@ -261,6 +270,14 @@ const BUDGET_CATEGORIES = [
 
 const tr = (locale: string, en: string, ar: string) => (locale === "ar" ? ar : en);
 
+/** A plan date as YYYY-MM-DD in local time (the API may send a timestamp). */
+function isoDay(v: string | null | undefined): string {
+  if (!v) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? String(v).slice(0, 10) : format(d, "yyyy-MM-dd");
+}
+
 export default function Budgets() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -276,6 +293,8 @@ export default function Budgets() {
   const [editingLine, setEditingLine] = useState<BudgetLine | null>(null);
   const [budgetToDelete, setBudgetToDelete] = useState<string | null>(null);
   const [lineToDelete, setLineToDelete] = useState<string | null>(null);
+  // E2 (J4-r2): a viewer is not offered writes the server refuses (403).
+  const { gate } = useCompanyPermission();
 
   // ─── Queries ────────────────────────────────────────────
 
@@ -293,6 +312,30 @@ export default function Budgets() {
     queryKey: [`/api/budget-plans/${selectedBudget?.id}/variance`],
     enabled: !!selectedBudget?.id && activeTab === "variance",
   });
+
+  // E2 (J3-r2): every line budgets one P&L account (not a control account), so actuals come
+  // from the ledger and income is never added to expenses.
+  const { data: accounts = [] } = useQuery<LedgerAccount[]>({
+    queryKey: [`/api/companies/${companyId}/accounts`],
+    enabled: !!companyId,
+  });
+  const accountOptions = budgetAccountOptions(accounts, (a) => isControlAccount(a));
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
+  const lineAccountType = (line: { account_id?: string | null }) =>
+    line.account_id ? (accountById.get(line.account_id)?.type ?? null) : null;
+
+  // E2 (J3-r2): the months the selected plan covers (a Sep-Nov plan has three columns).
+  const selectedPlanMonths: PlanMonth[] = selectedBudget
+    ? planMonths(isoDay(selectedBudget.start_date), isoDay(selectedBudget.end_date))
+    : [];
+  const varianceMonths: PlanMonth[] = varianceData?.periods?.length
+    ? planMonths(
+        `${varianceData.periods[0]}-01`,
+        `${varianceData.periods[varianceData.periods.length - 1]}-01`
+      )
+    : selectedPlanMonths;
+  const planMonthLabel = (m: PlanMonth) =>
+    format(new Date(m.year, m.month - 1, 1), "MMM yyyy", dateFnsOptions(locale));
 
   // ─── Forms ──────────────────────────────────────────────
 
@@ -312,6 +355,7 @@ export default function Budgets() {
   const lineForm = useForm<BudgetLineFormData>({
     resolver: zodResolver(budgetLineFormSchema),
     defaultValues: {
+      accountId: "",
       category: "",
       description: "",
       jan: 0,
@@ -632,6 +676,7 @@ export default function Budgets() {
   const handleOpenAddLine = () => {
     setEditingLine(null);
     lineForm.reset({
+      accountId: "",
       category: "",
       description: "",
       jan: 0,
@@ -653,6 +698,7 @@ export default function Budgets() {
   const handleOpenEditLine = (line: BudgetLine) => {
     setEditingLine(line);
     lineForm.reset({
+      accountId: line.account_id ?? "",
       category: line.category,
       description: line.description || "",
       jan: parseFloat(line.jan || "0"),
@@ -733,23 +779,12 @@ export default function Budgets() {
     return "";
   };
 
-  // Compute totals row for budget lines
-  const lineTotals = useCallback(() => {
-    const totals: Record<string, number> = {};
-    MONTH_KEYS.forEach((key) => {
-      totals[key] = 0;
-    });
-    totals.annual = 0;
-
-    budgetLines.forEach((line) => {
-      MONTH_KEYS.forEach((key) => {
-        totals[key] += parseFloat((line as any)[key] || "0");
-      });
-      totals.annual += parseFloat(line.annual_total || "0");
-    });
-
-    return totals;
-  }, [budgetLines]);
+  // E2 (J3-r2): income and expenses are totalled separately; net = income - expenses.
+  const lineTotals = useCallback(
+    () => signedLineTotals(budgetLines, lineAccountType),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [budgetLines, accounts]
+  );
 
   // ─── Loading State ─────────────────────────────────────
 
@@ -827,11 +862,14 @@ export default function Budgets() {
             icon={CheckCircle}
             label={tr(locale, "Approve", "اعتماد")}
             onClick={() => approveBudgetMutation.mutate(budget.id)}
+            data-testid={`button-approve-budget-${budget.id}`}
+            {...gate("documents.approve")}
           />
           <RowActionButton
             icon={Edit}
             label={tr(locale, "Edit", "تعديل")}
             onClick={() => handleOpenEditBudget(budget)}
+            {...gate("documents.write")}
           />
         </>
       )}
@@ -861,7 +899,11 @@ export default function Budgets() {
         }
         actions={
           !selectedBudget ? (
-            <Button onClick={handleOpenCreateBudget}>
+            <Button
+              onClick={handleOpenCreateBudget}
+              data-testid="button-new-budget"
+              {...gate("documents.write")}
+            >
               <Plus className="h-4 w-4 me-2" aria-hidden />
               <T k="pages.newBudget" />
             </Button>
@@ -1058,7 +1100,12 @@ export default function Budgets() {
                           }}
                         />
                       </label>
-                      <Button onClick={handleOpenAddLine} className="flex items-center gap-2">
+                      <Button
+                        onClick={handleOpenAddLine}
+                        className="flex items-center gap-2"
+                        data-testid="button-add-budget-line"
+                        {...gate("documents.write")}
+                      >
                         <Plus className="w-4 h-4" />
                         <T k="pages.addLine" />
                       </Button>
@@ -1092,9 +1139,9 @@ export default function Budgets() {
                           <TableHead className="sticky start-0 bg-background z-10 min-w-[160px]">
                             <T k="pages.category" />
                           </TableHead>
-                          {MONTH_LABELS.map((label) => (
-                            <TableHead data-numeric key={label} className=" min-w-[90px]">
-                              {label}
+                          {selectedPlanMonths.map((m) => (
+                            <TableHead data-numeric key={m.key} className=" min-w-[90px]">
+                              {planMonthLabel(m)}
                             </TableHead>
                           ))}
                           <TableHead data-numeric className=" min-w-[110px] font-bold">
@@ -1115,6 +1162,11 @@ export default function Budgets() {
                             <TableCell className="sticky start-0 bg-background z-10 font-medium">
                               <div>
                                 {line.category}
+                                <div className="text-xs text-muted-foreground">
+                                  {line.account_id && accountById.get(line.account_id)
+                                    ? `${accountById.get(line.account_id)!.code} · ${accountDisplayName(accountById.get(line.account_id), locale)}`
+                                    : t["forms.budget.noAccount"]}
+                                </div>
                                 {line.description && (
                                   <div className="text-xs text-muted-foreground">
                                     {line.description}
@@ -1122,10 +1174,10 @@ export default function Budgets() {
                                 )}
                               </div>
                             </TableCell>
-                            {MONTH_KEYS.map((key) => (
+                            {selectedPlanMonths.map(({ key, column }) => (
                               <TableCell data-numeric key={key} className=" text-sm">
                                 <Money
-                                  amount={parseFloat((line as any)[key] || "0")}
+                                  amount={parseFloat((line as any)[column] || "0")}
                                   currency={"AED"}
                                 />
                               </TableCell>
@@ -1142,6 +1194,7 @@ export default function Budgets() {
                                 size="sm"
                                 onClick={() => setLineToDelete(line.id)}
                                 title={t["hr.delete"]}
+                                {...gate("documents.write")}
                                 className="text-muted-foreground hover:text-destructive"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -1149,21 +1202,36 @@ export default function Budgets() {
                             </TableCell>
                           </TableRow>
                         ))}
-                        {/* Totals Row */}
-                        <TableRow className="bg-muted/50 font-bold">
-                          <TableCell className="sticky start-0 bg-muted/50 z-10">
-                            <T k="pages.total" />
-                          </TableCell>
-                          {MONTH_KEYS.map((key) => (
-                            <TableCell data-numeric key={key} className=" text-sm">
-                              <Money amount={lineTotals()[key]} currency={"AED"} />
-                            </TableCell>
-                          ))}
-                          <TableCell data-numeric className=" text-sm">
-                            <Money amount={lineTotals().annual} currency={"AED"} />
-                          </TableCell>
-                          <TableCell />
-                        </TableRow>
+                        {/* Totals (E2/J3-r2): income, expenses and net, never income + expenses */}
+                        {(
+                          [
+                            ["income", t["forms.budget.totalIncome"]],
+                            ["expense", t["forms.budget.totalExpenses"]],
+                            ["net", t["forms.budget.netTotal"]],
+                          ] as const
+                        ).map(([group, label]) => {
+                          const totals = lineTotals()[group];
+                          return (
+                            <TableRow
+                              key={group}
+                              className="bg-muted/50 font-bold"
+                              data-testid={`budget-total-${group}`}
+                            >
+                              <TableCell className="sticky start-0 bg-muted/50 z-10">
+                                {label}
+                              </TableCell>
+                              {selectedPlanMonths.map(({ key, column }) => (
+                                <TableCell data-numeric key={key} className=" text-sm">
+                                  <Money amount={totals[column]} currency={"AED"} />
+                                </TableCell>
+                              ))}
+                              <TableCell data-numeric className=" text-sm">
+                                <Money amount={totals.annual} currency={"AED"} />
+                              </TableCell>
+                              <TableCell />
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -1201,9 +1269,9 @@ export default function Budgets() {
                           <TableHead className="sticky start-0 bg-background z-10 min-w-[160px]">
                             <T k="pages.category" />
                           </TableHead>
-                          {MONTH_LABELS.map((label) => (
-                            <TableHead key={label} className="text-center min-w-[200px]">
-                              <div>{label}</div>
+                          {varianceMonths.map((pm) => (
+                            <TableHead key={pm.key} className="text-center min-w-[200px]">
+                              <div>{planMonthLabel(pm)}</div>
                               <div className="flex text-xs text-muted-foreground mt-1">
                                 <span className="flex-1 text-end pe-1">
                                   <T k="pages.budget" />
@@ -1244,8 +1312,14 @@ export default function Budgets() {
                                 )}
                               </div>
                             </TableCell>
-                            {MONTH_KEYS.map((key) => {
-                              const m = line.months[key];
+                            {varianceMonths.map(({ key, column }) => {
+                              // E2 (J3-r2): the report holds only the plan's months.
+                              const m = line.months[column] ?? {
+                                budget: 0,
+                                actual: 0,
+                                variance: 0,
+                                variancePercent: 0,
+                              };
                               return (
                                 <TableCell data-numeric key={key}>
                                   <div className="flex text-xs tabular-nums">
@@ -1497,6 +1571,43 @@ export default function Budgets() {
                 <FormGrid>
                   <FormField
                     control={lineForm.control}
+                    name="accountId"
+                    render={({ field }) => (
+                      <FormItem className={formSpanFull}>
+                        <FormLabel required>{t["forms.budget.account"]}</FormLabel>
+                        <Select
+                          onValueChange={(v) => {
+                            field.onChange(v);
+                            const acc = accountById.get(v);
+                            if (acc?.type === "income" && !lineForm.getValues("category")) {
+                              lineForm.setValue("category", "Revenue");
+                            }
+                          }}
+                          value={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-budget-line-account">
+                              <SelectValue placeholder={t["forms.journal.selectAccount"]} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {accountOptions.map((acc) => (
+                              <SelectItem key={acc.id} value={acc.id}>
+                                <span className="me-2 inline-block tabular-nums text-muted-foreground">
+                                  {acc.code}
+                                </span>
+                                {accountDisplayName(acc, locale)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>{t["forms.budget.accountHelp"]}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={lineForm.control}
                     name="category"
                     render={({ field }) => (
                       <FormItem>
@@ -1544,14 +1655,25 @@ export default function Budgets() {
               <FormSection title={t["forms.budget.monthly"]}>
                 <div className="rounded-lg bg-surface-sunken/60 p-4">
                   <div className="mobile-keep-cols grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    {MONTH_KEYS.map((key, idx) => (
+                    {(selectedPlanMonths.length
+                      ? selectedPlanMonths.map((pm) => ({
+                          key: pm.key,
+                          column: pm.column,
+                          label: planMonthLabel(pm),
+                        }))
+                      : MONTH_KEYS.map((column, idx) => ({
+                          key: column,
+                          column,
+                          label: monthLabel(idx),
+                        }))
+                    ).map((pm) => (
                       <FormField
-                        key={key}
+                        key={pm.key}
                         control={lineForm.control}
-                        name={key}
+                        name={pm.column}
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel className={lineLabelClass}>{monthLabel(idx)}</FormLabel>
+                            <FormLabel className={lineLabelClass}>{pm.label}</FormLabel>
                             <FormControl>
                               <Input type="number" step="0.01" min="0" {...field} />
                             </FormControl>

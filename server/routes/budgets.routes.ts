@@ -14,6 +14,7 @@ import {
   getCompanyRole,
 } from "../middleware/companyRolePolicy";
 import { roleHasAnyPermission } from "../../shared/permissions";
+import { isControlAccount } from "../../shared/control-accounts";
 import { emitDomainEvent } from "../platform/domain-events";
 import { listJobs, registerJob } from "../platform/job-registry";
 import { readFormat, sendTabular } from "../reporting/http";
@@ -86,18 +87,34 @@ function assertDraft(plan: BudgetPlanRow): void {
   }
 }
 
+/**
+ * The account a budget line budgets: in this company, an income or expense account (actuals are
+ * read per P&L account) and not a control account (its balance belongs to a sub-ledger).
+ */
 async function assertAccountInCompany(companyId: string, accountId: string | null | undefined) {
   if (!accountId) return;
-  const { rows } = await db.query(`SELECT 1 FROM accounts WHERE id = $1 AND company_id = $2`, [
-    accountId,
-    companyId,
-  ]);
+  const { rows } = await db.query(
+    `SELECT code, type, is_vat_account FROM accounts WHERE id = $1 AND company_id = $2`,
+    [accountId, companyId]
+  );
   if (!rows[0]) {
     throw new DomainError(
       "ACCOUNT_NOT_FOUND",
       400,
       { accountId },
       "Account not found in this company"
+    );
+  }
+  const a = rows[0] as { code: string | null; type: string; is_vat_account: boolean | null };
+  if (
+    (a.type !== "income" && a.type !== "expense") ||
+    isControlAccount({ code: a.code, isVatAccount: a.is_vat_account })
+  ) {
+    throw new DomainError(
+      "BUDGET_ACCOUNT_INVALID",
+      400,
+      { fields: { accountId: ["Choose an income or expense account"] } },
+      "A budget line budgets an income or expense account"
     );
   }
 }

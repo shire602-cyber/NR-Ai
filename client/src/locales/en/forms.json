@@ -335,5 +335,11 @@
   "forms.serverErrors.SUBLEDGER_ENTRY.fiscal_year": "This journal entry closes a fiscal year. Re-open the fiscal year instead.",
   "forms.serverErrors.SUBLEDGER_ENTRY.vat_workpaper": "This journal entry was posted from the VAT workpaper. Correct the row there.",
   "forms.serverErrors.INVOICE_BILLS_ASSET_DISPOSAL": "This invoice bills a fixed-asset disposal. Issue a credit note for a price change; the disposal itself stays in the fixed-asset register.",
-  "forms.serverErrors.VAT_AMENDMENT_NOTHING_TO_SETTLE": "The amended return changes nothing that was already paid or refunded, so there is nothing to settle."
+  "forms.serverErrors.VAT_AMENDMENT_NOTHING_TO_SETTLE": "The amended return changes nothing that was already paid or refunded, so there is nothing to settle.",
+  "forms.budget.account": "Account",
+  "forms.budget.accountHelp": "Actuals for this line come from this income or expense account in your books.",
+  "forms.budget.noAccount": "No account linked: actuals cannot be read. Edit the line and choose an account.",
+  "forms.budget.totalIncome": "Total income",
+  "forms.budget.totalExpenses": "Total expenses",
+  "forms.budget.netTotal": "Net (income less expenses)"
 }
