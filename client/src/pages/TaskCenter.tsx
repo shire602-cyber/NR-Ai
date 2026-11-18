@@ -1,5 +1,5 @@
 import { DatePicker } from "@/components/ui/date-picker";
-import { formatDate } from "@/lib/format-date";
+import { displayObligationTitle, formatDate } from "@/lib/format-date";
 import { localizeServerText } from "@shared/server-copy";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
@@ -490,7 +490,10 @@ export function TaskListPanel() {
                     data-testid={`task-${task.id}`}
                   >
                     <Checkbox
-                      aria-label={locale === "ar" && task.titleAr ? task.titleAr : task.title}
+                      aria-label={displayObligationTitle(
+                        locale === "ar" && task.titleAr ? task.titleAr : task.title,
+                        locale
+                      )}
                       checked={task.status === "completed"}
                       disabled={task.statusDerived === true}
                       title={task.statusDerived ? t["compliance.statusFollowsReturn"] : undefined}
@@ -515,7 +518,10 @@ export function TaskListPanel() {
                         <span
                           className={`font-medium ${task.status === "completed" ? "line-through" : ""}`}
                         >
-                          {locale === "ar" && task.titleAr ? task.titleAr : task.title}
+                          {displayObligationTitle(
+                            locale === "ar" && task.titleAr ? task.titleAr : task.title,
+                            locale
+                          )}
                         </span>
                         <Badge variant="outline" className="text-xs">
                           {locale === "ar" ? category?.labelAr : category?.labelEn}

@@ -36,7 +36,7 @@ import {
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
-import { formatDateRange } from "@/lib/format-date";
+import { formatDate, formatDateRange, formatEmbeddedDates } from "@/lib/format-date";
 import {
   TrendingUp,
   DollarSign,
@@ -555,7 +555,9 @@ export default function CashFlowForecast() {
                   <TableBody>
                     {forecast.items.map((it, i) => (
                       <TableRow key={`${it.kind}-${it.date}-${i}`}>
-                        <TableCell className="whitespace-nowrap">{it.date}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {formatDate(it.date, locale)}
+                        </TableCell>
                         <TableCell>
                           {tr(
                             locale,
@@ -564,7 +566,7 @@ export default function CashFlowForecast() {
                           )}
                         </TableCell>
                         <TableCell className="text-sm">
-                          {serverText(it.description, null)}
+                          {formatEmbeddedDates(serverText(it.description, null), locale)}
                           {it.note && (
                             <span className="block text-xs text-muted-foreground">
                               {serverText(it.note, null)}
@@ -685,7 +687,7 @@ export default function CashFlowForecast() {
             >
               <span>
                 {tr(locale, KIND_LABELS[it.kind].en, KIND_LABELS[it.kind].ar)} · {it.description} ·{" "}
-                {it.dueDate}
+                {formatDate(it.dueDate, locale)}
                 {it.repeatMonths > 0 ? ` ×${it.occurrences}` : ""}
               </span>
               <span className="flex items-center gap-3">
@@ -772,7 +774,8 @@ export default function CashFlowForecast() {
               className="flex items-center justify-between rounded-md border p-2 text-sm"
             >
               <span>
-                {a.date} · {a.description} · {a.direction === "inflow" ? "+" : "-"}
+                {formatDate(a.date, locale)} · {a.description} ·{" "}
+                {a.direction === "inflow" ? "+" : "-"}
                 <Money amount={a.amount} currency={"AED"} />
               </span>
               <Button

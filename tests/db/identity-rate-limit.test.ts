@@ -112,6 +112,8 @@ describe("R01-12 progressive lockout", () => {
     const sixth = await h.anon.post("/api/auth/login", { email: t.email, password: "Bad6xx" });
     expect(sixth.status).toBe(429);
     expect(sixth.body.code).toBe("ACCOUNT_LOCKED");
+    // B14: the sentence is named by catalog key so the sign-in form shows it in Arabic too.
+    expect(sixth.body.messageKey).toBe("components.authErrors.loginLocked");
     expect(Number(sixth.headers.get("retry-after"))).toBeGreaterThan(0);
 
     // Another email on the same IP is unaffected.
@@ -143,5 +145,16 @@ describe("R01-12 progressive lockout", () => {
       [t.user.id]
     );
     expect(notes.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("B14: a throttled password reset names its catalog sentence", async () => {
+    const email = mail();
+    let last = await h.anon.post("/api/auth/forgot-password", { email });
+    for (let i = 0; i < 6 && last.status !== 429; i++) {
+      last = await h.anon.post("/api/auth/forgot-password", { email });
+    }
+    expect(last.status).toBe(429);
+    expect(last.body.code).toBe("RATE_LIMITED");
+    expect(last.body.messageKey).toBe("components.authErrors.resetRequestsLimited");
   });
 });

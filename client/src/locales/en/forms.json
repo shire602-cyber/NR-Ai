@@ -264,6 +264,8 @@
   "forms.serverErrors.AI_QUOTA_EXCEEDED": "Your AI usage limit has been reached.",
   "forms.serverErrors.USAGE_LIMIT_REACHED": "Your plan limit has been reached.",
   "forms.serverErrors.RATE_LIMITED": "Too many requests. Wait a moment and try again.",
+  "forms.serverErrors.aiRateLimited": "The assistant is busy. Wait a moment, then try again.",
+  "forms.serverErrors.ocrRateLimited": "Too many receipt scans for this company. Wait a moment, then try again.",
   "forms.serverErrors.CSRF_INVALID": "Your session expired. Reload the page and try again.",
   "forms.serverErrors.COMPANY_ACCESS_DENIED": "You do not have access to this company.",
   "forms.serverErrors.AUTH_REQUIRED": "Sign in to continue.",

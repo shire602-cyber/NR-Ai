@@ -17,6 +17,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { apiUrl } from "@/lib/api";
+import { serverErrorMessage } from "@/lib/validation-messages";
 import { OAuthButtons } from "./OAuthButtons";
 import { AUTH_BUTTON, AUTH_INPUT, AuthAlert, AuthHeader, AuthSwitch } from "./AuthBlocks";
 
@@ -82,7 +83,7 @@ export function RegisterForm({ onSuccess, captchaToken, captcha }: RegisterFormP
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error?.message || translateNow("shell.toastPleaseTryAgain"));
+        throw new Error(serverErrorMessage(error, translateNow("shell.toastPleaseTryAgain")));
       }
       const registered = await response.json().catch(() => null);
       // Platform-level flag: with no email provider no confirmation email exists to check.

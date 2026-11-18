@@ -19,6 +19,7 @@
   "assistant.thinking": "جارٍ الاطلاع على دفاترك…",
   "assistant.answerFailed": "تعذّر إعداد الإجابة. حاول مرة أخرى بعد قليل.",
   "assistant.notAvailable": "المساعد غير مفعّل لمساحة عملك بعد. تجد الأرقام نفسها في تقاريرك.",
+  "assistant.openReports": "فتح التقارير",
   "assistant.insufficientData": "لا توجد قيود مرحّلة كافية بعد للإجابة بشكل كامل.",
   "assistant.figuresUsed": "الأرقام المستخدمة",
   "assistant.source": "المصدر",

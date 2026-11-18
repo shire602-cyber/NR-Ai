@@ -139,6 +139,16 @@ vi.mock("../../server/reporting", async (importOriginal) => {
         netCashChange: 40,
         closingCash: 140,
         cashProof: { isBalanced: state.balanced, difference: state.balanced ? 0 : 2 },
+        nonCashTransactions: [
+          {
+            entryId: "e9",
+            entryNumber: "JE-9",
+            date: "2026-02-17",
+            memo: "Vehicle on finance",
+            source: "manual",
+            amount: 4500,
+          },
+        ],
       };
     }),
     generalLedger: vi.fn(async () => ({
@@ -206,8 +216,11 @@ vi.mock("../../server/tax/vat-engine", () => ({
 }));
 
 import {
+  bilingualDate,
+  bilingualMoney,
   formatAmount,
   formatIsoDate,
+  formatIsoDateAr,
   bilingualLabel,
   label,
   periodLabel,
@@ -253,6 +266,13 @@ describe("report-render model helpers", () => {
     expect(label("ar", t)).toBe("النقد");
     expect(bilingualLabel("en", t)).toBe("Cash / النقد");
     expect(bilingualLabel("ar", t)).toBe("النقد / Cash");
+  });
+
+  it("formats note dates and money through the shared formatters (B12)", () => {
+    expect(formatIsoDateAr("2026-11-18")).toBe("18 نوفمبر 2026");
+    expect(bilingualDate("2026-11-17")).toEqual({ en: "17 Nov 2026", ar: "17 نوفمبر 2026" });
+    expect(bilingualMoney(381160.85)).toEqual({ en: "AED 381,160.85", ar: "381,160.85 درهم" });
+    expect(bilingualMoney(-3.5).en).toBe("-AED 3.50");
   });
 
   it("guards spreadsheet cells against formula injection", () => {
@@ -310,6 +330,44 @@ describe("statement builders", { timeout: 30_000 }, () => {
       });
     }
   }
+
+  it("B12: statement footnotes print formatted dates and grouped money, never ISO or toFixed", async () => {
+    const ISO = /\d{4}-\d{2}-\d{2}/;
+    const UNGROUPED = /\d{4,}\.\d{2}/;
+    for (const balanced of [true, false]) {
+      state.balanced = balanced;
+      for (const locale of ["en", "ar"] as const) {
+        state.locale = locale;
+        const company = await loadRenderCompany("c1");
+        for (const kind of ["cash-flow", "changes-in-equity", "ar-aging", "ap-aging"] as const) {
+          const report = await renderStatement(kind, company, period);
+          for (const note of report.notes) {
+            for (const text of [note.en, note.ar]) {
+              expect(text, `${kind} ${locale}: ${text}`).not.toMatch(ISO);
+              expect(text, `${kind} ${locale}: ${text}`).not.toMatch(UNGROUPED);
+            }
+          }
+          if (kind === "changes-in-equity") {
+            for (const row of report.tables[0].rows) {
+              expect(String(row.cells.account ?? ""), kind).not.toMatch(ISO);
+            }
+          }
+        }
+      }
+    }
+    state.balanced = true;
+    const company = await loadRenderCompany("c1");
+    const cf = await renderStatement("cash-flow", company, period);
+    const nonCash = cf.notes.find((n) => n.en.includes("IAS 7.43"))!;
+    expect(nonCash.en).toContain("17 Feb 2026");
+    expect(nonCash.en).toContain("AED 4,500.00");
+    expect(nonCash.ar).toContain("17 فبراير 2026");
+    expect(nonCash.ar).toContain("4,500.00 درهم");
+    state.balanced = false;
+    const aging = await renderStatement("ar-aging", company, period);
+    expect(aging.notes[0].ar).toContain("31 مارس 2026");
+    expect(aging.notes[0].en).toContain("AED 3.50");
+  });
 
   it("truncates the general ledger at the PDF line cap", async () => {
     const company = await loadRenderCompany("c1");

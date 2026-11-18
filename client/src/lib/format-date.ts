@@ -32,7 +32,8 @@ function monthName(date: Date, locale: string): string {
     f = new Intl.DateTimeFormat(tag, { month: locale === "ar" ? "long" : "short" });
     monthFormatters.set(tag, f);
   }
-  return f.format(date);
+  // en-GB abbreviates September as "Sept"; the app uses three letters everywhere (P8).
+  return locale === "ar" ? f.format(date) : f.format(date).replace(/^Sept$/, "Sep");
 }
 
 /** "16 Nov 2026" / "16 نوفمبر 2026"; "" for an empty or invalid value. */
@@ -71,4 +72,42 @@ export function formatDateRange(from: DateInput, to: DateInput, locale: string =
     )} ${b.getFullYear()}`;
   }
   return `${formatDate(a, locale)} ${EN_DASH} ${formatDate(b, locale)}`;
+}
+
+const RANGE_IN_TEXT =
+  /(?<![\w/-])(\d{4}-\d{2}-\d{2})\s+(?:to|إلى|–|-)\s+(\d{4}-\d{2}-\d{2})(?![\w-])/g;
+const DAY_IN_TEXT = /(?<![\w/-])(\d{4}-\d{2}-\d{2})(?![\w-])/g;
+const MONTH_IN_TEXT = /(?<![\w/-])(\d{4})-(0[1-9]|1[0-2])(?![\w-])/g;
+
+/**
+ * Re-format machine dates inside server text (B6): "2026-07-01 to 2026-09-30" ->
+ * "1 Jul – 30 Sep 2026", "2026-11-17" -> "17 Nov 2026", "2026-11" -> "Nov 2026". Codes such
+ * as "INV-2026-01" are left alone (a date must not touch a letter, digit, "-" or "/").
+ */
+export function formatEmbeddedDates(text: string, locale: string = "en"): string {
+  if (!text) return text;
+  return text
+    .replace(RANGE_IN_TEXT, (_m, a: string, b: string) => formatDateRange(a, b, locale))
+    .replace(DAY_IN_TEXT, (_m, d: string) => formatDate(d, locale))
+    .replace(MONTH_IN_TEXT, (_m, y: string, mo: string) =>
+      formatMonthYear(`${y}-${mo}-01`, locale)
+    );
+}
+
+const TRAILING_PERIOD =
+  /^(.*?\S)\s+(?:FY\s+)?(\d{4}-\d{2}-\d{2}\s+(?:to|إلى)\s+\d{4}-\d{2}-\d{2})$/;
+
+/**
+ * Compliance obligation / task title for display (B6). The calendar generates titles such as
+ * "VAT return 2026-07-01 to 2026-09-30" and "Pay 2026-11 salaries through WPS"; they read
+ * "VAT return, 1 Jul – 30 Sep 2026" and "Pay Nov 2026 salaries through WPS", the same period
+ * style as the firm practice workspace. Other titles only get their dates re-formatted.
+ */
+export function displayObligationTitle(title: string, locale: string = "en"): string {
+  if (!title) return title;
+  const m = TRAILING_PERIOD.exec(title.trim());
+  if (m) {
+    return `${m[1]}${locale === "ar" ? "، " : ", "}${formatEmbeddedDates(m[2], locale)}`;
+  }
+  return formatEmbeddedDates(title, locale);
 }

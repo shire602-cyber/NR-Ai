@@ -264,6 +264,8 @@
   "forms.serverErrors.AI_QUOTA_EXCEEDED": "تم بلوغ حد استخدام الذكاء الاصطناعي.",
   "forms.serverErrors.USAGE_LIMIT_REACHED": "تم بلوغ حد باقتك.",
   "forms.serverErrors.RATE_LIMITED": "عدد الطلبات كبير جداً. انتظر قليلاً ثم حاول مرة أخرى.",
+  "forms.serverErrors.aiRateLimited": "المساعد مشغول حالياً. انتظر قليلاً ثم حاول مرة أخرى.",
+  "forms.serverErrors.ocrRateLimited": "عمليات مسح إيصالات كثيرة لهذه الشركة. انتظر قليلاً ثم حاول مرة أخرى.",
   "forms.serverErrors.CSRF_INVALID": "انتهت صلاحية الجلسة. أعد تحميل الصفحة وحاول مرة أخرى.",
   "forms.serverErrors.COMPANY_ACCESS_DENIED": "ليس لديك صلاحية الوصول إلى هذه الشركة.",
   "forms.serverErrors.AUTH_REQUIRED": "سجّل الدخول للمتابعة.",

@@ -19,6 +19,7 @@
   "assistant.thinking": "Looking at your books…",
   "assistant.answerFailed": "The answer could not be prepared. Try again in a moment.",
   "assistant.notAvailable": "The assistant is not switched on for your workspace yet. Your reports have the same figures.",
+  "assistant.openReports": "Open reports",
   "assistant.insufficientData": "There are not enough posted entries yet to answer fully.",
   "assistant.figuresUsed": "Figures used",
   "assistant.source": "Source",

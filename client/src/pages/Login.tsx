@@ -4,6 +4,7 @@ import { LoginForm } from "@/components/auth/LoginForm";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { fetchCurrentUser } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
+import { serverErrorMessage } from "@/lib/validation-messages";
 import { establishAuthenticatedSession } from "@/lib/authSession";
 import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -63,7 +64,7 @@ function MfaChallenge({
         body: JSON.stringify({ ...(mfaToken ? { mfaToken } : {}), code: code.trim() }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.message || t["security.error"]);
+      if (!res.ok) throw new Error(serverErrorMessage(body, t["security.error"]));
       await onDone(body.user, body);
     } catch (err) {
       setError((err as Error).message);

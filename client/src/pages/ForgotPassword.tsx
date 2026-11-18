@@ -15,6 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { apiUrl } from "@/lib/api";
+import { serverErrorMessage } from "@/lib/validation-messages";
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
 import { ArrowLeft } from "lucide-react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
@@ -58,7 +59,7 @@ export default function ForgotPassword() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.message || t["marketing.forgotErrorBody"]);
+        throw new Error(serverErrorMessage(err, t["marketing.forgotErrorBody"]));
       }
       const body = await res.json();
       // Server returns devResetUrl outside of production so QA can verify

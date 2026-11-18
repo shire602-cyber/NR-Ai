@@ -909,7 +909,11 @@ export default function VATFiling() {
             className="min-h-20"
           />
         </section>
-        <div className="sticky bottom-0 z-20 -mx-4 flex flex-wrap justify-end gap-2 border-t border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:-mx-8 sm:px-8">
+        {/* B4: one row on a phone (no wrap, no send icon) so the bar stays 64 px tall. */}
+        <div
+          className="sticky bottom-0 z-20 -mx-4 flex flex-nowrap justify-end gap-2 border-t border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 max-sm:[&>button]:min-w-0 max-sm:[&>button]:px-3 sm:-mx-8 sm:px-8"
+          data-testid="vat201-workbook-actions"
+        >
           <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
             {locale === "ar" ? "إلغاء" : "Cancel"}
           </Button>
@@ -923,7 +927,7 @@ export default function VATFiling() {
           </Button>
           <Button onClick={handleSubmitReturn} disabled={submitMutation.isPending}>
             {submitMutation.isPending && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
-            <Send className="w-4 h-4 me-2" />
+            <Send className="hidden w-4 h-4 me-2 sm:inline" />
             {t["compliance.vatFilingSubmitForFiling"]}
           </Button>
         </div>
@@ -1551,7 +1555,7 @@ export default function VATFiling() {
                   data-testid="text-vat-generate-after"
                 >
                   {formatMessage(t["compliance.vatPreview.generateAfter"], {
-                    date: newPeriodEnd,
+                    date: formatDisplayDate(newPeriodEnd, locale),
                   })}
                 </p>
               </div>

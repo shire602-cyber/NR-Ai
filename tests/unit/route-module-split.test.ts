@@ -71,6 +71,7 @@ const AI_TABLE = [
   "GET /api/ai/classifier-config [authMiddleware,requireCustomer,<anonymous>]",
   "PATCH /api/ai/classifier-config [authMiddleware,requireCustomer,<anonymous>]",
   "POST /api/ai/nl-gateway [authMiddleware,<anonymous>,<anonymous>,<anonymous>]",
+  "GET /api/ai/status [authMiddleware,<anonymous>]",
   "POST /api/ask|/api/ai/chat [authMiddleware,<anonymous>,<anonymous>]",
   "GET /api/ask/history [authMiddleware,<anonymous>]",
   "GET /api/autocomplete/accounts [authMiddleware,<anonymous>]",

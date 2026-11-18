@@ -158,6 +158,11 @@ export function localizeApiError(body: Record<string, unknown> | undefined): str
   const guard = localizeLedgerGuard(body);
   if (guard) return guard;
   if (useI18n.getState().locale !== "ar" || !body) return undefined;
+  // B14: throttles and lockouts name their sentence by catalog key (`messageKey`).
+  const messageKey = typeof body.messageKey === "string" ? body.messageKey : undefined;
+  if (messageKey && KEY_PATTERN.test(messageKey) && dict("ar")[messageKey]) {
+    return dict("ar")[messageKey];
+  }
   const code = typeof body.code === "string" ? body.code : undefined;
   const fields = body.fields;
   if (code === "VALIDATION_ERROR" || (fields && typeof fields === "object")) {
@@ -176,6 +181,20 @@ export function localizeApiError(body: Record<string, unknown> | undefined): str
     if (dict("ar")[key]) return dict("ar")[key];
   }
   return undefined;
+}
+
+/**
+ * Sentence for a failed response read with plain `fetch` (sign-in, password reset), in the
+ * active language (B14): the catalog entry the server named in `messageKey` (rate limits and
+ * lockouts), else a localised code, else the server's message, else `fallback`.
+ */
+export function serverErrorMessage(body: unknown, fallback: string): string {
+  const record = body && typeof body === "object" ? (body as Record<string, unknown>) : undefined;
+  const key = typeof record?.messageKey === "string" ? record.messageKey : undefined;
+  if (key && KEY_PATTERN.test(key) && dict("en")[key]) return tr(key);
+  const localized = localizeApiError(record);
+  if (localized) return localized;
+  return typeof record?.message === "string" && record.message ? record.message : fallback;
 }
 
 const CONTROL_LEDGERS = new Set(["receivables", "payables", "inventory", "vat", "grni", "payroll"]);
