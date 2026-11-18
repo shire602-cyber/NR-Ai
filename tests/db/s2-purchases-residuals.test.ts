@@ -15,6 +15,8 @@ import { PINT_AE_FIXTURES, fixtureCompany, type PintAeFixture } from "../fixture
 
 const h = useHarness();
 const TRN = "100000000000003";
+/** WQ2 (4.7): a supplier's TRN differs from the company's own (a self-TRN bill is refused). */
+const SUPPLIER_TRN = "100222333400003";
 const BUYER_TRN = "100555666700003";
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -51,7 +53,7 @@ async function bal(t: Tenant, code: string): Promise<number> {
 async function createBill(t: Tenant, over: Record<string, unknown> = {}) {
   return t.as.post(`/api/companies/${t.company.id}/bills`, {
     vendor_name: "Acme Hosting LLC",
-    vendor_trn: TRN,
+    vendor_trn: SUPPLIER_TRN,
     bill_number: `B-${Math.random().toString(36).slice(2, 8)}`,
     bill_date: "2026-08-15",
     line_items: [{ description: "Hosting", quantity: 1, unit_price: 1000, vat_rate: 5 }],
