@@ -14,6 +14,26 @@ import {
 import { reportDeliverySubscriptions } from "@/lib/reportCatalog";
 import { formatAedText } from "@/lib/format";
 import { formatMoneyText } from "@/lib/format-money";
+import { formatDate, formatEmbeddedDates } from "@/lib/format-date";
+
+const ISO_DAY_PARAM = /^\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z?)?$/;
+
+/**
+ * F3 (Fable sign-off 2): date params arrive as ISO days ("2026-10-28"); show them in the app's
+ * date format for the active language ("28 Oct 2026" / "28 أكتوبر 2026"), zone-safe.
+ */
+function localizeDateParams(
+  params: Record<string, string>,
+  locale: "en" | "ar"
+): Record<string, string> {
+  const out = { ...params };
+  for (const [k, v] of Object.entries(out)) {
+    if (typeof v === "string" && ISO_DAY_PARAM.test(v.trim())) {
+      out[k] = formatDate(v.trim().slice(0, 10), locale) || v;
+    }
+  }
+  return out;
+}
 
 /** Server strings carry "AED 15000.00"; re-render amounts through the one money formatter. */
 function localizeAmounts(text: string): string {
@@ -64,11 +84,15 @@ export function localizeNotification(
   locale: "en" | "ar" = "en"
 ): { title: string; message: string; setupEmailHref?: string } {
   const copy = n.copy ?? describeNotificationCopy(n);
-  const titleParams = { ...copy.titleParams };
+  const titleParams = localizeDateParams({ ...copy.titleParams }, locale);
   if (titleParams.title) {
     titleParams.title = localizeDeliverySubscriptionTitle(titleParams.title, t);
   }
-  const title = renderDescriptor(copy.titleKey, titleParams, n.title, t);
+  // Rows without a catalog key fall back to the stored English, whose dates are ISO too.
+  const title = formatEmbeddedDates(
+    renderDescriptor(copy.titleKey, titleParams, n.title, t),
+    locale
+  );
   if (isEmailNotSetUpMessage(n.message)) {
     return {
       title,
@@ -76,7 +100,7 @@ export function localizeNotification(
       setupEmailHref: EMAIL_SETUP_HREF,
     };
   }
-  const messageParams = { ...copy.messageParams };
+  const messageParams = localizeDateParams({ ...copy.messageParams }, locale);
   for (const key of ["amount", "total"]) {
     const v = messageParams[key];
     const cur = messageParams.currency;
@@ -98,6 +122,9 @@ export function localizeNotification(
   }
   return {
     title,
-    message: localizeAmounts(renderDescriptor(copy.messageKey, messageParams, n.message, t).trim()),
+    message: formatEmbeddedDates(
+      localizeAmounts(renderDescriptor(copy.messageKey, messageParams, n.message, t).trim()),
+      locale
+    ),
   };
 }

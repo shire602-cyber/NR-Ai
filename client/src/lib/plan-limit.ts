@@ -43,7 +43,22 @@ export function planLimitDetail(body: Record<string, unknown>): PlanLimitDetail 
   };
 }
 
+/** When the upgrade prompt was last opened (ms since epoch); 0 when never. */
+let lastAnnouncedAt = 0;
+/** How long after a plan refusal an error toast is taken to be about that refusal. */
+export const PLAN_LIMIT_TOAST_WINDOW_MS = 3000;
+
+/**
+ * F1 (Fable sign-off 2): true right after a plan refusal opened the upgrade prompt. The
+ * caller's own error toast ("Failed to create contact") repeats the same refusal in red, so the
+ * toaster drops destructive toasts in this window; the dialog alone explains the lock.
+ */
+export function planLimitJustAnnounced(now: number = Date.now()): boolean {
+  return lastAnnouncedAt > 0 && now - lastAnnouncedAt < PLAN_LIMIT_TOAST_WINDOW_MS;
+}
+
 export function announcePlanLimit(body: Record<string, unknown> | undefined): void {
   if (!body || !isPlanLimitBody(body) || typeof window === "undefined") return;
+  lastAnnouncedAt = Date.now();
   window.dispatchEvent(new CustomEvent(PLAN_LIMIT_EVENT, { detail: planLimitDetail(body) }));
 }

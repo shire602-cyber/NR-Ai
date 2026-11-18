@@ -64,14 +64,18 @@ export function PlanLimitDialog() {
   return (
     <Dialog open onOpenChange={(open) => (!open ? setDetail(null) : undefined)}>
       <DialogContent size="sm" data-testid="plan-limit-dialog" data-code={detail.code}>
-        <DialogHeader>
+        {/* F1: the header (with the data-safe line) never shrinks, so the sticky footer cannot
+            cut "Nothing is deleted." in half. */}
+        <DialogHeader className="shrink-0">
           <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300">
             <Lock className="h-4 w-4" aria-hidden />
           </span>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{body}</DialogDescription>
+          <p className="text-small text-muted-foreground" data-testid="plan-limit-data-safe">
+            {t["components.planLimitDataSafe"]}
+          </p>
         </DialogHeader>
-        <p className="text-small text-muted-foreground">{t["components.planLimitDataSafe"]}</p>
         <DialogFooter className="gap-2 sm:gap-2">
           <Button variant="outline" onClick={() => setDetail(null)}>
             {t["components.planLimitNotNow"]}

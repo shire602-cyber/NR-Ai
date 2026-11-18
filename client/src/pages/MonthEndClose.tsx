@@ -5,6 +5,7 @@ import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import { PageHeader } from "@/components/ui/page-header";
 import {
   formatDate as formatDisplayDate,
+  formatEmbeddedDates,
   formatMonthYear,
   parseCalendarDate,
 } from "@/lib/format-date";
@@ -454,7 +455,10 @@ export default function MonthEndClose() {
     }
     const issues = open.map((item) => {
       const title = localizeServerText(item.title, t, item.copy?.title);
-      const detail = item.details ? localizeServerText(item.details, t, item.copy?.details) : "";
+      // F3: server details carry ISO dates ("the VAT period ends 2026-12-31").
+      const detail = item.details
+        ? formatEmbeddedDates(localizeServerText(item.details, t, item.copy?.details), locale)
+        : "";
       return `- ${title}${detail ? ` (${detail})` : ""}`;
     });
     return [
@@ -641,9 +645,12 @@ export default function MonthEndClose() {
                         {localizeServerText(item.title, t, item.copy?.title)}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {item.details
-                          ? localizeServerText(item.details, t, item.copy?.details)
-                          : localizeServerText(item.description, t, item.copy?.description)}
+                        {formatEmbeddedDates(
+                          item.details
+                            ? localizeServerText(item.details, t, item.copy?.details)
+                            : localizeServerText(item.description, t, item.copy?.description),
+                          locale
+                        )}
                       </p>
                       {item.signOff && (
                         <p className="text-xs text-success" data-testid={`signoff-${item.key}`}>

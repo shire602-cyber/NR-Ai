@@ -2,10 +2,11 @@ import { sql } from "drizzle-orm";
 import { db } from "../db";
 import { DomainError } from "../errors";
 
-export type InvoiceDocType = "invoice" | "credit_note" | "debit_note" | "quote";
+export type InvoiceDocType = "invoice" | "cash_sale" | "credit_note" | "debit_note" | "quote";
 
 export const NUMBERED_DOC_TYPES: readonly InvoiceDocType[] = [
   "invoice",
+  "cash_sale",
   "credit_note",
   "debit_note",
   "quote",
@@ -13,6 +14,10 @@ export const NUMBERED_DOC_TYPES: readonly InvoiceDocType[] = [
 
 const PREFIX: Record<InvoiceDocType, string> = {
   invoice: "INV",
+  // CASH-SERIES (owner decision 2026-11-18): cash sales are tax invoices with their own
+  // gap-free series (own prefix and counter per company), never shared with "invoice".
+  // Migration 0130 gives "CSL" to a company where another type already uses "CS".
+  cash_sale: "CS",
   credit_note: "CN",
   // W3-A: debit notes (additional charges on an issued invoice) are tax
   // documents with their own gap-free sequence.
@@ -167,6 +172,33 @@ export async function numberingView(
 }
 
 /**
+ * Highest counter value already written in the format `settings` produce for `year` (0 = none),
+ * across every numbered document table. Used when a prefix or the yearly reset changes, so the
+ * new format starts above any number already printed in it (imported documents, an earlier
+ * prefix that is reused) and the next number can never collide with an existing one.
+ */
+async function highestExistingInFormat(
+  companyId: string,
+  settings: NumberingSettings,
+  year: number,
+  executor: Executor
+): Promise<number> {
+  // Prefixes are letters, digits, "-" and "/" only (validator), all literal in a POSIX regex.
+  const pattern = settings.yearlyReset
+    ? `^${settings.prefix}-${year}-([0-9]+)$`
+    : `^${settings.prefix}-([0-9]+)$`;
+  const result = await executor.execute(sql`
+    SELECT COALESCE(MAX(substring(number from ${pattern})::bigint), 0) AS n FROM (
+      SELECT number FROM invoices WHERE company_id = ${companyId}
+      UNION ALL SELECT number FROM credit_notes WHERE company_id = ${companyId}
+      UNION ALL SELECT number FROM quotes WHERE company_id = ${companyId}
+    ) docs
+    WHERE number ~ ${pattern}
+  `);
+  return Number(rowsOf<{ n: string | number }>(result)[0]?.n ?? 0);
+}
+
+/**
  * Save the numbering settings and, optionally, move the next number forward. One transaction:
  *   - the settings row is upserted;
  *   - switching between yearly and continuous numbering seeds the new sequence with the highest
@@ -191,8 +223,13 @@ export async function saveNumberingSettings(
     };
     const year = sequenceYear(settings, date);
     // Make sure the target sequence row exists, then lock it.
-    if (before.yearlyReset !== settings.yearlyReset) {
-      const prevLast = await lastIssued(companyId, docType, sequenceYear(before, date), tx);
+    if (before.yearlyReset !== settings.yearlyReset || before.prefix !== settings.prefix) {
+      const prevLast = Math.max(
+        before.yearlyReset !== settings.yearlyReset
+          ? await lastIssued(companyId, docType, sequenceYear(before, date), tx)
+          : 0,
+        await highestExistingInFormat(companyId, settings, date.getUTCFullYear(), tx)
+      );
       await tx.execute(sql`
         INSERT INTO invoice_number_sequences (company_id, doc_type, year, last_value, updated_at)
           VALUES (${companyId}, ${docType}, ${year}, ${prevLast}, now())

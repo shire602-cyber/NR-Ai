@@ -54,7 +54,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ARTIFACT_DIR = path.join(__dirname, ".artifacts");
 
 // The Reports "Advanced tools" workspace tabs are separate URLs that render different panels
-// (F14), so each one is crawled in addition to the 20 launch routes.
+// (F14), so each one is crawled in addition to the 22 launch routes.
 const ADVANCED_REPORT_ROUTES = [
   "home",
   "suites",

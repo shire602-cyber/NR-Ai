@@ -23,7 +23,7 @@ the week's token budget for the work that needs it.
 - `client/` React/Vite frontend (`@` aliases `client/src`). UI copy lives in namespaced catalogs
   `client/src/locales/{en,ar}/*.json` (`<T k>` / `t["ns.key"]`); use logical CSS properties for RTL.
   Report catalog Arabic is the keyed overlay `client/src/locales/ar-catalog/reportCatalog.json`
-  (`useCatalogText()`); `npm run e2e:arabic-runtime` must find 0 English text nodes on the 20
+  (`useCatalogText()`); `npm run e2e:arabic-runtime` must find 0 English text nodes on the 22
   launch routes in Arabic mode. The i18n ratchet also scans `client/src/lib` and `client/src/hooks`.
 - `server/` Express API: `routes/`, `services/`, `middleware/`, `ledger/`, `reporting/`, `tax/`,
   `tenancy/`, `platform/` (service registry, domain events, job registry), `outbox/`, `http/`.
@@ -42,7 +42,7 @@ the week's token budget for the work that needs it.
   exceeds 1,500 lines.
 - `migrations/` Drizzle migrations (`migrations/meta/` is generated; never edit by hand).
 - `tests/` Vitest unit tests (`tests/unit`), DB-backed tests (`tests/db`) and smoke/E2E scripts.
-- `docs/release/DEPLOY-RUNBOOK.md` deploy runbook: backup, migration 0089-0130 rehearsal, env,
+- `docs/release/DEPLOY-RUNBOOK.md` deploy runbook: backup, migration 0089-0131 rehearsal, env,
   smoke, rollback.
 - `docs/` engineering notes. Do not edit `dist/` or `node_modules/`; `.claude/` and `.claire/`
   worktrees are excluded from Vitest/ESLint and are not a source of truth.

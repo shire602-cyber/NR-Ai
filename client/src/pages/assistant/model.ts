@@ -158,3 +158,110 @@ export function revealScrollDelta(input: {
   const roomAbove = Math.max(0, input.turnTop - (input.visibleTop + REVEAL_GAP_PX));
   return Math.round(Math.min(overlap, roomAbove));
 }
+
+// ─── AS1: grounded answers (segments, facts, missing links) ─────────────────
+
+/** One piece of an answer: text, or an amount the client formats (A3). */
+export type AnswerSegment =
+  | { type: "text"; text: string }
+  | { type: "money"; value: number; currency: string }
+  | { type: "number"; value: number };
+
+/** A fact the answer rests on, as `/api/ai/nl-gateway` returns it (A4). */
+export interface AnswerFigure {
+  id: string;
+  /** `assistant.fact.<key>` in the catalogs. */
+  key: string;
+  value: number;
+  unit: "AED" | "count";
+  params: Record<string, string | number>;
+  source: { key: string; href: string };
+}
+
+export interface AnswerMissing {
+  key: string;
+  href: string;
+}
+
+const CITATION = /\s*\(?\[\s*F\d+(?:\s*[,،]\s*F\d+)*\s*\]\)?/g;
+
+/** Text of an answer without citation markers (A2), for answers that carry no segments. */
+export function stripCitations(text: string): string {
+  return text.replace(CITATION, "").replace(/\s+([.,;:!?،؛؟])/g, "$1");
+}
+
+/** Segments for an answer: the server's, else the plain text without markers. */
+export function answerSegments(answer: {
+  response: string;
+  segments?: AnswerSegment[];
+}): AnswerSegment[] {
+  if (answer.segments && answer.segments.length > 0) return answer.segments;
+  return [{ type: "text", text: stripCitations(answer.response ?? "") }];
+}
+
+/** Facts whose label is the record's own name (a customer, a bank or expense account). */
+export const NAME_LABELLED_FACTS: ReadonlySet<string> = new Set([
+  "customerOwes",
+  "cashAccount",
+  "expenseAccount",
+]);
+
+/** Catalog keys of the source chips, by the server's source key. */
+export const SOURCE_LABEL_KEYS: Record<string, string> = {
+  profitLoss: "assistant.srcProfitLoss",
+  balanceSheet: "assistant.srcBalanceSheet",
+  invoices: "assistant.srcReceivables",
+  bills: "assistant.srcBills",
+  vat: "assistant.srcVat",
+  bank: "assistant.srcBank",
+  receipts: "assistant.srcReceipts",
+  corporateTax: "assistant.srcCorporateTax",
+};
+
+/** Distinct source chips of a set of facts, in first-seen order. */
+export function factSources(
+  figures: ReadonlyArray<Pick<AnswerFigure, "source">>
+): Array<{ labelKey: string; href: string }> {
+  const seen = new Set<string>();
+  const out: Array<{ labelKey: string; href: string }> = [];
+  for (const f of figures) {
+    const labelKey = SOURCE_LABEL_KEYS[f.source.key];
+    if (!labelKey || seen.has(f.source.key)) continue;
+    seen.add(f.source.key);
+    out.push({ labelKey, href: f.source.href });
+  }
+  return out;
+}
+
+/**
+ * Values for a fact label template: periods and dates in the app's date format (never ISO),
+ * names in the active language when an Arabic name exists.
+ */
+export function factLabelValues(
+  params: Record<string, string | number>,
+  locale: string,
+  fmt: {
+    date: (iso: string, locale: string) => string;
+    range: (from: string, to: string, locale: string) => string;
+  }
+): Record<string, string | number> {
+  const out: Record<string, string | number> = { ...params };
+  if (typeof params.from === "string" && typeof params.to === "string") {
+    out.period = fmt.range(params.from, params.to, locale);
+  }
+  for (const k of ["date", "due"] as const) {
+    const v = params[k];
+    if (typeof v === "string" && v) out[k] = fmt.date(v, locale);
+  }
+  if (locale === "ar" && typeof params.nameAr === "string" && params.nameAr) {
+    out.name = params.nameAr;
+  }
+  if (params.number === "") out.number = "—";
+  // Names and document numbers are data in either script: isolate them so an Arabic customer
+  // name inside an English label (or a Latin code inside Arabic) keeps its own direction.
+  for (const k of ["name", "number"] as const) {
+    const v = out[k];
+    if (typeof v === "string" && v) out[k] = `⁨${v}⁩`;
+  }
+  return out;
+}

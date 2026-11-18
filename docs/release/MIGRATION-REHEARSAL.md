@@ -1,4 +1,4 @@
-# Migration rehearsal: main (0000-0088) to #67 (0089-0130)
+# Migration rehearsal: main (0000-0088) to #67 (0089-0131)
 
 Rehearsed on 2026-11-18 on branch `launch/hardening-on-67` (PR #67 head `ea6d1bd` plus this
 branch's changes), following [DEPLOY-RUNBOOK.md](DEPLOY-RUNBOOK.md) sections 1, 2 and 7. **This is a
@@ -36,15 +36,15 @@ Until `rehearse.sh` has run on a restored production dump, treat the first produ
 
 This stays open until the owner runs it.
 
-## Owner exception: migration 0130 (settlement indexes)
+## Owner exception: migration 0131 (settlement indexes)
 
 AGENTS.md freezes the migration chain ("never edit `migrations/meta/_journal.json` or add new numbers").
 **The owner approved an explicit exception on 2026-11-18 (PR #68)** for
-`0130_settlement_open_balance_indexes`.
+`0131_settlement_open_balance_indexes`.
 
 It was added as 0125 and renumbered three times, before any deploy, because the base branch kept
-taking numbers: 0125 and 0126 (WQ7, WQ3), 0127 and 0128 (WQ2, WQ5), then 0129 (WQ1). It is now
-the next free number, 0130, journal idx 129, `when` +10 s as the migrations test requires. The header
+taking numbers: 0125 and 0126 (WQ7, WQ3), 0127 and 0128 (WQ2, WQ5), 0129 (WQ1), then 0130
+(cash-sale numbering). It is now the next free number, 0131, journal idx 130, `when` +10 s as the migrations test requires. The header
 and `IF NOT EXISTS` rules are followed.
 
 It adds two partial indexes, `idx_invoices_original_invoice_id` and `idx_credit_notes_invoice_id`.
@@ -52,7 +52,10 @@ They are also declared in `shared/schema/sales.ts`, so `db:push` keeps them. The
 `CONCURRENTLY`, because `drizzle-kit migrate` runs inside one transaction.
 
 Re-rehearsed from scratch on the merged tree: fresh copies of the 1x and 20x pre-0089 databases, the
-full `rehearse.sh`, 0089-0130 (42 files, including the base's 0125-0129).
+full `rehearse.sh`, 0089-0130 (42 files, including the base's 0125-0129; the table below is from that run, when
+our file was still numbered 0130). After the renumber to 0131 on top of the base's
+`0130_cash_sale_numbering`, a fresh-database check migrated through 0131 twice (second run a no-op)
+and both indexes exist and are valid.
 
 | Check                                           | 1x                                | 20x                                            |
 | ----------------------------------------------- | --------------------------------- | ---------------------------------------------- |
@@ -227,15 +230,15 @@ on the migrated schema. Treat it as unverified. The data-preserving rollback is 
 
 ## Findings for the owner
 
-1. **Missing indexes made the settlement rule quadratic. Fixed by migration 0130 (owner exception).**
+1. **Missing indexes made the settlement rule quadratic. Fixed by migration 0131 (owner exception).**
    `invoices.original_invoice_id` and `credit_notes.invoice_id` had no index. The settlement rule
    (`server/reporting/settlement.ts`, used by the invoice list balances, ageing, dashboard,
    statements and payment chasing) runs a correlated subquery on each.
 
    On the 20x data, open balances for one company with 10,000 invoices took 35 s; with both
-   indexes, 0.45 s, and after 0130 on the re-rehearsed database 57-114 ms.
+   indexes, 0.45 s, and after the settlement-index migration on the re-rehearsed database 57-114 ms.
    `find-sales-ledger-drift.mjs` went from 388 s to under 1 s. See "Owner exception: migration
-   0130" above, and the evidence in
+   0131" above, and the evidence in
    [proposed-migrations/settlement-open-balance-indexes.md](proposed-migrations/settlement-open-balance-indexes.md).
 
 2. **0097 deactivates every reconciliation rule on main data.** `reconciliation_rules.account_id`

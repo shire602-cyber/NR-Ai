@@ -1,5 +1,5 @@
 /**
- * The 20 customer launch routes crawled by tests/e2e/a11y-crawl.mjs and
+ * The 22 customer launch routes crawled by tests/e2e/a11y-crawl.mjs and
  * tests/e2e/arabic-runtime-crawl.mjs.
  */
 export const LAUNCH_ROUTES = [
@@ -24,6 +24,9 @@ export const LAUNCH_ROUTES = [
   "/inventory",
   // The merged company page (CL-B); /company-profile only redirects here.
   "/settings/company",
+  // INTEGRATE-I: the cash sale editor (own CS series) and the numbering settings it links to.
+  "/sales/cash-sale",
+  "/settings/numbering",
 ];
 
 /**

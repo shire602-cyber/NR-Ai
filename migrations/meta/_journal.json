@@ -909,7 +909,14 @@
    "idx": 129,
    "version": "7",
    "when": 1781430450000,
-   "tag": "0130_settlement_open_balance_indexes",
+   "tag": "0130_cash_sale_numbering",
+   "breakpoints": false
+  },
+  {
+   "idx": 130,
+   "version": "7",
+   "when": 1781430460000,
+   "tag": "0131_settlement_open_balance_indexes",
    "breakpoints": false
   }
  ]

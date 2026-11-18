@@ -29,7 +29,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
  */
 
 interface NumberingRow {
-  docType: "invoice" | "credit_note" | "debit_note" | "quote";
+  docType: "invoice" | "cash_sale" | "credit_note" | "debit_note" | "quote";
   prefix: string;
   padding: number;
   yearlyReset: boolean;
