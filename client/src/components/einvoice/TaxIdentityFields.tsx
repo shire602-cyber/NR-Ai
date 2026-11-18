@@ -119,7 +119,7 @@ export function TaxIdentityFields({
               value={idType || undefined}
               onValueChange={(v) => onChange({ sellerIdType: v as SellerIdType })}
             >
-              <SelectTrigger data-testid="tax-id-type">
+              <SelectTrigger id={id("seller-id-type")} data-testid="tax-id-type">
                 <SelectValue placeholder={t["einvoicing.taxId.idTypePlaceholder"]} />
               </SelectTrigger>
               <SelectContent>
@@ -219,7 +219,7 @@ export function TaxIdentityFields({
       {has("emirate") && (
         <Field id={id("emirate")} label={t["einvoicing.taxId.emirate"]}>
           <Select value={form.emirate || undefined} onValueChange={(v) => onChange({ emirate: v })}>
-            <SelectTrigger data-testid="tax-id-emirate">
+            <SelectTrigger id={id("emirate")} data-testid="tax-id-emirate">
               <SelectValue placeholder={t["einvoicing.taxId.emiratePlaceholder"]} />
             </SelectTrigger>
             <SelectContent>

@@ -357,7 +357,7 @@ export function ContactForm({
               value={f.legalIdType || NONE}
               onValueChange={(v) => set({ legalIdType: v === NONE ? "" : (v as SellerIdType) })}
             >
-              <SelectTrigger data-testid="contact-id-type">
+              <SelectTrigger id={`${idp}-id-type`} data-testid="contact-id-type">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -404,7 +404,7 @@ export function ContactForm({
               value={f.emirate || NONE}
               onValueChange={(value) => set({ emirate: value === NONE ? "" : value })}
             >
-              <SelectTrigger data-testid="select-contact-emirate">
+              <SelectTrigger id={`${idp}-emirate`} data-testid="select-contact-emirate">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -422,13 +422,12 @@ export function ContactForm({
             label={t["forms.contact.freeZone"]}
             help={t["forms.contact.freeZoneHelp"]}
           >
-            <div className="flex h-10 items-center">
-              <Checkbox
-                checked={f.freeZone}
-                onCheckedChange={(v) => set({ freeZone: v === true })}
-                data-testid="contact-free-zone"
-              />
-            </div>
+            <Checkbox
+              className="mt-2.5"
+              checked={f.freeZone}
+              onCheckedChange={(v) => set({ freeZone: v === true })}
+              data-testid="contact-free-zone"
+            />
           </Field>
         </FormGrid>
       </FormSection>
@@ -515,7 +514,7 @@ export function ContactForm({
               value={f.defaultVatTreatment || NONE}
               onValueChange={(v) => set({ defaultVatTreatment: v === NONE ? "" : v })}
             >
-              <SelectTrigger data-testid="contact-vat-treatment">
+              <SelectTrigger id={`${idp}-vat-treatment`} data-testid="contact-vat-treatment">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -534,7 +533,7 @@ export function ContactForm({
                 value={f.defaultRevenueAccountId || NONE}
                 onValueChange={(v) => set({ defaultRevenueAccountId: v === NONE ? "" : v })}
               >
-                <SelectTrigger data-testid="contact-revenue-account">
+                <SelectTrigger id={`${idp}-revenue`} data-testid="contact-revenue-account">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -554,7 +553,7 @@ export function ContactForm({
                 value={f.defaultExpenseAccountId || NONE}
                 onValueChange={(v) => set({ defaultExpenseAccountId: v === NONE ? "" : v })}
               >
-                <SelectTrigger data-testid="contact-expense-account">
+                <SelectTrigger id={`${idp}-expense`} data-testid="contact-expense-account">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -574,7 +573,7 @@ export function ContactForm({
                 value={f.defaultCostCenterId || NONE}
                 onValueChange={(v) => set({ defaultCostCenterId: v === NONE ? "" : v })}
               >
-                <SelectTrigger data-testid="contact-cost-centre">
+                <SelectTrigger id={`${idp}-cost-centre`} data-testid="contact-cost-centre">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
