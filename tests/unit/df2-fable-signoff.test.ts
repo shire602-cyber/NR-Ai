@@ -93,6 +93,15 @@ describe("[DF2 B13] activity sentences", () => {
     };
     expect(activitySentence(t, log, "en")).toBe("Journal entry JE-20261118-005 saved as draft");
   });
+  it("prints a period date in the display format, not ISO", () => {
+    const log = {
+      action: "period_lock.override",
+      description: "Period lock override on period 2026-08-31",
+    };
+    const sentence = activitySentence(t, log, "en");
+    expect(sentence).not.toMatch(/2026-08-31/);
+    expect(sentence).toContain("31 Aug 2026");
+  });
 });
 
 describe("[DF2 B9] empty company: no KPI row of zeros", () => {

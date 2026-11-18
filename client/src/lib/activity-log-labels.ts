@@ -3,6 +3,7 @@
 // (server/storage/helpers.ts describeAuditLog). In Arabic mode the UI shows the action and entity
 // as catalog labels and rebuilds the description from the same code, keeping the document
 // number / id from the server text. English mode keeps the server text unchanged.
+import { formatDate } from "@/lib/format-date";
 import { formatMessage } from "@/lib/i18n";
 
 type Translations = Record<string, string>;
@@ -106,10 +107,17 @@ export function readableSentence(sentence: string, actionLabel: string | undefin
   return sentence;
 }
 
-/** One sentence for a log row: localised, no ids, generic server text replaced. */
+const ISO_DATE_RE = /\b(20\d\d-[01]\d-[0-3]\d)\b/g;
+
+/** ISO dates inside server text ("override on period 2026-08-31") read as display dates. */
+export function withDisplayDates(text: string, locale: string): string {
+  return text.replace(ISO_DATE_RE, (iso) => formatDate(iso, locale) || iso);
+}
+
+/** One sentence for a log row: localised, no ids, display dates, generic server text replaced. */
 export function activitySentence(t: Translations, log: ActivityLogLike, locale: string): string {
   const sentence = readableSentence(
-    withoutIds(activityDescription(t, log, locale)),
+    withDisplayDates(withoutIds(activityDescription(t, log, locale)), locale),
     t[`activityLog.action.${log.action}`]
   );
   return sentence || activityActionLabel(t, log.action);
