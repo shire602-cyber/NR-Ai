@@ -103,5 +103,6 @@
   "journal.sourceFxRevaluation": "إعادة تقييم العملات",
   "journal.sourceInventory": "المخزون",
   "journal.sourceOpeningBalance": "الرصيد الافتتاحي",
-  "journal.sourceSystem": "قيد النظام"
+  "journal.sourceSystem": "قيد النظام",
+  "journal.coaParentLocked": "الحساب الرئيسي مقفل: هذا الحساب الفرعي جزء من حساب مراقبة"
 }

@@ -757,12 +757,13 @@ export function registerVATRoutes(app: Express) {
 
       const vatReturn = await storage.updateVatReturn(existing.id, {
         status: target,
-        adjustmentAmount: body.adjustmentAmount ?? 0,
-        adjustmentReason: body.adjustmentReason ?? null,
         notes: body.notes ?? existing.notes ?? null,
         ftaReferenceNumber: reference,
         submittedBy: userId,
         submittedAt: filedOn ? new Date(`${filedOn}T08:00:00Z`) : new Date(),
+        // D2 (N13): the filing date the user stated (the VAT 201 declaration date); the
+        // settlement of the filed return cannot predate it.
+        ...(filedOn ? { declarationDate: new Date(`${filedOn}T08:00:00Z`) } : {}),
         declarantName: body.declarantName ?? existing.declarantName ?? null,
         declarantPosition: body.declarantPosition ?? existing.declarantPosition ?? null,
       });

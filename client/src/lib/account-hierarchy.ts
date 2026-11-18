@@ -4,6 +4,8 @@
  * Pure so they can be unit tested; the server enforces the same rules in
  * server/routes/accounts.routes.ts (assertValidParent: same company, same type, no cycle).
  */
+import { CONTROL_ACCOUNT_CODES } from "@shared/control-accounts";
+
 export interface HierarchyAccount {
   id: string;
   code: string;
@@ -79,4 +81,36 @@ export function parentCandidates(
   return accounts
     .filter((a) => a.type === self.type && !a.isArchived && !blocked.has(a.id))
     .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+}
+
+/** True when the account is a control account by its own code or input / output VAT flag. */
+function ownControl(a: {
+  code: string;
+  isVatAccount?: boolean | null;
+  vatType?: string | null;
+}): boolean {
+  return (
+    !!CONTROL_ACCOUNT_CODES[a.code] ||
+    (a.isVatAccount === true && (a.vatType === "input" || a.vatType === "output"))
+  );
+}
+
+type RoleAccount = HierarchyAccount & { isVatAccount?: boolean | null; vatType?: string | null };
+
+/**
+ * D2 (N8): a sub-account that is a control account only through a control parent keeps that
+ * parent (moving it out would let manual journals reach the sub-ledger's GL). Mirrors the server
+ * rule in server/routes/accounts.routes.ts (assertAccountRoleUnchanged).
+ */
+export function parentLocked(account: RoleAccount, all: RoleAccount[]): boolean {
+  if (ownControl(account)) return false;
+  const byId = new Map(all.map((a) => [a.id, a]));
+  const seen = new Set<string>([account.id]);
+  let cur = account.parentId ? byId.get(account.parentId) : undefined;
+  while (cur && !seen.has(cur.id)) {
+    if (ownControl(cur)) return true;
+    seen.add(cur.id);
+    cur = cur.parentId ? byId.get(cur.parentId) : undefined;
+  }
+  return false;
 }

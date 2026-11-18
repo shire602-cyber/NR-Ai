@@ -1,7 +1,7 @@
 /**
  * E2 (J3-r2): depreciation is never future-dated (a month is recorded only after it ends, the
- * default is the last ended month), a disposal stops depreciation and is not dated before
- * depreciation already booked, and the balance sheet never shows accumulated depreciation
+ * default is the last ended month), a disposal stops depreciation and is never dated in the
+ * future (D2 N10), and the balance sheet never shows accumulated depreciation
  * (1240) as a positive asset.
  */
 import { afterEach, describe, expect, it } from "vitest";
@@ -80,13 +80,14 @@ describe("E2 (J3-r2) fixed-asset depreciation dates and disposal", () => {
     expect(oct.status, oct.text).toBe(200);
     expect(oct.body.period).toEqual({ month: 10, year: 2026 });
 
-    // A disposal dated before booked depreciation would clear it before it is booked.
+    // D2 (N10): a disposal is never dated in the future. (D2 N6: a disposal dated before booked
+    // depreciation now reverses that depreciation; tests/db/d2-accounting-round-d.test.ts.)
     const early = await t.as.post(`/api/fixed-assets/${id}/dispose`, {
-      disposalDate: "2026-10-15",
+      disposalDate: "2026-11-19",
       disposalAmount: 0,
     });
-    expect(early.status, early.text).toBe(409);
-    expect(early.body.code).toBe("DISPOSAL_BEFORE_DEPRECIATION");
+    expect(early.status, early.text).toBe(422);
+    expect(early.body.code).toBe("DISPOSAL_DATE_IN_FUTURE");
 
     const sold = await t.as.post(`/api/fixed-assets/${id}/dispose`, {
       disposalDate: "2026-11-18",

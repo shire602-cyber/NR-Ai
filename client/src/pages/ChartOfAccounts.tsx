@@ -23,7 +23,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiUrl } from "@/lib/api";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { orderByHierarchy, parentCandidates } from "@/lib/account-hierarchy";
+import { orderByHierarchy, parentCandidates, parentLocked } from "@/lib/account-hierarchy";
 import {
   Dialog,
   DialogContent,
@@ -400,8 +400,13 @@ export default function ChartOfAccounts() {
                       <TableCell data-cell="actions" className="w-px">
                         <RowActions>
                           <RowActionButton
-                            label={t["journal.coaSetParent"]}
+                            label={
+                              parentLocked(item.account, allAccounts)
+                                ? t["journal.coaParentLocked"]
+                                : t["journal.coaSetParent"]
+                            }
                             icon={GitBranch}
+                            disabled={parentLocked(item.account, allAccounts)}
                             data-testid={`button-set-parent-${item.account.id}`}
                             onClick={(event) => {
                               event.stopPropagation();

@@ -356,5 +356,14 @@
   "forms.serverErrors.VAT_RETURN_NOTHING_TO_SETTLE": "This return has nothing to pay or receive.",
   "forms.errors.depreciationMonthNotEnded": "This month has not ended yet. Choose a month that has ended.",
   "forms.serverErrors.DEPRECIATION_PERIOD_NOT_ENDED": "This month has not ended yet: depreciation is dated on the month's last day and never in the future.",
-  "forms.serverErrors.DISPOSAL_BEFORE_DEPRECIATION": "Depreciation is already recorded after this disposal date. Dispose of the asset on or after the last depreciation date."
+  "forms.serverErrors.DISPOSAL_BEFORE_DEPRECIATION": "Depreciation is already recorded after this disposal date. Dispose of the asset on or after the last depreciation date.",
+  "forms.serverErrors.CONTROL_ACCOUNT_LOCKED": "This is a system or control account. Its code, type, sub-type and VAT settings cannot change, so the sub-ledger stays tied to the general ledger. Create a new account instead.",
+  "forms.serverErrors.CONTROL_ACCOUNT_ROLE_RESERVED": "This code or VAT setting is reserved for a control account. Create a new account instead of changing this one.",
+  "forms.serverErrors.GL_ACCOUNT_NOT_BANK": "A bank account must link to a bank or cash account in the chart of accounts, never to a control account such as receivables.",
+  "forms.serverErrors.VAT_SETTLEMENT_BEFORE_FILING": "The payment or refund is dated before the return was filed. Date it on or after the filing date, or correct the filing date first.",
+  "forms.serverErrors.DISPOSAL_DATE_IN_FUTURE": "The disposal date is in the future. Record the disposal on or after the day the asset leaves the business.",
+  "forms.serverErrors.DISPOSAL_BEFORE_REMEASUREMENT": "The asset was revalued or impaired after this disposal date. Undo that first, or dispose of the asset on or after it.",
+  "forms.serverErrors.FX_RATE_OUTSIDE_BAND": "A rate used by this revaluation is more than 20% away from the reference rate. Correct the rate, or give a reason if it is right.",
+  "forms.serverErrors.FX_RATE_OVERRIDE_ROLE_REQUIRED": "Only an owner, admin, accountant or CFO can revalue at a rate outside the sanity band.",
+  "forms.serverErrors.FX_RATE_OVERRIDE_REASON_REQUIRED": "Give a reason (at least 5 characters) for using a rate outside the sanity band."
 }

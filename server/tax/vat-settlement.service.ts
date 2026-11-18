@@ -36,13 +36,16 @@ interface ReturnRow {
   box12: string;
   box13: string;
   box14: string;
+  /** D2 (N13): the EmaraTax filing date stated on submit (filedOn), when one was given. */
+  filed_on: string | null;
 }
 
 async function loadReturn(companyId: string, vatReturnId: string): Promise<ReturnRow> {
   const { rows } = await pool.query(
     `SELECT id, company_id, status, period_start::date::text AS period_start,
             period_end::date::text AS period_end, box12_total_due_tax::text AS box12,
-            box13_recoverable_tax::text AS box13, box14_payable_tax::text AS box14
+            box13_recoverable_tax::text AS box13, box14_payable_tax::text AS box14,
+            declaration_date::date::text AS filed_on
        FROM vat_returns WHERE id = $1 AND company_id = $2`,
     [vatReturnId, companyId]
   );
@@ -164,6 +167,18 @@ export async function settleVatReturn(input: {
       422,
       { periodEnd: ret.period_end },
       "The VAT payment or refund is dated after the end of the return period"
+    );
+  }
+  // D2 (N13): the settlement of a filed return is the payment (or refund) of what that return
+  // declared, so it cannot predate the filing recorded on EmaraTax (the payable tax is the one the
+  // filed return states). A payment made before filing is a payment on account:
+  // record it once the return is filed. Without a stated filing date nothing is checked.
+  if (ret.status === "filed" && ret.filed_on && input.date < ret.filed_on) {
+    throw new DomainError(
+      "VAT_SETTLEMENT_BEFORE_FILING",
+      422,
+      { filedOn: ret.filed_on, fields: { date: [`On or after ${ret.filed_on}`] } },
+      `The return was filed on ${ret.filed_on}. Date the payment or refund on or after the filing date.`
     );
   }
   if (await getVatReturnSettlement(input.companyId, ret.id)) {

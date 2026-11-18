@@ -356,5 +356,14 @@
   "forms.serverErrors.VAT_RETURN_NOTHING_TO_SETTLE": "لا يوجد في هذا الإقرار مبلغ للدفع أو الاسترداد.",
   "forms.errors.depreciationMonthNotEnded": "هذا الشهر لم ينتهِ بعد. اختر شهراً انتهى.",
   "forms.serverErrors.DEPRECIATION_PERIOD_NOT_ENDED": "هذا الشهر لم ينتهِ بعد: يُؤرَّخ الإهلاك بآخر يوم في الشهر ولا يكون بتاريخ مستقبلي أبداً.",
-  "forms.serverErrors.DISPOSAL_BEFORE_DEPRECIATION": "يوجد إهلاك مسجَّل بعد تاريخ الاستبعاد هذا. استبعد الأصل في تاريخ آخر إهلاك أو بعده."
+  "forms.serverErrors.DISPOSAL_BEFORE_DEPRECIATION": "يوجد إهلاك مسجَّل بعد تاريخ الاستبعاد هذا. استبعد الأصل في تاريخ آخر إهلاك أو بعده.",
+  "forms.serverErrors.CONTROL_ACCOUNT_LOCKED": "هذا حساب نظام أو حساب مراقبة. لا يمكن تغيير رمزه أو نوعه أو نوعه الفرعي أو إعدادات ضريبة القيمة المضافة فيه، ليبقى الدفتر الفرعي مطابقاً لدفتر الأستاذ العام. أنشئ حساباً جديداً بدلاً من ذلك.",
+  "forms.serverErrors.CONTROL_ACCOUNT_ROLE_RESERVED": "هذا الرمز أو إعداد ضريبة القيمة المضافة محجوز لحساب مراقبة. أنشئ حساباً جديداً بدلاً من تغيير هذا الحساب.",
+  "forms.serverErrors.GL_ACCOUNT_NOT_BANK": "يجب ربط الحساب البنكي بحساب بنك أو نقدية في دليل الحسابات، وليس بحساب مراقبة مثل الذمم المدينة.",
+  "forms.serverErrors.VAT_SETTLEMENT_BEFORE_FILING": "تاريخ الدفعة أو الاسترداد يسبق تاريخ تقديم الإقرار. اجعل التاريخ في يوم التقديم أو بعده، أو صحّح تاريخ التقديم أولاً.",
+  "forms.serverErrors.DISPOSAL_DATE_IN_FUTURE": "تاريخ الاستبعاد في المستقبل. سجّل الاستبعاد في اليوم الذي يخرج فيه الأصل من المنشأة أو بعده.",
+  "forms.serverErrors.DISPOSAL_BEFORE_REMEASUREMENT": "أُعيد تقييم الأصل أو سُجّل له انخفاض في القيمة بعد تاريخ الاستبعاد هذا. ألغِ ذلك أولاً، أو استبعد الأصل في ذلك التاريخ أو بعده.",
+  "forms.serverErrors.FX_RATE_OUTSIDE_BAND": "أحد الأسعار المستخدمة في إعادة التقييم يبعد أكثر من 20% عن السعر المرجعي. صحّح السعر، أو اذكر سبباً إن كان صحيحاً.",
+  "forms.serverErrors.FX_RATE_OVERRIDE_ROLE_REQUIRED": "إعادة التقييم بسعر خارج نطاق التحقق متاحة للمالك أو المدير أو المحاسب أو المدير المالي فقط.",
+  "forms.serverErrors.FX_RATE_OVERRIDE_REASON_REQUIRED": "اذكر سبباً (5 أحرف على الأقل) لاستخدام سعر خارج نطاق التحقق."
 }
