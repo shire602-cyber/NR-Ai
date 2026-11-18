@@ -300,7 +300,7 @@ export const einvoiceBuyerEndpoints = pgTable(
 export type EInvoiceBuyerEndpoint = typeof einvoiceBuyerEndpoints.$inferSelect;
 
 /**
- * WQ5 (0127): single-purpose, expiring, revocable links for whoever approves the partner in
+ * WQ5 (0128): single-purpose, expiring, revocable links for whoever approves the partner in
  * EmaraTax. Only the SHA-256 of the token is stored; the page shows the company's display name
  * and the steps, nothing else.
  */

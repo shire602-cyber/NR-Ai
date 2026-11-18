@@ -69,6 +69,13 @@ import { assertClaimNotOnPayroll, setClaimPayrollReimbursement } from "../servic
 import { zUuid } from "../../shared/validators/primitives";
 import { fromFils, mulRate, sumFils, toFils } from "../../shared/money";
 import { companyIsVatRegistered } from "../tax/vat-registration";
+import {
+  signReceiptRef,
+  storePurchaseFile,
+  verifyReceiptRef,
+} from "../services/bill-capture.service";
+import { readReceiptImage } from "../services/fileStorage";
+import { billAttachmentSchema } from "../../shared/validators/bills";
 
 const log = createLogger("expense-claims");
 
@@ -120,6 +127,18 @@ async function loadClaim(req: Request): Promise<ClaimRow> {
   return claim;
 }
 
+/**
+ * WQ2 (8.7): items leave the API with a signed receipt_ref (sent back unchanged on an edit) and
+ * has_receipt; the storage key itself never reaches the client.
+ */
+function withReceiptRefs(companyId: string, rows: Array<Record<string, unknown>>) {
+  return rows.map(({ receipt_path, ...item }) => ({
+    ...item,
+    has_receipt: !!receipt_path,
+    receipt_ref: receipt_path ? signReceiptRef(companyId, String(receipt_path)) : null,
+  }));
+}
+
 async function assertCompanyAccess(req: Request, companyId: string) {
   if (!(await storage.hasCompanyAccess(req.user!.id, companyId))) {
     throw new DomainError("COMPANY_ACCESS_DENIED", 403, undefined, "Access denied");
@@ -142,6 +161,8 @@ interface PreparedItem {
   has_tax_invoice: boolean;
   vat_recoverable: boolean;
   receipt_url: string | null;
+  receipt_path: string | null;
+  receipt_name: string | null;
   merchant_name: string | null;
   grossFils: number;
 }
@@ -218,6 +239,9 @@ async function prepareItems(
       has_tax_invoice: hasTaxInvoice,
       vat_recoverable: hasTaxInvoice && vatAed > 0,
       receipt_url: item.receipt_url ?? null,
+      // WQ2 (8.7): an uploaded receipt is referenced by a ref signed for this company only.
+      receipt_path: item.receipt_ref ? verifyReceiptRef(companyId, item.receipt_ref) : null,
+      receipt_name: item.receipt_ref ? (item.receipt_name ?? null) : null,
       merchant_name: item.merchant_name ?? null,
       grossFils: netAed + vatAed,
     });
@@ -231,8 +255,8 @@ async function insertItems(tx: LedgerTx, claimId: string, items: PreparedItem[])
       tx,
       `INSERT INTO expense_claim_items (claim_id, expense_date, category, description, amount, vat_amount,
           receipt_url, merchant_name, item_type, quantity, unit_rate, supplier_trn, has_tax_invoice,
-          vat_recoverable, original_currency, original_amount, exchange_rate)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+          vat_recoverable, original_currency, original_amount, exchange_rate, receipt_path, receipt_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
       [
         claimId,
         it.expense_date,
@@ -251,6 +275,8 @@ async function insertItems(tx: LedgerTx, claimId: string, items: PreparedItem[])
         it.original_currency,
         it.original_amount,
         it.exchange_rate,
+        it.receipt_path,
+        it.receipt_name,
       ]
     );
   }
@@ -409,7 +435,50 @@ export function registerExpenseClaimRoutes(app: Express) {
         "SELECT * FROM expense_claim_items WHERE claim_id = $1 ORDER BY expense_date ASC, created_at ASC",
         [claim.id]
       );
-      res.json({ ...claim, items: items.rows });
+      res.json({ ...claim, items: withReceiptRefs(claim.company_id, items.rows) });
+    })
+  );
+
+  // ── WQ2 (8.7): receipt files ────────────────────────────────────────────
+  // Upload first (the upload guard checks the magic number, size and malware), then save the
+  // claim with the returned receipt_ref on the item.
+  app.post(
+    "/api/companies/:companyId/expense-claims/receipts",
+    authMiddleware,
+    requireCustomer,
+    strictBody(billAttachmentSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      const { file, filename } = parsedBody<{ file: string; filename?: string | null }>(req);
+      const path = await storePurchaseFile(file);
+      res.status(201).json({
+        receipt_ref: signReceiptRef(companyId, path),
+        receipt_name: filename ?? null,
+      });
+    })
+  );
+
+  app.get(
+    "/api/expense-claims/:id/items/:itemId/receipt",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const claim = await loadClaim(req);
+      const { itemId } = req.params;
+      if (!zUuid.safeParse(itemId).success) throw new DomainError("RECEIPT_NOT_FOUND", 404);
+      const r = await pool.query(
+        `SELECT receipt_path FROM expense_claim_items WHERE id = $1 AND claim_id = $2`,
+        [itemId, claim.id]
+      );
+      const path = r.rows[0]?.receipt_path as string | undefined;
+      if (!path) throw new DomainError("RECEIPT_NOT_FOUND", 404);
+      const file = await readReceiptImage(path);
+      if (!file) throw new DomainError("RECEIPT_NOT_FOUND", 404);
+      res.setHeader("Content-Type", file.contentType);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "private, no-store");
+      res.send(file.buffer);
     })
   );
 
@@ -447,7 +516,7 @@ export function registerExpenseClaimRoutes(app: Express) {
           `SELECT * FROM expense_claim_items WHERE claim_id = $1 ORDER BY expense_date`,
           [rows[0].id]
         );
-        return { ...rows[0], items: inserted };
+        return { ...rows[0], items: withReceiptRefs(companyId, inserted) };
       });
       log.info(
         { claimId: out.id, companyId, claimNumber: out.claim_number },
@@ -500,7 +569,7 @@ export function registerExpenseClaimRoutes(app: Express) {
           `SELECT * FROM expense_claim_items WHERE claim_id = $1 ORDER BY expense_date`,
           [claim.id]
         );
-        return { ...rows[0], items: all };
+        return { ...rows[0], items: withReceiptRefs(claim.company_id, all) };
       });
       res.json(out);
     })
@@ -554,7 +623,7 @@ export function registerExpenseClaimRoutes(app: Express) {
         const p = policies.find(
           (x) => String(x.category).toLowerCase() === String(it.category).toLowerCase()
         );
-        if (!p || it.receipt_url) return false;
+        if (!p || it.receipt_url || it.receipt_path) return false;
         return (
           toFils(String(it.amount)) + toFils(String(it.vat_amount ?? 0)) >=
           toFils(String(p.receipt_threshold ?? 0))

@@ -10,6 +10,8 @@ import { accountByCode, ledgerTotals, useHarness, type Tenant } from "./harness"
 
 const h = useHarness();
 const TRN = "100000000000003";
+/** WQ2 (4.7): a supplier TRN differs from the company TRN (a self-TRN bill is refused). */
+const VENDOR_TRN = "100222333400003";
 const base = (t: Tenant) => `/api/companies/${t.company.id}`;
 
 function vatTenant(name: string, columns: Record<string, unknown> = {}) {
@@ -70,7 +72,7 @@ async function issue(id: string, t: Tenant) {
 async function approvedBill(t: Tenant, over: Record<string, unknown> = {}) {
   const b = await t.as.post(`${base(t)}/bills`, {
     vendor_name: "Emirates Office Supplies",
-    vendor_trn: TRN,
+    vendor_trn: VENDOR_TRN,
     bill_number: `EOS-${Math.random().toString(36).slice(2, 8)}`,
     bill_date: "2026-08-12",
     due_date: "2026-09-12",

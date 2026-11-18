@@ -49,7 +49,7 @@ export const customerContacts = pgTable(
     // W4-D (0103): dunning opt-out and preferred language for customer emails (en | ar).
     doNotChase: boolean("do_not_chase").notNull().default(false),
     preferredLanguage: text("preferred_language"),
-    // WQ5 (0127): one record for a customer and/or supplier. A supplier contact links the
+    // WQ5 (0128): one record for a customer and/or supplier. A supplier contact links the
     // vendors row bills and purchase orders read (vendor_id; FKs live in the migration).
     isCustomer: boolean("is_customer").notNull().default(true),
     isSupplier: boolean("is_supplier").notNull().default(false),

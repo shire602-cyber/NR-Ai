@@ -293,7 +293,9 @@ describe("[D5b] bill form payload unchanged", () => {
     await type(named("line_items.0.quantity"), "10");
     await type(named("line_items.0.unit_price"), "24.5");
     await submit(editorPage().querySelector('button[type="submit"]'));
+    // WQ2: the supplier record link (null for free text) and the line item are part of the body.
     expect(body("POST", `${C}/bills`)).toEqual({
+      vendor_id: null,
       vendor_name: "Atlas Office Supplies",
       vendor_trn: "100456789000003",
       bill_number: "AOS-2291",
@@ -317,6 +319,7 @@ describe("[D5b] bill form payload unchanged", () => {
           vat_rate: 5,
           account_id: null,
           cost_center_id: null,
+          product_id: null,
         },
       ],
     });
@@ -379,6 +382,9 @@ describe("[D5b] expense claim form payload unchanged", () => {
           vat_amount: 6,
           merchant_name: "Careem",
           receipt_url: null,
+          // WQ2 (8.7): the uploaded receipt (none on this item).
+          receipt_ref: null,
+          receipt_name: null,
           supplier_trn: "100678901200003",
           has_tax_invoice: true,
         },

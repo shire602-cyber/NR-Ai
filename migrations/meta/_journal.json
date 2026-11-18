@@ -888,7 +888,14 @@
    "idx": 126,
    "version": "7",
    "when": 1781430420000,
-   "tag": "0127_wq5_einvoice_identity",
+   "tag": "0127_wq2_purchases",
+   "breakpoints": false
+  },
+  {
+   "idx": 127,
+   "version": "7",
+   "when": 1781430430000,
+   "tag": "0128_wq5_einvoice_identity",
    "breakpoints": false
   },
   {

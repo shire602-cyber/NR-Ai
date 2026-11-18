@@ -1,4 +1,4 @@
--- 0127_wq5_einvoice_identity (WQ5 e-invoicing identity and contacts; W4-C e-invoicing): seller tax identity, unified contacts, approver links.
+-- 0128_wq5_einvoice_identity (WQ5 e-invoicing identity and contacts; W4-C e-invoicing): seller tax identity, unified contacts, approver links.
 -- Idempotent: ADD COLUMN IF NOT EXISTS / CREATE ... IF NOT EXISTS only, so re-running the file changes nothing.
 --
 -- Company: a stored, validated TIN (10 digits, the first 10 of the CT TRN), the seller legal

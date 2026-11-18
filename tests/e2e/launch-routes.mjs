@@ -102,6 +102,8 @@ export const ALL_AUTH_ROUTES = [
   "/bill-pay",
   "/bill-pay/new",
   "/vendors",
+  "/debit-notes",
+  "/debit-notes/new",
   "/fixed-assets",
   "/budgets",
   "/expense-claims",

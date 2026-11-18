@@ -14,6 +14,10 @@ export const LARGE_JSON_ROUTES: readonly RegExp[] = [
   /^\/api\/journal\/[^/]+\/attachments$/,
   /^\/api\/invoices\/[^/]+\/attachments$/,
   /^\/api\/companies\/[^/]+\/logo$/,
+  // WQ2: purchase documents (bill attachment, bill capture, expense-claim receipt).
+  /^\/api\/bills\/[^/]+\/attachment$/,
+  /^\/api\/companies\/[^/]+\/bills\/capture$/,
+  /^\/api\/companies\/[^/]+\/expense-claims\/receipts$/,
 ];
 
 export const LARGE_JSON_LIMIT = "10mb";

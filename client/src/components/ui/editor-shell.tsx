@@ -21,6 +21,11 @@ export interface EditorShellProps {
   /** Live document preview, sticky beside the form from 1024 px; collapsible below. */
   preview?: React.ReactNode;
   previewLabel?: string;
+  /**
+   * Below 1024 px the preview is collapsed under a toggle after the form (default). "first"
+   * shows it open above the form instead, for a panel the user starts from (WQ2 bill capture).
+   */
+  mobilePreview?: "collapsed" | "first";
   /** Sticky footer, inline-start side: totals summary (e.g. "Total AED 9,500.00"). */
   footerSummary?: React.ReactNode;
   /** Sticky footer, inline-end side: Cancel / Save draft / primary (primary last). */
@@ -45,6 +50,7 @@ export function EditorShell({
   children,
   preview,
   previewLabel,
+  mobilePreview = "collapsed",
   footerSummary,
   footer,
   className,
@@ -88,10 +94,16 @@ export function EditorShell({
         >
           <div className="min-w-0 space-y-6">{children}</div>
           {preview ? (
-            <aside className="min-w-0" aria-label={previewLabel ?? t["components.ui.preview"]}>
+            <aside
+              className={cn("min-w-0", mobilePreview === "first" && "max-lg:order-first")}
+              aria-label={previewLabel ?? t["components.ui.preview"]}
+            >
               <button
                 type="button"
-                className="flex w-full items-center justify-between rounded-lg border border-border bg-card px-4 py-3 text-small font-medium text-foreground lg:hidden"
+                className={cn(
+                  "flex w-full items-center justify-between rounded-lg border border-border bg-card px-4 py-3 text-small font-medium text-foreground lg:hidden",
+                  mobilePreview === "first" && "hidden"
+                )}
                 aria-expanded={previewOpen}
                 aria-controls={previewId}
                 onClick={() => setPreviewOpen((v) => !v)}
@@ -112,7 +124,7 @@ export function EditorShell({
                 id={previewId}
                 className={cn(
                   "mt-3 lg:sticky lg:top-6 lg:mt-0 lg:block",
-                  previewOpen ? "block" : "hidden"
+                  previewOpen || mobilePreview === "first" ? "block" : "hidden"
                 )}
               >
                 {preview}

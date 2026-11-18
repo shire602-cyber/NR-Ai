@@ -85,6 +85,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import type { Permission } from "@/lib/auth";
+import { ClaimReceiptUpload } from "@/components/bills/ClaimReceiptUpload";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
@@ -111,6 +112,9 @@ interface ExpenseClaimItem {
   amount: number;
   vat_amount: number;
   receipt_url?: string | null;
+  receipt_ref?: string | null;
+  receipt_name?: string | null;
+  has_receipt?: boolean;
   supplier_trn?: string | null;
   has_tax_invoice?: boolean;
   merchant_name?: string | null;
@@ -170,6 +174,9 @@ const expenseItemSchema = z.object({
   vat_amount: z.coerce.number().min(0, "forms.errors.vatAmountNonNegative"),
   merchant_name: z.string().optional().nullable(),
   receipt_url: z.string().optional().nullable(),
+  receipt_ref: z.string().optional().nullable(),
+  receipt_name: z.string().optional().nullable(),
+  receipt_view: z.string().optional().nullable(),
   supplier_trn: z.string().optional().nullable(),
   has_tax_invoice: z.boolean().default(true),
 });
@@ -229,6 +236,8 @@ function claimPayload(data: ClaimFormData) {
       vat_amount: i.vat_amount,
       merchant_name: i.merchant_name || null,
       receipt_url: i.receipt_url || null,
+      receipt_ref: i.receipt_ref || null,
+      receipt_name: i.receipt_ref ? i.receipt_name || null : null,
       supplier_trn: i.supplier_trn || null,
       has_tax_invoice: i.has_tax_invoice,
     })),
@@ -593,6 +602,12 @@ export default function ExpenseClaims() {
                 vat_amount: parseFloat(String(item.vat_amount)) || 0,
                 merchant_name: item.merchant_name || "",
                 receipt_url: item.receipt_url || "",
+                receipt_ref: item.receipt_ref || "",
+                receipt_name: item.receipt_name || "",
+                receipt_view:
+                  item.has_receipt && item.id
+                    ? `/api/expense-claims/${fullClaim.id}/items/${item.id}/receipt`
+                    : "",
                 supplier_trn: item.supplier_trn || "",
                 has_tax_invoice: item.has_tax_invoice !== false,
               }))
@@ -1176,8 +1191,24 @@ export default function ExpenseClaims() {
                         </FormItem>
                       )}
                     />
-                    {/* Spec 3.8: no receipt-link field until receipt upload exists; an
-                      existing link on the line is kept as it is. */}
+                    {/* WQ2 (8.7): the receipt file (an old receipt link on the line is kept). */}
+                    <ClaimReceiptUpload
+                      companyId={companyId}
+                      index={index}
+                      receiptName={claimForm.watch(`items.${index}.receipt_name`)}
+                      hasReceipt={!!claimForm.watch(`items.${index}.receipt_ref`)}
+                      viewPath={claimForm.watch(`items.${index}.receipt_view`)}
+                      onUploaded={(ref, name) => {
+                        claimForm.setValue(`items.${index}.receipt_ref`, ref);
+                        claimForm.setValue(`items.${index}.receipt_name`, name);
+                        claimForm.setValue(`items.${index}.receipt_view`, "");
+                      }}
+                      onClear={() => {
+                        claimForm.setValue(`items.${index}.receipt_ref`, "");
+                        claimForm.setValue(`items.${index}.receipt_name`, "");
+                        claimForm.setValue(`items.${index}.receipt_view`, "");
+                      }}
+                    />
                     <FormField
                       control={claimForm.control}
                       name={`items.${index}.has_tax_invoice`}

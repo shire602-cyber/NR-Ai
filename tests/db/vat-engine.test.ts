@@ -9,6 +9,8 @@ import { accountByCode, postJournalEntry, useHarness, type Tenant } from "./harn
 
 const h = useHarness();
 const TRN = "100000000000003";
+/** WQ2 (4.7): a supplier's TRN differs from the company's own (a self-TRN bill is refused). */
+const SUPPLIER_TRN = "100222333400003";
 const Q3 = { periodStart: "2026-07-01", periodEnd: "2026-09-30" };
 
 async function vatTenant(columns: Record<string, unknown> = {}) {
@@ -43,7 +45,7 @@ async function issuedInvoice(
 async function approvedBill(t: Tenant, over: Record<string, unknown> = {}) {
   const b = await t.as.post(`/api/companies/${t.company.id}/bills`, {
     vendor_name: "Local Supplies LLC",
-    vendor_trn: TRN,
+    vendor_trn: SUPPLIER_TRN,
     bill_number: `B-${Math.random().toString(36).slice(2, 8)}`,
     bill_date: "2026-08-12",
     due_date: "2026-09-12",

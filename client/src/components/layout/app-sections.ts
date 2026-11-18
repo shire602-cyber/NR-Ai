@@ -82,6 +82,7 @@ export const APP_SECTIONS: ReadonlySet<string> = new Set([
   "vat-autopilot",
   "vat-filing",
   "vendors",
+  "debit-notes",
 ]);
 
 /** True when `pathname` belongs to the signed-in app (sign-in required, not a 404). */

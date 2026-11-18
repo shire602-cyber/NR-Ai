@@ -48,7 +48,7 @@ yet verified" (`einvoice_appointment_confirmed_at`).
   Done notifies the owner through the email outbox.
 - Code: `server/services/einvoice/identity.ts`, `server/routes/einvoice-identity.routes.ts`,
   `client/src/components/einvoice/EInvoicePartnerCard.tsx`, `TaxReadyModal.tsx`,
-  `CompanyTaxIdentityCard.tsx`, `client/src/pages/EInvoicingApprove.tsx`, migration 0127.
+  `CompanyTaxIdentityCard.tsx`, `client/src/pages/EInvoicingApprove.tsx`, migration 0128.
 
 ## Provider-neutral layer (keep in either case)
 

@@ -85,7 +85,7 @@ export const companies = pgTable("companies", {
   einvoiceScope: text("einvoice_scope"), // b2b | b2g | b2b_b2g | none
   einvoiceTurnoverBand: text("einvoice_turnover_band"), // large | standard | government
   einvoiceGoLiveDate: pgDate("einvoice_go_live_date"),
-  // WQ5 (0127): stored TIN (10 digits starting with 1, the first 10 of the CT TRN), used for the
+  // WQ5 (0128): stored TIN (10 digits starting with 1, the first 10 of the CT TRN), used for the
   // PINT AE EndpointID when no ASP-registered participant id is set; seller legal identifier
   // (TL trade licence, EID Emirates ID, PAS passport, CD Cabinet decision); the rest of the
   // structured address; Arabic legal name and address; the accredited partner the company chose

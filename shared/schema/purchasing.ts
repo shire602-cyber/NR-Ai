@@ -5,6 +5,7 @@ import {
   boolean,
   index,
   integer,
+  numeric,
   pgTable,
   real,
   text,
@@ -190,6 +191,155 @@ export const vendors = pgTable(
 );
 export type Vendor = typeof vendors.$inferSelect;
 export type InsertVendor = typeof vendors.$inferInsert;
+
+// ===========================
+// WQ2 (8.8): vendor bills, bill lines and bill payments. These tables were created by raw SQL
+// migrations (0010, 0032, 0036, 0069, 0072, 0096, 0111, 0121); the definitions below describe the
+// existing columns exactly (no column change; tests/db/wq2-purchases.test.ts compares them with
+// information_schema). Writes still go through server/services/bill-payment.service.ts and
+// bill-posting.service.ts, settlement through server/reporting/settlement.ts.
+// ===========================
+const amount12 = (name: string) => numeric(name, { precision: 12, scale: 2 });
+const amount15 = (name: string) => numeric(name, { precision: 15, scale: 2 });
+const retentionFiveYears = sql`(created_at + '5 years'::interval)`;
+
+export const vendorBills = pgTable(
+  "vendor_bills",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    vendorName: text("vendor_name").notNull(),
+    vendorTrn: text("vendor_trn"),
+    billNumber: text("bill_number"),
+    billDate: timestamp("bill_date").notNull(),
+    dueDate: timestamp("due_date"),
+    currency: text("currency").default("AED"),
+    subtotal: amount12("subtotal").default("0"),
+    vatAmount: amount12("vat_amount").default("0"),
+    totalAmount: amount12("total_amount").default("0"),
+    amountPaid: amount12("amount_paid").default("0"),
+    // draft | pending | approved | partial | paid | rejected | void (billMachine)
+    status: text("status").default("pending"),
+    category: text("category"),
+    notes: text("notes"),
+    attachmentUrl: text("attachment_url"),
+    approvedBy: uuid("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    paidAt: timestamp("paid_at"),
+    createdAt: timestamp("created_at").defaultNow(),
+    reverseCharge: boolean("reverse_charge").notNull().default(false),
+    retentionExpiresAt: timestamp("retention_expires_at").generatedAlwaysAs(retentionFiveYears),
+    exchangeRate: numeric("exchange_rate", { precision: 12, scale: 6 }).notNull().default("1"),
+    vendorId: uuid("vendor_id").references(() => vendors.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by"),
+    revision: integer("revision").notNull().default(0),
+    placeOfSupply: text("place_of_supply"),
+    isImport: boolean("is_import").notNull().default(false),
+    customsDeclarationNo: text("customs_declaration_no"),
+    importVatAmount: amount15("import_vat_amount").notNull().default("0"),
+    designatedZone: boolean("designated_zone").notNull().default(false),
+    recoverableVatPercent: numeric("recoverable_vat_percent", { precision: 5, scale: 2 })
+      .notNull()
+      .default("100"),
+    withholdingAmount: amount15("withholding_amount").notNull().default("0"),
+    purchaseOrderId: uuid("purchase_order_id").references(() => purchaseOrders.id, {
+      onDelete: "set null",
+    }),
+    origin: text("origin").notNull().default("manual"),
+    originRef: text("origin_ref"),
+    attachmentPath: text("attachment_path"),
+    attachmentName: text("attachment_name"),
+    rejectedBy: uuid("rejected_by"),
+    rejectedAt: timestamp("rejected_at"),
+    voidedBy: uuid("voided_by"),
+    voidedAt: timestamp("voided_at"),
+    statusReason: text("status_reason"),
+    recoverableVatBase: amount15("recoverable_vat_base"),
+    customsValue: amount15("customs_value"),
+    customsDutyAmount: amount15("customs_duty_amount"),
+    inputVatAttribution: text("input_vat_attribution"),
+  },
+  (table) => ({
+    companyIdx: index("idx_vendor_bills_company_id").on(table.companyId),
+    dueDateIdx: index("idx_vendor_bills_due_date").on(table.dueDate),
+    statusIdx: index("idx_vendor_bills_status").on(table.status),
+    vendorIdx: index("idx_vendor_bills_vendor_id").on(table.vendorId),
+  })
+);
+export type VendorBillRow = typeof vendorBills.$inferSelect;
+
+export const billLineItems = pgTable(
+  "bill_line_items",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    billId: uuid("bill_id")
+      .notNull()
+      .references(() => vendorBills.id, { onDelete: "cascade" }),
+    description: text("description").notNull(),
+    quantity: numeric("quantity", { precision: 10, scale: 2 }).default("1"),
+    unitPrice: amount12("unit_price").notNull(),
+    vatRate: numeric("vat_rate", { precision: 5, scale: 2 }).default("5"),
+    amount: amount12("amount"),
+    accountId: uuid("account_id").references(() => accounts.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow(),
+    reverseCharge: boolean("reverse_charge").notNull().default(false),
+    vatSupplyType: text("vat_supply_type").notNull().default("standard_rated"),
+    vatAmount: amount15("vat_amount").notNull().default("0"),
+    productId: uuid("product_id"),
+    purchaseOrderLineId: uuid("purchase_order_line_id").references(() => purchaseOrderLines.id, {
+      onDelete: "set null",
+    }),
+    costCenterId: uuid("cost_center_id"),
+  },
+  (table) => ({
+    billIdx: index("idx_bill_line_items_bill_id").on(table.billId),
+  })
+);
+export type BillLineItemRow = typeof billLineItems.$inferSelect;
+
+export const billPayments = pgTable(
+  "bill_payments",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    billId: uuid("bill_id")
+      .notNull()
+      .references(() => vendorBills.id, { onDelete: "cascade" }),
+    paymentDate: timestamp("payment_date").notNull(),
+    amount: amount12("amount").notNull(),
+    paymentMethod: text("payment_method").default("bank_transfer"),
+    reference: text("reference"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow(),
+    retentionExpiresAt: timestamp("retention_expires_at").generatedAlwaysAs(retentionFiveYears),
+    // payment | prepayment | vendor_credit | reversal (one settlement rule: reporting/settlement.ts)
+    kind: text("kind").notNull().default("payment"),
+    status: text("status").notNull().default("active"),
+    paymentAccountId: uuid("payment_account_id").references(() => accounts.id, {
+      onDelete: "set null",
+    }),
+    exchangeRate: numeric("exchange_rate", { precision: 12, scale: 6 }),
+    apAmountBase: amount15("ap_amount_base"),
+    cashAmountBase: amount15("cash_amount_base"),
+    fxDifference: amount15("fx_difference").notNull().default("0"),
+    sourceDocumentId: uuid("source_document_id"),
+    reversesPaymentId: uuid("reverses_payment_id"),
+    createdBy: uuid("created_by"),
+    voidedAt: timestamp("voided_at"),
+    voidedBy: uuid("voided_by"),
+  },
+  (table) => ({
+    billIdx: index("idx_bill_payments_bill_id").on(table.billId),
+  })
+);
+export type BillPaymentRow = typeof billPayments.$inferSelect;
 
 // ===========================
 // W3-B (0096): approval rules (R04-19) — by document type, amount band, permission/role, step.
