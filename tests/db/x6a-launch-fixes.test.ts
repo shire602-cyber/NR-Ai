@@ -40,6 +40,17 @@ async function subAccount(t: Tenant, parentCode: string, code: string) {
     subType: p.sub_type,
     parentId: parent.id,
   });
+  if (r.status === 422 && r.body?.code === "CONTROL_ACCOUNT_NOT_ALLOWED") {
+    // WQ3 (9.3): a control account can no longer be chosen as a parent through the API. Books
+    // created before that rule may still hold such sub-accounts, so the posting paths below must
+    // keep working with them: insert the legacy row directly.
+    const [row] = await h.sql<{ id: string; code: string }>(
+      `INSERT INTO accounts (company_id, code, name_en, type, sub_type, parent_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, code`,
+      [t.company.id, code, `Sub of ${parentCode}`, p.type, p.sub_type, parent.id]
+    );
+    return row;
+  }
   expect(r.status, r.text).toBeLessThan(300);
   return r.body as { id: string; code: string };
 }

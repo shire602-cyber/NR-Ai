@@ -1002,5 +1002,21 @@
   "pages.unitShort.m": "م",
   "pages.unitShort.hr": "ساعة",
   "pages.unitShort.box": "صندوق",
-  "pages.unitShort.unit": "وحدة"
+  "pages.unitShort.unit": "وحدة",
+  "pages.subscriptionUsedOfUnlimited": "{used} · بلا حد",
+  "pages.subscriptionTrialOf": "تجربة مجانية لخطة {plan}",
+  "pages.subscriptionNoPlan": "لا توجد خطة",
+  "pages.subscriptionFirmBilled": "تُفوتر عبر مكتب المحاسبة",
+  "pages.subscriptionPlanPageDescription": "خطتك واستخدام هذا الشهر ومستندات الفوترة.",
+  "pages.subscriptionStateTrial": "تجربة",
+  "pages.subscriptionStateReadOnly": "للقراءة فقط",
+  "pages.subscriptionTrialEnds": "تنتهي التجربة",
+  "pages.subscriptionTrialExplain": "كل الوحدات متاحة خلال التجربة. اختر خطة قبل انتهائها لتواصل العمل دون انقطاع.",
+  "pages.subscriptionExpiredExplain": "بياناتك محفوظة ومتاحة للقراءة. اختر خطة لتعود إلى إضافة السجلات وتعديلها.",
+  "pages.subscriptionUnlimitedUsersNote": "كل خطة تشمل عددًا غير محدود من المستخدمين.",
+  "pages.subscriptionChooseAPlan": "اختر خطة",
+  "pages.subscriptionChoosePlanContact": "اختر {plan}",
+  "pages.subscriptionChoosePlanNamed": "اختر {plan}",
+  "pages.subscriptionContactNote": "الدفع عبر الإنترنت غير متاح بعد. اختيار خطة يرسل إلينا بريدًا إلكترونيًا، ثم نفعّل خطتك ونرسل فاتورة ضريبية.",
+  "pages.subscriptionCompareHelp": "ما تشمله كل خطة. تبقى الوحدات خارج خطتك متاحة للقراءة."
 }

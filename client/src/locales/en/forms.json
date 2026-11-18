@@ -368,7 +368,20 @@
   "forms.serverErrors.FX_RATE_OUTSIDE_BAND": "A rate used by this revaluation is more than 20% away from the reference rate. Correct the rate, or give a reason if it is right.",
   "forms.serverErrors.FX_RATE_OVERRIDE_ROLE_REQUIRED": "Only an owner, admin, accountant or CFO can revalue at a rate outside the sanity band.",
   "forms.serverErrors.FX_RATE_OVERRIDE_REASON_REQUIRED": "Give a reason (at least 5 characters) for using a rate outside the sanity band.",
+  "forms.serverErrors.ACCOUNT_CODE_TAKEN": "This account code is already used. Choose another code.",
+  "forms.serverErrors.VAT_RATE_NOT_FOR_COUNTRY": "The default VAT rate must be 0% or the standard rate where the company is registered (5% in the UAE, 15% in Saudi Arabia).",
+  "forms.serverErrors.CT_TREATMENT_ACCOUNT_TYPE": "This corporate-tax treatment does not fit the account: non-deductible applies to expenses, exempt income to income accounts.",
+  "forms.serverErrors.CONTACT_NOT_FOUND": "This contact is not a customer or supplier of this company.",
+  "forms.serverErrors.INVALID_CT_SHARE": "The non-deductible share must be more than 0% and at most 100%.",
+  "forms.serverErrors.ZATCA_NOT_AVAILABLE": "Saudi ZATCA e-invoicing is not available on this service.",
   "forms.accountGroupExpenses": "Expenses",
   "forms.accountGroupFixedAssets": "Fixed assets",
-  "forms.accountGroupOtherAssets": "Other assets"
+  "forms.accountGroupOtherAssets": "Other assets",
+  "forms.serverErrors.PLAN_REQUIRED": "Your free trial has ended. Choose a plan to add or change records; your data stays readable.",
+  "forms.serverErrors.USAGE_LIMIT_REACHED_invoices": "This month's invoice limit on your plan is used up. Upgrade for unlimited invoices.",
+  "forms.serverErrors.USAGE_LIMIT_REACHED_receipts": "This month's receipt limit on your plan is used up. Upgrade for unlimited receipts.",
+  "forms.serverErrors.USAGE_LIMIT_REACHED_ai_calls": "This month's AI credits on your plan are used up. Upgrade for more.",
+  "forms.serverErrors.NUMBERING_BELOW_ISSUED": "The next number must be above the last number issued.",
+  "forms.serverErrors.NUMBERING_PREFIX_IN_USE": "Another document type already uses this prefix.",
+  "forms.serverErrors.AUTOMATION_NOT_FOUND": "This automation does not exist."
 }

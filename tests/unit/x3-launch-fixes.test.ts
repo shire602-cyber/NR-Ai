@@ -219,8 +219,11 @@ describe("X3 pricing makes only true claims", () => {
     const text = container.textContent ?? "";
     expect(text).not.toMatch(/AI OCR/i);
     // WP-B: qualifiers sit on a sub-line under the row label instead of inside it.
-    expect(text).toContain("AI receipt readingAutomatic reading arrives later");
-    expect(text).toContain("E-invoicing (PINT AE)Sending needs an accredited service provider");
+    // WQ7: e-invoicing is in every plan (no partner named); sending needs an accredited
+    // provider. The comparison no longer lists an "AI receipt reading" row at all.
+    expect(text).not.toMatch(/AI receipt reading/i);
+    expect(text).toContain("E-invoicing (PINT AE)");
+    expect(text).toContain("Sending needs an accredited service provider");
     expect(text).not.toMatch(/coming soon/i);
   });
 });

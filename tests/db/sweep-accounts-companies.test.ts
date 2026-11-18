@@ -26,7 +26,7 @@ describe("W2-D accounts", () => {
       type: "asset",
       subType: "cash",
     });
-    expect(ok.status).toBe(200);
+    expect(ok.status).toBe(201); // WQ3: account create answers 201 Created
     expect(ok.body.isSystemAccount).toBe(false);
     const rows = await h.sql(
       "SELECT 1 FROM accounts WHERE company_id = $1 AND code IN ('9901','9902')",
@@ -95,7 +95,7 @@ describe("W2-D accounts", () => {
       type: "expense",
       parentId: parent.body.id,
     });
-    expect(child.status).toBe(200);
+    expect(child.status).toBe(201);
     expect(child.body.parentId).toBe(parent.body.id);
     // cycle: parent -> child
     const cycle = await a.as.put(`/api/accounts/${parent.body.id}`, { parentId: child.body.id });

@@ -1,5 +1,5 @@
 /**
- * X6b free trial + cost caps: while billing enforcement is off (no online payment yet) every feature and
+ * X6b free trial + cost caps (WQ7: the trial's caps are shared/plans.ts TRIAL_LIMITS): while billing enforcement is off (no online payment yet) every feature and
  * the monthly invoice/receipt/seat figures stay open, but the cost and abuse caps stay hard:
  * AI credits, storage and companies per user. Each cap answers with a stable code that the app
  * localises (forms.serverErrors.<CODE>).
@@ -41,13 +41,13 @@ describe("X6b free trial + cost caps keeps only the cost caps", () => {
     expect(r.status, r.text).toBe(200);
   });
 
-  it("[X6b-ai-credits] the 11th AI call of the month on the free plan is a localisable 402", async () => {
+  it("[X6b-ai-credits] WQ7: the 101st AI call of the month in the trial is a localisable 402", async () => {
     env("false", "true");
     const t = await h.createTenant();
     await h.sql(
       `INSERT INTO usage_counters (company_id, period, metric, count)
-       SELECT $1, to_char(now() + interval '4 hours', 'YYYY-MM'), 'ai_calls', 10
-       ON CONFLICT (company_id, period, metric) DO UPDATE SET count = 10`,
+       SELECT $1, to_char(now() + interval '4 hours', 'YYYY-MM'), 'ai_calls', 100
+       ON CONFLICT (company_id, period, metric) DO UPDATE SET count = 100`,
       [t.company.id]
     );
     const r = await t.as.post("/api/ai/categorize", {
@@ -59,7 +59,7 @@ describe("X6b free trial + cost caps keeps only the cost caps", () => {
     expect(r.body).toMatchObject({
       code: "USAGE_LIMIT_REACHED",
       resource: "ai_calls",
-      limit: 10,
+      limit: 100,
     });
   });
 
@@ -80,18 +80,24 @@ describe("X6b free trial + cost caps keeps only the cost caps", () => {
     expect(r.status).not.toBe(402);
   });
 
-  it("[X6b-companies] a second company for the same free user is refused with COMPANY_LIMIT_REACHED", async () => {
+  it("[X6b-companies] WQ7: a trial user may own three companies; the fourth is COMPANY_LIMIT_REACHED", async () => {
     env("false", "true");
     const t = await h.createTenant();
-    const second = await t.as.post("/api/companies", { name: `Second Co ${Date.now()}` });
-    expect(second.status, second.text).toBe(403);
-    expect(second.body.code).toBe("COMPANY_LIMIT_REACHED");
-    expect(second.body.details).toMatchObject({ planId: "free", limit: 1, current: 1 });
+    for (const n of [2, 3]) {
+      const ok = await t.as.post("/api/companies", { name: `Trial Co ${n} ${Date.now()}` });
+      expect([200, 201], ok.text).toContain(ok.status);
+    }
+    const fourth = await t.as.post("/api/companies", { name: `Fourth Co ${Date.now()}` });
+    expect(fourth.status, fourth.text).toBe(403);
+    expect(fourth.body.code).toBe("COMPANY_LIMIT_REACHED");
+    expect(fourth.body.details).toMatchObject({ planId: "trial", limit: 3, current: 3 });
 
-    // A user on a higher plan is not capped at one.
-    const pro = await h.createTenant({ planId: "professional" });
-    const ok = await pro.as.post("/api/companies", { name: `Pro Second ${Date.now()}` });
-    expect([200, 201], ok.text).toContain(ok.status);
+    // Enterprise has no company limit.
+    const ent = await h.createTenant({ planId: "enterprise" });
+    for (const n of [2, 3, 4]) {
+      const ok = await ent.as.post("/api/companies", { name: `Ent Co ${n} ${Date.now()}` });
+      expect([200, 201], ok.text).toContain(ok.status);
+    }
   });
 
   it("[X6b-storage] an upload that would pass the storage allowance is refused with STORAGE_LIMIT_REACHED", async () => {
@@ -114,15 +120,15 @@ describe("X6b free trial + cost caps keeps only the cost caps", () => {
       ],
     });
     expect(entry.status, entry.text).toBe(200);
-    // 499 MB already stored (free plan: 500 MB): the next receipt photo fits no longer.
+    // 1,023 MB already stored (trial: 1,024 MB, WQ7): the next receipt photo fits no longer.
     await h.sql(
       `INSERT INTO journal_attachments (entry_id, company_id, file_name, content_type, storage_key, size_bytes, uploaded_by)
        VALUES ($1, $2, 'scan.pdf', 'application/pdf', 'k', $3, $4)`,
-      [entry.body.id, t.company.id, 499 * 1024 * 1024, t.user.id]
+      [entry.body.id, t.company.id, 1023 * 1024 * 1024, t.user.id]
     );
     const usage = await t.as.get(`/api/companies/${t.company.id}/billing/usage`);
-    expect(usage.body.usage.storage.used).toBeGreaterThan(498);
-    expect(usage.body.usage.storage.limit).toBe(500);
+    expect(usage.body.usage.storage.used).toBeGreaterThan(1022);
+    expect(usage.body.usage.storage.limit).toBe(1024);
 
     const big = "data:image/png;base64," + "A".repeat(2 * 1024 * 1024);
     const receipt = await t.as.post(`/api/companies/${t.company.id}/receipts`, {
@@ -132,7 +138,7 @@ describe("X6b free trial + cost caps keeps only the cost caps", () => {
       imageData: big,
     });
     expect(receipt.status, receipt.text).toBe(402);
-    expect(receipt.body).toMatchObject({ code: "STORAGE_LIMIT_REACHED", limitMb: 500 });
+    expect(receipt.body).toMatchObject({ code: "STORAGE_LIMIT_REACHED", limitMb: 1024 });
 
     // The same upload is allowed once the company is on a larger plan.
     const pro = await h.createTenant({ planId: "professional" });

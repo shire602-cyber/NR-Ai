@@ -1,4 +1,4 @@
--- 0125_wq2_purchases (WQ2 purchases finished; W3-B purchases): expense-claim items keep an uploaded receipt file.
+-- 0127_wq2_purchases (WQ2 purchases finished; W3-B purchases): expense-claim items keep an uploaded receipt file.
 -- Idempotent: ADD COLUMN IF NOT EXISTS only, so re-running the file changes nothing.
 --
 -- 8.7: an expense-claim item had only a receipt URL ("upload coming soon"). The receipt is now

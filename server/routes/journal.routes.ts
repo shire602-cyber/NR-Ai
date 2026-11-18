@@ -67,6 +67,7 @@ import { createLogger } from "../config/logger";
 import { assertRetentionExpired } from "../services/retention.service";
 import { inspectUpload } from "../services/upload-guard";
 import { readReceiptImage, saveReceiptFile } from "../services/fileStorage";
+import { buildManualJournalLines } from "../services/journal-lines.service";
 
 const log = createLogger("journal");
 
@@ -160,18 +161,17 @@ async function approvalThresholdFils(companyId: string): Promise<number | null> 
   return toFils(row.threshold, { rounding: "halfUp" });
 }
 
-function toLineInputs(lines: CreateJournalBody["lines"]): PostJournalLineInput[] {
-  return lines.map((l) => ({
-    accountId: l.accountId,
-    debit: l.debit ?? null,
-    credit: l.credit ?? null,
-    description: l.description ?? null,
-    costCenterId: l.costCenterId ?? null,
-    foreignCurrency: l.foreignCurrency ?? null,
-    foreignDebit: l.foreignDebit ?? null,
-    foreignCredit: l.foreignCredit ?? null,
-    exchangeRate: l.exchangeRate ?? null,
-  }));
+/**
+ * WQ3 (9.4): body lines -> kernel lines. Foreign-currency lines without a base amount convert at
+ * the tenant rate (fx.convert); "standard" VAT lines get their derived, flagged VAT leg; contacts
+ * and CT treatments are checked against this company (server/services/journal-lines.service.ts).
+ */
+function toLineInputs(
+  companyId: string,
+  date: string | Date,
+  lines: CreateJournalBody["lines"]
+): Promise<PostJournalLineInput[]> {
+  return buildManualJournalLines(companyId, date, lines);
 }
 
 function memoOf(body: { memo?: string | null; description?: string | null }): string | null {
@@ -314,7 +314,7 @@ export function registerJournalRoutes(app: Express) {
         source: "manual",
         idempotencyKey: body.idempotencyKey ?? null,
         autoReverseOn: body.autoReverseOn ?? null,
-        lines: toLineInputs(body.lines),
+        lines: await toLineInputs(companyId, body.date, body.lines),
       };
       // Maker-checker: a manual entry above the company threshold is saved as
       // a draft pending approval instead of being posted by its maker.
@@ -507,7 +507,7 @@ export function registerJournalRoutes(app: Express) {
           memo: memoOf(body),
           reference: body.reference ?? null,
           autoReverseOn: body.autoReverseOn ?? null,
-          lines: toLineInputs(body.lines),
+          lines: await toLineInputs(entry.companyId, body.date, body.lines),
         },
         ctx
       );

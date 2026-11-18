@@ -109,7 +109,14 @@ export async function runDueJournalTemplates(today: string = todayIso()): Promis
     .where(
       and(eq(journalTemplates.isActive, true), sql`${journalTemplates.nextRunOn} <= ${today}::date`)
     );
+  // WQ7: templates of companies that switched "Recurring journals" off in Automations are skipped.
+  const automations = await import("../platform/company-automations");
+  const off = await automations.companiesWithAutomationOff("recurringJournals");
+  const runs = new Map<string, { posted: number; error: string | null }>();
   for (const t of due) {
+    if (off.has(String(t.companyId))) continue;
+    const run = runs.get(t.companyId) ?? { posted: 0, error: null };
+    runs.set(t.companyId, run);
     let current: JournalTemplate | undefined = t;
     for (
       let i = 0;
@@ -120,12 +127,23 @@ export async function runDueJournalTemplates(today: string = todayIso()): Promis
       try {
         await runJournalTemplate(current, current.nextRunOn, current.createdBy);
         posted++;
+        run.posted++;
       } catch (err) {
+        run.error = (err as Error).message;
         log.error({ templateId: t.id, err: (err as Error).message }, "journal template run failed");
         break;
       }
       [current] = await db.select().from(journalTemplates).where(eq(journalTemplates.id, t.id));
     }
+  }
+  for (const [companyId, run] of runs) {
+    await automations.recordAutomationRun(
+      "recurringJournals",
+      companyId,
+      run.error ? "failed" : "ok",
+      { posted: run.posted },
+      run.error
+    );
   }
   return posted;
 }

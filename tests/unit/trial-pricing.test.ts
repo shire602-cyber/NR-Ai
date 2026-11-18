@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 /**
- * X6b: the free trial (TRIAL_DAYS, no card), the pricing page (monthly / quarterly / yearly,
- * Most popular, comparison grid) and the subscription page (trial banner, Contact us while checkout
- * is not configured, viewer cannot upgrade, AI credits agree). Renders the real pages and reads back
+ * X6b / WQ7: the free trial (TRIAL_DAYS of the top plan, no card), the pricing page (monthly /
+ * yearly = 10 × monthly, Most popular, comparison grid), the subscription page (trial status,
+ * Contact us while checkout is not configured, viewer cannot upgrade, limits from the server) and
+ * the trial banner (read-only once the trial ends). Renders the real pages and reads back
  * what a visitor sees; replaces the old source-text check of advertised limits.
  */
 import { createElement, act } from "react";
@@ -34,6 +35,7 @@ vi.mock("../../client/src/lib/queryClient", async () => {
 });
 
 import { getTierLimits } from "../../server/middleware/featureGate";
+import { TRIAL_LIMITS, planFeatures, planPrice } from "../../shared/plans";
 import { TRIAL_DAYS, trialState } from "../../shared/trial";
 
 let container: HTMLDivElement;
@@ -41,18 +43,26 @@ let root: Root;
 
 function freshState(): Record<string, unknown> {
   return {
-    tierName: "free",
+    tierName: "enterprise",
     isLoading: false,
-    enforcement: false,
+    enforcement: true,
     checkoutAvailable: false,
+    planState: "trial",
+    entitlement: {
+      state: "trial",
+      planId: "enterprise",
+      storedPlanId: "free",
+      features: planFeatures("enterprise"),
+      limits: TRIAL_LIMITS,
+    },
     trial: trialState(new Date(Date.now() - 4 * 86400_000)),
     subscription: { id: "s1", planId: "free", status: "active", billingCycle: "monthly" },
     usage: {
-      invoices: { used: 7, limit: 20 },
-      receipts: { used: 3, limit: 20 },
-      aiCredits: { used: 10, limit: 10 },
-      users: { used: 1, limit: 1 },
-      storage: { used: 12.5, limit: 500 },
+      invoices: { used: 7, limit: -1 },
+      receipts: { used: 3, limit: -1 },
+      aiCredits: { used: 100, limit: TRIAL_LIMITS.aiCreditsPerMonth },
+      users: { used: 4, limit: -1 },
+      storage: { used: 12.5, limit: TRIAL_LIMITS.maxStorageMb },
     },
   };
 }
@@ -137,6 +147,9 @@ describe("trial state", () => {
         "marketing.pricingTrialFaqAnswer",
         "marketing.pricingFooterNote",
         "marketing.seoPricingDescription",
+        "marketing.prBodyTrial",
+        "marketing.pricingTitleTrial",
+        "marketing.prFaqTrialTopA",
       ]) {
         const days = [...String((t[loc] as Record<string, string>)[key]).matchAll(/\d+/g)].map(
           (m) => Number(m[0])
@@ -162,30 +175,27 @@ describe("/pricing", () => {
     expect(text()).toContain("Most popular");
   });
 
-  it("switches monthly, quarterly and yearly prices on the plan cards", async () => {
+  it("switches monthly and yearly prices on the plan cards (yearly = 10 × monthly, no quarterly)", async () => {
     await renderPricing();
     const price = () =>
       container.querySelector("[data-testid=card-plan-starter] .mk-tier__price")?.textContent ?? "";
-    expect(price()).toContain("49");
-    await act(async () => {
-      container.querySelector<HTMLButtonElement>("[data-testid=billing-cycle-quarterly]")!.click();
-    });
-    expect(price()).toContain("44");
-    expect(container.querySelector("[data-testid=card-plan-starter]")?.textContent).toContain(
-      "every 3 months"
-    );
+    expect(price()).toContain(String(planPrice("starter", "monthly")));
+    expect(container.querySelector("[data-testid=billing-cycle-quarterly]")).toBeNull();
+    expect(container.querySelector("[data-testid=card-plan-free]")).toBeNull();
     await act(async () => {
       container.querySelector<HTMLButtonElement>("[data-testid=billing-cycle-yearly]")!.click();
     });
-    expect(price()).toContain("39");
+    expect(planPrice("starter", "yearly")).toBe(planPrice("starter", "monthly") * 10);
+    expect(price()).toContain(String(planPrice("starter", "yearly")));
+    expect(price()).toContain("per year");
     expect(container.querySelector("[data-testid=card-plan-starter]")?.textContent).toContain(
-      "a year"
+      "two months free"
     );
   });
 
   it("has a tick/cross feature comparison grid", async () => {
     await renderPricing();
-    expect(container.querySelectorAll("table.mk-ptable tbody tr").length).toBeGreaterThan(20);
+    expect(container.querySelectorAll("table.mk-ptable tbody tr").length).toBeGreaterThan(15);
     expect(container.querySelector(".mk-ptable__yes")).not.toBeNull();
     expect(container.querySelector(".mk-ptable__no")).not.toBeNull();
   });
@@ -211,16 +221,16 @@ describe("trial banner", () => {
 
   it("counts the days left", async () => {
     const el = await banner(trialState(new Date(Date.now() - 4 * 86400_000)));
-    expect(el?.textContent).toBe(`${TRIAL_DAYS - 4} days left in your free trial`);
+    expect(el?.textContent).toContain(`${TRIAL_DAYS - 4} days left in your free trial`);
     expect(container.querySelector("[data-testid=trial-contact-us]")).toBeNull();
   });
 
-  it("says the trial has ended with a Contact us mailto, and does not lock anything", async () => {
+  it("says the books are read-only once the trial has ended and links to choosing a plan", async () => {
     const el = await banner(trialState(new Date(Date.now() - 30 * 86400_000)));
     expect(el?.getAttribute("data-trial-state")).toBe("ended");
-    expect(el?.textContent).toContain("Your trial has ended — contact us to choose a plan");
-    expect(container.querySelector("[data-testid=trial-contact-us]")?.getAttribute("href")).toMatch(
-      /^mailto:support@muhasib\.ai/
+    expect(el?.textContent).toContain("Your books are read-only until you choose a plan");
+    expect(container.querySelector("[data-testid=trial-contact-us]")?.getAttribute("href")).toBe(
+      "/subscription"
     );
   });
 
@@ -230,53 +240,63 @@ describe("trial banner", () => {
 });
 
 describe("/subscription", () => {
-  it("shows the trial banner and the free plan card agrees with the table: 10 AI credits", async () => {
+  it("shows the trial of the top plan, three paid plan cards and no free plan", async () => {
     await renderSubscription();
+    expect(container.querySelector("[data-testid=text-current-plan]")?.textContent).toBe(
+      "Free trial of Enterprise"
+    );
     expect(container.querySelector("[data-testid=trial-banner]")).not.toBeNull();
-    // WP-E: the plan grid is the site's PlanCard (spec 3.15); the free card is on the page and the
-    // comparison table carries the AI-credit figure.
-    expect(container.querySelector("[data-testid=card-plan-free]")).not.toBeNull();
-    const row = [...container.querySelectorAll("tr")].find((r) =>
-      r.querySelector("td")?.textContent?.startsWith("AI credits/month")
-    );
-    expect(row?.querySelectorAll("td")[1]?.textContent).toBe("10");
-    expect(getTierLimits("free").aiCreditsPerMonth).toBe(10);
+    for (const id of ["starter", "professional", "enterprise"]) {
+      expect(container.querySelector(`[data-testid=card-plan-${id}]`)).not.toBeNull();
+    }
+    expect(container.querySelector("[data-testid=card-plan-free]")).toBeNull();
+    expect(text()).toContain("Every plan includes unlimited users.");
+    expect(getTierLimits("starter").maxUsers).toBe(-1);
   });
 
-  it("shows invoices, receipts and seats as not enforced yet, and AI credits and storage as hard limits", async () => {
+  it("shows the server's limits with no 'not enforced yet' note", async () => {
     await renderSubscription();
-    const notes = [...container.querySelectorAll("[data-testid=usage-offer-note]")].map(
-      (n) => n.textContent
+    expect(container.querySelector("[data-testid=usage-offer-note]")).toBeNull();
+    expect(text()).not.toMatch(/not enforced/i);
+    expect(text()).toContain(`100 / ${TRIAL_LIMITS.aiCreditsPerMonth}`);
+    expect(text()).toContain("12.5 MB / 1,024 MB");
+    expect(container.querySelector("[data-testid=usage-users]")?.textContent).toContain(
+      "unlimited"
     );
-    expect(notes).toEqual([
-      "Not enforced yet (plan limit: 20)",
-      "Not enforced yet (plan limit: 20)",
-      "Not enforced yet (plan limit: 1)",
-    ]);
-    expect(text()).toContain("10 / 10");
-    expect(text()).toContain("12.5 MB / 500 MB");
   });
 
-  it("aligns plan features with /pricing: AI receipt reading arrives later, e-invoicing with provider", async () => {
+  it("compares plans with the pricing page's rows (shared plan module)", async () => {
     await renderSubscription();
-    // WP-E: plan cards are the shared PlanCard; the claims live in the comparison table.
     const cells = (label: string) =>
-      [...container.querySelectorAll("tr")].find((r) =>
-        r.querySelector("td")?.textContent?.startsWith(label)
-      )?.textContent ?? "";
-    // Fable P3: the row uses the pricing page wording, not "OCR ... Coming soon".
-    expect(cells("AI receipt reading")).toContain("Arrives later");
-    expect(text()).not.toContain("Coming soon");
-    expect(cells("E-invoicing")).toContain("With provider");
-    expect(text()).not.toContain("E-invoicing XML workflow");
+      [...container.querySelectorAll("[data-testid=subscription-compare] tr")].find(
+        (r) => r.querySelector("td")?.textContent === label
+      );
+    const payroll = cells("Payroll and WPS");
+    expect(payroll?.querySelectorAll("td").length).toBe(4);
+    expect(payroll?.querySelectorAll("td")[1]?.textContent).toContain("Not included");
+    expect(payroll?.querySelectorAll("td")[2]?.textContent).toContain("Included");
   });
 
-  it("replaces Upgrade with 'Contact us to upgrade' (mailto) while checkout is not configured", async () => {
+  it("after the trial: says the books are read-only and asks to choose a plan", async () => {
+    sub.state = {
+      ...freshState(),
+      planState: "expired",
+      entitlement: { state: "expired", planId: null, storedPlanId: "free", features: {} },
+      trial: trialState(new Date(Date.now() - 30 * 86400_000)),
+    };
+    await renderSubscription();
+    expect(container.querySelector("[data-testid=text-current-plan]")?.textContent).toBe("No plan");
+    expect(text()).toContain("Your trial has ended: your books are read-only");
+    expect(container.querySelector("[data-testid=button-choose-plan]")).not.toBeNull();
+  });
+
+  it("replaces checkout with 'Choose <plan>' (mailto) while checkout is not configured", async () => {
     await renderSubscription();
     const link = container.querySelector<HTMLAnchorElement>("a[data-testid=plan-contact-starter]");
-    expect(link?.textContent).toBe("Contact us to upgrade");
+    expect(link?.textContent).toBe("Choose Starter");
     expect(link?.getAttribute("href")).toMatch(/^mailto:support@muhasib\.ai\?subject=/);
     expect(container.querySelector("[data-testid^=plan-upgrade-]")).toBeNull();
+    expect(container.querySelector("[data-testid=checkout-contact-note]")).not.toBeNull();
   });
 
   it("disables the plan buttons and the usage Upgrade for a viewer", async () => {
@@ -307,4 +327,86 @@ describe("/subscription", () => {
     expect(document.body.textContent).toContain("Could not start checkout");
     expect(document.body.textContent).toContain("Online checkout is not available yet");
   });
+});
+
+/*
+ * WQ7: the owner-approved prices (2026-11-18), written out as literals on purpose so a change to
+ * shared/plans.ts that was not approved fails here. Every surface reads the one plan module.
+ */
+describe("owner-approved prices on every surface (en and ar)", () => {
+  const MONTHLY = { starter: "59", professional: "119", enterprise: "229" } as const;
+  const YEARLY = { starter: "590", professional: "1,190", enterprise: "2,290" } as const;
+  const IDS = ["starter", "professional", "enterprise"] as const;
+  const figure = (id: string) =>
+    container.querySelector(`[data-testid=card-plan-${id}] .mk-tier__price strong`)?.textContent;
+
+  it("the shared module, the server catalogue and the server gates agree", async () => {
+    const { PLAN_MONTHLY_PRICES, publicPlanCatalog } = await import("../../shared/plans");
+    const { getAllPlanDefinitions } = await import("../../server/middleware/featureGate");
+    expect(PLAN_MONTHLY_PRICES).toEqual({ starter: 59, professional: 119, enterprise: 229 });
+    expect(getAllPlanDefinitions()).toEqual(publicPlanCatalog());
+    expect(getAllPlanDefinitions().plans.map((p) => [p.id, p.pricing])).toEqual([
+      ["starter", { monthly: 59, yearly: 590, currency: "AED" }],
+      ["professional", { monthly: 119, yearly: 1190, currency: "AED" }],
+      ["enterprise", { monthly: 229, yearly: 2290, currency: "AED" }],
+    ]);
+    for (const id of IDS) {
+      expect(planPrice(id, "monthly")).toBe(Number(MONTHLY[id]));
+      expect(planPrice(id, "yearly")).toBe(Number(YEARLY[id].replace(",", "")));
+    }
+  });
+
+  it.each(["en", "ar"] as const)(
+    "/pricing shows 59 / 119 / 229 and 590 / 1,190 / 2,290 (%s)",
+    async (loc) => {
+      const { useI18n } = await import("../../client/src/lib/i18n");
+      act(() => useI18n.getState().setLocale(loc));
+      await renderPricing();
+      for (const id of IDS) expect(figure(id)).toBe(MONTHLY[id]);
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>("[data-testid=billing-cycle-yearly]")!.click();
+      });
+      for (const id of IDS) expect(figure(id)).toBe(YEARLY[id]);
+      expect(text()).not.toMatch(/\b(49|149|299|1,490|2,990)\b/);
+    }
+  );
+
+  it.each(["en", "ar"] as const)(
+    "/subscription plan cards show the same prices (%s)",
+    async (loc) => {
+      const { useI18n } = await import("../../client/src/lib/i18n");
+      act(() => useI18n.getState().setLocale(loc));
+      await renderSubscription();
+      for (const id of IDS) expect(figure(id)).toBe(MONTHLY[id]);
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>("[data-testid=subscription-cycle-yearly]")!
+          .click();
+      });
+      for (const id of IDS) expect(figure(id)).toBe(YEARLY[id]);
+    }
+  );
+
+  it.each(["en", "ar"] as const)(
+    "the landing strip's PlanCard shows the same prices (%s)",
+    async (loc) => {
+      const { useI18n } = await import("../../client/src/lib/i18n");
+      act(() => useI18n.getState().setLocale(loc));
+      const { PlanCard } = await import("../../client/src/components/marketing/PlanCard");
+      const { PLANS } = await import("../../client/src/components/marketing/plans");
+      const { Router } = await import("wouter");
+      for (const cycle of ["monthly", "yearly"] as const) {
+        await act(async () => {
+          root.render(
+            createElement(
+              Router,
+              null,
+              ...PLANS.map((plan) => createElement(PlanCard, { key: plan.id, plan, cycle }))
+            )
+          );
+        });
+        for (const id of IDS) expect(figure(id)).toBe((cycle === "monthly" ? MONTHLY : YEARLY)[id]);
+      }
+    }
+  );
 });

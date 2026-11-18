@@ -15,10 +15,13 @@ import {
   PLAN_FEATURE_RULES,
   USAGE_LIMIT_RULES,
   centrallyGatedFeatures,
+  featureForRequest,
   getTierFeatures,
+  getTierLimits,
   matchGateRule,
   usagePeriod,
 } from "../../server/middleware/featureGate";
+import { FEATURE_MIN_PLAN, type PlanFeature } from "../../shared/plans";
 import {
   mapAccountType,
   moneyToFils,
@@ -27,24 +30,31 @@ import {
   splitCodeAndName,
 } from "../../server/services/migration-import/mappers";
 
-const TIERS = ["free", "starter", "professional", "enterprise"] as const;
+const TIERS = ["starter", "professional", "enterprise"] as const;
 
 /**
- * R20-10: the Pricing page is rendered in jsdom and its comparison table is read back
- * (a check icon per included tier, a dash otherwise) instead of parsing page source.
+ * R20-10 / WQ7: the Pricing page is rendered in jsdom and its comparison table is read back (a
+ * check icon per included plan, a dash otherwise) instead of parsing page source. Every module the
+ * plans differ on (shared/plans.ts FEATURE_MIN_PLAN above Starter) must be on the page with the
+ * tiers the server gate enforces.
  */
 const GATE_ROW_LABELS: Record<string, string> = {
   payroll: "Payroll and WPS",
   fixedAssets: "Fixed assets and depreciation",
+  budgets: "Budgets and variance",
+  monthEnd: "Month-end close checklist",
+  costCenters: "Cost centres",
+  purchaseOrders: "Purchase orders",
+  expenseClaims: "Expense claims",
   bulkOps: "Bulk operations",
-  recurringInvoices: "Recurring invoices",
-  multiCurrency: "Multi-currency documents",
-  invoicePayment: "Online invoice payment links",
+  customerPortal: "Customer portal",
+  corporateTax: "Corporate tax (9%)",
+  aiAssistant: "Assistant: ask, forecasts and anomaly checks",
   webhooks: "Signed webhooks",
   apiAccess: "API access",
 };
 
-async function pricingGates(): Promise<Array<{ gate: string; tiers: Record<string, boolean> }>> {
+async function pricingRows(): Promise<HTMLTableRowElement[]> {
   // framer-motion's in-view reveal needs IntersectionObserver, which jsdom lacks.
   (globalThis as { IntersectionObserver?: unknown }).IntersectionObserver ??= class {
     observe() {}
@@ -64,67 +74,77 @@ async function pricingGates(): Promise<Array<{ gate: string; tiers: Record<strin
   await act(async () => {
     root.render(createElement(Pricing));
   });
-  const rows = [...container.querySelectorAll("tr")];
-  const out: Array<{ gate: string; tiers: Record<string, boolean> }> = [];
-  for (const [gate, label] of Object.entries(GATE_ROW_LABELS)) {
-    const row = rows.find((r) => r.querySelector("td")?.textContent?.trim() === label);
-    if (!row) continue;
-    const cells = [...row.querySelectorAll("td")].slice(1);
-    const included = cells.map((c) => c.querySelector(".lucide-check") !== null);
-    out.push({
-      gate,
-      tiers: {
-        free: included[0],
-        starter: included[1],
-        professional: included[2],
-        enterprise: included[3],
-      },
-    });
-  }
+  const rows = [...container.querySelectorAll("table.mk-ptable tr")].map(
+    (r) => r.cloneNode(true) as HTMLTableRowElement
+  );
   act(() => root.unmount());
   container.remove();
-  return out;
+  return rows;
 }
 
-describe("W5-B plan matrix", () => {
-  it("[R19-05] every centrally gated feature is on the Pricing page with the same tiers as TIER_FEATURES", async () => {
-    const gates = await pricingGates();
-    expect(gates.map((g) => g.gate).sort()).toEqual(Object.keys(GATE_ROW_LABELS).sort());
-    const onPage = new Set(gates.map((g) => g.gate));
-    for (const f of [
-      "payroll",
-      "fixedAssets",
-      "bulkOps",
-      "recurringInvoices",
-      "multiCurrency",
-      "invoicePayment",
-      "webhooks",
-      "apiAccess",
-    ]) {
-      expect(centrallyGatedFeatures(), f).toContain(f);
-      expect(onPage, f).toContain(f);
-    }
-    for (const g of gates) {
-      for (const tier of TIERS) {
-        expect(`${g.gate}@${tier}=${g.tiers[tier]}`).toBe(
-          `${g.gate}@${tier}=${!!getTierFeatures(tier)[g.gate]}`
+const rowCells = (rows: HTMLTableRowElement[], label: string) => {
+  // The label cell may carry a 12 px qualifier line after the label.
+  const row = rows.find((r) => r.querySelector("td")?.firstChild?.textContent?.trim() === label);
+  return row ? [...row.querySelectorAll("td")].slice(1) : [];
+};
+
+describe("WQ7 plan matrix (pricing page = server gates = shared/plans.ts)", () => {
+  it("[R19-05] every plan-differentiated module is on the Pricing page with the tiers the server enforces", async () => {
+    const rows = await pricingRows();
+    const differentiated = (Object.keys(FEATURE_MIN_PLAN) as PlanFeature[]).filter(
+      (f) => FEATURE_MIN_PLAN[f] !== "starter"
+    );
+    expect(differentiated.sort()).toEqual(Object.keys(GATE_ROW_LABELS).sort());
+    for (const [gate, label] of Object.entries(GATE_ROW_LABELS)) {
+      const cells = rowCells(rows, label);
+      expect(cells.length, label).toBe(3);
+      const included = cells.map((c) => c.querySelector(".lucide-check") !== null);
+      expect(centrallyGatedFeatures(), gate).toContain(gate);
+      TIERS.forEach((tier, i) => {
+        expect(`${gate}@${tier}=${included[i]}`).toBe(
+          `${gate}@${tier}=${!!getTierFeatures(tier)[gate as PlanFeature]}`
         );
-      }
+      });
     }
   });
 
-  it("[R19-05] the gate table maps routes to features (webhook provider callbacks never match)", () => {
-    const f = (m: string, p: string, body?: unknown) =>
-      matchGateRule(PLAN_FEATURE_RULES, m, p, { body } as never)?.feature ?? null;
-    expect(f("GET", "/api/companies/c1/payroll-runs")).toBe("payroll");
+  it("[WQ7] limit rows show the shared limits; users are unlimited on every plan", async () => {
+    const rows = await pricingRows();
+    const text = (label: string) => rowCells(rows, label).map((c) => c.textContent?.trim());
+    expect(text("Companies")).toEqual(["1", "3", "Unlimited"]);
+    expect(text("Invoices and receipts")[0]).toBe(
+      String(getTierLimits("starter").maxInvoicesPerMonth)
+    );
+    for (const tier of TIERS) expect(getTierLimits(tier).maxUsers).toBe(-1);
+  });
+
+  it("[R19-05] the gate table maps writes to features and never gates a read", () => {
+    const f = (m: string, p: string, body?: unknown) => featureForRequest(m, p, { body } as never);
+    expect(f("POST", "/api/companies/c1/payroll-runs")).toBe("payroll");
+    expect(f("GET", "/api/companies/c1/payroll-runs")).toBeNull();
     expect(f("POST", "/api/payroll-runs/x/approve")).toBe("payroll");
-    expect(f("GET", "/api/companies/c1/fixed-assets")).toBe("fixedAssets");
+    expect(f("POST", "/api/companies/c1/fixed-assets")).toBe("fixedAssets");
+    expect(f("GET", "/api/companies/c1/fixed-assets")).toBeNull();
+    expect(f("POST", "/api/companies/c1/budget-plans")).toBe("budgets");
+    expect(f("POST", "/api/companies/c1/month-end/checklist")).toBe("monthEnd");
+    expect(f("POST", "/api/companies/c1/expense-claims")).toBe("expenseClaims");
+    expect(f("POST", "/api/companies/c1/corporate-tax/returns")).toBe("corporateTax");
+    expect(f("POST", "/api/ai/nl-gateway")).toBe("aiAssistant");
+    expect(f("POST", "/api/portal/generate-access")).toBe("customerPortal");
+    expect(f("POST", "/api/portal/revoke-access")).toBeNull();
     expect(f("POST", "/api/companies/c1/invoices", { currency: "USD" })).toBe("multiCurrency");
-    expect(f("POST", "/api/companies/c1/invoices", { currency: "AED" })).toBeNull();
+    expect(f("POST", "/api/companies/c1/invoices", { currency: "AED" })).toBe("bookkeeping");
+    expect(f("POST", "/api/companies/c1/invoices/x/pdf")).toBeNull();
+    expect(f("POST", "/api/companies/c1/journal")).toBe("bookkeeping");
+    expect(f("PUT", "/api/companies/c1/billing/change-plan")).toBeNull();
+    expect(f("PUT", "/api/companies/c1/automations/categorise")).toBeNull();
     expect(f("POST", "/api/webhooks/stripe")).toBeNull();
     expect(f("POST", "/api/webhooks/invoice-payments/stripe")).toBeNull();
     expect(f("POST", "/api/webhooks/0b8f7f7a-2f6e-4d7a-9a83-2d4f3c1b1a11/test")).toBe("webhooks");
-    expect(f("GET", "/api/companies/c1/api-keys")).toBe("apiAccess");
+    expect(f("POST", "/api/companies/c1/api-keys")).toBe("apiAccess");
+    expect(f("GET", "/api/companies/c1/api-keys")).toBeNull();
+    // Every rule's feature exists in the shared matrix.
+    for (const r of PLAN_FEATURE_RULES) expect(Object.keys(FEATURE_MIN_PLAN)).toContain(r.feature);
   });
 
   it("[R19-04] metered creates and the UAE usage month", () => {

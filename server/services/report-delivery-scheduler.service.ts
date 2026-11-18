@@ -239,7 +239,11 @@ export async function scanDueReportDeliveries(
   const companies = await storage.getAllCompanies();
   result.scannedCompanies = companies.length;
 
+  const automations = await import("../platform/company-automations");
+  const switchedOff = await automations.companiesWithAutomationOff("reportDeliveries");
   for (const company of companies) {
+    // WQ7: a company that switched "Report deliveries" off in Automations is not scanned.
+    if (switchedOff.has(String(company.id))) continue;
     const companyResult = emptyCompanyScanResult(now);
     try {
       const settings = await storage.getReportDeliverySubscriptionSettings(company.id);
@@ -366,6 +370,15 @@ export async function scanDueReportDeliveries(
       companyResult.finishedAt = new Date();
       addCompanyScanResult(result, companyResult);
       await recordCompanySchedulerScan(company.id, companyResult);
+      if (companyResult.scannedSubscriptions > 0) {
+        await automations.recordAutomationRun(
+          "reportDeliveries",
+          company.id,
+          companyResult.status === "error" ? "failed" : "ok",
+          { sent: companyResult.queuedRuns, scanned: companyResult.scannedSubscriptions },
+          companyResult.status === "error" ? (companyResult.message ?? null) : null
+        );
+      }
     }
   }
 
