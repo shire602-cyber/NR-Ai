@@ -45,6 +45,7 @@ describe("ZATCA hidden at launch (owner decision 2026-11-18)", () => {
     for (const r of await Promise.all(calls)) {
       expect(r.status, r.text).toBe(503);
       expect(r.body.code).toBe("ZATCA_NOT_AVAILABLE");
+      expect(r.body.messageKey).toBe("forms.serverErrors.ZATCA_NOT_AVAILABLE");
     }
     // Without the flag a Saudi company cannot store the 15% KSA default rate either.
     const rate = await t.as.patch(`/api/companies/${t.company.id}`, { defaultVatRate: 0.15 });

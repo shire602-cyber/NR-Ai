@@ -432,6 +432,8 @@ describe("WQ3 9.16: CT treatment per journal line", () => {
 });
 
 describe("WQ3 9.11: the monthly depreciation job", () => {
+  // The job depreciates the last month that has fully ended before `today` (October here).
+  const TODAY = "2026-11-18";
   async function asset(t: Tenant, body: Record<string, unknown>) {
     const bank = await accountByCode(t, "1020");
     const a = await t.as.post(`${base(t)}/fixed-assets`, {
@@ -457,11 +459,11 @@ describe("WQ3 9.11: the monthly depreciation job", () => {
       purchaseDate: "2026-10-01",
       purchaseCost: 60_000,
     });
-    const first = await runMonthlyDepreciation({ companyIds: [t.company.id] });
+    const first = await runMonthlyDepreciation({ companyIds: [t.company.id], today: TODAY });
     expect(first).toEqual([
       expect.objectContaining({ status: "posted", posted: 1, period: { year: 2026, month: 10 } }),
     ]);
-    const second = await runMonthlyDepreciation({ companyIds: [t.company.id] });
+    const second = await runMonthlyDepreciation({ companyIds: [t.company.id], today: TODAY });
     expect(second[0]).toMatchObject({ status: "nothing_due", posted: 0 });
 
     const entries = await h.sql<{ id: string; d: string }>(
@@ -494,13 +496,55 @@ describe("WQ3 9.11: the monthly depreciation job", () => {
       `INSERT INTO month_end_close (company_id, period_end, status) VALUES ($1, '2026-10-31', 'locked')`,
       [locked.company.id]
     );
-    const run = await runMonthlyDepreciation({ companyIds: [locked.company.id] });
+    const run = await runMonthlyDepreciation({ companyIds: [locked.company.id], today: TODAY });
     expect(run[0]).toMatchObject({ status: "period_locked", posted: 0 });
     const [n] = await h.sql<{ n: string }>(
       `SELECT COUNT(*)::text AS n FROM depreciation_schedules WHERE company_id = $1`,
       [locked.company.id]
     );
     expect(Number(n.n)).toBe(0);
+  });
+
+  it("[9.11-disposal] never charges an asset disposed before the month, nor a future month", async () => {
+    const { runMonthlyDepreciation } =
+      await import("../../server/services/fixed-assets/monthly-job");
+    const t = await tenant("WQ3DepDisposed");
+    const bank = await accountByCode(t, "1020");
+    const id = await asset(t, {
+      assetName: "Old van",
+      purchaseDate: "2026-08-01",
+      purchaseCost: 30_000,
+    });
+    const sold = await t.as.post(`/api/fixed-assets/${id}/dispose`, {
+      disposalDate: "2026-09-30",
+      disposalAmount: 0,
+      proceedsAccountId: bank.id,
+    });
+    expect(sold.status, sold.text).toBeLessThan(300);
+    const run = await runMonthlyDepreciation({ companyIds: [t.company.id], today: TODAY });
+    // A disposed asset is no longer active: the company is not even visited.
+    expect(run).toEqual([]);
+    const [n] = await h.sql<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM depreciation_schedules
+        WHERE asset_id = $1 AND period_year * 100 + period_month > 202609`,
+      [id]
+    );
+    expect(Number(n.n)).toBe(0);
+
+    // A month that has not ended yet (November, on 18 November) is never posted.
+    const fresh = await tenant("WQ3DepFuture");
+    const fid = await asset(fresh, {
+      assetName: "New desk",
+      purchaseDate: "2026-11-01",
+      purchaseCost: 6_000,
+    });
+    const r = await runMonthlyDepreciation({ companyIds: [fresh.company.id], today: TODAY });
+    expect(r[0]).toMatchObject({ period: { year: 2026, month: 10 }, posted: 0 });
+    const [m] = await h.sql<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM depreciation_schedules WHERE asset_id = $1`,
+      [fid]
+    );
+    expect(Number(m.n)).toBe(0);
   });
 });
 

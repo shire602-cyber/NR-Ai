@@ -33,5 +33,9 @@ export const ZATCA_NOT_AVAILABLE_MESSAGE =
 /** 503 for every ZATCA endpoint while the flag is off (mounted ahead of the routes). */
 export function requireZatcaEnabled(_req: Request, res: Response, next: NextFunction) {
   if (zatcaEnabled()) return next();
-  res.status(503).json({ code: "ZATCA_NOT_AVAILABLE", message: ZATCA_NOT_AVAILABLE_MESSAGE });
+  res.status(503).json({
+    code: "ZATCA_NOT_AVAILABLE",
+    messageKey: "forms.serverErrors.ZATCA_NOT_AVAILABLE",
+    message: ZATCA_NOT_AVAILABLE_MESSAGE,
+  });
 }
