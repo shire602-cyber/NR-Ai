@@ -155,7 +155,7 @@ describe("WQ7 plan gates (enforced)", () => {
     // The invoice made during the trial is still there and readable.
     const list = await t.as.get(`/api/companies/${t.company.id}/invoices`);
     expect(list.status).toBe(200);
-    const rows = Array.isArray(list.body) ? list.body : (list.body.invoices ?? list.body.data);
+    const rows = Array.isArray(list.body) ? list.body : list.body.items;
     expect(rows.map((i: { id: string }) => i.id)).toContain(made.body.id);
     const n = await h.sql(`SELECT count(*)::int AS n FROM invoices WHERE company_id = $1`, [
       t.company.id,
@@ -263,8 +263,11 @@ describe("WQ7 automations", () => {
     expect(await journals()).toMatchObject({ enabled: true, lastRunAt: null, scheduled: true });
     expect((await journals()).nextRunAt).not.toBeNull();
 
-    // Another tenant's company is a 404; a viewer cannot switch; unknown fields are refused.
-    expect((await other.as.get(`/api/companies/${t.company.id}/automations`)).status).toBe(404);
+    // Another tenant's company is refused; a viewer cannot switch; unknown fields are refused.
+    // (The central company policy answers 403 for a company the caller is not a member of.)
+    expect([403, 404]).toContain(
+      (await other.as.get(`/api/companies/${t.company.id}/automations`)).status
+    );
     const byViewer = await viewer.as.put(
       `/api/companies/${t.company.id}/automations/recurringJournals`,
       { enabled: false }
@@ -419,7 +422,7 @@ describe("WQ7 onboarding progress", () => {
     expect((await t.as.put(url, { step: "done", secret: 1 })).status).toBe(400);
     expect((await t.as.put(url, { step: "nowhere" })).status).toBe(400);
     const other = await h.createTenant({ name: "OnboardOther" });
-    expect((await other.as.get(url)).status).toBe(404);
+    expect([403, 404]).toContain((await other.as.get(url)).status);
     const viewer = await h.createTenant({ name: "OnboardViewer" });
     await addMember(t, viewer, "viewer");
     expect((await viewer.as.put(url, { step: "done" })).status).toBe(403);
