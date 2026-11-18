@@ -178,5 +178,5 @@
   "complianceCalendar.today": "اليوم",
   "complianceCalendar.viewCalendar": "التقويم",
   "complianceCalendar.viewList": "القائمة",
-  "complianceCalendar.daysShort": "{count, plural, one {يوم} two {يومان} few {# أيام} other {# يومًا}}"
+  "complianceCalendar.daysShort": "{count} يوم"
 }

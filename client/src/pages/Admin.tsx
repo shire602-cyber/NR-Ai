@@ -376,7 +376,7 @@ export default function Admin() {
     );
   // Visible feedback while the admin queries re-read (STEP1 F6).
   const refreshing =
-    useIsFetching({ predicate: (q) => String(q.queryKey[0]).startsWith("/api/admin/") }) > 0;
+    useIsFetching({ predicate: (q) => /^\/api\/admin\//.test(String(q.queryKey[0])) }) > 0;
 
   // Filter functions
   const filteredUsers = users.filter(
