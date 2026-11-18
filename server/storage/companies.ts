@@ -11,7 +11,6 @@ import {
   type CompanyUser,
   type InsertCompany,
   type InsertCompanyUser,
-  type User,
 } from "@shared/schema";
 import {
   NR_FIRM_ID,
@@ -23,6 +22,18 @@ import { db } from "../db";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { scopedDelete, scopedGet, scopedUpdate } from "../tenancy";
 import { UserStorage } from "./users";
+import type { CompanyMemberWithUser } from "./types";
+
+const companyMemberUserColumns = {
+  id: users.id,
+  email: users.email,
+  name: users.name,
+  userType: users.userType,
+  avatarUrl: users.avatarUrl,
+  emailVerified: users.emailVerified,
+  lastLoginAt: users.lastLoginAt,
+  createdAt: users.createdAt,
+};
 
 export class CompanyStorage extends UserStorage {
   // Companies
@@ -239,17 +250,17 @@ export class CompanyStorage extends UserStorage {
     return scopedGet(companyUsers, companyId, id);
   }
 
-  async getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]> {
+  // PR-62 port: the joined user is a PUBLIC projection. Firm and admin client screens send
+  // this list straight to the browser, so password_hash, token_version and the MFA flags
+  // must never be selected here.
+  async getCompanyUserWithUser(companyId: string): Promise<CompanyMemberWithUser[]> {
     const results = await db
-      .select()
+      .select({ member: companyUsers, user: companyMemberUserColumns })
       .from(companyUsers)
       .innerJoin(users, eq(companyUsers.userId, users.id))
       .where(eq(companyUsers.companyId, companyId));
 
-    return results.map((r) => ({
-      ...r.company_users,
-      user: r.users,
-    }));
+    return results.map((r) => ({ ...r.member, user: r.user }));
   }
 
   // Admin Company Management

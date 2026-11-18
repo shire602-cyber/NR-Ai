@@ -29,6 +29,7 @@ import {
   assignStaffSchema,
   canAccessClient,
   createClientSchema,
+  denyClientAccess,
   getClientStats,
   type FirmClientsImportBody,
   importPayloadSchema,
@@ -80,7 +81,7 @@ export const handleGetFirmClients = async (req: Request, res: Response) => {
 export const handleGetFirmClientsSummary = async (req: Request, res: Response) => {
   const { companyId } = req.params;
   if (!(await canAccessClient(req, res, companyId))) {
-    return res.status(403).json({ message: "Access denied to this client" });
+    return denyClientAccess(res, companyId);
   }
 
   const company = await storage.getCompany(companyId);
@@ -196,7 +197,7 @@ export const handlePutFirmClients = async (req: Request, res: Response) => {
   const { serviceScope, ...companyPatch } = validated;
 
   if (!(await canAccessClient(req, res, companyId))) {
-    return res.status(403).json({ message: "Access denied to this client" });
+    return denyClientAccess(res, companyId);
   }
 
   const company = await storage.getCompany(companyId);
@@ -273,7 +274,7 @@ export const handlePostFirmClientsSwitch = async (req: Request, res: Response) =
   const { id: userId } = req.user!;
 
   if (!(await canAccessClient(req, res, companyId))) {
-    return res.status(403).json({ message: "Access denied to this client" });
+    return denyClientAccess(res, companyId);
   }
 
   const company = await storage.getCompany(companyId);

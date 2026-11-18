@@ -204,6 +204,19 @@ export type InvoiceSummary = Pick<
 >;
 
 /** A new user: the register payload, or an already-hashed password (invites, admin). */
+/** Public projection of a member's user row (never password_hash / token_version / MFA). */
+export interface CompanyMemberUser {
+  id: string;
+  email: string;
+  name: string;
+  userType: string;
+  avatarUrl: string | null;
+  emailVerified: boolean;
+  lastLoginAt: Date | null;
+  createdAt: Date;
+}
+export type CompanyMemberWithUser = CompanyUser & { user: CompanyMemberUser };
+
 export type NewUserInput = Omit<InsertUser, "password"> & {
   password?: string;
   passwordHash?: string;
@@ -681,7 +694,7 @@ export interface IStorage {
   ): Promise<CompanyUser | undefined>;
   deleteCompanyUser(companyId: string, id: string): Promise<boolean>;
   getCompanyUser(companyId: string, id: string): Promise<CompanyUser | undefined>;
-  getCompanyUserWithUser(companyId: string): Promise<(CompanyUser & { user: User })[]>;
+  getCompanyUserWithUser(companyId: string): Promise<CompanyMemberWithUser[]>;
 
   // Admin Stats
   getAllUsers(): Promise<User[]>;

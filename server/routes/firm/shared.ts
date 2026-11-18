@@ -24,7 +24,7 @@ import {
   users,
   vatReturns,
 } from "../../../shared/schema";
-import { canAccessFirmClient } from "../../services/firm/scope";
+import { canAccessFirmClient, isFirmClient } from "../../services/firm/scope";
 import { createDefaultAccountsForCompany } from "../../defaultChartOfAccounts";
 import { db } from "../../db";
 import { firmContextOf } from "../../middleware/rbac";
@@ -40,6 +40,20 @@ export async function canAccessClient(
   companyId: string
 ): Promise<boolean> {
   return canAccessFirmClient(firmContextOf(res), companyId);
+}
+
+/**
+ * Refuse a client the caller cannot access. A company outside the caller's
+ * firm (another firm's client, a self-signup SaaS customer, an archived or
+ * unlinked company) is another tenant's row: 404, never 403 (platform rules,
+ * tenancy). A client of the caller's own firm that this staff member is not
+ * assigned to is a permission refusal: 403.
+ */
+export async function denyClientAccess(res: Response, companyId: string): Promise<Response> {
+  if (await isFirmClient(firmContextOf(res), companyId)) {
+    return res.status(403).json({ message: "Access denied to this client" });
+  }
+  return res.status(404).json({ message: "Client not found", code: "CLIENT_NOT_FOUND" });
 }
 
 export async function seedChartOfAccounts(companyId: string): Promise<void> {
