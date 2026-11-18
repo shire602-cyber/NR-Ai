@@ -95,6 +95,7 @@ import { LineCostCentrePicker } from "@/components/invoices/LineCostCentrePicker
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCostCentres } from "@/hooks/useCostCentres";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
+import { useTaxReadyPrompt } from "@/components/einvoice/use-tax-ready-prompt";
 import { uploadInvoiceAttachment } from "@/lib/invoice-documents";
 import { blockingCount, einvoiceChecks, invoiceFormChecks } from "@/lib/invoice-checks";
 import { dueDateFromTerms, termsFromDays } from "@shared/sales-documents";
@@ -196,6 +197,10 @@ const LeaveWithoutSavingDialog = lazy(() =>
   import("@/components/invoices/LeaveWithoutSavingDialog").then((m) => ({
     default: m.LeaveWithoutSavingDialog,
   }))
+);
+// WQ5's first-invoice e-invoice details prompt (asks only for missing seller fields, once).
+const TaxReadyModal = lazy(() =>
+  import("@/components/einvoice/TaxReadyModal").then((m) => ({ default: m.TaxReadyModal }))
 );
 const InvoicePreview = lazy(() =>
   import("@/components/invoices/InvoicePreview").then((m) => ({ default: m.InvoicePreview }))
@@ -1283,6 +1288,11 @@ export default function Invoices() {
   const editorDirty = form.formState.isDirty || pendingAttachments.length > 0;
   const leaveGuard = useUnsavedChangesGuard(editorOpen && editorDirty && !saving);
   const isIssued = !!editingInvoice && editingInvoice.status !== "draft";
+  // WQ5 (mounted by WQ1): before the first invoice is finalised, ask once for the seller's
+  // missing e-invoice identity fields.
+  const taxReady = useTaxReadyPrompt(selectedCompanyId, {
+    enabled: editorOpen && !editingInvoice,
+  });
 
   const filteredInvoices = useMemo(() => {
     if (!invoices || invoices.length === 0) return [];
@@ -2069,6 +2079,11 @@ export default function Invoices() {
           </div>
         </form>
       </Form>
+      {taxReady.open && (
+        <Suspense fallback={null}>
+          <TaxReadyModal {...taxReady.modalProps} />
+        </Suspense>
+      )}
       {leaveGuard.pending && (
         <Suspense fallback={null}>
           <LeaveWithoutSavingDialog

@@ -306,6 +306,33 @@ describe("WQ1 invoice editor", () => {
     expect(apiCalls("POST").filter((c) => c.url === `${C}/invoices`)).toEqual([]);
   });
 
+  it("a new invoice asks once for missing e-invoice seller details (WQ5 prompt)", async () => {
+    setFixtures({
+      [`${C}/invoices?limit=50`]: { items: [], nextCursor: null },
+      [`${C}/einvoicing/tax-ready`]: {
+        show: true,
+        missing: ["tin"],
+        promptedAt: null,
+        identity: {
+          legalName: "Synthetic Trading LLC",
+          displayName: "Synthetic Trading LLC",
+          einvoiceTin: null,
+          effectiveTin: null,
+          tinSuggestion: "1000000000",
+          tinSource: "ct_trn",
+          sellerLegalId: { type: "TL", number: "CN-1" },
+          addressStreet: "Office 1",
+          addressCity: "Dubai",
+          emirate: "dubai",
+          missing: ["tin"],
+        },
+      },
+    });
+    await openNewInvoice();
+    await flushUntil(() => !!byTestId("tax-ready-modal"));
+    expect(byTestId("tax-ready-modal")).not.toBeNull();
+  });
+
   it("the source filter asks the server for API invoices only (13.5)", async () => {
     setFixtures({
       [`${C}/invoices?limit=50`]: { items: [], nextCursor: null },
