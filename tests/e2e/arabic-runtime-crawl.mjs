@@ -31,7 +31,7 @@
  *                               no registration, no seeding, a fresh signed-out browser
  *   --all (or ARABIC_ALL=true)  visit EVERY authenticated route in client/src/App.tsx
  *                               (ALL_AUTH_ROUTES, plus the param routes resolved against seeded
- *                               records) instead of the 20 launch routes. With a local
+ *                               records) instead of the 22 launch routes. With a local
  *                               DATABASE_URL the synthetic user is promoted to admin + firm
  *                               owner first so ADMIN_ROUTES and FIRM_ROUTES render; without it
  *                               those 20 routes are skipped and listed in the report.

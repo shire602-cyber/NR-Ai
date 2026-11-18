@@ -23,7 +23,7 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   `node tests/e2e/report-catalog-arabic-probe.mjs` (BASE_URL) checks Reports Advanced tools,
   onboarding automations, Dashboard, command palette and mobile nav for English lines.
   `npm run e2e:arabic-runtime` (`tests/e2e/arabic-runtime-crawl.mjs`, BASE_URL) counts rendered
-  English text nodes on the 20 launch routes in Arabic mode (target 0); the i18n ratchet also scans
+  English text nodes on the 22 launch routes in Arabic mode (target 0); the i18n ratchet also scans
   `client/src/lib` + `client/src/hooks` string properties (baseline 0, `i18n-ignore-file:` for non-UI
   files).
 - After a merged build, refresh the bundle baseline with
