@@ -28,6 +28,7 @@ import { registerEInvoiceRoutes } from "./routes/einvoice.routes";
 import { registerEInvoiceAcubeRoutes } from "./routes/einvoice-acube.routes";
 import { registerEInvoiceComplyanceRoutes } from "./routes/einvoice-complyance.routes";
 import { registerEInvoiceProviderRoutes } from "./routes/einvoice-provider.routes";
+import { registerEInvoiceIdentityRoutes } from "./routes/einvoice-identity.routes";
 import { registerZatcaRoutes } from "./routes/zatca.routes";
 import { registerInvoiceShareRoutes } from "./routes/invoice-share.routes";
 import { registerSalesReceiptRoutes } from "./routes/sales-receipts.routes";
@@ -86,6 +87,7 @@ import { registerBankRoutes } from "./routes/bank.routes";
 import { registerDocumentVersionRoutes } from "./routes/document-versions.routes";
 import { registerApiKeyRoutes } from "./routes/api-keys.routes";
 import { registerBillingRoutes } from "./routes/billing.routes";
+import { registerCompanyAutomationRoutes } from "./routes/company-automations.routes";
 import { registerPushRoutes } from "./routes/push.routes";
 import { registerWebhookRoutes } from "./routes/webhooks.routes";
 import { registerIntegrationStatusRoutes } from "./routes/integration-status.routes";
@@ -148,6 +150,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerEInvoiceProviderRoutes(app); // E2: which accredited provider is configured
   registerEInvoiceAcubeRoutes(app); // E1: A-Cube onboarding + signed webhooks
   registerEInvoiceComplyanceRoutes(app); // E2: Complyance onboarding + signed webhooks
+  registerEInvoiceIdentityRoutes(app); // WQ5: tax identity, partner choice, approver links
   registerZatcaRoutes(app);
   registerInvoiceShareRoutes(app);
   registerSalesReceiptRoutes(app);
@@ -195,6 +198,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerDocumentVersionRoutes(app);
   registerApiKeyRoutes(app);
   registerBillingRoutes(app);
+  registerCompanyAutomationRoutes(app);
   registerPushRoutes(app);
   registerWebhookRoutes(app);
   registerIntegrationStatusRoutes(app);

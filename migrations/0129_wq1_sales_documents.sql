@@ -1,4 +1,4 @@
--- 0125_wq1_sales_documents (WQ1 sales documents finished; W3-A sales): document language, source, attachments and the sent/viewed log of invoices.
+-- 0129_wq1_sales_documents (WQ1 sales documents finished; W3-A sales): document language, source, attachments and the sent/viewed log of invoices.
 -- Idempotent: ADD COLUMN IF NOT EXISTS / CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT EXISTS only.
 --
 -- * invoices.document_language: the language the server PDF is printed in for this document

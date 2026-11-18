@@ -56,6 +56,21 @@ export interface PostJournalLineInput {
    * Never set from request input.
    */
   controlLeg?: ControlLedger | "any";
+  /**
+   * WQ3 (9.4 / 9.16): descriptive per-line attributes of a manual journal, stored on the line and
+   * copied by a reversal. They never change the amounts or the control-account gate.
+   */
+  attributes?: JournalLineAttributes | null;
+}
+
+/** WQ3: per-line contact, VAT treatment and corporate-tax treatment (shared/journal-line-treatments). */
+export interface JournalLineAttributes {
+  contactType?: "customer" | "vendor" | null;
+  contactId?: string | null;
+  vatTreatment?: "standard" | "zero_rated" | "exempt" | "out_of_scope" | null;
+  ctTreatment?: "deductible" | "non_deductible" | "exempt_income" | null;
+  /** Non-deductible share in percent (0 < pct <= 100, 2 decimals). */
+  ctDisallowedPct?: string | null;
 }
 
 export interface PostJournalInput {
@@ -125,6 +140,8 @@ export interface NormalizedLine {
   systemVat?: boolean;
   /** See PostJournalLineInput.controlLeg. */
   controlLeg?: ControlLedger | "any";
+  /** See PostJournalLineInput.attributes. */
+  attributes?: JournalLineAttributes;
 }
 
 export interface NormalizedEntry {

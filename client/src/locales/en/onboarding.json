@@ -240,5 +240,13 @@
   "onboarding.v3FirmTeamLead": "Invite your accountants now. Each gets an email link to set a password and join.",
   "onboarding.v3FirmDoneClients": "Your client portfolio, with deadlines and open work.",
   "onboarding.v3FirmDoneHealth": "Firm health",
-  "onboarding.v3FirmDoneHealthBody": "Workload and filing status across every client."
+  "onboarding.v3FirmDoneHealthBody": "Workload and filing status across every client.",
+  "onboarding.wq7Industry": "Industry",
+  "onboarding.wq7IndustryHelp": "Adds the accounts businesses like yours use, on top of the UAE standard chart. You can edit them later.",
+  "onboarding.wq7IndustryGeneral": "General business",
+  "onboarding.wq7StartOpening": "Enter opening balances",
+  "onboarding.wq7StartOpeningBody": "Start from a trial balance at a cut-over date. We open the import with that date.",
+  "onboarding.wq7Cutover": "Cut-over date",
+  "onboarding.wq7CutoverHelp": "Your opening balances are as at the end of this day.",
+  "onboarding.wq7CutoverRequired": "Choose the cut-over date."
 }

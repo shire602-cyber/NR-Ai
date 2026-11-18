@@ -240,5 +240,13 @@
   "onboarding.v3FirmTeamLead": "ادعُ محاسبيك الآن. يصل كلاً منهم رابط بالبريد لتعيين كلمة مرور والانضمام.",
   "onboarding.v3FirmDoneClients": "محفظة عملائك مع المواعيد النهائية والأعمال المفتوحة.",
   "onboarding.v3FirmDoneHealth": "صحة المكتب",
-  "onboarding.v3FirmDoneHealthBody": "حجم العمل وحالة الإقرارات لجميع العملاء."
+  "onboarding.v3FirmDoneHealthBody": "حجم العمل وحالة الإقرارات لجميع العملاء.",
+  "onboarding.wq7Industry": "النشاط",
+  "onboarding.wq7IndustryHelp": "يضيف الحسابات التي تستخدمها الأنشطة المشابهة لنشاطك، فوق الدليل الإماراتي القياسي. يمكنك تعديلها لاحقًا.",
+  "onboarding.wq7IndustryGeneral": "نشاط تجاري عام",
+  "onboarding.wq7StartOpening": "إدخال الأرصدة الافتتاحية",
+  "onboarding.wq7StartOpeningBody": "ابدأ من ميزان مراجعة في تاريخ انتقال. نفتح لك الاستيراد بهذا التاريخ.",
+  "onboarding.wq7Cutover": "تاريخ الانتقال",
+  "onboarding.wq7CutoverHelp": "أرصدتك الافتتاحية كما في نهاية هذا اليوم.",
+  "onboarding.wq7CutoverRequired": "اختر تاريخ الانتقال."
 }

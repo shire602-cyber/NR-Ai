@@ -1,20 +1,4 @@
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { T } from "@/components/layout/T";
-import {
-  ErrorSummary,
-  Field,
-  FormActions,
-  FormGrid,
-  FormSection,
-  formSpanFull,
-} from "@/components/ui/form-layout";
-import { useFormGate } from "@/hooks/use-form-gate";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
@@ -89,6 +73,7 @@ import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import type { CustomerContact } from "@shared/schema";
+import { ContactForm } from "@/components/contacts/ContactForm";
 
 interface ImportResult {
   message: string;
@@ -141,221 +126,6 @@ async function downloadContactTemplate(companyId: string): Promise<void> {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
-
-/** Select sentinel for "use the company emirate" (Radix items cannot carry an empty value). */
-const EMIRATE_DEFAULT = "default";
-
-const CONTACT_EMIRATES = [
-  "abu_dhabi",
-  "dubai",
-  "sharjah",
-  "ajman",
-  "umm_al_quwain",
-  "ras_al_khaimah",
-  "fujairah",
-] as const;
-
-function ContactForm({
-  contact,
-  onSubmit,
-  onCancel,
-}: {
-  contact?: CustomerContact | null;
-  onSubmit: (data: any) => void;
-  onCancel: () => void;
-}) {
-  const { t } = useTranslation();
-  const [formData, setFormData] = useState({
-    name: contact?.name || "",
-    email: contact?.email || "",
-    phone: contact?.phone || "",
-    trnNumber: contact?.trnNumber || "",
-    address: contact?.address || "",
-    city: contact?.city || "",
-    country: contact?.country || t["pageLabels.countryUaeName"],
-    // R03-10: invoices to this contact default their place of supply and due date from here.
-    emirate: contact?.emirate || "",
-    paymentTerms: contact?.paymentTerms ?? 30,
-  });
-  const idp = contact ? `contact-${contact.id}` : "contact-new";
-  const gate = useFormGate([
-    { id: `${idp}-name`, label: t["forms.contact.name"], invalid: !formData.name },
-    { id: `${idp}-email`, label: t["forms.contact.email"], invalid: !formData.email },
-  ]);
-
-  return (
-    <form
-      noValidate
-      className="space-y-6"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (!gate.attempt()) return;
-        onSubmit({ ...formData, emirate: formData.emirate || null });
-      }}
-    >
-      <ErrorSummary items={gate.summary} />
-      <FormSection title={t["forms.section.contact"]}>
-        <FormGrid>
-          <Field
-            id={`${idp}-name`}
-            label={t["forms.contact.name"]}
-            required
-            error={gate.errorFor(`${idp}-name`)}
-            className={formSpanFull}
-          >
-            <Input
-              dir="auto"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder={t["forms.contact.namePlaceholder"]}
-              data-testid="input-contact-name"
-            />
-          </Field>
-          <Field
-            id={`${idp}-email`}
-            label={t["forms.contact.email"]}
-            required
-            error={gate.errorFor(`${idp}-email`)}
-          >
-            <Input
-              type="email"
-              autoComplete="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              placeholder="email@example.com"
-              data-testid="input-contact-email"
-            />
-          </Field>
-          <Field id={`${idp}-phone`} label={<T k="pages.phone" />}>
-            <Input
-              type="tel"
-              autoComplete="tel"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              placeholder="+971 50 000 0000"
-              data-testid="input-contact-phone"
-            />
-          </Field>
-        </FormGrid>
-      </FormSection>
-
-      <FormSection title={t["forms.section.tax"]} description={t["forms.section.taxDesc"]}>
-        <FormGrid>
-          <Field
-            id={`${idp}-trn`}
-            label={<T k="pageLabels.tRNNumber" />}
-            help={t["forms.contact.trnHelp"]}
-          >
-            <Input
-              ltr
-              inputMode="numeric"
-              value={formData.trnNumber}
-              onChange={(e) => setFormData({ ...formData, trnNumber: e.target.value })}
-              placeholder="100XXXXXXXXX003"
-              data-testid="input-contact-trn"
-            />
-          </Field>
-          <Field
-            id={`${idp}-emirate`}
-            label={t["invoices.placeOfSupply"]}
-            help={t["forms.contact.emirateHelp"]}
-          >
-            <Select
-              value={formData.emirate || EMIRATE_DEFAULT}
-              onValueChange={(value) =>
-                setFormData({ ...formData, emirate: value === EMIRATE_DEFAULT ? "" : value })
-              }
-            >
-              <SelectTrigger id={`${idp}-emirate`} data-testid="select-contact-emirate">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={EMIRATE_DEFAULT}>
-                  {t["invoices.placeOfSupplyDefault"]}
-                </SelectItem>
-                {CONTACT_EMIRATES.map((e) => (
-                  <SelectItem key={e} value={e}>
-                    {t[`invoices.emirate.${e}`]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field
-            id={`${idp}-terms`}
-            label={t["invoices.contactPaymentTermsDays"]}
-            help={t["forms.contact.termsHelp"]}
-          >
-            <Input
-              type="number"
-              min={0}
-              max={365}
-              value={formData.paymentTerms}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  paymentTerms: Math.max(0, Number(e.target.value) || 0),
-                })
-              }
-              data-testid="input-contact-payment-terms"
-            />
-          </Field>
-        </FormGrid>
-      </FormSection>
-
-      <FormSection title={t["forms.section.address"]}>
-        <FormGrid>
-          <Field
-            id={`${idp}-address`}
-            label={<T k="pageLabels.address" />}
-            className={formSpanFull}
-          >
-            <Input
-              dir="auto"
-              autoComplete="street-address"
-              value={formData.address}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              placeholder={t["forms.contact.streetPlaceholder"]}
-              data-testid="input-contact-address"
-            />
-          </Field>
-          <Field id={`${idp}-city`} label={t["forms.contact.city"]}>
-            <Input
-              dir="auto"
-              value={formData.city}
-              onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-              placeholder={t["forms.contact.cityPlaceholder"]}
-              data-testid="input-contact-city"
-            />
-          </Field>
-          <Field id={`${idp}-country`} label={<T k="pageLabels.country" />}>
-            <Input
-              dir="auto"
-              value={formData.country}
-              onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-              placeholder={t["pageLabels.countryUaeName"]}
-              data-testid="input-contact-country"
-            />
-          </Field>
-        </FormGrid>
-      </FormSection>
-
-      <FormActions sticky>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onCancel}
-          data-testid="button-cancel-contact"
-        >
-          <T k="pages.cancel" />
-        </Button>
-        <Button type="submit" className="sm:min-w-32" data-testid="button-save-contact">
-          {contact ? t["forms.contact.update"] : t["forms.contact.create"]}
-        </Button>
-      </FormActions>
-    </form>
-  );
 }
 
 /** One row of GET /api/portal/contacts/:id/access (metadata only; the token is never returned). */
@@ -921,8 +691,22 @@ export default function CustomerContacts() {
                     header: t["pages.contactsColName"],
                     width: "minmax(0, 1.4fr)",
                     cell: (contact) => (
-                      <span dir="auto" className="block truncate font-medium text-foreground">
-                        {locale === "ar" && contact.nameAr ? contact.nameAr : contact.name}
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span dir="auto" className="truncate font-medium text-foreground">
+                          {locale === "ar" && contact.nameAr ? contact.nameAr : contact.name}
+                        </span>
+                        {/* WQ5: one record, customer and/or supplier. */}
+                        {contact.isSupplier && (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0"
+                            data-testid="contact-role-badge"
+                          >
+                            {contact.isCustomer
+                              ? t["forms.contact.roleBoth"]
+                              : t["forms.contact.roleSupplier"]}
+                          </Badge>
+                        )}
                       </span>
                     ),
                   },

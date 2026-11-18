@@ -36,7 +36,7 @@ describe("W5-E audit hash chain", () => {
       nameEn: "Chain test expense",
       type: "expense",
     });
-    expect(acc.status, acc.text).toBe(200);
+    expect(acc.status, acc.text).toBe(201);
 
     const verify = await t.as.get(`/api/companies/${t.company.id}/audit-log/verify`);
     expect(verify.status).toBe(200);
@@ -67,7 +67,7 @@ describe("W5-E audit hash chain", () => {
         nameEn: `Tamper ${code}`,
         type: "expense",
       });
-      expect(r.status).toBe(200);
+      expect(r.status).toBe(201);
     }
     await expect(
       h.sql(`UPDATE audit_logs SET action = 'x' WHERE company_id = $1`, [t.company.id])

@@ -1,3 +1,4 @@
+import { AdminPlanControl } from "@/components/billing/AdminPlanControl";
 import { T } from "@/components/layout/T";
 import { StatCard } from "@/components/ui/stat-card";
 import { activityActionLabel, activityEntityLabel } from "@/lib/activity-log-labels";
@@ -887,6 +888,7 @@ export default function Admin() {
                   </DialogFooter>
                 </form>
               )}
+              {editingCompany && <AdminPlanControl companyId={editingCompany.id} />}
             </DialogContent>
           </Dialog>
         </TabsContent>

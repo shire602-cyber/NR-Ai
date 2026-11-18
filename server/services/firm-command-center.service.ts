@@ -1027,3 +1027,12 @@ export async function buildFirmDashboard(
   }
   return result;
 }
+
+// ─── WQ5: e-invoicing state column ────────────────────────────────────────────
+
+/**
+ * One e-invoicing state per client for the console column (identity missing, partner not
+ * chosen, appoint the partner, awaiting approval, confirmed by the client, connected). With no
+ * provider configured "connected" never appears.
+ */
+export { firmEInvoicingStates as clientEInvoicingStates } from "./einvoice/identity";

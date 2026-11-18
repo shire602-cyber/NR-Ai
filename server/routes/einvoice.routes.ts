@@ -66,6 +66,8 @@ import {
   tinFromTrn,
 } from "../services/einvoice/pint-ae-codes";
 
+import { effectiveTin } from "../../shared/validators/einvoice-identity";
+
 const log = createLogger("einvoice");
 
 const userOf = (req: Request): string => (req as Request & { user: { id: string } }).user.id;
@@ -184,7 +186,8 @@ function settingsView(company: Company) {
       emirate: company.emirate,
       peppolParticipantId: c.peppolParticipantId ?? null,
       peppolScheme: c.peppolScheme ?? null,
-      participantIdFallback: tinFromTrn(company.trnVatNumber),
+      // WQ5: the stored TIN, else the CT TRN's (then the VAT TRN's) first 10 digits.
+      participantIdFallback: effectiveTin(company) ?? tinFromTrn(company.trnVatNumber),
       tradeLicenceNo: c.tradeLicenceNo ?? null,
       tradeLicenceAuthority: c.tradeLicenceAuthority ?? null,
       einvoicePayeeIban: c.einvoicePayeeIban ?? null,

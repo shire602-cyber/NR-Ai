@@ -29,11 +29,12 @@ import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
-import { isSaudiCompany } from "@/lib/company-country";
+import { useZatcaAvailable } from "@/hooks/useZatcaAvailable";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { EInvoiceProviderCard } from "@/components/einvoice/EInvoiceProviderCard";
+import { EInvoicePartnerCard } from "@/components/einvoice/EInvoicePartnerCard";
 
 // UAE e-invoicing (PINT AE) settings: identity, scope, ASP status, per-invoice
 // validation, archive and inbound documents (W4-C, R07-04/R07-13/R03-18/R04-23).
@@ -315,6 +316,8 @@ export default function EInvoicingSettings() {
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
   const { company: activeCompany } = useActiveCompany();
+  // ZATCA is hidden at launch: the link shows only with the server flag on for a Saudi company.
+  const zatcaAvailable = useZatcaAvailable(activeCompany);
 
   const settings = useQuery<SettingsView>({
     queryKey: ["/api/companies", companyId, "einvoicing", "settings"],
@@ -385,7 +388,7 @@ export default function EInvoicingSettings() {
           description={s.description}
           icon={FileCheck2}
           actions={
-            isSaudiCompany(activeCompany) ? (
+            zatcaAvailable ? (
               <Button asChild variant="outline">
                 <Link href="/settings/zatca">{s.zatcaLink}</Link>
               </Button>
@@ -399,6 +402,11 @@ export default function EInvoicingSettings() {
           <>
             {/* E1/E2: the configured accredited provider's guided connection (or "Not connected"). */}
             {companyId && <EInvoiceProviderCard companyId={companyId} />}
+
+            {/* WQ5: choose the accredited partner (no default), appoint it, verify it. */}
+            {companyId && (
+              <EInvoicePartnerCard companyId={companyId} companyName={activeCompany?.name ?? ""} />
+            )}
 
             <Card>
               <CardHeader>

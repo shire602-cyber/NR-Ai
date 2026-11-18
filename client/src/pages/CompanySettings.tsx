@@ -37,10 +37,13 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { companyLogoFileError, companyLogoSrc, uploadCompanyLogo } from "@/lib/company-logo";
+import { vatRateOptionsFor } from "@/lib/company-country";
+import { useZatcaFlag } from "@/hooks/useZatcaAvailable";
 import type { Company } from "@shared/schema";
 import { companyPreferencesSchema } from "@shared/schema-values";
 import { Building2, Save, Upload } from "lucide-react";
 import { WpsSettingsCard } from "./payroll/WpsTab";
+import { CompanyTaxIdentityCard } from "@/components/einvoice/CompanyTaxIdentityCard";
 
 const CURRENCY_OPTIONS = [
   { value: "AED", label: "AED — UAE dirham" },
@@ -231,6 +234,21 @@ export default function CompanySettings() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates local form state from fetched data
     setLogoPreview(companyLogoSrc(company));
   }, [company, form]);
+
+  // WQ3 (12.10): a country change keeps the default VAT rate one that country offers.
+  const watchedCountry = useWatch({ control: form.control, name: "addressCountry" });
+  // Saudi ZATCA is hidden at launch: no Saudi option or 15% rate unless the server flag is on.
+  const zatcaFlag = useZatcaFlag();
+  const countryOptions = COUNTRY_OPTIONS.filter(
+    (c) => c.value !== "SA" || zatcaFlag || company?.addressCountry === "SA"
+  );
+  useEffect(() => {
+    const allowed = vatRateOptionsFor(watchedCountry, VAT_RATE_OPTIONS, zatcaFlag);
+    const current = String(form.getValues("defaultVatRate") ?? 0.05);
+    if (!allowed.some((o) => o.value === current)) {
+      form.setValue("defaultVatRate", parseFloat(allowed[allowed.length - 1].value));
+    }
+  }, [watchedCountry, form, zatcaFlag]);
 
   const updateMutation = useMutation({
     mutationFn: (data: SubmitValues) =>
@@ -627,11 +645,13 @@ export default function CompanySettings() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {VAT_RATE_OPTIONS.map((r) => (
-                              <SelectItem key={r.value} value={r.value}>
-                                {optionLabel(t, "vat", r.value, r.label)}
-                              </SelectItem>
-                            ))}
+                            {vatRateOptionsFor(watchedCountry, VAT_RATE_OPTIONS, zatcaFlag).map(
+                              (r) => (
+                                <SelectItem key={r.value} value={r.value}>
+                                  {optionLabel(t, "vat", r.value, r.label)}
+                                </SelectItem>
+                              )
+                            )}
                           </SelectContent>
                         </Select>
                         <FormDescription>
@@ -810,7 +830,7 @@ export default function CompanySettings() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {COUNTRY_OPTIONS.map((c) => (
+                            {countryOptions.map((c) => (
                               <SelectItem key={c.value} value={c.value}>
                                 {optionLabel(t, "country", c.value, c.label)}
                               </SelectItem>
@@ -1051,6 +1071,9 @@ export default function CompanySettings() {
             </FormActions>
           </form>
         </Form>
+
+        {/* WQ5: e-invoicing identity (TIN, seller ID, structured and Arabic address). */}
+        {companyId && <CompanyTaxIdentityCard companyId={companyId} />}
 
         {/* W3-D: WPS / MOL settings used by the payroll SIF (SCR record). */}
         {companyId && <WpsSettingsCard companyId={companyId} />}

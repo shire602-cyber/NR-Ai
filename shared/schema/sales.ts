@@ -98,7 +98,7 @@ export const invoices = pgTable(
     issuedAt: timestamp("issued_at"),
     // S1 (migration 0110): credit notes only — return goods to stock (true / null) or write off (false).
     restock: boolean("restock"),
-    // WQ1 (migration 0125): the PDF language of this document (en | ar; null = company locale) and
+    // WQ1 (migration 0129): the PDF language of this document (en | ar; null = company locale) and
     // where the document came from (app | api | recurring | quote | cash_sale | import | shopify).
     documentLanguage: text("document_language"),
     source: text("source").notNull().default("app"),
@@ -130,7 +130,7 @@ export const insertInvoiceSchema = createInsertSchema(invoices).omit({
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 export type Invoice = typeof invoices.$inferSelect;
 
-/** WQ1 (migration 0125): files kept with an invoice (bytes in file storage under storage_key). */
+/** WQ1 (migration 0129): files kept with an invoice (bytes in file storage under storage_key). */
 export const invoiceAttachments = pgTable(
   "invoice_attachments",
   {
@@ -157,7 +157,7 @@ export const invoiceAttachments = pgTable(
 export type InvoiceAttachment = typeof invoiceAttachments.$inferSelect;
 
 /**
- * WQ1 (migration 0125): the sent / viewed log of an invoice. kind = emailed (status is the
+ * WQ1 (migration 0129): the sent / viewed log of an invoice. kind = emailed (status is the
  * outbox status: sent, queued, blocked_no_provider, ...) | viewed (the share link was opened).
  */
 export const invoiceEvents = pgTable(
