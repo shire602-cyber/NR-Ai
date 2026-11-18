@@ -436,6 +436,7 @@ const genericExportSchema = z.object({
     .array(
       z.object({
         sheetName: z.string().max(80).optional(),
+        rtl: z.boolean().optional(),
         columns: z.array(genericExportColumnSchema).min(1).max(100),
         rows: z.array(z.record(z.string(), z.unknown())).max(5000),
       })

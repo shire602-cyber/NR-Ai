@@ -60,6 +60,8 @@ export const APP_SECTIONS: ReadonlySet<string> = new Set([
   "invoice-templates",
   "invoices",
   "journal",
+  // Legacy notification link (STEP1 F3): /journal-entries redirects to /journal.
+  "journal-entries",
   "month-end",
   "news-feed",
   "notification-preferences",

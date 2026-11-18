@@ -49,3 +49,35 @@ export function collapseSessions<S extends SessionLike>(
 
 /** How many device rows show before "Show all". */
 export const VISIBLE_DEVICE_ROWS = 3;
+
+/**
+ * "Chrome · Linux" from a raw user-agent string (the full string stays in the tooltip); null when the
+ * client is not a recognised browser (an API client such as "node"): the page says "Unknown device".
+ */
+export function describeUserAgent(ua: string | null | undefined): string | null {
+  if (!ua) return null;
+  const browser = /Edg\//.test(ua)
+    ? "Edge"
+    : /OPR\//.test(ua)
+      ? "Opera"
+      : /Firefox\//.test(ua)
+        ? "Firefox"
+        : /Chrome\//.test(ua)
+          ? "Chrome"
+          : /Safari\//.test(ua)
+            ? "Safari"
+            : null;
+  const os = /iPhone|iPad/.test(ua)
+    ? "iOS"
+    : /Android/.test(ua)
+      ? "Android"
+      : /Windows/.test(ua)
+        ? "Windows"
+        : /Mac OS X/.test(ua)
+          ? "macOS"
+          : /Linux/.test(ua)
+            ? "Linux"
+            : null;
+  if (!browser && !os) return null;
+  return [browser, os].filter(Boolean).join(" · ");
+}

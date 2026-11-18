@@ -27,6 +27,8 @@ export interface ExportData {
   columns: ExportColumn[];
   rows: Record<string, any>[];
   sheetName?: string;
+  /** Right-to-left sheet (Arabic exports). */
+  rtl?: boolean;
 }
 
 // R11-10: amounts prepared with toFixed(2) ("112200.00") must reach Excel as

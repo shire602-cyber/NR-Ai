@@ -1,3 +1,4 @@
+import { previewStatusKey } from "@/lib/invoice-preview-status";
 import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { loadNamespace, t as catalogs, useTranslation, type Locale } from "@/lib/i18n";
@@ -36,6 +37,8 @@ export interface InvoicePreviewProps {
   vatAmount: number;
   total: number;
   ratesLabel: string;
+  /** Lifecycle status of the invoice being shown; the chip says "Draft" only for a draft. */
+  status?: string | null;
   /**
    * Document accent (spec 2.8 "Ledger"): used only for the top rule and the amount-due row,
    * so no colour can flood the page. Defaults to Emerald ink.
@@ -121,6 +124,7 @@ export function InvoicePreview(props: InvoicePreviewProps) {
     vatAmount,
     total,
     ratesLabel,
+    status,
     accent,
     className,
   } = props;
@@ -141,7 +145,7 @@ export function InvoicePreview(props: InvoicePreviewProps) {
           {t["forms.preview.heading"]}
         </p>
         <span className="rounded-full bg-card px-2 py-0.5 text-caption text-muted-foreground">
-          {t["forms.preview.draftBadge"]}
+          {t[previewStatusKey(status)]}
         </span>
       </div>
 
@@ -311,7 +315,11 @@ export function InvoicePreview(props: InvoicePreviewProps) {
           </div>
         </dl>
 
-        <p className="text-caption text-muted-foreground">{t["forms.preview.footnote"]}</p>
+        <p className="text-caption text-muted-foreground">
+          {previewStatusKey(status) === "forms.preview.draftBadge"
+            ? t["forms.preview.footnote"]
+            : t["forms.preview.footnoteIssued"]}
+        </p>
       </article>
     </div>
   );

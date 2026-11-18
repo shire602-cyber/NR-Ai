@@ -418,5 +418,11 @@
   "forms.contact.noDefault": "No default",
   "forms.contact.revenueAccount": "Revenue account",
   "forms.contact.expenseAccount": "Expense account",
-  "forms.contact.costCentre": "Cost centre"
+  "forms.contact.costCentre": "Cost centre",
+  "forms.preview.status.sent": "Issued",
+  "forms.preview.status.paid": "Paid",
+  "forms.preview.status.partial": "Partially paid",
+  "forms.preview.status.void": "Void",
+  "forms.invoice.viewTitle": "Invoice {number}",
+  "forms.preview.footnoteIssued": "Preview of the invoice. The issued PDF follows your invoice branding."
 }

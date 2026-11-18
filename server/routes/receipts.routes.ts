@@ -1,3 +1,4 @@
+import { receiptHref } from "../../shared/app-links";
 import { type Express, type Request, type Response } from "express";
 import { receiptCheckSimilarBody } from "../../shared/validators/route-bodies";
 import { storage } from "../storage";
@@ -556,13 +557,17 @@ export function registerReceiptRoutes(app: Express) {
             : "notification.receiptUploadedUnknown.message",
           {
             merchant: receipt.merchant,
-            amount: `${receipt.amount ?? ""} ${receipt.currency || ""}`.trim(),
+            // "AED 6100.00": the client formats this as money in the reader's language.
+            amount:
+              receipt.amount != null && Number.isFinite(Number(receipt.amount))
+                ? `${receipt.currency || "AED"} ${Number(receipt.amount).toFixed(2)}`
+                : "",
           }
         ),
         priority: "normal",
         relatedEntityType: "receipt",
         relatedEntityId: receipt.id,
-        actionUrl: "/receipts",
+        actionUrl: receiptHref(receipt.id),
       }).catch(() => {});
 
       res.json(duplicateWarnings.length > 0 ? { ...receipt, duplicateWarnings } : receipt);

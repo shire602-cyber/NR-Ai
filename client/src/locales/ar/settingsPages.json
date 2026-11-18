@@ -1,7 +1,7 @@
 {
   "settingsPages.notAvailableYet": "غير متاح بعد",
   "settingsPages.emailNotSentYet": "تعذّر إرسال البريد الإلكتروني حتى الآن. حاول لاحقًا.",
-  "settingsPages.sessionCount": "{count} جلسات",
+  "settingsPages.sessionCount": "{count, plural, one {جلسة واحدة} two {جلستان} few {# جلسات} many {# جلسة} other {# جلسة}}",
   "settingsPages.showAllDevices": "عرض الكل ({count})",
   "settingsPages.showFewer": "عرض أقل",
   "settingsPages.permissions": "الصلاحيات",

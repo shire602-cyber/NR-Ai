@@ -233,10 +233,10 @@ export default function ComplianceCalendar() {
       >
         <TabsList>
           <TabsTrigger value="calendar" data-testid="tab-compliance-calendar">
-            {locale === "ar" ? "التقويم" : "Calendar"}
+            {t["complianceCalendar.viewCalendar"]}
           </TabsTrigger>
           <TabsTrigger value="list" data-testid="tab-compliance-list">
-            {locale === "ar" ? "القائمة" : "List"}
+            {t["complianceCalendar.viewList"]}
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -274,7 +274,7 @@ export default function ComplianceCalendar() {
                 onClick={() => setCurrentDate(new Date())}
                 disabled={isSameMonth(currentDate, new Date())}
               >
-                {locale === "ar" ? "اليوم" : "Today"}
+                {t["complianceCalendar.today"]}
               </Button>
             </CardHeader>
             {/* Spec 3.12: the legend lives with the calendar it explains. */}
@@ -437,12 +437,10 @@ export default function ComplianceCalendar() {
                               className="text-xs"
                             >
                               {daysLeft === 0
-                                ? locale === "ar"
-                                  ? "اليوم"
-                                  : "Today"
-                                : locale === "ar"
-                                  ? `${daysLeft} يوم`
-                                  : `${daysLeft}d`}
+                                ? t["complianceCalendar.today"]
+                                : formatMessage(t["complianceCalendar.daysShort"], {
+                                    count: daysLeft,
+                                  })}
                             </Badge>
                           </div>
                         );

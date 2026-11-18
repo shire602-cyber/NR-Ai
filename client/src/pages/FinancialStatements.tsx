@@ -28,7 +28,16 @@ import { useToast } from "@/hooks/use-toast";
 import { exportToExcel, type ExportData } from "@/lib/export";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Money } from "@/components/ui/money";
-import { BarChart3, Scale, Banknote, CheckCircle2, XCircle, Search, Download } from "lucide-react";
+import {
+  BarChart3,
+  Scale,
+  Banknote,
+  CheckCircle2,
+  XCircle,
+  Search,
+  Download,
+  Loader2,
+} from "lucide-react";
 
 // Types matching server response shapes
 
@@ -275,7 +284,7 @@ function ProfitLossTab({
   const [endDate, setEndDate] = useState(defaults.endDate);
   const [queryDates, setQueryDates] = useState(defaults);
 
-  const { data, isLoading, error, refetch } = useQuery<ProfitLossData>({
+  const { data, isLoading, isFetching, error, refetch } = useQuery<ProfitLossData>({
     queryKey: [
       `/api/companies/${companyId}/financial-statements/profit-loss?startDate=${queryDates.startDate}&endDate=${queryDates.endDate}&compareTo=prior_year`,
     ],
@@ -308,8 +317,17 @@ function ProfitLossTab({
               </Label>
               <DatePicker value={endDate} onChange={setEndDate} />
             </div>
-            <Button onClick={handleGenerate} className="md:justify-self-end">
-              <Search className="h-4 w-4 me-2" />
+            <Button
+              onClick={handleGenerate}
+              disabled={isFetching}
+              aria-busy={isFetching}
+              className="md:justify-self-end"
+            >
+              {isFetching ? (
+                <Loader2 className="h-4 w-4 me-2 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4 me-2" />
+              )}
               <T k="pages.generate" />
             </Button>
           </div>
@@ -483,7 +501,7 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
   const [asOfDate, setAsOfDate] = useState(today);
   const [queryDate, setQueryDate] = useState(today);
 
-  const { data, isLoading, error, refetch } = useQuery<BalanceSheetData>({
+  const { data, isLoading, isFetching, error, refetch } = useQuery<BalanceSheetData>({
     queryKey: [
       `/api/companies/${companyId}/financial-statements/balance-sheet?asOfDate=${queryDate}&compareTo=prior_year`,
     ],
@@ -506,8 +524,17 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
               </Label>
               <DatePicker value={asOfDate} onChange={setAsOfDate} />
             </div>
-            <Button onClick={handleGenerate} className="md:justify-self-end">
-              <Search className="h-4 w-4 me-2" />
+            <Button
+              onClick={handleGenerate}
+              disabled={isFetching}
+              aria-busy={isFetching}
+              className="md:justify-self-end"
+            >
+              {isFetching ? (
+                <Loader2 className="h-4 w-4 me-2 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4 me-2" />
+              )}
               <T k="pages.generate" />
             </Button>
           </div>
@@ -764,7 +791,7 @@ function CashFlowTab({
   const [endDate, setEndDate] = useState(defaults.endDate);
   const [queryDates, setQueryDates] = useState(defaults);
 
-  const { data, isLoading, error, refetch } = useQuery<CashFlowData>({
+  const { data, isLoading, isFetching, error, refetch } = useQuery<CashFlowData>({
     queryKey: [
       `/api/companies/${companyId}/financial-statements/cash-flow?startDate=${queryDates.startDate}&endDate=${queryDates.endDate}`,
     ],
@@ -816,8 +843,17 @@ function CashFlowTab({
               </Label>
               <DatePicker value={endDate} onChange={setEndDate} />
             </div>
-            <Button onClick={handleGenerate} className="md:justify-self-end">
-              <Search className="h-4 w-4 me-2" />
+            <Button
+              onClick={handleGenerate}
+              disabled={isFetching}
+              aria-busy={isFetching}
+              className="md:justify-self-end"
+            >
+              {isFetching ? (
+                <Loader2 className="h-4 w-4 me-2 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4 me-2" />
+              )}
               <T k="pages.generate" />
             </Button>
             <Button variant="outline" onClick={() => void handleExport()} disabled={!data}>

@@ -8,7 +8,7 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { invoiceHref } from "../../shared/app-links";
+import { billHref, invoiceHref, receiptHref } from "../../shared/app-links";
 
 const appRoutes = [
   ...readFileSync("client/src/App.tsx", "utf8").matchAll(/<Route path="([^"]+)"/g),
@@ -76,6 +76,15 @@ describe("stored in-app links resolve to client routes", () => {
     expect(invoiceHref("abc")).toBe("/invoices?open=abc");
     expect(matchesRoute(invoiceHref("abc"), { allowRedirects: false })).toBe(true);
     expect(redirectOnly.has("/banking")).toBe(true);
+    expect(redirectOnly.has("/journal-entries")).toBe(true);
+    expect(matchesRoute("/journal?status=draft", { allowRedirects: false })).toBe(true);
+  });
+
+  it("bill and receipt links open the specific record", () => {
+    expect(billHref("b1")).toBe("/bill-pay/b1/edit");
+    expect(receiptHref("r1")).toBe("/receipts?open=r1");
+    for (const href of [billHref("b1"), receiptHref("r1")])
+      expect(matchesRoute(href, { allowRedirects: false }), href).toBe(true);
   });
 
   it("links already stored before the fix still land on a page (redirect routes)", () => {
@@ -84,6 +93,7 @@ describe("stored in-app links resolve to client routes", () => {
       "/banking",
       "/compliance",
       "/settings",
+      "/journal-entries?status=draft",
     ]) {
       expect(matchesRoute(legacy), legacy).toBe(true);
     }

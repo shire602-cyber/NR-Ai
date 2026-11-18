@@ -94,5 +94,6 @@
   "security.currentPasswordWrong": "The current password is incorrect.",
   "security.passwordLocked": "Too many failed attempts. Please wait before trying again.",
   "security.passwordChanged": "Password changed",
-  "security.passwordChangedBody": "Every other session was signed out."
+  "security.passwordChangedBody": "Every other session was signed out.",
+  "security.unknownDevice": "Unknown device"
 }

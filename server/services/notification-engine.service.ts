@@ -11,7 +11,7 @@
  * legacy per-category flags) plus per-type overrides in type_preferences. A user on the daily
  * digest gets non-urgent emails batched into one message by "notifications.dailyDigest".
  */
-import { invoiceHref } from "../../shared/app-links";
+import { billHref, invoiceHref } from "../../shared/app-links";
 import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import {
@@ -364,7 +364,7 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
               }
             )),
         relatedEntityType: "bill",
-        actionUrl: "/bill-pay",
+        actionUrl: p.entityId ? billHref(p.entityId as string) : "/bill-pay",
       };
     }
     case "payroll.approved":

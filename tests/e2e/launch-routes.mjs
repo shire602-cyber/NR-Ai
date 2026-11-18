@@ -213,6 +213,8 @@ export const ALL_CRAWL_SKIPPED = [
   "/portal/:token",
   "/portal/einvoicing-approve/:token",
   "/accounts",
+  // Legacy redirect to /journal (the AI-drafts notice stored /journal-entries?status=draft).
+  "/journal-entries",
   // Edit routes of the document editors: the same editor as the matching /new route, for one record.
   "/recurring-invoices/:id/edit",
   "/quotes/:id/edit",

@@ -4,6 +4,7 @@ import { Loader2, ShieldAlert } from "lucide-react";
 import { currentUserQueryKey } from "@/hooks/useCurrentUser";
 import { probeCurrentUser } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
+import { landingPathFor } from "@/lib/app-landing";
 import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 import { AuthLayout } from "@/components/auth/AuthLayout";
@@ -45,8 +46,7 @@ export default function AuthCallback() {
         await queryClient.invalidateQueries({ queryKey: currentUserQueryKey });
 
         if (cancelled) return;
-        const fallback =
-          user.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard";
+        const fallback = landingPathFor(user);
         setLocation(requestedNext === "/dashboard" ? fallback : requestedNext);
       } catch {
         if (!cancelled) setFailed(true);

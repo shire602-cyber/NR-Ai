@@ -61,9 +61,10 @@ export function localizeDeliverySubscriptionTitle(
 
 /** "AED 15000.00" / "15000.00" (server string) -> locale money text, or null when not an amount. */
 function localizeAmountParam(value: string, locale: "en" | "ar"): string | null {
-  const m = /^(?:([A-Z]{3})\s+)?(-?\d+(?:\.\d+)?)$/.exec(value.trim());
+  // "AED 15000.00", "15000.00", or the older "6100 AED" (amount first) stored by receipt uploads.
+  const m = /^(?:([A-Z]{3})\s+)?(-?\d+(?:\.\d+)?)(?:\s+([A-Z]{3}))?$/.exec(value.trim());
   if (!m) return null;
-  return formatMoneyText(Number(m[2]), m[1] ?? "AED", locale);
+  return formatMoneyText(Number(m[2]), m[1] ?? m[3] ?? "AED", locale);
 }
 
 function monthYearLabel(month: string, year: string, locale: "en" | "ar"): string | null {

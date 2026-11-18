@@ -116,6 +116,76 @@ describe("sweep: Invoices > Customer deposits dialog", () => {
   });
 });
 
+describe("STEP1 F1: deposit dialog sends AED once (server validator converts to fils)", () => {
+  it("create and apply bodies carry the typed AED amount, never fils", async () => {
+    const { depositBody, applyBody } = await import("../../client/src/lib/deposit-body");
+    const body = depositBody({
+      contactId: "c-1",
+      date: "2026-11-01",
+      amount: " 1050 ",
+      vatTreatment: "standard",
+      paymentAccountId: "acc",
+      reference: "",
+    });
+    expect(body.amount).toBe("1050");
+    expect(body.amount).not.toBe(105000);
+    expect(body.contactId).toBe("c-1");
+    expect(applyBody("inv-1", "525.50")).toEqual({ invoiceId: "inv-1", amount: "525.50" });
+  });
+});
+
+describe("STEP1: deposit dialog field-level validation", () => {
+  it("names each missing or invalid field", async () => {
+    const { validateDeposit, validateApply } = await import("../../client/src/lib/deposit-body");
+    const base = {
+      contactId: "c",
+      date: "2026-11-01",
+      amount: "10.50",
+      vatTreatment: "standard",
+      paymentAccountId: "a",
+      reference: "",
+    };
+    expect(validateDeposit(base)).toEqual({});
+    expect(validateDeposit({ ...base, contactId: "", paymentAccountId: "", amount: "" })).toEqual({
+      contactId: "required",
+      paymentAccountId: "required",
+      amount: "required",
+    });
+    for (const amount of ["0", "-5", "abc", "1.234"])
+      expect(validateDeposit({ ...base, amount }).amount, amount).toBe("amount");
+    expect(validateApply("", "0")).toEqual({ invoice: true, amount: true });
+    expect(validateApply("i", "5")).toEqual({});
+  });
+
+  it.each(["en", "ar"] as const)("an empty submit shows field messages in %s", async (locale) => {
+    const i18n = await import("../../client/src/lib/i18n");
+    await act(async () => i18n.useI18n.getState().setLocale(locale));
+    const { CustomerDepositsDialog } =
+      await import("../../client/src/pages/invoices/CustomerDepositsDialog");
+    await mount(
+      createElement(CustomerDepositsDialog, {
+        companyId: "c-1",
+        open: true,
+        onOpenChange: () => {},
+      })
+    );
+    const submit = document.querySelector(
+      '[data-testid="dialog-customer-deposits"] form button[type="submit"]'
+    ) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    await act(async () => submit.click());
+    await flush();
+    const alerts = [
+      ...document.querySelectorAll(
+        '[data-testid="dialog-customer-deposits"] [role="alert"], [data-testid="dialog-customer-deposits"] [id$="-error"]'
+      ),
+    ];
+    expect(alerts.length).toBeGreaterThanOrEqual(3);
+    if (locale === "ar") for (const a of alerts) expect(a.textContent).toMatch(/[؀-ۿ]/);
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+  });
+});
+
 describe("sweep: bill preview decodes the chosen file without fetch (CSP connect-src 'self')", () => {
   it("turns a base64 data URL into a typed Blob with the same bytes", async () => {
     const { dataUrlToBlob } = await import("../../client/src/lib/purchase-files");
