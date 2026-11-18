@@ -780,7 +780,7 @@ async function seedBills(companyId, account, dates) {
   return created;
 }
 
-async function seedInventory(companyId, dates) {
+async function seedInventory(companyId, dates, account) {
   const products = [
     {
       name: "Automation Starter Kit",
@@ -823,7 +823,12 @@ async function seedInventory(companyId, dates) {
     for (const movement of movements) {
       await http("inventory movement", `/api/products/${createdProduct.id}/movements`, {
         method: "POST",
-        body: { ...movement, notes: `Synthetic report audit movement ${dates.today}` },
+        // D1 (N7): a manual purchase names the account it was paid from.
+        body: {
+          ...movement,
+          ...(movement.type === "purchase" ? { counterAccountId: account.bank.id } : {}),
+          notes: `Synthetic report audit movement ${dates.today}`,
+        },
       });
       count("inventoryMovements");
     }
@@ -1697,7 +1702,7 @@ async function main() {
   const invoices = await seedInvoices(companyId, account, dates, contacts);
   const receipts = await seedReceipts(companyId, account, dates);
   await seedBills(companyId, account, dates);
-  await seedInventory(companyId, dates);
+  await seedInventory(companyId, dates, account);
   await seedPayroll(companyId, account);
   await seedAssets(companyId, account, dates);
   const budget = await seedBudgets(companyId, account, dates);

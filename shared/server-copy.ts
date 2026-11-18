@@ -855,6 +855,19 @@ export const MONTH_END_TEMPLATES: readonly CopyTemplate[] = [
   T("monthEnd.controls.none", "No control-account activity in this period"),
   T("monthEnd.controls.tied", "{n} control account(s) tie to their sub-ledgers"),
   T("monthEnd.controls.differences", "{n} control account(s) differ from their sub-ledger: {list}"),
+  T("monthEnd.opening.title", "Opening balances complete"),
+  T(
+    "monthEnd.opening.description",
+    "The open invoices and bills behind the opening trial balance are imported"
+  ),
+  T(
+    "monthEnd.opening.pending",
+    "Opening balances at {date} still await their documents: receivables {ar}, payables {ap}; until they are imported the difference sits in Opening Balance Equity (3040)"
+  ),
+  T(
+    "monthEnd.opening.complete",
+    "Open invoices and bills match the opening trial balance at {date}"
+  ),
   T("monthEnd.closeMemo", "Computed close for {start} to {end}"),
   T(
     "monthEnd.closeMessage",

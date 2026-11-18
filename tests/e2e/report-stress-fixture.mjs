@@ -37,7 +37,10 @@ if (!BASE) {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ARTIFACT_DIR = path.join(__dirname, ".artifacts");
 const ARTIFACT_PATH = path.join(ARTIFACT_DIR, "report-stress-fixture-last-run.json");
-const runStamp = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+const runStamp = new Date()
+  .toISOString()
+  .replace(/[-:.TZ]/g, "")
+  .slice(0, 14);
 const email = process.env.REPORT_STRESS_EMAIL;
 const password = process.env.REPORT_STRESS_PASSWORD;
 const reuseCompany = process.env.REPORT_STRESS_REUSE_COMPANY === "true";
@@ -349,8 +352,18 @@ async function seedOpeningBalances(companyId, account, dates) {
       lines: [
         { accountId: account.bank.id, debit: 1250000, credit: 0, description: "Opening bank" },
         { accountId: account.cash.id, debit: 45000, credit: 0, description: "Opening cash" },
-        { accountId: account.inventory.id, debit: 180000, credit: 0, description: "Opening inventory" },
-        { accountId: account.equipment.id, debit: 260000, credit: 0, description: "Opening fixed assets" },
+        {
+          accountId: account.inventory.id,
+          debit: 180000,
+          credit: 0,
+          description: "Opening inventory",
+        },
+        {
+          accountId: account.equipment.id,
+          debit: 260000,
+          credit: 0,
+          description: "Opening fixed assets",
+        },
         { accountId: account.loan.id, debit: 0, credit: 300000, description: "Opening bank loan" },
         { accountId: account.capital.id, debit: 0, credit: 1435000, description: "Owner capital" },
       ],
@@ -368,15 +381,19 @@ async function seedOpeningBalances(companyId, account, dates) {
 async function seedCostCenters(companyId) {
   const centers = [];
   for (const name of ["Advisory", "Bookkeeping", "Tax", "Automation"]) {
-    const center = await http(`create cost center ${name}`, `/api/companies/${companyId}/cost-centers`, {
-      method: "POST",
-      body: {
-        code: `${name.slice(0, 3).toUpperCase()}-${runStamp}`,
-        name,
-        description: `Synthetic ${name} cost center`,
-        isActive: true,
-      },
-    });
+    const center = await http(
+      `create cost center ${name}`,
+      `/api/companies/${companyId}/cost-centers`,
+      {
+        method: "POST",
+        body: {
+          code: `${name.slice(0, 3).toUpperCase()}-${runStamp}`,
+          name,
+          description: `Synthetic ${name} cost center`,
+          isActive: true,
+        },
+      }
+    );
     centers.push(center);
     count("costCenters");
   }
@@ -395,7 +412,12 @@ async function createInvoice(companyId, payload) {
       body: { status: "sent" },
     });
   }
-  return { ...invoice, total: safeNumber(invoice.total), subtotal: safeNumber(invoice.subtotal), vatAmount: safeNumber(invoice.vatAmount) };
+  return {
+    ...invoice,
+    total: safeNumber(invoice.total),
+    subtotal: safeNumber(invoice.subtotal),
+    vatAmount: safeNumber(invoice.vatAmount),
+  };
 }
 
 async function seedInvoices(companyId, account, dates) {
@@ -451,30 +473,38 @@ async function seedInvoices(companyId, account, dates) {
     }
 
     if (issue && i % 3 === 0) {
-      await http("invoice full payment", `/api/companies/${companyId}/invoices/${invoice.id}/payments`, {
-        method: "POST",
-        body: {
-          amount: invoice.total,
-          date: ymd(addDays(new Date(date), 8)),
-          method: "bank",
-          reference: `STRESS-PAY-${runStamp}-${i}`,
-          paymentAccountId: account.bank.id,
-        },
-      });
+      await http(
+        "invoice full payment",
+        `/api/companies/${companyId}/invoices/${invoice.id}/payments`,
+        {
+          method: "POST",
+          body: {
+            amount: invoice.total,
+            date: ymd(addDays(new Date(date), 8)),
+            method: "bank",
+            reference: `STRESS-PAY-${runStamp}-${i}`,
+            paymentAccountId: account.bank.id,
+          },
+        }
+      );
       summary.expected.invoicePaymentsAed += invoice.total * rate;
       count("invoicePayments");
     } else if (issue && i % 5 === 0) {
       const amountPaid = round2(invoice.total * 0.45);
-      await http("invoice partial payment", `/api/companies/${companyId}/invoices/${invoice.id}/payments`, {
-        method: "POST",
-        body: {
-          amount: amountPaid,
-          date: ymd(addDays(new Date(date), 12)),
-          method: "bank",
-          reference: `STRESS-PPAY-${runStamp}-${i}`,
-          paymentAccountId: account.bank.id,
-        },
-      });
+      await http(
+        "invoice partial payment",
+        `/api/companies/${companyId}/invoices/${invoice.id}/payments`,
+        {
+          method: "POST",
+          body: {
+            amount: amountPaid,
+            date: ymd(addDays(new Date(date), 12)),
+            method: "bank",
+            reference: `STRESS-PPAY-${runStamp}-${i}`,
+            paymentAccountId: account.bank.id,
+          },
+        }
+      );
       summary.expected.invoicePaymentsAed += amountPaid * rate;
       count("invoicePayments");
     }
@@ -494,7 +524,10 @@ async function seedReceipts(companyId, account, dates) {
     ["Travel", account.travelExpense.id],
     ["Utilities", account.utilitiesExpense.id],
   ];
-  const merchants = Array.from({ length: 55 }, (_, index) => `NR Stress Vendor Receipt ${index + 1}`);
+  const merchants = Array.from(
+    { length: 55 },
+    (_, index) => `NR Stress Vendor Receipt ${index + 1}`
+  );
 
   const receipts = [];
   for (let i = 0; i < config.receipts; i += 1) {
@@ -735,12 +768,27 @@ async function seedInventoryAndAssets(companyId, account, dates) {
     });
     count("products");
     for (const movement of [
-      { type: "purchase", quantity: 35 + i, unitCost: String(420 + i * 90), reference: `STOCK-IN-${i}` },
-      { type: "sale", quantity: 11 + (i % 6), unitCost: String(420 + i * 90), reference: `STOCK-OUT-${i}` },
+      {
+        type: "purchase",
+        quantity: 35 + i,
+        unitCost: String(420 + i * 90),
+        reference: `STOCK-IN-${i}`,
+      },
+      {
+        type: "sale",
+        quantity: 11 + (i % 6),
+        unitCost: String(420 + i * 90),
+        reference: `STOCK-OUT-${i}`,
+      },
     ]) {
       await http("inventory movement", `/api/products/${product.id}/movements`, {
         method: "POST",
-        body: { ...movement, notes: "Synthetic stress inventory movement" },
+        // D1 (N7): a manual purchase names the account it was paid from.
+        body: {
+          ...movement,
+          ...(movement.type === "purchase" ? { counterAccountId: account.bank.id } : {}),
+          notes: "Synthetic stress inventory movement",
+        },
       });
       count("inventoryMovements");
     }
@@ -853,45 +901,69 @@ async function seedBudgetAndTax(companyId, account, dates) {
   await optional("generate VAT return", () =>
     http("generate VAT return", `/api/companies/${companyId}/vat-returns/generate`, {
       method: "POST",
-      body: { periodStart: dates.start, periodEnd: dates.end, dueDate: ymd(addDays(new Date(), 28)) },
+      body: {
+        periodStart: dates.start,
+        periodEnd: dates.end,
+        dueDate: ymd(addDays(new Date(), 28)),
+      },
     })
   );
   await optional("create corporate tax return", async () => {
-    const ctReturn = await http("create corporate tax return", `/api/companies/${companyId}/corporate-tax/returns`, {
-      method: "POST",
-      body: {
-        taxPeriodStart: `${year}-01-01`,
-        taxPeriodEnd: `${year}-12-31`,
-        totalRevenue: round2(summary.expected.salesIssuedSubtotalAed + summary.expected.manualRevenueAed),
-        totalExpenses: round2(summary.expected.billTotalAed + summary.expected.postedReceiptExpenseAed),
-        totalDeductions: 25000,
-        exemptionThreshold: 375000,
-        taxRate: 0.09,
-        status: "draft",
-      },
-    });
+    const ctReturn = await http(
+      "create corporate tax return",
+      `/api/companies/${companyId}/corporate-tax/returns`,
+      {
+        method: "POST",
+        body: {
+          taxPeriodStart: `${year}-01-01`,
+          taxPeriodEnd: `${year}-12-31`,
+          totalRevenue: round2(
+            summary.expected.salesIssuedSubtotalAed + summary.expected.manualRevenueAed
+          ),
+          totalExpenses: round2(
+            summary.expected.billTotalAed + summary.expected.postedReceiptExpenseAed
+          ),
+          totalDeductions: 25000,
+          exemptionThreshold: 375000,
+          taxRate: 0.09,
+          status: "draft",
+        },
+      }
+    );
     count("corporateTaxReturns");
-    await http("compute corporate tax return", `/api/corporate-tax/returns/${ctReturn.id}/compute`, {
-      method: "POST",
-      body: { adjustments: [{ label: "Stress entertainment add-back", amount: 7500, direction: "add_back" }] },
-    });
+    await http(
+      "compute corporate tax return",
+      `/api/corporate-tax/returns/${ctReturn.id}/compute`,
+      {
+        method: "POST",
+        body: {
+          adjustments: [
+            { label: "Stress entertainment add-back", amount: 7500, direction: "add_back" },
+          ],
+        },
+      }
+    );
   });
 
   return budget;
 }
 
 async function seedBank(companyId, account, dates) {
-  const bankAccount = await http("create bank account", `/api/companies/${companyId}/bank-accounts`, {
-    method: "POST",
-    body: {
-      nameEn: "Najma Raida Stress Operating Account",
-      bankName: "Emirates NBD",
-      accountNumber: `NRSTRESS${runStamp}`,
-      iban: "AE070331234567890123456",
-      currency: "AED",
-      glAccountId: account.bank.id,
-    },
-  });
+  const bankAccount = await http(
+    "create bank account",
+    `/api/companies/${companyId}/bank-accounts`,
+    {
+      method: "POST",
+      body: {
+        nameEn: "Najma Raida Stress Operating Account",
+        bankName: "Emirates NBD",
+        accountNumber: `NRSTRESS${runStamp}`,
+        iban: "AE070331234567890123456",
+        currency: "AED",
+        glAccountId: account.bank.id,
+      },
+    }
+  );
   count("bankAccounts");
 
   const rows = ["date,description,debit,credit,balance,reference"];
@@ -923,33 +995,52 @@ async function probeReports(companyId, dates) {
     http("payroll runs", `/api/companies/${companyId}/payroll-runs`),
   ]);
 
-  assertProbe("Invoice volume loaded", Array.isArray(invoices) && invoices.length >= config.invoices, {
-    expected: config.invoices,
-    actual: invoices?.length || 0,
-  });
-  assertProbe("Receipt volume loaded", Array.isArray(receipts) && receipts.length >= config.receipts, {
-    expected: config.receipts,
-    actual: receipts?.length || 0,
-  });
+  assertProbe(
+    "Invoice volume loaded",
+    Array.isArray(invoices) && invoices.length >= config.invoices,
+    {
+      expected: config.invoices,
+      actual: invoices?.length || 0,
+    }
+  );
+  assertProbe(
+    "Receipt volume loaded",
+    Array.isArray(receipts) && receipts.length >= config.receipts,
+    {
+      expected: config.receipts,
+      actual: receipts?.length || 0,
+    }
+  );
   assertProbe("Bill volume loaded", Array.isArray(bills) && bills.length >= config.bills, {
     expected: config.bills,
     actual: bills?.length || 0,
   });
-  assertProbe("Journal volume loaded", Array.isArray(journals) && journals.length >= config.journals, {
-    expectedAtLeast: config.journals,
-    actual: journals?.length || 0,
-  });
+  assertProbe(
+    "Journal volume loaded",
+    Array.isArray(journals) && journals.length >= config.journals,
+    {
+      expectedAtLeast: config.journals,
+      actual: journals?.length || 0,
+    }
+  );
   assertProbe("Payroll runs loaded", Array.isArray(payrollRuns) && payrollRuns.length >= 3, {
     actual: payrollRuns?.length || 0,
   });
 
-  const pl = await http("P&L report", `/api/companies/${companyId}/reports/pl?startDate=${start}&endDate=${end}`);
+  const pl = await http(
+    "P&L report",
+    `/api/companies/${companyId}/reports/pl?startDate=${start}&endDate=${end}`
+  );
   const expectedRevenueFloor = round2(summary.expected.salesIssuedSubtotalAed * 0.95);
-  assertProbe("P&L revenue reflects loaded sales", safeNumber(pl.totalRevenue) >= expectedRevenueFloor, {
-    actualRevenue: round2(pl.totalRevenue),
-    expectedSalesSubtotalAed: round2(summary.expected.salesIssuedSubtotalAed),
-    expectedRevenueFloor,
-  });
+  assertProbe(
+    "P&L revenue reflects loaded sales",
+    safeNumber(pl.totalRevenue) >= expectedRevenueFloor,
+    {
+      actualRevenue: round2(pl.totalRevenue),
+      expectedSalesSubtotalAed: round2(summary.expected.salesIssuedSubtotalAed),
+      expectedRevenueFloor,
+    }
+  );
   assertProbe("P&L expenses reflect loaded costs", safeNumber(pl.totalExpenses) > 0, {
     totalExpenses: round2(pl.totalExpenses),
     expectedBillsAed: round2(summary.expected.billTotalAed),
@@ -1002,7 +1093,10 @@ async function probeReports(companyId, dates) {
     "cost-center profitability",
     `/api/companies/${companyId}/cost-centers/profitability?startDate=${start}&endDate=${end}`
   );
-  const balanceSummaries = await http("balance summaries", `/api/companies/${companyId}/reports/balance-summaries`);
+  const balanceSummaries = await http(
+    "balance summaries",
+    `/api/companies/${companyId}/reports/balance-summaries`
+  );
   const bankReport = await optional("bank statement report", () =>
     http("bank statement report", `/api/companies/${companyId}/bank-statements/report`)
   );

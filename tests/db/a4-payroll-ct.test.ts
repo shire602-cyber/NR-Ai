@@ -707,6 +707,7 @@ describe("[A4] low findings", () => {
       type: "purchase",
       quantity: 5,
       unitCost: 100,
+      counterAccountId: (await accountByCode(t, "1020")).id,
     });
     expect(bought.status, bought.text).toBeLessThan(300);
     const down = await t.as.post(`/api/products/${p.body.id}/write-down`, {

@@ -19,8 +19,14 @@ async function product(t: Tenant, over: Record<string, unknown> = {}) {
   return r.body as { id: string };
 }
 
-const move = (t: Tenant, id: string, body: Record<string, unknown>) =>
-  t.as.post(`/api/products/${id}/movements`, body);
+/** D1 (N7): a manual purchase names the account it was paid from (the bank, 1020). */
+const move = async (t: Tenant, id: string, body: Record<string, unknown>) =>
+  t.as.post(`/api/products/${id}/movements`, {
+    ...(body.type === "purchase" && !body.counterAccountId
+      ? { counterAccountId: (await accountByCode(t, "1020")).id }
+      : {}),
+    ...body,
+  });
 
 /** Natural (debit − credit) balance in fils for an account code. */
 async function bal(t: Tenant, code: string): Promise<number> {
@@ -69,7 +75,7 @@ async function approvedBill(t: Tenant, lines: Record<string, unknown>[]) {
 }
 
 describe("W4-B inventory ledger", () => {
-  it("[R10-01] manual purchase and sale post Inventory / GRNI and COGS / Inventory at weighted average", async () => {
+  it("[R10-01] manual purchase and sale post Inventory / bank and COGS / Inventory at weighted average", async () => {
     const t = await h.createTenant();
     const p = await product(t);
     expect((await move(t, p.id, { type: "purchase", quantity: 10, unitCost: 50 })).status).toBe(
@@ -83,7 +89,9 @@ describe("W4-B inventory ledger", () => {
     expect(s.body.journalEntryId).toBeTruthy();
     expect(await bal(t, "1070")).toBe(90_000);
     expect(await bal(t, "5005")).toBe(30_000);
-    expect(await bal(t, "2015")).toBe(-120_000);
+    // D1 (N7): paid from the bank, not accrued to GRNI (nothing could clear it).
+    expect(await bal(t, "2015")).toBe(0);
+    expect(await bal(t, "1020")).toBe(-120_000);
     expect(await stock(p.id)).toEqual({ qty: 15, value: 900 });
   });
 

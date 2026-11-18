@@ -8,6 +8,7 @@ import { AI_QUEUE_STILL_OPEN_SQL } from "./ai-gl-queue-sql";
 import { getEffectiveLock, type LockScope, type LockType } from "./period-lock.service";
 import { controlAccountTies, type ControlTie } from "./control-account-ties.service";
 import { computeFxExposure } from "./fx/exposure";
+import { pendingOpeningDocuments } from "./migration-import";
 import {
   YEAR_END_CLOSE_SOURCE,
   accountTotals,
@@ -488,6 +489,25 @@ export async function getCloseChecklist(
     actionHref: "/reports",
     ties,
   });
+
+  // 12. D1 (N14): a documents-mode opening trial balance moved A/R and A/P to Opening Balance
+  //     Equity 3040 for the open invoices and bills; until they are imported the receivable /
+  //     payable is missing from the balance sheet (and its 3040 offset sits in equity).
+  const pending = await pendingOpeningDocuments(companyId);
+  if (pending && pending.cutOver <= periodEnd) {
+    const open = pending.receivablesFils !== 0 || pending.payablesFils !== 0;
+    checklist.push({
+      id: 12,
+      key: "opening_balances",
+      title: "Opening balances complete",
+      description: "The open invoices and bills behind the opening trial balance are imported",
+      status: open ? "incomplete" : "complete",
+      details: open
+        ? `Opening balances at ${pending.cutOver} still await their documents: receivables ${(pending.receivablesFils / 100).toFixed(2)}, payables ${(pending.payablesFils / 100).toFixed(2)}; until they are imported the difference sits in Opening Balance Equity (3040)`
+        : `Open invoices and bills match the opening trial balance at ${pending.cutOver}`,
+      actionHref: "/import",
+    });
+  }
 
   const keys: Record<number, string> = {
     1: "bank_reconciliation",

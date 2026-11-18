@@ -8,7 +8,7 @@
  */
 import crypto from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { useHarness, type Tenant } from "./harness";
+import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
 const TRN = "100000000000003";
@@ -264,6 +264,7 @@ describe("S1 credit notes: return to stock or write off", () => {
       type: "purchase",
       quantity: 5,
       unitCost: 40,
+      counterAccountId: (await accountByCode(t, "1020")).id,
     });
     expect(mv.status, mv.text).toBeLessThan(300);
     const inv = await t.as.post(`/api/companies/${t.company.id}/invoices`, {

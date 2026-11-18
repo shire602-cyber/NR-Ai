@@ -97,9 +97,20 @@ describe("W2-D products and inventory", () => {
     });
     expect(p.status).toBe(200);
     const id = p.body.id as string;
-    const mv = (type: string, quantity: number) =>
-      a.as.post(`/api/products/${id}/movements`, { type, quantity });
-    expect((await mv("purchase", 20)).status).toBe(200);
+    const mv = (type: string, quantity: number, counterAccountId?: string) =>
+      a.as.post(`/api/products/${id}/movements`, {
+        type,
+        quantity,
+        ...(counterAccountId ? { counterAccountId } : {}),
+      });
+    // D1 (N7): a manual purchase names the account it was paid from.
+    const paidFrom = (
+      await h.sql<{ id: string }>(
+        `SELECT id FROM accounts WHERE company_id = $1 AND code = '1020'`,
+        [a.company.id]
+      )
+    )[0].id;
+    expect((await mv("purchase", 20, paidFrom)).status).toBe(200);
     expect((await mv("sale", 15)).status).toBe(200);
     const rejected = await mv("sale", 15);
     expect(rejected.status).toBe(422);

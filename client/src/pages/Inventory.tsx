@@ -54,6 +54,7 @@ import { Alert } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { StatusBadge as ToneBadge } from "@/components/ui/status-badge";
+import { postablePaymentAccounts } from "@/lib/payment-accounts";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -145,10 +146,16 @@ const movementFormSchema = z
     unitCost: z.coerce.number().min(0).optional().nullable(),
     date: z.string().optional().nullable(),
     notes: z.string().optional().nullable(),
+    // D1 (N7): a manual purchase names the account it was paid from (no GRNI default).
+    counterAccountId: z.string().optional().nullable(),
   })
   .refine((v) => v.type === "adjustment" || v.quantity > 0, {
     message: "forms.errors.quantityPositive",
     path: ["quantity"],
+  })
+  .refine((v) => v.type !== "purchase" || !!v.counterAccountId, {
+    message: "forms.errors.paidFromRequired",
+    path: ["counterAccountId"],
   });
 
 type MovementFormData = z.infer<typeof movementFormSchema>;
@@ -185,6 +192,14 @@ export default function Inventory() {
       enabled: !!companyId,
     }
   );
+
+  const { data: ledgerAccounts = [] } = useQuery<
+    Array<{ id: string; code: string; nameEn: string; nameAr?: string | null; type: string }>
+  >({
+    queryKey: ["/api/companies", companyId, "accounts"],
+    enabled: !!companyId,
+  });
+  const paymentAccounts = postablePaymentAccounts(ledgerAccounts);
 
   // ─── Forms ────────────────────────────────────────────
 
@@ -284,6 +299,7 @@ export default function Inventory() {
         unitCost: data.unitCost || null,
         date: data.date || undefined,
         notes: data.notes || null,
+        ...(data.type === "purchase" ? { counterAccountId: data.counterAccountId } : {}),
       }),
     onSuccess: (res: { warnings?: string[] }) => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/products`] });
@@ -1074,6 +1090,38 @@ export default function Inventory() {
                   </FormItem>
                 )}
               />
+
+              {movementForm.watch("type") === "purchase" && (
+                <FormField
+                  control={movementForm.control}
+                  name="counterAccountId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        <T k="inventory.paidFrom" /> *
+                      </FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-movement-paid-from">
+                            <SelectValue placeholder={t["inventory.paidFrom"]} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {paymentAccounts.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.code} {locale === "ar" && a.nameAr ? a.nameAr : a.nameEn}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        <T k="inventory.paidFromHelp" />
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
 
               <FormField
                 control={movementForm.control}

@@ -93,30 +93,33 @@ export async function recordManualMovement(
   const lines: DraftLine[] = [];
   let r: MoveResult;
   let valueFils: number;
-  // C1 (RH2): a purchase's counter account is the user's choice. It may clear goods received not
-  // invoiced (the default) or be a bank, equity or other account, never another control account
-  // (Cr 2020 would land in VAT 201 Box 1, Cr 1040 / 2010 would break the aging). Checked before
-  // any stock moves.
-  let purchaseCounter: { id: string; grni: boolean } | null = null;
+  // C1 (RH2): a purchase's counter account is the user's choice: a bank, equity or other
+  // account, never a control account (Cr 2020 would land in VAT 201 Box 1, Cr 1040 / 2010 would
+  // break the aging). D1 (N7): nor goods received not invoiced: a manual receipt has no
+  // purchase-order line, so no bill could ever clear it (and the supplier's bill for the goods
+  // would stock them a second time). Goods bought on credit are received through a purchase
+  // order or entered on the supplier's bill. Checked before any stock moves.
+  let purchaseCounter: { id: string } | null = null;
   if (input.type === "purchase") {
-    if (input.counterAccountId) {
-      const chosen = await assertAccount(tx, input.companyId, input.counterAccountId, [
-        "asset",
-        "liability",
-        "equity",
-      ]);
-      await assertChosenAccountsNotControl(
-        input.companyId,
-        [{ field: "counterAccountId", accountId: chosen.id }],
-        { tx, allow: ["grni"] }
+    if (!input.counterAccountId) {
+      throw new DomainError(
+        "COUNTER_ACCOUNT_REQUIRED",
+        422,
+        { field: "counterAccountId" },
+        "Choose the account the purchase was paid from (for example the bank). Goods bought on credit are received against a purchase order or entered on the supplier's bill."
       );
-      purchaseCounter = { id: chosen.id, grni: chosen.code === INVENTORY_CODES.GRNI };
-    } else {
-      purchaseCounter = {
-        id: await ensureAccountByCode(tx, input.companyId, INVENTORY_CODES.GRNI),
-        grni: true,
-      };
     }
+    const chosen = await assertAccount(tx, input.companyId, input.counterAccountId, [
+      "asset",
+      "liability",
+      "equity",
+    ]);
+    await assertChosenAccountsNotControl(
+      input.companyId,
+      [{ field: "counterAccountId", accountId: chosen.id }],
+      { tx }
+    );
+    purchaseCounter = { id: chosen.id };
   }
   if (inbound) {
     const unit =
@@ -138,12 +141,7 @@ export async function recordManualMovement(
       fils: valueFils,
       description: `${label} - stock in`,
     });
-    lines.push({
-      accountId: counter,
-      fils: -valueFils,
-      description: label,
-      ...(purchaseCounter?.grni ? { controlLeg: "grni" as const } : {}),
-    });
+    lines.push({ accountId: counter, fils: -valueFils, description: label });
     lines.push(...trueUpLines(r, valueFils, null, label));
   } else {
     const type = input.type === "adjustment" ? "adjustment" : "sale";
@@ -221,6 +219,7 @@ export async function recordOpeningStock(
     source: "inventory",
     sourceId: r.movementId,
     idempotencyKey: `inventory:opening:${args.productId}`,
+    kind: "opening",
     lines: [
       {
         accountId: r.accounts.inventory,
@@ -342,6 +341,7 @@ export async function applyOpeningBackfill(
       source: "inventory",
       sourceId: r.movementId,
       idempotencyKey: `inventory:opening_backfill:${item.productId}`,
+      kind: "opening",
       lines: [
         {
           accountId: r.accounts.inventory,

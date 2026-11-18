@@ -16,12 +16,18 @@
  *   gratuity      2036 vs opening provisions + run accruals - provisions cleared by settlements
  *                 (B1: NM3: the provision used for the gratuity and any excess released)
  *   salaries      2030 vs postings from payroll documents (a manual journal to 2030 breaks it)
+ *   grni          2015 vs goods received on purchase orders and not yet billed (D1: N7), read
+ *                 from inventory_grni (received less cleared value) rolled back to the period end
+ *   fixed_assets  property, plant and equipment (fixed-asset sub-type accounts and every account
+ *                 an asset posts to) vs the register's net book value at the period end of the
+ *                 capitalised assets (D1: N3)
  *
  * A tie with no activity on either side is reported as `applicable: false`.
  */
 import { pool } from "../db";
 import { accountTotals, agedPayables, agedReceivables, loadAccounts } from "../reporting";
 import { computeVat201 } from "../tax/vat-engine";
+import { assetRegister } from "./fixed-assets";
 
 export type ControlTieKey =
   | "receivables"
@@ -30,7 +36,9 @@ export type ControlTieKey =
   | "vat"
   | "pension"
   | "gratuity"
-  | "salaries";
+  | "salaries"
+  | "grni"
+  | "fixed_assets";
 
 export interface ControlTie {
   key: ControlTieKey;
@@ -116,6 +124,84 @@ async function inventoryTie(companyId: string, asOf: string): Promise<ControlTie
   );
 }
 
+/**
+ * D1 (N7): goods received not invoiced (2015) vs the purchase-order receipts not yet billed. The
+ * sub-ledger is inventory_grni (received less cleared value per PO line) as it stands now, rolled
+ * back to `asOf` by the receipts (po_receipt, po_grni_restore movements) and bill clearances
+ * (grni_clear movements and their reversals) dated after it. A GRNI credit with no receipt
+ * behind it (a manual stock purchase credited to 2015 before D1) is a difference here.
+ */
+async function grniTie(companyId: string, asOf: string): Promise<ControlTie | null> {
+  const { rows } = await pool.query(
+    `SELECT
+       (SELECT COALESCE(SUM(ROUND((COALESCE(g.received_value, 0) - COALESCE(g.cleared_value, 0)) * 100)), 0)
+          FROM inventory_grni g WHERE g.company_id = $1)::bigint AS open_fils,
+       (SELECT COALESCE(SUM(ROUND(COALESCE(m.total_cost, 0) * 100)), 0)
+          FROM inventory_movements m
+         WHERE m.company_id = $1 AND m.source_type IN ('po_receipt', 'po_grni_restore')
+           AND m.type <> 'reversal'
+           AND COALESCE(m.movement_date, ${LOCAL("m.created_at")}) > $2::date)::bigint AS received_after,
+       (SELECT COALESCE(SUM(ROUND(COALESCE(NULLIF(m.meta->>'clearedFils', '')::numeric, 0))), 0)
+          FROM inventory_movements m
+         WHERE m.company_id = $1 AND m.type = 'grni_clear'
+           AND COALESCE(m.movement_date, ${LOCAL("m.created_at")}) > $2::date)::bigint AS cleared_after,
+       (SELECT COALESCE(SUM(ROUND(COALESCE(NULLIF(o.meta->>'clearedFils', '')::numeric, 0))), 0)
+          FROM inventory_movements m
+          JOIN inventory_movements o ON o.id = m.reverses_movement_id AND o.type = 'grni_clear'
+         WHERE m.company_id = $1 AND m.type = 'reversal'
+           AND COALESCE(m.movement_date, ${LOCAL("m.created_at")}) > $2::date)::bigint AS unclear_after`,
+    [companyId, asOf]
+  );
+  const r = rows[0] as Record<string, string>;
+  const sub =
+    Number(r.open_fils) -
+    Number(r.received_after) +
+    Number(r.cleared_after) -
+    Number(r.unclear_after);
+  const gl = await glCredit(companyId, "2015", asOf);
+  if (gl === null) return null;
+  return tie(
+    "grni",
+    "Goods received not invoiced vs purchase-order receipts not billed",
+    "2015",
+    gl,
+    sub
+  );
+}
+
+/**
+ * D1 (N3): property, plant and equipment in the GL vs the asset register at `asOf` (net book
+ * value of the capitalised assets: cost and revaluation less accumulated depreciation and
+ * impairment). PPE on the GL with no asset behind it (an opening balance never imported into the
+ * register) or an asset whose capitalisation is not on the GL is a difference here.
+ */
+async function fixedAssetsTie(companyId: string, asOf: string): Promise<ControlTie> {
+  const { rows } = await pool.query(
+    `SELECT id FROM accounts WHERE company_id = $1 AND sub_type = 'fixed_asset'
+     UNION SELECT cost_account_id FROM fixed_assets WHERE company_id = $1 AND cost_account_id IS NOT NULL
+     UNION SELECT accumulated_account_id FROM fixed_assets
+      WHERE company_id = $1 AND accumulated_account_id IS NOT NULL`,
+    [companyId]
+  );
+  const totals = await accountTotals(companyId, { to: asOf });
+  let glFils = 0;
+  for (const r of rows as Array<{ id: string }>) {
+    const t = totals.get(r.id);
+    if (t) glFils += t.debit - t.credit;
+  }
+  let subFils = 0;
+  for (const a of await assetRegister(companyId, asOf)) {
+    if (a.capitalized) subFils += Math.round(a.bookNetBookValue * 100);
+  }
+  return tie(
+    "fixed_assets",
+    "Property, plant and equipment vs the asset register",
+    "1290",
+    glFils,
+    subFils
+  );
+}
+
 async function payrollTablesExist(): Promise<boolean> {
   const r = await pool.query(`SELECT to_regclass('public.payroll_runs') IS NOT NULL AS ok`);
   return r.rows[0]?.ok === true;
@@ -149,6 +235,9 @@ export async function controlAccountTies(
   );
 
   out.push(await inventoryTie(companyId, periodEnd));
+  const grni = await grniTie(companyId, periodEnd);
+  if (grni) out.push(grni);
+  out.push(await fixedAssetsTie(companyId, periodEnd));
 
   try {
     const vat = await computeVat201({

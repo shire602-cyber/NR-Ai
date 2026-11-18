@@ -279,6 +279,8 @@ async function post(
     lines: PostJournalLineInput[];
     actorId: string;
     reportsVat?: boolean;
+    /** D1 (N2): "opening" for the go-live opening capitalisation. */
+    kind?: "opening";
   }
 ): Promise<string> {
   const { entry } = await postJournal(
@@ -287,6 +289,7 @@ async function post(
       date: args.date,
       memo: args.memo.slice(0, 500),
       status: "posted",
+      ...(args.kind ? { kind: args.kind } : {}),
       source: FA_SOURCE,
       sourceId: a.id,
       idempotencyKey: args.key,
@@ -324,6 +327,24 @@ export async function capitalizeAsset(
   const costFils = f(a.purchase_cost);
   if (costFils <= 0)
     throw new DomainError("ASSET_ZERO_COST", 422, undefined, "Asset cost must be above zero");
+  // D1 (N3): the register carries the opening PPE and the opening trial balance is checked
+  // against it, so the register's opening import comes first. Once the trial balance is in, an
+  // opening capitalisation would add PPE the opening position does not have (or count it twice).
+  if (args.openingBalance) {
+    const tb = await q(
+      tx,
+      sql`SELECT 1 FROM import_jobs WHERE company_id = ${a.company_id}
+            AND kind = 'trial_balance' AND status = 'committed' LIMIT 1`
+    );
+    if (tb.length) {
+      throw new DomainError(
+        "OPENING_TB_ALREADY_COMMITTED",
+        409,
+        undefined,
+        "The opening trial balance is already imported and sets the opening position. Register this asset with its purchase (payment account) instead, or import the asset register with opening balances before the trial balance."
+      );
+    }
+  }
   const credit = args.openingBalance
     ? await ensureAccountByCode(tx, a.company_id, FA_CODES.OPENING)
     : (
@@ -364,6 +385,7 @@ export async function capitalizeAsset(
     date,
     memo: `Capitalization: ${a.asset_name}`,
     key: `${FA_SOURCE}:${a.id}:capitalize`,
+    ...(args.openingBalance ? { kind: "opening" as const } : {}),
     lines: [
       { accountId: acc.cost, debitFils: costFils, description: `Capitalize ${a.asset_name}` },
       ...(vatAccount
