@@ -394,5 +394,6 @@
   "invoices.editor.backCreditNotes": "كل الإشعارات الدائنة",
   "invoices.editor.backRecurring": "كل الفواتير المتكررة",
   "invoices.editor.backBills": "كل فواتير الموردين",
-  "invoices.editor.backPurchaseOrders": "كل أوامر الشراء"
+  "invoices.editor.backPurchaseOrders": "كل أوامر الشراء",
+  "invoices.chooseCustomer": "اختر عميلًا"
 }

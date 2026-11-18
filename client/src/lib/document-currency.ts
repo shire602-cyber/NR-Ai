@@ -45,3 +45,17 @@ export function rateToSend(
   if (!/^\d+(\.\d{1,6})?$/.test(v) || !(Number(v) > 0)) return undefined;
   return v;
 }
+
+/** The dirham is pegged to the US dollar at a fixed rate (1 USD = 3.6725 AED, CBUAE). */
+export const AED_USD_PEG = "3.6725";
+
+/**
+ * E1 (J1-r2): a real, editable starting value for the Add-rate dialog. The pegged pair gets the
+ * peg itself (or its 6 dp reciprocal); every other pair starts empty because no honest default
+ * exists. Never a placeholder-only hint: clicking Add rate with the box untouched must work.
+ */
+export function pegRatePrefill(from: string, to: string): string {
+  if (from === "USD" && to === "AED") return AED_USD_PEG;
+  if (from === "AED" && to === "USD") return (1 / Number(AED_USD_PEG)).toFixed(6);
+  return "";
+}

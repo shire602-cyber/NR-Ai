@@ -19,6 +19,7 @@ import { pool } from "../db";
 import { UAE_VAT_RATE } from "../constants";
 import { DomainError } from "../errors";
 import { resolveNrClientVatPeriodStartMonth } from "./firm-clients.service";
+import { loadVatApplicability, periodApplies } from "./vat-applicability";
 import { computeVat201, type VatComputation } from "../tax/vat-engine";
 import { EMIRATE_BOX_PREFIX, type Vat201Key } from "../tax/vat-boxes";
 import type { VatReconciliation } from "../tax/vat-reconciliation";
@@ -831,7 +832,17 @@ export async function listPeriodsForCompany(
     Number.POSITIVE_INFINITY
   );
 
-  const summaries: VatPeriodSummary[] = synthetic.map((p) => {
+  // E1: periods that ended before the VAT registration / books start are not this company's to
+  // file (same rule as the dashboard's compliance calendar); a stored return keeps its row.
+  const applyFrom = (await loadVatApplicability([companyId])).get(companyId)?.applyFrom ?? null;
+  const applicable = synthetic.filter(
+    (p) =>
+      !applyFrom ||
+      periodApplies(p.end.toISOString().slice(0, 10), applyFrom) ||
+      storedByKey.has(periodKey(p.start, p.end))
+  );
+
+  const summaries: VatPeriodSummary[] = applicable.map((p) => {
     const key = periodKey(p.start, p.end);
     const row = storedByKey.get(key);
     if (row) storedByKey.delete(key);
@@ -1045,6 +1056,7 @@ export async function listDueDates(
     storedByCompany.set(key, [...(storedByCompany.get(key) ?? []), row]);
   }
 
+  const applicability = await loadVatApplicability(companyIds);
   const out: DueDateView[] = [];
   for (const c of companyRes.rows as Array<Record<string, unknown>>) {
     const cid = String(c.id);
@@ -1056,7 +1068,17 @@ export async function listDueDates(
     );
     const synthetic = listRecentPeriods(freq, periodStartMonth, 8, now);
     const syntheticKeys = new Set(synthetic.map((period) => periodKey(period.start, period.end)));
-    const scheduled = synthetic[0] ?? detectFilingPeriod(freq, periodStartMonth, now);
+    // E1: the first return that applies to this company's books. A period that ended before the
+    // VAT registration / books start is skipped (it is not late, it was never due here); with
+    // none left, the period in progress is the next filing.
+    const applyFrom = applicability.get(cid)?.applyFrom ?? null;
+    const scheduled =
+      synthetic.find(
+        (p) => !applyFrom || periodApplies(p.end.toISOString().slice(0, 10), applyFrom)
+      ) ??
+      (applyFrom
+        ? detectPeriod(freq, periodStartMonth, now)
+        : detectFilingPeriod(freq, periodStartMonth, now));
     let candidate: { periodEnd: Date; dueDate: Date; status: VatPeriodStatus } = {
       periodEnd: scheduled.end,
       dueDate: scheduled.dueDate,

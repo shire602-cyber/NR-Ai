@@ -338,5 +338,6 @@
   "forms.serverErrors.SUBLEDGER_ENTRY.vat_workpaper": "This journal entry was posted from the VAT workpaper. Correct the row there.",
   "forms.serverErrors.INVOICE_BILLS_ASSET_DISPOSAL": "This invoice bills a fixed-asset disposal. Issue a credit note for a price change; the disposal itself stays in the fixed-asset register.",
   "forms.serverErrors.VAT_AMENDMENT_NOTHING_TO_SETTLE": "The amended return changes nothing that was already paid or refunded, so there is nothing to settle.",
-  "forms.serverErrors.VAT_SETTLEMENT_COUNTED_BY_AMENDMENT": "A later amended return's settlement already counted this payment. Reverse the latest amendment's settlement first, then this one."
+  "forms.serverErrors.VAT_SETTLEMENT_COUNTED_BY_AMENDMENT": "A later amended return's settlement already counted this payment. Reverse the latest amendment's settlement first, then this one.",
+  "forms.errors.uaeTrnPrefix100": "A UAE TRN is 15 digits and starts with 100. Check your FTA registration certificate."
 }

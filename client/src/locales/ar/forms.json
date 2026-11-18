@@ -338,5 +338,6 @@
   "forms.serverErrors.SUBLEDGER_ENTRY.vat_workpaper": "هذا القيد سُجّل من ورقة عمل ضريبة القيمة المضافة. صحّح السطر هناك.",
   "forms.serverErrors.INVOICE_BILLS_ASSET_DISPOSAL": "هذه الفاتورة تخص بيع أصل ثابت. أصدر إشعاراً دائناً لتغيير السعر؛ أما الاستبعاد نفسه فيبقى في سجل الأصول الثابتة.",
   "forms.serverErrors.VAT_AMENDMENT_NOTHING_TO_SETTLE": "الإقرار المعدَّل لا يغيّر شيئاً مما سُدّد أو استُرد من قبل، لذلك لا يوجد ما يُسوّى.",
-  "forms.serverErrors.VAT_SETTLEMENT_COUNTED_BY_AMENDMENT": "تسوية إقرار معدَّل لاحق احتسبت هذه الدفعة. اعكس تسوية آخر إقرار معدَّل أولاً، ثم هذه التسوية."
+  "forms.serverErrors.VAT_SETTLEMENT_COUNTED_BY_AMENDMENT": "تسوية إقرار معدَّل لاحق احتسبت هذه الدفعة. اعكس تسوية آخر إقرار معدَّل أولاً، ثم هذه التسوية.",
+  "forms.errors.uaeTrnPrefix100": "رقم التسجيل الضريبي الإماراتي مكوّن من 15 رقماً ويبدأ بـ 100. راجع شهادة التسجيل لدى الهيئة الاتحادية للضرائب."
 }

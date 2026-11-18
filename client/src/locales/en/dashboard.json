@@ -195,5 +195,8 @@
   "dashboard.viewAll": "View all",
   "dashboard.chartNotEnoughData": "The chart appears once there are two months of activity.",
   "dashboard.calendarLink": "Calendar",
-  "dashboard.otherIncomeLabel": "Other income"
+  "dashboard.otherIncomeLabel": "Other income",
+  "dashboard.bankDiffBooksAhead": "{amount} is posted in your books but is not on the statement yet. Match it when it appears.",
+  "dashboard.bankDiffStatementAhead": "{amount} is on the statement but not in your books yet. Create or match the entries.",
+  "dashboard.bankDiffReview": "Review in bank reconciliation"
 }

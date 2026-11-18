@@ -7,6 +7,7 @@ import { detectAnomalies } from "./anomaly-detection.service";
 import { AI_QUEUE_STILL_OPEN_SQL } from "./ai-gl-queue-sql";
 import { getEffectiveLock, type LockScope, type LockType } from "./period-lock.service";
 import { controlAccountTies, type ControlTie } from "./control-account-ties.service";
+import { computeFxExposure } from "./fx/exposure";
 import {
   YEAR_END_CLOSE_SOURCE,
   accountTotals,
@@ -431,23 +432,19 @@ export async function getCloseChecklist(
     actionHref: "/journal",
   });
 
-  // 10. FX revaluation: open foreign-currency balances need a revaluation at period end.
+  // 10. FX revaluation: OPEN foreign-currency balances need a revaluation at period end. E1 (J1-r2):
+  //     counted from the exposure engine (the FX page's own figure), so settled foreign documents
+  //     no longer keep the step open just because their accounts once carried a foreign tag.
   const fx = await pool.query(
     `SELECT
-       (SELECT COUNT(DISTINCT jl.account_id) FROM journal_lines jl
-          JOIN journal_entries je ON je.id = jl.entry_id
-          JOIN accounts a ON a.id = jl.account_id
-         WHERE je.company_id = $1 AND je.status = 'posted'
-           AND a.type IN ('asset', 'liability')
-           AND COALESCE(jl.foreign_currency, '') NOT IN ('', 'AED')
-           AND ((je.date + interval '4 hours')::date) <= $3::date) AS fx_accounts,
        (SELECT COUNT(*) FROM journal_entries je
          WHERE je.company_id = $1 AND je.status = 'posted'
            AND (je.entry_kind = 'revaluation' OR je.source IN ('fx_revaluation', 'revaluation'))
            AND ((je.date + interval '4 hours')::date) BETWEEN $2::date AND $3::date) AS revaluations`,
     [companyId, periodStart, periodEnd]
   );
-  const fxAccounts = parseInt(fx.rows[0]?.fx_accounts || "0");
+  const exposure = await computeFxExposure(companyId, periodEnd);
+  const fxAccounts = exposure.items.length + exposure.missingRates.length;
   const revaluations = parseInt(fx.rows[0]?.revaluations || "0");
   checklist.push({
     id: 10,

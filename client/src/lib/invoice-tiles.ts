@@ -3,7 +3,7 @@
  * currency (server-computed `openBalanceBase`, the dashboard `outstanding` rule); Draft and
  * Paid show document totals in base currency.
  */
-import type { InvoiceListItem } from "@shared/invoice-balance";
+import { invoiceDisplayStatus, type InvoiceListItem } from "@shared/invoice-balance";
 
 export type InvoiceTileKey = "draft" | "open" | "overdue" | "paid";
 export interface InvoiceTile {
@@ -22,7 +22,8 @@ export function computeInvoiceTiles(all: InvoiceListItem[], today: Date): Invoic
     (inv) => (inv.status === "sent" || inv.status === "partial") && owedBase(inv) > 0
   );
   const overdue = open.filter((inv) => inv.dueDate && new Date(inv.dueDate) < today);
-  const paid = live.filter((inv) => inv.status === "paid");
+  // Credited invoices (settled by credit notes, nothing received) are not "paid" revenue cash.
+  const paid = live.filter((inv) => invoiceDisplayStatus(inv) === "paid");
   const sum = (rows: InvoiceListItem[], f: (i: InvoiceListItem) => number) =>
     Math.round(rows.reduce((s, i) => s + f(i), 0) * 100) / 100;
   return [

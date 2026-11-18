@@ -1,6 +1,6 @@
 // Reports > balances tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -96,7 +96,9 @@ export default function BalancesTab() {
                   <Money amount={balanceReport.customerOverdueAed} currency={"AED"} />
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {balanceReport.overdueCustomerCount} customers
+                  {formatMessage(t["reportCenter.overdueCustomersCount"], {
+                    count: balanceReport.overdueCustomerCount,
+                  })}
                 </div>
               </div>
             )}
@@ -113,8 +115,15 @@ export default function BalancesTab() {
             {balancesLoading ? (
               <Skeleton className="h-8 w-32" />
             ) : (
-              <div className="tabular-nums text-kpi">
-                <Money amount={balanceReport.vendorOpenAed} currency={"AED"} />
+              <div className="space-y-1">
+                <div className="tabular-nums text-kpi">
+                  <Money amount={balanceReport.vendorOpenAed} currency={"AED"} />
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {formatMessage(t["reportCenter.vendorOpenBalanceHint"], {
+                    count: balanceReport.overdueVendorCount,
+                  })}
+                </div>
               </div>
             )}
           </CardContent>
@@ -155,7 +164,7 @@ export default function BalancesTab() {
                 from={dateRange.from ? format(dateRange.from, "yyyy-MM-dd") : undefined}
                 to={dateRange.to ? format(dateRange.to, "yyyy-MM-dd") : undefined}
               />
-              <Button asChild size="sm" variant="outline">
+              <Button asChild size="sm" variant="outline" className="min-h-11 md:min-h-8">
                 <Link href="/bill-pay?tab=summary">
                   <T k="reportCenter.openBillPay" />
                 </Link>
@@ -186,7 +195,7 @@ export default function BalancesTab() {
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Over 90 days</div>
+                  <div className="text-xs text-muted-foreground">{t["analytics.bucketOver90"]}</div>
                   <div className="tabular-nums text-2xl font-semibold">
                     <Money amount={payableAgingSummary.over90} currency={"AED"} />
                   </div>
@@ -228,7 +237,7 @@ export default function BalancesTab() {
                     <TableBody>
                       {payableAgingBuckets.map((bucket) => (
                         <TableRow key={bucket.label}>
-                          <TableCell className="font-medium">{bucket.label}</TableCell>
+                          <TableCell className="font-medium">{t[bucket.labelKey]}</TableCell>
                           <TableCell data-numeric>{bucket.count.toLocaleString(locale)}</TableCell>
                           <TableCell data-numeric className=" font-medium">
                             <Money amount={bucket.amount} currency={"AED"} />
@@ -249,7 +258,7 @@ export default function BalancesTab() {
                         <TableHead data-numeric>
                           <T k="reportCenter.bills" />
                         </TableHead>
-                        <TableHead data-numeric>Open</TableHead>
+                        <TableHead data-numeric>{t["reportCenter.colOpenBalance"]}</TableHead>
                         <TableHead data-numeric>
                           <T k="reportCenter.overdue" />
                         </TableHead>
@@ -268,7 +277,9 @@ export default function BalancesTab() {
                               variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
                               dot
                             >
-                              {row.overdueBalanceAed > 0 ? t["balancesTab.payQueue"] : "Current"}
+                              {row.overdueBalanceAed > 0
+                                ? t["balancesTab.payQueue"]
+                                : t["reportCenter.current"]}
                             </Badge>
                           </TableCell>
                           <TableCell data-numeric>{row.billCount}</TableCell>
@@ -288,7 +299,9 @@ export default function BalancesTab() {
                               <Money amount={row.overdueBalanceAed} currency={"AED"} />
                             </div>
                           </TableCell>
-                          <TableCell data-numeric>{row.maxDaysOverdue} days</TableCell>
+                          <TableCell data-numeric>
+                            {formatMessage(t["reportCenter.nDaysValue"], { n: row.maxDaysOverdue })}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -316,7 +329,7 @@ export default function BalancesTab() {
                   {t["balancesTab.currentOpenReceivablesFromIssued"]}
                 </CardDescription>
               </div>
-              <Button asChild size="sm" variant="outline">
+              <Button asChild size="sm" variant="outline" className="min-h-11 md:min-h-8">
                 <Link href="/payment-chasing">
                   <T k="reportCenter.openCollections" />
                 </Link>
@@ -337,7 +350,7 @@ export default function BalancesTab() {
                       <TableHead data-numeric>
                         <T k="reportCenter.invoices" />
                       </TableHead>
-                      <TableHead data-numeric>Open</TableHead>
+                      <TableHead data-numeric>{t["reportCenter.colOpenBalance"]}</TableHead>
                       <TableHead data-numeric>
                         <T k="reportCenter.overdue" />
                       </TableHead>
@@ -356,7 +369,9 @@ export default function BalancesTab() {
                             variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
                             dot
                           >
-                            {row.overdueBalanceAed > 0 ? "Collections" : "Current"}
+                            {row.overdueBalanceAed > 0
+                              ? t["reportCenter.badgeCollections"]
+                              : t["reportCenter.current"]}
                           </Badge>
                         </TableCell>
                         <TableCell data-numeric>{row.invoiceCount}</TableCell>
@@ -376,7 +391,9 @@ export default function BalancesTab() {
                             <Money amount={row.overdueBalanceAed} currency={"AED"} />
                           </div>
                         </TableCell>
-                        <TableCell data-numeric>{row.maxDaysOverdue} days</TableCell>
+                        <TableCell data-numeric>
+                          {formatMessage(t["reportCenter.nDaysValue"], { n: row.maxDaysOverdue })}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -399,7 +416,7 @@ export default function BalancesTab() {
                 </CardTitle>
                 <CardDescription>{t["balancesTab.currentOpenPayablesFromVendor"]}</CardDescription>
               </div>
-              <Button asChild size="sm" variant="outline">
+              <Button asChild size="sm" variant="outline" className="min-h-11 md:min-h-8">
                 <Link href="/bill-pay?tab=summary">
                   <T k="reportCenter.openBillPay" />
                 </Link>
@@ -420,7 +437,7 @@ export default function BalancesTab() {
                       <TableHead data-numeric>
                         <T k="reportCenter.bills" />
                       </TableHead>
-                      <TableHead data-numeric>Open</TableHead>
+                      <TableHead data-numeric>{t["reportCenter.colOpenBalance"]}</TableHead>
                       <TableHead data-numeric>
                         <T k="reportCenter.overdue" />
                       </TableHead>
@@ -439,7 +456,9 @@ export default function BalancesTab() {
                             variant={row.overdueBalanceAed > 0 ? "warning" : "success"}
                             dot
                           >
-                            {row.overdueBalanceAed > 0 ? t["balancesTab.payQueue"] : "Current"}
+                            {row.overdueBalanceAed > 0
+                              ? t["balancesTab.payQueue"]
+                              : t["reportCenter.current"]}
                           </Badge>
                         </TableCell>
                         <TableCell data-numeric>{row.billCount}</TableCell>
@@ -459,7 +478,9 @@ export default function BalancesTab() {
                             <Money amount={row.overdueBalanceAed} currency={"AED"} />
                           </div>
                         </TableCell>
-                        <TableCell data-numeric>{row.maxDaysOverdue} days</TableCell>
+                        <TableCell data-numeric>
+                          {formatMessage(t["reportCenter.nDaysValue"], { n: row.maxDaysOverdue })}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -483,7 +504,7 @@ export default function BalancesTab() {
               </CardTitle>
               <CardDescription>{t["balancesTab.stockQuantityCostValueReorder"]}</CardDescription>
             </div>
-            <Button asChild size="sm" variant="outline">
+            <Button asChild size="sm" variant="outline" className="min-h-11 md:min-h-8">
               <Link href="/inventory">
                 <T k="reportCenter.openInventory" />
               </Link>
@@ -622,7 +643,7 @@ export default function BalancesTab() {
               </CardTitle>
               <CardDescription>{t["balancesTab.stockReceiptsSalesReturnsAnd"]}</CardDescription>
             </div>
-            <Button asChild size="sm" variant="outline">
+            <Button asChild size="sm" variant="outline" className="min-h-11 md:min-h-8">
               <Link href="/inventory">
                 <T k="reportCenter.openMovements" />
               </Link>
@@ -786,7 +807,7 @@ export default function BalancesTab() {
                 fixed asset register.
               </CardDescription>
             </div>
-            <Button asChild size="sm" variant="outline">
+            <Button asChild size="sm" variant="outline" className="min-h-11 md:min-h-8">
               <Link href="/fixed-assets">
                 <T k="reportCenter.openFixedAssets" />
               </Link>
@@ -919,7 +940,7 @@ export default function BalancesTab() {
                 {t["balancesTab.assetCostAccumulatedDepreciationNet"]}
               </CardDescription>
             </div>
-            <Button asChild size="sm" variant="outline">
+            <Button asChild size="sm" variant="outline" className="min-h-11 md:min-h-8">
               <Link href="/fixed-assets">
                 <T k="reportCenter.openFixedAssets" />
               </Link>

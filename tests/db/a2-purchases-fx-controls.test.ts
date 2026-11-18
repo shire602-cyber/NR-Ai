@@ -214,16 +214,16 @@ describe("A2 purchase returns", () => {
 });
 
 describe("A2 bank currency", () => {
-  async function usdBank(t: Tenant) {
+  async function usdBank(t: Tenant, currency = "USD") {
     const gl = await h.sql<{ id: string }>(
       `INSERT INTO accounts (company_id, code, name_en, type, sub_type, is_active)
-       VALUES ($1, '1026', 'USD Current Account', 'asset', 'bank', true) RETURNING id`,
-      [t.company.id]
+       VALUES ($1, '1026', $2, 'asset', 'bank', true) RETURNING id`,
+      [t.company.id, `${currency} Current Account`]
     );
     await h.sql(
       `INSERT INTO bank_accounts (company_id, name_en, bank_name, currency, gl_account_id)
-       VALUES ($1, 'USD Current', 'FAB', 'USD', $2)`,
-      [t.company.id, gl[0].id]
+       VALUES ($1, $3, 'FAB', $2, $4)`,
+      [t.company.id, currency, `${currency} Current`, gl[0].id]
     );
     return gl[0].id;
   }
@@ -299,7 +299,9 @@ describe("A2 bank currency", () => {
 
   it("[C4] a third-currency payment with no rate for the bank currency is refused with BANK_CURRENCY_RATE_REQUIRED", async () => {
     const t = await tenant();
-    const usdGl = await usdBank(t);
+    // E1: USD/AED resolves at the CBUAE peg with no stored rate, so the refusal is shown with a
+    // bank currency that has no default (GBP).
+    const usdGl = await usdBank(t, "GBP");
     await rate(t, "EUR", 4.0, daysAgo(10));
     const b = await t.as.post(`/api/companies/${t.company.id}/bills`, {
       vendor_name: "Euro Vendor GmbH",

@@ -1,7 +1,7 @@
 import { T } from "@/components/layout/T";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -681,32 +681,18 @@ export function VatPeriodsPanel() {
                   <T k="pageLabels.markReady" />
                 </Button>
               )}
-              {currentPeriodId && currentPeriodStatus === "ready" && (
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    statusMutation.mutate({ periodId: currentPeriodId, status: "submitted" })
-                  }
-                  disabled={statusMutation.isPending}
-                  data-testid="button-mark-submitted"
-                >
-                  <Send className="h-4 w-4 me-2" />
-                  <T k="pageLabels.markSubmitted" />
-                </Button>
-              )}
-              {currentPeriodId && currentPeriodStatus === "submitted" && (
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    statusMutation.mutate({ periodId: currentPeriodId, status: "accepted" })
-                  }
-                  disabled={statusMutation.isPending}
-                  data-testid="button-mark-accepted"
-                >
-                  <CheckCircle2 className="h-4 w-4 me-2" />
-                  <T k="pageLabels.markAcceptedByFta" />
-                </Button>
-              )}
+              {/* E1 (J3-r2): the Periods tab is read-only for filing. Submitting and filing happen on
+                  the Returns tab (one state machine), so this links there instead of marking a
+                  period submitted in one click. */}
+              {currentPeriodId &&
+                (currentPeriodStatus === "ready" || currentPeriodStatus === "submitted") && (
+                  <Button asChild variant="secondary" data-testid="link-open-vat-return">
+                    <Link href="/vat-filing?tab=returns">
+                      <Send className="h-4 w-4 me-2" />
+                      {t["compliance.periodsOpenReturn"]}
+                    </Link>
+                  </Button>
+                )}
               {currentPeriodId && currentPeriodStatus === "accepted" && (
                 <Badge variant="secondary" className="text-xs">
                   <CheckCircle2 className="h-3 w-3 me-1" />

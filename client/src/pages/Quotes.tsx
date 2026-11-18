@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -59,21 +60,26 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { formatDate } from "@/lib/format";
+import { lineVatRate } from "@/lib/invoice-totals";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, CalendarIcon, Trash2, Download, Edit, FileText, ArrowRightLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const QUOTE_SUPPLY_TYPES = ["standard_rated", "zero_rated", "exempt", "out_of_scope"] as const;
 
 const quoteLineSchema = z.object({
   description: z.string().min(1, "forms.errors.descriptionRequired"),
   quantity: z.coerce.number().min(0.01, "forms.errors.quantityPositive"),
   unitPrice: z.coerce.number().min(0, "forms.errors.pricePositive"),
-  vatRate: z.coerce.number().default(0.05),
+  // E1 (J1-r2): UAE treatments only: standard 5%, zero-rated, exempt, out of scope.
+  vatSupplyType: z.enum(QUOTE_SUPPLY_TYPES).default("standard_rated"),
 });
 
 const quoteSchema = z.object({
   companyId: z.string().guid(),
   // The server assigns the number (R03-11); the field only shows it once a quote exists.
   number: z.string().optional(),
+  contactId: z.string().optional(),
   customerName: z.string().min(1, "forms.errors.customerNameRequired"),
   customerTrn: z.string().optional(),
   date: z.date(),
@@ -89,13 +95,20 @@ interface Quote {
   id: string;
   companyId: string;
   number: string;
+  contactId?: string | null;
   customerName: string;
   customerTrn?: string;
   date: string;
   expiryDate: string;
   currency: string;
   notes?: string;
-  lines: Array<{ description: string; quantity: number; unitPrice: number; vatRate: number }>;
+  lines: Array<{
+    description: string;
+    quantity: number;
+    unitPrice: number;
+    vatRate: number;
+    vatSupplyType?: string | null;
+  }>;
   subtotal: number;
   vatAmount: number;
   total: number;
@@ -116,18 +129,28 @@ export default function Quotes() {
     enabled: !!selectedCompanyId,
   });
 
+  const { data: contacts = [] } = useQuery<
+    Array<{ id: string; name: string; trnNumber?: string | null }>
+  >({
+    queryKey: ["/api/companies", selectedCompanyId, "customer-contacts"],
+    enabled: !!selectedCompanyId,
+  });
+
   const form = useForm<QuoteFormData>({
     resolver: zodResolver(quoteSchema),
     defaultValues: {
       companyId: selectedCompanyId || "",
       number: "",
+      contactId: "",
       customerName: "",
       customerTrn: "",
       date: new Date(),
       expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       currency: "AED",
       notes: "",
-      lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+      lines: [
+        { description: "", quantity: 1, unitPrice: 0, vatSupplyType: "standard_rated" as const },
+      ],
     },
   });
 
@@ -225,13 +248,16 @@ export default function Quotes() {
     form.reset({
       companyId: selectedCompanyId || "",
       number: "",
+      contactId: "",
       customerName: "",
       customerTrn: "",
       date: new Date(),
       expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       currency: "AED",
       notes: "",
-      lines: [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+      lines: [
+        { description: "", quantity: 1, unitPrice: 0, vatSupplyType: "standard_rated" as const },
+      ],
     });
     setEditingQuote(null);
   };
@@ -243,13 +269,25 @@ export default function Quotes() {
       form.reset({
         companyId: fullQuote.companyId,
         number: fullQuote.number,
+        contactId: fullQuote.contactId || "",
         customerName: fullQuote.customerName,
         customerTrn: fullQuote.customerTrn || "",
         date: new Date(fullQuote.date),
         expiryDate: new Date(fullQuote.expiryDate),
         currency: fullQuote.currency,
         notes: fullQuote.notes || "",
-        lines: fullQuote.lines || [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],
+        lines: (fullQuote.lines as Quote["lines"] | undefined)?.map((l) => ({
+          description: l.description,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          vatSupplyType: (QUOTE_SUPPLY_TYPES as readonly string[]).includes(String(l.vatSupplyType))
+            ? (l.vatSupplyType as (typeof QUOTE_SUPPLY_TYPES)[number])
+            : Number(l.vatRate) > 0
+              ? "standard_rated"
+              : "zero_rated",
+        })) || [
+          { description: "", quantity: 1, unitPrice: 0, vatSupplyType: "standard_rated" as const },
+        ],
       });
       setEditorOpen(true);
     } catch (error: any) {
@@ -291,6 +329,7 @@ export default function Quotes() {
   const onSubmit = async (data: QuoteFormData) => {
     // R03-11: strict contract — number, status and totals are server-owned.
     const quoteData = {
+      ...(data.contactId ? { contactId: data.contactId } : {}),
       customerName: data.customerName,
       customerTrn: data.customerTrn || null,
       date: format(data.date, "yyyy-MM-dd"),
@@ -298,13 +337,13 @@ export default function Quotes() {
       currency: data.currency,
       notes: data.notes || null,
       lines: fields.map((_, index) => {
-        const vat = Number(data.lines[index].vatRate) > 0 ? 0.05 : 0;
+        const supplyType = data.lines[index].vatSupplyType;
         return {
           description: data.lines[index].description,
           quantity: Number(data.lines[index].quantity),
           unitPrice: Math.round(Number(data.lines[index].unitPrice) * 100) / 100,
-          vatRate: vat,
-          vatSupplyType: vat > 0 ? "standard_rated" : "zero_rated",
+          vatRate: supplyType === "standard_rated" ? 0.05 : 0,
+          vatSupplyType: supplyType,
         };
       }),
     };
@@ -316,10 +355,12 @@ export default function Quotes() {
     }
   };
 
+  // A quote saved before the picker existed has a typed customer and no contact: keep it editable.
+  const legacyFreeText = Boolean(editingQuote && !editingQuote.contactId);
   const watchLines = form.watch("lines");
   const subtotal = watchLines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
   const vatAmount = watchLines.reduce(
-    (sum, line) => sum + line.quantity * line.unitPrice * line.vatRate,
+    (sum, line) => sum + line.quantity * line.unitPrice * lineVatRate(line.vatSupplyType),
     0
   );
   const total = subtotal + vatAmount;
@@ -473,6 +514,40 @@ export default function Quotes() {
             <FormGrid>
               <FormField
                 control={form.control}
+                name="contactId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel required>{t["invoices.contact"]}</FormLabel>
+                    <Select
+                      value={field.value || ""}
+                      onValueChange={(id) => {
+                        field.onChange(id);
+                        const c = contacts.find((x) => x.id === id);
+                        if (c) {
+                          form.setValue("customerName", c.name, { shouldValidate: true });
+                          form.setValue("customerTrn", c.trnNumber || "");
+                        }
+                      }}
+                    >
+                      <FormControl>
+                        <SelectTrigger data-testid="select-quote-contact">
+                          <SelectValue placeholder={t["invoices.chooseCustomer"]} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {contacts.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>{t["invoices.contactHint"]}</FormDescription>
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
                 name="customerName"
                 render={({ field }) => (
                   <FormItem>
@@ -480,7 +555,7 @@ export default function Quotes() {
                       <T k="pages.customerName" />
                     </FormLabel>
                     <FormControl>
-                      <Input {...field} dir="auto" />
+                      <Input {...field} dir="auto" readOnly={!legacyFreeText} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -499,6 +574,7 @@ export default function Quotes() {
                         {...field}
                         ltr
                         inputMode="numeric"
+                        readOnly={!legacyFreeText}
                         placeholder={t["screens.optional"]}
                       />
                     </FormControl>
@@ -517,7 +593,12 @@ export default function Quotes() {
                 variant="outline"
                 size="sm"
                 onClick={() =>
-                  append({ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 })
+                  append({
+                    description: "",
+                    quantity: 1,
+                    unitPrice: 0,
+                    vatSupplyType: "standard_rated" as const,
+                  })
                 }
               >
                 <Plus className="h-4 w-4" />
@@ -603,23 +684,22 @@ export default function Quotes() {
                   />
                   <FormField
                     control={form.control}
-                    name={`lines.${index}.vatRate`}
+                    name={`lines.${index}.vatSupplyType`}
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel className={lineLabelClass}>{t["forms.col.vat"]}</FormLabel>
-                        <Select
-                          value={String(field.value * 100)}
-                          onValueChange={(val) => field.onChange(parseFloat(val) / 100)}
-                        >
+                        <Select value={field.value} onValueChange={field.onChange}>
                           <FormControl>
-                            <SelectTrigger>
+                            <SelectTrigger data-testid={`select-quote-vat-${index}`}>
                               <SelectValue />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="0">0%</SelectItem>
-                            <SelectItem value="5">5%</SelectItem>
-                            <SelectItem value="10">10%</SelectItem>
+                            {QUOTE_SUPPLY_TYPES.map((type) => (
+                              <SelectItem key={type} value={type}>
+                                {t[`invoices.supply.${type}`]}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </FormItem>
@@ -630,7 +710,7 @@ export default function Quotes() {
                       amount={
                         (watchLines[index]?.quantity || 0) *
                         (watchLines[index]?.unitPrice || 0) *
-                        (1 + (watchLines[index]?.vatRate || 0))
+                        (1 + lineVatRate(watchLines[index]?.vatSupplyType))
                       }
                       currency="AED"
                     />

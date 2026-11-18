@@ -78,6 +78,8 @@ import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { invoiceStatusTargets } from "@/lib/invoice-status";
+import { invoiceDisplayStatus } from "@shared/invoice-balance";
+import { statusLabelKey } from "@/components/ui/status-meta";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -251,6 +253,16 @@ function WrittenOffBadge({ invoice }: { invoice: InvoiceListItem }) {
       {full ? t["invoices.writtenOff"] : t["invoices.partlyWrittenOff"]}
     </StatusBadge>
   );
+}
+
+/** Display text of an invoice row's status (credited / applied read from the credit settlement). */
+function invoiceStatusText(t: Record<string, string>, invoice: InvoiceListItem): string {
+  const shown = invoiceDisplayStatus(invoice);
+  if (shown === "credited" || shown === "applied") {
+    const key = statusLabelKey(shown);
+    return (key && t[key]) || shown;
+  }
+  return t[shown] ?? shown;
 }
 
 function BalanceLine({ invoice }: { invoice: InvoiceListItem }) {
@@ -2095,19 +2107,23 @@ export default function Invoices() {
                         >
                           <SelectTrigger
                             className={cn(
-                              badgeVariants({ variant: statusBadgeVariant(invoice.status) }),
+                              badgeVariants({
+                                variant: statusBadgeVariant(invoiceDisplayStatus(invoice)),
+                              }),
                               "h-6 min-h-6 w-auto shrink-0 gap-1.5 py-0 ps-2 pe-1.5 shadow-none [&>svg]:size-3 [&>svg]:opacity-60"
                             )}
                             aria-label={formatMessage(t["components.statusChange"], {
-                              status: t[invoice.status as keyof typeof t] ?? invoice.status,
+                              status: invoiceStatusText(t, invoice),
                             })}
                             data-testid={`mobile-select-status-${invoice.id}`}
                           >
                             <span
                               aria-hidden
-                              className={statusDotClass(statusBadgeVariant(invoice.status))}
+                              className={statusDotClass(
+                                statusBadgeVariant(invoiceDisplayStatus(invoice))
+                              )}
                             />
-                            <SelectValue>{t[invoice.status as keyof typeof t]}</SelectValue>
+                            <SelectValue>{invoiceStatusText(t, invoice)}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             {invoiceStatusTargets(invoice).map((target) => (
@@ -2237,19 +2253,23 @@ export default function Invoices() {
                               {/* Editable status: the StatusBadge is the dropdown trigger (CTO 3). */}
                               <SelectTrigger
                                 className={cn(
-                                  badgeVariants({ variant: statusBadgeVariant(invoice.status) }),
+                                  badgeVariants({
+                                    variant: statusBadgeVariant(invoiceDisplayStatus(invoice)),
+                                  }),
                                   "h-6 min-h-6 w-auto gap-1.5 py-0 ps-2 pe-1.5 shadow-none [&>svg]:size-3 [&>svg]:opacity-60"
                                 )}
                                 aria-label={formatMessage(t["components.statusChange"], {
-                                  status: t[invoice.status as keyof typeof t] ?? invoice.status,
+                                  status: invoiceStatusText(t, invoice),
                                 })}
                                 data-testid={`select-status-${invoice.id}`}
                               >
                                 <span
                                   aria-hidden
-                                  className={statusDotClass(statusBadgeVariant(invoice.status))}
+                                  className={statusDotClass(
+                                    statusBadgeVariant(invoiceDisplayStatus(invoice))
+                                  )}
                                 />
-                                <SelectValue>{t[invoice.status as keyof typeof t]}</SelectValue>
+                                <SelectValue>{invoiceStatusText(t, invoice)}</SelectValue>
                               </SelectTrigger>
                               <SelectContent>
                                 {invoiceStatusTargets(invoice).map((target) => (

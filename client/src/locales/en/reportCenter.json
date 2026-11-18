@@ -775,5 +775,9 @@
   "reportCenter.moreActions": "More actions",
   "reportCenter.open": "Open",
   "reportCenter.arAgingTitle": "Receivables ageing",
-  "reportCenter.apAgingTitle": "Payables ageing"
+  "reportCenter.apAgingTitle": "Payables ageing",
+  "reportCenter.colOpenBalance": "Open",
+  "reportCenter.badgeCollections": "Collections",
+  "reportCenter.overdueCustomersCount": "{count, plural, one {# customer} other {# customers}}",
+  "reportCenter.vendorOpenBalanceHint": "{count, plural, one {# supplier overdue} other {# suppliers overdue}}"
 }

@@ -39,7 +39,8 @@ export type StatusKind =
   | "confirmed"
   | "unposted"
   | "ordered"
-  | "billed";
+  | "billed"
+  | "credited";
 
 // R18-02: `label` is a translation key (components namespace).
 export const STATUS_MAP: Record<
@@ -83,6 +84,7 @@ export const STATUS_MAP: Record<
   unposted: { variant: "warning", label: "screens.statusUnposted" },
   ordered: { variant: "info", label: "screens.statusOrdered" },
   billed: { variant: "success", label: "screens.statusBilled" },
+  credited: { variant: "info", label: "screens.statusCredited" },
 };
 
 /** Semantic variant for a document status (green paid/posted, amber needs action, red overdue, blue sent, neutral draft/void). */

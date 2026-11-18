@@ -14,10 +14,7 @@ import {
 } from "@/components/ui/select";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { apiRequest } from "@/lib/queryClient";
-import { currencyChoices, type CompanyRateLike } from "@/lib/document-currency";
-
-/** The dirham is pegged to the US dollar at a fixed rate (1 USD = 3.6725 AED). */
-const AED_USD_PEG = "3.6725";
+import { AED_USD_PEG, currencyChoices, type CompanyRateLike } from "@/lib/document-currency";
 
 /** Same rule as the form schema: a positive rate with up to 6 decimals. */
 const isValidRate = (v: string) => /^\d+(\.\d{1,6})?$/.test(v.trim()) && Number(v) > 0;

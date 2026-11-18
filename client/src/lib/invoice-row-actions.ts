@@ -8,7 +8,8 @@ export function invoiceRowActions(invoice: {
 }) {
   const issued = invoice.status !== "draft";
   return {
-    canRecordPayment: issued,
+    // A credit note is not paid: it reduces the invoice it credits (E1, J1-r2).
+    canRecordPayment: issued && invoice.invoiceType !== "credit_note",
     canGenerateEinvoice: issued,
     canCreateCreditNote: issued && invoice.invoiceType !== "credit_note",
   };

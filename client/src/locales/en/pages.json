@@ -991,5 +991,7 @@
   "pages.receiptsEmptyBodyManual": "Upload a photo or PDF and enter the details yourself. Automatic reading is not switched on yet.",
   "pages.receiptsReadyToAttach": "Ready. Enter the details yourself and keep this file as proof.",
   "pages.payrollNoAccessTitle": "Payroll is not available to your role",
-  "pages.payrollNoAccessBody": "Payroll and employee pay are visible to owners, administrators, accountants and approvers. Ask the company owner if you need access."
+  "pages.payrollNoAccessBody": "Payroll and employee pay are visible to owners, administrators, accountants and approvers. Ask the company owner if you need access.",
+  "pages.billPayTotalRemaining": "Total: {total} | Remaining: {remaining}",
+  "pages.receiptsSubtitleManual": "Upload receipts and enter the details yourself, or attach them as proof"
 }

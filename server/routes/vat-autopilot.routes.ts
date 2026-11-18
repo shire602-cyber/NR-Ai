@@ -239,6 +239,15 @@ export function registerVATAutopilotRoutes(app: Express) {
       if (!uid) return res.status(401).json({ message: "Unauthenticated" });
       const hasAccess = await storage.hasCompanyAccess(uid, companyId);
       if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      // E1 (J3-r2): one state machine. Submitting / filing a return goes through the VAT return
+      // flow (Returns tab), never a one-click flip of the period.
+      if (status === "submitted" || status === "accepted") {
+        return res.status(409).json({
+          message:
+            "Submit and file the VAT return from the Returns tab; a period cannot be marked submitted on its own.",
+          code: "USE_VAT_RETURN_FLOW",
+        });
+      }
 
       try {
         const summary = await updatePeriodStatus({
@@ -262,12 +271,10 @@ export function registerVATAutopilotRoutes(app: Express) {
         res.json(summary);
       } catch (err: unknown) {
         if (err instanceof DomainError) throw err;
-        res
-          .status(400)
-          .json({
-            message: (err as Error)?.message || "Could not update status",
-            code: "INVALID_TRANSITION",
-          });
+        res.status(400).json({
+          message: (err as Error)?.message || "Could not update status",
+          code: "INVALID_TRANSITION",
+        });
       }
     })
   );

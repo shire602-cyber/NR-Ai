@@ -1185,6 +1185,27 @@ export function useCatalogRevision(): number {
   return useCatalogVersion((s) => s.version);
 }
 
+/**
+ * E1: a lookup view over a catalog that may still be loading. A key missing from `locale` falls
+ * back to the other locale's copy, then to the key itself, so `t[key]` is never undefined and
+ * `.replace(...)` on it cannot throw while a catalog chunk is in flight (an Arabic -> English
+ * switch with only the Arabic catalog loaded used to crash NotificationBell).
+ */
+function withFallback(locale: Locale): TranslationCatalog {
+  const other: Locale = locale === "en" ? "ar" : "en";
+  return new Proxy(t[locale] as TranslationCatalog, {
+    get(target, prop, receiver) {
+      if (typeof prop !== "string") return Reflect.get(target, prop, receiver);
+      return target[prop] ?? t[other][prop] ?? prop;
+    },
+  });
+}
+
+const fallbackViews: Record<Locale, TranslationCatalog> = {
+  en: withFallback("en"),
+  ar: withFallback("ar"),
+};
+
 export function useTranslation() {
   const { locale } = useI18n();
   // Subscribing re-renders the caller once a lazily loaded catalog lands.
@@ -1192,8 +1213,9 @@ export function useTranslation() {
   const needed = neededNamespaces();
   if (!hasNamespaces(locale, needed)) {
     void loadLocaleForCurrentRoute(locale);
-    // While Arabic chunks load after a switch, keep showing the loaded English copy.
-    if (locale !== "en" && hasNamespaces("en", needed)) return { t: t.en, locale };
+    // While a locale's chunks load after a switch, show the other loaded catalog's copy and
+    // never hand out an undefined string.
+    return { t: fallbackViews[locale], locale };
   }
   return { t: t[locale], locale };
 }

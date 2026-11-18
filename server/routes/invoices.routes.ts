@@ -288,7 +288,12 @@ async function prepareNewDocument(companyId: string, body: CreateInvoiceInput) {
   return { header, rows, totals, currency, rate };
 }
 
-const NO_BALANCE: InvoiceBalanceFields = { amountPaid: 0, openBalance: 0, openBalanceBase: 0 };
+const NO_BALANCE: InvoiceBalanceFields = {
+  amountPaid: 0,
+  amountCredited: 0,
+  openBalance: 0,
+  openBalanceBase: 0,
+};
 const balanceOf = (m: Map<string, InvoiceBalanceFields>, id: string) => m.get(id) ?? NO_BALANCE;
 
 export function registerInvoiceRoutes(app: Express) {

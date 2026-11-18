@@ -775,5 +775,9 @@
   "reportCenter.moreActions": "إجراءات أخرى",
   "reportCenter.open": "فتح",
   "reportCenter.arAgingTitle": "أعمار الذمم المدينة",
-  "reportCenter.apAgingTitle": "أعمار الذمم الدائنة"
+  "reportCenter.apAgingTitle": "أعمار الذمم الدائنة",
+  "reportCenter.colOpenBalance": "المفتوح",
+  "reportCenter.badgeCollections": "التحصيل",
+  "reportCenter.overdueCustomersCount": "{count, plural, zero {لا عملاء} one {عميل واحد} two {عميلان} few {# عملاء} many {# عميلًا} other {# عميل}}",
+  "reportCenter.vendorOpenBalanceHint": "{count, plural, zero {لا موردين متأخرين} one {مورد واحد متأخر} two {موردان متأخران} few {# موردين متأخرين} many {# موردًا متأخرًا} other {# مورد متأخر}}"
 }

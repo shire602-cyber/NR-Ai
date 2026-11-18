@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTranslation } from "@/lib/i18n";
+import { pegRatePrefill } from "@/lib/document-currency";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -381,6 +382,7 @@ const SOURCE_LABELS: Record<string, { en: string; ar: string }> = {
   manual: { en: "Manual", ar: "يدوي" },
   cbuae: { en: "Central Bank", ar: "المصرف المركزي" },
   identity: { en: "Fixed", ar: "ثابت" },
+  peg: { en: "Fixed peg", ar: "الربط الثابت" },
   import: { en: "Imported", ar: "مستورد" },
   system: { en: "System", ar: "النظام" },
 };
@@ -434,7 +436,7 @@ export default function ExchangeRates() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [formFromCurrency, setFormFromCurrency] = useState("USD");
   const [formToCurrency, setFormToCurrency] = useState("AED");
-  const [formRate, setFormRate] = useState("");
+  const [formRate, setFormRate] = useState(pegRatePrefill("USD", "AED"));
   const [formRateType, setFormRateType] = useState<RateType>("spot");
   const [formEffectiveDate, setFormEffectiveDate] = useState(todayIso());
   const [largeMove, setLargeMove] = useState<string | null>(null);
@@ -505,7 +507,7 @@ export default function ExchangeRates() {
       invalidateAll();
       setShowAddDialog(false);
       setLargeMove(null);
-      setFormRate("");
+      setFormRate(pegRatePrefill(formFromCurrency, formToCurrency));
       toast({ title: s.added });
     },
     onError: (error: Error) => {
@@ -590,6 +592,18 @@ export default function ExchangeRates() {
       toast({ title: s.revalFailed, description: error?.message, variant: "destructive" });
     },
   });
+
+  // E1: keep the rate box on a real value for the pair (the peg for USD/AED), but never
+  // overwrite a number the user typed.
+  const changePair = (side: "from" | "to") => (value: string) => {
+    const nextFrom = side === "from" ? value : formFromCurrency;
+    const nextTo = side === "to" ? value : formToCurrency;
+    const untouched =
+      formRate === "" || formRate === pegRatePrefill(formFromCurrency, formToCurrency);
+    if (side === "from") setFormFromCurrency(value);
+    else setFormToCurrency(value);
+    if (untouched) setFormRate(pegRatePrefill(nextFrom, nextTo));
+  };
 
   const submitRate = (confirmLargeMove: boolean) => {
     const rate = parseFloat(formRate);
@@ -1162,11 +1176,11 @@ export default function ExchangeRates() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{s.fromCurrency}</Label>
-                {currencySelect(formFromCurrency, setFormFromCurrency, "select-rate-from")}
+                {currencySelect(formFromCurrency, changePair("from"), "select-rate-from")}
               </div>
               <div className="space-y-2">
                 <Label>{s.toCurrency}</Label>
-                {currencySelect(formToCurrency, setFormToCurrency, "select-rate-to")}
+                {currencySelect(formToCurrency, changePair("to"), "select-rate-to")}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">

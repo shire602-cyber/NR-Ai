@@ -16,6 +16,9 @@ function receivableCounts(invoices: any[] | undefined, asOf: string | undefined)
   let overdue = 0;
   for (const invoice of invoices ?? []) {
     if (!OPEN_INVOICE_STATUSES.has(String(invoice.status))) continue;
+    // E1 (J1-r2): a credit note is not a receivable, and a settled invoice owes nothing.
+    if (invoice.invoiceType === "credit_note") continue;
+    if (typeof invoice.openBalance === "number" && !(invoice.openBalance > 0)) continue;
     open += 1;
     const due = invoice.dueDate ? String(invoice.dueDate).slice(0, 10) : null;
     if (due && due < today) overdue += 1;
