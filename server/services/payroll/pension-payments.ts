@@ -163,6 +163,7 @@ export async function payPension(
         lines: [
           {
             accountId: requireAccount(accounts, "pensionPayable"),
+            controlLeg: "payroll",
             debitFils: amountFils,
             description: `Pension payable cleared - ${label}`,
           },

@@ -229,6 +229,7 @@ export function normalizeLine(
     foreignCreditFils: foreignCredit,
     exchangeRate,
     ...(line.systemVat === true ? { systemVat: true } : {}),
+    ...(line.controlLeg ? { controlLeg: line.controlLeg } : {}),
   };
 }
 

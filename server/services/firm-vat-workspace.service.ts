@@ -1,21 +1,16 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 
 import type { Request } from "express";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { ConflictError, DomainError, NotFoundError, ValidationError } from "../errors";
 import { assertPeriodNotLocked } from "./period-lock.service";
-import { storage } from "../storage";
-import { ACCOUNT_CODES } from "../constants";
-import { buildVatRowJournalLines } from "./vat-workpaper-posting";
+import { isPostableVatCategory } from "./vat-workpaper-posting";
+import { createBill } from "./bill-payment.service";
+import { createDraftInvoice } from "./connectors/draft-documents";
+import { issueInvoice } from "./invoice-posting.service";
 import { recordAudit } from "./audit.service";
 import { assertDifferentActor } from "../middleware/companyRolePolicy";
-import {
-  defineMachine,
-  postJournal,
-  reverseBySource,
-  transitionRow,
-  withLedgerTx,
-} from "../ledger";
+import { defineMachine, reverseBySource, transitionRow, withLedgerTx } from "../ledger";
 import { mulRate, toFils } from "../../shared/money";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { classifySupply } from "../../shared/vat-classification";
@@ -23,6 +18,7 @@ import { computeVat201 } from "../tax/vat-engine";
 import { normaliseEmirate as normaliseEmirateStrict } from "../tax/vat-boxes";
 import {
   companies,
+  journalEntries,
   vatReturns,
   vatWorkpaperAttachments,
   vatWorkpaperRows,
@@ -775,6 +771,29 @@ export async function deleteVatWorkpaperRow(workpaperId: string, rowId: string) 
     .limit(1);
   if (!existing) throw new NotFoundError("VAT workpaper row");
 
+  // C1 (RM5): a posted manual row lives on as its invoice or bill; that document is corrected
+  // through its own flow (void / credit note), so the row is kept while the document is live.
+  if (existing.sourceMethod === "manual" && existing.sourceDocumentId) {
+    const live =
+      existing.sourceDocumentType === "invoice"
+        ? await pool.query(
+            `SELECT number AS ref FROM invoices WHERE id = $1 AND company_id = $2
+                AND status NOT IN ('void', 'cancelled')`,
+            [existing.sourceDocumentId, existing.companyId]
+          )
+        : await pool.query(
+            `SELECT COALESCE(bill_number, id::text) AS ref FROM vendor_bills
+              WHERE id = $1 AND company_id = $2 AND status NOT IN ('void', 'rejected')`,
+            [existing.sourceDocumentId, existing.companyId]
+          );
+    if (live.rows[0]) {
+      throw new ConflictError(
+        `This row was posted as ${existing.sourceDocumentType} ${String(live.rows[0].ref)}. ` +
+          `Void or reject that ${existing.sourceDocumentType} first, then delete the row.`
+      );
+    }
+  }
+
   // If this row was posted to the ledger, reverse it (delete the linked journal
   // entry) so deleting the row doesn't leave an orphaned GL entry behind.
   if (existing.journalEntryId) {
@@ -805,27 +824,20 @@ export async function deleteVatWorkpaperRow(workpaperId: string, rowId: string) 
   return { id: rowId };
 }
 
-/** Get (or create once) the default "General Expenses" account for VAT purchase posting. */
-async function getOrCreateGeneralExpense(companyId: string) {
-  const existing = await storage.getAccountByCode(companyId, ACCOUNT_CODES.GENERAL_EXPENSE);
-  if (existing) return existing;
-  return storage.createAccount({
-    companyId,
-    code: ACCOUNT_CODES.GENERAL_EXPENSE,
-    nameEn: "General Expenses",
-    type: "expense",
-  });
-}
-
 /**
- * Post a manually-entered VAT row to the general ledger so it shows up across
- * the books (journal, P&L, balance sheet) — the books tie to the VAT 201.
- * Sales rows post Dr A/R, Cr Revenue, Cr Output VAT; standard purchase rows post
- * Dr Expense, Dr Input VAT, Cr Accounts Payable.
+ * Post a manually-entered VAT row to the books so it shows up across the journal, P&L, balance
+ * sheet and VAT 201.
  *
- * Guards: only manual rows (rows pulled from the books are already in the
- * ledger — posting would double-count); not already posted; not excluded; a
- * postable sales category; period not locked; required accounts present.
+ * C1 (RM5): the row reaches the books as the document that owns its receivable or payable, never
+ * as a bare journal on 1040 / 2010 (the aging could never tie and the receivable could never be
+ * receipted). A sales row issues a customer invoice (Dr A/R, Cr revenue, Cr output VAT, through
+ * the invoice posting service); a purchase, reverse-charge or import row creates the supplier
+ * bill, pending approval, which posts Dr expense, Dr input VAT, Cr A/P (and the self-assessed
+ * output VAT) when it is approved through the bill approval flow. The row is linked to the
+ * document (source_document_type / _id) so a later pull from the books does not count it twice.
+ *
+ * Guards: only manual rows (rows pulled from the books are already in the ledger — posting would
+ * double-count); not already posted; not excluded; a postable category; period not locked.
  */
 export async function postVatWorkpaperRowToLedger(
   workpaperId: string,
@@ -841,7 +853,7 @@ export async function postVatWorkpaperRowToLedger(
     .limit(1);
   if (!row) throw new NotFoundError("VAT workpaper row");
 
-  if (row.journalEntryId) {
+  if (row.journalEntryId || (row.sourceMethod === "manual" && row.sourceDocumentId)) {
     throw new ConflictError("This row is already posted to the ledger.");
   }
   if (row.sourceMethod !== "manual") {
@@ -852,77 +864,135 @@ export async function postVatWorkpaperRowToLedger(
   if (row.status === "excluded") {
     throw new ValidationError("Excluded rows are not posted to the ledger.");
   }
+  if (!isPostableVatCategory(row.rowCategory)) {
+    throw new ValidationError(
+      `${row.rowCategory} rows aren't posted to the ledger automatically. Sales (standard/zero-rated/exempt), ` +
+        "standard expenses, reverse-charge and imports post as invoices and bills."
+    );
+  }
 
   const companyId = workpaper.companyId;
+  const netFils = toFils(String(row.taxableAmount ?? 0), { rounding: "halfUp" });
+  const vatFils = toFils(String(row.vatAmount ?? 0), { rounding: "halfUp" });
+  if (netFils <= 0) {
+    throw new ValidationError("Taxable amount must be greater than zero to post.");
+  }
+  // A dateless row belongs to the VAT period being worked, not "today" — posting
+  // to today could land it in the wrong return. Fall back to the period end.
+  const date = (row.documentDate ? new Date(row.documentDate) : new Date(workpaper.periodEnd))
+    .toISOString()
+    .slice(0, 10);
+  await assertPeriodNotLocked(companyId, date);
+  const trn = validateUaeTrn(row.counterpartyTrn);
+  const counterpartyTrn = trn.valid ? trn.trn : null;
+  const description = (
+    row.invoiceNumber ? `VAT ${row.rowCategory} ${row.invoiceNumber}` : `VAT ${row.rowCategory}`
+  ).slice(0, 500);
+
   const isPurchase =
     row.rowCategory === "standard_expense" ||
     row.rowCategory === "reverse_charge_input" ||
     row.rowCategory === "import";
-  const [ar, revenue, zeroRated, vatOutput, ap, vatInput] = await Promise.all([
-    storage.getAccountByCode(companyId, ACCOUNT_CODES.AR),
-    storage.getAccountByCode(companyId, ACCOUNT_CODES.REVENUE),
-    storage.getAccountByCode(companyId, ACCOUNT_CODES.ZERO_RATED_SALES),
-    storage.getAccountByCode(companyId, ACCOUNT_CODES.VAT_OUTPUT),
-    storage.getAccountByCode(companyId, ACCOUNT_CODES.AP),
-    storage.getAccountByCode(companyId, ACCOUNT_CODES.VAT_INPUT),
-  ]);
-  // Purchases need an expense account to debit. The VAT row carries no expense
-  // category, so default to a "General Expenses" account, creating it once if
-  // the company's chart doesn't have one (the accountant can reclassify later).
-  const generalExpense = isPurchase ? await getOrCreateGeneralExpense(companyId) : null;
-
-  const built = buildVatRowJournalLines(
-    {
-      rowCategory: row.rowCategory,
-      taxableAmount: Number(row.taxableAmount ?? 0),
-      vatAmount: Number(row.vatAmount ?? 0),
-      label: row.invoiceNumber
-        ? `VAT ${row.rowCategory} ${row.invoiceNumber}`
-        : `VAT ${row.rowCategory}`,
-    },
-    {
-      accountsReceivableId: ar?.id ?? null,
-      salesRevenueId: revenue?.id ?? null,
-      zeroRatedRevenueId: zeroRated?.id ?? null,
-      vatOutputId: vatOutput?.id ?? null,
-      generalExpenseId: generalExpense?.id ?? null,
-      vatInputId: vatInput?.id ?? null,
-      accountsPayableId: ap?.id ?? null,
-    }
-  );
-  if (!built.ok) {
-    throw new ValidationError(built.message);
+  if (isPurchase) {
+    const selfAssessed = row.rowCategory !== "standard_expense";
+    const created = await createBill({
+      companyId,
+      actorId: actorUserId,
+      status: "pending",
+      origin: "vat_workpaper",
+      originRef: rowId,
+      input: {
+        vendor_name: (row.counterpartyName || "VAT workpaper supplier").slice(0, 255),
+        vendor_trn: counterpartyTrn,
+        bill_number: row.invoiceNumber ?? null,
+        bill_date: date,
+        notes: `Posted from VAT workpaper row ${rowId}`,
+        reverse_charge: row.rowCategory === "reverse_charge_input",
+        is_import: row.rowCategory === "import",
+        line_items: [
+          {
+            description,
+            quantity: 1,
+            unit_price: netFils,
+            vat_rate: vatFils > 0 ? 5 : 0,
+            vat_supply_type: selfAssessed
+              ? "reverse_charge"
+              : vatFils > 0
+                ? "standard_rated"
+                : "zero_rated",
+          },
+        ],
+      } as Parameters<typeof createBill>[0]["input"],
+    });
+    await db
+      .update(vatWorkpaperRows)
+      .set({
+        sourceDocumentType: "bill",
+        sourceDocumentId: created.bill.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(vatWorkpaperRows.id, rowId));
+    return {
+      journalEntryId: null,
+      documentType: "bill" as const,
+      documentId: created.bill.id,
+      status: "pending_approval" as const,
+    };
   }
 
-  // A dateless row belongs to the VAT period being worked, not "today" — posting
-  // to today could land it in the wrong return. Fall back to the period end.
-  const date = row.documentDate ? new Date(row.documentDate) : new Date(workpaper.periodEnd);
-  await assertPeriodNotLocked(companyId, date);
-
-  const { entry } = await postJournal(
+  const supplyType =
+    row.rowCategory === "zero_rated_sale"
+      ? "zero_rated"
+      : row.rowCategory === "exempt_sale"
+        ? "exempt"
+        : "standard_rated";
+  const draft = await createDraftInvoice(
+    companyId,
     {
-      companyId,
-      date: date.toISOString().slice(0, 10),
-      memo: `VAT workpaper — ${row.invoiceNumber || row.rowCategory}`,
-      status: "posted",
-      source: "vat_workpaper_row",
-      sourceId: rowId,
-      idempotencyKey: `vat_workpaper_row:${rowId}`,
-      lines: built.lines.map((l) => ({
-        accountId: l.accountId,
-        ...(l.debit > 0 ? { debit: l.debit.toFixed(2) } : { credit: l.credit.toFixed(2) }),
-        description: l.description,
-      })),
+      customerName: (row.counterpartyName || "VAT workpaper customer").slice(0, 255),
+      customerTrn: counterpartyTrn,
+      date,
+      placeOfSupplyEmirate: row.emirate ?? null,
+      notes: `Posted from VAT workpaper row ${rowId}`,
+      lines: [
+        {
+          description,
+          quantity: 1,
+          unitPrice: netFils,
+          vatRate: supplyType === "standard_rated" ? 0.05 : 0,
+          vatSupplyType: supplyType,
+        },
+      ],
     },
-    { actorId: actorUserId }
+    actorUserId
   );
-
+  const issued = await issueInvoice(draft.id, companyId, actorUserId, "sent");
+  const [je] = await db
+    .select({ id: journalEntries.id })
+    .from(journalEntries)
+    .where(
+      and(
+        eq(journalEntries.companyId, companyId),
+        eq(journalEntries.source, "invoice"),
+        eq(journalEntries.sourceId, issued.invoice.id)
+      )
+    )
+    .limit(1);
   await db
     .update(vatWorkpaperRows)
-    .set({ journalEntryId: entry.id, updatedAt: new Date() })
+    .set({
+      sourceDocumentType: "invoice",
+      sourceDocumentId: issued.invoice.id,
+      journalEntryId: je?.id ?? null,
+      updatedAt: new Date(),
+    })
     .where(eq(vatWorkpaperRows.id, rowId));
-
-  return { journalEntryId: entry.id };
+  return {
+    journalEntryId: je?.id ?? null,
+    documentType: "invoice" as const,
+    documentId: issued.invoice.id,
+    status: "posted" as const,
+  };
 }
 
 export async function scanVatWorkpaperEvidence(

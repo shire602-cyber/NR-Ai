@@ -36,6 +36,7 @@ import { fromFils, toFils } from "../../../shared/money";
 import { isNonDepreciableCategory } from "../../../shared/validators/fixed-assets";
 import { postJournal, withLedgerTx, type LedgerTx, type PostJournalLineInput } from "../../ledger";
 import { assertAccount, ensureAccountByCode, q } from "../inventory/store";
+import { assertChosenAccountsNotControl } from "../../ledger/control-accounts";
 import { defaultPaymentAccountId, isHeaderAccount } from "../payment-accounts.service";
 import { normaliseEmirate } from "../../tax/vat-boxes";
 import { createDraftInvoice } from "../connectors/draft-documents";
@@ -328,6 +329,15 @@ export async function capitalizeAsset(
           "equity",
         ])
       ).id;
+  // C1 (RM1): the payment account is the user's choice; a control account (Cr 2010 / 1040 / 2020)
+  // would book a payable, receivable or output VAT with no bill, invoice or return behind it.
+  if (!args.openingBalance) {
+    await assertChosenAccountsNotControl(
+      a.company_id,
+      [{ field: "paymentAccountId", accountId: credit }],
+      { tx }
+    );
+  }
   const acc = await assetAccounts(tx, a);
   const date = args.date ?? a.purchase_iso;
   const opening = args.openingBalance ? Math.max(0, args.openingAccumulatedFils ?? 0) : 0;
@@ -357,6 +367,7 @@ export async function capitalizeAsset(
             {
               accountId: vatAccount,
               debitFils: vatFils,
+              systemVat: true,
               description: `Input VAT - ${a.asset_name}`,
             },
           ]
@@ -1171,6 +1182,13 @@ async function disposeInTx(
       const proceedsAccount = input.proceedsAccountId
         ? (await assertAccount(tx, a.company_id, input.proceedsAccountId, ["asset"])).id
         : await defaultDisposalCashAccount(tx, a.company_id);
+      // C1 (RM1): cash proceeds land on a bank or cash account. A receivable is a disposal on
+      // credit (onCredit), which raises the invoice that 1040 belongs to.
+      await assertChosenAccountsNotControl(
+        a.company_id,
+        [{ field: "proceedsAccountId", accountId: proceedsAccount }],
+        { tx }
+      );
       lines.push({
         accountId: proceedsAccount,
         debitFils: grossFils,
@@ -1204,6 +1222,7 @@ async function disposeInTx(
       lines.push({
         accountId: vat,
         creditFils: split.vatFils,
+        systemVat: true,
         description: `Output VAT 5% - disposal of ${a.asset_name}`,
       });
     }

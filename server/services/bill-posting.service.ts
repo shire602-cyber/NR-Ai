@@ -590,6 +590,7 @@ export async function planBillJournal(
     lines.push({
       accountId: inputVat.id,
       debitFils: recoverableBase,
+      systemVat: true,
       description: `Input VAT - Bill ${billRef}`,
     });
   }
@@ -622,6 +623,7 @@ export async function planBillJournal(
     lines.push({
       accountId: outputVat.id,
       creditFils: rcVatBase,
+      systemVat: true,
       description: `Reverse-charge output VAT - Bill ${billRef}`,
     });
   }
@@ -647,6 +649,7 @@ export async function planBillJournal(
   lines.push({
     accountId: ap.id,
     creditFils: apCreditFils,
+    controlLeg: "payables",
     description: `A/P - ${bill.vendor_name} - Bill ${billRef}`.slice(0, 255),
     ...(foreign
       ? {

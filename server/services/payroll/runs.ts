@@ -822,6 +822,7 @@ export function buildAccrualLines(
   if (net > 0) {
     lines.push({
       accountId: requireAccount(accounts, "salariesPayable"),
+      controlLeg: "payroll",
       creditFils: net,
       description: `Net salaries payable - payroll ${label}`,
     });
@@ -829,6 +830,7 @@ export function buildAccrualLines(
   if (pensionEe + pensionEr > 0) {
     lines.push({
       accountId: requireAccount(accounts, "pensionPayable"),
+      controlLeg: "payroll",
       creditFils: pensionEe + pensionEr,
       description: `Pension payable (GPSSA / ADPF, employee + employer) - payroll ${label}`,
     });
@@ -836,6 +838,7 @@ export function buildAccrualLines(
   if (deductions > 0) {
     lines.push({
       accountId: requireAccount(accounts, "deductionsPayable"),
+      controlLeg: "payroll",
       creditFils: deductions,
       description: `Payroll deductions payable - payroll ${label}`,
     });
@@ -843,6 +846,7 @@ export function buildAccrualLines(
   if (gratuity > 0) {
     lines.push({
       accountId: requireAccount(accounts, "gratuityProvision"),
+      controlLeg: "payroll",
       creditFils: gratuity,
       description: `End-of-service gratuity provision - payroll ${label}`,
     });
@@ -1004,6 +1008,7 @@ export async function payRun(
       if (netFils > 0) {
         lines.push({
           accountId: requireAccount(accounts, "salariesPayable"),
+          controlLeg: "payroll",
           debitFils: netFils,
           description: `Net salaries paid - payroll ${label}`,
         });

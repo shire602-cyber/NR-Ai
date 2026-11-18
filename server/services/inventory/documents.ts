@@ -180,11 +180,13 @@ export async function reverseDocumentStock(
       const grni = await ensureAccountByCode(tx, args.companyId, INVENTORY_CODES.GRNI);
       lines.push({
         accountId: restored.accounts.inventory,
+        controlLeg: "inventory",
         fils: Math.max(0, valueFils),
         description: `${args.label} voided - received goods kept in stock`,
       });
       lines.push({
         accountId: grni,
+        controlLeg: "grni",
         fils: -Math.max(0, valueFils),
         description: `${args.label} voided - goods received not invoiced`,
       });
@@ -317,6 +319,7 @@ export async function planBillStock(
           (await ensureAccountByCode(tx, companyId, INVENTORY_CODES.COGS));
         draft.push({
           accountId: grni,
+          controlLeg: "grni",
           fils: clearFils,
           description: `${label} - clear goods received not invoiced`,
         });
@@ -352,6 +355,7 @@ export async function planBillStock(
             capitalised = r.stockDeltaFils;
             draft.push({
               accountId: r.accounts.inventory,
+              controlLeg: "inventory",
               fils: capitalised,
               description: `${label} - purchase price variance on stock on hand`,
             });
@@ -415,6 +419,7 @@ export async function planBillStock(
       movementIds.push(r.movementId);
       draft.push({
         accountId: r.accounts.inventory,
+        controlLeg: "inventory",
         fils: stockValue,
         description: `${label} - stock ${product.sku ?? product.name}`,
       });
@@ -506,6 +511,7 @@ export async function planPurchaseReturnStock(
     // stockDeltaFils is negative: the value that left stock.
     draft.push({
       accountId: r.accounts.inventory,
+      controlLeg: "inventory",
       fils: r.stockDeltaFils,
       description: `${label} - returned ${product.sku ?? product.name}`,
     });
@@ -604,6 +610,7 @@ export async function onInvoiceIssued(
       });
       draft.push({
         accountId: r.accounts.inventory,
+        controlLeg: "inventory",
         fils: -r.costFils,
         description: `Stock out - Invoice ${invoice.number}`,
       });
@@ -729,6 +736,7 @@ export async function onCreditNoteIssued(
       movementIds.push(r.movementId);
       draft.push({
         accountId: r.accounts.inventory,
+        controlLeg: "inventory",
         fils: value,
         description: `Restock - ${creditNote.number}`,
       });
@@ -877,11 +885,13 @@ export async function onGoodsReceived(
       const grni = await ensureAccountByCode(tx, event.companyId, INVENTORY_CODES.GRNI);
       draft.push({
         accountId: r.accounts.inventory,
+        controlLeg: "inventory",
         fils: valueFils,
         description: `${label} - stock in`,
       });
       draft.push({
         accountId: grni,
+        controlLeg: "grni",
         fils: -valueFils,
         description: `${label} - goods received not invoiced`,
       });

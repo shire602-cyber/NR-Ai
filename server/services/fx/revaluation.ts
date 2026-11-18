@@ -257,7 +257,15 @@ export async function previewRevaluation(companyId: string, asOfInput?: string) 
   };
 }
 
-type JeLine = { accountId: string; debitFils: number; creditFils: number; description: string };
+// C1: every line is a balance the exposure engine computed itself (the receivable, payable or bank
+// carrying the foreign balance, and the unrealised gain / loss), so it is a derived control leg.
+type JeLine = {
+  accountId: string;
+  debitFils: number;
+  creditFils: number;
+  description: string;
+  controlLeg: "any";
+};
 
 const toJeLines = (lines: RevaluationLine[], flip = false, prefix = ""): JeLine[] =>
   lines
@@ -267,6 +275,7 @@ const toJeLines = (lines: RevaluationLine[], flip = false, prefix = ""): JeLine[
       debitFils: flip ? l.creditFils : l.debitFils,
       creditFils: flip ? l.debitFils : l.creditFils,
       description: `${prefix}${l.description}`.slice(0, 255),
+      controlLeg: "any",
     }));
 
 async function post(
@@ -472,6 +481,7 @@ export async function undoRevaluation(companyId: string, revaluationId: string, 
               debitFils: toFils(String(l.credit ?? 0)),
               creditFils: toFils(String(l.debit ?? 0)),
               description: `Undo — ${l.description ?? ""}`.slice(0, 255),
+              controlLeg: "any" as const,
             })
           )
           .filter((l: JeLine) => l.debitFils !== 0 || l.creditFils !== 0)

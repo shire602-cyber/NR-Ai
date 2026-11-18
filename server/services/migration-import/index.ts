@@ -33,6 +33,7 @@ import { resolve } from "../../platform/service-registry";
 import type { FxGetRate } from "../fx";
 import { DomainError } from "../../errors";
 import { postJournal, withLedgerTx, type PostJournalLineInput } from "../../ledger";
+import { controlAccountsAmong, type ControlLedger } from "../../ledger/control-accounts";
 import { emitDomainEvent } from "../../platform/domain-events";
 import { txRows } from "../bill-posting.service";
 import { pq } from "../connectors/pq";
@@ -431,6 +432,47 @@ async function inventoryAccountIds(companyId: string): Promise<Set<string>> {
   return new Set(rows.map((r) => r.id));
 }
 
+/**
+ * C1 (RM4): the control ledger of each trial-balance account (receivables, payables, VAT, GRNI,
+ * payroll payables; a sub-account of a control account is one too). A control balance in the
+ * opening trial balance needs the sub-ledger records that carry it, or the aging, VAT and payroll
+ * ties can never hold: open invoices / bills (documents mode), the employees' opening gratuity
+ * provisions, the products' opening stock.
+ */
+async function tbControlLedgers(
+  companyId: string,
+  accountIds: readonly string[]
+): Promise<Map<string, ControlLedger>> {
+  const hits = await controlAccountsAmong(companyId, accountIds);
+  return new Map(hits.map((h) => [h.accountId, h.ledger]));
+}
+
+/** Employees' opening gratuity provisions recorded as of the cut-over date (fils). */
+async function openingGratuityFils(companyId: string, cutOver: string | null): Promise<number> {
+  try {
+    const { rows } = await pq<{ f: string }>(
+      `SELECT COALESCE(SUM(ROUND(opening_gratuity_provision * 100)), 0)::bigint::text AS f
+         FROM employees
+        WHERE company_id = $1 AND opening_gratuity_provision IS NOT NULL
+          AND ($2::date IS NULL OR opening_gratuity_as_of IS NULL OR opening_gratuity_as_of <= $2::date)`,
+      [companyId, cutOver]
+    );
+    return Number(rows[0]?.f ?? 0);
+  } catch {
+    return 0; // no payroll module tables
+  }
+}
+
+const GRATUITY_CODE = "2036";
+
+function isReceivableAccount(acct: AccountRow | undefined, ledger: ControlLedger | undefined) {
+  return !!acct && (acct.sub_type === "receivable" || ledger === "receivables");
+}
+
+function isPayableAccount(acct: AccountRow | undefined, ledger: ControlLedger | undefined) {
+  return !!acct && (acct.sub_type === "payable" || ledger === "payables");
+}
+
 /** Stock value recorded on the company's stocked products (fils). */
 async function stockValueFils(companyId: string): Promise<number> {
   const { rows } = await pq<{ f: string }>(
@@ -577,6 +619,12 @@ export async function validateImport(companyId: string, jobId: string): Promise<
       const existing = await companyAccounts(companyId);
       const state = await openingState(companyId);
       const inventoryIds = await inventoryAccountIds(companyId);
+      const ledgers = await tbControlLedgers(
+        companyId,
+        rows.map((r) => existing.get(String(r.code))?.id ?? "")
+      );
+      let gratuityFils = 0;
+      const otherControl = new Map<ControlLedger, Set<string>>();
       let debit = 0;
       let credit = 0;
       let arFils = 0;
@@ -599,8 +647,17 @@ export async function validateImport(companyId: string, jobId: string): Promise<
         debit += d;
         credit += c;
         perCode.set(code, (perCode.get(code) ?? 0) + d - c);
-        if (acct?.sub_type === "receivable") arFils += d - c;
-        if (acct?.sub_type === "payable") apFils += c - d;
+        const ledger = acct ? ledgers.get(acct.id) : undefined;
+        if (isReceivableAccount(acct, ledger)) arFils += d - c;
+        if (isPayableAccount(acct, ledger)) apFils += c - d;
+        if (acct && d !== c && !inventoryIds.has(acct.id)) {
+          if (ledger === "payroll" && code === GRATUITY_CODE) gratuityFils += c - d;
+          else if (ledger === "payroll" || ledger === "vat" || ledger === "grni") {
+            const set = otherControl.get(ledger) ?? new Set<string>();
+            set.add(code);
+            otherControl.set(ledger, set);
+          }
+        }
         if (acct && inventoryIds.has(acct.id)) inventoryFils += d - c;
         if (acct && (acct.type === "income" || acct.type === "expense")) {
           warn(
@@ -648,6 +705,62 @@ export async function validateImport(companyId: string, jobId: string): Promise<
         }
         if (!existing.has(OBE_CODE))
           warn(null, "OBE_CREATED", "Account 3040 Opening Balance Equity will be created");
+      }
+      // C1 (RM4): a receivable or payable balance needs its open documents, otherwise the A/R and
+      // A/P aging can never tie to 1040 / 2010 and the balance can never be receipted or paid
+      // (a bank line coded to a control account is refused).
+      if (mode === "balance" && arFils !== 0) {
+        err(
+          null,
+          "AR_WITHOUT_DOCUMENTS",
+          `The trial balance carries accounts receivable of ${fromFils(arFils)} with no customer invoices behind it. ` +
+            "Import it in 'documents' mode and import the open invoices (Customers, open invoices): each invoice then carries its share of the receivable and can be receipted."
+        );
+      }
+      if (mode === "balance" && apFils !== 0) {
+        err(
+          null,
+          "AP_WITHOUT_DOCUMENTS",
+          `The trial balance carries accounts payable of ${fromFils(apFils)} with no supplier bills behind it. ` +
+            "Import it in 'documents' mode and import the open bills (Suppliers, open bills): each bill then carries its share of the payable and can be paid."
+        );
+      }
+      // The gratuity provision (2036) is carried by each employee's opening provision, which the
+      // final settlement uses and the gratuity tie reads.
+      if (gratuityFils !== 0) {
+        const employeesFils = await openingGratuityFils(companyId, cutOver);
+        if (employeesFils !== gratuityFils) {
+          err(
+            null,
+            "GRATUITY_WITHOUT_EMPLOYEES",
+            `The end-of-service gratuity provision in the trial balance (${fromFils(gratuityFils)}) must equal the opening gratuity provisions recorded on your employees (${fromFils(employeesFils)}). ` +
+              "Add the employees with their opening gratuity provision as of the cut-over date first (Payroll, employees)."
+          );
+        }
+      }
+      // VAT, goods received not invoiced and the payroll payables have no opening document: the
+      // VAT return, the purchase-order receipts and the payroll runs are their only writers.
+      const guidance: Record<string, [string, string]> = {
+        vat: [
+          "VAT_IN_OPENING",
+          "VAT owed to or reclaimable from the FTA for returns filed before go-live is not part of a return kept here. Carry it on a non-VAT current liability or asset (for example 2040 Accrued Expenses) and pay or receive it from there.",
+        ],
+        grni: [
+          "GRNI_IN_OPENING",
+          "Goods received not invoiced is cleared by purchase-order receipts and their bills. Carry an opening accrual on 2040 Accrued Expenses instead.",
+        ],
+        payroll: [
+          "PAYROLL_PAYABLE_IN_OPENING",
+          "Salaries, pension and deductions payable are kept by payroll runs. Carry amounts unpaid at the cut-over date on 2040 Accrued Expenses and pay them from there.",
+        ],
+      };
+      for (const [ledger, codes] of otherControl) {
+        const [code, text] = guidance[ledger];
+        err(
+          null,
+          code,
+          `Control account${codes.size > 1 ? "s" : ""} ${[...codes].sort().join(", ")} cannot take an opening balance. ${text}`
+        );
       }
       // B1 (NM5): inventory in the opening balance is carried by the opening stock, like A/R and
       // A/P by open documents. Without stock behind it the valuation (0) and GL 1070 would
@@ -939,11 +1052,19 @@ async function commitTrialBalance(
   }
   let deferred = 0; // net debit moved to Opening Balance Equity
   let deferredInventory = 0; // B1 (NM5): carried by the opening stock already recorded
+  const ledgers = await tbControlLedgers(
+    companyId,
+    [...net.keys()].map((code) => existing.get(code)?.id ?? "")
+  );
   const lines: PostJournalLineInput[] = [];
   for (const [code, fils] of net) {
     if (fils === 0) continue;
     const acct = existing.get(code)!;
-    if (mode === "documents" && (acct.sub_type === "receivable" || acct.sub_type === "payable")) {
+    const ledger = ledgers.get(acct.id);
+    if (
+      mode === "documents" &&
+      (isReceivableAccount(acct, ledger) || isPayableAccount(acct, ledger))
+    ) {
       deferred += fils;
       continue;
     }
@@ -951,10 +1072,13 @@ async function commitTrialBalance(
       deferredInventory += fils;
       continue;
     }
+    // C1 (RM4): validateImport refused every other control balance; the gratuity provision is
+    // carried by the employees' opening provisions it was checked against.
+    const leg = ledger === "payroll" && code === GRATUITY_CODE ? { controlLeg: ledger } : {};
     lines.push(
       fils > 0
-        ? { accountId: acct.id, debitFils: fils, description: "Opening balance" }
-        : { accountId: acct.id, creditFils: -fils, description: "Opening balance" }
+        ? { accountId: acct.id, debitFils: fils, description: "Opening balance", ...leg }
+        : { accountId: acct.id, creditFils: -fils, description: "Opening balance", ...leg }
     );
   }
   if (deferred !== 0) {
@@ -1180,6 +1304,7 @@ async function commitOpenInvoices(
             {
               accountId: control.id,
               debitFils: dueBase,
+              controlLeg: "receivables",
               description: `Opening A/R ${r.number}`,
               ...fx.debitLine(due),
             },
@@ -1290,6 +1415,7 @@ async function commitOpenBills(
             {
               accountId: control.id,
               creditFils: dueBase,
+              controlLeg: "payables",
               description: `Opening A/P ${r.number}`,
               ...fx.creditLine(due),
             },

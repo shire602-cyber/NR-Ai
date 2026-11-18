@@ -6,6 +6,7 @@ import { requirePermission } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
+import { assertChosenAccountsNotControl } from "../ledger/control-accounts";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import {
@@ -44,6 +45,9 @@ async function assertRuleAccount(companyId: string, accountId: string): Promise<
       undefined,
       "Choose a contra account, not a bank account"
     );
+  // C1 (RL1): the rule codes bank lines to this account with no document behind them, so a
+  // control account would fail on every auto-match run. Refuse it when the rule is saved.
+  await assertChosenAccountsNotControl(companyId, [{ field: "accountId", accountId }]);
 }
 
 /** Another tenant's rule id answers 404 (never 403). */

@@ -64,12 +64,29 @@ describe("W5-B migration import", () => {
       { code: "5220", type: "expense", sub_type: "cost_of_sales" },
     ]);
 
+    // C1 (RM4): A/R and A/P balances need their open documents; a balance-mode import of this
+    // file is refused with guidance (the aging could never tie to 1040 / 2010).
+    const refused = await runImport(
+      t,
+      {
+        kind: "trial_balance",
+        sourceSystem: "xero",
+        csv: fixture("xero-trial-balance.csv"),
+        cutOverDate: CUT_OVER,
+        arApMode: "balance",
+      },
+      { expectCommit: false }
+    );
+    expect(refused.validated.status).toBe("previewed");
+    expect(refused.validated.issues.map((i: { code: string }) => i.code)).toEqual(
+      expect.arrayContaining(["V_AR_WITHOUT_DOCUMENTS", "V_AP_WITHOUT_DOCUMENTS"])
+    );
     const { preview, committed } = await runImport(t, {
       kind: "trial_balance",
       sourceSystem: "xero",
       csv: fixture("xero-trial-balance.csv"),
       cutOverDate: CUT_OVER,
-      arApMode: "balance",
+      arApMode: "documents",
     });
     expect(preview.rowCount).toBe(6); // title lines and the Total row are skipped
     const entries = await h.sql(
@@ -84,11 +101,13 @@ describe("W5-B migration import", () => {
       `SELECT SUM(debit)::text AS d, SUM(credit)::text AS c FROM journal_lines WHERE entry_id = $1`,
       [entries[0].id]
     );
-    expect(Number(sums[0].d)).toBe(49000);
-    expect(Number(sums[0].c)).toBe(49000);
+    // A/R 1,500 and A/P 2,000 wait in 3040 for the open documents (net credit 500).
+    expect(Number(sums[0].d)).toBe(47500);
+    expect(Number(sums[0].c)).toBe(47500);
     expect(await balance(t, "1020")).toBe(42500);
-    expect(await balance(t, "1040")).toBe(1500);
-    expect(await balance(t, "2010")).toBe(-2000);
+    expect(await balance(t, "1040")).toBe(0);
+    expect(await balance(t, "2010")).toBe(0);
+    expect(await balance(t, "3040")).toBe(-500);
 
     // A second opening trial balance is refused.
     const again = await runImport(
@@ -187,28 +206,24 @@ describe("W5-B migration import", () => {
     if (aging.status === 200 && aging.body?.totals) expect(aging.body.totals.total).toBe(1500);
   });
 
-  it("[R19-13] control totals are checked: a mismatch, or documents on a balance-mode TB, are refused", async () => {
+  it("[R19-13] control totals are checked: a mismatch, or A/R on a balance-mode TB, are refused", async () => {
     const t = await h.createTenant();
     await importCoa(t);
-    await runImport(t, {
-      kind: "trial_balance",
-      sourceSystem: "xero",
-      csv: fixture("xero-trial-balance.csv"),
-      cutOverDate: CUT_OVER,
-      arApMode: "balance",
-    });
+    // C1 (RM4): a balance-mode TB may not carry A/R or A/P at all, so documents can never
+    // count them twice; the refusal points at documents mode.
     const dup = await runImport(
       t,
       {
-        kind: "open_invoices",
+        kind: "trial_balance",
         sourceSystem: "xero",
-        csv: fixture("xero-open-invoices.csv"),
+        csv: fixture("xero-trial-balance.csv"),
         cutOverDate: CUT_OVER,
+        arApMode: "balance",
       },
       { expectCommit: false }
     );
     expect(dup.validated.issues.map((i: { code: string }) => i.code)).toContain(
-      "V_CONTROL_IN_OPENING_BALANCE"
+      "V_AR_WITHOUT_DOCUMENTS"
     );
 
     const u = await h.createTenant();

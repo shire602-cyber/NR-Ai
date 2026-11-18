@@ -417,13 +417,15 @@ export interface DraftLine {
   fils: number;
   costCenterId?: string | null;
   description: string;
+  /** C1: the movement's own inventory / GRNI leg (derived by the engine, never a user's account). */
+  controlLeg?: "inventory" | "grni";
 }
 
 /** Merge per (account, cost centre) and emit kernel lines (one side each, zero lines dropped). */
 export function toKernelLines(lines: DraftLine[]): PostJournalLineInput[] {
   const map = new Map<string, DraftLine>();
   for (const l of lines) {
-    const key = `${l.accountId}|${l.costCenterId ?? ""}`;
+    const key = `${l.accountId}|${l.costCenterId ?? ""}|${l.controlLeg ?? ""}`;
     const cur = map.get(key);
     if (cur) cur.fils += l.fils;
     else map.set(key, { ...l });
@@ -436,6 +438,7 @@ export function toKernelLines(lines: DraftLine[]): PostJournalLineInput[] {
       ...(l.fils > 0 ? { debitFils: l.fils } : { creditFils: -l.fils }),
       costCenterId: l.costCenterId ?? null,
       description: l.description.slice(0, 255),
+      ...(l.controlLeg ? { controlLeg: l.controlLeg } : {}),
     });
   }
   return out;
@@ -456,6 +459,7 @@ export function trueUpLines(
   return [
     {
       accountId: r.accounts.inventory,
+      controlLeg: "inventory",
       fils: diff,
       costCenterId: null,
       description: `${label} - stock true-up`,

@@ -205,6 +205,7 @@ export async function createBadDebtReliefClaim(input: {
           {
             accountId: output,
             debitFils: vatBase,
+            systemVat: true,
             description: `Output VAT relief - ${inv.number}`,
           },
           {
