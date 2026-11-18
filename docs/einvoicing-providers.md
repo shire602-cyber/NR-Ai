@@ -72,6 +72,7 @@ both providers may stay.
 
 - `server/services/einvoice/providers/registry.ts`: the `ACUBE_PROVIDER_MODULE` import and list entry
 - `server/routes.ts`: `registerEInvoiceAcubeRoutes` import and call
+- `scripts/ops/asp-sandbox-dryrun.ts`: the `acube` entry in `ASP_REQUIREMENTS` and its branch in `runProvider`
 - `server/http/body-limits.ts`: the `/api/webhooks/einvoice/acube` entry in `RAW_WEBHOOK_PREFIXES`
   (shared by `server/index.ts` and `tests/db/harness.ts`)
 - `server/middleware/csrf.ts`: the A-Cube webhook exemption
@@ -128,6 +129,7 @@ Env to unset: `ACUBE_*`.
 
 - `server/services/einvoice/providers/registry.ts`: the `COMPLYANCE_PROVIDER_MODULE` import and list entry
 - `server/routes.ts`: `registerEInvoiceComplyanceRoutes` import and call
+- `scripts/ops/asp-sandbox-dryrun.ts`: the `complyance` entry in `ASP_REQUIREMENTS` and its branch in `runProvider`
 - `server/http/body-limits.ts`: the `/api/webhooks/einvoice/complyance` entry in `RAW_WEBHOOK_PREFIXES`
   (shared by `server/index.ts` and `tests/db/harness.ts`)
 - `server/middleware/csrf.ts`: the Complyance webhook exemption
