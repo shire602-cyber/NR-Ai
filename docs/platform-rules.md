@@ -158,6 +158,11 @@ One model for every migrating company (D1, accounting re-audit 3: N1-N4, N7, N14
   Muhasib and is carried on 2040. With a cut-over inside a tax period, that period's pre-go-live
   VAT may stay on 2020 / 1050 (a `vat` control leg of the opening entry): the period's return
   reports it in the adjustment column and its settlement clears it, so 2020 / 1050 end at 0.
+  A return adjustment (output / input correction, voluntary disclosure) has no GL side, so one
+  for VAT from before the go-live date (a return period starting on or before the latest
+  committed import cut-over, or correcting such a period) is refused (422
+  `VAT_PRE_GO_LIVE_ADJUSTMENT`): VAT carried elsewhere (e.g. 2040) is moved onto 2020 / 1050 by
+  a reasoned VAT journal dated in the open period, which the return reports as an adjustment.
 - GRNI (2015) is written only by purchase-order receipts and their bills; a manual stock
   purchase names the account it was paid from (422 `COUNTER_ACCOUNT_REQUIRED`). Month end ties
   2015 to the receipts not yet billed (`grni` tie).

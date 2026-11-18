@@ -8,7 +8,8 @@
  *  - N3  PPE is carried by the asset register; the trial balance is checked against it and does
  *        not post it again; a register-to-GL tie at month end.
  *  - N4  a mid-quarter go-live: the open period's pre-go-live VAT sits on 2020, the return
- *        reports it and the settlement clears it (2020 and 2040 end at 0).
+ *        reports it and the settlement clears it (2020 and 2040 end at 0). INTEGRATE-H: the old
+ *        path (VAT on 2040 plus a return adjustment) is refused and redirected to a VAT journal.
  *  - N7  a manual stock purchase needs the account it was paid from (no GRNI default); GRNI tie.
  *  - N14 a documents-mode trial balance waiting for its open invoices / bills is a month-end
  *        warning until they arrive.
@@ -614,5 +615,147 @@ describe("D1 pending opening documents (N14)", () => {
     step = (await checklist(t, "2026-10")).find((i) => i.key === "opening_balances");
     expect(step).toMatchObject({ status: "complete" });
     expect(await gl(t, "3040")).toBe(0);
+  });
+});
+
+describe("INTEGRATE-H: N4 residual (pre-go-live VAT carried on 2040)", () => {
+  it("[N4-residual] a return correction for pre-go-live VAT is refused and redirected to a reasoned VAT journal; Q1 then settles 2020 and 2040 to 0", async () => {
+    restore = freezeTime("2026-11-18T08:00:00Z");
+    const t = await h.createTenant({ name: "D1N4Old" });
+    const c = base(t);
+    await t.as.patch(c, { emirate: "dubai" });
+    const bankId = await bank(t);
+    const bankAcct = await bankCode(bankId);
+    // The old guidance: January's output VAT carried on 2040 at a mid-quarter cut-over.
+    await importJob(t, {
+      kind: "trial_balance",
+      cutOverDate: "2026-01-31",
+      arApMode: "documents",
+      csv: tbCsv([
+        `${bankAcct},Bank - ENBD,80000,`,
+        "2040,Accrued Expenses,,500",
+        "3010,Owner's Capital / Share Capital,,50000",
+        "3020,Retained Earnings,,29500",
+      ]),
+    });
+    expect(await gl(t, "2040")).toBe(-500);
+
+    const adjust = (body: Record<string, unknown>) =>
+      t.as.post(`${c}/vat/adjustments`, {
+        kind: "output_correction",
+        emirate: "dubai",
+        amount: 10000,
+        vatAmount: 500,
+        reason: "January output VAT before go-live",
+        ...body,
+      });
+    // The return adjustment (no GL side) is the path that ended 2020 +500 / 2040 -500: refused.
+    const q1 = await adjust({ periodStart: "2026-01-01", periodEnd: "2026-03-31" });
+    expect(q1.status, q1.text).toBe(422);
+    expect(q1.body.code).toBe("VAT_PRE_GO_LIVE_ADJUSTMENT");
+    expect(q1.body.message).toContain("2026-01-31");
+    expect(q1.body.message).toContain("credit 2020 Output VAT");
+    // ... also from a later return when it corrects a pre-go-live period.
+    const later = await adjust({
+      periodStart: "2026-04-01",
+      periodEnd: "2026-06-30",
+      correctsPeriodStart: "2025-10-01",
+      correctsPeriodEnd: "2025-12-31",
+    });
+    expect(later.status, later.text).toBe(422);
+    expect(later.body.code).toBe("VAT_PRE_GO_LIVE_ADJUSTMENT");
+    const input = await adjust({
+      kind: "input_correction",
+      periodStart: "2026-01-01",
+      periodEnd: "2026-03-31",
+    });
+    expect(input.status, input.text).toBe(422);
+    expect(input.body.message).toContain("debit 1050 Input VAT");
+    // A correction that concerns only post-go-live periods is unchanged.
+    const q2 = await adjust({ periodStart: "2026-04-01", periodEnd: "2026-06-30", vatAmount: 10 });
+    expect(q2.status, q2.text).toBe(201);
+    expect((await t.as.delete(`${c}/vat/adjustments/${q2.body.id}`)).status).toBe(200);
+    const stored = await h.sql<{ n: string }>(
+      `SELECT COUNT(*)::text AS n FROM vat_return_adjustments WHERE company_id = $1`,
+      [t.company.id]
+    );
+    expect(stored[0].n).toBe("0");
+
+    // The redirect: a reasoned VAT journal moves it onto 2020 inside Q1.
+    const ids = await h.sql<{ code: string; id: string }>(
+      `SELECT code, id FROM accounts WHERE company_id = $1 AND code IN ('2020', '2040')`,
+      [t.company.id]
+    );
+    const id = (code: string) => ids.find((r) => r.code === code)!.id;
+    const je = await t.as.post(`${c}/journal`, {
+      date: "2026-02-01",
+      status: "posted",
+      memo: "January output VAT carried on 2040 at go-live",
+      lines: [
+        { accountId: id("2040"), debit: 500, credit: 0 },
+        { accountId: id("2020"), debit: 0, credit: 500 },
+      ],
+      controlAdjustment: { reason: "January output VAT before go-live, reported in Q1" },
+    });
+    expect(je.status, je.text).toBeLessThan(300);
+    expect(await gl(t, "2040")).toBe(0);
+    expect(await gl(t, "2020")).toBe(-500);
+
+    const cu = await t.as.post(`${c}/customer-contacts`, {
+      name: "Cust",
+      trnNumber: "100987654300202",
+      emirate: "dubai",
+    });
+    expect(cu.status, cu.text).toBeLessThan(300);
+    const inv = await t.as.post(`${c}/invoices`, {
+      contactId: cu.body.id,
+      customerName: "Cust",
+      date: "2026-02-15",
+      placeOfSupplyEmirate: "dubai",
+      lines: [
+        {
+          description: "Sale",
+          quantity: 1,
+          unitPrice: 20000,
+          vatRate: 0.05,
+          vatSupplyType: "standard_rated",
+        },
+      ],
+    });
+    expect(inv.status, inv.text).toBe(200);
+    expect(
+      (await t.as.patch(`/api/invoices/${inv.body.id}/status`, { status: "sent" })).status
+    ).toBe(200);
+    const vat = await t.as.get(`${c}/vat/compute?from=2026-01-01&to=2026-03-31`);
+    expect(vat.status, vat.text).toBe(200);
+    expect(vat.body.boxes).toMatchObject({
+      box1bDubaiAmount: 20000,
+      box1bDubaiVat: 1000,
+      box1bDubaiAdj: 500,
+      box12TotalDueTax: 1500,
+      box14PayableTax: 1500,
+    });
+    expect(vat.body.reconciliation.unexplainedOutputFils).toBe(0);
+
+    const gen = await t.as.post(`${c}/vat-returns/generate`, {
+      periodStart: "2026-01-01",
+      periodEnd: "2026-03-31",
+    });
+    expect(gen.status, gen.text).toBe(201);
+    await t.as.post(`/api/vat-returns/${gen.body.id}/ready`, {});
+    const sub = await t.as.post(`/api/vat-returns/${gen.body.id}/submit`, {
+      ftaReferenceNumber: "FTA-N4R",
+      filedOn: "2026-04-20",
+    });
+    expect(sub.status, sub.text).toBe(200);
+    const settle = await t.as.post(`/api/vat-returns/${gen.body.id}/settlement`, {
+      date: "2026-04-25",
+      paymentAccountId: bankId,
+    });
+    expect(settle.status, settle.text).toBe(201);
+    expect(settle.body).toMatchObject({ outputVat: 1500, netPayable: 1500 });
+    expect(await gl(t, "2020")).toBe(0);
+    expect(await gl(t, "2040")).toBe(0);
+    expect(await gl(t, bankAcct)).toBe(78500);
   });
 });

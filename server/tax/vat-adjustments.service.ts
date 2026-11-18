@@ -5,7 +5,8 @@
  *     Cr Bad Debt Expense 5120 through the ledger kernel; a later payment reverses it.
  *   - return adjustments: tourist refunds (Box 2), import adjustments (Box 7), output / input
  *     corrections and voluntary disclosures. They change the return only (no GL posting) and are
- *     reported as explained reconciliation differences.
+ *     reported as explained reconciliation differences. A correction for VAT from before the
+ *     go-live date is refused (INTEGRATE-H, N4 residual): it would have no GL side.
  *   - VAT groups (Art. 14): the representative files one return for all members.
  */
 import { and, eq, sql } from "drizzle-orm";
@@ -366,6 +367,52 @@ export function installBadDebtPaymentHook(): void {
 
 // ─── Return adjustments ──────────────────────────────────────────────────
 
+const CORRECTION_KINDS: ReadonlySet<ReturnAdjustmentKind> = new Set([
+  "output_correction",
+  "input_correction",
+  "voluntary_disclosure_output",
+  "voluntary_disclosure_input",
+]);
+
+/**
+ * INTEGRATE-H (re-audit 3 N4 residual): a return adjustment changes the return only, while the
+ * settlement clears Box 12 / Box 13 from 2020 / 1050. A correction for VAT of the days before the
+ * go-live date (cut-over of a committed opening import) therefore has no GL side: VAT carried on
+ * 2040 (the pre-D1 opening guidance) plus such an adjustment ends with 2020 debit and 2040
+ * credit for ever. That VAT is moved onto the VAT account by a reasoned VAT journal instead
+ * (Dr the account it is carried on / Cr 2020, or Dr 1050 / Cr that account): the engine reports
+ * it in the return's adjustment column and the settlement then clears both accounts.
+ * Corrections that concern only periods after the go-live date are unchanged.
+ */
+async function assertNotPreGoLiveCorrection(
+  companyId: string,
+  kind: ReturnAdjustmentKind,
+  periodStart: string,
+  corrects: { start: string | null }
+): Promise<void> {
+  if (!CORRECTION_KINDS.has(kind)) return;
+  const { rows } = await pool.query<{ go_live: string | null }>(
+    `SELECT MAX(cut_over_date)::date::text AS go_live FROM import_jobs
+      WHERE company_id = $1 AND status = 'committed' AND cut_over_date IS NOT NULL`,
+    [companyId]
+  );
+  const goLive = rows[0]?.go_live ?? null;
+  if (!goLive) return;
+  const covers = periodStart <= goLive || (corrects.start !== null && corrects.start <= goLive);
+  if (!covers) return;
+  const output = kind === "output_correction" || kind === "voluntary_disclosure_output";
+  throw new DomainError(
+    "VAT_PRE_GO_LIVE_ADJUSTMENT",
+    422,
+    { goLiveDate: goLive, kind, vatAccount: output ? "2020" : "1050" },
+    `This correction covers VAT from before your go-live date ${goLive}, which is not on the VAT account. ` +
+      (output
+        ? "Move it with a VAT journal instead: debit the account it is carried on (for example 2040 Accrued Expenses) and credit 2020 Output VAT, with a reason, dated in this period."
+        : "Move it with a VAT journal instead: debit 1050 Input VAT and credit the account it is carried on (for example 2040 Accrued Expenses), with a reason, dated in this period.") +
+      " The return reports it as an adjustment and its payment or refund clears both accounts."
+  );
+}
+
 export async function addReturnAdjustment(input: {
   companyId: string;
   userId: string;
@@ -398,6 +445,9 @@ export async function addReturnAdjustment(input: {
     toFils(input.amount, { rounding: "halfUp" }),
     toFils(input.vatAmount, { rounding: "halfUp" })
   );
+  await assertNotPreGoLiveCorrection(input.companyId, input.kind, period.from, {
+    start: input.correctsPeriodStart ?? null,
+  });
   const locked = await pool.query(
     `SELECT status FROM vat_returns
       WHERE company_id = $1 AND period_start::date = $2::date AND period_end::date = $3::date

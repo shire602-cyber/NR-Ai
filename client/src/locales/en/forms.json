@@ -362,6 +362,7 @@
   "forms.serverErrors.CONTROL_ACCOUNT_ROLE_RESERVED": "This code or VAT setting is reserved for a control account. Create a new account instead of changing this one.",
   "forms.serverErrors.GL_ACCOUNT_NOT_BANK": "A bank account must link to a bank or cash account in the chart of accounts, never to a control account such as receivables.",
   "forms.serverErrors.VAT_SETTLEMENT_BEFORE_FILING": "The payment or refund is dated before the return was filed. Date it on or after the filing date, or correct the filing date first.",
+  "forms.serverErrors.VAT_PRE_GO_LIVE_ADJUSTMENT": "This correction covers VAT from before your go-live date, which is not on the VAT account. Move it with a reasoned VAT journal dated in this period (between the account it is carried on, for example 2040 Accrued Expenses, and the VAT account); the return reports it as an adjustment and its payment clears both accounts.",
   "forms.serverErrors.DISPOSAL_DATE_IN_FUTURE": "The disposal date is in the future. Record the disposal on or after the day the asset leaves the business.",
   "forms.serverErrors.DISPOSAL_BEFORE_REMEASUREMENT": "The asset was revalued or impaired after this disposal date. Undo that first, or dispose of the asset on or after it.",
   "forms.serverErrors.FX_RATE_OUTSIDE_BAND": "A rate used by this revaluation is more than 20% away from the reference rate. Correct the rate, or give a reason if it is right.",
