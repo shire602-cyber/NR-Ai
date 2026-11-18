@@ -18,6 +18,7 @@
 import pg from "pg";
 import { createHmac } from "node:crypto";
 import { withRegisterLogin } from "./register-compat.mjs";
+import { throttledFetch } from "./_http.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 const STRIPE_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
@@ -38,7 +39,7 @@ async function rawApi(method, path, { body, token, headers, raw } = {}) {
   const h = { ...(headers ?? {}) };
   if (!raw) h["Content-Type"] = "application/json";
   if (token) h.Authorization = "Bearer " + token;
-  const res = await fetch(BASE + path, {
+  const res = await throttledFetch(BASE + path, {
     method,
     headers: h,
     body: raw ?? (body === undefined ? undefined : JSON.stringify(body)),
@@ -321,7 +322,16 @@ async function main() {
     });
     ok("stripe: tampered body refused (400)", bad.status === 400, bad.status);
   } else {
-    console.log("SKIP  stripe webhook checks (server started without STRIPE_WEBHOOK_SECRET)");
+    // No webhook secret in this environment: the endpoint must say so plainly (503), never 500.
+    const r = await rawApi("POST", "/api/webhooks/stripe", {
+      raw: "{}",
+      headers: { "content-type": "application/json", "stripe-signature": "t=1,v1=x" },
+    });
+    ok(
+      "stripe: without a configured secret the webhook answers 503 or 400, never 5xx crash",
+      r.status === 503 || r.status === 400,
+      r.status
+    );
   }
 
   // ── chasing net of credit notes (PR-61) ────────────────────────────────────
