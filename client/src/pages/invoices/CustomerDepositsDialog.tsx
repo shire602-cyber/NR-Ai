@@ -169,7 +169,7 @@ export function CustomerDepositsDialog({
         ? t[`invoices.deposits.error.${field}`]
         : undefined;
   const setField = (patch: Partial<typeof form>) => {
-    setForm({ ...form, ...patch });
+    setForm((current) => ({ ...current, ...patch }));
     setErrors({});
   };
 

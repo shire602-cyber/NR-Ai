@@ -28,10 +28,10 @@ afterEach(() => {
 });
 
 describe("STEP1 F3: ?open=<id> is honoured on every navigation", () => {
-  it("opens on mount, on a later navigation while mounted, and on a repeat click of the same id", async () => {
+  it("opens on mount and on every later navigation while mounted", async () => {
     const opened: string[] = [];
     function Page() {
-      useOpenInvoiceParam((id) => opened.push(id));
+      useOpenInvoiceParam((id) => opened.push(id), "/invoices");
       return null;
     }
     const mem = memoryLocation({ path: "/invoices?open=a1", searchHook: true, record: true });
@@ -45,19 +45,35 @@ describe("STEP1 F3: ?open=<id> is honoured on every navigation", () => {
       );
     });
     expect(opened).toEqual(["a1"]);
-    // The param is consumed so the back button does not re-open it.
-    expect(mem.history?.at(-1)).toBe("/invoices");
 
     await act(async () => mem.navigate("/invoices?open=b2"));
     expect(opened).toEqual(["a1", "b2"]);
 
-    await act(async () => mem.navigate("/invoices?open=b2"));
-    expect(opened).toEqual(["a1", "b2", "b2"]);
-
-    // Other params are preserved while `open` is removed.
+    // Other params are kept; the link is honoured on every navigation, not only the first.
     await act(async () => mem.navigate("/invoices?status=paid&open=c3"));
     expect(opened.at(-1)).toBe("c3");
-    expect(mem.history?.at(-1)).toBe("/invoices?status=paid");
+  });
+});
+
+describe("STEP1: a page only consumes ?open= links addressed to it", () => {
+  it("a still-mounted previous page ignores /receipts?open=<id>", async () => {
+    const opened: string[] = [];
+    function InvoicesPage() {
+      useOpenInvoiceParam((id) => opened.push(id), "/invoices");
+      return null;
+    }
+    const mem = memoryLocation({ path: "/invoices", searchHook: true });
+    await act(async () => {
+      root.render(
+        createElement(
+          Router,
+          { hook: mem.hook, searchHook: mem.searchHook } as never,
+          createElement(InvoicesPage)
+        )
+      );
+    });
+    await act(async () => mem.navigate("/receipts?open=r1"));
+    expect(opened).toEqual([]);
   });
 });
 

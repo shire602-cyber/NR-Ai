@@ -610,7 +610,7 @@ export default function Invoices() {
 
   // R3 (CTO 17) + STEP1 F3: command-palette and notification links open /invoices?open=<id> in
   // the invoice view, on every navigation (the bell navigates while this page is mounted).
-  useOpenInvoiceParam((openId) => openInvoiceEditor({ id: openId } as Invoice));
+  useOpenInvoiceParam((openId) => openInvoiceEditor({ id: openId } as Invoice), "/invoices");
 
   const stripNewInvoiceParam = () => {
     if (typeof window === "undefined") return;

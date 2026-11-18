@@ -670,11 +670,25 @@ export default function Receipts() {
     setEditDialogOpen(true);
   };
 
-  // STEP1: "Receipt uploaded" notifications link to /receipts?open=<id>.
-  useOpenInvoiceParam((id) => {
-    const target = (receipts ?? []).find((r) => r.id === id);
-    if (target) handleEditReceipt(target);
-  }, receipts !== undefined);
+  // STEP1: "Receipt uploaded" notifications link to /receipts?open=<id>. The cached list may be
+  // an older (or shorter) copy, so a receipt missing from it is looked up in a fresh list.
+  useOpenInvoiceParam(
+    (id) => {
+      void (async () => {
+        let target = (receipts ?? []).find((r) => r.id === id);
+        if (!target && companyId) {
+          const fresh: any[] = await queryClient.fetchQuery({
+            queryKey: ["/api/companies", companyId, "receipts"],
+            staleTime: 0,
+          });
+          target = fresh.find((r) => r.id === id);
+        }
+        if (target) handleEditReceipt(target);
+      })();
+    },
+    "/receipts",
+    receipts !== undefined
+  );
 
   const handlePostExpense = (receipt: any) => {
     setPostingReceipt(receipt);
