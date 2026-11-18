@@ -395,5 +395,7 @@
   "invoices.editor.backRecurring": "كل الفواتير المتكررة",
   "invoices.editor.backBills": "كل فواتير الموردين",
   "invoices.editor.backPurchaseOrders": "كل أوامر الشراء",
-  "invoices.chooseCustomer": "اختر عميلًا"
+  "invoices.chooseCustomer": "اختر عميلًا",
+  "invoices.item.incomeAccountLabel": "حساب الإيراد",
+  "invoices.item.incomeAccountAuto": "حساب الإيراد: تلقائي"
 }

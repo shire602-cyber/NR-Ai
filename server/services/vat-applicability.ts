@@ -26,6 +26,14 @@ export function periodApplies(periodEnd: IsoDate, applyFrom: IsoDate): boolean {
   return periodEnd >= applyFrom;
 }
 
+/**
+ * E3 (J3-r3): vat_returns statuses that mean the period's return was filed with the FTA. The one
+ * rule the compliance calendar, the VAT Periods tab and the VAT deadlines card share.
+ */
+export function isFiledReturnStatus(status: string): boolean {
+  return ["submitted", "filed", "amended", "paid", "accepted"].includes(status);
+}
+
 export interface VatApplicability {
   /** First day the books cover (earliest of creation, first posted journal, first invoice). */
   booksStart: IsoDate;

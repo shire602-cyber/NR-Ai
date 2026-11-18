@@ -1109,6 +1109,17 @@ export function loadNamespace(locale: Locale, namespace: string): Promise<void> 
   return loadPaths(locale, pathsFor(locale, [namespace]));
 }
 
+/**
+ * E3 (J2-r3 High): load (once) the given namespaces of `locale`. Components rendered on the
+ * signed-out public routes declare the namespaces they read beyond their route's set through
+ * `useTranslation([...])`; event handlers that read such a key await this first, so a key is
+ * never looked up in a namespace that an in-page language switch did not fetch.
+ */
+export function loadNamespaces(locale: Locale, namespaces: readonly string[]): Promise<void> {
+  if (loadedLocales.has(locale)) return Promise.resolve();
+  return loadPaths(locale, pathsFor(locale, [...namespaces]));
+}
+
 /** Load only the namespaces `pathname` needs (every namespace for app routes). */
 export function loadLocaleForPath(locale: Locale, pathname: string): Promise<void> {
   const namespaces = namespacesForPath(pathname);
@@ -1126,7 +1137,12 @@ export function loadLocaleForCurrentRoute(locale: Locale): Promise<void> {
  * translated fragments so word order stays correct in Arabic
  * (e.g. "{done}/{total} completed" instead of "{done}/{total}" + " completed").
  */
-export function formatMessage(template: string, values: Record<string, string | number>): string {
+export function formatMessage(
+  template: string | undefined,
+  values: Record<string, string | number>
+): string {
+  // E3 (J2-r3): a key from a namespace that is not loaded reads as undefined; never throw on it.
+  if (typeof template !== "string") return "";
   const withPlurals = template.includes(", plural,") ? expandPlurals(template, values) : template;
   return withPlurals.replace(/\{(\w+)\}/g, (match, key: string) =>
     key in values ? String(values[key]) : match
@@ -1206,13 +1222,23 @@ const fallbackViews: Record<Locale, TranslationCatalog> = {
   ar: withFallback("ar"),
 };
 
-export function useTranslation() {
+/**
+ * The active catalog. `namespaces` (E3, J2-r3) declares the namespaces this component reads that
+ * its route may not load (signed-out public routes load only a subset, see namespacesForPath):
+ * they are fetched for the active locale, including after an in-page language switch, and the
+ * fallback view is served until they land.
+ */
+export function useTranslation(namespaces?: readonly string[]) {
   const { locale } = useI18n();
   // Subscribing re-renders the caller once a lazily loaded catalog lands.
   useCatalogVersion((s) => s.version);
   const needed = neededNamespaces();
-  if (!hasNamespaces(locale, needed)) {
-    void loadLocaleForCurrentRoute(locale);
+  const routeReady = hasNamespaces(locale, needed);
+  const declaredMissing =
+    !!namespaces?.length && !loadedLocales.has(locale) && !hasNamespaces(locale, [...namespaces]);
+  if (declaredMissing) void loadNamespaces(locale, namespaces!);
+  if (!routeReady || declaredMissing) {
+    if (!routeReady) void loadLocaleForCurrentRoute(locale);
     // While a locale's chunks load after a switch, show the other loaded catalog's copy and
     // never hand out an undefined string.
     return { t: fallbackViews[locale], locale };

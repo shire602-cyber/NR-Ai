@@ -395,5 +395,7 @@
   "invoices.editor.backRecurring": "All recurring invoices",
   "invoices.editor.backBills": "All bills",
   "invoices.editor.backPurchaseOrders": "All purchase orders",
-  "invoices.chooseCustomer": "Choose a customer"
+  "invoices.chooseCustomer": "Choose a customer",
+  "invoices.item.incomeAccountLabel": "Income account",
+  "invoices.item.incomeAccountAuto": "Income account: automatic"
 }

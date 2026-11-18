@@ -16,7 +16,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { apiUrl } from "@/lib/api";
-import { serverErrorMessage } from "@/lib/validation-messages";
+import { serverErrorMessage, VALIDATION_NAMESPACES } from "@/lib/validation-messages";
 import { OAuthButtons } from "./OAuthButtons";
 import { AUTH_BUTTON, AUTH_INPUT, AuthAlert, AuthHeader, AuthSwitch } from "./AuthBlocks";
 
@@ -42,7 +42,7 @@ function currentEpochMs(): number {
 }
 
 export function LoginForm({ onSuccess, notice }: LoginFormProps) {
-  const { t } = useTranslation();
+  const { t } = useTranslation(VALIDATION_NAMESPACES);
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

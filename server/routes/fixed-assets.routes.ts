@@ -67,6 +67,7 @@ import {
 } from "../services/fixed-assets";
 import { assertAccount, q } from "../services/inventory/store";
 import { registerFixedAssetJobs } from "../services/fixed-assets/monthly-job";
+import { companyIsVatRegistered } from "../tax/vat-registration";
 
 const log = createLogger("fixed-assets");
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -169,6 +170,12 @@ async function createAssetRecord(
       ],
       { tx }
     );
+    // E3 (J3-r3 / J2-r3): input VAT paid with the asset is recoverable (Dr 1050) only for a VAT
+    // registered company; otherwise it is part of the asset's cost.
+    const paidVatFils = body.paymentAccountId && body.inputVat ? body.inputVat : 0;
+    const vatRegistered = paidVatFils > 0 ? await companyIsVatRegistered(companyId) : true;
+    if (!vatRegistered) body = { ...body, purchaseCost: body.purchaseCost + paidVatFils };
+    const acquisitionVatFils = vatRegistered ? paidVatFils : 0;
     const cost = fromFils(body.purchaseCost);
     const [row] = await q<{ id: string }>(
       tx,
@@ -186,7 +193,7 @@ async function createAssetRecord(
             ${body.accumulatedAccountId ?? cls?.accumulated_account_id ?? null},
             ${body.expenseAccountId ?? cls?.expense_account_id ?? null}, ${body.costCenterId ?? null},
             ${body.taxUsefulLifeYears ?? cls?.tax_useful_life_years ?? null}, ${body.taxDepreciationMethod ?? null},
-            ${fromFils(body.paymentAccountId && body.inputVat ? body.inputVat : 0)})
+            ${fromFils(acquisitionVatFils)})
           RETURNING id`
     );
     const asset = await loadAsset(tx, row.id, { lock: true });
@@ -749,7 +756,24 @@ export function registerFixedAssetRoutes(app: Express) {
       const companyId = await assetForRequest(req);
       await assertCompanyPermission(actorFromRequest(req), companyId, ["ledger.post"]);
       const body = parsedBody<CapitalizeBody>(req);
+      // E3 (J3-r3): input VAT paid with the asset is recoverable (Dr 1050) for a VAT registered
+      // company, else part of the asset's cost (same rule as creating a paid asset).
+      const paidVatFils = body.paymentAccountId && body.inputVat ? body.inputVat : 0;
+      const vatRegistered = paidVatFils > 0 ? await companyIsVatRegistered(companyId) : true;
       const entryId = await withLedgerTx(async (tx) => {
+        if (paidVatFils > 0) {
+          const vat = fromFils(paidVatFils);
+          await tx.execute(
+            vatRegistered
+              ? sql`UPDATE fixed_assets SET acquisition_vat = ${vat}
+                     WHERE id = ${req.params.id} AND company_id = ${companyId}
+                       AND capitalization_entry_id IS NULL`
+              : sql`UPDATE fixed_assets SET purchase_cost = purchase_cost + ${vat},
+                            net_book_value = net_book_value + ${vat}, acquisition_vat = 0
+                     WHERE id = ${req.params.id} AND company_id = ${companyId}
+                       AND capitalization_entry_id IS NULL`
+          );
+        }
         const a = await loadAsset(tx, req.params.id, { lock: true });
         return capitalizeAsset(tx, a, {
           paymentAccountId: body.paymentAccountId ?? null,

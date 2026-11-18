@@ -540,3 +540,18 @@ export const nonRevenueInvoiceStatuses = new Set(["draft", "void", "cancelled"])
 export const inactiveVendorBillStatuses = new Set(["paid", "void", "cancelled"]);
 
 export const nonPayableVendorBillStatuses = new Set(["void", "cancelled"]);
+
+/**
+ * E3 (J1-r3 / J2-r3): the reports whose page shows the balances KPI strip (customer / vendor open
+ * balance, net AR less AP). The strip and the balance-summaries query both read this list, so
+ * the strip is never shown on a report that did not load its figures (it read 0.00 on AP aging).
+ */
+export const BALANCE_STRIP_REPORT_IDS = [
+  "customer-balances",
+  "ap-aging",
+  "vendor-balances",
+  "inventory-valuation",
+  "inventory-movement",
+  "depreciation-schedule",
+  "fixed-asset-register",
+] as const;

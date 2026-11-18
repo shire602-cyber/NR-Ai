@@ -224,5 +224,9 @@
   "compliance.vatFlow.stepNothing": "Nothing to pay or receive",
   "compliance.vatFlow.calculated": "Return calculated",
   "compliance.vatFlow.reviewed": "Reviewed and ready",
-  "compliance.vatFlow.filedStep": "Filed on EmaraTax (by you)"
+  "compliance.vatFlow.filedStep": "Filed on EmaraTax (by you)",
+  "compliance.autopilotStageFiled": "Filed",
+  "compliance.autopilotStagePaid": "Paid",
+  "compliance.vatNotRegisteredTitle": "This company is not registered for VAT",
+  "compliance.vatNotRegisteredBody": "It charges no VAT and files no VAT return. VAT that suppliers charge cannot be recovered, so it is booked as part of the cost of each purchase. When the company registers with the FTA, change the registration type and add the TRN in the company profile."
 }

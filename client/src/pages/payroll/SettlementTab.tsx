@@ -92,9 +92,12 @@ export function SettlementTab({ companyId }: { companyId: string }) {
       subType?: string | null;
       isArchived?: boolean;
       isActive?: boolean;
+      parentId?: string | null;
     }>
   >({ queryKey: [`/api/companies/${companyId}/accounts`] });
-  const cashAccounts = accounts.filter(isCashOrBankAccount);
+  // E3 (J3-r3): a header account (1020 Bank Accounts, the parent of 1021) cannot be posted to.
+  const parentIds = new Set(accounts.map((a) => a.parentId).filter(Boolean));
+  const cashAccounts = accounts.filter((a) => isCashOrBankAccount(a) && !parentIds.has(a.id));
   const accountLabel = (a: (typeof accounts)[number]) =>
     `${a.code} · ${accountDisplayName(a, locale)}`;
   const [payNowAccount, setPayNowAccount] = useState("");

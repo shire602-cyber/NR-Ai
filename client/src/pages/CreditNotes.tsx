@@ -48,6 +48,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -106,6 +107,7 @@ export default function CreditNotes() {
   const { toast } = useToast();
   const { company: _company, companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier, isLoading: subLoading } = useSubscription();
+  const { gate } = useCompanyPermission();
   const { routed, editor, toNew, toList } = useEditorRoute("/credit-notes");
   const [editorOpen, setEditorOpen] = useState(false);
 
@@ -649,7 +651,11 @@ export default function CreditNotes() {
                 <T k="pages.createFromInvoice" />
               </Link>
             </Button>
-            <Button onClick={openNewCreditNote} data-testid="button-new-credit-note">
+            <Button
+              onClick={openNewCreditNote}
+              data-testid="button-new-credit-note"
+              {...gate("documents.write")}
+            >
               <Plus aria-hidden />
               {t["screens.newCreditNote"]}
             </Button>
@@ -670,6 +676,7 @@ export default function CreditNotes() {
           action: {
             label: t["pages.createFromInvoice"],
             href: "/invoices",
+            permission: "documents.write",
           },
           testId: "empty-credit-notes",
         }}

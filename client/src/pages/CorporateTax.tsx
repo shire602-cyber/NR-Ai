@@ -643,11 +643,21 @@ export default function CorporateTax() {
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => addWorkpaperRow("revenue")}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => addWorkpaperRow("revenue")}
+                {...gate("documents.write")}
+              >
                 <Plus className="w-4 h-4 me-2" />
                 <T k="pageLabels.revenueRow" />
               </Button>
-              <Button type="button" variant="outline" onClick={() => addWorkpaperRow("expense")}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => addWorkpaperRow("expense")}
+                {...gate("documents.write")}
+              >
                 <Plus className="w-4 h-4 me-2" />
                 <T k="pageLabels.expenseRow" />
               </Button>
@@ -691,6 +701,7 @@ export default function CorporateTax() {
                       size="icon"
                       className="shrink-0"
                       onClick={() => removeWorkpaperRow(row.id)}
+                      {...gate("documents.write")}
                       aria-label={`${ctTr(locale, "Remove", "إزالة")} ${row.label}`}
                     >
                       <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
@@ -870,6 +881,7 @@ export default function CorporateTax() {
                             variant="ghost"
                             size="icon"
                             onClick={() => removeWorkpaperRow(row.id)}
+                            {...gate("documents.write")}
                             aria-label={`${ctTr(locale, "Remove", "إزالة")} ${row.label}`}
                           >
                             <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
@@ -1107,6 +1119,7 @@ export default function CorporateTax() {
                 <Button
                   onClick={() => saveDraftMutation.mutate()}
                   disabled={saveDraftMutation.isPending}
+                  {...gate("documents.write")}
                 >
                   {saveDraftMutation.isPending ? (
                     <>
@@ -1253,6 +1266,7 @@ export default function CorporateTax() {
                                 onClick={() => pullFromBooksMutation.mutate(taxReturn.id)}
                                 disabled={pullFromBooksMutation.isPending}
                                 title={t["corporateTax.pullFromBooks"]}
+                                {...gate("documents.write")}
                                 data-testid={`button-ct-pull-${taxReturn.id}`}
                               >
                                 <BookOpen className="w-4 h-4" />
@@ -1267,6 +1281,7 @@ export default function CorporateTax() {
                                 }
                                 disabled={transitionMutation.isPending}
                                 title={t["corporateTax.markComputed"]}
+                                {...gate("documents.write")}
                                 data-testid={`button-ct-compute-${taxReturn.id}`}
                               >
                                 <Calculator className="w-4 h-4" />
@@ -1323,6 +1338,7 @@ export default function CorporateTax() {
                                   }
                                   disabled={transitionMutation.isPending}
                                   title={t["corporateTax.sendBack"]}
+                                  {...gate("documents.write")}
                                 >
                                   <RotateCcw className="w-4 h-4" />
                                 </Button>
@@ -1337,6 +1353,7 @@ export default function CorporateTax() {
                                 }
                                 disabled={transitionMutation.isPending}
                                 title={t["corporateTax.voidReturn"]}
+                                {...gate("documents.write")}
                               >
                                 <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
                               </Button>
@@ -1350,6 +1367,7 @@ export default function CorporateTax() {
                                 }
                                 disabled={transitionMutation.isPending}
                                 title={t["corporateTax.markPaid"]}
+                                {...gate("tax.submit")}
                               >
                                 <Banknote className="w-4 h-4 text-muted-foreground" aria-hidden />
                               </Button>
@@ -1364,6 +1382,7 @@ export default function CorporateTax() {
                                 }}
                                 disabled={unfileMutation.isPending}
                                 title={t["corporateTax.markNotFiled"]}
+                                {...gate("tax.submit")}
                                 aria-label={t["corporateTax.markNotFiled"]}
                                 data-testid={`button-ct-unfile-${taxReturn.id}`}
                               >
@@ -1377,6 +1396,7 @@ export default function CorporateTax() {
                                 onClick={() => amendMutation.mutate(taxReturn.id)}
                                 disabled={amendMutation.isPending}
                                 title={t["corporateTax.amend"]}
+                                {...gate("tax.submit")}
                                 data-testid={`button-ct-amend-${taxReturn.id}`}
                               >
                                 <FilePen className="w-4 h-4" />

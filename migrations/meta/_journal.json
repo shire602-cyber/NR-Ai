@@ -866,8 +866,15 @@
   {
    "idx": 123,
    "version": "7",
-   "when": 1781430381000,
-   "tag": "0124_wq3_journal_line_fields",
+   "when": 1781430390000,
+   "tag": "0124_e3_invoice_line_income",
+   "breakpoints": false
+  },
+  {
+   "idx": 124,
+   "version": "7",
+   "when": 1781430400000,
+   "tag": "0125_wq3_journal_line_fields",
    "breakpoints": false
   }
  ]

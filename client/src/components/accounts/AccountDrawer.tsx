@@ -123,7 +123,7 @@ export function AccountDrawer({
   );
 
   // A new account's code follows the suggestion until the user types their own.
-  const code = !editing && !codeTouched ? suggested : code;
+  const code = !editing && !codeTouched ? suggested : draft.code;
 
   const set = <K extends keyof DraftState>(key: K, value: DraftState[K]) => {
     setDraft((d) => ({ ...d, [key]: value }));

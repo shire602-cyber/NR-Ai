@@ -373,5 +373,8 @@
   "forms.serverErrors.CT_TREATMENT_ACCOUNT_TYPE": "This corporate-tax treatment does not fit the account: non-deductible applies to expenses, exempt income to income accounts.",
   "forms.serverErrors.CONTACT_NOT_FOUND": "This contact is not a customer or supplier of this company.",
   "forms.serverErrors.INVALID_CT_SHARE": "The non-deductible share must be more than 0% and at most 100%.",
-  "forms.serverErrors.ZATCA_NOT_AVAILABLE": "Saudi ZATCA e-invoicing is not available on this service."
+  "forms.serverErrors.ZATCA_NOT_AVAILABLE": "Saudi ZATCA e-invoicing is not available on this service.",
+  "forms.accountGroupExpenses": "Expenses",
+  "forms.accountGroupFixedAssets": "Fixed assets",
+  "forms.accountGroupOtherAssets": "Other assets"
 }

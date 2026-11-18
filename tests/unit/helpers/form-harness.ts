@@ -33,6 +33,10 @@ const state: {
 export function setFixtures(f: Fixtures) {
   state.fixtures = f;
 }
+/** The body a non-GET `apiRequest` to `url` answers with (merged over the default draft row). */
+export function setResponse(url: string, body: unknown) {
+  state.responses[url] = body;
+}
 export function apiCalls(method?: string) {
   return state.calls.filter((c) => !method || c.method === method);
 }

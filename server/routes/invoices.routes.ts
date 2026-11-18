@@ -154,6 +154,7 @@ function lineDraft(
     discountValue: l.discountValue ?? null,
     productId: l.productId ?? null,
     costCenterId: l.costCenterId ?? null,
+    revenueAccountId: (l as { revenueAccountId?: string | null }).revenueAccountId ?? null,
   };
 }
 
@@ -171,6 +172,7 @@ function lineRow(invoiceId: string, r: PreparedSalesLine) {
     netAmount: r.netAmount,
     productId: r.productId,
     costCenterId: r.costCenterId,
+    revenueAccountId: r.revenueAccountId,
     marginScheme: r.marginScheme,
     marginPurchaseCost: r.marginPurchaseCost,
   };
@@ -212,6 +214,28 @@ async function assertLineRefs(companyId: string, lines: SalesLineInput[]): Promi
     );
     if (!(r.rows ?? (r as unknown as unknown[])).length) {
       throw new DomainError("COST_CENTER_NOT_FOUND", 404, { costCenterId: id });
+    }
+  }
+  // E3 (J1-r3): a line's income account is one of this company's active income accounts.
+  const incomeAccounts = [
+    ...new Set(
+      lines
+        .map((l) => (l as { revenueAccountId?: string | null }).revenueAccountId)
+        .filter(Boolean) as string[]
+    ),
+  ];
+  for (const id of incomeAccounts) {
+    const r: { rows?: unknown[] } = await db.execute(
+      sqlTag`SELECT 1 FROM accounts WHERE id = ${id} AND company_id = ${companyId}
+               AND type = 'income' AND is_active = true AND COALESCE(is_archived, false) = false`
+    );
+    if (!(r.rows ?? (r as unknown as unknown[])).length) {
+      throw new DomainError(
+        "REVENUE_ACCOUNT_INVALID",
+        422,
+        { fields: { revenueAccountId: ["Choose an active income account"] } },
+        "Choose an active income account for the line"
+      );
     }
   }
 }

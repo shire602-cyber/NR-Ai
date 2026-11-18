@@ -3,7 +3,8 @@ import { getAuthHeaders, hasAuthHint, refreshSession } from "./auth";
 import { apiUrl } from "./api";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
 import { isOnline, queueForSync } from "./pwa";
-import { localizeApiError } from "./validation-messages";
+import { localizeApiError, VALIDATION_NAMESPACES } from "./validation-messages";
+import { loadNamespaces, useI18n } from "./i18n";
 import {
   PERIOD_LOCK_REASON_HEADER,
   askLockReason,
@@ -48,6 +49,8 @@ async function throwIfResNotOk(res: Response) {
     } catch {
       errorMessage = res.statusText;
     }
+    // E3 (J2-r3): the localised error copy lives in `forms`, which public routes do not load.
+    await loadNamespaces(useI18n.getState().locale, VALIDATION_NAMESPACES).catch(() => undefined);
     throw new ApiError(localizeApiError(body) ?? errorMessage, res.status, body, errorMessage);
   }
 }

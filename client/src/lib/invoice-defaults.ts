@@ -44,3 +44,28 @@ export function isUntouchedBlankLine(
   if (!line) return true;
   return !(line.description ?? "").trim() && Number(line.unitPrice ?? 0) === 0;
 }
+
+/**
+ * E3 (J1-r3): the income account a new free-text invoice line starts with. A company with no
+ * stock (goods) items in its catalogue sells services, so its lines start on the chart's
+ * Service Revenue account (4020) instead of Product Sales (4010). Otherwise `undefined`: the
+ * server's item rule applies (service items 4020, goods and free text 4010).
+ */
+export function defaultLineIncomeAccountId(
+  accounts: Array<{
+    id: string;
+    code: string;
+    type: string;
+    isActive?: boolean | null;
+    isArchived?: boolean | null;
+  }>,
+  products: Array<{ productType?: string | null; isActive?: boolean | null }>
+): string | undefined {
+  const sellsGoods = products.some(
+    (p) => p.isActive !== false && (p.productType ?? "inventory") !== "service"
+  );
+  if (sellsGoods) return undefined;
+  return accounts.find(
+    (a) => a.code === "4020" && a.type === "income" && a.isActive !== false && a.isArchived !== true
+  )?.id;
+}

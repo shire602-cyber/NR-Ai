@@ -373,5 +373,8 @@
   "forms.serverErrors.CT_TREATMENT_ACCOUNT_TYPE": "لا تناسب معاملة ضريبة الشركات هذه الحساب: غير القابل للخصم يخص المصروفات، والدخل المعفى يخص حسابات الإيرادات.",
   "forms.serverErrors.CONTACT_NOT_FOUND": "جهة الاتصال هذه ليست عميلاً أو مورداً لهذه الشركة.",
   "forms.serverErrors.INVALID_CT_SHARE": "يجب أن تكون الحصة غير القابلة للخصم أكبر من 0% وألا تتجاوز 100%.",
-  "forms.serverErrors.ZATCA_NOT_AVAILABLE": "الفوترة الإلكترونية لهيئة الزكاة والضريبة والجمارك السعودية غير متاحة في هذه الخدمة."
+  "forms.serverErrors.ZATCA_NOT_AVAILABLE": "الفوترة الإلكترونية لهيئة الزكاة والضريبة والجمارك السعودية غير متاحة في هذه الخدمة.",
+  "forms.accountGroupExpenses": "المصروفات",
+  "forms.accountGroupFixedAssets": "الأصول الثابتة",
+  "forms.accountGroupOtherAssets": "أصول أخرى"
 }
