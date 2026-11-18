@@ -56,6 +56,7 @@
   "einvoicing.field_customerTrn": "Customer TRN",
   "einvoicing.field_customerEndpoint": "Customer electronic address",
   "einvoicing.issue_buyerEndpointMissing": "The buyer has no electronic address for the e-invoice. Add the customer's 15-digit TRN to the invoice or the customer, or record the customer's Peppol endpoint (scheme 0235 with its 10-digit TIN, or its own Peppol scheme and ID).",
+  "einvoicing.issue_buyerAddressMissing": "The customer's address is incomplete for the e-invoice. Open the customer and fill in the street address, the city and the emirate, then check the invoice again.",
   "einvoicing.field_currency": "Currency",
   "einvoicing.field_date": "Invoice date",
   "einvoicing.field_dueDate": "Due date",

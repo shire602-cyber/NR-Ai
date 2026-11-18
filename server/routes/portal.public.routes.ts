@@ -436,6 +436,7 @@ export function registerPortalPublicRoutes(app: Express) {
         companyName: company?.name || "Muhasib.ai",
         companyLogo: company?.logoUrl || null,
         preferredLanguage: ctx.contact.preferredLanguage ?? null,
+        companyLocale: company?.locale === "ar" ? "ar" : "en",
         onlinePayment: { available: payments.available, status: payments.status },
       });
     })

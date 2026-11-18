@@ -69,6 +69,7 @@ export interface EInvoiceFieldHint {
 /** Coded issues the invoice screens explain in the user's language. */
 const ISSUE_TEXT_KEYS: Record<string, string> = {
   EINVOICE_BUYER_ENDPOINT_MISSING: "invoices.einvoiceIssue.buyerEndpointMissing",
+  EINVOICE_BUYER_ADDRESS_MISSING: "invoices.einvoiceIssue.buyerAddressMissing",
 };
 
 export function einvoiceIssueTextKey(code: string | undefined): string | null {

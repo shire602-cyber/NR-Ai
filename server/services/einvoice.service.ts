@@ -717,6 +717,9 @@ export interface EInvoiceIssue {
 /** IBT-049: the buyer's electronic address (cbc:EndpointID) cannot be built. */
 export const BUYER_ENDPOINT_MISSING = "EINVOICE_BUYER_ENDPOINT_MISSING";
 
+/** ibr-144-ae: the buyer's street, city or emirate is missing (named fix-it field customer.address). */
+export const BUYER_ADDRESS_MISSING = "EINVOICE_BUYER_ADDRESS_MISSING";
+
 const TRN_RE = /^[0-9]{15}$/;
 
 /**
@@ -847,11 +850,19 @@ export function validateForEInvoicing(
   }
   if (ctx.customer) {
     const c = ctx.customer;
-    if (countryCode(c.country) === "AE" && (c.address || c.city || c.emirate)) {
-      if (!c.address || !c.city || !emirateSubentity(c.emirate)) {
+    if (countryCode(c.country) === "AE") {
+      // Check the parts one by one (a buyer with no address at all used to slip through here and
+      // only surface later as the schematron rule ibr-144-ae).
+      const missing = [
+        !c.address?.trim() && "street",
+        !c.city?.trim() && "city",
+        !emirateSubentity(c.emirate) && "emirate",
+      ].filter(Boolean) as string[];
+      if (missing.length > 0) {
         issues.push({
           field: "customer.address",
-          message: "Buyer street, city and emirate are all required for a UAE buyer (ibr-144-ae)",
+          code: BUYER_ADDRESS_MISSING,
+          message: `Buyer ${missing.join(", ")} missing: street, city and emirate are all required for a UAE buyer (ibr-144-ae)`,
         });
       }
     }

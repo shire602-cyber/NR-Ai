@@ -1,5 +1,5 @@
 import { T } from "@/components/layout/T";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,11 +25,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { AlertCircle, Clock, CreditCard, FileDown, FileText, Loader2 } from "lucide-react";
+import {
+  AlertCircle,
+  Clock,
+  CreditCard,
+  FileDown,
+  FileText,
+  Languages,
+  Loader2,
+} from "lucide-react";
 import { apiUrl } from "@/lib/api";
 import { DateText } from "@/components/documents/DateText";
 import { formatDate } from "@/lib/format-date";
-import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatMessage, useI18n, useTranslation, type Locale } from "@/lib/i18n";
 
 /**
  * Customer portal (W4-D: R16-04/06/07/14/15/16/19). Reached with a portal link token
@@ -44,6 +52,10 @@ interface PortalInfo {
   companyId: string;
   companyName: string;
   companyLogo: string | null;
+  /** The customer's own language when the firm recorded one (en | ar). */
+  preferredLanguage?: string | null;
+  /** The company's language (en | ar): the portal opens in it until the viewer switches. */
+  companyLocale?: string | null;
   onlinePayment: { available: boolean; status: string };
 }
 
@@ -120,6 +132,60 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return json as T;
 }
 
+const LOCALE_CHOICE_KEY = "portal-locale-chosen";
+
+function viewerChoseLocale(): boolean {
+  try {
+    return localStorage.getItem(LOCALE_CHOICE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Language switch for every portal screen; remembers that the viewer picked one. */
+function PortalLanguageSwitch() {
+  const { t, locale } = useTranslation();
+  const setLocale = useI18n((s) => s.setLocale);
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      data-testid="portal-language"
+      onClick={() => {
+        try {
+          localStorage.setItem(LOCALE_CHOICE_KEY, "1");
+        } catch {
+          // private mode: the choice just lasts for this page
+        }
+        setLocale(locale === "ar" ? "en" : "ar");
+      }}
+    >
+      <Languages className="h-4 w-4" aria-hidden />
+      {t["portal.switchLanguage"]}
+    </Button>
+  );
+}
+
+/**
+ * Open the portal in the customer's language, else the company's, unless the viewer already
+ * chose one (the choice is remembered). Renders the page direction for the active locale.
+ */
+function usePortalLocale(info: PortalInfo | undefined) {
+  const setLocale = useI18n((s) => s.setLocale);
+  const current = useI18n((s) => s.locale);
+  const wanted: Locale | null =
+    info?.preferredLanguage === "ar" || info?.preferredLanguage === "en"
+      ? info.preferredLanguage
+      : info?.companyLocale === "ar" || info?.companyLocale === "en"
+        ? info.companyLocale
+        : null;
+  useEffect(() => {
+    if (wanted && wanted !== current && !viewerChoseLocale()) setLocale(wanted);
+    // Only when the portal info arrives; later switches are the viewer's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wanted]);
+}
+
 function readSession(): string | null {
   try {
     return sessionStorage.getItem(SESSION_KEY);
@@ -129,6 +195,7 @@ function readSession(): string | null {
 }
 
 function PortalLogin() {
+  const { locale } = useTranslation();
   const [, setLocation] = useLocation();
   const companyId =
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("c") : null;
@@ -175,7 +242,13 @@ function PortalLogin() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div
+      className="min-h-screen bg-background flex flex-col items-center justify-center gap-2 p-4"
+      dir={locale === "ar" ? "rtl" : "ltr"}
+    >
+      <div className="flex w-full max-w-md justify-end">
+        <PortalLanguageSwitch />
+      </div>
       <Card className="max-w-md w-full">
         <CardHeader>
           <CardTitle>
@@ -260,6 +333,8 @@ function PortalHome({ token }: { token: string | null }) {
     enabled: !!token,
     retry: false,
   });
+
+  usePortalLocale(info);
 
   const { data: invoices = [], isLoading: invoicesLoading } = useQuery<PortalInvoice[]>({
     queryKey: ["portal-invoices", token],
@@ -364,7 +439,7 @@ function PortalHome({ token }: { token: string | null }) {
   const openPdf = (path: string) => window.open(apiUrl(`${base}${path}`), "_blank");
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col bg-background" dir={locale === "ar" ? "rtl" : "ltr"}>
       <header className="border-b border-border bg-card">
         <div aria-hidden className="h-0.5 bg-primary" />
         <div className="mx-auto flex max-w-content items-center justify-between gap-4 px-4 py-4 sm:px-8">
@@ -376,13 +451,16 @@ function PortalHome({ token }: { token: string | null }) {
               <T k="portal.doc.customerPortal" />
             </p>
           </div>
-          <p
-            className="min-w-0 max-w-[45%] truncate text-small font-medium text-foreground"
-            dir="auto"
-            data-testid="portal-customer-name"
-          >
-            {customerName}
-          </p>
+          <div className="flex min-w-0 max-w-[60%] items-center gap-2">
+            <p
+              className="min-w-0 truncate text-small font-medium text-foreground"
+              dir="auto"
+              data-testid="portal-customer-name"
+            >
+              {customerName}
+            </p>
+            <PortalLanguageSwitch />
+          </div>
         </div>
       </header>
 
@@ -710,8 +788,15 @@ function PortalMessage({
   title?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const { locale } = useTranslation();
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+    <div
+      className="flex min-h-screen flex-col items-center justify-center gap-2 bg-background p-4"
+      dir={locale === "ar" ? "rtl" : "ltr"}
+    >
+      <div className="flex w-full max-w-md justify-end">
+        <PortalLanguageSwitch />
+      </div>
       <div className="w-full max-w-md rounded-lg border border-border bg-card px-6 py-12 text-center">
         <span className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-800">
           <Icon className="h-5 w-5 text-muted-foreground" aria-hidden />

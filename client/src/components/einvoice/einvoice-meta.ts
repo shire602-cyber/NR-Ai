@@ -41,6 +41,7 @@ export interface EInvoiceIssue {
 /** Issue codes the UI explains in the user's language instead of the English validator text. */
 const ISSUE_TEXT_KEYS: Record<string, string> = {
   EINVOICE_BUYER_ENDPOINT_MISSING: "einvoicing.issue_buyerEndpointMissing",
+  EINVOICE_BUYER_ADDRESS_MISSING: "einvoicing.issue_buyerAddressMissing",
 };
 
 export function issueTextKey(code: string | undefined): string | null {

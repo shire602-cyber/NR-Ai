@@ -162,7 +162,13 @@ describe("e-invoicing validation gate", () => {
     // A recorded Peppol endpoint (e.g. a foreign buyer) is enough without a TRN.
     expect(
       validateForEInvoicing(makeInvoice({ customerTrn: null }), lines, company, {
-        customer: { endpointId: "DE123456789", endpointScheme: "9930" },
+        customer: {
+          endpointId: "DE123456789",
+          endpointScheme: "9930",
+          address: "Hauptstrasse 1",
+          city: "Berlin",
+          country: "DE",
+        },
       })
     ).toEqual([]);
   });
