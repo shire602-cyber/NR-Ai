@@ -268,7 +268,9 @@ function table(
       return { c, i, value, singleLine, h };
     });
     const rowHeight = Math.max(14, ...cells.map((x) => x.h)) + 5;
-    if (y + rowHeight > bottom) {
+    // P15: a section heading keeps with its first row; never orphaned at a page foot.
+    const keepWithNext = row.style === "heading" ? Math.max(rowHeight, 24) + 4 : 0;
+    if (y + rowHeight + keepWithNext > bottom) {
       doc.addPage();
       y = header(doc, company, report);
       drawHeader();

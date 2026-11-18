@@ -2,8 +2,12 @@ import { useMemo, useState } from "react";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { addDays, format } from "date-fns";
-import { formatDate as formatDisplayDate, formatDateRange } from "@/lib/format-date";
+import { addDays } from "date-fns";
+import {
+  calendarDayKey,
+  formatDate as formatDisplayDate,
+  formatDateRange,
+} from "@/lib/format-date";
 import { Link } from "wouter";
 import {
   AlertTriangle,
@@ -131,9 +135,8 @@ function canPostVatWorkpaperRow(row: VatWorkpaperRow) {
 
 function inputDate(value: string | Date | null | undefined) {
   if (!value) return "";
-  const parsed = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return format(parsed, "yyyy-MM-dd");
+  // The calendar day of a stored period date, not the browser-zone instant (N1).
+  return calendarDayKey(value);
 }
 
 function toMoney(value: unknown) {

@@ -5,9 +5,9 @@ import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { format, parseISO, differenceInDays } from "date-fns";
+import { format, differenceInDays } from "date-fns";
 import { localizeServerText } from "@shared/server-copy";
-import { formatDate } from "@/lib/format-date";
+import { formatDate, formatEmbeddedDates, parseCalendarDate } from "@/lib/format-date";
 import { CheckCircle2, Plus, Send } from "lucide-react";
 import { SiWhatsapp } from "react-icons/si";
 
@@ -236,10 +236,10 @@ export default function DocumentChasing() {
 
   const stats = useMemo(() => {
     const overdue = missingDocs.filter(
-      (r) => differenceInDays(new Date(), parseISO(r.dueDate)) > 0
+      (r) => differenceInDays(new Date(), parseCalendarDate(r.dueDate)) > 0
     ).length;
     const dueSoon = missingDocs.filter((r) => {
-      const d = differenceInDays(parseISO(r.dueDate), new Date());
+      const d = differenceInDays(parseCalendarDate(r.dueDate), new Date());
       return d >= 0 && d <= 14;
     }).length;
     return { overdue, dueSoon, total: missingDocs.length };
@@ -332,20 +332,23 @@ export default function DocumentChasing() {
         }
       />
 
-      {/* Top stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <StatCard label={t["pages.missingDocuments"]} value={stats.total} />
-        <StatCard label={t["components.statusOverdue"]} value={stats.overdue} />
-        <StatCard label={t["documentChasing.dueIn14Days"]} value={stats.dueSoon} />
-        <StatCard
-          label={t["documentChasing.responseRate2"]}
-          value={
-            effectivenessQuery.data
-              ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
-              : "—"
-          }
-        />
-      </div>
+      {/* Top stats. Fable P-g: hidden until something is missing or has been chased, so an
+          empty workspace does not open on four zero tiles. */}
+      {(stats.total > 0 || (effectivenessQuery.data?.totalChased ?? 0) > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4" data-testid="document-chasing-stats">
+          <StatCard label={t["pages.missingDocuments"]} value={stats.total} />
+          <StatCard label={t["components.statusOverdue"]} value={stats.overdue} />
+          <StatCard label={t["documentChasing.dueIn14Days"]} value={stats.dueSoon} />
+          <StatCard
+            label={t["documentChasing.responseRate2"]}
+            value={
+              effectivenessQuery.data
+                ? `${Math.round(effectivenessQuery.data.responseRate * 100)}%`
+                : "—"
+            }
+          />
+        </div>
+      )}
 
       <Tabs defaultValue="missing" className="w-full">
         <TabsList>
@@ -389,7 +392,7 @@ export default function DocumentChasing() {
               ) : (
                 <div className="divide-y">
                   {missingDocs.map((r) => {
-                    const due = parseISO(r.dueDate);
+                    const due = parseCalendarDate(r.dueDate);
                     const daysFromDue = differenceInDays(new Date(), due);
                     const isOverdue = daysFromDue > 0;
                     return (
@@ -531,7 +534,7 @@ export default function DocumentChasing() {
               ) : (
                 <div className="divide-y">
                   {events.map((e) => {
-                    const ed = parseISO(e.eventDate);
+                    const ed = parseCalendarDate(e.eventDate);
                     const dUntil = differenceInDays(ed, new Date());
                     return (
                       <div
@@ -544,9 +547,13 @@ export default function DocumentChasing() {
                             {enumLabel(t, "eventType", e.eventType)}
                           </div>
                           <div className="text-sm text-muted-foreground line-clamp-1">
-                            {locale === "ar" && e.titleAr
-                              ? e.titleAr
-                              : localizeServerText(e.description, t)}
+                            {/* P-g: generated deadlines carry ISO dates in their text. */}
+                            {formatEmbeddedDates(
+                              locale === "ar" && e.titleAr
+                                ? e.titleAr
+                                : localizeServerText(e.description, t),
+                              locale
+                            )}
                           </div>
                         </div>
                         <div className="text-sm text-muted-foreground">

@@ -20,6 +20,19 @@ import { sendEmail, renderTemplate } from "../services/email.service";
 import { createAndEmitNotification } from "../services/socket.service";
 import { notificationCopy } from "../../shared/server-copy";
 import { recordAudit } from "../services/audit.service";
+import { calendarDateKey } from "../../shared/uae-date";
+
+/** "30 September 2026": the calendar day of a business date in any server TZ (N1). */
+function longCalendarDate(value: Date | string): string {
+  const key = calendarDateKey(value);
+  if (!key) return "";
+  return new Date(`${key}T00:00:00Z`).toLocaleDateString("en-AE", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
 
 const logger = createLogger("firm-comms-routes");
 
@@ -244,18 +257,8 @@ export function registerFirmCommsRoutes(app: Express): void {
           if (inv) {
             vars.invoiceNumber = inv.number;
             vars.customerName = inv.customerName;
-            vars.invoiceDate = new Date(inv.date).toLocaleDateString("en-AE", {
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            });
-            vars.dueDate = inv.dueDate
-              ? new Date(inv.dueDate).toLocaleDateString("en-AE", {
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })
-              : "";
+            vars.invoiceDate = longCalendarDate(inv.date);
+            vars.dueDate = inv.dueDate ? longCalendarDate(inv.dueDate) : "";
             vars.total = `${inv.currency} ${inv.total.toFixed(2)}`;
             vars.subtotal = `${inv.currency} ${inv.subtotal.toFixed(2)}`;
             vars.vatAmount = `${inv.currency} ${inv.vatAmount.toFixed(2)}`;
@@ -565,11 +568,7 @@ export function registerFirmCommsRoutes(app: Express): void {
           continue;
         }
 
-        const dueDate = new Date(target.dueDate).toLocaleDateString("en-AE", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        });
+        const dueDate = longCalendarDate(target.dueDate);
         const subject = `VAT Return Reminder — Due ${dueDate}`;
         const body = [
           `Dear ${target.companyName},`,

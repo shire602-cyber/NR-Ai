@@ -76,6 +76,7 @@ import { cn } from "@/lib/utils";
 import { DataTableCard } from "@/components/ui/data-table";
 import { MoneyCell, Money } from "@/components/ui/money";
 import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { parseCalendarDate } from "@/lib/format-date";
 
 const poLineSchema = z.object({
   /** Stocked product received on this line (X4/J3): without one the receipt moves no stock. */
@@ -356,8 +357,8 @@ export default function PurchaseOrders() {
         number: full.number,
         vendorName: full.vendorName,
         vendorTrn: full.vendorTrn || "",
-        date: new Date(full.date),
-        expectedDeliveryDate: new Date(full.expectedDeliveryDate),
+        date: parseCalendarDate(full.date),
+        expectedDeliveryDate: parseCalendarDate(full.expectedDeliveryDate),
         currency: full.currency,
         notes: full.notes || "",
         lines: full.lines || [{ description: "", quantity: 1, unitPrice: 0, vatRate: 0.05 }],

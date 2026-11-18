@@ -13,6 +13,7 @@
  */
 import type { Invoice, Company } from "../../shared/schema";
 import { DOCUMENT_ACCENT_DEFAULT } from "../../shared/document-accent";
+import { calendarDateKey } from "../../shared/uae-date";
 import { createLogger } from "../config/logger";
 import {
   deliverOutboxMessage,
@@ -100,10 +101,14 @@ function formatCurrency(amount: number, currency = "AED"): string {
 
 function formatDate(date: Date | string | null | undefined, locale = "en-AE"): string {
   if (!date) return "—";
-  return new Date(date).toLocaleDateString(locale, {
+  // The calendar day of a business date (due date, invoice date) in any server TZ (N1).
+  const key = calendarDateKey(date);
+  if (!key) return "—";
+  return new Date(`${key}T00:00:00Z`).toLocaleDateString(locale, {
     year: "numeric",
     month: "long",
     day: "numeric",
+    timeZone: "UTC",
   });
 }
 

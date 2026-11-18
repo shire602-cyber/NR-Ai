@@ -69,6 +69,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, CalendarIcon, Trash2, Edit, Pause, Play, CalendarDays } from "lucide-react";
 import type { RecurringInvoice } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import { parseCalendarDate } from "@/lib/format-date";
 
 const lineItemSchema = z.object({
   description: z.string().min(1, "forms.errors.descriptionRequired"),
@@ -292,8 +293,8 @@ export default function RecurringInvoices() {
       customerTrn: item.customerTrn || "",
       currency: item.currency,
       frequency: item.frequency as "weekly" | "monthly" | "quarterly" | "yearly",
-      startDate: new Date(item.startDate),
-      endDate: item.endDate ? new Date(item.endDate) : null,
+      startDate: parseCalendarDate(item.startDate),
+      endDate: item.endDate ? parseCalendarDate(item.endDate) : null,
       lines: parsedLines.map((l) => ({
         description: l.description,
         quantity: Number(l.quantity),

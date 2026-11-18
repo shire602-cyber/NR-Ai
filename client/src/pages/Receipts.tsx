@@ -10,7 +10,7 @@ import {
 import { T } from "@/components/layout/T";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from "date-fns";
+import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -116,6 +116,7 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { accountDisplayName } from "@/lib/account-name";
+import { parseCalendarDate } from "@/lib/format-date";
 
 interface ExtractedData {
   merchant?: string;
@@ -1464,7 +1465,9 @@ export default function Receipts() {
       if (!receipt.date) return false;
 
       const receiptDate =
-        typeof receipt.date === "string" ? parseISO(receipt.date) : new Date(receipt.date);
+        typeof receipt.date === "string"
+          ? parseCalendarDate(receipt.date)
+          : parseCalendarDate(receipt.date);
 
       if (fromDate && toDate) {
         return isWithinInterval(receiptDate, { start: fromDate, end: toDate });

@@ -9,19 +9,54 @@
  * Machine formats (export cells, file names, query keys) must not use these helpers.
  */
 
+import { boundaryCalendarParts } from "@shared/uae-date";
+
 export type DateInput = Date | string | number | null | undefined;
 
 const ISO_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
+/**
+ * A Date whose local Y/M/D is the calendar day the value stands for (N1). `YYYY-MM-DD` strings
+ * and stored business dates (instants on a UTC or UAE day boundary, such as a period end of
+ * `2026-09-30T23:59:59.999Z`) become local midnight of that day, so a Dubai or Los Angeles
+ * browser shows the same "30 Sep 2026" as a UTC one. Other instants are timestamps and keep
+ * their instant (read in the viewer's zone).
+ */
 export function toCalendarDate(value: DateInput): Date | null {
   if (value === null || value === undefined || value === "") return null;
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
   if (typeof value === "string") {
     const m = ISO_DAY.exec(value.trim());
     if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
   }
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d;
+  const d = value instanceof Date ? value : new Date(value);
+  const ms = d.getTime();
+  if (Number.isNaN(ms)) return null;
+  const day = boundaryCalendarParts(ms);
+  // A local midnight is already the calendar day it shows (date pickers, `new Date(y, m, d)`).
+  if (!day || isLocalMidnight(d)) return d;
+  return new Date(day.year, day.month - 1, day.day);
+}
+
+function isLocalMidnight(d: Date): boolean {
+  return (
+    d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0
+  );
+}
+
+/**
+ * `toCalendarDate` for code that needs a Date (date-fns `format`, comparisons): an Invalid Date
+ * instead of null, like `parseISO`. Use it for business dates read from the API.
+ */
+export function parseCalendarDate(value: DateInput): Date {
+  return toCalendarDate(value) ?? new Date(Number.NaN);
+}
+
+/** `YYYY-MM-DD` of `toCalendarDate` (machine use: query params, file names); "" if invalid. */
+export function calendarDayKey(value: DateInput): string {
+  const d = toCalendarDate(value);
+  if (!d) return "";
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 // English abbreviations are fixed: ICU's en-GB gives "Sept" for September while every
@@ -130,16 +165,24 @@ export function displayObligationTitle(title: string, locale: string = "en"): st
   return formatEmbeddedDates(title, locale);
 }
 
+function toInstant(value: DateInput): Date | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "string" && ISO_DAY.test(value.trim())) return toCalendarDate(value);
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 /** "14:05": 24-hour clock with Latin digits in both languages. */
 export function formatTime(value: DateInput): string {
-  const d = toCalendarDate(value);
+  const d = toInstant(value);
   if (!d) return "";
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 /** "16 Nov 2026, 14:05" / "16 نوفمبر 2026، 14:05": one line, for logs and timestamps. */
 export function formatDateTime(value: DateInput, locale: string = "en"): string {
-  const d = toCalendarDate(value);
+  const d = toInstant(value);
   if (!d) return "";
-  return `${formatDate(d, locale)}${locale === "ar" ? "، " : ", "}${formatTime(d)}`;
+  // A timestamp: day and time both in the viewer's zone (never the calendar-day reading).
+  return `${d.getDate()} ${monthName(d, locale)} ${d.getFullYear()}${locale === "ar" ? "، " : ", "}${formatTime(d)}`;
 }
