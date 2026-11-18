@@ -118,8 +118,7 @@ describe("sweep: Invoices > Customer deposits dialog", () => {
 
 describe("STEP1 F1: deposit dialog sends AED once (server validator converts to fils)", () => {
   it("create and apply bodies carry the typed AED amount, never fils", async () => {
-    const { depositBody, applyBody } =
-      await import("../../client/src/pages/invoices/CustomerDepositsDialog");
+    const { depositBody, applyBody } = await import("../../client/src/lib/deposit-body");
     const body = depositBody({
       customerName: "Palm Co",
       date: "2026-11-01",

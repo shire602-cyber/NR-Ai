@@ -10,7 +10,7 @@ import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useOpenInvoiceParam } from "../../client/src/hooks/use-open-invoice-param";
-import { previewStatusKey } from "../../client/src/components/invoices/InvoicePreview";
+import { previewStatusKey } from "../../client/src/lib/invoice-preview-status";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

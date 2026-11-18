@@ -33,6 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { accountDisplayName } from "@/lib/account-name";
 import { postablePaymentAccounts } from "@/lib/payment-accounts";
+import { applyBody, depositBody } from "@/lib/deposit-body";
 
 interface Deposit {
   id: string;
@@ -67,36 +68,6 @@ interface Account {
 }
 
 const TREATMENTS = ["standard", "zero_rated", "exempt", "out_of_scope"] as const;
-/**
- * Money on the wire is a major-unit (AED) decimal string: the server validator `zPositiveFils`
- * converts it to integer fils exactly once. Never convert to fils here (that booked AED 1,050 as
- * 105,000 and made "Apply" fail with 409).
- */
-export const toWireAmount = (v: string) => v.trim();
-
-export function depositBody(form: {
-  customerName: string;
-  date: string;
-  amount: string;
-  vatTreatment: string;
-  paymentAccountId: string;
-  reference: string;
-}) {
-  return {
-    customerName: form.customerName,
-    date: form.date,
-    amount: toWireAmount(form.amount),
-    vatTreatment: form.vatTreatment,
-    paymentAccountId: form.paymentAccountId,
-    reference: form.reference || null,
-  };
-}
-
-export const applyBody = (invoiceId: string, amount: string) => ({
-  invoiceId,
-  amount: toWireAmount(amount),
-});
-
 /**
  * A4 (M1): customer deposits / advances. VAT is due on receipt (FDL 8/2017 Art. 26); applying
  * the deposit to the final invoice reverses the advance VAT, so the supply is taxed once.

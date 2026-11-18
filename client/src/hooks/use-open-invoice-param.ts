@@ -12,7 +12,9 @@ export function useOpenInvoiceParam(onOpen: (invoiceId: string) => void) {
   const [location, navigate] = useLocation();
   const search = useSearch();
   const handler = useRef(onOpen);
-  handler.current = onOpen;
+  useEffect(() => {
+    handler.current = onOpen;
+  });
   useEffect(() => {
     const params = new URLSearchParams(search);
     const openId = params.get("open");

@@ -1,3 +1,4 @@
+import { previewStatusKey } from "@/lib/invoice-preview-status";
 import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { loadNamespace, t as catalogs, useTranslation, type Locale } from "@/lib/i18n";
@@ -47,24 +48,6 @@ export interface InvoicePreviewProps {
 }
 
 const NS = "forms";
-
-/** Catalog key of the preview chip: the real lifecycle status, "Draft" only for a draft. */
-export function previewStatusKey(status?: string | null): string {
-  switch (status) {
-    case "paid":
-    case "partial":
-    case "void":
-      return `forms.preview.status.${status}`;
-    case "cancelled":
-      return "forms.preview.status.void";
-    case "sent":
-    case "posted":
-    case "overdue":
-      return "forms.preview.status.sent";
-    default:
-      return "forms.preview.draftBadge";
-  }
-}
 
 /** Both languages of one catalog key, active language first. */
 function useBilingual() {
