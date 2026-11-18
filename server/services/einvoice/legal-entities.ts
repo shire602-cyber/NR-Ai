@@ -25,6 +25,7 @@ import { db } from "../../db";
 import { einvoiceLegalEntities, type EInvoiceLegalEntity } from "../../../shared/schema";
 import { DomainError } from "../../errors";
 import { PEPPOL_SCHEME_UAE_TIN, isUaeTin, tinFromTrn } from "./pint-ae-codes";
+import { effectiveTin } from "../../../shared/validators/einvoice-identity";
 
 /** Provider legal-entity fields we keep (A-Cube's resource shape; other providers map onto it). */
 export interface LegalEntityFields {
@@ -173,14 +174,21 @@ export async function updateLegalEntityRow(
   return row;
 }
 
-/** The company's 10-digit TIN (explicit Peppol participant id, else the TRN's first 10). */
+/**
+ * The company's 10-digit TIN: explicit Peppol participant id, else the stored TIN (WQ5), else
+ * the first 10 digits of the CT TRN, else of the VAT TRN.
+ */
 export function companyTin(company: {
   trnVatNumber?: string | null;
   peppolParticipantId?: string | null;
+  einvoiceTin?: string | null;
+  corporateTaxId?: string | null;
 }): string | null {
   if (company.peppolParticipantId && isUaeTin(company.peppolParticipantId)) {
     return company.peppolParticipantId;
   }
+  const stored = effectiveTin(company);
+  if (stored) return stored;
   const tin = tinFromTrn(company.trnVatNumber ?? null);
   return tin && isUaeTin(tin) ? tin : null;
 }

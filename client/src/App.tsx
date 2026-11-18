@@ -46,6 +46,7 @@ const LandingPage = lazyWithReload(() => import("@/pages/MuhasibLanding"));
 const Services = lazyWithReload(() => import("@/pages/Services"));
 const Pricing = lazyWithReload(() => import("@/pages/Pricing"));
 const PublicInvoiceView = lazyWithReload(() => import("@/pages/PublicInvoiceView"));
+const EInvoicingApprove = lazyWithReload(() => import("@/pages/EInvoicingApprove"));
 const CustomerPortal = lazyWithReload(() => import("@/pages/CustomerPortal"));
 const PrivacyPolicy = lazyWithReload(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazyWithReload(() => import("@/pages/TermsOfService"));
@@ -612,6 +613,8 @@ function Router() {
               <Route path="/verify-email" component={Login} />
               <Route path="/services" component={Services} />
               <Route path="/view/invoice/:token" component={PublicInvoiceView} />
+              {/* WQ5: no-login e-invoicing approver page (before /portal/:token). */}
+              <Route path="/portal/einvoicing-approve/:token" component={EInvoicingApprove} />
               <Route path="/portal/:token" component={CustomerPortal} />
               <Route path="/pricing" component={Pricing} />
               <Route path="/trust" component={TrustSecurity} />

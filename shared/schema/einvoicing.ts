@@ -299,6 +299,37 @@ export const einvoiceBuyerEndpoints = pgTable(
 );
 export type EInvoiceBuyerEndpoint = typeof einvoiceBuyerEndpoints.$inferSelect;
 
+/**
+ * WQ5 (0128): single-purpose, expiring, revocable links for whoever approves the partner in
+ * EmaraTax. Only the SHA-256 of the token is stored; the page shows the company's display name
+ * and the steps, nothing else.
+ */
+export const einvoiceApproverLinks = pgTable(
+  "einvoice_approver_links",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    approverName: text("approver_name"),
+    approverEmail: text("approver_email"),
+    createdBy: uuid("created_by"),
+    expiresAt: timestamp("expires_at").notNull(),
+    revokedAt: timestamp("revoked_at"),
+    completedAt: timestamp("completed_at"),
+    lastViewedAt: timestamp("last_viewed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    tokenUnique: uniqueIndex("einvoice_approver_links_token_unique").on(table.tokenHash),
+    companyIdx: index("idx_einvoice_approver_links_company").on(table.companyId),
+  })
+);
+export type EInvoiceApproverLink = typeof einvoiceApproverLinks.$inferSelect;
+
 /** ZATCA e-invoice generation solution (EGS) unit: keys, CSIDs and hash chain. */
 export const zatcaEgsUnits = pgTable(
   "zatca_egs_units",

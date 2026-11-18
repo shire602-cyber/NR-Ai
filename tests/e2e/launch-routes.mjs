@@ -200,6 +200,7 @@ export const ALL_CRAWL_SKIPPED = [
   "/verify-email",
   "/view/invoice/:token",
   "/portal/:token",
+  "/portal/einvoicing-approve/:token",
   "/accounts",
   // Edit routes of the document editors: the same editor as the matching /new route, for one record.
   "/recurring-invoices/:id/edit",
