@@ -663,7 +663,11 @@ describe("W3-B debit notes, prepayments, vendors, approval rules, services", () 
     expect(draft.body.status).toBe("draft");
     expect(draft.body.total_amount).toBe("105.00");
     const viaService = resolve<
-      (c: string, u: string, raw: unknown) => Promise<{ bill: { status: string; total_amount: string } }>
+      (
+        c: string,
+        u: string,
+        raw: unknown
+      ) => Promise<{ bill: { status: string; total_amount: string } }>
     >("bills.createDraftFromInbound");
     const svc = await viaService(t.company.id, t.user.id, {
       vendorName: "OCR Vendor",
@@ -671,7 +675,9 @@ describe("W3-B debit notes, prepayments, vendors, approval rules, services", () 
       lines: [{ description: "Scanned", unitPrice: "20.00", vatRate: 5 }],
     });
     expect(svc.bill).toMatchObject({ status: "draft", total_amount: "21.00" });
-    await expect(viaService(t.company.id, t.user.id, { vendorName: "x", lines: [] })).rejects.toThrow();
+    await expect(
+      viaService(t.company.id, t.user.id, { vendorName: "x", lines: [] })
+    ).rejects.toThrow();
     const ledger = JSON.parse(
       fs.readFileSync(
         path.join(__dirname, "../../scripts/guard-baselines/ledger-writes.json"),

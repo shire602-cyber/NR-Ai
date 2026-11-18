@@ -1633,7 +1633,11 @@ export default function Receipts() {
       <PageHeader
         eyebrow="Purchases"
         title={t["purchases.receiptsTitle"]}
-        description={autoReadUnavailable ? t["pages.receiptsSubtitleManual"] : (t as any).receiptScannerSubtitle}
+        description={
+          autoReadUnavailable
+            ? t["pages.receiptsSubtitleManual"]
+            : (t as any).receiptScannerSubtitle
+        }
         actions={
           <Button
             onClick={() => setManualExpenseDialogOpen(true)}

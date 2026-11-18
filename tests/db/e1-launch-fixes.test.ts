@@ -161,3 +161,43 @@ describe("E1 month-end FX step ignores settled foreign documents", () => {
     expect(exp.missingRates).toHaveLength(0);
   });
 });
+
+describe("E1 dashboard: AP average payment period needs a fully paid bill", () => {
+  it("a part-paid bill gives no days-payable; once a bill is fully paid it is reported", async () => {
+    const t = await h.createTenant({ name: "DpoFullyPaid" });
+    const bill = async (n: string) => {
+      const b = await t.as.post(`/api/companies/${t.company.id}/bills`, {
+        vendor_name: "Office Supplies LLC",
+        bill_number: n,
+        bill_date: isoDaysAgo(10),
+        due_date: isoDaysAgo(-20),
+        line_items: [{ description: "Stationery", quantity: 1, unit_price: 1000, vat_rate: 0 }],
+      });
+      expect(b.status, b.text).toBe(200);
+      const a = await t.as.post(`/api/bills/${b.body.id}/approve`, {});
+      expect(a.status, a.text).toBe(200);
+      return b.body.id as string;
+    };
+    const pay = async (id: string, amount: number) => {
+      const r = await t.as.post(`/api/bills/${id}/payments`, {
+        payment_date: isoDaysAgo(10),
+        amount,
+        payment_method: "bank_transfer",
+      });
+      expect(r.status, r.text).toBeLessThan(300);
+    };
+    const dpo = async () => {
+      const s = await t.as.get(`/api/companies/${t.company.id}/dashboard/stats`);
+      expect(s.status, s.text).toBe(200);
+      return s.body.dpo as number | null;
+    };
+    const first = await bill("SUP-1");
+    await pay(first, 400);
+    // A same-day part payment is not an average payment period.
+    expect(await dpo()).toBeNull();
+    const second = await bill("SUP-2");
+    await pay(second, 1000);
+    // AP open 600 of 2,000 trailing expenses: 600 / 2000 x 90 = 27.0 days.
+    expect(await dpo()).toBe(27);
+  });
+});

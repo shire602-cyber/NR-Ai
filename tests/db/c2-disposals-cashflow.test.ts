@@ -356,6 +356,51 @@ describe("C2 RL2: the direct method shows the cash paid and received", () => {
   });
 });
 
+describe("C2 RL2 with the E1 peg default", () => {
+  it("[RL2][E1 peg] a USD bill booked at the default peg and paid at 3.70: the payable line is the cash paid", async () => {
+    // INTEGRATE-G: no USD rate row exists, so the bill books at the CBUAE peg (E1) and the
+    // realised difference against the payment rate folds into the 2010 line (RL2).
+    const t = await tenant("C2RL2Peg");
+    const bank = await accountByCode(t, "1020");
+    await journal(t, "2026-11-01", [
+      ["1020", 20000, 0],
+      ["3010", 0, 20000],
+    ]);
+    const bill = await t.as.post(`${base(t)}/bills`, {
+      vendor_name: "US Supplier Inc",
+      bill_number: "US-PEG",
+      bill_date: "2026-11-02",
+      due_date: "2026-12-31",
+      currency: "USD",
+      line_items: [
+        {
+          description: "Software service",
+          quantity: 1,
+          unit_price: 1000,
+          vat_rate: 0,
+          account_id: (await accountByCode(t, "5000")).id,
+        },
+      ],
+    });
+    expect(bill.status, bill.text).toBe(200);
+    expect(Number(bill.body.exchange_rate)).toBeCloseTo(3.6725, 6);
+    expect((await t.as.post(`/api/bills/${bill.body.id}/approve`, {})).status).toBe(200);
+    const paid = await t.as.post(`/api/bills/${bill.body.id}/payments`, {
+      amount: 1000,
+      payment_date: "2026-11-14",
+      payment_account_id: bank.id,
+      exchange_rate: 3.7,
+    });
+    expect(paid.status, paid.text).toBeLessThan(300);
+    expect(await glBalance(t, "1020")).toBe(20000 - 3700);
+    const { direct, indirect } = await bothMethods(t, "2026-11-01", "2026-11-30");
+    const op = Object.fromEntries(direct.operating.breakdown.map((l) => [l.accountCode, l.amount]));
+    expect(op).toEqual({ "2010": -3700 });
+    expect(direct.operating.total).toBe(-3700);
+    expect(indirect.operating.total).toBe(-3700);
+  });
+});
+
 describe("C2 RL4: register tax columns at a mid-month asOf", () => {
   it("[RL4] 30 Oct: tax and book both run through September (no spurious difference)", async () => {
     const t = await tenant("C2RL4");

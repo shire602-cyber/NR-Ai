@@ -335,9 +335,10 @@ function BankVsLedger({ accounts }: { accounts: BankVsGlAccount[] }) {
                     data-testid={`bank-vs-gl-reason-${a.bankAccountId}`}
                   >
                     {formatMessage(
+                      // difference = statement balance − ledger balance (dashboard-stats).
                       (a.difference ?? 0) > 0
-                        ? tt["dashboard.bankDiffBooksAhead"]
-                        : tt["dashboard.bankDiffStatementAhead"],
+                        ? tt["dashboard.bankDiffStatementAhead"]
+                        : tt["dashboard.bankDiffBooksAhead"],
                       {
                         amount: formatCurrency(Math.abs(a.difference ?? 0), a.currency, locale),
                       }

@@ -297,6 +297,51 @@ describe("A2 bank currency", () => {
     expect(Math.abs(usd.unrealisedGainLoss)).toBeLessThan(0.02);
   });
 
+  it("[C4][E1 peg] a EUR bill paid from a USD account with no USD rate on file measures the USD leg at the CBUAE peg", async () => {
+    // INTEGRATE-G: E1's AED/USD peg default composes with the bank-currency rule: the USD
+    // account's rate resolves to 3.6725 instead of BANK_CURRENCY_RATE_REQUIRED.
+    const t = await tenant();
+    const usdGl = await usdBank(t);
+    const d = daysAgo(5);
+    await rate(t, "EUR", 4.0, daysAgo(10));
+    await rate(t, "EUR", 3.92, d);
+    const b = await t.as.post(`/api/companies/${t.company.id}/bills`, {
+      vendor_name: "Euro Vendor GmbH",
+      bill_number: "EUR-PEG",
+      bill_date: daysAgo(10),
+      currency: "EUR",
+      exchange_rate: "4",
+      reverse_charge: true,
+      line_items: [{ description: "Consulting", quantity: 1, unit_price: 1000, vat_rate: 5 }],
+    });
+    expect(b.status, b.text).toBe(200);
+    expect((await t.as.post(`/api/bills/${b.body.id}/approve`, {})).status).toBe(200);
+    const pay = await t.as.post(`/api/bills/${b.body.id}/payments`, {
+      payment_date: d,
+      amount: 1000,
+      payment_account_id: usdGl,
+      exchange_rate: "3.92",
+    });
+    expect(pay.status, pay.text).toBe(200);
+    const cash = await h.sql<{ credit: string; foreign_credit: string; exchange_rate: string }>(
+      `SELECT jl.credit::text AS credit, jl.foreign_credit::text AS foreign_credit,
+              jl.exchange_rate::text AS exchange_rate
+         FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
+        WHERE je.source = 'bill_payment' AND je.company_id = $1 AND jl.account_id = $2`,
+      [t.company.id, usdGl]
+    );
+    // AED 3,920.00 / 3.6725 = USD 1,067.39 (half-up on fils).
+    expect(cash).toHaveLength(1);
+    expect(cash[0].credit).toBe("3920.00");
+    expect(cash[0].foreign_credit).toBe("1067.39");
+    expect(Number(cash[0].exchange_rate)).toBeCloseTo(3.6725, 6);
+    expect(await lines(t, "bill_payment", pay.body.payment.id)).toEqual({
+      "1026": -392_000,
+      "2010": 400_000,
+      "4090": -8_000,
+    });
+  });
+
   it("[C4] a third-currency payment with no rate for the bank currency is refused with BANK_CURRENCY_RATE_REQUIRED", async () => {
     const t = await tenant();
     // E1: USD/AED resolves at the CBUAE peg with no stored rate, so the refusal is shown with a
