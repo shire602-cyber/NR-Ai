@@ -60,6 +60,15 @@ describe("sweep: anomaly text never shows raw record ids", () => {
       replaceRecordIds(`Receipt ${"0".repeat(8)}-0000-0000-0000-${"0".repeat(12)} is odd`, refs)
     ).toBe("Receipt is odd");
   });
+  it("client: AI-written English in the Arabic UI is marked as English", async () => {
+    const { writtenLanguageProps } = await import("../../client/src/lib/server-message");
+    expect(writtenLanguageProps("Bank service fee, categorised as bank charges.", "ar")).toEqual({
+      lang: "en",
+      dir: "ltr",
+    });
+    expect(writtenLanguageProps("رسوم بنكية", "ar")).toEqual({});
+    expect(writtenLanguageProps("Bank service fee", "en")).toEqual({});
+  });
   it("client: stored text drops the id", async () => {
     const { withoutRecordIds } = await import("../../client/src/lib/server-message");
     expect(withoutRecordIds(`Invoice with ID '${id}' has a round amount.`)).toBe(

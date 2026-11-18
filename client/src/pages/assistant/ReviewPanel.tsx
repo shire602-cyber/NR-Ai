@@ -31,7 +31,7 @@ import { accountDisplayName } from "@/lib/account-name";
 import { formatDate } from "@/lib/format-date";
 import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { categorisationReason } from "@/lib/server-message";
+import { categorisationReason, writtenLanguageProps } from "@/lib/server-message";
 import { cn } from "@/lib/utils";
 import { confidenceWord, type ConfidenceWord } from "./model";
 
@@ -263,7 +263,12 @@ export default function ReviewPanel() {
                     )}
                   </p>
                   {reason && (
-                    <p className="line-clamp-2 text-small text-muted-foreground">{reason}</p>
+                    <p
+                      className="line-clamp-2 text-small text-muted-foreground"
+                      {...writtenLanguageProps(reason, locale)}
+                    >
+                      {reason}
+                    </p>
                   )}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">

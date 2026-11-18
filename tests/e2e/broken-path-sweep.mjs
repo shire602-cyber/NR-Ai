@@ -445,6 +445,21 @@ async function finishOnboarding(page) {
   }
 }
 
+/**
+ * Snapshot after the page settled. A heavy page (Evidence Center) can still show its loading
+ * skeleton after network idle; an empty main area is re-read for up to 6 s before it counts.
+ */
+async function settledSnapshot(page) {
+  let snap = await page.evaluate(pageSnapshot);
+  for (let i = 0; i < 4 && !snap.dialog && snap.mainText < 15; i += 1) {
+    await page.waitForTimeout(1500);
+    const next = await page.evaluate(pageSnapshot);
+    next.rejections = [...snap.rejections, ...next.rejections];
+    snap = next;
+  }
+  return snap;
+}
+
 /** Load one URL and run the page rules. Returns the snapshot (or null on navigation failure). */
 async function loadAndCheck(page, state, url, ctx) {
   state.problems.length = 0;
@@ -459,7 +474,7 @@ async function loadAndCheck(page, state, url, ctx) {
   }
   await settle(page, 900);
   await dismissOverlays(page);
-  const snap = await page.evaluate(pageSnapshot);
+  const snap = await settledSnapshot(page);
   const problems = [...state.problems, ...checkSnapshot(snap, ctx, ctx.lang, ctx.userWords)];
   let failed = 0;
   for (const p of problems) if (fail({ ...ctx, route: url, ...p })) failed += 1;
@@ -721,7 +736,7 @@ async function paletteSweep(page, state, ctx) {
       continue;
     }
     await settle(page, 600);
-    const snap = await page.evaluate(pageSnapshot);
+    const snap = await settledSnapshot(page);
     const problems = [
       ...state.problems,
       ...checkSnapshot(snap, ctx, ctx.lang, ctx.userWords),
@@ -774,7 +789,7 @@ async function mobileMoreSweep(page, state, ctx) {
       continue;
     }
     await settle(page, 700);
-    const snap = await page.evaluate(pageSnapshot);
+    const snap = await settledSnapshot(page);
     const problems = [...state.problems, ...checkSnapshot(snap, ctx, ctx.lang, ctx.userWords)];
     let failed = 0;
     for (const p of problems)

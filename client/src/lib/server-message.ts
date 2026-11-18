@@ -115,3 +115,12 @@ export function categorisationReason(
   if (message.key.startsWith("categorise.operator.")) return null;
   return renderServerMessage(message, row.ai_reason, t, locale);
 }
+
+/**
+ * Props for free text an AI model wrote (anomaly findings, categorisation reasons). It stays in
+ * the language the model wrote it in; in the Arabic UI an English sentence is marked as English
+ * (`lang`, `dir`) so screen readers and the layout treat it as such (broken-path sweep).
+ */
+export function writtenLanguageProps(text: string, locale: string): { lang?: string; dir?: "ltr" } {
+  return locale === "ar" && text && !/[\u0600-\u06FF]/.test(text) ? { lang: "en", dir: "ltr" } : {};
+}

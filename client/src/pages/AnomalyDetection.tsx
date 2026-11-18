@@ -3,7 +3,7 @@ import type { CopyDescriptor } from "@shared/server-copy";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
 import { anomalyRuleLabel } from "@/lib/anomaly-rules";
-import { anomalyMessage } from "@/lib/server-message";
+import { anomalyMessage, writtenLanguageProps } from "@/lib/server-message";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
@@ -359,16 +359,9 @@ export function AnomalyChecks({ embedded = false }: { embedded?: boolean }) {
                           )}
                         </div>
                         {(() => {
-                          // AI-written findings stay in the language the model wrote them in; an
-                          // English sentence in the Arabic UI is marked as English (lang, dir).
                           const text = anomalyMessage(anomaly, t, locale);
-                          const english = locale === "ar" && !/[؀-ۿ]/.test(text);
                           return (
-                            <p
-                              className="text-sm"
-                              lang={english ? "en" : undefined}
-                              dir={english ? "ltr" : undefined}
-                            >
+                            <p className="text-sm" {...writtenLanguageProps(text, locale)}>
                               {text}
                             </p>
                           );
