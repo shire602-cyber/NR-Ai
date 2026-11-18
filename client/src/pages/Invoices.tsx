@@ -6,7 +6,7 @@ import { Link, useLocation, useRoute } from "wouter";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
-import { format, isWithinInterval, parseISO, startOfDay, endOfDay } from "date-fns";
+import { format, isWithinInterval, startOfDay, endOfDay } from "date-fns";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,6 +90,7 @@ import {
 import { EInvoiceListCell } from "@/components/einvoice/EInvoiceListCell";
 import { InvoiceCurrencyFields } from "@/components/invoices/InvoiceCurrencyFields";
 import { LineItemPicker } from "@/components/invoices/LineItemPicker";
+import { LineIncomeAccountPicker } from "@/components/invoices/LineIncomeAccountPicker";
 import { rateToSend } from "@/lib/document-currency";
 import {
   defaultPaymentAccountId,
@@ -141,6 +142,7 @@ import {
 import { STANDARD_VAT_RATES, vatJurisdictionForCountry } from "@shared/vat-classification";
 import {
   blankInvoiceLine,
+  defaultLineIncomeAccountId,
   isUntouchedBlankLine,
   isVatRegisteredCompany,
 } from "@/lib/invoice-defaults";
@@ -150,6 +152,7 @@ import {
   type InvoiceStatusFilter,
 } from "@/lib/invoice-filters";
 import { accountDisplayName } from "@/lib/account-name";
+import { parseCalendarDate } from "@/lib/format-date";
 
 // D5b: the bilingual preview is its own chunk (only loaded when the invoice dialog opens).
 // Mounted only while open: the dialogs and their queries stay out of the list's first render.
@@ -192,6 +195,8 @@ const invoiceLineSchema = z.object({
   marginPurchaseCost: z.coerce.number().min(0).default(0),
   // X5 (J1 L1): linked product / service (drives the income account on posting).
   productId: z.string().optional(),
+  // E3 (J1-r3): the income account the line posts to ("" = by item type).
+  revenueAccountId: z.string().optional(),
 });
 
 // S1 (W5-E): form totals come from the pure, tested client/src/lib/invoice-totals.ts, which
@@ -308,7 +313,26 @@ export default function Invoices() {
   const standardRate = STANDARD_VAT_RATES[vatJurisdictionForCountry(company?.addressCountry)];
   // X6a: a company without a TRN is not VAT registered; its new lines start at 0% out of scope.
   const vatRegistered = isVatRegisteredCompany(company);
-  const blankLine = useCallback(() => blankInvoiceLine(vatRegistered), [vatRegistered]);
+  // E3 (J1-r3): a services company's new lines start on Service Revenue, not Product Sales.
+  const { data: lineAccounts = [] } = useQuery<any[]>({
+    queryKey: ["/api/companies", selectedCompanyId, "accounts"],
+    enabled: !!selectedCompanyId,
+  });
+  const { data: lineProducts = [] } = useQuery<
+    Array<{ productType?: string | null; isActive?: boolean | null }>
+  >({
+    queryKey: ["/api/companies", selectedCompanyId, "products"],
+    enabled: !!selectedCompanyId,
+    retry: false,
+  });
+  const defaultIncomeAccountId = useMemo(
+    () => defaultLineIncomeAccountId(lineAccounts, lineProducts),
+    [lineAccounts, lineProducts]
+  );
+  const blankLine = useCallback(
+    () => ({ ...blankInvoiceLine(vatRegistered), revenueAccountId: defaultIncomeAccountId }),
+    [vatRegistered, defaultIncomeAccountId]
+  );
   const [editorOpen, setEditorOpen] = useState(false);
   const [depositsOpen, setDepositsOpen] = useState(false);
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
@@ -982,7 +1006,7 @@ export default function Invoices() {
         customerTrn: fullInvoice.customerTrn || "",
         contactId: fullInvoice.contactId || undefined,
         placeOfSupplyEmirate: fullInvoice.placeOfSupplyEmirate || undefined,
-        date: new Date(fullInvoice.date),
+        date: parseCalendarDate(fullInvoice.date),
         currency: fullInvoice.currency || baseCurrency,
         exchangeRate:
           fullInvoice.currency && fullInvoice.currency !== baseCurrency
@@ -1001,6 +1025,7 @@ export default function Invoices() {
                 marginScheme?: boolean | null;
                 marginPurchaseCost?: number | string | null;
                 productId?: string | null;
+                revenueAccountId?: string | null;
               }) => ({
                 description: l.description,
                 quantity: Number(l.quantity),
@@ -1017,6 +1042,7 @@ export default function Invoices() {
                 marginScheme: !!l.marginScheme,
                 marginPurchaseCost: Number(l.marginPurchaseCost) || 0,
                 productId: l.productId || undefined,
+                revenueAccountId: l.revenueAccountId || undefined,
               })
             )
           : [blankLine()],
@@ -1075,6 +1101,9 @@ export default function Invoices() {
               }
             : {}),
           ...(line.productId ? { productId: line.productId } : {}),
+          ...(line.revenueAccountId && line.vatSupplyType === "standard_rated"
+            ? { revenueAccountId: line.revenueAccountId }
+            : {}),
         })),
       };
 
@@ -1129,7 +1158,9 @@ export default function Invoices() {
       if (!invoice.date) return false;
 
       const invoiceDate =
-        typeof invoice.date === "string" ? parseISO(invoice.date) : new Date(invoice.date);
+        typeof invoice.date === "string"
+          ? parseCalendarDate(invoice.date)
+          : parseCalendarDate(invoice.date);
 
       if (fromDate && toDate) {
         return isWithinInterval(invoiceDate, { start: fromDate, end: toDate });
@@ -1565,6 +1596,8 @@ export default function Invoices() {
                             return;
                           }
                           form.setValue(`lines.${index}.productId`, p.id, opts);
+                          // E3: a picked item decides the income account (service items post to Service Revenue).
+                          form.setValue(`lines.${index}.revenueAccountId`, undefined, opts);
                           form.setValue(
                             `lines.${index}.description`,
                             (locale === "ar" && p.nameAr) || p.name,
@@ -1581,6 +1614,17 @@ export default function Invoices() {
                             );
                           }
                         }}
+                      />
+                      <LineIncomeAccountPicker
+                        accounts={accounts}
+                        index={index}
+                        value={watchLines[index]?.revenueAccountId}
+                        disabled={watchLines[index]?.vatSupplyType !== "standard_rated"}
+                        onChange={(id) =>
+                          form.setValue(`lines.${index}.revenueAccountId`, id, {
+                            shouldDirty: true,
+                          })
+                        }
                       />
                       <Button
                         type="button"
@@ -2323,6 +2367,7 @@ export default function Invoices() {
                                       <DropdownMenuItem
                                         onSelect={() => openAddPayment(invoice)}
                                         data-testid={`button-add-payment-${invoice.id}`}
+                                        {...gate("ledger.post")}
                                       >
                                         <DollarSign aria-hidden />
                                         <T k="invoices.actionAddPayment" />
@@ -2402,6 +2447,7 @@ export default function Invoices() {
                                     label={t["invoices.actionAddPayment"]}
                                     onClick={() => openAddPayment(invoice)}
                                     data-testid={`button-add-payment-${invoice.id}`}
+                                    {...gate("ledger.post")}
                                   />
                                 )}
                               {invoice.status === "paid" ? (

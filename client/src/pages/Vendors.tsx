@@ -32,6 +32,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatDate } from "@/lib/format";
 import { DataTableCard } from "@/components/ui/data-table";
@@ -174,6 +175,7 @@ export default function Vendors() {
   const c = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId } = useDefaultCompany();
+  const { gate: permissionGate } = useCompanyPermission();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({ ...EMPTY });
   const [statementFor, setStatementFor] = useState<Vendor | null>(null);
@@ -259,7 +261,7 @@ export default function Vendors() {
         title={c.title}
         description={c.subtitle}
         primaryAction={
-          <Button onClick={() => setOpen(true)}>
+          <Button onClick={() => setOpen(true)} {...permissionGate("documents.write")}>
             <Plus aria-hidden />
             {c.newVendor}
           </Button>
@@ -283,7 +285,11 @@ export default function Vendors() {
               icon: Truck,
               title: c.noVendors,
               description: c.emptyBody,
-              action: { label: c.newVendor, onClick: () => setOpen(true) },
+              action: {
+                label: c.newVendor,
+                onClick: () => setOpen(true),
+                permission: "documents.write",
+              },
             }}
           >
             <Table className="row-cards">

@@ -7,7 +7,9 @@ import { useHarness } from "./harness";
 const h = useHarness();
 
 describe("PR-66 month-end checklist and quarterly VAT", () => {
-  it("PR-66: a quarterly return covering the month completes the VAT step; mid-quarter months are not due", async () => {
+  // The base's E3 (J3-r3) rewrote this step; the PR-66 port was dropped in its favour. This
+  // keeps the PR-66 regression: a quarterly filer is not blocked every month.
+  it("PR-66: a quarterly filer's mid-quarter months need no return; the period-end month needs the quarter's return", async () => {
     const t = await h.createTenant({ name: "QuarterlyFiler" });
     await h.sql(
       `UPDATE companies SET vat_filing_frequency = 'quarterly', vat_period_start_month = 1 WHERE id = $1`,
@@ -20,9 +22,7 @@ describe("PR-66 month-end checklist and quarterly VAT", () => {
       return r.body.checklist.find((c: { id: number }) => c.id === 7);
     };
 
-    // No return yet: July and August are mid-quarter (not due); September is due.
-    expect((await vatStep("2025-07")).status).toBe("complete");
-    expect((await vatStep("2025-07")).details).toMatch(/Not due yet/);
+    for (const m of ["2025-07", "2025-08"]) expect((await vatStep(m)).status, m).toBe("complete");
     expect((await vatStep("2025-09")).status).toBe("incomplete");
 
     await h.sql(
@@ -30,16 +30,9 @@ describe("PR-66 month-end checklist and quarterly VAT", () => {
        VALUES ($1, '2025-07-01', '2025-09-30', '2025-10-28', $2, 'submitted')`,
       [t.company.id, t.user.id]
     );
-    for (const m of ["2025-07", "2025-08", "2025-09"]) {
-      const step = await vatStep(m);
-      expect(step.status, m).toBe("complete");
-      expect(step.details, m).toMatch(/1 VAT return\(s\) prepared/);
-    }
-    // A monthly filer still needs a return every month.
-    await h.sql(`UPDATE companies SET vat_filing_frequency = 'monthly' WHERE id = $1`, [
-      t.company.id,
-    ]);
-    expect((await vatStep("2025-10")).status).toBe("incomplete");
+    const sep = await vatStep("2025-09");
+    expect(sep.status).toBe("complete");
+    expect(sep.details).toMatch(/1 VAT return\(s\) prepared/);
   });
 });
 

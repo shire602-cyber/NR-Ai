@@ -80,6 +80,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -781,7 +782,11 @@ export default function CustomerContacts() {
             <Building2 className="w-4 h-4" />
             {formatMessage(t["pages.contactsTabCount"], { count: contacts.length })}
           </TabsTrigger>
-          <TabsTrigger value="import" data-testid="tab-contacts-import">
+          <TabsTrigger
+            value="import"
+            data-testid="tab-contacts-import"
+            {...gate("documents.write")}
+          >
             <Upload className="w-4 h-4" />
             <T k="pageLabels.importFromExcel" />
           </TabsTrigger>
@@ -820,12 +825,14 @@ export default function CustomerContacts() {
                     label: t["pages.contactsAddContact"],
                     onClick: () => setShowAddDialog(true),
                     testId: "button-add-first-contact",
+                    permission: "documents.write",
                   },
               secondaryAction: searchTerm
                 ? { label: t["pages.contactsClearSearch"], onClick: () => setSearchTerm("") }
                 : {
                     label: t["pageLabels.importFromExcel"],
                     onClick: () => setActiveTab("import"),
+                    permission: "documents.write",
                   },
             }}
           >
@@ -1371,21 +1378,39 @@ export default function CustomerContacts() {
                 </ul>
               )}
               {activePortalLinks.length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-destructive hover:text-destructive"
-                  onClick={() => {
-                    if (window.confirm(t["customerContacts.revokeAccessConfirm"])) {
-                      revokePortalMutation.mutate(portalLinkDialog.contactId);
-                    }
-                  }}
-                  disabled={revokePortalMutation.isPending}
-                  data-testid="button-revoke-portal-access"
-                  {...(canManagePortal ? {} : gate("documents.write"))}
-                >
-                  {t["customerContacts.revokeAccess"]}
-                </Button>
+                // E3 (J4-r3): the app's confirm dialog, not the browser's native confirm().
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      disabled={revokePortalMutation.isPending}
+                      data-testid="button-revoke-portal-access"
+                      {...(canManagePortal ? {} : gate("documents.write"))}
+                    >
+                      {t["customerContacts.revokeAccess"]}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t["customerContacts.revokeAccess"]}</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {t["customerContacts.revokeAccessConfirm"]}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t["common.cancel"]}</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={() => revokePortalMutation.mutate(portalLinkDialog.contactId)}
+                        data-testid="button-confirm-revoke-portal-access"
+                      >
+                        {t["customerContacts.revokeAccess"]}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </section>
           </div>

@@ -8,6 +8,7 @@
  */
 
 import { formatMoneyAmount } from "../../utils/money-format";
+import { calendarParts } from "../../../shared/uae-date";
 
 export type RenderLocale = "en" | "ar";
 
@@ -75,9 +76,9 @@ export function bilingualLabel(locale: RenderLocale, text: Bilingual): string {
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export function formatIsoDate(iso: string): string {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-  if (!y || !m || !d) return iso;
-  return `${d} ${MONTHS[m - 1]} ${y}`;
+  const p = calendarParts(iso);
+  if (!p) return iso;
+  return `${p.day} ${MONTHS[p.month - 1]} ${p.year}`;
 }
 
 const MONTHS_AR = [
@@ -97,9 +98,9 @@ const MONTHS_AR = [
 
 /** Arabic counterpart of formatIsoDate: "18 نوفمبر 2026" (Latin digits, as in the app). */
 export function formatIsoDateAr(iso: string): string {
-  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
-  if (!y || !m || !d) return iso;
-  return `${d} ${MONTHS_AR[m - 1]} ${y}`;
+  const p = calendarParts(iso);
+  if (!p) return iso;
+  return `${p.day} ${MONTHS_AR[p.month - 1]} ${p.year}`;
 }
 
 /** A date for a note in both languages: { en: "18 Nov 2026", ar: "18 نوفمبر 2026" }. */

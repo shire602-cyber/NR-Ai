@@ -276,6 +276,54 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
     onError: fail,
   });
 
+  /** Edit, terminate, archive and delete: shared by the phone list and the table. */
+  const employeeActions = (e: Employee) => (
+    <>
+      <Button
+        size="icon"
+        variant="ghost"
+        aria-label={tx("hr.edit")}
+        disabled={e.status === "terminated"}
+        onClick={() => {
+          setEditing(e);
+          setForm(toForm(e));
+          setOpen(true);
+        }}
+      >
+        <Edit className="h-4 w-4" />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        aria-label={tx("hr.terminate")}
+        disabled={e.status === "terminated"}
+        onClick={() => {
+          setTerminating(e);
+          setTermDate(new Date().toISOString().slice(0, 10));
+          setTermReason("");
+        }}
+      >
+        <UserX className="h-4 w-4" />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        aria-label={tx("hr.archive")}
+        onClick={() => archive.mutate(e.id)}
+      >
+        <Archive className="h-4 w-4" />
+      </Button>
+      <Button
+        size="icon"
+        variant="ghost"
+        aria-label={tx("hr.delete")}
+        onClick={() => remove.mutate(e.id)}
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </>
+  );
+
   const filtered = employees.filter((e) => {
     const q = search.trim().toLowerCase();
     return (
@@ -317,87 +365,75 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
         ) : filtered.length === 0 ? (
           <EmptyState size="sm" title={tx("hr.noEmployees")} />
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{tx("hr.field.fullName")}</TableHead>
-                  <TableHead>{tx("hr.field.department")}</TableHead>
-                  <TableHead>{tx("hr.field.nationality")}</TableHead>
-                  <TableHead data-numeric>{tx("hr.totalSalary")}</TableHead>
-                  <TableHead>{tx("hr.statusLabel")}</TableHead>
-                  <TableHead data-numeric>{tx("hr.actions")}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((e) => (
-                  <TableRow key={e.id}>
-                    <TableCell>
-                      <div className="font-medium">{e.full_name}</div>
-                      {e.full_name_ar && (
-                        <div className="text-xs text-muted-foreground">{e.full_name_ar}</div>
-                      )}
-                    </TableCell>
-                    <TableCell>{e.department ?? "—"}</TableCell>
-                    <TableCell>{e.nationality ?? "—"}</TableCell>
-                    <TableCell data-numeric>
-                      <Money
-                        amount={Number(e.total_salary)}
-                        currency={e.salary_currency ?? "AED"}
-                      />
-                    </TableCell>
-                    <TableCell>
+          <>
+            {/* Fable P-d: below 768px each employee is one compact two-line row (about 80 px):
+                name and salary, then department, nationality, status and the row actions. */}
+            <ul className="divide-hairline md:hidden" data-testid="mobile-employee-list">
+              {filtered.map((e) => (
+                <li key={e.id} className="space-y-1 py-2.5 first:pt-0 last:pb-0">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="min-w-0 truncate text-sm font-medium text-foreground">
+                      {e.full_name}
+                    </p>
+                    <Money
+                      amount={Number(e.total_salary)}
+                      currency={e.salary_currency ?? "AED"}
+                      className="shrink-0 text-sm font-semibold text-foreground"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
+                      <span className="min-w-0 truncate">
+                        {[e.department, e.nationality].filter(Boolean).join(" · ") || "—"}
+                      </span>
                       <StatusBadge status={e.status} />
-                    </TableCell>
-                    <TableCell className="text-end space-x-1 rtl:space-x-reverse">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={tx("hr.edit")}
-                        disabled={e.status === "terminated"}
-                        onClick={() => {
-                          setEditing(e);
-                          setForm(toForm(e));
-                          setOpen(true);
-                        }}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={tx("hr.terminate")}
-                        disabled={e.status === "terminated"}
-                        onClick={() => {
-                          setTerminating(e);
-                          setTermDate(new Date().toISOString().slice(0, 10));
-                          setTermReason("");
-                        }}
-                      >
-                        <UserX className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={tx("hr.archive")}
-                        onClick={() => archive.mutate(e.id)}
-                      >
-                        <Archive className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        aria-label={tx("hr.delete")}
-                        onClick={() => remove.mutate(e.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
+                    </div>
+                    <div className="-me-2 flex shrink-0 items-center">{employeeActions(e)}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden overflow-x-auto md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{tx("hr.field.fullName")}</TableHead>
+                    <TableHead>{tx("hr.field.department")}</TableHead>
+                    <TableHead>{tx("hr.field.nationality")}</TableHead>
+                    <TableHead data-numeric>{tx("hr.totalSalary")}</TableHead>
+                    <TableHead>{tx("hr.statusLabel")}</TableHead>
+                    <TableHead data-numeric>{tx("hr.actions")}</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((e) => (
+                    <TableRow key={e.id}>
+                      <TableCell>
+                        <div className="font-medium">{e.full_name}</div>
+                        {e.full_name_ar && (
+                          <div className="text-xs text-muted-foreground">{e.full_name_ar}</div>
+                        )}
+                      </TableCell>
+                      <TableCell>{e.department ?? "—"}</TableCell>
+                      <TableCell>{e.nationality ?? "—"}</TableCell>
+                      <TableCell data-numeric>
+                        <Money
+                          amount={Number(e.total_salary)}
+                          currency={e.salary_currency ?? "AED"}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge status={e.status} />
+                      </TableCell>
+                      <TableCell className="text-end space-x-1 rtl:space-x-reverse">
+                        {employeeActions(e)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
         <p className="text-xs text-muted-foreground">{tx("hr.deleteGuardHint")}</p>
       </CardContent>

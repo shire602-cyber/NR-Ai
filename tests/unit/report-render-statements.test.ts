@@ -156,6 +156,7 @@ vi.mock("../../server/reporting", async (importOriginal) => {
       accounts: [1, 2].map((n) => ({
         accountCode: `100${n}`,
         accountName: `Account ${n}`,
+        accountNameAr: n === 1 ? "الحساب الأول" : null,
         openingBalance: 0,
         debitTotal: 30,
         creditTotal: 10,
@@ -367,6 +368,30 @@ describe("statement builders", { timeout: 30_000 }, () => {
     const aging = await renderStatement("ar-aging", company, period);
     expect(aging.notes[0].ar).toContain("31 مارس 2026");
     expect(aging.notes[0].en).toContain("AED 3.50");
+  });
+
+  it("P15: sentence-case totals, Latin ageing headers, Arabic GL account names", async () => {
+    state.balanced = true;
+    state.locale = "en";
+    let company = await loadRenderCompany("c1");
+    const pl = await renderStatement("profit-loss", company, period);
+    const accounts = pl.tables[0].rows.map((r) => String(r.cells.account ?? ""));
+    expect(accounts).toContain("Total revenue");
+    expect(accounts.some((a) => /^Total [A-Z][a-z]/.test(a))).toBe(false);
+    state.locale = "ar";
+    company = await loadRenderCompany("c1");
+    const aging = await renderStatement("ar-aging", company, period);
+    const headers = aging.tables[0].columns.map((c) => c.header.ar).join(" ");
+    expect(headers).toContain("1–30");
+    expect(headers).not.toMatch(/[٠-٩]/);
+    const totalRow = aging.tables[0].rows.find((r) => r.style === "total")!;
+    expect(totalRow.cells.name).toBe("الإجمالي");
+    const gl = await renderGeneralLedger(company, period);
+    const glHeadings = gl.tables[0].rows
+      .filter((r) => r.style === "heading")
+      .map((r) => r.cells.description);
+    expect(glHeadings).toEqual(["الحساب الأول", "Account 2"]);
+    state.locale = "en";
   });
 
   it("truncates the general ledger at the PDF line cap", async () => {

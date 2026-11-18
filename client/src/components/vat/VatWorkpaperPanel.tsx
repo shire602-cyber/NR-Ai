@@ -1,9 +1,14 @@
 import { useMemo, useState } from "react";
 import { DatePicker } from "@/components/ui/date-picker";
+import { parseCalendarDate } from "@/lib/format-date";
 import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { addDays, format } from "date-fns";
-import { formatDate as formatDisplayDate, formatDateRange } from "@/lib/format-date";
+import { addDays } from "date-fns";
+import {
+  calendarDayKey,
+  formatDate as formatDisplayDate,
+  formatDateRange,
+} from "@/lib/format-date";
 import { Link } from "wouter";
 import {
   AlertTriangle,
@@ -131,9 +136,8 @@ function canPostVatWorkpaperRow(row: VatWorkpaperRow) {
 
 function inputDate(value: string | Date | null | undefined) {
   if (!value) return "";
-  const parsed = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return format(parsed, "yyyy-MM-dd");
+  // The calendar day of a stored period date, not the browser-zone instant (N1).
+  return calendarDayKey(value);
 }
 
 function toMoney(value: unknown) {
@@ -194,7 +198,8 @@ export default function VatWorkpaperPanel({
 
   const dueDate = useMemo(() => {
     if (!periodEnd) return "";
-    const parsed = new Date(periodEnd);
+    // INTEGRATE-H: the period end is a calendar date (DF3 N1), never the browser zone's day.
+    const parsed = parseCalendarDate(periodEnd);
     if (Number.isNaN(parsed.getTime())) return "";
     return inputDate(addDays(parsed, 28));
   }, [periodEnd]);

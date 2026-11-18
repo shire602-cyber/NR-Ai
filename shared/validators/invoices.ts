@@ -163,6 +163,8 @@ export const invoiceLineInputSchema = z
     ...lineShape,
     marginScheme: z.boolean().optional(),
     marginPurchaseCost: zNonNegativeFils.optional().nullable(),
+    /** E3 (J1-r3): the income account a standard-rated line posts to (null = by item type). */
+    revenueAccountId: zUuid.optional().nullable(),
   })
   .strict()
   .superRefine(discountRefine)

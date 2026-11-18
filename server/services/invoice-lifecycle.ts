@@ -358,6 +358,8 @@ export interface SalesLineDraft {
   discountValue?: number | null;
   productId?: string | null;
   costCenterId?: string | null;
+  /** E3: the income account a standard-rated invoice line posts to (null = by item type). */
+  revenueAccountId?: string | null;
   /** S1: profit-margin scheme line (invoices only) and its purchase cost in fils. */
   marginScheme?: boolean | null;
   marginPurchaseCost?: number | null;
@@ -376,6 +378,7 @@ export interface PreparedSalesLine {
   netAmount: number;
   productId: string | null;
   costCenterId: string | null;
+  revenueAccountId: string | null;
   marginScheme: boolean;
   /** Major units (invoice_lines.margin_purchase_cost); null unless marginScheme. */
   marginPurchaseCost: number | null;
@@ -450,6 +453,7 @@ export function prepareSalesLines(
       netAmount: Number(fromFils(t.netFils)),
       productId: l.productId ?? null,
       costCenterId: l.costCenterId ?? null,
+      revenueAccountId: l.revenueAccountId ?? null,
       marginScheme: !!l.marginScheme,
       marginPurchaseCost: l.marginScheme ? Number(fromFils(l.marginPurchaseCost ?? 0)) : null,
     };

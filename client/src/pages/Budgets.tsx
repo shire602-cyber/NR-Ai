@@ -101,6 +101,7 @@ import { isControlAccount } from "@shared/control-accounts";
 import { accountDisplayName } from "@/lib/account-name";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { fiscalYearContaining } from "@/lib/fiscal-year";
+import { calendarDayKey, parseCalendarDate } from "@/lib/format-date";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -274,8 +275,7 @@ const tr = (locale: string, en: string, ar: string) => (locale === "ar" ? ar : e
 function isoDay(v: string | null | undefined): string {
   if (!v) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? String(v).slice(0, 10) : format(d, "yyyy-MM-dd");
+  return calendarDayKey(v) || String(v).slice(0, 10);
 }
 
 export default function Budgets() {
@@ -648,8 +648,10 @@ export default function Budgets() {
     budgetForm.reset({
       name: budget.name,
       fiscalYear: budget.fiscal_year,
-      startDate: budget.start_date ? format(new Date(budget.start_date), "yyyy-MM-dd") : "",
-      endDate: budget.end_date ? format(new Date(budget.end_date), "yyyy-MM-dd") : "",
+      startDate: budget.start_date
+        ? format(parseCalendarDate(budget.start_date), "yyyy-MM-dd")
+        : "",
+      endDate: budget.end_date ? format(parseCalendarDate(budget.end_date), "yyyy-MM-dd") : "",
       notes: budget.notes || "",
     });
     setBudgetDialogOpen(true);
@@ -983,7 +985,7 @@ export default function Budgets() {
                               {" · "}
                               {budget.start_date
                                 ? format(
-                                    new Date(budget.start_date),
+                                    parseCalendarDate(budget.start_date),
                                     "MMM yyyy",
                                     dateFnsOptions(locale)
                                   )
@@ -991,7 +993,7 @@ export default function Budgets() {
                               {" - "}
                               {budget.end_date
                                 ? format(
-                                    new Date(budget.end_date),
+                                    parseCalendarDate(budget.end_date),
                                     "MMM yyyy",
                                     dateFnsOptions(locale)
                                   )
@@ -1036,7 +1038,7 @@ export default function Budgets() {
                             <TableCell className="whitespace-nowrap">
                               {budget.start_date
                                 ? format(
-                                    new Date(budget.start_date),
+                                    parseCalendarDate(budget.start_date),
                                     "MMM yyyy",
                                     dateFnsOptions(locale)
                                   )
@@ -1044,7 +1046,7 @@ export default function Budgets() {
                               {" - "}
                               {budget.end_date
                                 ? format(
-                                    new Date(budget.end_date),
+                                    parseCalendarDate(budget.end_date),
                                     "MMM yyyy",
                                     dateFnsOptions(locale)
                                   )

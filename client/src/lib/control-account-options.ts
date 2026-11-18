@@ -43,3 +43,45 @@ export function withoutControlAccounts<T extends PickableAccount>(accounts: read
   const control = controlAccountIds(accounts);
   return accounts.filter((a) => !control.has(a.id));
 }
+
+export interface PurchaseLineAccount extends PickableAccount {
+  type?: string | null;
+  subType?: string | null;
+  nameEn?: string | null;
+  isActive?: boolean | null;
+  isArchived?: boolean | null;
+}
+
+/**
+ * E3 (J1-r3): the accounts a bill or expense line can be booked to, grouped for the picker.
+ * Expenses first; fixed assets stay for capital purchases (equipment), other assets (prepaid
+ * expenses) last. Left out: control accounts, cash and bank (money leaves through the payment,
+ * not the line), receivables, accumulated depreciation (a contra account the depreciation run
+ * posts) and header accounts that have sub-accounts.
+ */
+export function purchaseLineAccountGroups<T extends PurchaseLineAccount>(
+  accounts: readonly T[]
+): { expenses: T[]; fixedAssets: T[]; otherAssets: T[] } {
+  const parents = new Set(accounts.map((a) => a.parentId).filter(Boolean));
+  const usable = withoutControlAccounts(accounts).filter(
+    (a) => a.isActive !== false && a.isArchived !== true && !parents.has(a.id)
+  );
+  const byCode = (x: T, y: T) => String(x.code ?? "").localeCompare(String(y.code ?? ""));
+  const isAsset = (a: T) => a.type === "asset";
+  const excludedAsset = (a: T) =>
+    a.subType === "cash" ||
+    a.subType === "bank" ||
+    a.subType === "receivable" ||
+    a.subType === "inventory" ||
+    a.code === "1240" ||
+    /accumulated/i.test(a.nameEn ?? "");
+  return {
+    expenses: usable.filter((a) => !a.type || a.type === "expense").sort(byCode),
+    fixedAssets: usable
+      .filter((a) => isAsset(a) && a.subType === "fixed_asset" && !excludedAsset(a))
+      .sort(byCode),
+    otherAssets: usable
+      .filter((a) => isAsset(a) && a.subType !== "fixed_asset" && !excludedAsset(a))
+      .sort(byCode),
+  };
+}

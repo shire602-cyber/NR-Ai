@@ -2,14 +2,7 @@ import { T } from "@/components/layout/T";
 import { DatePicker } from "@/components/ui/date-picker";
 import { lazy, Suspense, useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import {
-  format,
-  parseISO,
-  startOfQuarter,
-  endOfQuarter,
-  addDays,
-  differenceInCalendarDays,
-} from "date-fns";
+import { format, startOfQuarter, endOfQuarter, addDays, differenceInCalendarDays } from "date-fns";
 import { dateFnsOptions } from "@/lib/date-locale";
 import { Link, useLocation, useSearch } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +32,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { isVatRegistered } from "@shared/vat-registration";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Money } from "@/components/ui/money";
 import { exportToExcel } from "@/lib/export";
@@ -46,7 +41,7 @@ import { evidenceSectionHref } from "@/lib/evidenceLinks";
 import { prepareVat201ForExport, vat201ExportFilename } from "@/lib/vat201-export";
 import VAT201Form from "@/components/VAT201Form";
 
-import { formatDate as formatDisplayDate } from "@/lib/format-date";
+import { formatDate as formatDisplayDate, parseCalendarDate } from "@/lib/format-date";
 import { companyAddressLine, vatStaggerLabel } from "@/lib/company-address";
 import VatReturnControls from "@/components/vat/VatReturnControls";
 import VatFilingActions from "@/components/vat/VatFilingActions";
@@ -160,6 +155,7 @@ interface Company {
   name: string;
   nameAr: string | null;
   trnVatNumber: string | null;
+  taxRegistrationType?: string | null;
   vatFilingFrequency: string | null;
   emirate: string | null;
   address?: string | null;
@@ -228,6 +224,7 @@ export default function VATFiling() {
   const dfOpts = dateFnsOptions(locale);
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { gate } = useCompanyPermission();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
@@ -342,8 +339,10 @@ export default function VATFiling() {
     const match = returns.find((r) => {
       try {
         return (
-          format(parseISO(r.periodStart), "yyyy-MM") === format(currentQuarter.start, "yyyy-MM") &&
-          format(parseISO(r.periodEnd), "yyyy-MM") === format(currentQuarter.end, "yyyy-MM")
+          format(parseCalendarDate(r.periodStart), "yyyy-MM") ===
+            format(currentQuarter.start, "yyyy-MM") &&
+          format(parseCalendarDate(r.periodEnd), "yyyy-MM") ===
+            format(currentQuarter.end, "yyyy-MM")
         );
       } catch {
         return false;
@@ -352,12 +351,13 @@ export default function VATFiling() {
     const active =
       match ??
       [...returns].sort(
-        (a, b) => parseISO(b.periodEnd).getTime() - parseISO(a.periodEnd).getTime()
+        (a, b) =>
+          parseCalendarDate(b.periodEnd).getTime() - parseCalendarDate(a.periodEnd).getTime()
       )[0];
 
-    const periodStart = active ? parseISO(active.periodStart) : currentQuarter.start;
-    const periodEnd = active ? parseISO(active.periodEnd) : currentQuarter.end;
-    const dueDate = active?.dueDate ? parseISO(active.dueDate) : addDays(periodEnd, 28);
+    const periodStart = active ? parseCalendarDate(active.periodStart) : currentQuarter.start;
+    const periodEnd = active ? parseCalendarDate(active.periodEnd) : currentQuarter.end;
+    const dueDate = active?.dueDate ? parseCalendarDate(active.dueDate) : addDays(periodEnd, 28);
     const daysUntilDue = differenceInCalendarDays(dueDate, new Date());
     const net = active?.box14PayableTax ?? 0;
 
@@ -604,13 +604,17 @@ export default function VATFiling() {
     doc.setFontSize(8);
     doc.text(`TRN: ${company?.trnVatNumber || "N/A"}`, margin, y);
     doc.text(
-      `VAT Period: ${format(parseISO(vatReturn.periodStart), "dd/MM/yyyy")} - ${format(parseISO(vatReturn.periodEnd), "dd/MM/yyyy")}`,
+      `VAT Period: ${format(parseCalendarDate(vatReturn.periodStart), "dd/MM/yyyy")} - ${format(parseCalendarDate(vatReturn.periodEnd), "dd/MM/yyyy")}`,
       pageWidth / 2,
       y
     );
     y += 5;
     doc.text(`Legal Name: ${company?.name || "N/A"}`, margin, y);
-    doc.text(`Due Date: ${format(parseISO(vatReturn.dueDate), "dd/MM/yyyy")}`, pageWidth / 2, y);
+    doc.text(
+      `Due Date: ${format(parseCalendarDate(vatReturn.dueDate), "dd/MM/yyyy")}`,
+      pageWidth / 2,
+      y
+    );
     y += 5;
     doc.text(`Address: ${company?.address || "N/A"}`, margin, y);
     y += 8;
@@ -842,7 +846,7 @@ export default function VATFiling() {
       { align: "center" }
     );
 
-    doc.save(`VAT201-${format(parseISO(vatReturn.periodStart), "yyyy-MM")}.pdf`);
+    doc.save(`VAT201-${format(parseCalendarDate(vatReturn.periodStart), "yyyy-MM")}.pdf`);
 
     toast({
       title: translateNow("toasts.pdfExported"),
@@ -891,8 +895,8 @@ export default function VATFiling() {
         <PageHeader
           eyebrow={t["pages.eyebrowCompliance"]}
           title={t["compliance.vatWorkbookTitle"]}
-          description={`${format(parseISO(selectedReturn.periodStart), "MMM yyyy", dfOpts)} – ${format(
-            parseISO(selectedReturn.periodEnd),
+          description={`${format(parseCalendarDate(selectedReturn.periodStart), "MMM yyyy", dfOpts)} – ${format(
+            parseCalendarDate(selectedReturn.periodEnd),
             "MMM yyyy",
             dfOpts
           )}`}
@@ -961,6 +965,32 @@ export default function VATFiling() {
     );
   }
 
+  // E3 (J2-r3): a company that is not VAT registered files no VAT return and recovers no input
+  // VAT, so the page says so instead of showing return figures.
+  if (company && !isVatRegistered(company)) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow={locale === "ar" ? "الامتثال الضريبي" : "Compliance"}
+          title={locale === "ar" ? "إقرار ضريبة القيمة المضافة 201" : "UAE VAT 201 return"}
+          backHref="/reports"
+          backLabel={t["compliance.vatFilingBackToReports"]}
+        />
+        <Card data-testid="card-vat-not-registered">
+          <CardContent className="pt-6 space-y-3">
+            <p className="font-medium">{t["compliance.vatNotRegisteredTitle"]}</p>
+            <p className="text-sm text-muted-foreground">{t["compliance.vatNotRegisteredBody"]}</p>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/company-profile" data-testid="link-vat-registration-settings">
+                {t["compliance.vatFilingOpenCompanyProfile"]}
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -982,7 +1012,11 @@ export default function VATFiling() {
               </Link>
             </Button>
             {canGenerateVatReturn ? (
-              <Button onClick={handleCreateReturn} data-testid="button-create-return">
+              <Button
+                onClick={handleCreateReturn}
+                data-testid="button-create-return"
+                {...gate("documents.write")}
+              >
                 <Calculator className="w-4 h-4 me-2" />
                 {t["compliance.vatFilingNewVatDraft"]}
               </Button>
@@ -1320,12 +1354,21 @@ export default function VATFiling() {
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="font-medium">
-                                {format(parseISO(vatReturn.periodStart), "MMM yyyy", dfOpts)} -{" "}
-                                {format(parseISO(vatReturn.periodEnd), "MMM yyyy", dfOpts)}
+                                {format(
+                                  parseCalendarDate(vatReturn.periodStart),
+                                  "MMM yyyy",
+                                  dfOpts
+                                )}{" "}
+                                -{" "}
+                                {format(parseCalendarDate(vatReturn.periodEnd), "MMM yyyy", dfOpts)}
                               </p>
                               <p className="text-xs text-muted-foreground">
                                 {formatMessage(t["pages.vatDueOn"], {
-                                  date: format(parseISO(vatReturn.dueDate), "dd MMM yyyy", dfOpts),
+                                  date: format(
+                                    parseCalendarDate(vatReturn.dueDate),
+                                    "dd MMM yyyy",
+                                    dfOpts
+                                  ),
                                 })}
                               </p>
                             </div>
@@ -1434,11 +1477,11 @@ export default function VATFiling() {
                         {vatReturns.map((vatReturn) => (
                           <TableRow key={vatReturn.id} data-testid={`row-return-${vatReturn.id}`}>
                             <TableCell className="font-medium">
-                              {format(parseISO(vatReturn.periodStart), "MMM yyyy", dfOpts)} -{" "}
-                              {format(parseISO(vatReturn.periodEnd), "MMM yyyy", dfOpts)}
+                              {format(parseCalendarDate(vatReturn.periodStart), "MMM yyyy", dfOpts)}{" "}
+                              - {format(parseCalendarDate(vatReturn.periodEnd), "MMM yyyy", dfOpts)}
                             </TableCell>
                             <TableCell>
-                              {format(parseISO(vatReturn.dueDate), "dd MMM yyyy", dfOpts)}
+                              {format(parseCalendarDate(vatReturn.dueDate), "dd MMM yyyy", dfOpts)}
                             </TableCell>
                             <TableCell data-numeric>
                               <Money
@@ -1641,8 +1684,8 @@ export default function VATFiling() {
             <DialogDescription>
               {selectedReturn && (
                 <span>
-                  {format(parseISO(selectedReturn.periodStart), "MMM yyyy", dfOpts)} -{" "}
-                  {format(parseISO(selectedReturn.periodEnd), "MMM yyyy", dfOpts)}
+                  {format(parseCalendarDate(selectedReturn.periodStart), "MMM yyyy", dfOpts)} -{" "}
+                  {format(parseCalendarDate(selectedReturn.periodEnd), "MMM yyyy", dfOpts)}
                 </span>
               )}
             </DialogDescription>

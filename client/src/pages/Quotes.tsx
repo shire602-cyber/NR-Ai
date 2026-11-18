@@ -58,12 +58,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { formatDate } from "@/lib/format";
 import { lineVatRate } from "@/lib/invoice-totals";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Plus, CalendarIcon, Trash2, Download, Edit, FileText, ArrowRightLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { parseCalendarDate } from "@/lib/format-date";
 
 const QUOTE_SUPPLY_TYPES = ["standard_rated", "zero_rated", "exempt", "out_of_scope"] as const;
 
@@ -120,6 +122,7 @@ export default function Quotes() {
   const { toast } = useToast();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
+  const { gate } = useCompanyPermission();
   const { routed, editor, toNew, toEdit, toList } = useEditorRoute("/quotes");
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingQuote, setEditingQuote] = useState<Quote | null>(null);
@@ -272,8 +275,8 @@ export default function Quotes() {
         contactId: fullQuote.contactId || "",
         customerName: fullQuote.customerName,
         customerTrn: fullQuote.customerTrn || "",
-        date: new Date(fullQuote.date),
-        expiryDate: new Date(fullQuote.expiryDate),
+        date: parseCalendarDate(fullQuote.date),
+        expiryDate: parseCalendarDate(fullQuote.expiryDate),
         currency: fullQuote.currency,
         notes: fullQuote.notes || "",
         lines: (fullQuote.lines as Quote["lines"] | undefined)?.map((l) => ({
@@ -773,7 +776,7 @@ export default function Quotes() {
         title={t.quotes}
         description={(t as any).quotesSubtitle}
         actions={
-          <Button onClick={openNewQuote}>
+          <Button onClick={openNewQuote} {...gate("documents.write")}>
             <Plus className="w-4 h-4" />
             <T k="pageLabels.newQuote" />
           </Button>
@@ -793,6 +796,7 @@ export default function Quotes() {
           action: {
             label: (t as any).newQuote ?? "New quote",
             onClick: openNewQuote,
+            permission: "documents.write",
           },
           testId: "empty-quotes",
         }}

@@ -69,6 +69,7 @@ import {
 import { assertClaimNotOnPayroll, setClaimPayrollReimbursement } from "../services/payroll/claims";
 import { zUuid } from "../../shared/validators/primitives";
 import { fromFils, mulRate, sumFils, toFils } from "../../shared/money";
+import { companyIsVatRegistered } from "../tax/vat-registration";
 
 const log = createLogger("expense-claims");
 
@@ -633,6 +634,8 @@ export function registerExpenseClaimRoutes(app: Express) {
         vat_recoverable: boolean;
         expense_date: string;
       }>;
+      // E3 (J2-r3): a company that is not VAT registered recovers no input VAT on claims.
+      const vatRegistered = await companyIsVatRegistered(claim.company_id);
       const accounts = await storage.getAccountsByCompanyId(claim.company_id);
       const codeToId = new Map(
         accounts.filter((a) => a.isActive !== false).map((a) => [a.code, a.id])
@@ -642,7 +645,7 @@ export function registerExpenseClaimRoutes(app: Express) {
           category: r.category,
           amountFils: toFils(String(r.amount), { rounding: "halfUp" }),
           vatFils: toFils(String(r.vat_amount ?? 0), { rounding: "halfUp" }),
-          vatRecoverable: r.vat_recoverable === true,
+          vatRecoverable: vatRegistered && r.vat_recoverable === true,
         })),
         resolveByCode: (code) => codeToId.get(code) ?? null,
       });

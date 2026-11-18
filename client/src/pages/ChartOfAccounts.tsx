@@ -20,6 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiUrl } from "@/lib/api";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -117,6 +118,7 @@ const ACCOUNT_TYPE_CONFIG: Record<
 
 export default function ChartOfAccounts() {
   const { t, locale } = useTranslation();
+  const { gate } = useCompanyPermission();
   const [, navigate] = useLocation();
   const { companyId: selectedCompanyId } = useDefaultCompany();
   const [searchQuery, setSearchQuery] = useState("");
@@ -254,11 +256,16 @@ export default function ChartOfAccounts() {
               variant="outline"
               data-testid="button-import-coa-csv"
               onClick={() => navigate("/import?kind=chart_of_accounts")}
+              {...gate("ledger.post")}
             >
               <Upload aria-hidden />
               <T k="journal.coaImportCsv" />
             </Button>
-            <Button data-testid="button-add-account" onClick={() => navigate("/journal")}>
+            <Button
+              data-testid="button-add-account"
+              onClick={() => navigate("/journal")}
+              {...gate("ledger.post")}
+            >
               <Plus aria-hidden />
               {t.addAccount}
             </Button>

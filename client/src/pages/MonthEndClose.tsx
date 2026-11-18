@@ -3,7 +3,11 @@ import { T } from "@/components/layout/T";
 import { DatePicker } from "@/components/ui/date-picker";
 import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import { PageHeader } from "@/components/ui/page-header";
-import { formatDate as formatDisplayDate, formatMonthYear } from "@/lib/format-date";
+import {
+  formatDate as formatDisplayDate,
+  formatMonthYear,
+  parseCalendarDate,
+} from "@/lib/format-date";
 import { localizeServerText, type CopyDescriptor } from "@shared/server-copy";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -1007,7 +1011,7 @@ export default function MonthEndClose() {
                     <TableCell className="font-medium">
                       {(() => {
                         try {
-                          const d = new Date(record.periodEnd);
+                          const d = parseCalendarDate(record.periodEnd);
                           return formatMonthYear(d, locale);
                         } catch {
                           return record.periodEnd;

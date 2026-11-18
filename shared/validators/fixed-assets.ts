@@ -116,9 +116,15 @@ export const capitalizeBody = z
     /** Capitalise an asset already owned at go-live against Opening Balance Equity (3040). */
     openingBalance: z.boolean().optional(),
     date: zDate.optional(),
+    /** E3 (J3-r3): input VAT paid with the asset (fils); needs a payment account. */
+    inputVat: zMoneyFils.optional().nullable(),
   })
   .refine((v) => !!v.paymentAccountId !== (v.openingBalance === true), {
     message: "Give either paymentAccountId or openingBalance: true",
+  })
+  .refine((v) => !v.inputVat || !!v.paymentAccountId, {
+    message: "Input VAT needs the account the asset was paid from",
+    path: ["inputVat"],
   });
 export type CapitalizeBody = z.output<typeof capitalizeBody>;
 

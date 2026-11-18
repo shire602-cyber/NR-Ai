@@ -808,7 +808,7 @@ function TemplatesTab() {
 // ─── Bulk Actions Tab ─────────────────────────────────────────────────────────
 
 function BulkActionsTab() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -938,7 +938,7 @@ function BulkActionsTab() {
                             )}
                           </TableCell>
                           <TableCell className="text-sm">
-                            {new Date(item.dueDate).toLocaleDateString("en-AE")}
+                            {formatDate(item.dueDate, locale)}
                           </TableCell>
                         </TableRow>
                       ))}

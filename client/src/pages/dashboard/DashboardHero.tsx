@@ -99,9 +99,9 @@ export function DashboardHero({ m, empty = false }: { m: DashboardModel; empty?:
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/ai?tab=cfo">
+                <Link href="/assistant">
                   <Sparkles aria-hidden />
-                  {tt["dashboard.talkToCfo"]}
+                  {tt["dashboard.askAssistant"]}
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
