@@ -69,7 +69,8 @@ import {
   readValidatedUpload,
 } from "../services/document-vault.service";
 import { checkoutForInvoice, paymentsAvailability, publicBaseUrl } from "../services/payments";
-import { escapeHtml, renderBilingualEmail, sendEmail } from "../services/email.service";
+import { buildPortalCodeEmail, sendEmail } from "../services/email.service";
+import { resolveEmailLanguage } from "../services/email-layout";
 import { receivableSettledSql } from "../reporting/settlement";
 import { actorFromRequest, assertCompanyPermission } from "../services/approval-rules.service";
 import type { Permission } from "../../shared/permissions";
@@ -357,32 +358,18 @@ export function registerPortalPublicRoutes(app: Express) {
       });
       if (created) {
         const company = await storage.getCompany(companyId);
-        const html = renderBilingualEmail(
-          {
-            brandName: company?.name ?? "Muhasib.ai",
-            heading: { en: "Your sign-in code", ar: "رمز الدخول الخاص بك" },
-            paragraphs: {
-              en: [
-                `Use <strong style="font-size:20px;letter-spacing:4px;">${escapeHtml(created.code)}</strong> to open your customer portal. The code expires in 10 minutes.`,
-              ],
-              ar: [
-                `استخدم الرمز <strong dir="ltr">${escapeHtml(created.code)}</strong> للدخول إلى بوابة العملاء. تنتهي صلاحيته خلال 10 دقائق.`,
-              ],
-            },
-          },
-          "bilingual"
-        );
-        await sendEmail(
-          email,
-          `Your portal sign-in code: ${created.code}`,
-          `Code: ${created.code}`,
-          {
-            html,
-            companyId,
-            category: "portal_login",
-            sensitive: true,
-          }
-        );
+        const built = buildPortalCodeEmail({
+          companyName: company?.name ?? "Muhasib.ai",
+          code: created.code,
+          language: resolveEmailLanguage(null, created.contact.preferredLanguage),
+        });
+        await sendEmail(email, built.subject, built.text, {
+          html: built.html,
+          fromName: company?.name,
+          companyId,
+          category: "portal_login",
+          sensitive: true,
+        });
       }
       res.json(generic);
     })

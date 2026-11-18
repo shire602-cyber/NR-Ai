@@ -36,7 +36,8 @@ import {
   statementQuery,
   type EmailStatementBody,
 } from "../../shared/validators/portal";
-import { escapeHtml, renderBilingualEmail, sendEmail } from "../services/email.service";
+import { buildStatementEmail, sendEmail } from "../services/email.service";
+import { resolveEmailLanguage } from "../services/email-layout";
 
 // ─── Validators (W2-D: R08-10, R16-13, R17-09) ───────────────────────────────
 
@@ -523,44 +524,35 @@ export function registerPortalRoutes(app: Express) {
         );
       }
       const pdf = await renderStatementPdf(st);
-      const lines = st.sections.map((s) => `${s.currency} ${s.closingBalance.toFixed(2)}`);
-      const html = renderBilingualEmail(
-        {
-          brandName: st.company.name,
-          heading: { en: "Statement of account", ar: "كشف حساب" },
-          paragraphs: {
-            en: [
-              `Dear ${escapeHtml(st.party.name)},`,
-              `Please find attached your statement of account as of ${escapeHtml(st.asOf)}. Balance: <strong>${escapeHtml(lines.join(", "))}</strong>.`,
-              ...(body.message ? [escapeHtml(body.message)] : []),
-            ],
-            ar: [
-              `عزيزنا ${escapeHtml(st.party.name)}،`,
-              `تجدون مرفقاً كشف حسابكم حتى ${escapeHtml(st.asOf)}. الرصيد: <strong dir="ltr">${escapeHtml(lines.join(", "))}</strong>.`,
-            ],
+      const customer = await storage.getCustomerContact(st.party.id);
+      const company = await storage.getCompany(companyId);
+      const built = buildStatementEmail({
+        company: company ?? { name: st.company.name, businessAddress: null, contactEmail: null },
+        customerName: st.party.name,
+        asOf: st.asOf,
+        balances: st.sections.map((s) => ({
+          currency: s.currency,
+          closingBalance: s.closingBalance,
+        })),
+        message: body.message ?? null,
+        language: resolveEmailLanguage(body.language, customer?.preferredLanguage),
+      });
+      const result = await sendEmail(to, built.subject, built.text, {
+        html: built.html,
+        fromName: st.company.name,
+        replyTo: company?.contactEmail ?? null,
+        companyId,
+        category: "statement",
+        relatedEntityType: "customer_contact",
+        relatedEntityId: st.party.id,
+        attachments: [
+          {
+            filename: `statement-${st.asOf}.pdf`,
+            content: pdf,
+            contentType: "application/pdf",
           },
-        },
-        body.language ?? "bilingual"
-      );
-      const result = await sendEmail(
-        to,
-        `Statement of account — ${st.company.name}`,
-        lines.join("\n"),
-        {
-          html,
-          companyId,
-          category: "statement",
-          relatedEntityType: "customer_contact",
-          relatedEntityId: st.party.id,
-          attachments: [
-            {
-              filename: `statement-${st.asOf}.pdf`,
-              content: pdf,
-              contentType: "application/pdf",
-            },
-          ],
-        }
-      );
+        ],
+      });
       res.status(result.sent ? 200 : 202).json({
         ...result,
         message: result.sent
