@@ -538,5 +538,7 @@
   "invoices.terms.label": "شروط الدفع",
   "invoices.terms.hint": "تُعبأ من بيانات العميل، ويتبعها تاريخ الاستحقاق.",
   "invoices.terms.dueOnReceipt": "مستحقة عند الاستلام",
-  "invoices.terms.net": "صافي {days} يوماً"
+  "invoices.terms.net": "صافي {days} يوماً",
+  "invoices.receive.noCustomers": "تُستلم الدفعات من العملاء المحفوظين، ولا يوجد لديك عملاء بعد.",
+  "invoices.receive.addCustomer": "أضف عميلًا"
 }

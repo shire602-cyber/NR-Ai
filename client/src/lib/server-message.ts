@@ -61,12 +61,28 @@ export function anomalyMessage(
   locale: string
 ): string {
   const message = anomaly.message ?? describeAnomalyText(anomaly.description);
-  return renderServerMessage(message, anomaly.description, t, locale, {
-    param: (name, value) =>
-      (name === "merchant" || name === "vendor") && value === "Unknown"
-        ? t["firmOps.unknownMerchant"]
-        : undefined,
-  });
+  return withoutRecordIds(
+    renderServerMessage(message, anomaly.description, t, locale, {
+      param: (name, value) =>
+        (name === "merchant" || name === "vendor") && value === "Unknown"
+          ? t["firmOps.unknownMerchant"]
+          : undefined,
+    })
+  );
+}
+
+const RECORD_ID =
+  /\s*(?:with\s+)?(?:ID\s*)?['"‘’]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}['"‘’]?/gi;
+
+/**
+ * Broken-path sweep: AI-written anomaly text stored before the server fix quotes raw record ids
+ * ("Invoice with ID '77cb…'"). They mean nothing to the reader and are left out.
+ */
+export function withoutRecordIds(text: string): string {
+  return text
+    .replace(RECORD_ID, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 /** Value-programme sentence (action, review item, audit pack line); unknown text is unchanged. */
@@ -98,4 +114,13 @@ export function categorisationReason(
   if (!message) return row.ai_reason;
   if (message.key.startsWith("categorise.operator.")) return null;
   return renderServerMessage(message, row.ai_reason, t, locale);
+}
+
+/**
+ * Props for free text an AI model wrote (anomaly findings, categorisation reasons). It stays in
+ * the language the model wrote it in; in the Arabic UI an English sentence is marked as English
+ * (`lang`, `dir`) so screen readers and the layout treat it as such (broken-path sweep).
+ */
+export function writtenLanguageProps(text: string, locale: string): { lang?: string; dir?: "ltr" } {
+  return locale === "ar" && text && !/[\u0600-\u06FF]/.test(text) ? { lang: "en", dir: "ltr" } : {};
 }

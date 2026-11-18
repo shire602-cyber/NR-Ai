@@ -525,6 +525,7 @@ export default function SecuritySettings() {
                       <p
                         className="truncate font-medium"
                         dir="ltr"
+                        translate="no"
                         title={g.lead.userAgent ?? undefined}
                       >
                         {describeUserAgent(g.lead.userAgent)}

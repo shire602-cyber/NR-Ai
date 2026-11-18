@@ -39,9 +39,28 @@ const humanise = (value: string) => {
   return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : value;
 };
 
-/** Label for an action code; falls back to the humanised code. */
+/**
+ * Label for an action code. Codes built from a status (`compliance_obligation.completed`,
+ * `vat_workpaper.status.locked`, `period.reopen_approved`) have no single catalog key; they are
+ * composed as "<entity label>: <status label>" (broken-path sweep: /history in Arabic showed
+ * "Compliance obligation completed"). Falls back to the humanised code.
+ */
 export function activityActionLabel(t: Translations, action: string): string {
-  return t[`activityLog.action.${action}`] ?? humanise(action);
+  const exact = t[`activityLog.action.${action}`];
+  if (exact) return exact;
+  for (const sep of [".", "_"]) {
+    let at = action.lastIndexOf(sep);
+    while (at > 0) {
+      const base = action.slice(0, at).replace(/\.status$|_status$/, "");
+      const verb = action.slice(at + 1);
+      const entity =
+        t[`activityLog.entity.${base}`] ?? t[`activityLog.entity.${base.replace(/\./g, "_")}`];
+      const status = t[`activityLog.verb.${verb}`];
+      if (entity && status) return `${entity}: ${status}`;
+      at = action.lastIndexOf(sep, at - 1);
+    }
+  }
+  return humanise(action);
 }
 
 /** Label for an entity / resource type; falls back to the humanised type. */

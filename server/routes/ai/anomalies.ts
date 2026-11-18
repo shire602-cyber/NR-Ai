@@ -71,7 +71,7 @@ Respond with JSON:
       "type": "duplicate|unusual_amount|timing|category_mismatch|potential_fraud",
       "severity": "low|medium|high|critical",
       "title": "Brief title",
-      "description": "Detailed explanation",
+      "description": "Detailed explanation. Name documents by their number (invoices) or merchant and date (receipts); never quote an id.",
       "entityType": "invoice|receipt",
       "entityId": "uuid",
       "duplicateOfId": "uuid if duplicate",
@@ -130,7 +130,19 @@ ${DATA_BLOCK_INSTRUCTION}`,
         return undefined;
       };
 
+      // Broken-path sweep: the model quoted record ids ("Invoice with ID '77cb…'") into text the
+      // user reads. Ids are replaced by the document's own reference before anything is stored.
+      const refs = new Map<string, string>();
+      for (const i of invoices) refs.set(i.id, i.number || i.customerName || "");
+      for (const r of receipts) {
+        refs.set(
+          r.id,
+          [r.merchant, r.date ? String(r.date).slice(0, 10) : ""].filter(Boolean).join(" ")
+        );
+      }
       for (const anomaly of aiResponse.anomalies || []) {
+        anomaly.title = replaceRecordIds(anomaly.title, refs);
+        anomaly.description = replaceRecordIds(anomaly.description, refs);
         const safeRelatedId = await validateBelongsToCompany(anomaly.entityType, anomaly.entityId);
         // duplicateOfId must reference the same entity type as the anomaly
         // (a "duplicate invoice" alert points at another invoice).
@@ -230,3 +242,27 @@ export const handlePostAnomalyAlertsResolve = async (req: Request, res: Response
       .json({ message: errorMessage(error), ...aiErrorBody(error) });
   }
 };
+
+/**
+ * Replaces record ids (UUIDs, optionally quoted and introduced by "ID") in AI-written text with
+ * the record's own reference (invoice number, receipt merchant and date). An id the map does not
+ * know is dropped with its "with ID" lead-in, so no raw id reaches the user.
+ */
+export function replaceRecordIds(text: unknown, refs: Map<string, string>): string {
+  if (typeof text !== "string") return "";
+  const uuid = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+  return text
+    .replace(
+      new RegExp(`\\s*(?:with\\s+)?(?:ID|id)\\s*['"‘’“”]?(${uuid})['"‘’“”]?`, "gi"),
+      (_m, id: string) => {
+        const ref = refs.get(id.toLowerCase());
+        return ref ? ` ${ref}` : "";
+      }
+    )
+    .replace(
+      new RegExp(`['"‘’“”]?(${uuid})['"‘’“”]?`, "gi"),
+      (_m, id: string) => refs.get(id.toLowerCase()) ?? ""
+    )
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}

@@ -150,7 +150,9 @@ export default function CorporateTaxTab() {
                     <TableHead data-numeric>
                       <T k="reportCenter.amount" />
                     </TableHead>
-                    <TableHead>Note</TableHead>
+                    <TableHead>
+                      <T k="reportCenter.tabs.note" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

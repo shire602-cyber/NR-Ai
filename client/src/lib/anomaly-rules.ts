@@ -10,6 +10,11 @@ const RULE_LABELS: Record<string, { en: string; ar: string }> = {
   trn_missing: { en: "Supplier TRN missing", ar: "الرقم الضريبي للمورد مفقود" },
   trn_malformed: { en: "Malformed TRN", ar: "رقم ضريبي غير صالح" },
   cross_period_baseline: { en: "Above trailing average", ar: "أعلى من المتوسط السابق" },
+  // Types the AI review returns (server/routes/ai/anomalies.ts); they showed as raw ids in Arabic.
+  duplicate: { en: "Possible duplicate", ar: "احتمال تكرار" },
+  timing: { en: "Unusual timing", ar: "توقيت غير معتاد" },
+  category_mismatch: { en: "Category mismatch", ar: "عدم تطابق الفئة" },
+  potential_fraud: { en: "Possible fraud indicator", ar: "مؤشر احتيال محتمل" },
 };
 
 /** Label of a check, in the reader's language; an unknown rule shows its id with spaces. */

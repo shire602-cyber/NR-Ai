@@ -954,5 +954,14 @@
   "components.planFeature_apiAccess": "API access",
   "components.planFeature_webhooks": "Webhooks",
   "components.ui.settingsNav.numbering": "Numbering",
-  "components.ui.settingsNav.approvals": "Approvals"
+  "components.ui.settingsNav.approvals": "Approvals",
+  "components.newCompanyMenu": "New company",
+  "components.newCompanyTitle": "Add a company",
+  "components.newCompanyBody": "Each company has its own books, VAT and team. Your plan sets how many companies you can have.",
+  "components.newCompanyName": "Company name",
+  "components.newCompanyNameRequired": "Enter the company name.",
+  "components.newCompanyCancel": "Cancel",
+  "components.newCompanyCreate": "Create and set up",
+  "components.srv.notification.aiDraftsReview.title": "AI draft journal entries to review: {count}",
+  "components.srv.notification.aiDraftsReview.message": "The AI categorised {count} bank transaction(s) with high confidence. Review and approve each draft journal entry before it posts to the ledger."
 }

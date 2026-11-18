@@ -54,6 +54,27 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   `CUSTOMER_E2E_CLEANUP_ADMIN_PASS`; add `CUSTOMER_E2E_CLEANUP_DELETE_USER=true` only when the
   generated user should be deleted too. The runner writes the created user/company IDs to
   `tests/e2e/.artifacts/customer-launch-last-run.json`.
+- Broken-path sweep (pre-release, local disposable target only): start a production build on a
+  scratch database (`npm run build`, migrate, `NODE_ENV=production ALLOW_LOCAL_STORAGE=true
+BASE_URL=http://localhost:<port> CORS_ORIGIN=http://localhost:<port> node dist/index.js`), then
+  `BASE_URL=http://localhost:<port> DATABASE_URL=<scratch db> npm run e2e:sweep`. It seeds eight
+  personas (`tests/e2e/lib/sweep-personas.mjs`: trial owner, populated owner via the report audit
+  fixture, accountant, viewer, firm staff, NR admin, client-portal user, visitor), loads every
+  App.tsx route plus every in-app link it finds in en and ar, clicks every enabled control
+  (destructive ones skipped), submits opened dialogs empty, walks the command palette and the
+  mobile More sheet, and fails on 4xx/5xx, 404 pages, blank pages, console/page errors, failed
+  requests, horizontal scroll, native date/select/file inputs, raw keys / placeholders / UUIDs
+  and English in Arabic. Report: `tests/e2e/.artifacts/broken-path-sweep-last-run.json`;
+  deliberate exceptions (with reasons) live in `tests/e2e/lib/sweep-allow.mjs`. Delta runs:
+  `SWEEP_REUSE=true` reuses the seeded personas; narrow with `SWEEP_PERSONAS`, `SWEEP_LANGS`,
+  `SWEEP_ROUTES`, `SWEEP_CLICKS=false`, `SWEEP_MOBILE=false`, `SWEEP_PALETTE=false` (header of
+  `tests/e2e/broken-path-sweep.mjs`). A full run takes 2-3 hours on 4 CPUs; run it under the
+  heavy-step lock.
+- Core release flows: same target, `npm run e2e:flows` (`tests/e2e/core-flows.mjs`; `FLOWS=id,..`
+  and `FLOWS_LANGS` narrow it). Steps in areas still being built are tagged `wip` and reported as
+  "in progress" (`FLOWS_STRICT_WIP=true` makes them fail). Report:
+  `tests/e2e/.artifacts/core-flows-last-run.json`. Results of the release run:
+  [docs/release/BROKEN-PATH-SWEEP.md](release/BROKEN-PATH-SWEEP.md).
 - For read-only production/ad-route customer launch QA, run
   `BASE_URL=<url> npm run e2e:customer:public`; it crawls only public launch routes and does not
   register users or create accounting records. The crawl includes public ad, auth, and legal routes

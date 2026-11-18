@@ -360,6 +360,7 @@ export interface CorporateTaxEstimateReport {
 export interface TrialBalanceRow {
   accountId: string;
   accountName: string;
+  accountNameAr?: string | null;
   accountCode?: string | null;
   accountType: string;
   totalDebit: number;

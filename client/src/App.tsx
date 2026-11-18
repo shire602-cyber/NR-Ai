@@ -279,6 +279,10 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (companyLoading || pathname === "/onboarding") return;
 
+    // Broken-path sweep: the NR console (/admin, /firm) is staff work, guarded by its own role
+    // checks; an admin's or staffer's own unfinished company must not bounce them to onboarding.
+    if (/^\/(admin|firm)(\/|$)/.test(pathname)) return;
+
     // Skip the customer-onboarding redirect when a firm staffer is operating
     // inside a client workspace — the client's onboarding state is the firm's
     // problem to manage, not a hard redirect for the staff member.
@@ -672,9 +676,22 @@ function Router() {
             {/* Spec 3.7: the invoice editor is a full page inside the shell. */}
             <Route path="/invoices/new" component={Invoices} />
             <Route path="/invoices/:id/edit" component={Invoices} />
+            {/* SWEEP: notification links stored before the fix pointed at /invoices/<id>. */}
+            <Route path="/invoices/:id">
+              {(params) => <RedirectTo to={`/invoices?open=${params.id}`} />}
+            </Route>
             <Route path="/invoices" component={Invoices} />
             <Route path="/sales/receive-payment" component={ReceivePayment} />
             <Route path="/sales/cash-sale" component={CashSale} />
+            <Route path="/banking">
+              <RedirectTo to="/bank-feeds" />
+            </Route>
+            <Route path="/compliance">
+              <RedirectTo to="/compliance-calendar" />
+            </Route>
+            <Route path="/settings">
+              <RedirectTo to="/settings/company" />
+            </Route>
             <Route path="/recurring-invoices/new" component={RecurringInvoices} />
             <Route path="/recurring-invoices/:id/edit" component={RecurringInvoices} />
             <Route path="/recurring-invoices" component={RecurringInvoices} />

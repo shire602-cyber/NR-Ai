@@ -11,6 +11,7 @@
  * legacy per-category flags) plus per-type overrides in type_preferences. A user on the daily
  * digest gets non-urgent emails batched into one message by "notifications.dailyDigest".
  */
+import { invoiceHref } from "../../shared/app-links";
 import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import { db, pool } from "../db";
 import {
@@ -278,7 +279,9 @@ export async function notify(input: NotifyInput): Promise<NotifyResult[]> {
 // ─── Domain event → notification ────────────────────────────────────────────
 
 const fmtAmount = (fils?: number) =>
-  typeof fils === "number" ? `AED ${(fils / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "";
+  typeof fils === "number"
+    ? `AED ${(fils / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : "";
 
 async function invoiceNumber(id: string | undefined): Promise<string> {
   if (!id) return "";
@@ -304,12 +307,16 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
       return {
         ...base,
         type: "invoice.issued",
-        ...notificationCopy("notification.invoiceIssued.title", "notification.invoiceIssued.message", {
-          number,
-          amount: p.totalFils ? fmtAmount(p.totalFils as number) : "",
-        }),
+        ...notificationCopy(
+          "notification.invoiceIssued.title",
+          "notification.invoiceIssued.message",
+          {
+            number,
+            amount: p.totalFils ? fmtAmount(p.totalFils as number) : "",
+          }
+        ),
         relatedEntityType: "invoice",
-        actionUrl: `/invoices/${p.entityId}`,
+        actionUrl: invoiceHref(p.entityId as string),
       };
     }
     case "invoice.paid": {
@@ -321,7 +328,7 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
           number,
         }),
         relatedEntityType: "invoice",
-        actionUrl: `/invoices/${p.entityId}`,
+        actionUrl: invoiceHref(p.entityId as string),
       };
     }
     case "payment.received": {
@@ -335,7 +342,7 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
           { number, amount: fmtAmount(p.amountFils as number) }
         ),
         relatedEntityType: "invoice",
-        actionUrl: p.invoiceId ? `/invoices/${p.invoiceId}` : "/invoices",
+        actionUrl: p.invoiceId ? invoiceHref(p.invoiceId as string) : "/invoices",
       };
     }
     case "bill.approved":
@@ -349,9 +356,13 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
           ? notificationCopy("notification.billPaid.title", "notification.billPaid.message", {
               label,
             })
-          : notificationCopy("notification.billApproved.title", "notification.billApproved.message", {
-              label,
-            })),
+          : notificationCopy(
+              "notification.billApproved.title",
+              "notification.billApproved.message",
+              {
+                label,
+              }
+            )),
         relatedEntityType: "bill",
         actionUrl: "/bill-pay",
       };
@@ -379,7 +390,7 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
         ),
         priority: "high",
         relatedEntityType: "bank_connection",
-        actionUrl: "/banking",
+        actionUrl: "/bank-feeds",
         // One notification per failure day, not per retry.
         eventKey: `${p.entityId}:${String(p.occurredAt).slice(0, 10)}`,
       };
@@ -389,11 +400,13 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
         type: "compliance.deadline_due",
         title: renderServerCopy("notification.deadlineDue.title", { dueDate: p.dueDate as string }),
         message: renderServerCopy(
-          p.obligation ? "notification.deadlineDue.message" : "notification.deadlineDueGeneric.message",
+          p.obligation
+            ? "notification.deadlineDue.message"
+            : "notification.deadlineDueGeneric.message",
           { obligation: p.obligation as string | undefined, dueDate: p.dueDate as string }
         ),
         priority: "high",
-        actionUrl: "/compliance",
+        actionUrl: "/compliance-calendar",
         eventKey: `${p.entityId}:${p.obligation ?? ""}:${p.dueDate ?? ""}`,
       };
     case "task.due":
@@ -403,7 +416,7 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
         ...notificationCopy("notification.taskDue.title", "notification.taskDue.message", {
           dueDate: p.dueDate as string,
         }),
-        actionUrl: "/compliance",
+        actionUrl: "/task-center",
         eventKey: `${p.entityId}:${p.dueDate ?? ""}`,
       };
     default:
@@ -496,7 +509,7 @@ export async function scanOverdueInvoices(now: Date = new Date()): Promise<numbe
       ),
       priority: "high",
       relatedEntityType: "invoice",
-      actionUrl: `/invoices/${r.id}`,
+      actionUrl: invoiceHref(r.id),
     });
     n++;
   }

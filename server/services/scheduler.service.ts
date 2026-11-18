@@ -1,4 +1,5 @@
 import { sql, eq } from "drizzle-orm";
+import { invoiceHref } from "../../shared/app-links";
 import { storage } from "../storage";
 import { db, pool } from "../db";
 import {
@@ -364,7 +365,7 @@ async function dunOne(args: {
           : `Invoice ${inv.number} has no customer contact; the customer cannot be reminded.`,
         priority: daysOverdue > 14 ? "urgent" : daysOverdue > 0 ? "high" : "normal",
         relatedEntityType: "invoice",
-        actionUrl: `/invoices/${inv.id}`,
+        actionUrl: invoiceHref(inv.id),
       });
       await settleLog(logId, { status: "sent", sent: true });
       summary.sent++;

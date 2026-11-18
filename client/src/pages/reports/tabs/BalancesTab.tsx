@@ -552,7 +552,9 @@ export default function BalancesTab() {
                       <TableHead>
                         <T k="reportCenter.product" />
                       </TableHead>
-                      <TableHead>Unit</TableHead>
+                      <TableHead>
+                        <T k="reportCenter.tabs.unit" />
+                      </TableHead>
                       <TableHead>
                         <T k="reportCenter.status" />
                       </TableHead>
@@ -576,7 +578,7 @@ export default function BalancesTab() {
                         <TableCell>
                           <div className="font-medium">{product.name}</div>
                           <div className="text-xs text-muted-foreground">
-                            {product.sku || "No SKU"}
+                            {product.sku || t["reportCenter.tabs.noSku"]}
                           </div>
                         </TableCell>
                         <TableCell>{product.unit}</TableCell>
@@ -600,8 +602,8 @@ export default function BalancesTab() {
                                 : product.isLowStock
                                   ? t["reportCenter.lowStock"]
                                   : product.isActive
-                                    ? "Valued"
-                                    : "Inactive"}
+                                    ? t["reportCenter.tabs.valued"]
+                                    : t["reportCenter.tabs.inactive"]}
                           </Badge>
                         </TableCell>
                         <TableCell data-numeric>
@@ -723,11 +725,15 @@ export default function BalancesTab() {
                   <Table className="min-w-[920px]">
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Date</TableHead>
+                        <TableHead>
+                          <T k="reportCenter.tabs.date" />
+                        </TableHead>
                         <TableHead>
                           <T k="reportCenter.product" />
                         </TableHead>
-                        <TableHead>Type</TableHead>
+                        <TableHead>
+                          <T k="reportCenter.tabs.type" />
+                        </TableHead>
                         <TableHead data-numeric>
                           <T k="reportCenter.quantity" />
                         </TableHead>
@@ -751,7 +757,7 @@ export default function BalancesTab() {
                           <TableCell>
                             <div className="font-medium">{movement.productName}</div>
                             <div className="text-xs text-muted-foreground">
-                              {movement.sku || movement.unit || "No SKU"}
+                              {movement.sku || movement.unit || t["reportCenter.tabs.noSku"]}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -998,11 +1004,15 @@ export default function BalancesTab() {
                         <TableHead>
                           <T k="reportCenter.status" />
                         </TableHead>
-                        <TableHead data-numeric>Cost</TableHead>
+                        <TableHead data-numeric>
+                          <T k="reportCenter.tabs.cost" />
+                        </TableHead>
                         <TableHead data-numeric>
                           <T k="reportCenter.depreciation" />
                         </TableHead>
-                        <TableHead data-numeric>NBV</TableHead>
+                        <TableHead data-numeric>
+                          <T k="reportCenter.tabs.nbv" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1011,7 +1021,9 @@ export default function BalancesTab() {
                           <TableCell>
                             <div className="font-medium">{asset.asset_name}</div>
                             <div className="text-xs text-muted-foreground">
-                              {asset.asset_number || asset.serial_number || "No asset number"}
+                              {asset.asset_number ||
+                                asset.serial_number ||
+                                t["reportCenter.tabs.noAssetNumber"]}
                             </div>
                           </TableCell>
                           <TableCell>{asset.category}</TableCell>

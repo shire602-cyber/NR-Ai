@@ -3,12 +3,14 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
-import { format } from "date-fns";
+import { useTranslation } from "@/lib/i18n";
+import { formatDateRange } from "@/lib/format-date";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function VatTab() {
   const { dateRange, t, vatLoading, vatSummary } = useReportsPageContext();
+  const { locale } = useTranslation();
   return (
     <>
       <Card>
@@ -16,7 +18,7 @@ export default function VatTab() {
           <CardTitle>{t.vatSummary}</CardTitle>
           <CardDescription>
             {dateRange.from && dateRange.to
-              ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+              ? formatDateRange(dateRange.from, dateRange.to, locale)
               : "UAE VAT (5%) summary for the current period"}
           </CardDescription>
         </CardHeader>

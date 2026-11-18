@@ -7,11 +7,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
+import { useTranslation } from "@/lib/i18n";
+import { formatDateRange } from "@/lib/format-date";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function ProfitLossTab() {
   const { dateRange, plLoading, profitLoss, selectedCompanyId, t } = useReportsPageContext();
+  const { locale } = useTranslation();
+  // SWEEP: Arabic statements showed English account names and dates.
+  const accountLabel = (item: { accountName?: string | null; accountNameAr?: string | null }) =>
+    (locale === "ar" && item.accountNameAr) || item.accountName || t["screens.unknownAccount"];
   return (
     <>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -82,7 +88,7 @@ export default function ProfitLossTab() {
             <CardTitle>{t.profitLoss}</CardTitle>
             <CardDescription>
               {dateRange.from && dateRange.to
-                ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+                ? formatDateRange(dateRange.from, dateRange.to, locale)
                 : t["reportCenter.allTime"]}
             </CardDescription>
           </div>
@@ -111,7 +117,7 @@ export default function ProfitLossTab() {
                         <TableCell className="tabular-nums text-xs text-muted-foreground">
                           {item.accountCode || "-"}
                         </TableCell>
-                        <TableCell>{item.accountName || "Unknown Account"}</TableCell>
+                        <TableCell>{accountLabel(item)}</TableCell>
                         <TableCell data-numeric className=" font-medium">
                           <Money amount={item.amount ?? 0} currency={"AED"} />
                         </TableCell>
@@ -140,7 +146,7 @@ export default function ProfitLossTab() {
                         <TableCell className="tabular-nums text-xs text-muted-foreground">
                           {item.accountCode || "-"}
                         </TableCell>
-                        <TableCell>{item.accountName || "Unknown Account"}</TableCell>
+                        <TableCell>{accountLabel(item)}</TableCell>
                         <TableCell data-numeric className=" font-medium">
                           <Money amount={item.amount ?? 0} currency={"AED"} />
                         </TableCell>

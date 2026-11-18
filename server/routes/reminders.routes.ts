@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { invoiceHref } from "../../shared/app-links";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { pool } from "../db";
@@ -266,7 +267,7 @@ export function registerReminderRoutes(app: Express) {
           amountDue: remaining,
           currency: inv.currency,
           priority: isOverdue ? "urgent" : daysRemaining <= 7 ? "high" : "normal",
-          actionUrl: `/invoices/${inv.id}`,
+          actionUrl: invoiceHref(inv.id),
           relatedEntityType: "invoice",
           relatedEntityId: inv.id,
         });

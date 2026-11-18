@@ -271,6 +271,7 @@ interface StatementOverrides {
 const IMPORT_STRINGS = {
   en: {
     detected: "Detected",
+    genericFormat: "Generic (Arabic/English)",
     reviewTitle: "Review before importing",
     rows: "rows",
     valid: "valid",
@@ -304,6 +305,7 @@ const IMPORT_STRINGS = {
   },
   ar: {
     detected: "تم اكتشاف",
+    genericFormat: "عام (عربي/إنجليزي)",
     reviewTitle: "مراجعة قبل الاستيراد",
     rows: "صفوف",
     valid: "صالحة",
@@ -1524,7 +1526,14 @@ export default function BankReconciliation() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium text-sm">{strings.reviewTitle}</p>
                   <Badge variant="secondary">
-                    {strings.detected}: {statementPreview.detectedFormatLabel}
+                    {/* Sweep: the server's English "Generic (Arabic/English)" showed in Arabic;
+                        bank names stay proper names. */}
+                    {strings.detected}:{" "}
+                    {statementPreview.detectedFormat === "generic" ? (
+                      strings.genericFormat
+                    ) : (
+                      <span translate="no">{statementPreview.detectedFormatLabel}</span>
+                    )}
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">

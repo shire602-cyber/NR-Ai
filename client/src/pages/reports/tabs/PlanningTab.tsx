@@ -137,7 +137,7 @@ export default function PlanningTab() {
                 <CardDescription>
                   {planningReport.budget
                     ? `${planningReport.budget.name} (${planningReport.budget.fiscalYear})`
-                    : "Create a budget to compare actuals."}
+                    : t["reportCenter.tabs.createBudget"]}
                 </CardDescription>
               </div>
               <Button asChild size="sm" variant="outline">
@@ -186,7 +186,9 @@ export default function PlanningTab() {
                       </TableCell>
                       <TableCell data-numeric>
                         <Badge variant={line.totals.variance >= 0 ? "success" : "warning"} dot>
-                          {line.totals.variance >= 0 ? "Under" : "Over"}
+                          {line.totals.variance >= 0
+                            ? t["reportCenter.tabs.under"]
+                            : t["reportCenter.tabs.over"]}
                         </Badge>
                       </TableCell>
                     </TableRow>
@@ -225,12 +227,18 @@ export default function PlanningTab() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Week</TableHead>
+                      <TableHead>
+                        <T k="reportCenter.tabs.week" />
+                      </TableHead>
                       <TableHead>
                         <T k="reportCenter.period" />
                       </TableHead>
-                      <TableHead data-numeric>In</TableHead>
-                      <TableHead data-numeric>Out</TableHead>
+                      <TableHead data-numeric>
+                        <T k="reportCenter.tabs.in" />
+                      </TableHead>
+                      <TableHead data-numeric>
+                        <T k="reportCenter.tabs.out" />
+                      </TableHead>
                       <TableHead data-numeric>
                         <T k="reportCenter.balance" />
                       </TableHead>

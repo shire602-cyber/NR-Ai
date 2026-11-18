@@ -538,5 +538,7 @@
   "invoices.terms.label": "Payment terms",
   "invoices.terms.hint": "Filled from the customer; the due date follows.",
   "invoices.terms.dueOnReceipt": "Due on receipt",
-  "invoices.terms.net": "Net {days} days"
+  "invoices.terms.net": "Net {days} days",
+  "invoices.receive.noCustomers": "Payments are received from saved customers, and you have none yet.",
+  "invoices.receive.addCustomer": "Add a customer"
 }

@@ -22,6 +22,8 @@ export const APP_SECTIONS: ReadonlySet<string> = new Set([
   "auto-reconcile",
   "backup-restore",
   "bank-accounts",
+  // Legacy notification links (broken-path sweep): /banking, /compliance redirect.
+  "banking",
   "bank-feeds",
   "bank-reconciliation",
   "bill-pay",
@@ -31,6 +33,7 @@ export const APP_SECTIONS: ReadonlySet<string> = new Set([
   "client-portal",
   "company-groups",
   "company-profile",
+  "compliance",
   "compliance-calendar",
   "consolidation",
   "contacts",

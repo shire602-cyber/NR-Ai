@@ -19,6 +19,7 @@ import { createAndEmitNotification } from "../services/socket.service";
 import { notificationCopy } from "../../shared/server-copy";
 import {
   BANK_FORMAT_LABELS,
+  importFormatLabel,
   parseBankCsvText,
   parseBankStatement,
   toLegacyTransactions,
@@ -515,7 +516,13 @@ export function registerBankStatementRoutes(app: Express) {
         ...notificationCopy(
           "notification.bankStatementImported.title",
           "notification.bankStatementImported.message",
-          { count: created.length, bank: bankAccount.bankName, format }
+          // Sweep: the raw format id ("generic") showed in the Arabic notification; the
+          // label is a proper name or a file-format acronym.
+          {
+            count: created.length,
+            bank: bankAccount.bankName,
+            format: importFormatLabel(format),
+          }
         ),
         priority: "normal",
         relatedEntityType: "bank_statement",

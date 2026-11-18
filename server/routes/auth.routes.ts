@@ -510,7 +510,7 @@ export function registerAuthRoutes(app: Express): void {
           { minutes: Math.ceil(retryAfterSeconds / 60) }
         ),
         priority: "high",
-        actionUrl: "/settings",
+        actionUrl: "/settings/security",
       } as Parameters<typeof storage.createNotification>[0]);
     } catch (err) {
       log.warn({ err, userId: user.id }, "Failed to create lockout notification");

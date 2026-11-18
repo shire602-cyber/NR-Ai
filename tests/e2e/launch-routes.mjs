@@ -146,6 +146,10 @@ export const ALL_AUTH_ROUTES = [
   "/compliance-calendar",
   "/task-center",
   "/news-feed",
+  // Legacy notification links (broken-path sweep): redirect to the real page.
+  "/banking",
+  "/compliance",
+  "/settings",
 ];
 
 /** Admin-only routes (need `users.is_admin`); `--all` promotes its synthetic user when it can. */
@@ -185,6 +189,8 @@ export const PARAM_ROUTES = {
   "/journal/:id": "journal",
   // WP-C full-page invoice editor; resolved only when the crawl seeds an invoice id.
   "/invoices/:id/edit": "invoice",
+  // Legacy notification link: redirects to /invoices?open=<id>.
+  "/invoices/:id": "invoice",
   "/admin/clients/:id": "company",
   "/admin/clients/:id/documents": "company",
   "/admin/clients/:id/tasks": "company",

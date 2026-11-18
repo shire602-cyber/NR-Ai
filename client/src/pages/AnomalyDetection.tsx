@@ -3,7 +3,7 @@ import type { CopyDescriptor } from "@shared/server-copy";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
 import { anomalyRuleLabel } from "@/lib/anomaly-rules";
-import { anomalyMessage } from "@/lib/server-message";
+import { anomalyMessage, writtenLanguageProps } from "@/lib/server-message";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
@@ -358,7 +358,14 @@ export function AnomalyChecks({ embedded = false }: { embedded?: boolean }) {
                             </span>
                           )}
                         </div>
-                        <p className="text-sm">{anomalyMessage(anomaly, t, locale)}</p>
+                        {(() => {
+                          const text = anomalyMessage(anomaly, t, locale);
+                          return (
+                            <p className="text-sm" {...writtenLanguageProps(text, locale)}>
+                              {text}
+                            </p>
+                          );
+                        })()}
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <Clock className="h-3 w-3" />
                           {formatAnomalyDate(anomaly.date)}

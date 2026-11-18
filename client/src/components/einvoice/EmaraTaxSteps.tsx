@@ -17,6 +17,20 @@ export interface StepsPartner {
   accreditationNumber: string;
 }
 
+/** Renders `template` with the `{slot}` placeholder replaced by a React node. */
+function withSlot(template: string, slot: string, node: React.ReactNode): React.ReactNode {
+  const marker = `{${slot}}`;
+  const at = template.indexOf(marker);
+  if (at < 0) return template;
+  return (
+    <>
+      {template.slice(0, at)}
+      {node}
+      {template.slice(at + marker.length)}
+    </>
+  );
+}
+
 export function EmaraTaxSteps({
   partner,
   companyName,
@@ -37,7 +51,9 @@ export function EmaraTaxSteps({
   const steps = [
     formatMessage(t["einvoicing.appoint.step1"], { company: isolate(companyName) }),
     t["einvoicing.appoint.step2"],
-    formatMessage(t["einvoicing.appoint.step3"], { partner: isolate(partnerLabel) }),
+    // Sweep: the partner's display / legal names are proper names; they render in a
+    // translate="no" span so Arabic text around them is not read as untranslated copy.
+    withSlot(t["einvoicing.appoint.step3"], "partner", <span translate="no">{isolate(partnerLabel)}</span>),
     t["einvoicing.appoint.step4"],
     ...(withDone ? [t["einvoicing.appoint.step5Done"]] : [t["einvoicing.appoint.step5"]]),
   ];

@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { format } from "date-fns";
+import { formatDateRange } from "@/lib/format-date";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import { formatReportDate, ledgerDetailPageSize } from "../shared";
@@ -66,7 +67,9 @@ export default function LedgerTab() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">Debit / credit difference</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="reportCenter.tabs.debitCreditDifference" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {ledgerLoading ? (
@@ -77,7 +80,9 @@ export default function LedgerTab() {
                   <Money amount={ledgerReport.difference} currency={"AED"} />
                 </div>
                 <Badge variant={ledgerReport.difference < 0.005 ? "success" : "warning"} dot>
-                  {ledgerReport.difference < 0.005 ? "Balanced" : t["reportCenter.needsReview"]}
+                  {ledgerReport.difference < 0.005
+                    ? t["consolidation.balanced"]
+                    : t["reportCenter.needsReview"]}
                 </Badge>
               </div>
             )}
@@ -141,7 +146,9 @@ export default function LedgerTab() {
                       <TableHead>
                         <T k="reportCenter.account" />
                       </TableHead>
-                      <TableHead>Type</TableHead>
+                      <TableHead>
+                        <T k="reportCenter.tabs.type" />
+                      </TableHead>
                       <TableHead data-numeric>
                         <T k="reportCenter.lines" />
                       </TableHead>
@@ -231,7 +238,9 @@ export default function LedgerTab() {
                       </TableCell>
                       <TableCell data-numeric>
                         <Badge variant={row.needsReview ? "warning" : "success"} dot>
-                          {row.needsReview ? "Review" : "Linked"}
+                          {row.needsReview
+                            ? t["reportCenter.tabs.review"]
+                            : t["reportCenter.tabs.linked"]}
                         </Badge>
                       </TableCell>
                     </TableRow>
@@ -256,7 +265,7 @@ export default function LedgerTab() {
               </CardTitle>
               <CardDescription>
                 {dateRange.from && dateRange.to
-                  ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+                  ? formatDateRange(dateRange.from, dateRange.to, locale)
                   : t["expensesTab.allPostedJournalEntryDates"]}
               </CardDescription>
             </div>
@@ -297,14 +306,18 @@ export default function LedgerTab() {
                       <TableHead>
                         <T k="reportCenter.entry" />
                       </TableHead>
-                      <TableHead>Date</TableHead>
+                      <TableHead>
+                        <T k="reportCenter.tabs.date" />
+                      </TableHead>
                       <TableHead>
                         <T k="reportCenter.account" />
                       </TableHead>
                       <TableHead>
                         <T k="reportCenter.source" />
                       </TableHead>
-                      <TableHead>Memo</TableHead>
+                      <TableHead>
+                        <T k="reportCenter.tabs.memo" />
+                      </TableHead>
                       <TableHead data-numeric>
                         <T k="reportCenter.debit" />
                       </TableHead>
@@ -377,7 +390,7 @@ export default function LedgerTab() {
                       setLedgerDetailPage((page) => Math.min(ledgerDetailPageCount, page + 1))
                     }
                   >
-                    Next
+                    <T k="reportCenter.tabs.next" />
                     <ArrowRight className="ms-1.5 h-3.5 w-3.5" />
                   </Button>
                 </div>

@@ -12,19 +12,35 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { format } from "date-fns";
+import { formatDateRange } from "@/lib/format-date";
+import { useTranslation } from "@/lib/i18n";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function TrialBalanceTab() {
   const { dateRange, t, trialBalance, trialBalanceLoading, trialBalanceSummary } =
     useReportsPageContext();
+  // SWEEP: the Arabic trial balance showed English account names, raw type keys ("expense")
+  // and English headings / dates. Names, types and dates now follow the UI language.
+  const { locale } = useTranslation();
+  const typeLabel = (type: string) =>
+    (
+      ({
+        asset: t["screens.typeAsset"],
+        liability: t["screens.typeLiability"],
+        equity: t["screens.typeEquity"],
+        income: t["screens.typeIncome"],
+        expense: t["screens.typeExpense"],
+      }) as Record<string, string | undefined>
+    )[type] ?? type;
   return (
     <>
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 gap-2">
-            <CardTitle className="text-sm font-medium">Debit / credit status</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              <T k="reportCenter.debitCreditStatus" />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {trialBalanceLoading ? (
@@ -87,7 +103,7 @@ export default function TrialBalanceTab() {
               <CardTitle>{t.trialBalance}</CardTitle>
               <CardDescription>
                 {dateRange.from && dateRange.to
-                  ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+                  ? formatDateRange(dateRange.from, dateRange.to, locale)
                   : t["reportCenter.trialBalanceThroughToday"]}
               </CardDescription>
             </div>
@@ -108,11 +124,15 @@ export default function TrialBalanceTab() {
               <Table className="min-w-[900px]">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Code</TableHead>
+                    <TableHead>
+                      <T k="screens.code" />
+                    </TableHead>
                     <TableHead>
                       <T k="reportCenter.account" />
                     </TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>
+                      <T k="screens.type" />
+                    </TableHead>
                     <TableHead data-numeric>
                       <T k="reportCenter.debit" />
                     </TableHead>
@@ -134,12 +154,12 @@ export default function TrialBalanceTab() {
                         {row.accountCode || "-"}
                       </TableCell>
                       <TableCell className="font-medium">
-                        {row.accountName || "Unknown Account"}
+                        {(locale === "ar" && row.accountNameAr) ||
+                          row.accountName ||
+                          t["screens.unknownAccount"]}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="capitalize">
-                          {row.accountType}
-                        </Badge>
+                        <Badge variant="outline">{typeLabel(row.accountType)}</Badge>
                       </TableCell>
                       <TableCell data-numeric>
                         <Money

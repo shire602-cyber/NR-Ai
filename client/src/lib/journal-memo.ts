@@ -42,6 +42,13 @@ const SHAPES: MemoShape[] = [
     params: ["ref", "party"],
   },
   { pattern: /^Receipt: (.*)$/, key: "journal.memo.receipt", params: ["party"] },
+  // Sweep: AI bank categorisation memos (server/services/autonomous-gl.service.ts).
+  {
+    pattern: /^AI Draft \(review required\): (.*)$/,
+    key: "journal.memo.aiDraft",
+    params: ["party"],
+  },
+  { pattern: /^AI GL \(reviewed\): (.*)$/, key: "journal.memo.aiReviewed", params: ["party"] },
   {
     pattern: /^Credit note (\S+) - (.*)$/i,
     key: "journal.memo.creditNote",

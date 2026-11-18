@@ -6,6 +6,7 @@ import { FileDrop } from "@/components/ui/file-drop";
 import { apiRequest, ApiError } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import {
+  dataUrlToBlob,
   fetchStoredFile,
   PURCHASE_FILE_ACCEPT,
   PURCHASE_FILE_MAX_BYTES,
@@ -110,10 +111,11 @@ export function BillCapturePanel({
       setPreview({ url, type, source });
     };
     if (file) {
-      void fetch(file.dataUrl)
-        .then((r) => r.blob())
-        .then((blob) => show(URL.createObjectURL(blob), file.type))
-        .catch(() => undefined);
+      try {
+        show(URL.createObjectURL(dataUrlToBlob(file.dataUrl)), file.type);
+      } catch {
+        /* unreadable data URL: no preview */
+      }
     } else if (storedBillId) {
       void fetchStoredFile(`/api/bills/${storedBillId}/attachment`)
         .then((p) => show(p.url, p.type))

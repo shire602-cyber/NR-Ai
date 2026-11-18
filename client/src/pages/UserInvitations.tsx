@@ -64,6 +64,7 @@ export default function UserInvitations() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
 
   const { data: invitations = [], isLoading } = useQuery<Invitation[]>({
@@ -188,7 +189,14 @@ export default function UserInvitations() {
   const handleSendInvitation = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const email = formData.get("email") as string;
+    const email = String(formData.get("email") ?? "").trim();
+    // Broken-path sweep: an empty "Send invitation" did nothing visible (only the browser's own
+    // bubble, in the browser's language); the form now says what is wrong, in the app language.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEmailError(t[email ? "forms.errors.emailAddressInvalid" : "forms.errors.required"]);
+      return;
+    }
+    setEmailError(null);
     const role = formData.get("role") as string;
     const userType = formData.get("userType") as string;
 
@@ -238,7 +246,7 @@ export default function UserInvitations() {
               <T k="portal.inviteDescription" />
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSendInvitation} className="space-y-4">
+          <form onSubmit={handleSendInvitation} noValidate className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">{t["adminConsole.inviteEmail"]}</Label>
               <Input
@@ -247,8 +255,16 @@ export default function UserInvitations() {
                 type="email"
                 placeholder="client@example.com"
                 required
+                aria-invalid={emailError ? true : undefined}
+                aria-describedby={emailError ? "invite-email-error" : undefined}
+                onChange={() => setEmailError(null)}
                 data-testid="input-invite-email"
               />
+              {emailError && (
+                <p id="invite-email-error" role="alert" className="text-small text-danger">
+                  {emailError}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="company">{t["adminConsole.inviteAssignClient"]}</Label>

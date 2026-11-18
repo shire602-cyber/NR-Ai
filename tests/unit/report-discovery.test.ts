@@ -2829,9 +2829,10 @@ describe("report discoverability", () => {
     expect(reportsSource).toContain("Corporate Tax Estimate");
     expect(reportsSource).toContain("salesProductServiceReport");
     expect(reportsSource).toContain("productServiceSalesRows");
-    expect(reportsSource).toContain("Sales by product/service");
-    expect(reportTabSource("tax")).not.toContain("Sales by product/service");
-    expect(reportTabSource("sales")).toContain("Sales by product/service");
+    // Broken-path sweep: the heading is catalog copy now (it was English in Arabic mode).
+    expect(reportsSource).toContain("reportCenter.tabs.salesByProduct");
+    expect(reportTabSource("tax")).not.toContain("reportCenter.tabs.salesByProduct");
+    expect(reportTabSource("sales")).toContain("reportCenter.tabs.salesByProduct");
     expect(reportTabSource("tax")).not.toContain("Audit trail");
     expect(reportTabSource("tax")).not.toContain("Expense claims");
     expect(reportTabSource("tax")).not.toContain("Inventory valuation");
@@ -2910,7 +2911,7 @@ describe("report discoverability", () => {
     expect(costCentersRouteSource).toContain("lte(journalEntries.date, toDate)");
     expect(reportsSource).toContain("payrollReport");
     expect(reportsSource).toContain("Payroll summary");
-    expect(reportsSource).toContain("WPS / SIF readiness");
+    expect(reportsSource).toContain("reportCenter.tabs.wpsReadiness");
     expect(reportsSource).toContain("preparePayrollReportsForExport");
     expect(exportSource).toContain("Payroll Summary");
     expect(exportSource).toContain("WPS SIF Summary");
