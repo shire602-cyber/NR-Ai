@@ -5,6 +5,10 @@ The stacked `launch/phase-*` PRs are an older line that #67 supersedes; none of 
 #67's history, so every row below was checked by reading #67's own code (the file layout differs:
 `server/ledger/`, `server/reporting/`, `server/tax/`, `server/storage/<domain>.ts`, `server/tenancy`).
 
+Paths in the **PR evidence** column (and file names a Notes cell proposes to port) are files on the
+superseded branches, not on #67, so they do not exist in this tree; every path in the **#67 evidence**
+column does.
+
 Status key: **Covered** = equivalent behaviour on #67, code read. **Partially** = the core is there
 with a named gap. **Missing** = no equivalent. **Ported (this PR)** = fixed on this branch with a
 test. Sizes: small is under about 40 self-contained lines; large is anything bigger.

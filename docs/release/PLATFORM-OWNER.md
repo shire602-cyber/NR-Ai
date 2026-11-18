@@ -97,7 +97,7 @@ Repeat with `$DEMO_DATABASE_URL`. Record the JSON output, which shows `before`, 
 `memberships`, against each environment. `changed: false` means that environment never had the
 promotion. The account's company memberships are reported, not removed.
 
-## Decision on `docs/proposed-migrations/revoke-shire602-admin.sql`
+## Decision on `docs/proposed-migrations/revoke-shire602-admin.sql` (removed)
 
 **It does not become a migration, and it has been removed.** It has been replaced by the `--revoke`
 command above. The reasons:

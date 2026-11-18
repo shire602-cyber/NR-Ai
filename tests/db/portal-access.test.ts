@@ -466,7 +466,11 @@ describe("PR-62 client-portal users are confined to the portal API", () => {
       expect(r.status, p).toBe(403);
       if (r.body?.code) expect(r.body.code).toBe("PORTAL_SCOPE");
     }
-    expect((await pu.as.get("/api/companies")).status).toBe(403);
+    // The app shell's company list answers an empty list (no supplier row, no failed call).
+    const companies = await pu.as.get("/api/companies");
+    expect(companies.status).toBe(200);
+    expect(companies.body).toEqual([]);
+    expect((await pu.as.post("/api/companies", { name: "Nope LLC" })).status).toBe(403);
     // The portal API and the session endpoints stay open.
     expect((await pu.as.get("/api/auth/me")).status).toBe(200);
     expect((await pu.as.get("/api/client-portal/invoices")).status).toBe(403); // unbound: own guard

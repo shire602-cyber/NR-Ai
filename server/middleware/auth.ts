@@ -200,9 +200,11 @@ export function clearAuthenticationCache(req: Request): void {
 /** API paths a client_portal user may call: the portal API and session endpoints. */
 const PORTAL_USER_ALLOWED_PREFIXES = ["/api/client-portal/", "/api/auth/"];
 
-export function isPortalUserAllowedPath(urlPath: string): boolean {
+export function isPortalUserAllowedPath(urlPath: string, method = "GET"): boolean {
   const pathOnly = urlPath.split("?")[0].split("#")[0];
   if (pathOnly.includes("..") || /%2e/i.test(pathOnly)) return false;
+  // The app shell lists companies on every page; for a portal user the handler answers [].
+  if (method === "GET" && pathOnly === "/api/companies") return true;
   return PORTAL_USER_ALLOWED_PREFIXES.some(
     (prefix) => pathOnly.startsWith(prefix) || pathOnly === prefix.slice(0, -1)
   );
@@ -229,7 +231,7 @@ export async function authMiddleware(
   if (
     result.user.userType === "client_portal" &&
     !result.user.isAdmin &&
-    !isPortalUserAllowedPath(req.originalUrl || req.url)
+    !isPortalUserAllowedPath(req.originalUrl || req.url, req.method)
   ) {
     res.status(403).json({
       message: "Client portal accounts can only use the client portal",

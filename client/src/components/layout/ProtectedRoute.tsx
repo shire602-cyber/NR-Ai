@@ -28,6 +28,14 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     }
   }, [isLoading, isError, user, setLocation]);
 
+  // A client_portal user may only use the portal API (server: authMiddleware, PORTAL_SCOPE), so
+  // the accounting app would only show refused calls. Send them to their portal instead.
+  const portalOnly = !!user && user.userType === "client_portal" && !user.isAdmin;
+  useEffect(() => {
+    if (portalOnly) setLocation("/client-portal/dashboard");
+  }, [portalOnly, setLocation]);
+
+  if (portalOnly) return null;
   if (user) return <>{children}</>;
 
   if (isError) {
