@@ -71,6 +71,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { exportToExcel } from "@/lib/export";
 import type { AdminSetting, SubscriptionPlan, User, Company, AuditLog } from "@shared/schema";
 
 export default function Admin() {
@@ -302,6 +303,45 @@ export default function Admin() {
     },
   });
 
+  // Broken-path sweep: "Export data" and "Refresh" had no handlers. Export writes the users and
+  // companies lists (two sheets); Refresh re-reads every admin query.
+  const exportAdminData = () =>
+    exportToExcel(
+      [
+        {
+          sheetName: t["admin.export.usersSheet"],
+          columns: [
+            { header: t["admin.export.name"], key: "name", width: 28 },
+            { header: t["admin.export.email"], key: "email", width: 32 },
+            { header: t["admin.export.type"], key: "type", width: 14 },
+            { header: t["admin.export.created"], key: "created", width: 16 },
+          ],
+          rows: users.map((u) => ({
+            name: u.name,
+            email: u.email,
+            type: u.userType,
+            created: formatDate(u.createdAt, locale),
+          })),
+        },
+        {
+          sheetName: t["admin.export.companiesSheet"],
+          columns: [
+            { header: t["admin.export.name"], key: "name", width: 32 },
+            { header: t["admin.export.trn"], key: "trn", width: 18 },
+            { header: t["admin.export.currency"], key: "currency", width: 10 },
+            { header: t["admin.export.created"], key: "created", width: 16 },
+          ],
+          rows: companies.map((c) => ({
+            name: c.name,
+            trn: c.trnVatNumber ?? "",
+            currency: c.baseCurrency,
+            created: formatDate(c.createdAt, locale),
+          })),
+        },
+      ],
+      "admin-export"
+    );
+
   // Filter functions
   const filteredUsers = users.filter(
     (user) =>
@@ -334,11 +374,25 @@ export default function Admin() {
         description={t["admin.managePlatformSettingsUsersAnd"]}
         actions={
           <>
-            <Button variant="outline" size="sm" data-testid="button-export-data">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void exportAdminData()}
+              data-testid="button-export-data"
+            >
               <Download className="w-4 h-4 me-2" />
               <T k="pageLabels.exportData" />
             </Button>
-            <Button variant="outline" size="sm" data-testid="button-refresh">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                queryClient.invalidateQueries({
+                  predicate: (q) => String(q.queryKey[0] ?? "").startsWith("/api/admin/"),
+                })
+              }
+              data-testid="button-refresh"
+            >
               <RefreshCw className="w-4 h-4 me-2" />
               <T k="pages.refresh" />
             </Button>

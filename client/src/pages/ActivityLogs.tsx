@@ -1,5 +1,10 @@
 import { T } from "@/components/layout/T";
-import { activityEntityLabel, activitySentence, metadataChanges } from "@/lib/activity-log-labels";
+import {
+  activityActionLabel,
+  activityEntityLabel,
+  activitySentence,
+  metadataChanges,
+} from "@/lib/activity-log-labels";
 import { formatDateTime } from "@/lib/format-date";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -30,6 +35,7 @@ import {
 import type { ActivityLog, User as UserType, Company } from "@shared/schema";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { securityFetch } from "@/lib/securityApi";
+import { exportToExcel } from "@/lib/export";
 
 export default function ActivityLogs() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -68,6 +74,31 @@ export default function ActivityLogs() {
     const matchesEntity = entityFilter === "all" || log.entityType === entityFilter;
     return matchesSearch && matchesAction && matchesEntity;
   });
+
+  // Broken-path sweep: "Export logs" had no handler. It exports the rows the filters show.
+  const exportLogs = () =>
+    exportToExcel(
+      [
+        {
+          sheetName: t["activityLog.export.sheet"],
+          columns: [
+            { header: t["activityLog.export.date"], key: "date", width: 20 },
+            { header: t["activityLog.export.user"], key: "user", width: 28 },
+            { header: t["activityLog.export.action"], key: "action", width: 28 },
+            { header: t["activityLog.export.entity"], key: "entity", width: 22 },
+            { header: t["activityLog.export.description"], key: "description", width: 60 },
+          ],
+          rows: filteredLogs.map((log) => ({
+            date: formatDateTime(log.createdAt, locale),
+            user: users.find((u) => u.id === log.userId)?.email ?? "",
+            action: activityActionLabel(t, log.action),
+            entity: activityEntityLabel(t, log.entityType ?? ""),
+            description: log.description,
+          })),
+        },
+      ],
+      "activity-log"
+    );
 
   const getEntityIcon = (entityType: string) => {
     switch (entityType) {
@@ -124,7 +155,13 @@ export default function ActivityLogs() {
               <ShieldCheck className="w-4 h-4 me-2" />
               <T k="security.auditVerify" />
             </Button>
-            <Button variant="outline" className="w-full sm:w-auto" data-testid="button-export-logs">
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => void exportLogs()}
+              disabled={filteredLogs.length === 0}
+              data-testid="button-export-logs"
+            >
               <Download className="w-4 h-4 me-2" />
               <T k="pages.exportLogs" />
             </Button>

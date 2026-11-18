@@ -16,7 +16,7 @@
  * GET /api/billing/plans in both languages.
  *
  * A flow fails on a failed assertion, a page error, a console error or a 5xx response. Steps in
- * areas still being built are tagged `wip` (FLOWS_WIP, default "WQ1,AS1") and reported as
+ * areas still being built are tagged `wip` (FLOWS_WIP, default "AS1"; WQ1 has merged) and reported as
  * "in progress" without failing the run; FLOWS_STRICT_WIP=true makes them count.
  *
  * Environment: BASE_URL, DATABASE_URL (local scratch only; the admin flow promotes one user),
@@ -34,7 +34,7 @@ assertLocal(BASE);
 const TZ = process.env.E2E_TIMEZONE || "Asia/Dubai";
 const LANGS = (process.env.FLOWS_LANGS || "en,ar").split(",").map((s) => s.trim());
 const ONLY = process.env.FLOWS ? process.env.FLOWS.split(",").map((s) => s.trim()) : null;
-const WIP = new Set((process.env.FLOWS_WIP ?? "WQ1,AS1").split(",").filter(Boolean));
+const WIP = new Set((process.env.FLOWS_WIP ?? "AS1").split(",").filter(Boolean));
 const STRICT_WIP = process.env.FLOWS_STRICT_WIP === "true";
 const api = apiClient(BASE);
 const results = [];
@@ -262,7 +262,7 @@ async function runFlow(def) {
           });
           if (!wipTag) record.result = "fail";
           console.log(`  ${wipTag ? "WIP " : "FAIL"} ${def.id}/${lang} ${name}: ${message}`);
-          if (!wipTag && !(error instanceof StepError)) {
+          if (!wipTag) {
             await helpers.page
               .screenshot({
                 path: path.join(ARTIFACT_DIR, `flow-${def.id}-${lang}-${record.steps.length}.png`),
@@ -300,10 +300,11 @@ async function accounts(owner) {
 
 async function seedInvoice(
   owner,
-  { customer = "Palm Trading", amount = 1000, issue = true, date = today() } = {}
+  { customer = "Palm Trading", amount = 1000, issue = true, date = today(), contactId } = {}
 ) {
   const res = await api(owner.token, "POST", `/api/companies/${owner.companyId}/invoices`, {
     customerName: customer,
+    ...(contactId ? { contactId } : {}),
     date,
     dueDate: date,
     currency: "AED",
@@ -521,17 +522,12 @@ const FLOWS = [
         invoiceId = all[0].id;
         expect(all[0].status !== "draft", `status ${all[0].status}`);
       });
-      await h.step(
-        "invoice Checks tab",
-        async () => {
-          await goto(page, `/invoices/${invoiceId}/edit`);
-          const tab = page
-            .locator('[role="tab"]')
-            .filter({ hasText: h.ar ? /فحوص|التحقق/ : /Checks/ });
-          expect((await tab.count()) > 0, "no Checks tab in the invoice editor");
-        },
-        { wip: "WQ1" }
-      );
+      await h.step("invoice editor Checks tab lists the checks", async () => {
+        await goto(page, `/invoices/${invoiceId}/edit`);
+        await click(page, "tab-invoice-checks");
+        const text = await page.locator("main").innerText();
+        expect(text.length > 40, "Checks tab is empty");
+      });
       await h.step("PDF downloads", async () => {
         await goto(page, "/invoices");
         const [download] = await Promise.all([
@@ -574,90 +570,83 @@ const FLOWS = [
           `status ${inv.status}`
         );
       });
-      await h.step(
-        "receive one payment across several invoices",
-        async () => {
-          await seedInvoice(owner, { customer: "Palm Trading", amount: 200 });
-          await seedInvoice(owner, { customer: "Palm Trading", amount: 300 });
-          await goto(page, "/invoices");
-          const button = page.locator(
-            '[data-testid="button-receive-payment"], [data-testid="button-receive-payments"]'
-          );
-          expect(
-            (await button.count()) > 0,
-            "no receive-payment-across-invoices action on /invoices"
-          );
-        },
-        { wip: "WQ1" }
-      );
-      await h.step("full credit note from an issued invoice", async () => {
+      await h.step("receive one payment across several invoices", async () => {
+        const contact = await api(
+          owner.token,
+          "POST",
+          `/api/companies/${owner.companyId}/customer-contacts`,
+          { name: "Oasis Retail", email: "oasis@example.com" }
+        );
+        expect(contact.status < 300, `contact ${contact.status}`);
+        const contactId = (contact.body.contact ?? contact.body).id;
+        const a = await seedInvoice(owner, { customer: "Oasis Retail", amount: 200, contactId });
+        const b = await seedInvoice(owner, { customer: "Oasis Retail", amount: 300, contactId });
+        await goto(page, "/sales/receive-payment");
+        await pick(page, "select-receive-customer", "Oasis Retail");
+        await pick(page, "select-receive-account");
+        await fill(page, "input-receive-amount", "525");
+        await click(page, "button-auto-apply");
+        await click(page, "button-record-receipt");
+        await settle(page, 1500);
+        for (const id of [a.id, b.id]) {
+          const inv = await invoiceById(owner, id);
+          expect(inv.status === "paid", `invoice ${inv.number} ${inv.status}`);
+        }
+      });
+      await h.step("full credit note from an issued invoice (prefilled editor)", async () => {
         const inv = await seedInvoice(owner, { customer: "Gulf Co", amount: 400 });
         await goto(page, "/invoices");
         await rowAction(page, `button-credit-note-${inv.id}`);
-        await click(page, "button-confirm-credit-note");
-        await settle(page, 1000);
+        await page.waitForURL(/\/credit-notes\/new/, { timeout: 15000 });
+        await settle(page, 800);
+        await page.locator('[name="reason"]').fill(h.ar ? "مرتجع جزئي" : "Goods returned");
+        await click(page, "button-submit-credit-note");
+        await settle(page, 1500);
         const notes = listOf(
           (await api(owner.token, "GET", `/api/companies/${owner.companyId}/credit-notes`)).body
         );
         expect(notes.length >= 1, "no credit note created");
       });
-      await h.step(
-        "partial credit note from an invoice",
-        async () => {
-          const inv = await seedInvoice(owner, { customer: "Gulf Co", amount: 600 });
-          const res = await api(
-            owner.token,
-            "POST",
-            `/api/companies/${owner.companyId}/invoices/${inv.id}/credit-note`,
-            {
-              lines: [
-                { description: "Partial refund", quantity: 1, unitPrice: 100, vatRate: 0.05 },
-              ],
-            }
-          );
-          expect(
-            res.status < 300,
-            `partial credit note ${res.status} ${JSON.stringify(res.body).slice(0, 160)}`
-          );
-          await goto(page, "/invoices");
-          await rowAction(page, `button-credit-note-${inv.id}`);
-          const dialog = tid(page, "dialog-credit-note-invoice");
-          expect(
-            (await dialog
-              .locator(
-                'input[type="number"], [data-testid*="credit-amount"], [data-testid*="credit-line"]'
-              )
-              .count()) > 0,
-            "credit note dialog offers no partial amount"
-          );
-        },
-        { wip: "WQ1" }
-      );
-      await h.step(
-        "make recurring from an invoice",
-        async () => {
-          await goto(page, "/invoices");
-          const before = listOf(
-            (await api(owner.token, "GET", `/api/companies/${owner.companyId}/recurring-invoices`))
-              .body
-          ).length;
-          await rowAction(page, `button-set-recurring-${invoiceId}`);
-          await settle(page, 800);
-          const submit = page
-            .locator(
-              '[role="dialog"] button[type="submit"], [data-testid="button-submit-recurring"]'
-            )
-            .first();
-          if (await submit.count()) await submit.click();
-          await settle(page, 1000);
-          const after = listOf(
-            (await api(owner.token, "GET", `/api/companies/${owner.companyId}/recurring-invoices`))
-              .body
-          ).length;
-          expect(after > before, `recurring schedules ${before} -> ${after}`);
-        },
-        { wip: "WQ1" }
-      );
+      await h.step("partial credit note from an invoice", async () => {
+        const inv = await seedInvoice(owner, { customer: "Gulf Co", amount: 600 });
+        const before = listOf(
+          (await api(owner.token, "GET", `/api/companies/${owner.companyId}/credit-notes`)).body
+        ).length;
+        await goto(page, "/invoices");
+        await rowAction(page, `button-credit-note-${inv.id}`);
+        await page.waitForURL(/\/credit-notes\/new/, { timeout: 15000 });
+        await settle(page, 800);
+        await page.locator('input[name="lines.0.unitPrice"]').fill("100");
+        await page.locator('[name="reason"]').fill(h.ar ? "مرتجع جزئي" : "Goods returned");
+        await click(page, "button-submit-credit-note");
+        await settle(page, 1500);
+        const notes = listOf(
+          (await api(owner.token, "GET", `/api/companies/${owner.companyId}/credit-notes`)).body
+        );
+        expect(notes.length === before + 1, `credit notes ${before} -> ${notes.length}`);
+        const total = Number(notes[0]?.total ?? notes[notes.length - 1]?.total ?? 0);
+        expect(
+          notes.some((n) => Math.abs(Number(n.total)) === 105),
+          `partial total ${total}`
+        );
+      });
+      await h.step("make recurring from an invoice", async () => {
+        const before = listOf(
+          (await api(owner.token, "GET", `/api/companies/${owner.companyId}/recurring-invoices`))
+            .body
+        ).length;
+        await goto(page, "/invoices");
+        await rowAction(page, `button-set-recurring-${invoiceId}`);
+        await page.waitForURL(/\/recurring-invoices\/new/, { timeout: 15000 });
+        await settle(page, 800);
+        await click(page, "button-submit-recurring");
+        await settle(page, 1500);
+        const after = listOf(
+          (await api(owner.token, "GET", `/api/companies/${owner.companyId}/recurring-invoices`))
+            .body
+        ).length;
+        expect(after > before, `recurring schedules ${before} -> ${after}`);
+      });
     }
   ),
 

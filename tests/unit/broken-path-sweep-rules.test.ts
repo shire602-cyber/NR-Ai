@@ -68,6 +68,23 @@ describe("sweep: anomaly text never shows raw record ids", () => {
   });
 });
 
+describe("sweep: Evidence Center localises month-end checks", () => {
+  it("renders 'Control accounts reconciled' and its detail from the Arabic catalog", async () => {
+    const { localizeEvidenceText } = await import("../../shared/server-copy");
+    const ar = (await import("../../client/src/locales/ar/components.json")).default as Record<
+      string,
+      string
+    >;
+    expect(localizeEvidenceText("Control accounts reconciled", ar)).toMatch(/[؀-ۿ]/);
+    const detail = localizeEvidenceText(
+      "2 control account(s) differ from their sub-ledger: 1070 (45000.00)",
+      ar
+    );
+    expect(detail).toMatch(/[؀-ۿ]/);
+    expect(detail).toContain("1070 (45000.00)");
+  });
+});
+
 describe("sweep: CSP lets the file previews frame blob: URLs", () => {
   it("allows blob: frames in the enforced and the report-only policy", async () => {
     const { buildCspDirectives, buildCspReportOnlyDirectives } =

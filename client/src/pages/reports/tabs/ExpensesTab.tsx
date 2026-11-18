@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { expenseClaimAmount, expenseClaimStatusVariant, formatReportDate } from "../shared";
-import { format } from "date-fns";
 import { formatDateRange } from "@/lib/format-date";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";

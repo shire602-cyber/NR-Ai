@@ -36,6 +36,7 @@
  *   SWEEP_ROUTES=/a,/b      restrict the route list (link discovery still follows links)
  *   SWEEP_DISCOVER=false    do not follow discovered links
  *   SWEEP_MOBILE=false      skip the phone-width pass; SWEEP_PALETTE=false skip the palette pass
+ *   SWEEP_AI=true           also click controls that start a paid AI call (skipped by default)
  *   SWEEP_OUT=<file>        report path (default .artifacts/broken-path-sweep-last-run.json)
  *   CHROMIUM_PATH, E2E_TIMEZONE (default Asia/Dubai)
  */
@@ -91,6 +92,8 @@ const clickLangsFor = (persona) =>
 
 const DESTRUCTIVE =
   /\b(delete|remove|void|reverse|reversal|archive|revoke|disconnect|deactivate|sign ?out|log ?out|erase|purge|restore backup|reset|unlink|discard|cancel (the )?(subscription|plan)|close (the )?period|lock period|file return|mark (as )?filed|transfer ownership|leave)\b|حذف|إزالة|إلغاء الاشتراك|تسجيل الخروج|عكس|إبطال|أرشفة|إعادة تعيين|فصل|تجاهل/i;
+const AI_CLICKS = process.env.SWEEP_AI === "true";
+const AI_TESTID = /(^|-)ai(-|$)|run-scan|scan-now|assistant-send|ask-ai|categori[sz]e|anomal|forecast-run|cfo/i;
 const DESTRUCTIVE_TESTID =
   /delete|remove|logout|log-out|sign-out|void|reverse|archive|revoke|disconnect|deactivate|reset|discard|language-toggle|lang-toggle|locale|unlink|purge|restore/i;
 
@@ -185,6 +188,10 @@ function attach(page, state) {
       if (GATE_STATUSES.has(status)) state.gates.push(entry);
       else if (state.expectValidation && (status === 400 || status === 422 || status === 409)) {
         state.validation.push(entry);
+      } else if (state.clicking && (status === 409 || status === 422)) {
+        // A click the server refuses with a reason (year-end close before the year ends, a scan
+        // already running) is a deliberate refusal the page explains, not a broken path.
+        state.refusals.push(entry);
       } else
         state.problems.push({
           rule: status >= 500 ? "api-5xx" : "api-4xx",
@@ -245,6 +252,8 @@ function freshState() {
     requestsStarted: 0,
     signals: 0,
     expectValidation: false,
+    clicking: false,
+    refusals: [],
   };
 }
 
@@ -544,9 +553,11 @@ async function clickOne(page, state, ctx, item, restoreUrl) {
   const signalsBefore = state.signals;
   const problemsBefore = state.problems.length;
   report.clicks.total += 1;
+  state.clicking = true;
   try {
     await target.click({ timeout: 3000 });
   } catch (error) {
+    state.clicking = false;
     report.info.push({
       ...ctx,
       rule: "unclickable",
@@ -557,6 +568,7 @@ async function clickOne(page, state, ctx, item, restoreUrl) {
   }
   await page.waitForTimeout(450);
   await page.waitForLoadState("networkidle", { timeout: 4000 }).catch(() => {});
+  state.clicking = false;
   const after = await counters(page).catch(() => null);
   const newProblems = state.problems.slice(problemsBefore);
   for (const p of newProblems) {
@@ -651,6 +663,8 @@ async function restore(page, url) {
 async function clickSweep(page, state, url, ctx, shellDone) {
   const items = (await page.evaluate(collectClickables, SHELL_SELECTOR)).filter((item) => {
     if (DESTRUCTIVE.test(item.name) || DESTRUCTIVE_TESTID.test(item.testid)) return false;
+    // Controls that start a paid AI call are left to the core flows (a handful of real calls).
+    if (!AI_CLICKS && AI_TESTID.test(item.testid)) return false;
     // Shell controls (sidebar, header) are clicked once per persona and language; a page control
     // with a data-testid seen on an earlier route (shared toolbars, export menus) is clicked once
     // too unless SWEEP_DEDUPE=false.

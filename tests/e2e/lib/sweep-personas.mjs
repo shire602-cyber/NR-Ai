@@ -256,18 +256,25 @@ export async function setupPersonas(base, { log = console.log } = {}) {
 
   for (const role of ["accountant", "viewer"]) {
     const email = mail(role);
-    const token = await invite(api, ownerToken, ownerCompany.id, email, role, `Sweep ${role}`);
+    const token = await invite(
+      api,
+      ownerToken,
+      ownerCompany.id,
+      email,
+      role,
+      role === "accountant" ? "محاسب التجربة" : "مشاهد التجربة"
+    );
     personas[role] = { email, token, companyId: ownerCompany.id };
   }
 
   // Client-portal user: invited as a viewer, made a portal user, bound to one contact.
   const portalEmail = mail("portal");
-  await invite(api, ownerToken, ownerCompany.id, portalEmail, "viewer", "Sweep Portal");
+  await invite(api, ownerToken, ownerCompany.id, portalEmail, "viewer", "بوابة التجربة");
 
   const staffEmail = mail("firmstaff");
   const adminEmail = mail("admin");
-  const staffToken = await register(api, staffEmail, "Sweep Firm Staff", "Sweep Staff Co");
-  const adminToken = await register(api, adminEmail, "Sweep NR Admin", "Sweep Admin Co");
+  const staffToken = await register(api, staffEmail, "موظف المكتب", "شركة الموظف");
+  const adminToken = await register(api, adminEmail, "مدير المنصة", "شركة المدير");
   void staffToken;
   void adminToken;
 

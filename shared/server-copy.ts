@@ -161,7 +161,21 @@ export const REPORT_DELIVERY_TEMPLATES: readonly CopyTemplate[] = [
 ];
 
 /** Older stored sentences that map onto a current key (parse only, never rendered or catalogued). */
+export const LEGACY_NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
+  // AI drafts notice stored before it was catalog copy (broken-path sweep).
+  T("notification.aiDraftsReview.title", "{count} AI draft journal entries need review"),
+  T("notification.aiDraftsReview.title", "{count} AI draft journal entry need review"),
+];
+
 export const LEGACY_NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
+  T(
+    "notification.aiDraftsReview.message",
+    "The AI categorized {count} bank transactions with high confidence. Review and approve each draft journal entry before it posts to the GL."
+  ),
+  T(
+    "notification.aiDraftsReview.message",
+    "The AI categorized {count} bank transaction with high confidence. Review and approve each draft journal entry before it posts to the GL."
+  ),
   // Legacy wording stored before the format was part of the sentence: same key, neutral format.
   T("notification.reportDeliveryScheduled.message", "Report delivery scheduled for {date}.", true, {
     format: "PDF + Excel",
@@ -280,7 +294,10 @@ export function describeNotificationCopy(n: {
   title: string;
   message: string;
 }): NotificationCopyDescriptor {
-  const title = parseServerCopy(n.title, NOTIFICATION_TITLE_TEMPLATES);
+  const title = parseServerCopy(n.title, [
+    ...NOTIFICATION_TITLE_TEMPLATES,
+    ...LEGACY_NOTIFICATION_TITLE_TEMPLATES,
+  ]);
   const message = parseServerCopy(n.message, [
     ...NOTIFICATION_MESSAGE_TEMPLATES,
     ...LEGACY_NOTIFICATION_MESSAGE_TEMPLATES,
@@ -1349,7 +1366,9 @@ export function localizeEvidenceText(
 ): string {
   if (!text) return text ?? "";
   const d = descriptor ?? describeEvidenceText(text);
-  if (!d) return text;
+  // Broken-path sweep: the Evidence Center also lists month-end checks ("Control accounts
+  // reconciled"), which are month-end copy, not evidence copy; they showed in English in Arabic.
+  if (!d) return localizeServerText(text, catalog);
   const params: Record<string, string> = {};
   for (const [k, v] of Object.entries(d.params)) {
     if (describeEvidenceText(v)) params[k] = localizeEvidenceText(v, catalog);

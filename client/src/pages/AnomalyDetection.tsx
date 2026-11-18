@@ -358,7 +358,21 @@ export function AnomalyChecks({ embedded = false }: { embedded?: boolean }) {
                             </span>
                           )}
                         </div>
-                        <p className="text-sm">{anomalyMessage(anomaly, t, locale)}</p>
+                        {(() => {
+                          // AI-written findings stay in the language the model wrote them in; an
+                          // English sentence in the Arabic UI is marked as English (lang, dir).
+                          const text = anomalyMessage(anomaly, t, locale);
+                          const english = locale === "ar" && !/[؀-ۿ]/.test(text);
+                          return (
+                            <p
+                              className="text-sm"
+                              lang={english ? "en" : undefined}
+                              dir={english ? "ltr" : undefined}
+                            >
+                              {text}
+                            </p>
+                          );
+                        })()}
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <Clock className="h-3 w-3" />
                           {formatAnomalyDate(anomaly.date)}

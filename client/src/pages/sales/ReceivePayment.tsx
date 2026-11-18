@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
 import { Wand2 } from "lucide-react";
 import { EditorShell } from "@/components/ui/editor-shell";
@@ -246,6 +246,15 @@ export default function ReceivePayment() {
                 ))}
               </SelectContent>
             </Select>
+            {/* Sweep: with no customers the picker opened empty and the page was a dead end. */}
+            {contacts.length === 0 && (
+              <p className="text-small text-muted-foreground" data-testid="receive-no-customers">
+                {t["invoices.receive.noCustomers"]}{" "}
+                <Link href="/contacts" className="text-primary underline-offset-4 hover:underline">
+                  {t["invoices.receive.addCustomer"]}
+                </Link>
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="receive-account">{t["invoices.receive.depositTo"]}</Label>

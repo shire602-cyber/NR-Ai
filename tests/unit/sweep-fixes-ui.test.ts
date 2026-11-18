@@ -167,6 +167,16 @@ describe("sweep: AI bank categorisation memos and notice in Arabic", () => {
     expect(NOTIFICATION_TITLE_TEMPLATES.map((x) => x.key)).toContain(
       "notification.aiDraftsReview.title"
     );
+    // Rows stored with the old English wording are still recognised (and so localised).
+    const { describeNotificationCopy } = await import("../../shared/server-copy");
+    const old = describeNotificationCopy({
+      title: "2 AI draft journal entries need review",
+      message:
+        "The AI categorized 2 bank transactions with high confidence. Review and approve each draft journal entry before it posts to the GL.",
+    });
+    expect(old.titleKey).toBe("notification.aiDraftsReview.title");
+    expect(old.messageKey).toBe("notification.aiDraftsReview.message");
+    expect(old.titleParams.count).toBe("2");
   });
 });
 

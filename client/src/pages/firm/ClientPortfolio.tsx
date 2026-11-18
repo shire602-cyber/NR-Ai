@@ -381,6 +381,7 @@ export default function ClientPortfolio() {
         <Button
           size="sm"
           variant={quickFilter === "all" ? "secondary" : "outline"}
+          aria-pressed={quickFilter === "all"}
           onClick={() => setQuickFilter("all")}
         >
           {b("All", "الكل")} ({clients.length})
@@ -388,6 +389,7 @@ export default function ClientPortfolio() {
         <Button
           size="sm"
           variant={quickFilter === "critical" ? "secondary" : "outline"}
+          aria-pressed={quickFilter === "critical"}
           onClick={() => setQuickFilter("critical")}
           data-testid="filter-critical"
         >
@@ -397,6 +399,7 @@ export default function ClientPortfolio() {
         <Button
           size="sm"
           variant={quickFilter === "attention" ? "secondary" : "outline"}
+          aria-pressed={quickFilter === "attention"}
           onClick={() => setQuickFilter("attention")}
           data-testid="filter-attention"
         >
@@ -409,6 +412,7 @@ export default function ClientPortfolio() {
         <Button
           size="sm"
           variant={quickFilter === "vat-due" ? "secondary" : "outline"}
+          aria-pressed={quickFilter === "vat-due"}
           onClick={() => setQuickFilter("vat-due")}
           data-testid="filter-vat-due"
         >
@@ -425,6 +429,7 @@ export default function ClientPortfolio() {
               key={group.filter}
               size="sm"
               variant={quickFilter === group.filter ? "secondary" : "outline"}
+              aria-pressed={quickFilter === group.filter}
               onClick={() => setQuickFilter(group.filter)}
               data-testid={`filter-${group.filter}`}
             >
@@ -437,6 +442,7 @@ export default function ClientPortfolio() {
         <Button
           size="sm"
           variant={quickFilter === "close-blocked" ? "secondary" : "outline"}
+          aria-pressed={quickFilter === "close-blocked"}
           onClick={() => setQuickFilter("close-blocked")}
           data-testid="filter-close-blocked"
         >
@@ -447,6 +453,7 @@ export default function ClientPortfolio() {
         <Button
           size="sm"
           variant={quickFilter === "unassigned" ? "secondary" : "outline"}
+          aria-pressed={quickFilter === "unassigned"}
           onClick={() => setQuickFilter("unassigned")}
           data-testid="filter-unassigned"
         >
@@ -456,6 +463,7 @@ export default function ClientPortfolio() {
         <Button
           size="sm"
           variant={quickFilter === "no-docs" ? "secondary" : "outline"}
+          aria-pressed={quickFilter === "no-docs"}
           onClick={() => setQuickFilter("no-docs")}
           data-testid="filter-no-docs"
         >
