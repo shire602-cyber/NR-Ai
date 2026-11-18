@@ -1,7 +1,7 @@
 /**
  * WQ5: the first-invoice e-invoice details prompt.
  *
- * Owned here, mounted by the invoice editor (WQ1):
+ * Owned here, mounted by the invoice editor (WQ1) with the hook in use-tax-ready-prompt.ts:
  *
  *   const taxReady = useTaxReadyPrompt(companyId, { enabled: isNewInvoice });
  *   ...
@@ -12,8 +12,8 @@
  * both record that it was shown, so it never appears twice; it never appears when nothing is
  * missing. Not shown at signup.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { FileCheck2 } from "lucide-react";
 import {
   Dialog,
@@ -39,54 +39,9 @@ import {
   type TaxReadyState,
 } from "./tax-identity";
 import { identityErrorFor } from "./identity-errors";
+import type { TaxReadyModalProps } from "./use-tax-ready-prompt";
 
-export interface TaxReadyModalProps {
-  open: boolean;
-  companyId: string;
-  state: TaxReadyState | undefined;
-  /** Called after Save or Later (the editor continues either way). */
-  onDone: (outcome: "saved" | "skipped") => void;
-}
-
-/** Decide whether to open: data loaded, fields missing, never shown before. Pure for tests. */
-export function shouldOpenTaxReady(state: TaxReadyState | undefined): boolean {
-  return !!state && state.show && state.missing.length > 0;
-}
-
-/**
- * The hook the invoice editor calls. `enabled` should be true on a new invoice only. It opens
- * once per page view at most and the server makes it once per company.
- */
-export function useTaxReadyPrompt(
-  companyId: string | null | undefined,
-  { enabled = true }: { enabled?: boolean } = {}
-) {
-  const query = useQuery<TaxReadyState>({
-    queryKey: taxReadyKey(companyId ?? ""),
-    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/einvoicing/tax-ready`),
-    enabled: !!companyId && enabled,
-    staleTime: 60_000,
-  });
-  const [open, setOpen] = useState(false);
-  const opened = useRef(false);
-  useEffect(() => {
-    if (!opened.current && enabled && shouldOpenTaxReady(query.data)) {
-      opened.current = true;
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- opens once when the server says so
-      setOpen(true);
-    }
-  }, [query.data, enabled]);
-  return {
-    open,
-    state: query.data,
-    modalProps: {
-      open,
-      companyId: companyId ?? "",
-      state: query.data,
-      onDone: () => setOpen(false),
-    } satisfies TaxReadyModalProps,
-  };
-}
+export type { TaxReadyModalProps };
 
 export function TaxReadyModal({ open, companyId, state, onDone }: TaxReadyModalProps) {
   const { t } = useTranslation();

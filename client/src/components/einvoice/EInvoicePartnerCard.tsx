@@ -78,7 +78,7 @@ const LINK_TONE: Record<ApproverLinkRow["state"], StatusTone> = {
   revoked: "neutral",
 };
 
-export const partnerKey = (companyId: string) =>
+const partnerKey = (companyId: string) =>
   ["/api/companies", companyId, "einvoicing", "partner"] as const;
 const linksKey = (companyId: string) =>
   ["/api/companies", companyId, "einvoicing", "approver-links"] as const;

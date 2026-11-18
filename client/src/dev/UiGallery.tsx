@@ -66,6 +66,9 @@ import { SectionCard } from "@/components/ui/section-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Money, MoneyCell } from "@/components/ui/money";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
+import { TaxReadyModal } from "@/components/einvoice/TaxReadyModal";
+import { useTaxReadyPrompt } from "@/components/einvoice/use-tax-ready-prompt";
+import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 
 const SERIES = [
   { m: "Jun", income: 61200, expenses: 48100 },
@@ -88,6 +91,8 @@ export default function UiGallery() {
   const [file, setFile] = React.useState<string | null>(null);
 
   if (view === "editor") return <EditorDemo L={L} />;
+  // WQ5: the first-invoice e-invoice details prompt on the signed-in company (real API).
+  if (view === "tax-ready") return <TaxReadyPreview />;
   if (view === "settings") {
     return (
       <SettingsLayout>
@@ -689,4 +694,11 @@ function EditorDemo({ L }: { L: (en: string, ar: string) => string }) {
       </SectionCard>
     </EditorShell>
   );
+}
+
+/** WQ5: mounts the first-invoice prompt the way the invoice editor does (dev gallery only). */
+function TaxReadyPreview() {
+  const { companyId } = useDefaultCompany();
+  const prompt = useTaxReadyPrompt(companyId, { enabled: true });
+  return <TaxReadyModal {...prompt.modalProps} />;
 }

@@ -151,7 +151,7 @@ async function setLocale(locale: "en" | "ar") {
 describe("tax-ready prompt", () => {
   it("decides to open only when the server says so and fields are missing", async () => {
     const { shouldOpenTaxReady } =
-      await import("../../client/src/components/einvoice/TaxReadyModal");
+      await import("../../client/src/components/einvoice/use-tax-ready-prompt");
     expect(shouldOpenTaxReady(undefined)).toBe(false);
     expect(shouldOpenTaxReady({ show: true, missing: ["tin"] } as never)).toBe(true);
     expect(shouldOpenTaxReady({ show: false, missing: ["tin"] } as never)).toBe(false);
@@ -159,8 +159,10 @@ describe("tax-ready prompt", () => {
   });
 
   async function renderPrompt() {
-    const { useTaxReadyPrompt, TaxReadyModal } =
-      await import("../../client/src/components/einvoice/TaxReadyModal");
+    const { TaxReadyModal } = await import("../../client/src/components/einvoice/TaxReadyModal");
+    const { useTaxReadyPrompt } =
+      await import("../../client/src/components/einvoice/use-tax-ready-prompt");
+
     function Editor() {
       const p = useTaxReadyPrompt("c-1", { enabled: true });
       return createElement(TaxReadyModal, p.modalProps);
@@ -392,7 +394,7 @@ describe("firm cell and contact form body", () => {
 
   it("sends role, typed registrations, the VAT TRN and a legacy address line", async () => {
     const { contactBodyFromForm } =
-      await import("../../client/src/components/contacts/ContactForm");
+      await import("../../client/src/components/contacts/contact-form-model");
     const body = contactBodyFromForm({
       name: "Gulf Hosting",
       nameAr: "",
