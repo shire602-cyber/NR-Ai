@@ -18,12 +18,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiUrl } from "@/lib/api";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { orderByHierarchy, parentCandidates, parentLocked } from "@/lib/account-hierarchy";
+import {
+  orderByHierarchy,
+  parentCandidates,
+  parentIds,
+  parentLocked,
+  rollUpTotals,
+} from "@/lib/account-hierarchy";
+import { AccountDrawer } from "@/components/accounts/AccountDrawer";
 import {
   Dialog,
   DialogContent,
@@ -53,6 +60,7 @@ import {
   Download,
   Upload,
   GitBranch,
+  Pencil,
 } from "lucide-react";
 import { accountDisplayName } from "@/lib/account-name";
 
@@ -64,6 +72,10 @@ interface AccountWithBalance {
 }
 
 const ACCOUNT_TYPE_ORDER = ["asset", "liability", "equity", "income", "expense"];
+
+/** WQ3 (9.1): the level toggle shows accounts down to this depth (1 = top level only). */
+const LEVELS = [1, 2, 3, 4] as const;
+type Level = (typeof LEVELS)[number] | "all";
 
 /** Select value for "no parent" (Radix Select items cannot use an empty string). */
 const NO_PARENT = "__none__";
@@ -124,6 +136,11 @@ export default function ChartOfAccounts() {
   const { toast } = useToast();
   const [parentFor, setParentFor] = useState<Account | null>(null);
   const [parentChoice, setParentChoice] = useState<string>(NO_PARENT);
+  // WQ3 (9.3): the account drawer (create when `drawerAccount` is null).
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerAccount, setDrawerAccount] = useState<Account | null>(null);
+  const [drawerKey, setDrawerKey] = useState(0);
+  const [level, setLevel] = useState<Level>("all");
 
   const { data: accountsWithBalances, isLoading } = useQuery<AccountWithBalance[]>({
     queryKey: ["/api/companies", selectedCompanyId, "accounts-with-balances"],
@@ -155,6 +172,16 @@ export default function ChartOfAccounts() {
 
     return grouped;
   }, [accountsWithBalances, searchQuery]);
+
+  // Parent rows carry their sub-accounts' figures, so a collapsed level still adds up.
+  const rolled = useMemo(
+    () => rollUpTotals(accountsWithBalances ?? [], (item) => item.account),
+    [accountsWithBalances]
+  );
+  const headers = useMemo(
+    () => parentIds((accountsWithBalances ?? []).map((i) => i.account)),
+    [accountsWithBalances]
+  );
 
   const typeTotals = useMemo(() => {
     const totals: Record<string, number> = {};
@@ -258,7 +285,14 @@ export default function ChartOfAccounts() {
               <Upload aria-hidden />
               <T k="journal.coaImportCsv" />
             </Button>
-            <Button data-testid="button-add-account" onClick={() => navigate("/journal")}>
+            <Button
+              data-testid="button-add-account"
+              onClick={() => {
+                setDrawerAccount(null);
+                setDrawerKey((k) => k + 1);
+                setDrawerOpen(true);
+              }}
+            >
               <Plus aria-hidden />
               {t.addAccount}
             </Button>
@@ -268,19 +302,48 @@ export default function ChartOfAccounts() {
 
       {/* Spec 3.10: the per-type balance strip is gone (the balance sheet says the same). */}
 
-      <div className="relative w-full sm:max-w-sm">
-        <Search
-          className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          placeholder={t.searchAccounts}
-          aria-label={t.searchAccounts}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="h-9 ps-9"
-          data-testid="input-search-accounts"
-        />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-sm">
+          <Search
+            className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            placeholder={t.searchAccounts}
+            aria-label={t.searchAccounts}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-9 ps-9"
+            data-testid="input-search-accounts"
+          />
+        </div>
+        <div
+          role="group"
+          aria-label={t["journal.coaLevels"]}
+          aria-describedby="coa-levels-help"
+          className="inline-flex w-fit items-center gap-1 rounded-lg bg-surface-sunken p-1"
+          data-testid="coa-level-toggle"
+        >
+          {[...LEVELS, "all" as const].map((l) => (
+            <Button
+              key={l}
+              type="button"
+              size="sm"
+              variant={level === l ? "default" : "ghost"}
+              aria-pressed={level === l}
+              className="h-7 px-2.5"
+              onClick={() => setLevel(l)}
+              data-testid={`button-level-${l}`}
+            >
+              {l === "all"
+                ? t["journal.coaLevelAll"]
+                : formatMessage(t["journal.coaLevelN"], { n: l })}
+            </Button>
+          ))}
+          <span id="coa-levels-help" className="sr-only">
+            {t["journal.coaLevelsHelp"]}
+          </span>
+        </div>
       </div>
 
       <DataTableCard
@@ -350,78 +413,112 @@ export default function ChartOfAccounts() {
                   </TableCell>
                 </TableRow>
                 {isExpanded &&
-                  accounts.map((item) => (
-                    <TableRow
-                      key={item.account.id}
-                      className="group cursor-pointer"
-                      onClick={() => handleAccountClick(item.account.id)}
-                      data-testid={`row-account-${item.account.id}`}
-                    >
-                      <TableCell
-                        data-nowrap=""
-                        data-cell="meta"
-                        className="tabular-nums text-muted-foreground"
-                      >
-                        {item.account.code}
-                      </TableCell>
-                      <TableCell
-                        data-truncate=""
-                        data-cell="title"
-                        style={
-                          item.depth > 0
-                            ? { paddingInlineStart: `${1 + item.depth * 1.25}rem` }
-                            : undefined
-                        }
-                      >
-                        <span dir="auto" className="font-medium">
-                          {accountDisplayName(item.account, locale)}
-                        </span>
-                        {!item.account.isActive && (
-                          <Badge variant="neutral" className="ms-2">
-                            {t.inactive}
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <MoneyCell
-                        amount={item.debitTotal}
-                        showCurrency={false}
-                        className="text-muted-foreground"
-                      />
-                      <MoneyCell
-                        amount={item.creditTotal}
-                        showCurrency={false}
-                        className="text-muted-foreground"
-                      />
-                      <MoneyCell
-                        amount={Math.abs(item.balance)}
-                        className={cn("font-medium", item.balance < 0 && "text-negative")}
-                        data-cell="amount"
-                      />
-                      <TableCell data-cell="actions" className="w-px">
-                        <RowActions>
-                          <RowActionButton
-                            label={
-                              parentLocked(item.account, allAccounts)
-                                ? t["journal.coaParentLocked"]
-                                : t["journal.coaSetParent"]
+                  accounts
+                    .filter((item) => level === "all" || item.depth < level)
+                    .map((item) => {
+                      const figures = rolled.get(item.account.id) ?? item;
+                      const isHeader = headers.has(item.account.id);
+                      return (
+                        <TableRow
+                          key={item.account.id}
+                          className="group cursor-pointer"
+                          onClick={() => handleAccountClick(item.account.id)}
+                          data-testid={`row-account-${item.account.id}`}
+                        >
+                          <TableCell
+                            data-nowrap=""
+                            data-cell="meta"
+                            className="tabular-nums text-muted-foreground"
+                          >
+                            {item.account.code}
+                          </TableCell>
+                          <TableCell
+                            data-truncate=""
+                            data-cell="title"
+                            style={
+                              item.depth > 0
+                                ? { paddingInlineStart: `${1 + item.depth * 1.25}rem` }
+                                : undefined
                             }
-                            icon={GitBranch}
-                            disabled={parentLocked(item.account, allAccounts)}
-                            data-testid={`button-set-parent-${item.account.id}`}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openParentDialog(item.account);
-                            }}
+                          >
+                            <span dir="auto" className="font-medium">
+                              {accountDisplayName(item.account, locale)}
+                            </span>
+                            {!item.account.isActive && (
+                              <Badge variant="neutral" className="ms-2">
+                                {t.inactive}
+                              </Badge>
+                            )}
+                            {isHeader && (
+                              <span className="ms-2 text-caption text-muted-foreground">
+                                {t["journal.coaIncludesSub"]}
+                              </span>
+                            )}
+                          </TableCell>
+                          <MoneyCell
+                            amount={figures.debitTotal}
+                            showCurrency={false}
+                            className="text-muted-foreground"
                           />
-                        </RowActions>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                          <MoneyCell
+                            amount={figures.creditTotal}
+                            showCurrency={false}
+                            className="text-muted-foreground"
+                          />
+                          <MoneyCell
+                            amount={Math.abs(figures.balance)}
+                            className={cn(
+                              isHeader ? "font-semibold" : "font-medium",
+                              figures.balance < 0 && "text-negative"
+                            )}
+                            data-cell="amount"
+                          />
+                          <TableCell data-cell="actions" className="w-px">
+                            <RowActions>
+                              <RowActionButton
+                                label={t["journal.coaEditAccount"]}
+                                icon={Pencil}
+                                data-testid={`button-edit-account-${item.account.id}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setDrawerAccount(item.account);
+                                  setDrawerKey((k) => k + 1);
+                                  setDrawerOpen(true);
+                                }}
+                              />
+                              <RowActionButton
+                                label={
+                                  parentLocked(item.account, allAccounts)
+                                    ? t["journal.coaParentLocked"]
+                                    : t["journal.coaSetParent"]
+                                }
+                                icon={GitBranch}
+                                disabled={parentLocked(item.account, allAccounts)}
+                                data-testid={`button-set-parent-${item.account.id}`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openParentDialog(item.account);
+                                }}
+                              />
+                            </RowActions>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
               </TableBody>
             );
           })}
         </Table>
       </DataTableCard>
+
+      <AccountDrawer
+        key={drawerKey}
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        companyId={selectedCompanyId}
+        accounts={allAccounts}
+        account={drawerAccount}
+      />
 
       <Dialog open={!!parentFor} onOpenChange={(open) => !open && setParentFor(null)}>
         <DialogContent data-testid="dialog-set-parent">

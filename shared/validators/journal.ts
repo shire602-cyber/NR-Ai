@@ -38,7 +38,10 @@ export const journalLineBody = z
     contactId: z.string().max(64).nullable().optional(),
     vatTreatment: z.enum(JOURNAL_LINE_VAT_TREATMENTS).nullable().optional(),
     ctTreatment: z.enum(JOURNAL_LINE_CT_TREATMENTS).nullable().optional(),
-    ctDisallowedPct: z.union([z.number(), z.string().max(10)]).nullable().optional(),
+    ctDisallowedPct: z
+      .union([z.number(), z.string().max(10)])
+      .nullable()
+      .optional(),
   })
   .strict();
 export type JournalLineBody = z.infer<typeof journalLineBody>;

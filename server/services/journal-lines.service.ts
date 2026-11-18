@@ -21,7 +21,8 @@ import { resolve } from "../platform/service-registry";
 import type { FxConvert } from "./fx";
 import { loadBaseCurrency, type JournalLineAttributes, type PostJournalLineInput } from "../ledger";
 import { toFils } from "../../shared/money";
-import { STANDARD_VAT_RATES, vatJurisdictionForCountry } from "../../shared/vat-classification";
+import { STANDARD_VAT_RATES } from "../../shared/vat-classification";
+import { vatJurisdictionWithFlag } from "./zatca/flag";
 import {
   ctTreatmentFitsAccount,
   journalLineVatFils,
@@ -73,7 +74,12 @@ async function assertContactsOwned(companyId: string, lines: JournalLineBody[]):
   for (const [index, l] of lines.entries()) {
     if (!l.contactId) continue;
     if (!l.contactType) {
-      throw lineError("CONTACT_TYPE_REQUIRED", index, "contactType", "Choose a customer or supplier");
+      throw lineError(
+        "CONTACT_TYPE_REQUIRED",
+        index,
+        "contactType",
+        "Choose a customer or supplier"
+      );
     }
     const table = l.contactType === "customer" ? "customer_contacts" : "vendors";
     const ok =
@@ -100,7 +106,7 @@ async function companyVatRate(companyId: string): Promise<number> {
     companyId,
   ]);
   const country = (rows[0] as { address_country?: string | null } | undefined)?.address_country;
-  return STANDARD_VAT_RATES[vatJurisdictionForCountry(country)];
+  return STANDARD_VAT_RATES[vatJurisdictionWithFlag(country)];
 }
 
 function ctPct(l: JournalLineBody): string | null {
@@ -126,7 +132,8 @@ export async function buildManualJournalLines(
   await assertContactsOwned(companyId, lines);
 
   const base = (await loadBaseCurrency(companyId)).toUpperCase();
-  const dateIso = date instanceof Date ? date.toISOString().slice(0, 10) : String(date).slice(0, 10);
+  const dateIso =
+    date instanceof Date ? date.toISOString().slice(0, 10) : String(date).slice(0, 10);
   let rate: number | null = null;
   const vatAccountIds = new Map<string, string>();
   const vatAccount = async (code: string): Promise<string> => {
@@ -243,7 +250,12 @@ export async function buildManualJournalLines(
       const vatDebit = journalLineVatFils(baseDebit, rate);
       const vatCredit = journalLineVatFils(baseCredit, rate);
       if (vatDebit > 0) {
-        out.push({ accountId: vatAccountId, debitFils: vatDebit, description: label, systemVat: true });
+        out.push({
+          accountId: vatAccountId,
+          debitFils: vatDebit,
+          description: label,
+          systemVat: true,
+        });
       } else if (vatCredit > 0) {
         out.push({
           accountId: vatAccountId,

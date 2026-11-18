@@ -21,6 +21,7 @@ import { z } from "zod";
 import { zUaeTrn } from "../../shared/validators/vat";
 import { STANDARD_VAT_RATES, vatJurisdictionForCountry } from "../../shared/vat-classification";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
+import { vatJurisdictionWithFlag } from "../services/zatca/flag";
 import { createLogger } from "../config/logger";
 import { ensureCriticalSchema } from "../db";
 import { withNrClientVatGroup } from "../services/firm-clients.service";
@@ -368,7 +369,8 @@ export function registerCompanyRoutes(app: Express) {
       const rate = Number(
         "defaultVatRate" in updateData ? updateData.defaultVatRate : current.defaultVatRate
       );
-      const standard = STANDARD_VAT_RATES[vatJurisdictionForCountry(country)];
+      // Saudi Arabia (15%) only while ZATCA is enabled (owner decision 2026-11-18).
+      const standard = STANDARD_VAT_RATES[vatJurisdictionWithFlag(country)];
       const mismatch = rate !== 0 && Math.abs(rate - standard) > 1e-9;
       // A country change alone moves a standard default rate to the new country's standard.
       if (mismatch && !("defaultVatRate" in updateData)) {

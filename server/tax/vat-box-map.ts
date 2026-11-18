@@ -16,7 +16,8 @@ import {
   type PurchaseKind,
 } from "./vat-boxes";
 import type { Vat201Family } from "../../shared/vat-classification";
-import { STANDARD_VAT_RATES, vatJurisdictionForCountry } from "../../shared/vat-classification";
+import { STANDARD_VAT_RATES } from "../../shared/vat-classification";
+import { vatJurisdictionWithFlag } from "../services/zatca/flag";
 
 export interface VatBoxRef {
   /** "1b", "4", "9" ... */
@@ -55,14 +56,20 @@ function boxesOf(delta: BoxDelta): VatBoxRef[] {
     .filter((b): b is VatBoxRef => !!b);
 }
 
-const SALES: Vat201Family[] = ["standard", "zero_rated", "exempt", "out_of_scope", "reverse_charge"];
+const SALES: Vat201Family[] = [
+  "standard",
+  "zero_rated",
+  "exempt",
+  "out_of_scope",
+  "reverse_charge",
+];
 const PURCHASES: PurchaseKind[] = ["standard", "reverse_charge", "import", "not_reportable"];
 
 export function vatBoxMap(company: {
   addressCountry?: string | null;
   emirate?: string | null;
 }): VatBoxMap {
-  const jurisdiction = vatJurisdictionForCountry(company.addressCountry);
+  const jurisdiction = vatJurisdictionWithFlag(company.addressCountry);
   const standardRate = STANDARD_VAT_RATES[jurisdiction];
   const emirate = normaliseEmirate(company.emirate ?? null);
   // Box 1 is per emirate: probe with the company's own (Dubai when it is not set yet).

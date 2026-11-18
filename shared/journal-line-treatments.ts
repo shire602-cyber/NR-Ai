@@ -27,7 +27,11 @@ export const JOURNAL_LINE_VAT_TREATMENTS = [
 ] as const;
 export type JournalLineVatTreatment = (typeof JOURNAL_LINE_VAT_TREATMENTS)[number];
 
-export const JOURNAL_LINE_CT_TREATMENTS = ["deductible", "non_deductible", "exempt_income"] as const;
+export const JOURNAL_LINE_CT_TREATMENTS = [
+  "deductible",
+  "non_deductible",
+  "exempt_income",
+] as const;
 export type JournalLineCtTreatment = (typeof JOURNAL_LINE_CT_TREATMENTS)[number];
 
 export const JOURNAL_LINE_CONTACT_TYPES = ["customer", "vendor"] as const;

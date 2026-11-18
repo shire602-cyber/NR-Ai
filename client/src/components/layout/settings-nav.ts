@@ -20,6 +20,12 @@ export const SETTINGS_NAV: SettingsNavItem[] = [
     href: "/settings/company",
     matches: ["/company-profile"],
   },
+  // WQ3 (9.13): read-only VAT treatments, rates and their VAT 201 boxes.
+  {
+    key: "taxRates",
+    labelKey: "components.ui.settingsNav.taxRates",
+    href: "/settings/tax-rates",
+  },
   { key: "team", labelKey: "components.ui.settingsNav.team", href: "/team" },
   { key: "security", labelKey: "components.ui.settingsNav.security", href: "/settings/security" },
   {

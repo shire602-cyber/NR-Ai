@@ -14,6 +14,7 @@ import { storage } from "../storage";
 import { getCapability } from "../../shared/capabilities";
 import { zText, zUuid } from "../../shared/validators/primitives";
 import { recordAudit } from "../services/audit.service";
+import { requireZatcaEnabled, zatcaEnabled } from "../services/zatca/flag";
 import { ZatcaClient, requireZatcaConfig, zatcaConfig } from "../services/zatca/client";
 import {
   createEgsUnit,
@@ -75,6 +76,17 @@ function client(): ZatcaClient {
 }
 
 export function registerZatcaRoutes(app: Express) {
+  // Owner decision (2026-11-18): ZATCA is hidden at launch. The flag the client reads to show
+  // or hide every ZATCA surface; the endpoints below answer 503 while it is off.
+  app.get(
+    "/api/features",
+    authMiddleware,
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json({ zatca: zatcaEnabled() });
+    })
+  );
+  app.use("/api/companies/:companyId/zatca", requireZatcaEnabled);
+
   app.get(
     "/api/companies/:companyId/zatca/status",
     authMiddleware,

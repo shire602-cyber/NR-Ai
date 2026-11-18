@@ -123,7 +123,10 @@ export function ledgerAdjustmentsFromBooks(books: CtBooksSnapshot): CtBridgeAdju
         id: `ledger-line-${t.accountId}-nd-${t.pct}`,
         category: "other_addback",
         amount,
-        label: `${t.accountName} (${t.accountCode}): journal lines ${t.pct}% non-deductible`.slice(0, 200),
+        label: `${t.accountName} (${t.accountCode}): journal lines ${t.pct}% non-deductible`.slice(
+          0,
+          200
+        ),
         source: "ledger",
         accountId: t.accountId,
       });
@@ -132,7 +135,10 @@ export function ledgerAdjustmentsFromBooks(books: CtBooksSnapshot): CtBridgeAdju
         id: `ledger-line-${t.accountId}-exempt`,
         category: "exempt_income",
         amount,
-        label: `${t.accountName} (${t.accountCode}): journal lines marked exempt income`.slice(0, 200),
+        label: `${t.accountName} (${t.accountCode}): journal lines marked exempt income`.slice(
+          0,
+          200
+        ),
         source: "ledger",
         accountId: t.accountId,
       });

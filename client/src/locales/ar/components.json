@@ -904,5 +904,6 @@
   "components.authErrors.failedAttemptsLocked": "محاولات فاشلة كثيرة. انتظر بضع دقائق ثم حاول مرة أخرى.",
   "components.authErrors.linkRequestsLimited": "انتظر قليلاً قبل طلب رابط آخر.",
   "components.authErrors.authRateLimited": "محاولات تسجيل دخول كثيرة. انتظر دقيقة ثم حاول مرة أخرى.",
-  "components.srv.evidence.workflow.request.bullet.draftOnlyNoSend": "مسودة فقط - لا يُرسل أو يُرفع أي شيء"
+  "components.srv.evidence.workflow.request.bullet.draftOnlyNoSend": "مسودة فقط - لا يُرسل أو يُرفع أي شيء",
+  "components.ui.settingsNav.taxRates": "نسب الضريبة"
 }

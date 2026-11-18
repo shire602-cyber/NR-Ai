@@ -3,7 +3,7 @@
  * Fatoora mock: 503 when unconfigured, EGS onboarding with OTP, hash-chained
  * signed documents, clearance / reporting, rejection and retry.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import { createMockFatoora } from "../fixtures/zatca/mock-fatoora";
 
@@ -19,9 +19,49 @@ function useMockFatoora(opts: Parameters<typeof createMockFatoora>[0] = {}) {
   return mock;
 }
 
+// Saudi ZATCA is hidden at launch behind ZATCA_ENABLED (default off); these flows run with it on.
+beforeEach(() => {
+  process.env.ZATCA_ENABLED = "true";
+});
 afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.ZATCA_ENV;
+  delete process.env.ZATCA_ENABLED;
+});
+
+describe("ZATCA hidden at launch (owner decision 2026-11-18)", () => {
+  it("flag off: /api/features says zatca false and every ZATCA endpoint answers 503 ZATCA_NOT_AVAILABLE", async () => {
+    delete process.env.ZATCA_ENABLED;
+    process.env.ZATCA_ENV = "sandbox";
+    const t = await h.createTenant({ companyColumns: { address_country: "SA" } });
+    const features = await t.as.get(`/api/features`);
+    expect(features.status, features.text).toBe(200);
+    expect(features.body).toEqual({ zatca: false });
+    const calls = [
+      t.as.get(`/api/companies/${t.company.id}/zatca/status`),
+      t.as.post(`/api/companies/${t.company.id}/zatca/egs-units`, EGS_BODY),
+      t.as.get(`/api/companies/${t.company.id}/zatca/documents`),
+    ];
+    for (const r of await Promise.all(calls)) {
+      expect(r.status, r.text).toBe(503);
+      expect(r.body.code).toBe("ZATCA_NOT_AVAILABLE");
+    }
+    // Without the flag a Saudi company cannot store the 15% KSA default rate either.
+    const rate = await t.as.patch(`/api/companies/${t.company.id}`, { defaultVatRate: 0.15 });
+    expect(rate.status, rate.text).toBe(422);
+    expect(rate.body.code).toBe("VAT_RATE_NOT_FOR_COUNTRY");
+  });
+
+  it("flag on + Saudi company: features say zatca true and the endpoints answer", async () => {
+    process.env.ZATCA_ENV = "sandbox";
+    useMockFatoora();
+    const t = await h.createTenant({ companyColumns: { address_country: "SA" } });
+    expect((await t.as.get(`/api/features`)).body).toEqual({ zatca: true });
+    const status = await t.as.get(`/api/companies/${t.company.id}/zatca/status`);
+    expect(status.status, status.text).toBe(200);
+    const rate = await t.as.patch(`/api/companies/${t.company.id}`, { defaultVatRate: 0.15 });
+    expect(rate.status, rate.text).toBe(200);
+  });
 });
 
 const EGS_BODY = {

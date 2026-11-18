@@ -28,6 +28,7 @@ beforeEach(() => {
   restore = freezeTime("2026-11-18T08:00:00Z");
 });
 afterEach(() => {
+  delete process.env.ZATCA_ENABLED;
   restore?.();
   restore = null;
 });
@@ -147,7 +148,11 @@ describe("WQ3 12.10: the 15% KSA rate", () => {
     const ok = await uae.as.patch(`/api/companies/${uae.company.id}`, { defaultVatRate: 0.05 });
     expect(ok.status, ok.text).toBe(200);
 
+    // ZATCA (and with it the Saudi 15% rate) is behind ZATCA_ENABLED, off at launch.
     const ksa = await h.createTenant({ name: "WQ3Ksa", companyColumns: { address_country: "SA" } });
+    const ksaOff = await ksa.as.patch(`/api/companies/${ksa.company.id}`, { defaultVatRate: 0.15 });
+    expect(ksaOff.status, ksaOff.text).toBe(422);
+    process.env.ZATCA_ENABLED = "true";
     const ksaOk = await ksa.as.patch(`/api/companies/${ksa.company.id}`, { defaultVatRate: 0.15 });
     expect(ksaOk.status, ksaOk.text).toBe(200);
     const [row] = await h.sql<{ r: string }>(
@@ -155,6 +160,7 @@ describe("WQ3 12.10: the 15% KSA rate", () => {
       [ksa.company.id]
     );
     expect(Number(row.r)).toBe(0.15);
+    delete process.env.ZATCA_ENABLED;
   });
 });
 

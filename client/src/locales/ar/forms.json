@@ -367,5 +367,11 @@
   "forms.serverErrors.DISPOSAL_BEFORE_REMEASUREMENT": "أُعيد تقييم الأصل أو سُجّل له انخفاض في القيمة بعد تاريخ الاستبعاد هذا. ألغِ ذلك أولاً، أو استبعد الأصل في ذلك التاريخ أو بعده.",
   "forms.serverErrors.FX_RATE_OUTSIDE_BAND": "أحد الأسعار المستخدمة في إعادة التقييم يبعد أكثر من 20% عن السعر المرجعي. صحّح السعر، أو اذكر سبباً إن كان صحيحاً.",
   "forms.serverErrors.FX_RATE_OVERRIDE_ROLE_REQUIRED": "إعادة التقييم بسعر خارج نطاق التحقق متاحة للمالك أو المدير أو المحاسب أو المدير المالي فقط.",
-  "forms.serverErrors.FX_RATE_OVERRIDE_REASON_REQUIRED": "اذكر سبباً (5 أحرف على الأقل) لاستخدام سعر خارج نطاق التحقق."
+  "forms.serverErrors.FX_RATE_OVERRIDE_REASON_REQUIRED": "اذكر سبباً (5 أحرف على الأقل) لاستخدام سعر خارج نطاق التحقق.",
+  "forms.serverErrors.ACCOUNT_CODE_TAKEN": "رمز الحساب هذا مستخدم بالفعل. اختر رمزاً آخر.",
+  "forms.serverErrors.VAT_RATE_NOT_FOR_COUNTRY": "يجب أن تكون نسبة الضريبة الافتراضية 0% أو النسبة الأساسية في بلد تسجيل الشركة (5% في الإمارات، و15% في السعودية).",
+  "forms.serverErrors.CT_TREATMENT_ACCOUNT_TYPE": "لا تناسب معاملة ضريبة الشركات هذه الحساب: غير القابل للخصم يخص المصروفات، والدخل المعفى يخص حسابات الإيرادات.",
+  "forms.serverErrors.CONTACT_NOT_FOUND": "جهة الاتصال هذه ليست عميلاً أو مورداً لهذه الشركة.",
+  "forms.serverErrors.INVALID_CT_SHARE": "يجب أن تكون الحصة غير القابلة للخصم أكبر من 0% وألا تتجاوز 100%.",
+  "forms.serverErrors.ZATCA_NOT_AVAILABLE": "الفوترة الإلكترونية لهيئة الزكاة والضريبة والجمارك السعودية غير متاحة في هذه الخدمة."
 }
