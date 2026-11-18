@@ -24,9 +24,9 @@ import {
   grantableRoles,
   normalizeCompanyRole,
   permissionsForRole,
-  zCompanyRole,
   type CompanyRole,
 } from "../../shared/permissions";
+import { zCompanyRole } from "../../shared/validators/company-role";
 import type { CompanyInvitation } from "../../shared/schema";
 
 const log = createLogger("team");

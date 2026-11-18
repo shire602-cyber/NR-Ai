@@ -19,6 +19,7 @@ import { getRate } from "./fx/rates";
 import { fromFils, mulRate } from "../../shared/money";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { generateInvoicePDF } from "./pdf-invoice.service";
+import { resolveEmailLanguage } from "./email-layout";
 import {
   buildReminderEmail,
   sendEmail,
@@ -400,9 +401,8 @@ async function dunOne(args: {
       return;
     }
     const lang =
-      setting.language === "bilingual" &&
-      (contact.preferredLanguage === "en" || contact.preferredLanguage === "ar")
-        ? contact.preferredLanguage
+      setting.language === "bilingual"
+        ? resolveEmailLanguage(null, contact.preferredLanguage, company.locale)
         : (setting.language as EmailLanguage);
     const { subject, html, text } = buildReminderEmail({
       invoice,

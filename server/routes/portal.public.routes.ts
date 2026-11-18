@@ -361,7 +361,7 @@ export function registerPortalPublicRoutes(app: Express) {
         const built = buildPortalCodeEmail({
           companyName: company?.name ?? "Muhasib.ai",
           code: created.code,
-          language: resolveEmailLanguage(null, created.contact.preferredLanguage),
+          language: resolveEmailLanguage(null, created.contact.preferredLanguage, company?.locale),
         });
         await sendEmail(email, built.subject, built.text, {
           html: built.html,

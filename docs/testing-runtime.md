@@ -70,6 +70,13 @@ BASE_URL=http://localhost:<port> CORS_ORIGIN=http://localhost:<port> node dist/i
   `SWEEP_ROUTES`, `SWEEP_CLICKS=false`, `SWEEP_MOBILE=false`, `SWEEP_PALETTE=false` (header of
   `tests/e2e/broken-path-sweep.mjs`). A full run takes 2-3 hours on 4 CPUs; run it under the
   heavy-step lock.
+- Customer links: `BASE_URL=http://localhost:<port> DATABASE_URL=<app db> npm run e2e:customer-links`
+  (`tests/e2e/customer-links-flow.mjs`; local production build with FRONTEND_URL = BASE_URL, no e-mail
+  provider, restart the app between runs). Sends invoice, reminder, quote, statement and EmaraTax
+  approval mail for an English company, an Arabic company and an Arabic-preferring contact, reads
+  it from the outbox, opens every link signed out at iPhone 13 and 1440x900 and checks language,
+  absolute links, console, overflow, 44 px targets, PDF/print and no TRN. Route-level twin:
+  `tests/db/customer-links-flow.test.ts`. `SHOT_DIR` saves screenshots.
 - Core release flows: same target, `npm run e2e:flows` (`tests/e2e/core-flows.mjs`; `FLOWS=id,..`
   and `FLOWS_LANGS` narrow it). Steps in areas still being built are tagged `wip` and reported as
   "in progress" (`FLOWS_STRICT_WIP=true` makes them fail). Report:

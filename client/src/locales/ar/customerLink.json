@@ -28,5 +28,14 @@
   "customerLink.downloadAria": "تنزيل الفاتورة {number} بصيغة PDF",
   "customerLink.downloadXml": "تنزيل الفاتورة الإلكترونية (XML)",
   "customerLink.payAria": "دفع الفاتورة {number}",
-  "customerLink.codeInvalid": "الرمز غير صحيح أو انتهت صلاحيته. يرجى طلب رمز جديد."
+  "customerLink.codeInvalid": "الرمز غير صحيح أو انتهت صلاحيته. يرجى طلب رمز جديد.",
+  "customerLink.invoiceTitle": "فاتورة",
+  "customerLink.invoiceSupplyDate": "تاريخ التوريد",
+  "customerLink.trn": "الرقم الضريبي",
+  "customerLink.statusVoid": "ملغاة",
+  "customerLink.invoicePageTitle": "فاتورة {number} · {company}",
+  "customerLink.invoiceExpiredBody": "انتهت صلاحية رابط هذه الفاتورة. اطلب من المرسل رابطاً جديداً.",
+  "customerLink.invoiceInvalidBody": "تأكد من فتح الرابط كاملاً كما ورد في الرسالة، أو اطلب من المرسل رابطاً جديداً.",
+  "customerLink.einvoiceDelivered": "تم التسليم",
+  "customerLink.invoiceDownload": "تنزيل PDF"
 }

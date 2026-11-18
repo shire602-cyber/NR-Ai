@@ -184,6 +184,10 @@ export function registerInvoiceShareRoutes(app: Express) {
       const payments = paymentsAvailability();
       const openFils =
         invoice.invoiceType === "credit_note" ? 0 : await invoiceOpenFils(db, invoice);
+      // The page opens in the customer's own language, else the browser's, else the company's.
+      const contact = invoice.contactId
+        ? await storage.getCustomerContact(invoice.contactId)
+        : null;
       // Return sanitized data (no internal IDs exposed except what's needed)
       res.json({
         // R16-14: "Pay now" only when a gateway is live/sandbox and something is owed.
@@ -195,6 +199,8 @@ export function registerInvoiceShareRoutes(app: Express) {
         einvoice: invoice.einvoiceStatus
           ? { status: invoice.einvoiceStatus, uuid: invoice.einvoiceUuid ?? null }
           : null,
+        preferredLanguage: contact?.preferredLanguage ?? null,
+        companyLocale: company.locale === "ar" ? "ar" : "en",
         invoice: {
           number: invoice.number,
           customerName: invoice.customerName,
@@ -335,7 +341,7 @@ export function registerInvoiceShareRoutes(app: Express) {
         : null;
       const result = await sendInvoiceEmail(to, invoice, company, pdfBuffer, subject, message, {
         throwOnFailure: false,
-        language: resolveEmailLanguage(language, customer?.preferredLanguage),
+        language: resolveEmailLanguage(language, customer?.preferredLanguage, company.locale),
         portalUrl: shareUrl,
         payUrl: shareUrl && paymentsAvailability().available ? shareUrl : null,
       });
@@ -425,7 +431,7 @@ export function registerInvoiceShareRoutes(app: Express) {
           // "Pay now" only when online payment is actually available; else "View invoice".
           payUrl: paymentsAvailability().available ? shareUrl : null,
           portalUrl: shareUrl,
-          language: resolveEmailLanguage(null, customer?.preferredLanguage),
+          language: resolveEmailLanguage(null, customer?.preferredLanguage, company.locale),
           throwOnFailure: false,
         }
       );

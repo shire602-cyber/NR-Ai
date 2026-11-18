@@ -535,7 +535,7 @@ export function registerPortalRoutes(app: Express) {
           closingBalance: s.closingBalance,
         })),
         message: body.message ?? null,
-        language: resolveEmailLanguage(body.language, customer?.preferredLanguage),
+        language: resolveEmailLanguage(body.language, customer?.preferredLanguage, company?.locale),
       });
       const result = await sendEmail(to, built.subject, built.text, {
         html: built.html,

@@ -91,17 +91,19 @@ export function pickText(block: BilingualBlock, language: EmailLanguage): string
 }
 
 /**
- * The language to write in: an explicit choice wins, then the customer's own language,
- * then both (a UAE customer's preference is unknown until the firm records it).
+ * The language to write in: an explicit choice wins, then the customer's own language, then an
+ * Arabic company's language (its customers are written to in Arabic), else both (a UAE
+ * customer's preference is unknown until the firm records it).
  */
 export function resolveEmailLanguage(
   explicit?: string | null,
-  customerPreferred?: string | null
+  customerPreferred?: string | null,
+  companyLocale?: string | null
 ): EmailLanguage {
   for (const v of [explicit, customerPreferred]) {
     if (v === "en" || v === "ar" || v === "bilingual") return v;
   }
-  return "bilingual";
+  return companyLocale === "ar" ? "ar" : "bilingual";
 }
 
 /** A name or number inside a sentence of the other direction keeps its own order. */

@@ -28,6 +28,7 @@ import { DomainError } from "../errors";
 import { recordAudit } from "../services/audit.service";
 import { enqueueEmail } from "../outbox";
 import { buildApproverDoneEmail, buildApproverRequestEmail } from "../services/email.service";
+import { resolveEmailLanguage } from "../services/email-layout";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { portalGuard, notePortalFailure } from "./portal.public.routes";
@@ -222,6 +223,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
             companyName: company.name,
             approverName: link.approverName,
             url,
+            language: resolveEmailLanguage(null, null, company.locale),
           });
           await enqueueEmail({
             to: link.approverEmail,
@@ -319,12 +321,14 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
       const done = state === "completed" ? link : await completeApproverLink(link);
       if (state === "active") {
         const view = await publicApproverView(done);
+        const doneCompany = await storage.getCompany(done.companyId);
         for (const to of await approverNotifyRecipients(done)) {
           try {
             const built = buildApproverDoneEmail({
               companyName: view.companyName,
               who: done.approverName || done.approverEmail || null,
               settingsUrl: `${appBaseUrl()}/settings/einvoicing`,
+              language: resolveEmailLanguage(null, null, doneCompany?.locale),
             });
             await enqueueEmail({
               to,

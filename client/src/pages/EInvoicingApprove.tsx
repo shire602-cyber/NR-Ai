@@ -211,6 +211,7 @@ export default function EInvoicingApprove() {
                     })}
                   </StatusBadge>
                   <Button
+                    className="min-h-11"
                     onClick={() => done.mutate()}
                     disabled={done.isPending}
                     data-testid="approve-done"

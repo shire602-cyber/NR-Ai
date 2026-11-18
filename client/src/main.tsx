@@ -1,7 +1,5 @@
 import type { ComponentType } from "react";
 import { createRoot } from "react-dom/client";
-// Keep first: zod must be configured (jitless, no eval) before any schema is built.
-import "@/lib/zod-config";
 // Self-hosted fonts (Fontsource) — no external Google Fonts dependency, so the
 // app never blocks on, nor leaks the user's IP to, a third-party CDN. One Latin
 // family (Geist Sans; display is the same family) plus Geist Mono for code/IDs;
@@ -18,6 +16,7 @@ import "./index.css";
 import { registerServiceWorker } from "@/lib/pwa";
 import { hasAuthHint } from "@/lib/authHint";
 import {
+  isCustomerLinkPath,
   isLocaleLoaded,
   isPublicPath,
   loadLocale,
@@ -49,8 +48,18 @@ function customerLinkChunk(path: string): (() => Promise<unknown>) | undefined {
   if (/^\/portal\/einvoicing-approve\/[^/]+\/?$/.test(path))
     return () => import("@/pages/EInvoicingApprove");
   if (/^\/portal\/[^/]+\/?$/.test(path)) return () => import("@/pages/CustomerPortal");
+  if (/^\/view\/invoice\/[^/]+\/?$/.test(path)) return () => import("@/pages/PublicInvoiceView");
   return undefined;
 }
+
+// zod must be configured (jitless, no eval) before any module builds a schema. The landing page,
+// pricing and the no-login e-mail links (portal, invoice, approver) build none, so they never
+// download zod; every other first page loads the configuration first (a few ms: the same chunk
+// the form pages need anyway) and then its root and page chunk. PublicApp does the same before
+// it lazily opens a form page after a client-side navigation.
+const zodFree =
+  publicShell && (pathname === "/" || pathname === "/pricing" || isCustomerLinkPath(pathname));
+const zodReady: Promise<unknown> = zodFree ? Promise.resolve() : import("@/lib/zod-config");
 
 const loadRoot: () => Promise<{ default: ComponentType }> = publicShell
   ? () => import("./PublicApp")
@@ -62,10 +71,12 @@ const loadRoot: () => Promise<{ default: ComponentType }> = publicShell
 // catalog chunk still renders (keys fall back).
 setPublicBootScope(publicShell ? pathname : "/__app");
 void Promise.all([
-  loadRoot(),
+  zodReady.then(loadRoot),
   loadLocaleForPath(locale, publicShell ? pathname : "/__app").catch(() => undefined),
   publicShell
-    ? (PUBLIC_ROUTE_CHUNKS[pathname] ?? customerLinkChunk(pathname))?.().catch(() => undefined)
+    ? zodReady.then(() =>
+        (PUBLIC_ROUTE_CHUNKS[pathname] ?? customerLinkChunk(pathname))?.().catch(() => undefined)
+      )
     : undefined,
 ]).then(([{ default: Root }]) => {
   createRoot(document.getElementById("root")!).render(<Root />);

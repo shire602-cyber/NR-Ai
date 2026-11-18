@@ -20,22 +20,33 @@ import { isCustomerLinkPath, isPublicPath, useI18n } from "@/lib/i18n";
  * the session; it owns every public route as well, so nothing is lost.
  */
 
+/**
+ * Form pages build zod schemas when their chunk is evaluated, so the zod configuration (no eval,
+ * see lib/zod-config) must be evaluated first. The landing page, pricing and the no-login
+ * links need no zod and never load it.
+ */
+const afterZod =
+  <T,>(load: () => Promise<T>) =>
+  () =>
+    import("@/lib/zod-config").then(load);
+
 const LandingPage = lazyWithReload(() => import("@/pages/MuhasibLanding"));
 const Pricing = lazyWithReload(() => import("@/pages/Pricing"));
-const Services = lazyWithReload(() => import("@/pages/Services"));
-const DemoWorkspace = lazyWithReload(() => import("@/pages/DemoWorkspace"));
-const HelpCenter = lazyWithReload(() => import("@/pages/HelpCenter"));
-const TrustSecurity = lazyWithReload(() => import("@/pages/TrustSecurity"));
-const MigrationGuides = lazyWithReload(() => import("@/pages/MigrationGuides"));
-const PrivacyPolicy = lazyWithReload(() => import("@/pages/PrivacyPolicy"));
-const TermsOfService = lazyWithReload(() => import("@/pages/TermsOfService"));
-const CookiePolicy = lazyWithReload(() => import("@/pages/CookiePolicy"));
-const Login = lazyWithReload(() => import("@/pages/Login"));
-const Register = lazyWithReload(() => import("@/pages/Register"));
-const ForgotPassword = lazyWithReload(() => import("@/pages/ForgotPassword"));
-const ResetPassword = lazyWithReload(() => import("@/pages/ResetPassword"));
+const Services = lazyWithReload(afterZod(() => import("@/pages/Services")));
+const DemoWorkspace = lazyWithReload(afterZod(() => import("@/pages/DemoWorkspace")));
+const HelpCenter = lazyWithReload(afterZod(() => import("@/pages/HelpCenter")));
+const TrustSecurity = lazyWithReload(afterZod(() => import("@/pages/TrustSecurity")));
+const MigrationGuides = lazyWithReload(afterZod(() => import("@/pages/MigrationGuides")));
+const PrivacyPolicy = lazyWithReload(afterZod(() => import("@/pages/PrivacyPolicy")));
+const TermsOfService = lazyWithReload(afterZod(() => import("@/pages/TermsOfService")));
+const CookiePolicy = lazyWithReload(afterZod(() => import("@/pages/CookiePolicy")));
+const Login = lazyWithReload(afterZod(() => import("@/pages/Login")));
+const Register = lazyWithReload(afterZod(() => import("@/pages/Register")));
+const ForgotPassword = lazyWithReload(afterZod(() => import("@/pages/ForgotPassword")));
+const ResetPassword = lazyWithReload(afterZod(() => import("@/pages/ResetPassword")));
 const CustomerPortal = lazyWithReload(() => import("@/pages/CustomerPortal"));
 const EInvoicingApprove = lazyWithReload(() => import("@/pages/EInvoicingApprove"));
+const PublicInvoiceView = lazyWithReload(() => import("@/pages/PublicInvoiceView"));
 const LinkProviders = lazy(() => import("@/components/customer-link/LinkProviders"));
 const PublicProviders = lazy(() => import("@/components/marketing/PublicProviders"));
 const FullApp = lazyWithReload(() => import("./App"));
@@ -76,6 +87,7 @@ function PublicRoutes() {
       {/* No-login e-mail links: the approver page first (it also matches /portal/:token). */}
       <Route path="/portal/einvoicing-approve/:token" component={EInvoicingApprove} />
       <Route path="/portal/:token" component={CustomerPortal} />
+      <Route path="/view/invoice/:token" component={PublicInvoiceView} />
     </Switch>
   );
 }

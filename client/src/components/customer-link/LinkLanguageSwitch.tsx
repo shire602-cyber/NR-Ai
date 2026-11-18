@@ -17,7 +17,7 @@ export function LinkLanguageSwitch({ testId }: { testId: string }) {
     <Button
       variant="ghost"
       size="sm"
-      className="print:hidden"
+      className="min-h-11 print:hidden"
       data-testid={testId}
       title={t["customerLink.switchLanguageTitle"]}
       onClick={() => {
