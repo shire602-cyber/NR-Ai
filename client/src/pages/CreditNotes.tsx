@@ -600,7 +600,12 @@ export default function CreditNotes() {
                     render={({ field }) => (
                       <FormItem>
                         <FormControl>
-                          <Input {...field} placeholder={t.description} />
+                          <Input
+                            {...field}
+                            dir="auto"
+                            aria-label={t.description}
+                            placeholder={t.description}
+                          />
                         </FormControl>
                       </FormItem>
                     )}

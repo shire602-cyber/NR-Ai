@@ -96,7 +96,8 @@ import { LineCostCentrePicker } from "@/components/invoices/LineCostCentrePicker
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useCostCentres } from "@/hooks/useCostCentres";
 import { useUnsavedChangesGuard } from "@/hooks/useUnsavedChangesGuard";
-import { useTaxReadyPrompt } from "@/components/einvoice/use-tax-ready-prompt";
+import { shouldOpenTaxReady } from "@/components/einvoice/use-tax-ready-prompt";
+import { taxReadyKey, type TaxReadyState } from "@/components/einvoice/tax-identity";
 import { uploadInvoiceAttachment } from "@/lib/invoice-documents";
 import { blockingCount, einvoiceChecks, invoiceFormChecks } from "@/lib/invoice-checks";
 import { dueDateFromTerms, termsFromDays } from "@shared/sales-documents";
@@ -1289,11 +1290,29 @@ export default function Invoices() {
   const editorDirty = form.formState.isDirty || pendingAttachments.length > 0;
   const leaveGuard = useUnsavedChangesGuard(editorOpen && editorDirty && !saving);
   const isIssued = !!editingInvoice && editingInvoice.status !== "draft";
-  // WQ5 (mounted by WQ1): before the first invoice is finalised, ask once for the seller's
-  // missing e-invoice identity fields.
-  const taxReady = useTaxReadyPrompt(selectedCompanyId, {
-    enabled: editorOpen && !editingInvoice,
-  });
+  // WQ5 (mounted by WQ1): "Save and issue" on a new invoice first asks, once per company, for
+  // the seller's missing e-invoice identity fields; Save or Later continues the issue.
+  const [taxPrompt, setTaxPrompt] = useState<TaxReadyState | null>(null);
+  const finalise = () => void form.handleSubmit((data) => onSubmit(data, true))();
+  const onFinaliseClick = async () => {
+    if (!editingInvoice && selectedCompanyId) {
+      try {
+        const state = await queryClient.fetchQuery<TaxReadyState>({
+          queryKey: taxReadyKey(selectedCompanyId),
+          queryFn: () =>
+            apiRequest("GET", `/api/companies/${selectedCompanyId}/einvoicing/tax-ready`),
+          staleTime: 60_000,
+        });
+        if (shouldOpenTaxReady(state)) {
+          setTaxPrompt(state);
+          return;
+        }
+      } catch {
+        // The prompt is a convenience: issuing never waits on it.
+      }
+    }
+    finalise();
+  };
 
   const filteredInvoices = useMemo(() => {
     if (!invoices || invoices.length === 0) return [];
@@ -1496,7 +1515,7 @@ export default function Invoices() {
                   ? formatMessage(t["invoices.finalise.blocked"], { count: blockingChecks })
                   : undefined
               }
-              onClick={() => void form.handleSubmit((data) => onSubmit(data, true))()}
+              onClick={() => void onFinaliseClick()}
               data-testid="button-finalise-invoice"
             >
               {t["invoices.finalise.action"]}
@@ -2081,9 +2100,17 @@ export default function Invoices() {
           </div>
         </form>
       </Form>
-      {taxReady.open && (
+      {taxPrompt && selectedCompanyId && (
         <Suspense fallback={null}>
-          <TaxReadyModal {...taxReady.modalProps} />
+          <TaxReadyModal
+            open
+            companyId={selectedCompanyId}
+            state={taxPrompt}
+            onDone={() => {
+              setTaxPrompt(null);
+              finalise();
+            }}
+          />
         </Suspense>
       )}
       {leaveGuard.pending && (

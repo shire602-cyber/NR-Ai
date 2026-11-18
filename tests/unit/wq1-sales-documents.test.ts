@@ -306,7 +306,7 @@ describe("WQ1 invoice editor", () => {
     expect(apiCalls("POST").filter((c) => c.url === `${C}/invoices`)).toEqual([]);
   });
 
-  it("a new invoice asks once for missing e-invoice seller details (WQ5 prompt)", async () => {
+  it("Save and issue on a new invoice first asks for missing e-invoice seller details (WQ5 prompt)", async () => {
     setFixtures({
       [`${C}/invoices?limit=50`]: { items: [], nextCursor: null },
       [`${C}/einvoicing/tax-ready`]: {
@@ -329,8 +329,20 @@ describe("WQ1 invoice editor", () => {
       },
     });
     await openNewInvoice();
+    // Not on opening the editor: only when the user issues.
+    expect(byTestId("tax-ready-modal")).toBeNull();
+    await type(byTestId("input-customer-name"), "Harbor Design Studio");
+    await type(byTestId("input-line-description-0"), "Brand workshop");
+    await type(byTestId("input-line-price-0"), "800");
+    await flush();
+    await click(byTestId("button-finalise-invoice"));
     await flushUntil(() => !!byTestId("tax-ready-modal"));
     expect(byTestId("tax-ready-modal")).not.toBeNull();
+    expect(apiCalls("POST").filter((c) => c.url === `${C}/invoices`)).toEqual([]);
+    // "Later" records it and the issue goes on.
+    await click(byTestId("tax-ready-later"));
+    await flushUntil(() => apiCalls("PATCH").length > 0);
+    expect(apiCalls("PATCH").map((c) => c.url)).toEqual(["/api/invoices/new-id/status"]);
   });
 
   it("the source filter asks the server for API invoices only (13.5)", async () => {
