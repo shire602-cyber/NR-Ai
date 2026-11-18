@@ -361,6 +361,7 @@ async function harvestUserWords(token, companyId) {
     "/projects",
     "/team",
     "/einvoicing/partner",
+    "/ai-gl/queue",
     "/invoices?all=true",
     "/payroll-runs",
     "/report-delivery/subscriptions",
