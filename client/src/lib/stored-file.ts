@@ -1,5 +1,6 @@
-// Stored-file helpers: read a file the server holds (document vault) as a Blob, and turn a picked
-// File into a base64 data URL for the JSON upload contract. Used by the admin documents page.
+// Download a file the server holds (document vault) with its stored name. Viewing a stored file
+// in a tab is `openStoredFile` in purchase-files.ts; reading a picked File as a data URL is
+// `readFileAsDataUrl` there too.
 import { apiUrl } from "./api";
 import { getAuthHeaders } from "./auth";
 import { triggerBlobDownload } from "./export";
@@ -25,7 +26,7 @@ function filenameFrom(disposition: string | null, fallback: string): string {
 }
 
 /** GET a stored file with the session credentials; throws StoredFileError when it is missing. */
-export async function fetchStoredFile(
+export async function fetchStoredBlob(
   url: string,
   fallbackName = "document"
 ): Promise<{ blob: Blob; filename: string }> {
@@ -48,29 +49,6 @@ export async function fetchStoredFile(
 
 /** Download a stored file through the browser's save flow. */
 export async function downloadStoredFile(url: string, fallbackName?: string): Promise<void> {
-  const { blob, filename } = await fetchStoredFile(url, fallbackName);
+  const { blob, filename } = await fetchStoredBlob(url, fallbackName);
   await triggerBlobDownload(blob, filename);
-}
-
-/** Open a stored file in a new tab (the browser renders PDFs and images inline). */
-export async function openStoredFile(url: string): Promise<void> {
-  const { blob } = await fetchStoredFile(url);
-  const objectUrl = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = objectUrl;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
-}
-
-export function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error ?? new Error("Could not read the file"));
-    reader.readAsDataURL(file);
-  });
 }

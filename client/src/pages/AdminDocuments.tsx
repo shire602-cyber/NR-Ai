@@ -38,7 +38,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { downloadStoredFile, fileToDataUrl, openStoredFile } from "@/lib/stored-file";
+import { downloadStoredFile } from "@/lib/stored-file";
+import { openStoredFile, readFileAsDataUrl } from "@/lib/purchase-files";
 import {
   Upload,
   FileText,
@@ -161,7 +162,7 @@ export default function AdminDocuments() {
         reminderDays: data.reminderDays,
         fileName: data.file.name,
         mimeType: data.file.type || undefined,
-        fileData: await fileToDataUrl(data.file),
+        fileData: await readFileAsDataUrl(data.file),
       });
     },
     onSuccess: () => {

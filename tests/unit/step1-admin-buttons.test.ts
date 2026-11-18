@@ -165,8 +165,8 @@ describe("STEP1 F6: audit log search, filter and export", () => {
 });
 
 describe("STEP1 F6: stored documents are read through the vault download", () => {
-  it("fetchStoredFile requests the file with credentials and reports a missing file", async () => {
-    const { fetchStoredFile, StoredFileError } = await import("../../client/src/lib/stored-file");
+  it("fetchStoredBlob requests the file with credentials and reports a missing file", async () => {
+    const { fetchStoredBlob, StoredFileError } = await import("../../client/src/lib/stored-file");
     const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
     fetchMock.mockResolvedValueOnce(
       new Response("%PDF-1.4", {
@@ -174,13 +174,13 @@ describe("STEP1 F6: stored documents are read through the vault download", () =>
         headers: { "Content-Disposition": 'attachment; filename="licence.pdf"' },
       })
     );
-    const ok = await fetchStoredFile("/api/documents/d1/download");
+    const ok = await fetchStoredBlob("/api/documents/d1/download");
     expect(ok.filename).toBe("licence.pdf");
     expect(await ok.blob.text()).toBe("%PDF-1.4");
     expect(fetchMock.mock.calls.at(-1)?.[1]).toMatchObject({ credentials: "include" });
 
     fetchMock.mockResolvedValueOnce(json({ message: "File not found" }, 404));
-    await expect(fetchStoredFile("/api/documents/legacy/download")).rejects.toBeInstanceOf(
+    await expect(fetchStoredBlob("/api/documents/legacy/download")).rejects.toBeInstanceOf(
       StoredFileError
     );
   });
@@ -191,7 +191,7 @@ describe("STEP1 F6: stored documents are read through the vault download", () =>
     const src = readFileSync("client/src/pages/AdminDocuments.tsx", "utf8");
     expect(src).toMatch(/onClick=\{\(\) => void openStored\(doc, "view"\)\}/);
     expect(src).toMatch(/onClick=\{\(\) => void openStored\(doc, "download"\)\}/);
-    expect(src).toContain("fileData: await fileToDataUrl(data.file)");
+    expect(src).toContain("fileData: await readFileAsDataUrl(data.file)");
     expect(src).not.toContain("/uploads/${data.fileName}");
     expect(src).not.toMatch(/MMM d, yyyy/);
   });
