@@ -16,6 +16,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { apiUrl } from "@/lib/api";
+import { serverErrorMessage } from "@/lib/validation-messages";
 import { OAuthButtons } from "./OAuthButtons";
 import { AUTH_BUTTON, AUTH_INPUT, AuthAlert, AuthHeader, AuthSwitch } from "./AuthBlocks";
 
@@ -99,7 +100,7 @@ export function LoginForm({ onSuccess, notice }: LoginFormProps) {
         const failure = new Error(
           error?.code === "INVALID_CREDENTIALS"
             ? t["components.authInvalidCredentials"]
-            : error?.message || t["components.authLoginFailed"]
+            : serverErrorMessage(error, t["components.authLoginFailed"])
         );
         throw failure;
       }

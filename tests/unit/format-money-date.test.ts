@@ -12,7 +12,13 @@ import {
   formatPercentDelta,
   stripBidiControls,
 } from "../../client/src/lib/format-money";
-import { formatDate, formatDateRange, formatMonthYear } from "../../client/src/lib/format-date";
+import {
+  displayObligationTitle,
+  formatDate,
+  formatDateRange,
+  formatEmbeddedDates,
+  formatMonthYear,
+} from "../../client/src/lib/format-date";
 import { formatCurrency } from "../../client/src/lib/format";
 
 describe("formatMoneyParts", () => {
@@ -143,5 +149,42 @@ describe("formatDateRange", () => {
     const text = formatDateRange("2026-11-01", "2026-11-16", "ar");
     expect(text).toMatch(/^1–16 \S+ 2026$/);
     expect(text).not.toMatch(/[٠-٩]/);
+  });
+});
+
+describe("B6: machine dates inside server text", () => {
+  it("formats compliance calendar titles in the firm practice period style", () => {
+    expect(displayObligationTitle("VAT return 2026-07-01 to 2026-09-30", "en")).toBe(
+      "VAT return, 1 Jul – 30 Sep 2026"
+    );
+    expect(displayObligationTitle("Corporate tax return FY 2026-01-01 to 2026-12-31", "en")).toBe(
+      "Corporate tax return, 1 Jan – 31 Dec 2026"
+    );
+    expect(displayObligationTitle("Pay 2026-11 salaries through WPS", "en")).toBe(
+      "Pay Nov 2026 salaries through WPS"
+    );
+    expect(displayObligationTitle("Renew trade licence (expires 2027-03-01)", "en")).toBe(
+      "Renew trade licence (expires 1 Mar 2027)"
+    );
+    const ar = displayObligationTitle("إقرار ضريبة القيمة المضافة 2026-07-01 إلى 2026-09-30", "ar");
+    expect(ar).toMatch(/^إقرار ضريبة القيمة المضافة، 1 \S+ – 30 \S+ 2026$/);
+    expect(displayObligationTitle("دفع رواتب 2026-11 عبر نظام حماية الأجور", "ar")).not.toMatch(
+      /\d{4}-\d{2}/
+    );
+    expect(displayObligationTitle("Register for corporate tax", "en")).toBe(
+      "Register for corporate tax"
+    );
+  });
+
+  it("leaves document numbers alone and formats free-standing dates", () => {
+    expect(formatEmbeddedDates("Computed 2026-11-17", "en")).toBe("Computed 17 Nov 2026");
+    expect(formatEmbeddedDates("Payroll 2026-11", "en")).toBe("Payroll Nov 2026");
+    expect(formatEmbeddedDates("VAT return payment 2026-07-01 to 2026-09-30", "en")).toBe(
+      "VAT return payment 1 Jul – 30 Sep 2026"
+    );
+    expect(formatEmbeddedDates("Invoice INV-2026-01 – Acme", "en")).toBe(
+      "Invoice INV-2026-01 – Acme"
+    );
+    expect(formatEmbeddedDates("Ref 2026-11-17T10:00:00Z", "en")).toBe("Ref 2026-11-17T10:00:00Z");
   });
 });

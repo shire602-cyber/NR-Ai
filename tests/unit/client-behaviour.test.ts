@@ -153,6 +153,15 @@ describe("WP-D VAT 201 workbook (spec 3.12)", () => {
     expect(summary).toContain("500.00");
     expect(summary).toContain("100.00");
     expect(summary).toContain("400.00");
+    // B4: the phone summary is one row of boxes 12, 13 and 14 (dd = figure), kept to three
+    // columns on mobile (`mobile-keep-cols` opts out of mobile.css's one-column grids).
+    const compact = container.querySelector('[data-testid="vat201-summary-compact"]');
+    expect(compact?.classList.contains("mobile-keep-cols")).toBe(true);
+    expect([...(compact?.querySelectorAll("dd") ?? [])].map((d) => d.textContent)).toEqual([
+      "500.00",
+      "100.00",
+      "400.00",
+    ]);
   });
 });
 

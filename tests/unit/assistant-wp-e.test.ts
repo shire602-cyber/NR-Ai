@@ -198,3 +198,81 @@ describe("Review panel", () => {
     expect(container.querySelector('[data-testid="review-item-q1"]')).toBeNull();
   });
 });
+
+describe("Ask panel sign-off fixes (B1-B3)", () => {
+  async function render(overrides: Record<string, () => Response> = {}) {
+    const base = globalThis.fetch as unknown as (input: RequestInfo | URL) => Promise<Response>;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : String(input);
+        for (const [needle, respond] of Object.entries(overrides)) {
+          if (url.includes(needle)) return respond();
+        }
+        return base(input);
+      })
+    );
+    const { queryClient } = await import("../../client/src/lib/queryClient");
+    const { default: AskPanel } = await import("../../client/src/pages/assistant/AskPanel");
+    queryClient.clear();
+    await act(async () => {
+      root.render(
+        createElement(QueryClientProvider, { client: queryClient }, createElement(AskPanel))
+      );
+    });
+    await flush();
+  }
+
+  it("B3: when the assistant is not switched on, says so up front with no chips and a disabled composer", async () => {
+    await render({ "/api/ai/status": () => json({ configured: false }) });
+    const notice = container.querySelector('[data-testid="assistant-unavailable"]');
+    expect(notice?.textContent).toContain("not switched on");
+    expect(notice?.querySelector("a")?.getAttribute("href")).toBe("/reports");
+    expect(container.querySelector('[data-testid="assistant-suggestions"]')).toBeNull();
+    expect(
+      container.querySelector<HTMLTextAreaElement>('[data-testid="assistant-input"]')?.disabled
+    ).toBe(true);
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-testid="assistant-send"]')?.disabled
+    ).toBe(true);
+  });
+
+  it("B3: a switched-on assistant shows chips and no notice; a failed answer is a danger alert", async () => {
+    await render({
+      "/api/ai/status": () => json({ configured: true }),
+      "/ai/nl-gateway": () =>
+        new Response(JSON.stringify({ message: "boom" }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+    expect(container.querySelector('[data-testid="assistant-unavailable"]')).toBeNull();
+    const chip = container.querySelector<HTMLButtonElement>(
+      '[data-testid="assistant-suggestions"] button'
+    );
+    await act(async () => chip!.click());
+    await flush();
+    const failed = container.querySelector('[data-testid="assistant-answer-failed"]');
+    expect(failed?.getAttribute("data-tone")).toBe("danger");
+    expect(failed?.textContent).toContain("could not be prepared");
+  });
+
+  it("B1/B2: the figures table fits a phone and only four chips show below md", async () => {
+    // jsdom has no layout, so the phone behaviour is asserted through the classes that
+    // drive it: `.mobile-fit` opts out of mobile.css's 600 px table minimum (the cause of
+    // B1) and rows stack under 480 px; chips five and six are hidden below md (B2).
+    await render();
+    const chips = [
+      ...container.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="assistant-suggestions"] button'
+      ),
+    ];
+    expect(chips.slice(0, 4).every((c) => !c.className.includes("max-md:hidden"))).toBe(true);
+    expect(chips.slice(4).every((c) => c.className.includes("max-md:hidden"))).toBe(true);
+    await act(async () => chips[0].click());
+    await flush();
+    const table = container.querySelector('[data-testid="assistant-figures"]');
+    expect(table?.classList.contains("mobile-fit")).toBe(true);
+    expect(table?.querySelector("tr")?.className).toContain("max-[479px]:flex-col");
+  });
+});

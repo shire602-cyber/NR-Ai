@@ -46,7 +46,11 @@ import {
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/format";
-import { formatDate as formatDisplayDate } from "@/lib/format-date";
+import {
+  formatDate as formatDisplayDate,
+  formatDateRange,
+  formatEmbeddedDates,
+} from "@/lib/format-date";
 import { localizeEvidenceText } from "@shared/server-copy";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type {
@@ -151,8 +155,9 @@ export default function EvidenceCenter() {
   const [requestAcknowledged, setRequestAcknowledged] = useState(false);
 
   /** Server sentence in the active language: stable key + params from the payload, else the English text. */
+  // B6: server sentences carry ISO dates ("Computed 2026-11-17"); show them formatted.
   const ev = (text: string, copy?: EvidenceCopyRef | null) =>
-    localizeEvidenceText(text, t, copy ?? null);
+    formatEmbeddedDates(localizeEvidenceText(text, t, copy ?? null), locale);
   /** Enum-like value (status, category, entity type) from the catalog; humanised when unknown. */
   const st = (value: string | null | undefined) => {
     const slug = String(value ?? "").trim();
@@ -473,9 +478,13 @@ export default function EvidenceCenter() {
           <CardContent className="space-y-2 text-sm">
             {ctPack.ctReturn ? (
               <p className="text-muted-foreground">
-                {ctPack.ctReturn.taxPeriodStart} – {ctPack.ctReturn.taxPeriodEnd} ·{" "}
-                {st(ctPack.ctReturn.status)} · <T k="compliance.ctPackDue" />{" "}
-                {ctPack.ctReturn.filingDeadline}
+                {formatDateRange(
+                  ctPack.ctReturn.taxPeriodStart,
+                  ctPack.ctReturn.taxPeriodEnd,
+                  locale
+                )}{" "}
+                · {st(ctPack.ctReturn.status)} · <T k="compliance.ctPackDue" />{" "}
+                {formatDate(ctPack.ctReturn.filingDeadline)}
               </p>
             ) : (
               <p className="text-muted-foreground">

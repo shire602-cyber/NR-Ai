@@ -161,6 +161,8 @@ interface RouteLimit {
   windowMs: number;
   max: number;
   message: string;
+  /** Client catalog key for `message` (`components.authErrors.*` / `forms.serverErrors.*`), so it is shown localised (B14). */
+  messageKey?: string;
   /** Routes where the limiter must NOT apply (e.g., GET-only views can be skipped). */
   skipMethods?: Array<"GET" | "HEAD" | "OPTIONS">;
   /** Custom escape hatch — return true to exempt a request from this limiter. */
@@ -214,6 +216,7 @@ export function buildLimiter(cfg: RouteLimit) {
       res.status(429).json({
         message: cfg.message,
         code: "RATE_LIMITED",
+        ...(cfg.messageKey ? { messageKey: cfg.messageKey } : {}),
         details: { retryAfterSeconds: retryAfter },
       });
     },
@@ -242,21 +245,25 @@ export const limiterProfiles = {
     windowMs: envInt("RL_AUTH_WINDOW_MS", 60_000),
     max: envInt("RL_AUTH_MAX", 5),
     message: "Too many authentication attempts. Please wait 1 minute.",
+    messageKey: "components.authErrors.authRateLimited",
   } as RouteLimit,
   authOAuth: {
     windowMs: envInt("RL_AUTH_OAUTH_WINDOW_MS", 5 * 60_000),
     max: envInt("RL_AUTH_OAUTH_MAX", 30),
     message: "Too many social login attempts. Please try again shortly.",
+    messageKey: "components.authErrors.authRateLimited",
   } as RouteLimit,
   ai: {
     windowMs: envInt("RL_AI_WINDOW_MS", 60_000),
     max: envInt("RL_AI_MAX", 20),
     message: "AI rate limit exceeded. Please try again later.",
+    messageKey: "forms.serverErrors.aiRateLimited",
   } as RouteLimit,
   ocrCompany: {
     windowMs: envInt("RL_OCR_COMPANY_WINDOW_MS", 60_000),
     max: envInt("RL_OCR_COMPANY_MAX", 30),
     message: "Too many receipt scans for this company. Please try again shortly.",
+    messageKey: "forms.serverErrors.ocrRateLimited",
   } as RouteLimit,
   read: {
     // GET-heavy dashboards fire 8-15 requests per page view, so the ceiling

@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Money } from "@/components/ui/money";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
 import { apiRequest } from "@/lib/queryClient";
 import { VatInputTrnWarnings, type VatIssueLike } from "./VatInputTrnWarnings";
 import { VatTiesToGl } from "@/components/reports/TiesToGlBadge";
@@ -30,7 +31,7 @@ export function VatPeriodPreview({
   periodEnd: string;
   compact?: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { data, isLoading, isError } = useQuery<{
     boxes?: VatPreviewBoxes;
     issues?: VatIssueLike[];
@@ -58,7 +59,9 @@ export function VatPeriodPreview({
           {t["compliance.vatPreview.badge"]}
         </Badge>
         <span className="text-caption text-muted-foreground">
-          {formatMessage(t["compliance.vatPreview.endsOn"], { date: periodEnd })}
+          {formatMessage(t["compliance.vatPreview.endsOn"], {
+            date: formatDate(periodEnd, locale),
+          })}
         </span>
       </div>
       {isLoading ? (

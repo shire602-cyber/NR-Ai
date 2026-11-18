@@ -165,15 +165,28 @@ export function SettlementTab({ companyId }: { companyId: string }) {
   const field = (key: keyof typeof form, label: string, type = "text") => (
     <div className="space-y-1">
       <Label htmlFor={`set-${key}`}>{tx(label)}</Label>
-      <Input
-        id={`set-${key}`}
-        type={type}
-        value={form[key]}
-        onChange={(e) => {
-          setForm({ ...form, [key]: e.target.value });
-          setPreview(null);
-        }}
-      />
+      {type === "date" ? (
+        // B7: the shared picker ("18 Nov 2026"), never the browser's native mm/dd/yyyy input.
+        <DatePicker
+          id={`set-${key}`}
+          value={form[key]}
+          onChange={(value) => {
+            setForm({ ...form, [key]: value });
+            setPreview(null);
+          }}
+          data-testid={`input-settlement-${key}`}
+        />
+      ) : (
+        <Input
+          id={`set-${key}`}
+          type={type}
+          value={form[key]}
+          onChange={(e) => {
+            setForm({ ...form, [key]: e.target.value });
+            setPreview(null);
+          }}
+        />
+      )}
     </div>
   );
 

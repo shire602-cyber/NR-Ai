@@ -411,10 +411,16 @@ function genericRegisterBody() {
   };
 }
 
-function retryAfterBody(message: string, code: string, retryAfterMs: number) {
+/**
+ * 429 body for the credential throttles. `messageKey` names the client catalog entry
+ * (`components.authErrors.*` / `forms.serverErrors.*`) so the sentence is shown in the user's language (B14); `message`
+ * stays the English text for API clients.
+ */
+function retryAfterBody(message: string, code: string, retryAfterMs: number, messageKey: string) {
   return {
     message,
     code,
+    messageKey,
     details: { retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)) },
   };
 }
@@ -612,7 +618,8 @@ export function registerAuthRoutes(app: Express): void {
             retryAfterBody(
               "Too many failed sign-in attempts for this email. Please wait before trying again.",
               "ACCOUNT_LOCKED",
-              lock.retryAfterMs
+              lock.retryAfterMs,
+              "components.authErrors.loginLocked"
             )
           );
       }
@@ -679,7 +686,8 @@ export function registerAuthRoutes(app: Express): void {
             retryAfterBody(
               "Too many invalid codes. Please wait before trying again.",
               "ACCOUNT_LOCKED",
-              lock.retryAfterMs
+              lock.retryAfterMs,
+              "components.authErrors.codesLocked"
             )
           );
       }
@@ -933,7 +941,8 @@ export function registerAuthRoutes(app: Express): void {
             retryAfterBody(
               "Too many reset requests for this email. Please wait before trying again.",
               "RATE_LIMITED",
-              budget.retryAfterMs
+              budget.retryAfterMs,
+              "components.authErrors.resetRequestsLimited"
             )
           );
       }
@@ -1009,7 +1018,8 @@ export function registerAuthRoutes(app: Express): void {
             retryAfterBody(
               "Too many invalid reset attempts. Please wait before trying again.",
               "RATE_LIMITED",
-              lock.retryAfterMs
+              lock.retryAfterMs,
+              "components.authErrors.resetAttemptsLocked"
             )
           );
       }
@@ -1065,7 +1075,8 @@ export function registerAuthRoutes(app: Express): void {
             retryAfterBody(
               "Too many failed attempts. Please wait before trying again.",
               "ACCOUNT_LOCKED",
-              lock.retryAfterMs
+              lock.retryAfterMs,
+              "components.authErrors.failedAttemptsLocked"
             )
           );
       }
@@ -1312,7 +1323,14 @@ export function registerAuthRoutes(app: Express): void {
         res.setHeader("Retry-After", String(Math.ceil(lock.retryAfterMs / 1000)));
         return res
           .status(429)
-          .json(retryAfterBody("Too many invalid codes.", "ACCOUNT_LOCKED", lock.retryAfterMs));
+          .json(
+            retryAfterBody(
+              "Too many invalid codes.",
+              "ACCOUNT_LOCKED",
+              lock.retryAfterMs,
+              "components.authErrors.codesLocked"
+            )
+          );
       }
       const verdict = await verifySecondFactor(req.user!.id, code);
       if (!verdict.ok) {
@@ -1368,7 +1386,8 @@ export function registerAuthRoutes(app: Express): void {
             retryAfterBody(
               "Please wait before requesting another link.",
               "RATE_LIMITED",
-              budget.retryAfterMs
+              budget.retryAfterMs,
+              "components.authErrors.linkRequestsLimited"
             )
           );
       }

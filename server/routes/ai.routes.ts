@@ -4,7 +4,7 @@ import {
   createMeteredOpenAI,
 } from "../services/ai/usage-meter";
 import type { AiTask } from "../services/ai/model-router";
-import type { Express, Request } from "express";
+import type { Express, Request, Response } from "express";
 import OpenAI from "openai";
 import { aiStatementImportBody } from "../../shared/validators/banking";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -298,6 +298,12 @@ export function registerAIRoutes(app: Express, deps: AIRouteDeps = {}) {
     strictBody(nlGatewayBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(handlePostAiNlGateway({ getAI }))
   );
+
+  // Whether the assistant can answer at all (B3), so Ask shows the setup notice up front
+  // instead of offering a composer that fails. Read-only; names no provider or model.
+  app.get("/api/ai/status", authMiddleware, (_req: Request, res: Response) => {
+    res.json({ configured: Boolean(openai) });
+  });
 
   // Enhanced /api/ask endpoint with streaming support. POST /api/ai/chat is an alias (R05-14).
   // The client can no longer supply a system prompt (R05-10): only a named tone preset.

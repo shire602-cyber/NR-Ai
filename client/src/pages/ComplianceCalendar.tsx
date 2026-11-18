@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/ui/page-header";
 import { dateFnsOptions } from "@/lib/date-locale";
+import { displayObligationTitle, formatDate } from "@/lib/format-date";
 import { lazy, Suspense, useState, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -153,7 +154,10 @@ export default function ComplianceCalendar() {
       events.push({
         id: task.id,
         date: parseISO(task.dueDate),
-        title: locale === "ar" && task.titleAr ? task.titleAr : task.title,
+        title: displayObligationTitle(
+          locale === "ar" && task.titleAr ? task.titleAr : task.title,
+          locale
+        ),
         category: task.category,
         status: task.status,
         type: "task",
@@ -165,7 +169,7 @@ export default function ComplianceCalendar() {
       events.push({
         id: o.id,
         date: parseISO(o.dueDate),
-        title: locale === "ar" && o.titleAr ? o.titleAr : o.title,
+        title: displayObligationTitle(locale === "ar" && o.titleAr ? o.titleAr : o.title, locale),
         category: obligationCategory(o),
         status: o.status,
         type: "obligation",
@@ -353,7 +357,9 @@ export default function ComplianceCalendar() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm">
-                    {format(selectedDate, "EEEE, MMMM d, yyyy", dateFnsOptions(locale))}
+                    {format(selectedDate, "EEEE", dateFnsOptions(locale))}
+                    {locale === "ar" ? "، " : ", "}
+                    {formatDate(selectedDate, locale)}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -419,7 +425,7 @@ export default function ComplianceCalendar() {
                             <div className="flex-1 min-w-0">
                               <p className="font-medium text-sm truncate">{event.title}</p>
                               <p className="text-xs text-muted-foreground">
-                                {format(event.date, "MMM d, yyyy", dateFnsOptions(locale))}
+                                {formatDate(event.date, locale)}
                               </p>
                             </div>
                             <Badge

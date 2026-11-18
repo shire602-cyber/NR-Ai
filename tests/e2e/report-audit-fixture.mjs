@@ -832,6 +832,11 @@ async function seedInventory(companyId, dates) {
 }
 
 async function seedPayroll(companyId, account) {
+  // A4 (M10): a payroll run is refused (OPENING_GRATUITY_REQUIRED) until each employee's opening
+  // gratuity provision at go-live is entered. The fixture's first run is two months ago, so
+  // go-live is the day before; 0 records "no provision existed" (the catch-up is expensed in
+  // the first run). The rule itself is unchanged.
+  const openingGratuityAsOf = ymd(addDays(monthStart(new Date(), -2), -1));
   const employees = [
     {
       employeeNumber: `RA-E001-${runStamp}`,
@@ -849,6 +854,8 @@ async function seedPayroll(companyId, account) {
       housingAllowance: 6500,
       transportAllowance: 1500,
       otherAllowance: 1000,
+      openingGratuityProvision: 0,
+      openingGratuityAsOf,
     },
     {
       employeeNumber: `RA-E002-${runStamp}`,
@@ -866,6 +873,8 @@ async function seedPayroll(companyId, account) {
       housingAllowance: 3000,
       transportAllowance: 900,
       otherAllowance: 500,
+      openingGratuityProvision: 0,
+      openingGratuityAsOf,
     },
   ];
 

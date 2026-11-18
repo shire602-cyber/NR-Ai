@@ -7,6 +7,8 @@
  * SQL, converted to AED once) or the VAT engine.
  */
 
+import { formatMoneyAmount } from "../../utils/money-format";
+
 export type RenderLocale = "en" | "ar";
 
 /** A label in both languages; the company's own language is shown first. */
@@ -76,6 +78,42 @@ export function formatIsoDate(iso: string): string {
   const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
   if (!y || !m || !d) return iso;
   return `${d} ${MONTHS[m - 1]} ${y}`;
+}
+
+const MONTHS_AR = [
+  "يناير",
+  "فبراير",
+  "مارس",
+  "أبريل",
+  "مايو",
+  "يونيو",
+  "يوليو",
+  "أغسطس",
+  "سبتمبر",
+  "أكتوبر",
+  "نوفمبر",
+  "ديسمبر",
+];
+
+/** Arabic counterpart of formatIsoDate: "18 نوفمبر 2026" (Latin digits, as in the app). */
+export function formatIsoDateAr(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return `${d} ${MONTHS_AR[m - 1]} ${y}`;
+}
+
+/** A date for a note in both languages: { en: "18 Nov 2026", ar: "18 نوفمبر 2026" }. */
+export function bilingualDate(iso: string): Bilingual {
+  return { en: formatIsoDate(iso), ar: formatIsoDateAr(iso) };
+}
+
+/**
+ * Money inside note text (B12), through the shared document money formatter
+ * (server/utils/money-format.ts): { en: "AED 4,500.00", ar: "4,500.00 درهم" }.
+ * Table cells keep formatAmount; this is only for amounts written into sentences.
+ */
+export function bilingualMoney(amount: number): Bilingual {
+  return { en: formatMoneyAmount(amount), ar: `${formatMoneyAmount(amount, "")} درهم` };
 }
 
 export function periodLabel(from: string | null, to: string): string {

@@ -293,11 +293,37 @@ export default function VAT201Form({
       </BoxSection>
 
       <section
-        className={`sticky ${summaryOffsetClassName} z-10 rounded-xl border border-border bg-card/95 p-4 shadow-card-soft backdrop-blur supports-[backdrop-filter]:bg-card/85`}
+        className={`sticky ${summaryOffsetClassName} z-10 rounded-xl border border-border bg-card/95 p-2 shadow-card-soft backdrop-blur supports-[backdrop-filter]:bg-card/85 sm:p-4`}
         aria-label={SUMMARY_LABELS.section}
         data-testid="vat201-summary"
       >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {/* B4: on a phone the summary is one compact row of boxes 12-14, so the workbook
+            keeps most of the screen; the full bilingual labels stay on the boxes above. */}
+        <dl
+          className="mobile-keep-cols grid grid-cols-3 gap-1 sm:hidden"
+          data-testid="vat201-summary-compact"
+        >
+          <CompactCell box="12" label={SUMMARY_LABELS.due}>
+            {formatNumber(calculateDueTax())}
+          </CompactCell>
+          <CompactCell box="13" label={SUMMARY_LABELS.recoverable}>
+            {formatNumber(calculateRecoverableTax())}
+          </CompactCell>
+          <CompactCell
+            box="14"
+            label={
+              net >= 0
+                ? `${SUMMARY_LABELS.payable.en} / ${SUMMARY_LABELS.payable.ar}`
+                : `${SUMMARY_LABELS.refundable.en} / ${SUMMARY_LABELS.refundable.ar}`
+            }
+            emphasis
+          >
+            {net >= 0 ? "" : "("}
+            {formatNumber(Math.abs(net))}
+            {net >= 0 ? "" : ")"}
+          </CompactCell>
+        </dl>
+        <div className="hidden grid-cols-3 gap-3 sm:grid">
           <SummaryCell box="12" en="Total due tax" ar="إجمالي الضريبة المستحقة">
             {formatNumber(calculateDueTax())}
           </SummaryCell>
@@ -329,9 +355,40 @@ export default function VAT201Form({
   );
 }
 
+/** One box of the phone summary row: box number over the figure; the label is for AT only. */
+function CompactCell({
+  box,
+  label,
+  emphasis = false,
+  children,
+}: {
+  box: string;
+  label: string;
+  emphasis?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn("min-w-0 rounded-md px-2 py-1", emphasis && "bg-surface-sunken")}>
+      <dt className="text-caption text-muted-foreground">
+        <span aria-hidden="true">{box}</span>
+        <span className="sr-only">
+          {box} {label}
+        </span>
+      </dt>
+      <dd className="truncate text-end text-small font-semibold tabular-nums text-foreground">
+        <span className="money" dir="ltr">
+          {children}
+        </span>
+      </dd>
+    </div>
+  );
+}
+
 /** FTA VAT 201 bilingual labels for the summary (fixed English over Arabic, as on the form). */
 const SUMMARY_LABELS = {
   section: "Net VAT due / صافي ضريبة القيمة المضافة المستحقة",
+  due: "Total due tax / إجمالي الضريبة المستحقة",
+  recoverable: "Total recoverable tax / إجمالي الضريبة القابلة للاسترداد",
   payable: { en: "Payable tax for the period", ar: "الضريبة المستحقة الدفع للفترة" },
   refundable: { en: "Refundable tax for the period", ar: "الضريبة المستردة للفترة" },
 };

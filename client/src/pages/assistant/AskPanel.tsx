@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { ArrowUp, Loader2, MessageSquareText } from "lucide-react";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -30,6 +31,8 @@ interface Turn {
 }
 
 const RECENT_KEY = "muhasib-assistant-recent";
+/** Suggestions shown below md: the rest would sit under the docked composer (B2). */
+const MOBILE_SUGGESTIONS = 4;
 const SUGGESTION_KEYS = [
   "assistant.suggestOverdue",
   "assistant.suggestVat",
@@ -78,6 +81,13 @@ export default function AskPanel() {
     queryKey: ["/api/companies", companyId, "dashboard/stats"],
     enabled: !!companyId,
   });
+  // B3: know up front whether the assistant can answer, so an unconfigured workspace sees the
+  // notice instead of chips and a composer that can only fail.
+  const { data: aiStatus } = useQuery<{ configured: boolean }>({
+    queryKey: ["/api/ai/status"],
+    staleTime: 5 * 60_000,
+  });
+  const switchedOff = unavailable || aiStatus?.configured === false;
 
   useEffect(() => {
     endRef.current?.scrollIntoView?.({ block: "end" });
@@ -101,7 +111,7 @@ export default function AskPanel() {
 
   const submit = (raw: string) => {
     const question = raw.trim();
-    if (!question || ask.isPending || !companyId) return;
+    if (!question || ask.isPending || !companyId || switchedOff) return;
     const id = `q-${turns.length + 1}-${question.length}`;
     setTurns((prev) => [...prev, { id, question }]);
     setRecent(rememberQuestion(question));
@@ -118,14 +128,22 @@ export default function AskPanel() {
       className="mx-auto flex min-h-[calc(100dvh-16rem)] w-full max-w-[760px] flex-col"
       data-testid="assistant-ask"
     >
-      {unavailable && (
-        <SetupNotice className="mb-4" testId="assistant-unavailable">
+      {switchedOff && (
+        <SetupNotice
+          className="mb-4"
+          testId="assistant-unavailable"
+          action={{
+            label: t["assistant.openReports"],
+            href: "/reports",
+            testId: "assistant-open-reports",
+          }}
+        >
           {t["assistant.notAvailable"]}
         </SetupNotice>
       )}
 
       {turns.length === 0 ? (
-        <div className="flex-1">
+        <div className="flex-1 pb-4">
           <EmptyState
             size="lg"
             previewColumns={0}
@@ -134,22 +152,28 @@ export default function AskPanel() {
             description={t["assistant.askEmptyBody"]}
             testId="assistant-ask-empty"
           />
-          <div
-            className="mt-6 flex flex-wrap justify-center gap-2"
-            data-testid="assistant-suggestions"
-          >
-            {suggestions.map((text) => (
-              <button
-                key={text}
-                type="button"
-                onClick={() => submit(text)}
-                className="rounded-full border border-border bg-card px-3 py-1.5 text-small text-foreground transition-colors duration-fast hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {text}
-              </button>
-            ))}
-          </div>
-          {recent.length > 0 && (
+          {/* B2: four suggestions on a phone so none sits under the docked composer. */}
+          {!switchedOff && (
+            <div
+              className="mt-6 flex flex-wrap justify-center gap-2"
+              data-testid="assistant-suggestions"
+            >
+              {suggestions.map((text, index) => (
+                <button
+                  key={text}
+                  type="button"
+                  onClick={() => submit(text)}
+                  className={cn(
+                    "rounded-full border border-border bg-card px-3 py-1.5 text-small text-foreground transition-colors duration-fast hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    index >= MOBILE_SUGGESTIONS && "max-md:hidden"
+                  )}
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
+          )}
+          {!switchedOff && recent.length > 0 && (
             <section className="mt-8" aria-labelledby="assistant-recent">
               <h3 id="assistant-recent" className="text-caption font-medium text-muted-foreground">
                 {t["assistant.recentQuestions"]}
@@ -180,7 +204,9 @@ export default function AskPanel() {
               {turn.answer ? (
                 <Answer answer={turn.answer} />
               ) : turn.failed ? (
-                <p className="text-small text-danger">{t["assistant.answerFailed"]}</p>
+                <Alert tone="danger" data-testid="assistant-answer-failed">
+                  {t["assistant.answerFailed"]}
+                </Alert>
               ) : (
                 <p className="flex items-center gap-2 text-small text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -218,6 +244,7 @@ export default function AskPanel() {
             }
           }}
           placeholder={t["assistant.composerPlaceholder"]}
+          disabled={switchedOff}
           rows={1}
           className="min-h-11 flex-1 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
           data-testid="assistant-input"
@@ -226,7 +253,7 @@ export default function AskPanel() {
           type="submit"
           size="icon"
           className="h-11 w-11 shrink-0"
-          disabled={!input.trim() || ask.isPending || !companyId}
+          disabled={!input.trim() || ask.isPending || !companyId || switchedOff}
           aria-label={t["assistant.send"]}
           data-testid="assistant-send"
         >
@@ -251,20 +278,25 @@ function Answer({ answer }: { answer: AskResponse }) {
         {answer.response}
       </p>
       {figures.length > 0 && (
-        <table className="w-full max-w-md text-small" data-testid="assistant-figures">
+        // B1: `mobile-fit` opts out of the phone-wide 600 px table minimum, so the figures stay
+        // inside the answer column; under 480 px each label sits over its amount.
+        <table
+          className="mobile-fit w-full max-w-md table-fixed text-small"
+          data-testid="assistant-figures"
+        >
           <caption className="sr-only">{t["assistant.figuresUsed"]}</caption>
           <tbody className="divide-y divide-border">
             {figures.map((f) => {
               const p = presentFigure(f)!;
               return (
-                <tr key={f.id}>
+                <tr key={f.id} className="max-[479px]:flex max-[479px]:flex-col max-[479px]:py-1.5">
                   <th
                     scope="row"
-                    className="py-1.5 pe-4 text-start font-normal text-muted-foreground"
+                    className="break-words py-1.5 pe-4 text-start font-normal text-muted-foreground max-[479px]:p-0"
                   >
                     {t[p.labelKey]}
                   </th>
-                  <td className="py-1.5 text-end tabular-nums text-foreground">
+                  <td className="w-40 whitespace-nowrap py-1.5 text-end tabular-nums text-foreground max-[479px]:w-auto max-[479px]:p-0 max-[479px]:text-start max-[479px]:font-medium">
                     {f.unit === "AED" ? (
                       <Money amount={f.value} currency="AED" />
                     ) : (
@@ -284,7 +316,7 @@ function Answer({ answer }: { answer: AskResponse }) {
             <Link
               key={s.sourceKey}
               href={s.href}
-              className="rounded-full border border-border px-2.5 py-0.5 text-caption font-medium text-primary hover:bg-secondary"
+              className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-caption font-medium text-primary hover:bg-secondary"
             >
               {t[s.sourceKey]}
             </Link>

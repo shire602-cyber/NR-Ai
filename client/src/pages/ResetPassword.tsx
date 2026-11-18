@@ -16,6 +16,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { apiUrl } from "@/lib/api";
+import { serverErrorMessage } from "@/lib/validation-messages";
 import { ArrowLeft } from "lucide-react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import {
@@ -78,7 +79,7 @@ export default function ResetPassword() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.message || t["marketing.resetErrorBody"]);
+        throw new Error(serverErrorMessage(err, t["marketing.resetErrorBody"]));
       }
       setDone(true);
       // Redirect to login after a brief moment so the user sees confirmation.

@@ -30,6 +30,8 @@ import {
   CT_ZERO_RATE_BAND,
 } from "../../../shared/ct-workpaper";
 import {
+  bilingualDate,
+  bilingualMoney,
   formatIsoDate,
   periodLabel,
   type Bilingual,
@@ -135,8 +137,8 @@ function balanceNote(isBalanced: boolean, difference: number): Bilingual {
   return isBalanced
     ? { en: "Balanced.", ar: "متوازن." }
     : {
-        en: `Not balanced: difference AED ${difference.toFixed(2)}. Review before relying on it.`,
-        ar: `غير متوازن: الفرق ${difference.toFixed(2)} درهم. راجِع قبل الاعتماد عليه.`,
+        en: `Not balanced: difference ${bilingualMoney(difference).en}. Review before relying on it.`,
+        ar: `غير متوازن: الفرق ${bilingualMoney(difference).ar}. راجِع قبل الاعتماد عليه.`,
       };
 }
 
@@ -363,16 +365,16 @@ export async function renderCashFlow(
             ar: "إثبات النقد يطابق حسابات النقد والبنوك.",
           }
         : {
-            en: `Cash proof difference AED ${cf.cashProof.difference.toFixed(2)}.`,
-            ar: `فرق إثبات النقد ${cf.cashProof.difference.toFixed(2)} درهم.`,
+            en: `Cash proof difference ${bilingualMoney(cf.cashProof.difference).en}.`,
+            ar: `فرق إثبات النقد ${bilingualMoney(cf.cashProof.difference).ar}.`,
           },
       // B2 (NC2): IAS 7.43 disclosure of investing / financing transactions that used no cash.
       ...(cf.nonCashTransactions ?? []).map((n) => ({
-        en: `Non-cash transaction excluded from the statement (IAS 7.43): ${n.date} ${n.entryNumber ?? ""} ${n.memo ?? ""} AED ${n.amount.toFixed(2)}.`.replace(
+        en: `Non-cash transaction excluded from the statement (IAS 7.43): ${bilingualDate(n.date).en} ${n.entryNumber ?? ""} ${n.memo ?? ""} ${bilingualMoney(n.amount).en}.`.replace(
           /\s+/g,
           " "
         ),
-        ar: `معاملة غير نقدية مستبعدة من القائمة (معيار المحاسبة الدولي 7.43): ${n.date} ${n.entryNumber ?? ""} ${n.amount.toFixed(2)} درهم.`.replace(
+        ar: `معاملة غير نقدية مستبعدة من القائمة (معيار المحاسبة الدولي 7.43): ${bilingualDate(n.date).ar} ${n.entryNumber ?? ""} ${bilingualMoney(n.amount).ar}.`.replace(
           /\s+/g,
           " "
         ),
@@ -538,11 +540,11 @@ function agingReport(kind: "ar-aging" | "ap-aging", report: AgingReport): Render
       rec.isReconciled
         ? {
             en: `Reconstructed as of ${formatIsoDate(report.asOf)}; agrees to GL ${rec.controlAccountCode ?? ""}.`,
-            ar: `أُعيد بناؤه في ${report.asOf}؛ يطابق حساب الأستاذ ${rec.controlAccountCode ?? ""}.`,
+            ar: `أُعيد بناؤه في ${bilingualDate(report.asOf).ar}؛ يطابق حساب الأستاذ ${rec.controlAccountCode ?? ""}.`,
           }
         : {
-            en: `Reconstructed as of ${formatIsoDate(report.asOf)}; differs from GL ${rec.controlAccountCode ?? ""} by AED ${rec.difference.toFixed(2)}.`,
-            ar: `أُعيد بناؤه في ${report.asOf}؛ يختلف عن حساب الأستاذ بمبلغ ${rec.difference.toFixed(2)} درهم.`,
+            en: `Reconstructed as of ${formatIsoDate(report.asOf)}; differs from GL ${rec.controlAccountCode ?? ""} by ${bilingualMoney(rec.difference).en}.`,
+            ar: `أُعيد بناؤه في ${bilingualDate(report.asOf).ar}؛ يختلف عن حساب الأستاذ بمبلغ ${bilingualMoney(rec.difference).ar}.`,
           },
     ],
   };
@@ -707,7 +709,7 @@ export async function renderChangesInEquity(
           row(
             {
               en: `Balance at ${formatIsoDate(addDays(p.from, -1))}`,
-              ar: `الرصيد في ${addDays(p.from, -1)}`,
+              ar: `الرصيد في ${bilingualDate(addDays(p.from, -1)).ar}`,
             },
             e.opening.capital,
             e.opening.revaluationReserve ?? 0,
@@ -753,7 +755,7 @@ export async function renderChangesInEquity(
             e.otherRetainedEarningsMovements
           ),
           row(
-            { en: `Balance at ${formatIsoDate(p.to)}`, ar: `الرصيد في ${p.to}` },
+            { en: `Balance at ${formatIsoDate(p.to)}`, ar: `الرصيد في ${bilingualDate(p.to).ar}` },
             e.closing.capital,
             e.closing.revaluationReserve ?? 0,
             e.closing.retainedEarnings,
@@ -765,8 +767,8 @@ export async function renderChangesInEquity(
     notes: [
       e.ties
         ? {
-            en: `Closing equity agrees to the balance sheet (AED ${e.balanceSheetTotalEquity.toFixed(2)}).`,
-            ar: `حقوق الملكية الختامية تطابق الميزانية العمومية (${e.balanceSheetTotalEquity.toFixed(2)} درهم).`,
+            en: `Closing equity agrees to the balance sheet (${bilingualMoney(e.balanceSheetTotalEquity).en}).`,
+            ar: `حقوق الملكية الختامية تطابق الميزانية العمومية (${bilingualMoney(e.balanceSheetTotalEquity).ar}).`,
           }
         : {
             en: "Closing equity does not agree to the balance sheet; review unbalanced entries.",

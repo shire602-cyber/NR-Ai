@@ -38,6 +38,12 @@
  *   ARABIC_ROUTES=/a,/b         override the route list
  *   ARABIC_MAX_ENGLISH_LINES=n  per-route tolerance (default 0)
  *   ARABIC_ALLOW=a,b            extra allow-listed tokens (seeded data)
+ *   ARABIC_STATES=false         skip the state probes (B14): after the routes the crawl also
+ *                               measures states a plain visit never shows — the VAT Workpaper
+ *                               tab ("/vat-filing#workpaper") and, in a fresh signed-out
+ *                               browser, the sign-in and password-reset rate-limit messages
+ *                               ("/login#rate-limit", "/forgot-password#rate-limit"). The
+ *                               rate-limit probes lock a random, non-existent e-mail only.
  *   CHROMIUM_PATH               existing Chromium binary (else Playwright's own)
  */
 import { mkdir, writeFile } from "node:fs/promises";
@@ -275,6 +281,35 @@ async function main() {
       await page.keyboard.press("Escape");
       await page.waitForTimeout(400);
     }
+    await measure(page, route, report);
+  }
+
+  if (!PUBLIC_ONLY && process.env.ARABIC_STATES !== "false" && !process.env.ARABIC_ROUTES) {
+    await probeStates(browser, page, report);
+  }
+
+  await browser.close();
+  const out = path.join(
+    ARTIFACT_DIR,
+    PUBLIC_ONLY
+      ? "arabic-public-last-run.json"
+      : ALL
+        ? "arabic-runtime-all-last-run.json"
+        : "arabic-runtime-last-run.json"
+  );
+  await writeFile(out, JSON.stringify(report, null, 2));
+  const total = Object.values(report.routes).reduce((sum, r) => sum + r.englishLines, 0);
+  console.log(
+    `\n=== Arabic runtime crawl: ${Object.keys(report.routes).length} routes/states · ${total} English line(s) · ${report.failures.length} failure(s) ===`
+  );
+  for (const failure of report.failures) console.log(JSON.stringify(failure));
+  console.log(`Report: ${out}`);
+  process.exit(report.failures.length > 0 ? 1 : 0);
+}
+
+/** Count the English lines on the current page and record them under `route`. */
+async function measure(page, route, report) {
+  {
     // Visible text nodes in their source case (innerText would apply CSS text-transform and
     // turn "Actions" into an acronym-looking "ACTIONS").
     const sample = await page.evaluate(() => {
@@ -316,24 +351,80 @@ async function main() {
       `${route.padEnd(22)} ${String(result.english).padStart(4)} English / ${result.total} lines`
     );
   }
+}
 
-  await browser.close();
-  const out = path.join(
-    ARTIFACT_DIR,
-    PUBLIC_ONLY
-      ? "arabic-public-last-run.json"
-      : ALL
-        ? "arabic-runtime-all-last-run.json"
-        : "arabic-runtime-last-run.json"
-  );
-  await writeFile(out, JSON.stringify(report, null, 2));
-  const total = Object.values(report.routes).reduce((sum, r) => sum + r.englishLines, 0);
-  console.log(
-    `\n=== Arabic runtime crawl: ${ROUTES.length} routes · ${total} English line(s) · ${report.failures.length} failure(s) ===`
-  );
-  for (const failure of report.failures) console.log(JSON.stringify(failure));
-  console.log(`Report: ${out}`);
-  process.exit(report.failures.length > 0 ? 1 : 0);
+/**
+ * States a route visit never reaches (B14): a tab behind a click and messages the server only
+ * sends after repeated failures. Each is recorded like a route, so English there fails the run.
+ */
+async function probeStates(browser, page, report) {
+  const fail = (route, error) => {
+    report.failures.push({ route, rule: "state-probe", error: String(error).slice(0, 200) });
+    console.log(`${route.padEnd(22)} probe failed`);
+  };
+
+  // VAT return -> Workpaper tab (the accountant's grid).
+  try {
+    await page.goto(`${BASE}/vat-filing`, { timeout: 45000 });
+    await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+    await page.locator('[data-testid="tab-vat-workpaper"]').click({ timeout: 15000 });
+    await page.locator('[data-testid="vat-workpaper-panel"]').waitFor({ timeout: 15000 });
+    await page.waitForTimeout(800);
+    await measure(page, "/vat-filing#workpaper", report);
+  } catch (error) {
+    fail("/vat-filing#workpaper", error);
+  }
+
+  // Rate-limit messages, in a fresh signed-out Arabic browser. A random address that has no
+  // account: the per-address lockout opens after RL_LOGIN_LOCK_MAX (default 5) failures, so the
+  // API takes the first failures and the form shows the server's 429 sentence.
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await context.addInitScript(() => {
+    try {
+      localStorage.setItem("i18n-storage", JSON.stringify({ state: { locale: "ar" }, version: 0 }));
+      localStorage.setItem("cookie-consent", "accepted");
+    } catch {
+      /* storage blocked */
+    }
+  });
+  const visitor = await context.newPage();
+  const lockedEmail = `ar-ratelimit+${Date.now()}@test.local`;
+  const attempts = Number(process.env.RL_LOGIN_LOCK_MAX ?? 5) + 1;
+
+  try {
+    for (let i = 0; i < attempts; i += 1) {
+      await visitor.request.post(`${BASE}/api/auth/login`, {
+        data: { email: lockedEmail, password: "Wrong-password-1" },
+      });
+    }
+    await visitor.goto(`${BASE}/login`, { timeout: 45000 });
+    await visitor.locator('[data-testid="input-email"]').fill(lockedEmail);
+    await visitor.locator('[data-testid="input-password"]').fill("Wrong-password-1");
+    await visitor.locator('[data-testid="button-login"]').click();
+    await visitor.locator('[data-testid="login-error"]').waitFor({ timeout: 15000 });
+    await measure(visitor, "/login#rate-limit", report);
+  } catch (error) {
+    fail("/login#rate-limit", error);
+  }
+
+  try {
+    for (let i = 0; i < attempts; i += 1) {
+      await visitor.request.post(`${BASE}/api/auth/forgot-password`, {
+        data: { email: lockedEmail },
+      });
+    }
+    await visitor.goto(`${BASE}/forgot-password`, { timeout: 45000 });
+    await visitor.locator('[data-testid="input-email"]').fill(lockedEmail);
+    await visitor.locator('[data-testid="button-send-reset"]').click();
+    await visitor.locator('[role="alert"], [data-testid="text-forgot-result"]').first().waitFor({
+      timeout: 15000,
+    });
+    await visitor.waitForTimeout(400);
+    await measure(visitor, "/forgot-password#rate-limit", report);
+  } catch (error) {
+    fail("/forgot-password#rate-limit", error);
+  }
+  await context.close();
 }
 
 main().catch((error) => {
