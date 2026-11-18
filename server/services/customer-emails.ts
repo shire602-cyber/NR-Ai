@@ -33,17 +33,20 @@ export interface BuiltEmail {
   text: string;
 }
 
+/** Plain strings (subject, text part) carry no bidi isolates: some clients show them as boxes. */
+const stripBidi = (value: string) => value.replace(/[\u2066-\u2069]/g, "");
+
 function build(
   content: BilingualEmailContent,
   language: EmailLanguage,
   subject: BilingualBlock
 ): BuiltEmail {
   return {
-    subject: pickText(subject, language)
+    subject: stripBidi(pickText(subject, language))
       .replace(/[\r\n]+/g, " ")
       .slice(0, 300),
     html: renderBilingualEmail(content, language),
-    text: renderEmailText(content, language),
+    text: stripBidi(renderEmailText(content, language)),
   };
 }
 
@@ -274,7 +277,7 @@ export function buildReminderEmail(i: ReminderEmailInput): BuiltEmail {
       : {}),
   };
   const built = build(content, language, defaultSubject);
-  return customSubject ? { ...built, subject: customSubject } : built;
+  return customSubject ? { ...built, subject: stripBidi(customSubject) } : built;
 }
 
 // ─── Payment receipt ─────────────────────────────────────────────
@@ -496,11 +499,11 @@ export function buildApproverRequestEmail(input: {
     contactEmail: null,
     heading: {
       en: "Approve the e-invoicing partner in EmaraTax",
-      ar: "اعتماد شريك الفاتورة الإلكترونية في إمارات تاكس",
+      ar: "الموافقة على شريك الفوترة الإلكترونية في إمارات تاكس",
     },
     preheader: {
       en: `${input.companyName} needs you to approve its e-invoicing partner in EmaraTax`,
-      ar: `تطلب ${input.companyName} اعتمادكم لشريك الفاتورة الإلكترونية في إمارات تاكس`,
+      ar: `تطلب ${input.companyName} موافقتكم على شريك الفوترة الإلكترونية في إمارات تاكس`,
     },
     paragraphs: {
       en: [
@@ -509,7 +512,7 @@ export function buildApproverRequestEmail(input: {
       ],
       ar: [
         input.approverName ? greeting(input.approverName).ar : "مرحباً،",
-        `طلبت <strong>${co}</strong> منكم اعتماد شريك الفاتورة الإلكترونية في إمارات تاكس. تعرض الصفحة الخطوات المطلوبة، ولا تحتاجون إلى حساب لدينا.`,
+        `طلبت <strong>${co}</strong> منكم الموافقة على شريك الفوترة الإلكترونية في إمارات تاكس. تعرض الصفحة الخطوات المطلوبة، ولا تحتاجون إلى حساب لدينا.`,
       ],
     },
     button: { url: input.url, label: { en: "Open the steps", ar: "فتح الخطوات" } },
@@ -520,7 +523,7 @@ export function buildApproverRequestEmail(input: {
   };
   return build(content, language, {
     en: `${input.companyName}: approve the e-invoicing partner in EmaraTax`,
-    ar: `${input.companyName}: اعتماد شريك الفاتورة الإلكترونية في إمارات تاكس`,
+    ar: `${input.companyName}: الموافقة على شريك الفوترة الإلكترونية في إمارات تاكس`,
   });
 }
 
@@ -538,11 +541,11 @@ export function buildApproverDoneEmail(input: {
     contactEmail: null,
     heading: {
       en: "EmaraTax approval marked as done",
-      ar: "تم تأكيد الاعتماد في إمارات تاكس",
+      ar: "تم تأكيد الموافقة في إمارات تاكس",
     },
     preheader: {
       en: `${input.who ?? "Your approver"} marked the EmaraTax approval step as done`,
-      ar: `${input.who ?? "المعتمد لديكم"} أكّد إتمام خطوة الاعتماد في إمارات تاكس`,
+      ar: `${input.who ?? "المسؤول عن الموافقة"} أكّد إتمام خطوة الموافقة في إمارات تاكس`,
     },
     paragraphs: {
       en: [
@@ -550,22 +553,22 @@ export function buildApproverDoneEmail(input: {
         "Open Settings, then E-invoicing, to verify it with your partner.",
       ],
       ar: [
-        `أكّد ${who ?? "المعتمد لديكم"} إتمام خطوة الاعتماد في إمارات تاكس لصالح <strong>${co}</strong>.`,
-        "افتحوا الإعدادات ثم الفاتورة الإلكترونية للتحقق منها مع الشريك.",
+        `أكّد ${who ?? "المسؤول عن الموافقة"} إتمام خطوة الموافقة في إمارات تاكس لصالح <strong>${co}</strong>.`,
+        "افتحوا الإعدادات ثم الفوترة الإلكترونية للتحقق منها مع الشريك.",
       ],
     },
     ...(input.settingsUrl
       ? {
           button: {
             url: input.settingsUrl,
-            label: { en: "Open e-invoicing settings", ar: "فتح إعدادات الفاتورة الإلكترونية" },
+            label: { en: "Open e-invoicing settings", ar: "فتح إعدادات الفوترة الإلكترونية" },
           },
         }
       : {}),
   };
   return build(content, language, {
     en: `${input.companyName}: the e-invoicing partner approval is marked done`,
-    ar: `${input.companyName}: تم تأكيد اعتماد شريك الفاتورة الإلكترونية`,
+    ar: `${input.companyName}: تم تأكيد الموافقة على شريك الفوترة الإلكترونية`,
   });
 }
 

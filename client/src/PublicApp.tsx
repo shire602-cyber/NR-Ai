@@ -3,7 +3,7 @@ import { Route, Switch, useLocation } from "wouter";
 import { lazyWithReload } from "@/lib/lazyWithReload";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { RTLProvider } from "@/components/RTLProvider";
-import { isPublicPath, useI18n } from "@/lib/i18n";
+import { isCustomerLinkPath, isPublicPath, useI18n } from "@/lib/i18n";
 
 /**
  * Light root for signed-out visitors (D1b, mobile performance).
@@ -34,6 +34,9 @@ const Login = lazyWithReload(() => import("@/pages/Login"));
 const Register = lazyWithReload(() => import("@/pages/Register"));
 const ForgotPassword = lazyWithReload(() => import("@/pages/ForgotPassword"));
 const ResetPassword = lazyWithReload(() => import("@/pages/ResetPassword"));
+const CustomerPortal = lazyWithReload(() => import("@/pages/CustomerPortal"));
+const EInvoicingApprove = lazyWithReload(() => import("@/pages/EInvoicingApprove"));
+const LinkProviders = lazy(() => import("@/components/customer-link/LinkProviders"));
 const PublicProviders = lazy(() => import("@/components/marketing/PublicProviders"));
 const FullApp = lazyWithReload(() => import("./App"));
 const PWAInstallPrompt = lazy(() =>
@@ -70,6 +73,9 @@ function PublicRoutes() {
       <Route path="/register" component={Register} />
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
+      {/* No-login e-mail links: the approver page first (it also matches /portal/:token). */}
+      <Route path="/portal/einvoicing-approve/:token" component={EInvoicingApprove} />
+      <Route path="/portal/:token" component={CustomerPortal} />
     </Switch>
   );
 }
@@ -93,6 +99,8 @@ function DeferredInstallPrompt() {
 
 function WithProviders({ path, children }: { path: string; children: ReactNode }) {
   if (PROVIDERLESS.has(path)) return <>{children}</>;
+  // The no-login e-mail links need data fetching only (no toasts, no zod/forms).
+  if (isCustomerLinkPath(path)) return <LinkProviders>{children}</LinkProviders>;
   return <PublicProviders>{children}</PublicProviders>;
 }
 
@@ -125,7 +133,8 @@ export default function PublicApp() {
             <PublicRoutes />
           </WithProviders>
         </Suspense>
-        <DeferredInstallPrompt />
+        {/* A customer opening an invoice link is not asked to install the app. */}
+        {!isCustomerLinkPath(path) && <DeferredInstallPrompt />}
       </RTLProvider>
     </ErrorBoundary>
   );

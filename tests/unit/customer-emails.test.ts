@@ -88,7 +88,7 @@ function expectShell(e: BuiltEmail, language: EmailLanguage) {
 
 describe("layout and formatters", () => {
   it("formats money and dates by the app's rules (Latin digits, د.إ in Arabic)", () => {
-    expect(emailMoney(1250, "AED").en).toBe("AED ⁦" + "1,250.00⁩");
+    expect(emailMoney(1250, "AED").en).toBe("AED \u2066" + "1,250.00\u2069");
     expect(emailMoney(1250, "AED").ar).toContain("د.إ");
     expect(emailMoney(1250, "AED").ar).toContain("1,250.00");
     expect(emailMoney(1250, "USD").ar).toContain("USD");
@@ -106,6 +106,23 @@ describe("layout and formatters", () => {
     expect(resolveEmailLanguage(null, "ar")).toBe("ar");
     expect(resolveEmailLanguage(undefined, "fr")).toBe("bilingual");
     expect(resolveEmailLanguage()).toBe("bilingual");
+  });
+
+  it("subjects and plain text carry no bidi control characters", () => {
+    const e = buildReminderEmail({
+      invoice,
+      company,
+      customerName: "X",
+      openFils: 388605,
+      level: 1,
+      daysOverdue: 5,
+      language: "bilingual",
+    });
+    expect(e.subject).not.toMatch(/[\u2066-\u2069]/);
+    expect(e.text).not.toMatch(/[\u2066-\u2069]/);
+    expect(e.subject).toContain("3,886.05 د.إ");
+    // The HTML keeps the isolates so the figure stays in order inside Arabic text.
+    expect(e.html).toMatch(/[\u2066-\u2069]/);
   });
 
   it("counts days in natural Arabic", () => {
@@ -232,7 +249,7 @@ describe.each(LANGS)("payment reminder (%s)", (language) => {
     expectShell(e, language);
     expect(e.html).toContain("#B91C1C");
     if (language === "en") {
-      expect(e.subject).toBe("Overdue: invoice INV-2026-00002 — AED ⁦3,886.05⁩");
+      expect(e.subject).toBe("Overdue: invoice INV-2026-00002 — AED 3,886.05");
       expect(e.html).toContain("30 days overdue");
     }
     if (language === "ar") {
@@ -265,7 +282,7 @@ describe("payment reminder custom wording", () => {
       customSubject: "Hi {{customerName}}, {{invoiceNumber}} is due: {{amountDue}}",
       customTemplate: "Pay {{amountDue}} by {{dueDate}}",
     });
-    expect(e.subject).toBe("Hi A & B <Co>, INV-2026-00002 is due: AED ⁦1,000.00⁩");
+    expect(e.subject).toBe("Hi A & B <Co>, INV-2026-00002 is due: AED 1,000.00");
     expect(e.html).toContain("Pay AED");
     expect(e.html).not.toContain("<Co>");
   });
@@ -382,14 +399,14 @@ describe.each(LANGS)("EmaraTax approver emails (%s)", (language) => {
     expect(request.html).not.toMatch(/\b\d{15}\b|TRN/);
     if (language === "ar") {
       expect(request.html).toContain("إمارات تاكس");
-      expect(request.subject).toContain("اعتماد شريك الفاتورة الإلكترونية");
+      expect(request.subject).toContain("الموافقة على شريك الفوترة الإلكترونية");
     }
     if (language === "en") expect(request.html).toContain("14 days");
   });
   it("done: links to the e-invoicing settings", () => {
     expectShell(done, language);
     expect(done.text).toContain("/settings/einvoicing");
-    if (language === "ar") expect(done.subject).toContain("تم تأكيد اعتماد");
+    if (language === "ar") expect(done.subject).toContain("تم تأكيد الموافقة على");
   });
 });
 

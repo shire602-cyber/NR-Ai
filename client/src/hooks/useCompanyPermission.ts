@@ -9,6 +9,9 @@ import {
   type Permission,
 } from "@/lib/auth";
 
+/** Catalogs the permission tooltips read (declared so a public page that reaches this hook loads them). */
+const PERMISSION_NAMESPACES = ["common"];
+
 /**
  * Client view of the signed-in user's permissions in the active company
  * (GET /api/companies/:id/team/me, built from shared/permissions.ts). The
@@ -20,7 +23,7 @@ import {
  */
 export function useCompanyPermission() {
   const { companyId } = useDefaultCompany();
-  const { t } = useTranslation();
+  const { t } = useTranslation(PERMISSION_NAMESPACES);
   const { data: access, isLoading } = useQuery<CompanyAccess>({
     queryKey: companyAccessQueryKey(companyId),
     enabled: !!companyId,

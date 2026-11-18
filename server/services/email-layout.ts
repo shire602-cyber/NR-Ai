@@ -222,7 +222,8 @@ export function renderBilingualEmail(c: BilingualEmailContent, language: EmailLa
 <style>
 @media only screen and (max-width:620px){
   .em-pad{padding:22px 16px !important}
-  .em-btn,.em-btn td,.em-btn a{display:block !important;width:100% !important;box-sizing:border-box}
+  .em-btn,.em-btn td{width:100% !important}
+  .em-btn a{display:block !important;box-sizing:border-box;width:100% !important;text-align:center !important}
 }
 </style>
 </head>

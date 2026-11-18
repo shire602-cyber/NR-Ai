@@ -1,4 +1,8 @@
 import { T } from "@/components/layout/T";
+// The light public root does not load the app shell's stylesheets; these pages need the
+// mobile row-card tables and the RTL rules.
+import "@/styles/rtl.css";
+import "@/styles/mobile.css";
 import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,19 +29,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  AlertCircle,
-  Clock,
-  CreditCard,
-  FileDown,
-  FileText,
-  Languages,
-  Loader2,
-} from "lucide-react";
+import { AlertCircle, Clock, CreditCard, FileDown, FileText, Loader2, Printer } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { LinkLanguageSwitch } from "@/components/customer-link/LinkLanguageSwitch";
+import { useDocumentTitle, useLinkLocale } from "@/lib/customer-link";
 import { apiUrl } from "@/lib/api";
 import { DateText } from "@/components/documents/DateText";
 import { formatDate } from "@/lib/format-date";
-import { formatMessage, useI18n, useTranslation, type Locale } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 
 /**
  * Customer portal (W4-D: R16-04/06/07/14/15/16/19). Reached with a portal link token
@@ -104,6 +103,9 @@ interface PortalDocument {
   createdAt: string;
 }
 
+/** Catalogs this page reads (declared so an in-page language switch loads them). */
+const PORTAL_NAMESPACES = ["portal", "customerLink"];
+
 const SESSION_KEY = "muhasib.portalSession";
 
 const STATUS_TONE: Record<PortalInvoice["paymentStatus"], StatusTone> = {
@@ -114,76 +116,58 @@ const STATUS_TONE: Record<PortalInvoice["paymentStatus"], StatusTone> = {
   credit: "neutral",
 };
 
-async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(apiUrl(path));
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.message || `HTTP ${res.status}`);
-  return body as T;
-}
-
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(apiUrl(path), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json.message || `HTTP ${res.status}`);
-  return json as T;
-}
-
-const LOCALE_CHOICE_KEY = "portal-locale-chosen";
-
-function viewerChoseLocale(): boolean {
-  try {
-    return localStorage.getItem(LOCALE_CHOICE_KEY) === "1";
-  } catch {
-    return false;
+/** An answer from the portal API; the HTTP status and code decide what the page says. */
+class PortalHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string
+  ) {
+    super(`${status} ${code}`);
   }
 }
 
-/** Language switch for every portal screen; remembers that the viewer picked one. */
-function PortalLanguageSwitch() {
-  const { t, locale } = useTranslation();
-  const setLocale = useI18n((s) => s.setLocale);
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      data-testid="portal-language"
-      onClick={() => {
-        try {
-          localStorage.setItem(LOCALE_CHOICE_KEY, "1");
-        } catch {
-          // private mode: the choice just lasts for this page
-        }
-        setLocale(locale === "ar" ? "en" : "ar");
-      }}
-    >
-      <Languages className="h-4 w-4" aria-hidden />
-      {t["portal.switchLanguage"]}
-    </Button>
+async function readJson<T>(res: Response): Promise<T> {
+  const body = (await res.json().catch(() => ({}))) as { code?: string };
+  if (!res.ok) throw new PortalHttpError(res.status, body.code ?? "");
+  return body as T;
+}
+
+async function getJson<T>(path: string): Promise<T> {
+  return readJson<T>(await fetch(apiUrl(path)));
+}
+
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  return readJson<T>(
+    await fetch(apiUrl(path), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
   );
 }
 
-/**
- * Open the portal in the customer's language, else the company's, unless the viewer already
- * chose one (the choice is remembered). Renders the page direction for the active locale.
- */
-function usePortalLocale(info: PortalInfo | undefined) {
-  const setLocale = useI18n((s) => s.setLocale);
-  const current = useI18n((s) => s.locale);
-  const wanted: Locale | null =
-    info?.preferredLanguage === "ar" || info?.preferredLanguage === "en"
-      ? info.preferredLanguage
-      : info?.companyLocale === "ar" || info?.companyLocale === "en"
-        ? info.companyLocale
-        : null;
-  useEffect(() => {
-    if (wanted && wanted !== current && !viewerChoseLocale()) setLocale(wanted);
-    // Only when the portal info arrives; later switches are the viewer's.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wanted]);
+type LinkProblem = "invalid" | "expired" | "revoked" | "busy" | "failed";
+
+/** What went wrong with a request, from the HTTP status (never from English server text). */
+function problemOf(error: unknown): LinkProblem {
+  if (!(error instanceof PortalHttpError)) return "failed";
+  if (error.status === 404) return "invalid";
+  if (error.status === 410) return error.code === "PORTAL_LINK_EXPIRED" ? "expired" : "revoked";
+  if (error.status === 429) return "busy";
+  return "failed";
+}
+
+/** Arabic needs four count forms (1, 2, 3-10, 11+); English uses 1 and many. */
+function overdueKey(days: number): string {
+  if (days === 1) return "customerLink.overdueOne";
+  if (days === 2) return "customerLink.overdueTwo";
+  return days >= 3 && days <= 10 ? "customerLink.overdueFew" : "customerLink.overdueMany";
+}
+
+function daysOverdue(dueDate: string | null): number {
+  if (!dueDate) return 0;
+  const due = new Date(dueDate.length === 10 ? `${dueDate}T00:00:00` : dueDate);
+  return Math.max(0, Math.floor((Date.now() - due.getTime()) / 86_400_000));
 }
 
 function readSession(): string | null {
@@ -195,31 +179,43 @@ function readSession(): string | null {
 }
 
 function PortalLogin() {
-  const { locale } = useTranslation();
+  const { t, locale } = useTranslation(PORTAL_NAMESPACES);
   const [, setLocation] = useLocation();
   const companyId =
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("c") : null;
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"email" | "code">("email");
-  const [error, setError] = useState<string | null>(null);
+  const [errorKey, setErrorKey] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useLinkLocale(true);
+  useDocumentTitle(t["portal.signInTitle"]);
 
+  const failure = (e: unknown) => {
+    const problem = problemOf(e);
+    setErrorKey(
+      e instanceof PortalHttpError && e.status === 401
+        ? "customerLink.codeInvalid"
+        : problem === "busy"
+          ? "customerLink.busyBody"
+          : "customerLink.actionFailed"
+    );
+  };
   const request = async () => {
     setBusy(true);
-    setError(null);
+    setErrorKey(null);
     try {
       await postJson("/api/portal/login/request", { companyId, email });
       setStep("code");
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      failure(e);
     } finally {
       setBusy(false);
     }
   };
   const verify = async () => {
     setBusy(true);
-    setError(null);
+    setErrorKey(null);
     try {
       const r = await postJson<{ token: string }>("/api/portal/login/verify", {
         companyId,
@@ -235,25 +231,25 @@ function PortalLogin() {
       }
       setLocation("/portal/session");
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      failure(e);
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div
+    <main
       className="min-h-screen bg-background flex flex-col items-center justify-center gap-2 p-4"
       dir={locale === "ar" ? "rtl" : "ltr"}
     >
       <div className="flex w-full max-w-md justify-end">
-        <PortalLanguageSwitch />
+        <LinkLanguageSwitch testId="portal-language" />
       </div>
       <Card className="max-w-md w-full">
         <CardHeader>
-          <CardTitle>
+          <h1 className="text-h3 font-semibold leading-none tracking-tight">
             <T k="portal.signInTitle" />
-          </CardTitle>
+          </h1>
         </CardHeader>
         <CardContent className="space-y-4">
           {!companyId ? (
@@ -261,23 +257,36 @@ function PortalLogin() {
               <T k="portal.signInNeedsLink" />
             </p>
           ) : step === "email" ? (
-            <>
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (email && !busy) void request();
+              }}
+            >
               <Label htmlFor="portal-email">
                 <T k="portal.email" />
               </Label>
               <Input
                 id="portal-email"
                 type="email"
+                dir="ltr"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
               />
-              <Button onClick={request} disabled={busy || !email} className="w-full">
+              <Button type="submit" disabled={busy || !email} className="w-full">
                 <T k="portal.sendCode" />
               </Button>
-            </>
+            </form>
           ) : (
-            <>
+            <form
+              className="space-y-4"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (code.length === 6 && !busy) void verify();
+              }}
+            >
               <p className="text-sm text-muted-foreground">
                 <T k="portal.codeSent" />
               </p>
@@ -287,24 +296,25 @@ function PortalLogin() {
               <Input
                 id="portal-code"
                 inputMode="numeric"
+                dir="ltr"
                 maxLength={6}
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
                 autoComplete="one-time-code"
               />
-              <Button onClick={verify} disabled={busy || code.length !== 6} className="w-full">
+              <Button type="submit" disabled={busy || code.length !== 6} className="w-full">
                 <T k="portal.signIn" />
               </Button>
-            </>
+            </form>
           )}
-          {error && (
+          {errorKey && (
             <p className="text-sm text-destructive" role="alert">
-              {error}
+              {t[errorKey]}
             </p>
           )}
         </CardContent>
       </Card>
-    </div>
+    </main>
   );
 }
 
@@ -315,77 +325,140 @@ export default function CustomerPortal() {
   return <PortalHome token={token} />;
 }
 
+interface PortalOverview {
+  info: PortalInfo;
+  invoices: PortalInvoice[];
+}
+
+type Notice = { tone: "success" | "warning" | "danger"; key: string };
+
+/** The notice for `?payment=success|cancelled`, the query the payment page returns with. */
+function paymentReturnNotice(): Notice | null {
+  if (typeof window === "undefined") return null;
+  const result = new URLSearchParams(window.location.search).get("payment");
+  if (result === "success") return { tone: "success", key: "customerLink.paymentSuccess" };
+  if (result === "cancelled") return { tone: "warning", key: "customerLink.paymentCancelled" };
+  return null;
+}
+
 function PortalHome({ token }: { token: string | null }) {
-  const { t, locale } = useTranslation();
+  const { t, locale } = useTranslation(PORTAL_NAMESPACES);
   const queryClient = useQueryClient();
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(paymentReturnNotice);
+  const [tab, setTab] = useState("invoices");
+  const [payingId, setPayingId] = useState<string | null>(null);
   const [signer, setSigner] = useState("");
   const [uploading, setUploading] = useState(false);
   const base = `/api/portal/${token}`;
 
-  const {
-    data: info,
-    isLoading: infoLoading,
-    error: infoError,
-  } = useQuery<PortalInfo>({
-    queryKey: ["portal-info", token],
-    queryFn: () => getJson<PortalInfo>(`${base}/info`),
+  // The first screen is one request (who, which company, the invoices); the other tabs are
+  // fetched when they are opened.
+  const overview = useQuery<PortalOverview>({
+    queryKey: ["portal-overview", token],
+    queryFn: () => getJson<PortalOverview>(`${base}/overview`),
     enabled: !!token,
     retry: false,
   });
+  const info = overview.data?.info;
+  const invoices = overview.data?.invoices ?? [];
+  const ready = !!info;
 
-  usePortalLocale(info);
+  useLinkLocale(!overview.isLoading, info?.preferredLanguage, info?.companyLocale);
 
-  const { data: invoices = [], isLoading: invoicesLoading } = useQuery<PortalInvoice[]>({
-    queryKey: ["portal-invoices", token],
-    queryFn: () => getJson<PortalInvoice[]>(`${base}/invoices`),
-    enabled: !!token && !!info,
-    retry: false,
-  });
   const { data: statement } = useQuery<{ asOf: string; sections: StatementSection[] }>({
     queryKey: ["portal-statement", token],
     queryFn: () => getJson(`${base}/statement`),
-    enabled: !!token && !!info,
+    enabled: !!token && ready && tab === "statement",
     retry: false,
   });
   const { data: quotes = [] } = useQuery<PortalQuote[]>({
     queryKey: ["portal-quotes", token],
     queryFn: () => getJson<PortalQuote[]>(`${base}/quotes`),
-    enabled: !!token && !!info,
+    enabled: !!token && ready && tab === "quotes",
     retry: false,
   });
   const { data: documents = [] } = useQuery<PortalDocument[]>({
     queryKey: ["portal-documents", token],
     queryFn: () => getJson<PortalDocument[]>(`${base}/documents`),
-    enabled: !!token && !!info,
+    enabled: !!token && ready && tab === "documents",
     retry: false,
   });
 
+  // Coming back from the payment page: the notice was read on first render; drop the query
+  // string once and refresh the balances after a successful payment.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("payment");
+    if (result !== "success" && result !== "cancelled") return;
+    params.delete("payment");
+    const rest = params.toString();
+    window.history.replaceState(null, "", window.location.pathname + (rest ? `?${rest}` : ""));
+    if (result === "success") {
+      void queryClient.invalidateQueries({ queryKey: ["portal-overview", token] });
+    }
+    // Once, on arrival.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const problem: LinkProblem | null = !token
+    ? "revoked"
+    : overview.error
+      ? problemOf(overview.error)
+      : null;
+  const titleKey = !token
+    ? "portal.sessionEnded"
+    : problem === "invalid"
+      ? "customerLink.invalidTitle"
+      : problem === "expired"
+        ? "customerLink.expiredTitle"
+        : problem === "revoked"
+          ? "customerLink.revokedTitle"
+          : problem === "busy"
+            ? "customerLink.busyTitle"
+            : problem === "failed"
+              ? "customerLink.loadFailedTitle"
+              : null;
+  useDocumentTitle(
+    titleKey
+      ? t[titleKey]
+      : info
+        ? formatMessage(t["customerLink.pageTitle"], { company: info.companyName })
+        : t["customerLink.pageTitleBare"]
+  );
+
   if (!token) {
     return (
-      <PortalMessage icon={Clock}>
-        <T k="portal.sessionEnded" />
+      <PortalMessage icon={Clock} title={<T k="portal.sessionEnded" />}>
+        <T k="customerLink.endedBody" />
       </PortalMessage>
     );
   }
 
-  if (infoLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden />
-      </div>
-    );
-  }
+  if (overview.isLoading) return <PortalSkeleton />;
 
-  if (infoError || !info) {
-    const message = infoError instanceof Error ? infoError.message : "";
-    const ended = /expired|revoked/i.test(message);
+  if (problem || !info) {
+    const bodyKey =
+      problem === "invalid"
+        ? "customerLink.invalidBody"
+        : problem === "busy"
+          ? "customerLink.busyBody"
+          : problem === "failed" || !problem
+            ? "customerLink.loadFailedBody"
+            : "customerLink.endedBody";
+    const retryable = problem === "busy" || problem === "failed" || !problem;
     return (
       <PortalMessage
-        icon={ended ? Clock : AlertCircle}
-        title={<T k={ended ? "portal.linkEnded" : "portal.linkInvalid"} />}
+        icon={problem === "expired" || problem === "revoked" ? Clock : AlertCircle}
+        title={<T k={titleKey ?? "customerLink.loadFailedTitle"} />}
+        action={
+          retryable ? (
+            <Button variant="outline" onClick={() => void overview.refetch()}>
+              <T k="customerLink.retry" />
+            </Button>
+          ) : undefined
+        }
       >
-        <T k="portal.linkHelp" />
+        <T k={bodyKey} />
       </PortalMessage>
     );
   }
@@ -398,11 +471,21 @@ function PortalHome({ token }: { token: string | null }) {
     locale === "ar" && info.customerNameAr ? info.customerNameAr : info.customerName;
 
   const pay = async (invoiceId: string) => {
+    setPayingId(invoiceId);
+    setNotice(null);
     try {
       const r = await postJson<{ url: string }>(`${base}/invoices/${invoiceId}/pay`, {});
+      // Stay in the busy state while the browser leaves for the payment page.
       window.location.assign(r.url);
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : String(e));
+      setPayingId(null);
+      setNotice({
+        tone: "danger",
+        key:
+          e instanceof PortalHttpError && e.code === "PAYMENTS_REQUIRES_EXTERNAL"
+            ? "customerLink.payUnavailable"
+            : "customerLink.payFailed",
+      });
     }
   };
 
@@ -410,9 +493,12 @@ function PortalHome({ token }: { token: string | null }) {
     try {
       await postJson(`${base}/quotes/${quoteId}/respond`, { decision, signerName: signer });
       await queryClient.invalidateQueries({ queryKey: ["portal-quotes", token] });
-      setNotice(t[decision === "accepted" ? "portal.quoteAccepted" : "portal.quoteDeclined"]);
-    } catch (e) {
-      setNotice(e instanceof Error ? e.message : String(e));
+      setNotice({
+        tone: "success",
+        key: decision === "accepted" ? "portal.quoteAccepted" : "portal.quoteDeclined",
+      });
+    } catch {
+      setNotice({ tone: "danger", key: "customerLink.actionFailed" });
     }
   };
 
@@ -424,13 +510,14 @@ function PortalHome({ token }: { token: string | null }) {
       form.append("name", file.name);
       form.append("file", file, file.name);
       const res = await fetch(apiUrl(`${base}/documents`), { method: "POST", body: form });
-      const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setNotice(body.message || t["portal.uploadFailed"]);
+        setNotice({ tone: "danger", key: "portal.uploadFailed" });
         return;
       }
-      setNotice(t["portal.uploaded"]);
+      setNotice({ tone: "success", key: "portal.uploaded" });
       await queryClient.invalidateQueries({ queryKey: ["portal-documents", token] });
+    } catch {
+      setNotice({ tone: "danger", key: "portal.uploadFailed" });
     } finally {
       setUploading(false);
     }
@@ -439,19 +526,22 @@ function PortalHome({ token }: { token: string | null }) {
   const openPdf = (path: string) => window.open(apiUrl(`${base}${path}`), "_blank");
 
   return (
-    <div className="flex min-h-screen flex-col bg-background" dir={locale === "ar" ? "rtl" : "ltr"}>
+    <div
+      className="flex min-h-screen flex-col bg-background print:min-h-0"
+      dir={locale === "ar" ? "rtl" : "ltr"}
+    >
       <header className="border-b border-border bg-card">
-        <div aria-hidden className="h-0.5 bg-primary" />
+        <div aria-hidden className="h-0.5 bg-primary print:hidden" />
         <div className="mx-auto flex max-w-content items-center justify-between gap-4 px-4 py-4 sm:px-8">
           <div className="min-w-0">
-            <p className="truncate text-h3 font-semibold text-foreground" dir="auto">
+            <h1 className="truncate text-h3 font-semibold text-foreground" dir="auto">
               {info.companyName}
-            </p>
+            </h1>
             <p className="text-caption text-muted-foreground">
               <T k="portal.doc.customerPortal" />
             </p>
           </div>
-          <div className="flex min-w-0 max-w-[60%] items-center gap-2">
+          <div className="flex min-w-0 max-w-[60%] items-center gap-1">
             <p
               className="min-w-0 truncate text-small font-medium text-foreground"
               dir="auto"
@@ -459,15 +549,25 @@ function PortalHome({ token }: { token: string | null }) {
             >
               {customerName}
             </p>
-            <PortalLanguageSwitch />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden shrink-0 sm:inline-flex print:hidden"
+              onClick={() => window.print()}
+              data-testid="portal-print"
+            >
+              <Printer className="h-4 w-4" aria-hidden />
+              <T k="customerLink.print" />
+            </Button>
+            <LinkLanguageSwitch testId="portal-language" />
           </div>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-content flex-1 space-y-6 px-4 py-6 sm:px-8 sm:py-8">
         {notice && (
-          <Alert tone="success" role="status">
-            {notice}
+          <Alert tone={notice.tone} role={notice.tone === "danger" ? "alert" : "status"}>
+            {t[notice.key]}
           </Alert>
         )}
         {open.length > 0 && (
@@ -500,18 +600,18 @@ function PortalHome({ token }: { token: string | null }) {
           </div>
         )}
 
-        <Tabs defaultValue="invoices">
-          <ScrollTabs aria-label={t["portal.doc.sections"]}>
-            <TabsTrigger value="invoices">
+        <Tabs value={tab} onValueChange={setTab}>
+          <ScrollTabs aria-label={t["portal.doc.sections"]} className="print:hidden">
+            <TabsTrigger value="invoices" className="[@media(pointer:coarse)]:min-h-11">
               <T k="portal.doc.tabInvoices" />
             </TabsTrigger>
-            <TabsTrigger value="statement">
+            <TabsTrigger value="statement" className="[@media(pointer:coarse)]:min-h-11">
               <T k="portal.doc.tabStatement" />
             </TabsTrigger>
-            <TabsTrigger value="quotes">
+            <TabsTrigger value="quotes" className="[@media(pointer:coarse)]:min-h-11">
               <T k="portal.doc.tabQuotes" />
             </TabsTrigger>
-            <TabsTrigger value="documents">
+            <TabsTrigger value="documents" className="[@media(pointer:coarse)]:min-h-11">
               <T k="portal.doc.tabDocuments" />
             </TabsTrigger>
           </ScrollTabs>
@@ -519,11 +619,7 @@ function PortalHome({ token }: { token: string | null }) {
           <TabsContent value="invoices">
             <Card>
               <CardContent className="p-0">
-                {invoicesLoading ? (
-                  <div className="flex h-32 items-center justify-center">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
-                  </div>
-                ) : invoices.length === 0 ? (
+                {invoices.length === 0 ? (
                   <EmptyState
                     icon={FileText}
                     title={t["portal.doc.noInvoicesTitle"]}
@@ -545,7 +641,7 @@ function PortalHome({ token }: { token: string | null }) {
                         <TableHead>
                           <T k="portal.doc.status" />
                         </TableHead>
-                        <TableHead>
+                        <TableHead className="print:hidden">
                           <span className="sr-only">
                             <T k="portal.doc.actions" />
                           </span>
@@ -553,63 +649,90 @@ function PortalHome({ token }: { token: string | null }) {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {invoices.map((invoice) => (
-                        <TableRow key={invoice.id}>
-                          <TableCell data-cell="title" className="font-medium">
-                            <bdi>{invoice.number}</bdi>
-                            {invoice.einvoice && (
-                              <span className="ms-2 text-caption text-muted-foreground">
-                                <T k="portal.doc.einvoice" />
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell
-                            data-cell="meta"
-                            data-nowrap=""
-                            className="text-muted-foreground"
-                          >
-                            <DateText value={invoice.dueDate ?? invoice.date} locale={locale} />
-                          </TableCell>
-                          <MoneyCell
-                            amount={invoice.amountDue}
-                            currency={invoice.currency}
-                            className="font-semibold text-foreground"
-                            data-cell="amount"
-                          />
-                          <TableCell data-cell="status" data-nowrap="">
-                            <StatusBadge tone={STATUS_TONE[invoice.paymentStatus]}>
-                              <T k={`portal.payStatus.${invoice.paymentStatus}`} />
-                            </StatusBadge>
-                          </TableCell>
-                          <TableCell data-cell="actions">
-                            <div className="flex items-center justify-end gap-1">
-                              {invoice.canPayOnline && (
-                                <Button size="sm" onClick={() => pay(invoice.id)}>
-                                  <CreditCard className="h-4 w-4 me-1" aria-hidden />
-                                  <T k="portal.payNow" />
-                                </Button>
+                      {invoices.map((invoice) => {
+                        const late =
+                          invoice.paymentStatus === "overdue" ? daysOverdue(invoice.dueDate) : 0;
+                        const paying = payingId === invoice.id;
+                        return (
+                          <TableRow key={invoice.id}>
+                            <TableCell data-cell="title" className="font-medium">
+                              <bdi>{invoice.number}</bdi>
+                              {invoice.einvoice && (
+                                <span className="ms-2 text-caption text-muted-foreground">
+                                  <T k="portal.doc.einvoice" />
+                                </span>
                               )}
-                              <RowActions
-                                menu={
-                                  invoice.einvoice?.hasXml ? (
-                                    <DropdownMenuItem
-                                      onSelect={() => openPdf(`/invoices/${invoice.id}/einvoice`)}
-                                    >
-                                      XML
-                                    </DropdownMenuItem>
-                                  ) : undefined
-                                }
-                              >
-                                <RowActionButton
-                                  label={t["portal.doc.downloadPdf"]}
-                                  icon={FileDown}
-                                  onClick={() => openPdf(`/invoices/${invoice.id}/pdf`)}
-                                />
-                              </RowActions>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                            </TableCell>
+                            <TableCell
+                              data-cell="meta"
+                              data-nowrap=""
+                              className="text-muted-foreground"
+                            >
+                              {invoice.paymentStatus === "paid" || !invoice.dueDate ? (
+                                <DateText value={invoice.dueDate ?? invoice.date} locale={locale} />
+                              ) : (
+                                formatMessage(t["portal.dueOn"], {
+                                  date: formatDate(invoice.dueDate, locale),
+                                })
+                              )}
+                              {late > 0 && (
+                                <span className="block text-caption text-negative">
+                                  {formatMessage(t[overdueKey(late)], { days: late })}
+                                </span>
+                              )}
+                            </TableCell>
+                            <MoneyCell
+                              amount={invoice.amountDue}
+                              currency={invoice.currency}
+                              className="font-semibold text-foreground"
+                              data-cell="amount"
+                            />
+                            <TableCell data-cell="status" data-nowrap="">
+                              <StatusBadge tone={STATUS_TONE[invoice.paymentStatus]}>
+                                <T k={`portal.payStatus.${invoice.paymentStatus}`} />
+                              </StatusBadge>
+                            </TableCell>
+                            <TableCell data-cell="actions" className="print:hidden">
+                              <div className="flex items-center justify-end gap-1">
+                                {invoice.canPayOnline && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => pay(invoice.id)}
+                                    disabled={payingId !== null}
+                                    aria-busy={paying}
+                                  >
+                                    {paying ? (
+                                      <Loader2 className="h-4 w-4 me-1 animate-spin" aria-hidden />
+                                    ) : (
+                                      <CreditCard className="h-4 w-4 me-1" aria-hidden />
+                                    )}
+                                    <T k={paying ? "customerLink.paying" : "portal.payNow"} />
+                                  </Button>
+                                )}
+                                <RowActions
+                                  menu={
+                                    invoice.einvoice?.hasXml ? (
+                                      <DropdownMenuItem
+                                        onSelect={() => openPdf(`/invoices/${invoice.id}/einvoice`)}
+                                      >
+                                        <T k="customerLink.downloadXml" />
+                                      </DropdownMenuItem>
+                                    ) : undefined
+                                  }
+                                >
+                                  <RowActionButton
+                                    label={formatMessage(t["customerLink.downloadAria"], {
+                                      number: invoice.number,
+                                    })}
+                                    icon={FileDown}
+                                    onClick={() => openPdf(`/invoices/${invoice.id}/pdf`)}
+                                  />
+                                </RowActions>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 )}
@@ -635,6 +758,7 @@ function PortalHome({ token }: { token: string | null }) {
                 <Button
                   variant="outline"
                   size="sm"
+                  className="print:hidden"
                   onClick={() => openPdf("/statement?format=pdf")}
                 >
                   <FileDown className="h-4 w-4 me-1" aria-hidden />
@@ -642,16 +766,17 @@ function PortalHome({ token }: { token: string | null }) {
                 </Button>
               </CardHeader>
               <CardContent className="space-y-6">
-                {(statement?.sections ?? []).length === 0 && (
+                {!statement ? (
+                  <Skeleton className="h-32 w-full" aria-hidden />
+                ) : statement.sections.length === 0 ? (
                   <EmptyState
                     size="sm"
                     title={t["portal.doc.noStatementTitle"]}
                     description={t["portal.doc.noStatementBody"]}
                   />
+                ) : (
+                  statement.sections.map((s) => <StatementOfAccount key={s.currency} section={s} />)
                 )}
-                {(statement?.sections ?? []).map((s) => (
-                  <StatementOfAccount key={s.currency} section={s} />
-                ))}
               </CardContent>
             </Card>
           </TabsContent>
@@ -676,6 +801,7 @@ function PortalHome({ token }: { token: string | null }) {
                           id="signer"
                           value={signer}
                           onChange={(e) => setSigner(e.target.value)}
+                          autoComplete="name"
                         />
                       </div>
                     )}
@@ -770,11 +896,52 @@ function PortalHome({ token }: { token: string | null }) {
         </Tabs>
       </main>
 
-      <footer className="border-t border-border">
+      <footer className="border-t border-border print:hidden">
         <p className="mx-auto max-w-content px-4 py-5 text-center text-caption text-muted-foreground sm:px-8">
-          <span dir="auto">{info.companyName}</span> · <T k="portal.doc.sentWith" />
+          <bdi>{info.companyName}</bdi> · <T k="portal.doc.sentWith" />
         </p>
       </footer>
+    </div>
+  );
+}
+
+/** The portal's shape while it loads: no layout jump when the real content arrives. */
+function PortalSkeleton() {
+  const { t, locale } = useTranslation(PORTAL_NAMESPACES);
+  return (
+    <div
+      className="flex min-h-screen flex-col bg-background"
+      dir={locale === "ar" ? "rtl" : "ltr"}
+      role="status"
+      aria-busy="true"
+    >
+      <span className="sr-only">{t["customerLink.loading"]}</span>
+      <header className="border-b border-border bg-card" aria-hidden>
+        <div className="h-0.5 bg-primary" />
+        <div className="mx-auto flex max-w-content items-center justify-between gap-4 px-4 py-4 sm:px-8">
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-44" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+          <Skeleton className="h-8 w-24" />
+        </div>
+      </header>
+      <div
+        className="mx-auto w-full max-w-content flex-1 space-y-6 px-4 py-6 sm:px-8 sm:py-8"
+        aria-hidden
+      >
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-[116px] w-full rounded-lg" />
+          ))}
+        </div>
+        <Skeleton className="h-11 w-full max-w-md rounded-lg" />
+        <div className="space-y-px overflow-hidden rounded-lg border border-border">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-[72px] w-full rounded-none" />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -782,28 +949,31 @@ function PortalHome({ token }: { token: string | null }) {
 function PortalMessage({
   icon: Icon,
   title,
+  action,
   children,
 }: {
   icon: typeof Clock;
-  title?: React.ReactNode;
+  title: React.ReactNode;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const { locale } = useTranslation();
+  const { locale } = useTranslation(PORTAL_NAMESPACES);
   return (
-    <div
+    <main
       className="flex min-h-screen flex-col items-center justify-center gap-2 bg-background p-4"
       dir={locale === "ar" ? "rtl" : "ltr"}
     >
       <div className="flex w-full max-w-md justify-end">
-        <PortalLanguageSwitch />
+        <LinkLanguageSwitch testId="portal-language" />
       </div>
       <div className="w-full max-w-md rounded-lg border border-border bg-card px-6 py-12 text-center">
         <span className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-100 dark:bg-neutral-800">
           <Icon className="h-5 w-5 text-muted-foreground" aria-hidden />
         </span>
-        {title && <h1 className="mb-2 text-h3 font-semibold text-foreground">{title}</h1>}
+        <h1 className="mb-2 text-h3 font-semibold text-foreground">{title}</h1>
         <p className="text-small text-muted-foreground">{children}</p>
+        {action && <div className="mt-6">{action}</div>}
       </div>
-    </div>
+    </main>
   );
 }

@@ -44,6 +44,14 @@ const PUBLIC_ROUTE_CHUNKS: Record<string, () => Promise<unknown>> = {
   "/register": () => import("@/pages/Register"),
 };
 
+/** The page chunk of a no-login e-mail link (fetched in parallel with the root and catalogs). */
+function customerLinkChunk(path: string): (() => Promise<unknown>) | undefined {
+  if (/^\/portal\/einvoicing-approve\/[^/]+\/?$/.test(path))
+    return () => import("@/pages/EInvoicingApprove");
+  if (/^\/portal\/[^/]+\/?$/.test(path)) return () => import("@/pages/CustomerPortal");
+  return undefined;
+}
+
 const loadRoot: () => Promise<{ default: ComponentType }> = publicShell
   ? () => import("./PublicApp")
   : () => import("./App");
@@ -56,7 +64,9 @@ setPublicBootScope(publicShell ? pathname : "/__app");
 void Promise.all([
   loadRoot(),
   loadLocaleForPath(locale, publicShell ? pathname : "/__app").catch(() => undefined),
-  publicShell ? PUBLIC_ROUTE_CHUNKS[pathname]?.().catch(() => undefined) : undefined,
+  publicShell
+    ? (PUBLIC_ROUTE_CHUNKS[pathname] ?? customerLinkChunk(pathname))?.().catch(() => undefined)
+    : undefined,
 ]).then(([{ default: Root }]) => {
   createRoot(document.getElementById("root")!).render(<Root />);
 });

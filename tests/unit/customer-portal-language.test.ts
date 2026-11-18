@@ -32,9 +32,11 @@ function stubApi(portalInfo: unknown) {
     "fetch",
     vi.fn(async (url: string) => {
       const u = String(url);
-      const body = u.endsWith("/info")
-        ? portalInfo
-        : u.endsWith("/statement")
+      const body = u.endsWith("/overview")
+        ? { info: portalInfo, invoices: [] }
+        : u.endsWith("/info")
+          ? portalInfo
+          : u.endsWith("/statement")
           ? { asOf: "2026-01-01", sections: [] }
           : [];
       return new Response(JSON.stringify(body), { status: 200 });

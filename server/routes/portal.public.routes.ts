@@ -407,25 +407,52 @@ export function registerPortalPublicRoutes(app: Express) {
   );
 
   // ─── Customer: token routes ───────────────────────────────────────────────
+  async function portalInfoOf(ctx: PortalCtx) {
+    const company = await storage.getCompany(ctx.companyId);
+    const payments = paymentsAvailability();
+    return {
+      customerName: ctx.contact.name,
+      customerNameAr: ctx.contact.nameAr ?? null,
+      contactPerson: ctx.contact.contactPerson || null,
+      companyId: ctx.companyId,
+      companyName: company?.name || "Muhasib.ai",
+      companyLogo: company?.logoUrl || null,
+      preferredLanguage: ctx.contact.preferredLanguage ?? null,
+      companyLocale: company?.locale === "ar" ? "ar" : "en",
+      onlinePayment: { available: payments.available, status: payments.status },
+    };
+  }
+
+  async function portalInvoicesOf(ctx: PortalCtx) {
+    const payments = paymentsAvailability();
+    const rows = await contactInvoices(ctx.companyId, ctx.contact.id);
+    return rows.map((r) => ({
+      ...r,
+      canPayOnline: payments.available && r.invoiceType !== "credit_note" && r.amountDue > 0,
+    }));
+  }
+
   app.get(
     "/api/portal/:token/info",
     portalGuard("portal"),
     asyncHandler(async (req: Request, res: Response) => {
       const ctx = await portalContact(req, res);
       if (!ctx) return;
-      const company = await storage.getCompany(ctx.companyId);
-      const payments = paymentsAvailability();
-      res.json({
-        customerName: ctx.contact.name,
-        customerNameAr: ctx.contact.nameAr ?? null,
-        contactPerson: ctx.contact.contactPerson || null,
-        companyId: ctx.companyId,
-        companyName: company?.name || "Muhasib.ai",
-        companyLogo: company?.logoUrl || null,
-        preferredLanguage: ctx.contact.preferredLanguage ?? null,
-        companyLocale: company?.locale === "ar" ? "ar" : "en",
-        onlinePayment: { available: payments.available, status: payments.status },
-      });
+      res.json(await portalInfoOf(ctx));
+    })
+  );
+
+  // The first screen in one round trip: who and which company (info) and the invoice list.
+  // Statement, quotes and documents are fetched when their tab opens.
+  app.get(
+    "/api/portal/:token/overview",
+    portalGuard("portal"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const ctx = await portalContact(req, res);
+      if (!ctx) return;
+      res.setHeader("Cache-Control", "private, no-store");
+      const [info, invoices] = await Promise.all([portalInfoOf(ctx), portalInvoicesOf(ctx)]);
+      res.json({ info, invoices });
     })
   );
 
@@ -435,14 +462,7 @@ export function registerPortalPublicRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const ctx = await portalContact(req, res);
       if (!ctx) return;
-      const payments = paymentsAvailability();
-      const rows = await contactInvoices(ctx.companyId, ctx.contact.id);
-      res.json(
-        rows.map((r) => ({
-          ...r,
-          canPayOnline: payments.available && r.invoiceType !== "credit_note" && r.amountDue > 0,
-        }))
-      );
+      res.json(await portalInvoicesOf(ctx));
     })
   );
 

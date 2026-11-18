@@ -307,7 +307,7 @@
   "einvoicing.taxReady.whereLater": "You can change these any time in Settings, Company.",
   "einvoicing.taxReady.later": "Later",
   "einvoicing.taxReady.save": "Save details",
-  "einvoicing.appoint.partnerLabel": "{name} ({legal}, accreditation {number})",
+  "einvoicing.appoint.partnerLabel": "{name}, accreditation {number}",
   "einvoicing.appoint.partnerUnknown": "the accredited service provider the company chose",
   "einvoicing.appoint.step1": "Sign in to EmaraTax with the account that manages {company}'s tax registration.",
   "einvoicing.appoint.step2": "Open the e-invoicing section and choose to appoint an accredited service provider.",

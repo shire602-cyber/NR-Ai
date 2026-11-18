@@ -999,14 +999,31 @@ function normalisePath(pathname: string): string {
   return path.length > 1 ? path.replace(/\/+$/, "") : path;
 }
 
-/** True for the signed-out marketing, auth, legal and help routes. */
+/**
+ * No-login links a customer or approver opens from an e-mail: the customer portal
+ * (`/portal/<token>`, `/portal/login`, `/portal/session`) and the EmaraTax approver page
+ * (`/portal/einvoicing-approve/<token>`). They get the light public root and only their own
+ * catalogs (a one-screen page should not download the signed-in app).
+ */
+const APPROVER_LINK_PATH = /^\/portal\/einvoicing-approve\/[^/]+$/;
+const PORTAL_LINK_PATH = /^\/portal\/(?!einvoicing-approve\/)[^/]+$/;
+
+export function isCustomerLinkPath(pathname: string): boolean {
+  const path = normalisePath(pathname);
+  return APPROVER_LINK_PATH.test(path) || PORTAL_LINK_PATH.test(path);
+}
+
+/** True for the signed-out marketing, auth, legal and help routes and the no-login links. */
 export function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.has(normalisePath(pathname));
+  const path = normalisePath(pathname);
+  return PUBLIC_PATHS.has(path) || isCustomerLinkPath(path);
 }
 
 /** Namespaces a public path needs, or `null` for "every namespace" (app routes). */
 export function namespacesForPath(pathname: string): string[] | null {
   const path = normalisePath(pathname);
+  if (APPROVER_LINK_PATH.test(path)) return ["components", "einvoicing", "customerLink"];
+  if (PORTAL_LINK_PATH.test(path)) return ["components", "portal", "customerLink"];
   if (!PUBLIC_PATHS.has(path)) return null;
   return PUBLIC_CORE_ONLY.has(path)
     ? PUBLIC_CORE_NAMESPACES

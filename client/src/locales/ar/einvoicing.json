@@ -307,7 +307,7 @@
   "einvoicing.taxReady.whereLater": "يمكنك تعديلها في أي وقت من الإعدادات، الشركة.",
   "einvoicing.taxReady.later": "لاحقًا",
   "einvoicing.taxReady.save": "حفظ البيانات",
-  "einvoicing.appoint.partnerLabel": "{name} ({legal}، رقم الاعتماد {number})",
+  "einvoicing.appoint.partnerLabel": "{name}، رقم الاعتماد {number}",
   "einvoicing.appoint.partnerUnknown": "مزود الخدمة المعتمد الذي اختارته الشركة",
   "einvoicing.appoint.step1": "سجّل الدخول إلى منصة إمارات تاكس بالحساب الذي يدير التسجيل الضريبي لـ {company}.",
   "einvoicing.appoint.step2": "افتح قسم الفوترة الإلكترونية واختر تعيين مزود خدمة معتمد.",

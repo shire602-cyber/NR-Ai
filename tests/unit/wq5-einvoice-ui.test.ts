@@ -9,6 +9,7 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { stripBidiControls } from "../../client/src/lib/format-money";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -357,7 +358,8 @@ describe("no-login approver page", () => {
     });
     const { default: Page } = await import("../../client/src/pages/EInvoicingApprove");
     await mount(createElement(Page));
-    const text = container.textContent ?? "";
+    // Names are bidi-isolated (FSI/PDI) so they keep their direction inside Arabic text.
+    const text = stripBidiControls(container.textContent ?? "");
     expect(text).toContain("Approve the e-invoicing partner for Pearl Trading");
     expect(text).toContain("Partner One");
     expect(container.querySelectorAll('[data-testid="emaratax-steps"] li').length).toBe(5);
