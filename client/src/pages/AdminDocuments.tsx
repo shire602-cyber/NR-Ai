@@ -1,11 +1,11 @@
 import { T } from "@/components/layout/T";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
-import { formatDate } from "@/lib/format-date";
+import { formatDate, parseCalendarDate } from "@/lib/format-date";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, differenceInDays, parseISO } from "date-fns";
+import { format, differenceInDays } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -226,7 +226,7 @@ export default function AdminDocuments() {
 
   const getExpiryStatus = (expiryDate: string | null) => {
     if (!expiryDate) return null;
-    const days = differenceInDays(parseISO(expiryDate), new Date());
+    const days = differenceInDays(parseCalendarDate(expiryDate), new Date());
     if (days < 0) return { status: "expired", color: "destructive" as const, days: Math.abs(days) };
     if (days <= 30) return { status: "expiring_soon", color: "secondary" as const, days };
     return { status: "valid", color: "default" as const, days };
@@ -371,7 +371,7 @@ export default function AdminDocuments() {
                 <div className="text-2xl font-bold text-warning">
                   {documents?.filter((doc) => {
                     if (!doc.expiryDate || doc.isArchived) return false;
-                    const days = differenceInDays(parseISO(doc.expiryDate), new Date());
+                    const days = differenceInDays(parseCalendarDate(doc.expiryDate), new Date());
                     return days >= 0 && days <= 30;
                   }).length || 0}
                 </div>
@@ -506,7 +506,7 @@ export default function AdminDocuments() {
                             </TableCell>
                             <TableCell>
                               <div className="text-sm text-muted-foreground">
-                                {format(parseISO(doc.createdAt), "MMM d, yyyy")}
+                                {format(parseCalendarDate(doc.createdAt), "MMM d, yyyy")}
                               </div>
                             </TableCell>
                             <TableCell data-numeric>

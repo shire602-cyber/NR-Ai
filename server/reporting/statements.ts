@@ -1093,6 +1093,8 @@ export interface GeneralLedgerAccount {
   accountId: string;
   accountCode: string;
   accountName: string;
+  /** Arabic account name when the chart has one (Arabic statement PDFs, P15). */
+  accountNameAr?: string | null;
   accountType: string;
   openingBalance: number;
   debitTotal: number;
@@ -1210,6 +1212,7 @@ export async function generalLedger(
       accountId: a.id,
       accountCode: a.code,
       accountName: a.nameEn,
+      accountNameAr: a.nameAr,
       accountType: a.type,
       openingBalance: aed(open),
       debitTotal: aed(d),

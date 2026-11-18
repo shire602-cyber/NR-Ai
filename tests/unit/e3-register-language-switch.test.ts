@@ -57,6 +57,13 @@ async function settle(rounds = 10) {
   }
 }
 
+/** Settle until `done()` holds: namespace loads are dynamic imports, slower under machine load. */
+async function settleUntil(done: () => boolean, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!done() && Date.now() < deadline) await settle(1);
+  await settle(2);
+}
+
 function typeInto(testId: string, value: string) {
   const input = container.querySelector(`[data-testid="${testId}"]`) as HTMLInputElement;
   const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -91,7 +98,10 @@ describe("[E3][J2-r3] register after an in-page language switch", () => {
 
     // The in-page switch (the header language toggle calls setLocale).
     await act(async () => i18n.useI18n.getState().setLocale("ar"));
-    await settle();
+    await settleUntil(
+      () =>
+        !!i18n.t.ar["onboarding.defaultCompanyName"] && !!i18n.t.ar["forms.errors.uaeTrn15Digits"]
+    );
     // The declared namespaces were fetched for Arabic on the switch.
     expect(i18n.t.ar["onboarding.defaultCompanyName"]).toBe("شركة {name}");
     expect(i18n.t.ar["forms.errors.uaeTrn15Digits"]).toBeTruthy();
@@ -103,7 +113,11 @@ describe("[E3][J2-r3] register after an in-page language switch", () => {
     await act(async () => {
       (container.querySelector('[data-testid="button-register"]') as HTMLButtonElement).click();
     });
-    await settle();
+    await settleUntil(
+      () =>
+        onSuccess.mock.calls.length > 0 ||
+        !!container.querySelector('[data-testid="register-error"]')
+    );
 
     expect(container.querySelector('[data-testid="register-error"]')).toBeNull();
     const register = calls.find((c) => c.url.endsWith("/api/auth/register"));
@@ -125,7 +139,7 @@ describe("[E3][J2-r3] register after an in-page language switch", () => {
       )
     );
     await act(async () => i18n.useI18n.getState().setLocale("ar"));
-    await settle();
+    await settleUntil(() => !!i18n.t.ar["forms.errors.uaeTrn15Digits"]);
     typeInto("input-name", "سارة");
     typeInto("input-email", "sara@example.ae");
     typeInto("input-password", "Str0ng-pass-123");
@@ -133,7 +147,9 @@ describe("[E3][J2-r3] register after an in-page language switch", () => {
     await act(async () => {
       (container.querySelector('[data-testid="button-register"]') as HTMLButtonElement).click();
     });
-    await settle();
+    await settleUntil(() =>
+      (container.textContent ?? "").includes(i18n.t.ar["forms.errors.uaeTrn15Digits"] ?? "\u0000")
+    );
     const text = container.textContent ?? "";
     expect(text).not.toContain("forms.errors.uaeTrn15Digits");
     expect(text).toContain(i18n.t.ar["forms.errors.uaeTrn15Digits"]);

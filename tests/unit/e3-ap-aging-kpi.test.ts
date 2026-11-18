@@ -11,7 +11,7 @@ import {
   COMPANY_ID,
   apiCalls,
   byTestId,
-  flush,
+  flushUntil,
   formHarnessCompanyMock,
   formHarnessQueryClientMock,
   renderPage,
@@ -96,7 +96,9 @@ describe("[E3][J1-r3] AP aging KPI strip", () => {
     });
     const { default: Reports } = await import("../../client/src/pages/Reports");
     await renderPage(Reports);
-    await flush(10);
+    await flushUntil(() =>
+      (byTestId("balances-kpi-strip")?.textContent ?? "").includes("6,452.00")
+    );
     const strip = byTestId("balances-kpi-strip");
     expect(strip, "KPI strip rendered on AP aging").not.toBeNull();
     expect(apiCalls("GET").some((c) => c.url.endsWith("/reports/balance-summaries"))).toBe(true);

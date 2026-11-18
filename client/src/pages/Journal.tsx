@@ -107,6 +107,7 @@ import { STANDARD_VAT_RATES } from "@shared/vat-classification";
 import { useZatcaAvailable } from "@/hooks/useZatcaAvailable";
 import { ChevronDown as DetailsChevron } from "lucide-react";
 import { accountDisplayName } from "@/lib/account-name";
+import { parseCalendarDate } from "@/lib/format-date";
 
 /** Integer fils: balance is compared exactly, never with a 0.01 tolerance. */
 const toFils = (v: unknown) => Math.round((Number(v) || 0) * 100);
@@ -353,7 +354,7 @@ export default function Journal() {
       setEditingEntry(fullEntry);
       form.reset({
         companyId: fullEntry.companyId,
-        date: new Date(fullEntry.date),
+        date: parseCalendarDate(fullEntry.date),
         memo: fullEntry.memo || "",
         // WQ3: the derived VAT legs (systemVat) are re-derived on save, never edited.
         lines: (fullEntry.lines?.length

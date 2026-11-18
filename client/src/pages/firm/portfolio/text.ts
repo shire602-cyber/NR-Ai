@@ -4,6 +4,7 @@
 // leaves everything else (client names, free text) untouched.
 import { localizeFirmText } from "@shared/server-copy";
 import { useTranslation } from "@/lib/i18n";
+import { parseCalendarDate } from "@/lib/format-date";
 
 const MONTH_AR: Record<string, string> = {
   Jan: "يناير",
@@ -118,7 +119,8 @@ export function useFirmText() {
     /** Short date, e.g. "Oct 28" / "28 أكتوبر". */
     fdShort: (date: string | null | undefined): string => {
       if (!date) return "—";
-      const d = new Date(date);
+      // A business date (period, due date): its calendar day, not the browser-zone instant (N1).
+      const d = parseCalendarDate(date);
       if (Number.isNaN(d.getTime())) return "—";
       return new Intl.DateTimeFormat(isAr ? "ar-AE-u-nu-latn" : "en-US", {
         month: "short",

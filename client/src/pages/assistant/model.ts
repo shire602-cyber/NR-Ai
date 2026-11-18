@@ -136,3 +136,25 @@ export function sourcesFor(
   }
   return out;
 }
+
+/** Space kept between the newest turn and the composer, and under the page header (N3). */
+export const REVEAL_GAP_PX = 16;
+
+/**
+ * How far to scroll the thread so the newest turn ends just above the docked composer (N3).
+ * The bottom of the visible thread is the composer's top, not the viewport's bottom, because
+ * the composer (and on a phone the tab bar under it) cover the end of the scroll area. A turn
+ * taller than the space left keeps its question in view instead of scrolling it off the top.
+ * Positive scrolls down; 0 when the turn is already fully visible.
+ */
+export function revealScrollDelta(input: {
+  turnTop: number;
+  turnBottom: number;
+  composerTop: number;
+  visibleTop: number;
+}): number {
+  const overlap = input.turnBottom - (input.composerTop - REVEAL_GAP_PX);
+  if (overlap <= 0) return 0;
+  const roomAbove = Math.max(0, input.turnTop - (input.visibleTop + REVEAL_GAP_PX));
+  return Math.round(Math.min(overlap, roomAbove));
+}

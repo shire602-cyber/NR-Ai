@@ -128,7 +128,8 @@ describe("consolidated navigation redirects (App source)", () => {
     expect(read("client/src/components/MobileNav.tsx")).toContain("useNavGroups");
     expect(read("client/src/components/layout/nav-config.ts")).toContain('url: "/assistant"');
     expect(read("client/src/components/CommandPalette.tsx")).toContain('href: "/ai?tab=chat"');
-    expect(readDashboardSource()).toContain('<Link href="/ai?tab=cfo">');
+    // DF3 (Fable P-b): the dashboard menu links straight to the Assistant.
+    expect(readDashboardSource()).toContain('<Link href="/assistant">');
   });
 });
 

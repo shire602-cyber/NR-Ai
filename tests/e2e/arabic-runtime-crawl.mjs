@@ -61,6 +61,9 @@ import {
 import { classifyLines } from "./lib/latin-text.mjs";
 
 const BASE = (process.env.BASE_URL || "http://127.0.0.1:5000").replace(/\/$/, "");
+// Fable N1: browse in UAE time so a business date formatted as a browser-zone instant (a 30 Sep
+// period end shown as 1 Oct) shows up here. Override with E2E_TIMEZONE.
+const BROWSER_TIMEZONE = process.env.E2E_TIMEZONE || "Asia/Dubai";
 const ALLOW_REMOTE = process.env.ARABIC_ALLOW_REMOTE === "true";
 const PUBLIC_ONLY = process.env.ARABIC_PUBLIC === "true";
 const ALL = process.argv.includes("--all") || process.env.ARABIC_ALL === "true";
@@ -160,7 +163,10 @@ async function seed(page) {
 async function main() {
   await mkdir(ARTIFACT_DIR, { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    timezoneId: BROWSER_TIMEZONE,
+  });
   const page = await context.newPage();
   const report = {
     base: BASE,
@@ -378,7 +384,10 @@ async function probeStates(browser, page, report) {
   // Rate-limit messages, in a fresh signed-out Arabic browser. A random address that has no
   // account: the per-address lockout opens after RL_LOGIN_LOCK_MAX (default 5) failures, so the
   // API takes the first failures and the form shows the server's 429 sentence.
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    timezoneId: BROWSER_TIMEZONE,
+  });
   await context.addInitScript(() => {
     try {
       localStorage.setItem("i18n-storage", JSON.stringify({ state: { locale: "ar" }, version: 0 }));

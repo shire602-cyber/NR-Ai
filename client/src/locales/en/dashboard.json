@@ -84,6 +84,7 @@
   "dashboard.reportsSectionBody": "Launch a report, schedule a pack or open the full report workspace.",
   "dashboard.viewAllReports": "View all in reports",
   "dashboard.talkToCfo": "Ask the AI CFO",
+  "dashboard.askAssistant": "Ask the assistant",
   "dashboard.periodComparisonTitle": "Period comparison",
   "dashboard.colSelected": "Selected period",
   "dashboard.colPrior": "Prior period",

@@ -14,6 +14,7 @@ import type {
   BookkeeperQueueKey,
   ClientWithStats,
 } from "./types";
+import { calendarDayKey, parseCalendarDate } from "@/lib/format-date";
 
 export function formatAed(amount: number) {
   return formatAedText(amount);
@@ -21,7 +22,7 @@ export function formatAed(amount: number) {
 
 export function formatDateShort(date: string | null | undefined) {
   if (!date) return "—";
-  return format(new Date(date), "MMM d");
+  return format(parseCalendarDate(date), "MMM d");
 }
 
 export function formatPeriod(start: string | null | undefined, end: string | null | undefined) {
@@ -38,9 +39,7 @@ export function formatDays(days: number | null | undefined) {
 
 export function inputDate(date: string | null | undefined) {
   if (!date) return "";
-  const parsed = new Date(date);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return format(parsed, "yyyy-MM-dd");
+  return calendarDayKey(date);
 }
 
 /** Today as a yyyy-MM-dd string for pre-filling date inputs (local time). */
