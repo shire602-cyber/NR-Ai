@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import fs from "fs";
 import path from "path";
 import { type Server } from "http";
@@ -6,6 +6,22 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
+
+/**
+ * Crawler / security-contact files the app does not publish. They must answer
+ * 404 rather than fall through to the SPA shell (a 200 text/html soft 404 reads
+ * as a real sitemap or security.txt). If a real file is ever added under
+ * client/public, the static middleware serves it first and this never runs.
+ */
+const UNPUBLISHED_FILE_PATHS = new Set(["/sitemap.xml", "/llms.txt", "/.well-known/security.txt"]);
+
+export function rejectUnpublishedFiles(req: Request, res: Response, next: NextFunction) {
+  if ((req.method === "GET" || req.method === "HEAD") && UNPUBLISHED_FILE_PATHS.has(req.path)) {
+    res.status(404).type("text/plain").send("Not found");
+    return;
+  }
+  next();
+}
 
 /**
  * Set up Vite dev server (development only).
@@ -34,6 +50,7 @@ export async function setupVite(app: Express, server: Server) {
   });
 
   app.use(vite.middlewares);
+  app.use(rejectUnpublishedFiles);
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
 
@@ -105,6 +122,8 @@ export function serveStatic(app: Express) {
       },
     })
   );
+
+  app.use(rejectUnpublishedFiles);
 
   // SPA fallback — index.html is the entry document; must NEVER be cached
   // by the CDN or it pins users to a stale bundle hash forever.
