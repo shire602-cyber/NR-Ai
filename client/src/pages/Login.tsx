@@ -4,7 +4,7 @@ import { LoginForm } from "@/components/auth/LoginForm";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { fetchCurrentUser } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
-import { serverErrorMessage } from "@/lib/validation-messages";
+import { serverErrorMessage, VALIDATION_NAMESPACES } from "@/lib/validation-messages";
 import { establishAuthenticatedSession } from "@/lib/authSession";
 import { useTranslation } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,7 @@ function MfaChallenge({
   onDone(user: unknown, body: Record<string, unknown>): Promise<void>;
   onBack: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation(VALIDATION_NAMESPACES);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

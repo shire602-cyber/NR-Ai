@@ -63,6 +63,15 @@ interface VatPeriodSummary {
   netVatPayable: number;
   calculatedAt: string | null;
   deadline: DeadlineStatus;
+  lifecycle?: ReturnLifecycle | null;
+}
+
+/** E3 (J3-r3): the period's return on the Returns tab (server: vat-autopilot ReturnLifecycle). */
+interface ReturnLifecycle {
+  returnId: string;
+  stage: "draft" | "ready" | "filed" | "paid";
+  filed: boolean;
+  paymentDate: string | null;
 }
 
 interface DueDateView {
@@ -74,6 +83,17 @@ interface DueDateView {
   status: VatPeriodStatus;
   daysUntilDue: number;
   level: "ok" | "warning" | "critical" | "overdue";
+  lifecycle?: ReturnLifecycle | null;
+}
+
+/** Status label: a filed return reads Filed / Paid (the Returns tab's words), else the stage. */
+function statusKeyFor(status: VatPeriodStatus, lifecycle?: ReturnLifecycle | null): string {
+  if (lifecycle?.filed) {
+    return lifecycle.stage === "paid"
+      ? "compliance.autopilotStagePaid"
+      : "compliance.autopilotStageFiled";
+  }
+  return STATUS_KEY[status];
 }
 
 interface CalculationResult {
@@ -484,13 +504,20 @@ export function VatPeriodsPanel() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {formatDate(p.dueDate, locale)}
-                          <Badge className={LEVEL_BADGE[p.deadline.level].className}>
-                            {t[LEVEL_BADGE[p.deadline.level].labelKey]}
-                          </Badge>
+                          {p.lifecycle?.filed ? null : (
+                            <Badge className={LEVEL_BADGE[p.deadline.level].className}>
+                              {t[LEVEL_BADGE[p.deadline.level].labelKey]}
+                            </Badge>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={STATUS_VARIANT[p.status]}>{t[STATUS_KEY[p.status]]}</Badge>
+                        <Badge
+                          variant={STATUS_VARIANT[p.status]}
+                          data-testid={`status-vat-period-${p.periodStart.slice(0, 10)}`}
+                        >
+                          {t[statusKeyFor(p.status, p.lifecycle)]}
+                        </Badge>
                       </TableCell>
                       <TableCell data-numeric>
                         <Money amount={p.outputVat} />
@@ -752,20 +779,24 @@ export function VatPeriodsPanel() {
                     <TableCell>
                       <div className="flex items-center gap-2">
                         {formatDate(d.dueDate, locale)}
-                        <Badge className={LEVEL_BADGE[d.level].className}>
-                          <Clock className="h-3 w-3 me-1" />
-                          {d.daysUntilDue >= 0
-                            ? formatMessage(t["compliance.autopilotDaysLeft"], {
-                                n: d.daysUntilDue,
-                              })
-                            : formatMessage(t["compliance.autopilotDaysLate"], {
-                                n: Math.abs(d.daysUntilDue),
-                              })}
-                        </Badge>
+                        {d.lifecycle?.filed ? null : (
+                          <Badge className={LEVEL_BADGE[d.level].className}>
+                            <Clock className="h-3 w-3 me-1" />
+                            {d.daysUntilDue >= 0
+                              ? formatMessage(t["compliance.autopilotDaysLeft"], {
+                                  n: d.daysUntilDue,
+                                })
+                              : formatMessage(t["compliance.autopilotDaysLate"], {
+                                  n: Math.abs(d.daysUntilDue),
+                                })}
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={STATUS_VARIANT[d.status]}>{t[STATUS_KEY[d.status]]}</Badge>
+                      <Badge variant={STATUS_VARIANT[d.status]}>
+                        {t[statusKeyFor(d.status, d.lifecycle)]}
+                      </Badge>
                     </TableCell>
                   </TableRow>
                 ))}

@@ -367,5 +367,8 @@
   "forms.serverErrors.DISPOSAL_BEFORE_REMEASUREMENT": "أُعيد تقييم الأصل أو سُجّل له انخفاض في القيمة بعد تاريخ الاستبعاد هذا. ألغِ ذلك أولاً، أو استبعد الأصل في ذلك التاريخ أو بعده.",
   "forms.serverErrors.FX_RATE_OUTSIDE_BAND": "أحد الأسعار المستخدمة في إعادة التقييم يبعد أكثر من 20% عن السعر المرجعي. صحّح السعر، أو اذكر سبباً إن كان صحيحاً.",
   "forms.serverErrors.FX_RATE_OVERRIDE_ROLE_REQUIRED": "إعادة التقييم بسعر خارج نطاق التحقق متاحة للمالك أو المدير أو المحاسب أو المدير المالي فقط.",
-  "forms.serverErrors.FX_RATE_OVERRIDE_REASON_REQUIRED": "اذكر سبباً (5 أحرف على الأقل) لاستخدام سعر خارج نطاق التحقق."
+  "forms.serverErrors.FX_RATE_OVERRIDE_REASON_REQUIRED": "اذكر سبباً (5 أحرف على الأقل) لاستخدام سعر خارج نطاق التحقق.",
+  "forms.accountGroupExpenses": "المصروفات",
+  "forms.accountGroupFixedAssets": "الأصول الثابتة",
+  "forms.accountGroupOtherAssets": "أصول أخرى"
 }

@@ -31,6 +31,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -48,6 +49,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -224,6 +226,10 @@ export default function FixedAssets() {
   const [disposeDialogOpen, setDisposeDialogOpen] = useState(false);
   const [disposingAsset, setDisposingAsset] = useState<FixedAsset | null>(null);
   const [depRunDialogOpen, setDepRunDialogOpen] = useState(false);
+  // E3 (J3-r3): the row Capitalise action asks where it was paid from and the input VAT.
+  const [capitalizeTarget, setCapitalizeTarget] = useState<FixedAsset | null>(null);
+  const [capPaidFrom, setCapPaidFrom] = useState("");
+  const [capInputVat, setCapInputVat] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [assetToDelete, setAssetToDelete] = useState<string | null>(null);
 
@@ -284,17 +290,34 @@ export default function FixedAssets() {
     queryKey: [`/api/companies/${companyId}/accounts`],
     enabled: !!companyId,
   });
+  // E3 (J3-r3): a header account with sub-accounts (1020 Bank Accounts over 1021) is not offered.
+  const parentAccountIds = new Set(
+    accountsList.map((a) => (a as { parentId?: string | null }).parentId).filter(Boolean)
+  );
   const cashAccounts = accountsList.filter(
     (a) =>
       a.type === "asset" &&
+      !parentAccountIds.has(a.id) &&
       (a.code === "1010" || a.code === "1020" || /cash|bank/i.test(a.subType ?? ""))
   );
 
   const capitalizeMutation = useMutation({
-    mutationFn: ({ id, paymentAccountId }: { id: string; paymentAccountId: string }) =>
-      apiRequest("POST", `/api/fixed-assets/${id}/capitalize`, { paymentAccountId }),
+    mutationFn: ({
+      id,
+      paymentAccountId,
+      inputVat,
+    }: {
+      id: string;
+      paymentAccountId: string;
+      inputVat?: number;
+    }) =>
+      apiRequest("POST", `/api/fixed-assets/${id}/capitalize`, {
+        paymentAccountId,
+        ...(inputVat && inputVat > 0 ? { inputVat } : {}),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
+      setCapitalizeTarget(null);
       toast({ title: fa.capitalized });
     },
     onError: (error: Error) => {
@@ -818,12 +841,12 @@ export default function FixedAssets() {
                           <>
                             {canCapitalize && (
                               <DropdownMenuItem
-                                onSelect={() =>
-                                  capitalizeMutation.mutate({
-                                    id: asset.id,
-                                    paymentAccountId: cashAccounts[0].id,
-                                  })
-                                }
+                                onSelect={() => {
+                                  setCapPaidFrom(cashAccounts[0]?.id ?? "");
+                                  setCapInputVat("");
+                                  setCapitalizeTarget(asset);
+                                }}
+                                data-testid={`button-capitalize-${asset.id}`}
                                 disabled={capitalizeMutation.isPending || !can("ledger.post")}
                                 title={fa.capitalizeHint}
                               >
@@ -1427,6 +1450,72 @@ export default function FixedAssets() {
               </div>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Capitalise Dialog (E3, J3-r3): paid-from account and input VAT ─── */}
+      <Dialog
+        open={!!capitalizeTarget}
+        onOpenChange={(open) => {
+          if (!open) setCapitalizeTarget(null);
+        }}
+      >
+        <DialogContent size="sm" data-testid="dialog-capitalize">
+          <DialogHeader>
+            <DialogTitle>{fa.capitalize}</DialogTitle>
+            <DialogDescription>{fa.capitalizeHint}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="capitalize-paid-from">{fa.paidFrom}</Label>
+              <Select value={capPaidFrom} onValueChange={setCapPaidFrom}>
+                <SelectTrigger id="capitalize-paid-from" data-testid="select-capitalize-paid-from">
+                  <SelectValue placeholder={fa.paidFrom} />
+                </SelectTrigger>
+                <SelectContent>
+                  {cashAccounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.code} — {accountDisplayName(a, locale)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="capitalize-input-vat">{t["forms.asset.inputVat"]}</Label>
+              <Input
+                id="capitalize-input-vat"
+                type="number"
+                step="0.01"
+                min="0"
+                inputMode="decimal"
+                value={capInputVat}
+                onChange={(e) => setCapInputVat(e.target.value)}
+                data-testid="input-capitalize-input-vat"
+              />
+              <p className="text-xs text-muted-foreground">{t["forms.asset.inputVatHelp"]}</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCapitalizeTarget(null)}>
+              {t["common.cancel"]}
+            </Button>
+            <Button
+              onClick={() =>
+                capitalizeTarget &&
+                capitalizeMutation.mutate({
+                  id: capitalizeTarget.id,
+                  paymentAccountId: capPaidFrom,
+                  inputVat: Number(capInputVat) || 0,
+                })
+              }
+              disabled={!capPaidFrom || capitalizeMutation.isPending}
+              data-testid="button-confirm-capitalize"
+              {...gate("ledger.post")}
+            >
+              {fa.capitalize}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

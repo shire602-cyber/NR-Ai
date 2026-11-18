@@ -367,5 +367,8 @@
   "forms.serverErrors.DISPOSAL_BEFORE_REMEASUREMENT": "The asset was revalued or impaired after this disposal date. Undo that first, or dispose of the asset on or after it.",
   "forms.serverErrors.FX_RATE_OUTSIDE_BAND": "A rate used by this revaluation is more than 20% away from the reference rate. Correct the rate, or give a reason if it is right.",
   "forms.serverErrors.FX_RATE_OVERRIDE_ROLE_REQUIRED": "Only an owner, admin, accountant or CFO can revalue at a rate outside the sanity band.",
-  "forms.serverErrors.FX_RATE_OVERRIDE_REASON_REQUIRED": "Give a reason (at least 5 characters) for using a rate outside the sanity band."
+  "forms.serverErrors.FX_RATE_OVERRIDE_REASON_REQUIRED": "Give a reason (at least 5 characters) for using a rate outside the sanity band.",
+  "forms.accountGroupExpenses": "Expenses",
+  "forms.accountGroupFixedAssets": "Fixed assets",
+  "forms.accountGroupOtherAssets": "Other assets"
 }

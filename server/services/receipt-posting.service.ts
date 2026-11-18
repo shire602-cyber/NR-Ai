@@ -21,6 +21,7 @@ import { SUPPLY_TYPES } from "../../shared/validators/primitives";
 import { documentCurrency, loadBaseCurrency } from "../ledger";
 import { has, resolve } from "../platform/service-registry";
 import type { FxGetRate } from "./fx";
+import { companyIsVatRegistered } from "../tax/vat-registration";
 
 /** systemVat (B1: NC1): the VAT line this service derives; the kernel lets it sit on 1050 / 2020. */
 type JournalLineInsert = Omit<InsertJournalLine, "entryId"> & { systemVat?: boolean };
@@ -193,11 +194,17 @@ export async function planReceiptJournal(
   const merchant = receipt.merchant || "expense";
   const label = `${receipt.merchant || "Expense"} - ${receipt.category || "General"}`;
 
-  const isReverseCharge = !!receipt.reverseCharge;
+  // E3 (J2-r3): a company that is not VAT registered recovers no input VAT (it stays in the
+  // expense) and does not self-account reverse-charge VAT (there is none to record).
+  const vatRegistered = await companyIsVatRegistered(receipt.companyId);
+  if (!vatRegistered && receipt.reverseCharge) {
+    components = components.map((c) => ({ ...c, vatFils: 0 }));
+  }
+  const isReverseCharge = !!receipt.reverseCharge && vatRegistered;
   const vatBaseTotal = sumFils(components.map((c) => toBase(c.vatFils)));
   let inputVat: Account | null = null;
   let outputVat: Account | null = null;
-  if (vatBaseTotal > 0) {
+  if (vatBaseTotal > 0 && vatRegistered) {
     inputVat = accounts.find((a) => a.isVatAccount && a.vatType === "input" && a.isActive) ?? null;
     if (isReverseCharge) {
       outputVat =

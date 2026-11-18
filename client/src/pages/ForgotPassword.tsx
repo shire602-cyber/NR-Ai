@@ -15,7 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { apiUrl } from "@/lib/api";
-import { serverErrorMessage } from "@/lib/validation-messages";
+import { serverErrorMessage, VALIDATION_NAMESPACES } from "@/lib/validation-messages";
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
 import { ArrowLeft } from "lucide-react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
@@ -36,7 +36,7 @@ const forgotSchema = z.object({
 type ForgotFormData = z.infer<typeof forgotSchema>;
 
 export default function ForgotPassword() {
-  const { t } = useTranslation();
+  const { t } = useTranslation(VALIDATION_NAMESPACES);
   const [isLoading, setIsLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   // E1 (J2-r2): the API says when no email provider is configured; the page must not promise a

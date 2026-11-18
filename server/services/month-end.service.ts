@@ -9,6 +9,8 @@ import { getEffectiveLock, type LockScope, type LockType } from "./period-lock.s
 import { controlAccountTies, type ControlTie } from "./control-account-ties.service";
 import { computeFxExposure } from "./fx/exposure";
 import { pendingOpeningDocuments } from "./migration-import";
+import { frequencyOf, periodContaining } from "../tax/vat-periods";
+import { isVatRegistered } from "@shared/vat-registration";
 import {
   YEAR_END_CLOSE_SOURCE,
   accountTotals,
@@ -343,26 +345,36 @@ export async function getCloseChecklist(
     });
   }
 
-  // 7. VAT return prepared
-  const vatResult = await pool.query(
-    `SELECT COUNT(*) AS total
-     FROM vat_returns
-     WHERE company_id = $1
-       AND period_start >= $2::date
-       AND period_end <= $3::date
-       AND status != 'draft'`,
-    [companyId, periodStart, periodEnd]
-  );
-  const vatCount = parseInt(vatResult.rows[0]?.total || "0");
+  // 7. VAT return prepared. E3 (J3-r3): only a month in which one of the company's VAT periods
+  //    ends needs a return (a month inside an open quarter has none to prepare yet), and a
+  //    company that is not VAT registered files none. The return counted is the one whose period
+  //    ENDS in this month (period_end is stored as the last instant of the day, so compare dates).
+  const vatStep = await vatReturnStepScope(companyId, periodEnd);
+  let vatCount = 0;
+  if (vatStep.kind === "due") {
+    const vatResult = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM vat_returns
+       WHERE company_id = $1
+         AND (period_end::date) BETWEEN $2::date AND $3::date
+         AND status != 'draft'`,
+      [companyId, periodStart, periodEnd]
+    );
+    vatCount = parseInt(vatResult.rows[0]?.total || "0");
+  }
   checklist.push({
     id: 7,
     title: "VAT return prepared",
     description: "VAT 201 return has been prepared or filed for the period",
-    status: vatCount > 0 ? "complete" : "incomplete",
+    status: vatStep.kind !== "due" || vatCount > 0 ? "complete" : "incomplete",
     details:
-      vatCount > 0
-        ? `${vatCount} VAT return(s) prepared`
-        : "No VAT return prepared for this period",
+      vatStep.kind === "not_registered"
+        ? "Not VAT registered: no VAT return to prepare"
+        : vatStep.kind === "not_return_month"
+          ? `No VAT return due this month: the VAT period ends ${vatStep.periodEnd}`
+          : vatCount > 0
+            ? `${vatCount} VAT return(s) prepared`
+            : "No VAT return prepared for this period",
   });
 
   // ── W4-A (R08-23): accruals, prepayments, FX revaluation ────────────────
@@ -1210,8 +1222,48 @@ export const CLOSE_STEP_KEYS = [
   "accruals",
   "prepayments",
   "fx_revaluation",
+  // E3 (J3-r3): the checklist offers Sign off on every step it lists; this one answered 404.
+  "control_accounts",
+  // INTEGRATE-H: D1's go-live step (id 12, shown while a documents-mode opening TB exists). D1's
+  // grni / fixed_assets checks are ties inside control_accounts, not steps of their own.
+  "opening_balances",
 ] as const;
 export type CloseStepKey = (typeof CLOSE_STEP_KEYS)[number];
+
+/**
+ * E3 (J3-r3): whether the month ending `periodEnd` (YYYY-MM-DD) needs a VAT return: only when the
+ * company is VAT registered and one of its VAT periods (frequency + stagger) ends in this month.
+ */
+export async function vatReturnStepScope(
+  companyId: string,
+  periodEnd: string
+): Promise<
+  { kind: "due" } | { kind: "not_registered" } | { kind: "not_return_month"; periodEnd: string }
+> {
+  const r = await pool.query(
+    `SELECT tax_registration_type, trn_vat_number, vat_filing_frequency, vat_period_start_month
+       FROM companies WHERE id = $1`,
+    [companyId]
+  );
+  const row = r.rows[0] as Record<string, unknown> | undefined;
+  if (
+    row &&
+    !isVatRegistered({
+      taxRegistrationType: (row.tax_registration_type as string | null) ?? null,
+      trnVatNumber: (row.trn_vat_number as string | null) ?? null,
+    })
+  ) {
+    return { kind: "not_registered" };
+  }
+  const vatPeriod = periodContaining(
+    periodEnd,
+    frequencyOf((row?.vat_filing_frequency as string | null) ?? null),
+    Number(row?.vat_period_start_month) || 1
+  );
+  return vatPeriod.to === periodEnd
+    ? { kind: "due" }
+    : { kind: "not_return_month", periodEnd: vatPeriod.to };
+}
 
 export interface StepSignOff {
   stepKey: string;

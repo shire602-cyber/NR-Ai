@@ -5,6 +5,9 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/lib/i18n";
 
+/** E3: the "required" text lives in `forms`, which public routes do not load by themselves. */
+const REQUIRED_MARK_NAMESPACES = ["forms"] as const;
+
 const labelVariants = cva(
   "text-small font-medium leading-5 peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
 );
@@ -22,7 +25,7 @@ Label.displayName = LabelPrimitive.Root.displayName;
  * The asterisk is decorative; screen readers hear the translated "required".
  */
 function RequiredMark({ className }: { className?: string }) {
-  const { t } = useTranslation();
+  const { t } = useTranslation(REQUIRED_MARK_NAMESPACES);
   return (
     <>
       <span aria-hidden="true" className={cn("ms-0.5 text-danger", className)}>

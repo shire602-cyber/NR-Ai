@@ -34,6 +34,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { companyLogoFileError, companyLogoSrc, uploadCompanyLogo } from "@/lib/company-logo";
 import type { Company } from "@shared/schema";
@@ -156,6 +157,7 @@ export default function CompanySettings() {
   const t = tr as Record<string, string>;
   const [, navigate] = useLocation();
   const { companyId } = useDefaultCompany();
+  const { gate } = useCompanyPermission();
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
   const { data: company, isLoading } = useQuery<Company>({
@@ -1035,6 +1037,7 @@ export default function CompanySettings() {
                 disabled={updateMutation.isPending || !form.formState.isDirty}
                 className="min-w-32"
                 data-testid="button-save-company-settings"
+                {...gate("settings.company")}
               >
                 {updateMutation.isPending ? (
                   t["forms.saving"]
