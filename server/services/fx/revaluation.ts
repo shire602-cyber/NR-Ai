@@ -25,7 +25,8 @@ import { filsToNumber, fromFils, sumFils, toFils } from "../../../shared/money";
 import { ACCOUNT_CODES } from "../../constants";
 import { DomainError } from "../../errors";
 import { assertPeriodNotLocked } from "../period-lock.service";
-import { addDaysIso, isoToDate, toIsoDate } from "./rates";
+import Decimal from "decimal.js";
+import { addDaysIso, isoToDate, RATE_SANITY_BAND, referenceRate, toIsoDate } from "./rates";
 import { computeFxExposure, type FxExposure } from "./exposure";
 
 export const FX_REVALUATION_SOURCE = "fx_revaluation";
@@ -307,6 +308,47 @@ async function post(
 export interface RunOptions {
   /** Proceed although at least one rate is older than the proximity window. */
   acknowledgeStale?: boolean;
+  /** D2 (N9): why a rate outside the sanity band is right (owner, admin, accountant or CFO). */
+  rateOverrideReason?: string | null;
+  /** The caller's company role (null for a platform admin). */
+  role?: string | null;
+}
+
+/** D2 (N9): roles that may revalue at a rate outside the sanity band, with a reason. */
+export const FX_RATE_OVERRIDE_ROLES = new Set(["owner", "admin", "accountant", "cfo"]);
+
+export interface OutOfBandRate {
+  currency: string;
+  rate: string;
+  referenceRate: string;
+  referenceSource: string;
+  changePct: number;
+}
+
+/**
+ * D2 (N9): the rates a revaluation would use that are more than the sanity band (20%) away from
+ * the reference: the CBUAE peg for USD / AED, else the platform rate when one exists. A typo
+ * (36.725 for 3.6725) would otherwise restate every foreign balance (IAS 21.23: the closing rate).
+ */
+export async function ratesOutsideBand(exposure: FxExposure): Promise<OutOfBandRate[]> {
+  const byCurrency = new Map<string, string>();
+  for (const i of exposure.items) byCurrency.set(i.currency.toUpperCase(), i.currentRate);
+  const out: OutOfBandRate[] = [];
+  for (const [currency, rateText] of Array.from(byCurrency.entries())) {
+    const ref = await referenceRate(currency, exposure.baseCurrency, exposure.asOf);
+    if (!ref || ref.rate.lte(0)) continue;
+    const change = new Decimal(rateText).minus(ref.rate).dividedBy(ref.rate).abs();
+    if (change.gt(RATE_SANITY_BAND)) {
+      out.push({
+        currency,
+        rate: rateText,
+        referenceRate: ref.rate.toString(),
+        referenceSource: ref.source,
+        changePct: change.times(100).toDecimalPlaces(2).toNumber(),
+      });
+    }
+  }
+  return out;
 }
 
 export async function runRevaluation(
@@ -339,6 +381,36 @@ export async function runRevaluation(
       { warnings: exposure.warnings, asOf },
       "At least one rate is older than the proximity window; resend with acknowledgeStale=true"
     );
+  }
+
+  const outOfBand = await ratesOutsideBand(exposure);
+  const overrideReason = (opts.rateOverrideReason ?? "").trim();
+  if (outOfBand.length) {
+    if (!overrideReason) {
+      throw new DomainError(
+        "FX_RATE_OUTSIDE_BAND",
+        409,
+        { rates: outOfBand, bandPct: RATE_SANITY_BAND * 100, asOf },
+        `${outOfBand.map((r) => `${r.currency} ${r.rate} is ${r.changePct}% from ${r.referenceRate}`).join("; ")}. ` +
+          "Correct the rate, or resend with rateOverrideReason if it is right."
+      );
+    }
+    if (opts.role != null && !FX_RATE_OVERRIDE_ROLES.has(opts.role)) {
+      throw new DomainError(
+        "FX_RATE_OVERRIDE_ROLE_REQUIRED",
+        403,
+        { role: opts.role },
+        "Only an owner, admin, accountant or CFO can revalue at a rate outside the sanity band"
+      );
+    }
+    if (overrideReason.length < 5) {
+      throw new DomainError(
+        "FX_RATE_OVERRIDE_REASON_REQUIRED",
+        422,
+        { fields: { rateOverrideReason: ["At least 5 characters"] } },
+        "Give a reason (at least 5 characters) for using a rate outside the sanity band"
+      );
+    }
   }
 
   const accounts = await resolveAccounts(companyId, exposure, true);
@@ -400,6 +472,9 @@ export async function runRevaluation(
       items: exposure.items.length,
       lines: serialise(lines),
       warnings: exposure.warnings,
+      rateOverride: outOfBand.length
+        ? { reason: overrideReason, by: userId, rates: outOfBand }
+        : null,
     };
     const [row] = await tx
       .update(fxRevaluations)
@@ -421,6 +496,7 @@ export async function runRevaluation(
       netGainLoss: fromFils(exposure.totals.netFils),
       lines: serialise(lines),
       warnings: exposure.warnings,
+      rateOverride: summary.rateOverride,
     };
   });
 }

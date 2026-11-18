@@ -52,8 +52,6 @@ export interface Vat201ExportReturn {
   box12TotalDueTax: number;
   box13RecoverableTax: number;
   box14PayableTax: number;
-  adjustmentAmount?: number | null;
-  adjustmentReason?: string | null;
 }
 
 export interface Vat201ExportCompany {
@@ -297,8 +295,6 @@ export function prepareVat201ForExport(
         { field: "Due date", value: dueDate },
         { field: "Status", value: status },
         { field: "Net VAT payable", value: numberValue(vatReturn, "box14PayableTax") },
-        { field: "Adjustment amount", value: vatReturn.adjustmentAmount ?? "" },
-        { field: "Adjustment reason", value: vatReturn.adjustmentReason ?? "" },
         { field: "Notes", value: vatReturn.notes ?? "" },
         {
           field: "Submission note",

@@ -455,24 +455,46 @@ export function validateRateInput(
   return { row, date, rateType, source };
 }
 
-/** Previous rate for the same stored pair (company scope, then system) on or before `date`. */
+/**
+ * Previous rate for the same stored pair (company scope, then system) on or before `date`.
+ * D2 (N9): with no row of that type, the spot rate is the reference, and for USD / AED the
+ * CBUAE peg (3.6725), so the first rate a user types is checked too (36.725 is refused).
+ */
 async function previousRate(
   companyId: string | null,
   v: ValidatedRate
 ): Promise<{ rate: Decimal; date: string } | null> {
+  const opts = { rateType: v.rateType, fallbackToSpot: true, pegDefault: true };
   try {
     const r = companyId
-      ? await getRate(companyId, v.row.baseCurrency, v.row.targetCurrency, v.date, {
-          rateType: v.rateType,
-          fallbackToSpot: false,
-          pegDefault: false,
-        })
-      : await getSystemRate(v.row.baseCurrency, v.row.targetCurrency, v.date, {
-          rateType: v.rateType,
-          fallbackToSpot: false,
-          pegDefault: false,
-        });
+      ? await getRate(companyId, v.row.baseCurrency, v.row.targetCurrency, v.date, opts)
+      : await getSystemRate(v.row.baseCurrency, v.row.targetCurrency, v.date, opts);
     return { rate: new D(r.rateText), date: r.date };
+  } catch (err) {
+    if (err instanceof DomainError && err.code === "NO_EXCHANGE_RATE") return null;
+    throw err;
+  }
+}
+
+/**
+ * D2 (N9): the reference a rate in use is checked against: the CBUAE peg for USD / AED, else the
+ * platform (system) rate on or before the date, when one exists. Null when there is none.
+ */
+export async function referenceRate(
+  from: string,
+  to: string,
+  date: string
+): Promise<{ rate: Decimal; date: string; source: string } | null> {
+  const f = normalizeCurrency(from, "from");
+  const t = normalizeCurrency(to, "to");
+  if (f === t) return null;
+  if (isPeggedPair(f, t)) {
+    const p = pegResult(f, date, "spot");
+    return { rate: new D(p.rateText), date, source: PEG_SOURCE };
+  }
+  try {
+    const r = await getSystemRate(f, t, date, { rateType: "spot" });
+    return { rate: new D(r.rateText), date: r.date, source: r.source };
   } catch (err) {
     if (err instanceof DomainError && err.code === "NO_EXCHANGE_RATE") return null;
     throw err;

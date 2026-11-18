@@ -98,10 +98,13 @@ export const createCompanyVatWorkpaperBody = z
 
 export const generateVatReturnBody = z.object({ periodStart: zDate, periodEnd: zDate }).strict();
 
+/**
+ * D2 (N11): no free "adjustment" here. The VAT 201 has no adjustment outside Boxes 1-13 (Box 14
+ * is Box 12 less Box 13), so a correction is a return adjustment on its box before filing, or a
+ * voluntary disclosure (amended return) after filing. An unknown field is refused (strictBody).
+ */
 export const submitVatReturnBody = z
   .object({
-    adjustmentAmount: zAmount.optional().nullable(),
-    adjustmentReason: zText(2000).optional().nullable(),
     notes: zText(4000).optional().nullable(),
     ftaReferenceNumber: z.string().trim().max(100).optional().nullable(),
     reconciliationOverrideReason: zText(2000).optional().nullable(),

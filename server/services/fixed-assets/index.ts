@@ -34,7 +34,13 @@ import { DomainError } from "../../errors";
 import { createLogger } from "../../config/logger";
 import { fromFils, toFils } from "../../../shared/money";
 import { isNonDepreciableCategory } from "../../../shared/validators/fixed-assets";
-import { postJournal, withLedgerTx, type LedgerTx, type PostJournalLineInput } from "../../ledger";
+import {
+  postJournal,
+  reverseEntry,
+  withLedgerTx,
+  type LedgerTx,
+  type PostJournalLineInput,
+} from "../../ledger";
 import { todayIso } from "../../ledger/normalize";
 import { assertAccount, ensureAccountByCode, q } from "../inventory/store";
 import { assertChosenAccountsNotControl } from "../../ledger/control-accounts";
@@ -740,7 +746,7 @@ export async function depreciateInTx(
   year: number,
   month: number,
   actorId: string,
-  opts: { catchUp?: boolean; throughDate?: string } = {}
+  opts: { catchUp?: boolean; throughDate?: string; keySuffix?: string } = {}
 ): Promise<DepreciationOutcome> {
   const out = (code: string, extra: Partial<DepreciationOutcome> = {}): DepreciationOutcome => ({
     assetId: a.id,
@@ -794,7 +800,8 @@ export async function depreciateInTx(
   const entryId = await post(tx, a, {
     date,
     memo: `Depreciation: ${a.asset_name}${suffix}`,
-    key: `${FA_SOURCE}:${a.id}:dep:${year}-${month}`,
+    // D2 (N6): a month re-charged after its depreciation was reversed gets a new key.
+    key: `${FA_SOURCE}:${a.id}:dep:${year}-${month}${opts.keySuffix ?? ""}`,
     lines: [
       {
         accountId: acc.expense,
@@ -1085,6 +1092,19 @@ const SUPPLY_TYPE_OF: Record<string, "standard_rated" | "zero_rated" | "exempt" 
 async function assertDisposable(tx: LedgerTx, a: AssetRow, input: DisposeInput): Promise<void> {
   if (a.status === "disposed")
     throw new DomainError("ASSET_ALREADY_DISPOSED", 409, undefined, "Asset is already disposed");
+  // D2 (N10): derecognition is recorded when it happens (IAS 16.67), never ahead of time. A future
+  // date would post the proceeds and the VAT before the supply and skip the disposal month's
+  // depreciation (it can only be charged once its date has passed), so it is refused, like a
+  // future depreciation month (E2, J3-r2).
+  const today = todayIso();
+  if (input.disposalDate > today) {
+    throw new DomainError(
+      "DISPOSAL_DATE_IN_FUTURE",
+      422,
+      { today, fields: { disposalDate: [`On or before ${today}`] } },
+      `The disposal date ${input.disposalDate} is after today (${today}). Record the disposal on or after the day the asset leaves the business.`
+    );
+  }
   if (input.disposalDate < a.purchase_iso) {
     throw new DomainError(
       "DISPOSAL_BEFORE_PURCHASE",
@@ -1101,29 +1121,110 @@ async function assertDisposable(tx: LedgerTx, a: AssetRow, input: DisposeInput):
       "This asset is not on the general ledger; capitalise it before recording a disposal"
     );
   }
-  // E2 (J3-r2): the disposal clears the accumulated depreciation on its date. Depreciation dated
-  // after that day would be cleared before it was booked (1240 shown as a positive asset on the
-  // balance sheet in between), so the asset is disposed on or after its last depreciation.
-  const later = await q<{ period_year: number; period_month: number }>(
+  // D2 (N6): depreciation already booked after the disposal date is reversed by the disposal
+  // (reverseDepreciationAfter). A revaluation or impairment after that date changed the basis of
+  // those charges, so it has to be undone first.
+  const remeasured = await q<{ event_type: string; event_date: string }>(
     tx,
-    sql`SELECT period_year, period_month FROM depreciation_schedules
-         WHERE asset_id = ${a.id}
-           AND make_date(period_year, period_month, 1) + interval '1 month' - interval '1 day'
-               > ${input.disposalDate}::date
-         ORDER BY period_year, period_month LIMIT 1`
+    sql`SELECT event_type, event_date::text AS event_date FROM fixed_asset_events
+         WHERE asset_id = ${a.id} AND event_type IN ('revalued', 'impaired')
+           AND event_date > ${input.disposalDate}::date
+         ORDER BY event_date DESC LIMIT 1`
   );
-  if (later[0]) {
-    const end = depreciationPeriodEnd(later[0].period_year, later[0].period_month);
+  if (remeasured[0]) {
     throw new DomainError(
-      "DISPOSAL_BEFORE_DEPRECIATION",
+      "DISPOSAL_BEFORE_REMEASUREMENT",
       409,
-      { depreciatedThrough: end, fields: { disposalDate: [`On or after ${end}`] } },
-      `Depreciation is already recorded through ${end}. Dispose of the asset on or after that date.`
+      {
+        eventType: remeasured[0].event_type,
+        eventDate: remeasured[0].event_date,
+        fields: { disposalDate: [`On or after ${remeasured[0].event_date}`] },
+      },
+      `The asset was ${remeasured[0].event_type} on ${remeasured[0].event_date}, after this disposal date. Undo that first, or dispose of the asset on or after it.`
     );
   }
   if (input.proceedsFils > 0 && (input.vatTreatment ?? "standard") === "standard") {
     await assertCompanyEmirateForDisposal(tx, a.company_id);
   }
+}
+
+/**
+ * D2 (N6): depreciation stops at derecognition (IAS 16.55), so a disposal recorded late reverses,
+ * in its own transaction, every depreciation charge dated after the disposal date (the disposal
+ * month too: it is charged again up to the disposal date). Each charge is reversed through the
+ * ledger on its own date (reverseEntry), so a locked or closed period refuses the disposal
+ * (PERIOD_LOCKED) instead of moving the charge into another month. The register drops those
+ * months and gets its accumulated depreciation back.
+ */
+async function reverseDepreciationAfter(
+  tx: LedgerTx,
+  a: AssetRow,
+  disposalDate: string,
+  actorId: string
+): Promise<Array<{ year: number; month: number; amount: number; reversalEntryId: string }>> {
+  const rows = await q<{
+    id: string;
+    period_year: number;
+    period_month: number;
+    amount: string;
+    journal_entry_id: string | null;
+    entry_date: string | null;
+  }>(
+    tx,
+    sql`SELECT ds.id, ds.period_year, ds.period_month, ds.amount::text AS amount,
+               ds.journal_entry_id, to_char(je.date, 'YYYY-MM-DD') AS entry_date
+          FROM depreciation_schedules ds
+          LEFT JOIN journal_entries je ON je.id = ds.journal_entry_id
+         WHERE ds.asset_id = ${a.id}
+           AND COALESCE(to_char(je.date, 'YYYY-MM-DD'),
+                        to_char(make_date(ds.period_year, ds.period_month, 1)
+                                + interval '1 month' - interval '1 day', 'YYYY-MM-DD'))
+               > ${disposalDate}
+         ORDER BY ds.period_year DESC, ds.period_month DESC
+         FOR UPDATE OF ds`
+  );
+  const out: Array<{ year: number; month: number; amount: number; reversalEntryId: string }> = [];
+  let reversedFils = 0;
+  for (const r of rows) {
+    const amountFils = toFils(r.amount, { rounding: "halfUp" });
+    let reversalEntryId = "";
+    if (r.journal_entry_id) {
+      const { reversal } = await reverseEntry(
+        r.journal_entry_id,
+        {
+          date: r.entry_date ?? depreciationPeriodEnd(r.period_year, r.period_month),
+          reason: `Depreciation after the disposal on ${disposalDate} (IAS 16.55)`,
+        },
+        { actorId, tx, companyId: a.company_id }
+      );
+      reversalEntryId = reversal.id;
+    }
+    await tx.execute(sql`DELETE FROM depreciation_schedules WHERE id = ${r.id}`);
+    reversedFils += amountFils;
+    out.push({
+      year: r.period_year,
+      month: r.period_month,
+      amount: Number(fromFils(amountFils)),
+      reversalEntryId,
+    });
+    await recordEvent(tx, a, {
+      type: "depreciation_reversed",
+      date: r.entry_date ?? depreciationPeriodEnd(r.period_year, r.period_month),
+      amountFils: -amountFils,
+      journalEntryId: reversalEntryId || null,
+      details: { year: r.period_year, month: r.period_month, disposalDate },
+      actorId,
+    });
+  }
+  if (reversedFils > 0) {
+    await tx.execute(
+      sql`UPDATE fixed_assets
+             SET accumulated_depreciation = COALESCE(accumulated_depreciation, 0) - ${fromFils(reversedFils)}::numeric,
+                 net_book_value = COALESCE(net_book_value, 0) + ${fromFils(reversedFils)}::numeric
+           WHERE id = ${a.id}`
+    );
+  }
+  return out;
 }
 
 /**
@@ -1212,6 +1313,15 @@ async function disposeInTx(
   {
     let a = await loadAsset(tx, assetId, { lock: true, companyId });
     await assertDisposable(tx, a, input);
+    // D2 (N6): charges booked after the disposal date are reversed before anything is measured.
+    const reversedDepreciation = await reverseDepreciationAfter(
+      tx,
+      a,
+      input.disposalDate,
+      input.actorId
+    );
+    if (reversedDepreciation.length) a = await loadAsset(tx, assetId, { lock: true });
+    const redoneMonth = new Set(reversedDepreciation.map((r) => `${r.year}-${r.month}`));
     // Catch-up depreciation through the month before disposal, then (C2, RL5) the disposal
     // month up to the disposal date, so the gain or loss is measured against the carrying
     // amount at derecognition (IAS 16.55, 16.68).
@@ -1234,6 +1344,7 @@ async function disposeInTx(
       const r = await depreciateInTx(tx, a, dy, dm, input.actorId, {
         catchUp: true,
         throughDate: input.disposalDate,
+        keySuffix: redoneMonth.has(`${dy}-${dm}`) ? `:to-${input.disposalDate}` : undefined,
       });
       if (!r.skipped && r.calc && r.journalEntryId) {
         catchUp.push({
@@ -1399,6 +1510,7 @@ async function disposeInTx(
       gainLossType: split.gainLossFils > 0 ? "gain" : split.gainLossFils < 0 ? "loss" : "breakeven",
       journalEntryId: entryId,
       catchUpDepreciation: catchUp,
+      reversedDepreciation,
     };
   }
 }

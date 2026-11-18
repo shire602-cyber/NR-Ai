@@ -177,6 +177,8 @@ const csvImportBody = z.object({
 const revalueBody = z.object({
   asOf: zDay.optional(),
   acknowledgeStale: z.boolean().optional(),
+  /** D2 (N9): needed when a rate in use is outside the sanity band (owner/admin/accountant/CFO). */
+  rateOverrideReason: z.string().trim().max(1000).optional().nullable(),
 });
 
 const userIdOf = (req: Request): string => {
@@ -590,10 +592,15 @@ export function registerExchangeRateRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       await assertCanWrite(req, companyId);
-      const { asOf, acknowledgeStale } = req.body as z.output<typeof revalueBody>;
+      const { asOf, acknowledgeStale, rateOverrideReason } = req.body as z.output<
+        typeof revalueBody
+      >;
       const userId = userIdOf(req);
+      const membership = req.user?.isAdmin ? null : await storage.getUserRole(companyId, userId);
       const result = await runRevaluation(companyId, asOf, userId, {
         acknowledgeStale,
+        rateOverrideReason,
+        role: membership?.role ?? null,
       });
       if (result.posted) {
         const { recordAudit } = await import("../services/audit.service");
@@ -608,6 +615,7 @@ export function registerExchangeRateRoutes(app: Express) {
             netGainLoss: result.netGainLoss,
             journalEntryId: result.journalEntryId,
             reversalEntryId: result.reversalEntryId,
+            rateOverride: result.rateOverride ?? null,
           },
           req,
         });

@@ -215,7 +215,8 @@ export function isRealisedFxAccount(a: Pick<ReportAccount, "type" | "subType" | 
 
 /**
  * C2 (RM2): receipts (and reversed receipts) in range of an invoice that billed a fixed-asset
- * disposal: per entry, the asset's cost account and the invoice's net share (net / total).
+ * disposal (or a debit note on it, D2 N5): per entry, the asset's cost account and the
+ * document's net share (net / total).
  */
 async function disposalReceiptShares(
   companyId: string,
@@ -231,9 +232,12 @@ async function disposalReceiptShares(
             ROUND(i.total * 100)::bigint AS total_fils,
             ROUND(COALESCE(i.vat_amount, 0) * 100)::bigint AS vat_fils
        FROM journal_entries je
+       JOIN invoices i ON i.id = je.source_id AND i.company_id = je.company_id
+       -- D2 (N5): a debit note on the disposal invoice is more disposal proceeds.
        JOIN fixed_assets fa
-         ON fa.company_id = je.company_id AND fa.disposal_invoice_id = je.source_id
-       JOIN invoices i ON i.id = fa.disposal_invoice_id
+         ON fa.company_id = je.company_id
+        AND fa.disposal_invoice_id = CASE WHEN i.invoice_type = 'debit_note'
+                                          THEN i.original_invoice_id ELSE i.id END
       WHERE je.company_id = $1 AND je.status = 'posted'
         AND je.source IN ('payment', 'payment_reversal')
         AND ($2::date IS NULL OR ${ENTRY_LOCAL_DATE_SQL} >= $2::date)

@@ -37,6 +37,7 @@ import {
 } from "../ledger";
 import type { LedgerTx, PostJournalLineInput } from "../ledger";
 import { assertPeriodNotLocked } from "./period-lock.service";
+import { controlAccountsAmong } from "../ledger/control-accounts";
 import { has, resolve } from "../platform/service-registry";
 import { createLogger } from "../config/logger";
 import { ACCOUNT_CODES } from "../constants";
@@ -210,6 +211,17 @@ export async function assertLinkableGlAccount(
       422,
       { type: account.type, subType: account.subType },
       "A bank account must link to an asset GL account with sub-type bank or cash"
+    );
+  }
+  // D2 (N8): a control account (1040 receivables, 1050 input VAT, 1070 stock, ...) is never a
+  // bank account, whatever its sub-type says: bank lines posted to it would bypass its sub-ledger.
+  const [control] = await controlAccountsAmong(companyId, [account.id]);
+  if (control) {
+    throw new DomainError(
+      "GL_ACCOUNT_NOT_BANK",
+      422,
+      { type: account.type, subType: account.subType, controlLedger: control.ledger },
+      `${account.code} is a control account (${control.ledger}); link the bank account to a bank or cash GL account`
     );
   }
   return account;

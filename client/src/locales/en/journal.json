@@ -103,5 +103,6 @@
   "journal.sourceFxRevaluation": "FX revaluation",
   "journal.sourceInventory": "Inventory",
   "journal.sourceOpeningBalance": "Opening balance",
-  "journal.sourceSystem": "System entry"
+  "journal.sourceSystem": "System entry",
+  "journal.coaParentLocked": "Parent locked: this sub-account is part of a control account"
 }

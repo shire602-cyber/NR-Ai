@@ -563,7 +563,7 @@ async function postRevenueInTx(tx: LedgerTx, invoice: Invoice, userId: string): 
     baseCurrency,
   });
   const docLabel = invoice.invoiceType === "debit_note" ? "Debit Note" : "Sales Invoice";
-  const { replayed } = await postJournal(
+  const { replayed, entry } = await postJournal(
     {
       companyId: invoice.companyId,
       date: dateOnly(invoice.date),
@@ -577,6 +577,18 @@ async function postRevenueInTx(tx: LedgerTx, invoice: Invoice, userId: string): 
     },
     { actorId: userId, tx }
   );
+  if (!replayed && invoice.invoiceType === "debit_note" && invoice.originalInvoiceId) {
+    // D2 (N5): a debit note on a disposal invoice adjusts the disposal result, not revenue.
+    await inventoryHook("fixedAssets.onDisposalInvoiceDebited", tx, {
+      companyId: invoice.companyId,
+      originalInvoiceId: invoice.originalInvoiceId,
+      debitNoteId: invoice.id,
+      debitNoteNumber: invoice.number,
+      entryId: entry.id,
+      date: dateOnly(invoice.date),
+      userId,
+    });
+  }
   if (!replayed) await inventoryHook("inventory.onInvoiceIssued", tx, { invoice, lines, userId });
   return !replayed;
 }
@@ -737,6 +749,15 @@ export async function voidInvoice(
       { void: true, reason: reason ?? `Invoice ${target}` },
       { actorId: userId, tx }
     );
+    if (inv.invoiceType === "debit_note") {
+      // D2 (N5): voiding a debit note on a disposal invoice restores the disposal result.
+      await inventoryHook("fixedAssets.onDisposalCreditVoided", tx, {
+        companyId,
+        originalInvoiceId: inv.originalInvoiceId ?? null,
+        creditNoteId: invoiceId,
+        userId,
+      });
+    }
     await inventoryHook("inventory.onInvoiceVoided", tx, {
       companyId,
       invoiceId,

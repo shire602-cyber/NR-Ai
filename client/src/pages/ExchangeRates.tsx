@@ -169,6 +169,11 @@ const STRINGS = {
     missingRates: "Missing rates",
     staleConfirmTitle: "Some rates are stale",
     staleConfirm: "Post with these rates",
+    bandTitle: "A rate is far from the reference rate",
+    bandReason: "Why is this rate right?",
+    bandReasonHint:
+      "Owner, admin, accountant or CFO only. The reason is kept with the revaluation and in the audit log.",
+    bandConfirm: "Post with this rate",
     posted: "Revaluation posted",
     noop: "Nothing posted",
     revalFailed: "Revaluation failed",
@@ -270,6 +275,11 @@ const STRINGS = {
     missingRates: "أسعار مفقودة",
     staleConfirmTitle: "بعض الأسعار قديمة",
     staleConfirm: "الترحيل بهذه الأسعار",
+    bandTitle: "سعر بعيد عن السعر المرجعي",
+    bandReason: "لماذا هذا السعر صحيح؟",
+    bandReasonHint:
+      "للمالك أو المدير أو المحاسب أو المدير المالي فقط. يُحفظ السبب مع إعادة التقييم وفي سجل التدقيق.",
+    bandConfirm: "الترحيل بهذا السعر",
     posted: "تم ترحيل إعادة التقييم",
     noop: "لم يتم ترحيل شيء",
     revalFailed: "فشلت إعادة التقييم",
@@ -452,6 +462,10 @@ export default function ExchangeRates() {
   const [revalDate, setRevalDate] = useState(yesterdayIso());
   const [preview, setPreview] = useState<RevaluationPreview | null>(null);
   const [staleConfirm, setStaleConfirm] = useState<string | null>(null);
+  // D2 (N9): a rate outside the sanity band needs a reason (owner / admin / accountant / CFO).
+  const [bandConfirm, setBandConfirm] = useState<string | null>(null);
+  const [bandReason, setBandReason] = useState("");
+  const [staleAck, setStaleAck] = useState(false);
 
   const { data: rates, isLoading: isLoadingRates } = useQuery<ExchangeRate[]>({
     queryKey: [ratesKey],
@@ -558,10 +572,14 @@ export default function ExchangeRates() {
   });
 
   const runMutation = useMutation({
-    mutationFn: async (acknowledgeStale: boolean) =>
-      apiRequest("POST", `${ratesKey}/revalue`, { asOf: revalDate, acknowledgeStale }),
+    mutationFn: async (opts: { acknowledgeStale: boolean; rateOverrideReason?: string }) => {
+      setStaleAck(opts.acknowledgeStale);
+      return apiRequest("POST", `${ratesKey}/revalue`, { asOf: revalDate, ...opts });
+    },
     onSuccess: (data: { posted: boolean; reason?: string; netGainLoss?: string }) => {
       setStaleConfirm(null);
+      setBandConfirm(null);
+      setBandReason("");
       invalidateAll();
       if (data.posted) {
         toast({ title: s.posted, description: data.netGainLoss });
@@ -574,6 +592,11 @@ export default function ExchangeRates() {
       }
     },
     onError: (error: Error) => {
+      if (error instanceof ApiError && error.body?.code === "FX_RATE_OUTSIDE_BAND") {
+        setStaleConfirm(null);
+        setBandConfirm(error.message);
+        return;
+      }
       if (error instanceof ApiError && error.status === 409) {
         setStaleConfirm(error.message);
         return;
@@ -893,7 +916,7 @@ export default function ExchangeRates() {
               {s.preview}
             </Button>
             <Button
-              onClick={() => runMutation.mutate(false)}
+              onClick={() => runMutation.mutate({ acknowledgeStale: false })}
               disabled={
                 runMutation.isPending ||
                 !preview ||
@@ -1277,8 +1300,45 @@ export default function ExchangeRates() {
             <Button variant="outline" onClick={() => setStaleConfirm(null)}>
               {s.cancel}
             </Button>
-            <Button onClick={() => runMutation.mutate(true)} disabled={runMutation.isPending}>
+            <Button
+              onClick={() => runMutation.mutate({ acknowledgeStale: true })}
+              disabled={runMutation.isPending}
+            >
               {s.staleConfirm}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* D2 (N9): a rate outside the sanity band needs a reason */}
+      <Dialog open={!!bandConfirm} onOpenChange={(open) => !open && setBandConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{s.bandTitle}</DialogTitle>
+            <DialogDescription>{bandConfirm}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="reval-band-reason">{s.bandReason}</Label>
+            <Input
+              id="reval-band-reason"
+              value={bandReason}
+              onChange={(e) => setBandReason(e.target.value)}
+              data-testid="input-reval-band-reason"
+            />
+            <p className="text-sm text-muted-foreground">{s.bandReasonHint}</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBandConfirm(null)}>
+              {s.cancel}
+            </Button>
+            <Button
+              onClick={() =>
+                runMutation.mutate({ acknowledgeStale: staleAck, rateOverrideReason: bandReason })
+              }
+              disabled={runMutation.isPending || bandReason.trim().length < 5}
+              data-testid="button-reval-band-confirm"
+            >
+              {s.bandConfirm}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -6,6 +6,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db, pool } from "../db";
 import { DomainError } from "../errors";
+import { assertChosenAccountsNotControl } from "../ledger/control-accounts";
 import { vendors, type Vendor } from "../../shared/schema";
 import { scopedGet } from "../tenancy";
 import { agedPayables, type AgingReport } from "../reporting";
@@ -69,6 +70,11 @@ async function assertExpenseAccount(companyId: string, accountId: string | null 
       "Default account must be an expense or asset account"
     );
   }
+  // D2 (N12): the default is copied onto bill lines, so it follows the bill-line rule (C1, RH1):
+  // a control account (1040, 1050, 1070, 2010, ...) is refused at save, not at approval.
+  await assertChosenAccountsNotControl(companyId, [
+    { field: "default_expense_account_id", accountId },
+  ]);
 }
 
 export async function createVendor(companyId: string, input: VendorCreateInput): Promise<Vendor> {

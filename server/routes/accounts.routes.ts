@@ -16,6 +16,89 @@ import {
   type CreateAccountBody,
   type UpdateAccountBody,
 } from "../../shared/validators/accounts";
+import { CONTROL_ACCOUNT_CODES, controlAccountsAmong } from "../ledger/control-accounts";
+
+/** The fields that give an account its posting role (code, type, sub-type, VAT flags, parent). */
+const ROLE_FIELDS = ["code", "type", "subType", "isVatAccount", "vatType", "parentId"] as const;
+type RoleField = (typeof ROLE_FIELDS)[number];
+
+const ROLE_FIELD_TEXT: Record<RoleField, string> = {
+  code: "code",
+  type: "type",
+  subType: "sub-type",
+  isVatAccount: "VAT flag",
+  vatType: "VAT type",
+  parentId: "parent account",
+};
+
+function roleValue(v: unknown): unknown {
+  return v === undefined || v === "" ? null : v;
+}
+
+/**
+ * D2 (N8): system accounts, control accounts (1040, 1050, 1070, 2010, 2015, 2020, 2030-2036, every
+ * input / output VAT account, every product inventory account and their sub-accounts) and VAT
+ * accounts keep their code, type, sub-type and VAT flags: the posting rules, the control-account
+ * guard and the sub-ledger ties find them by these, so a change would let a manual journal reach a
+ * control account (H8) or break every invoice (2020 without its VAT flag). A sub-account that is a
+ * control account through its parent also keeps its parent. A non-control account cannot be
+ * re-coded into a control code or flagged as an input / output VAT account; create the account
+ * instead. 422 CONTROL_ACCOUNT_LOCKED / CONTROL_ACCOUNT_ROLE_RESERVED.
+ */
+async function assertAccountRoleUnchanged(
+  account: Account,
+  body: UpdateAccountBody
+): Promise<void> {
+  const changed = ROLE_FIELDS.filter(
+    (f) =>
+      body[f] !== undefined &&
+      roleValue(body[f]) !== roleValue((account as Record<RoleField, unknown>)[f])
+  );
+  if (!changed.length) return;
+  const [hit] = await controlAccountsAmong(account.companyId, [account.id]);
+  const ownControl =
+    !!CONTROL_ACCOUNT_CODES[account.code] ||
+    (account.isVatAccount === true && ["input", "output"].includes(account.vatType ?? ""));
+  const locked = changed.filter((f) =>
+    // A control account by its own code or VAT flag stays one under any parent (grouping it under
+    // a header is fine); a sub-account (or product stock account) may be one through its parent.
+    f === "parentId"
+      ? !!hit && !ownControl
+      : account.isSystemAccount || account.isVatAccount === true || !!hit
+  );
+  if (locked.length) {
+    const what = locked.map((f) => ROLE_FIELD_TEXT[f]).join(", ");
+    throw new DomainError(
+      "CONTROL_ACCOUNT_LOCKED",
+      422,
+      {
+        lockedFields: locked,
+        ledger: hit?.ledger ?? null,
+        fields: Object.fromEntries(locked.map((f) => [f, ["Locked on this account"]])),
+      },
+      `${account.code} ${account.nameEn} is a ${account.isSystemAccount ? "system" : "control"} ` +
+        `account: its ${what} cannot change. Create a new account instead.`
+    );
+  }
+  const nextCode = body.code ?? account.code;
+  const nextVat =
+    (body.isVatAccount ?? account.isVatAccount) === true &&
+    ["input", "output"].includes(String(roleValue(body.vatType) ?? account.vatType ?? ""));
+  if ((nextCode !== account.code && CONTROL_ACCOUNT_CODES[nextCode]) || nextVat) {
+    throw new DomainError(
+      "CONTROL_ACCOUNT_ROLE_RESERVED",
+      422,
+      {
+        fields: nextVat
+          ? { isVatAccount: ["Reserved for VAT control accounts"] }
+          : { code: [`${nextCode} is reserved for a control account`] },
+      },
+      nextVat
+        ? "An existing account cannot become an input or output VAT account. Create a new VAT account instead."
+        : `Code ${nextCode} is reserved for the ${CONTROL_ACCOUNT_CODES[nextCode]} control account.`
+    );
+  }
+}
 
 async function isManagedBankGlAccount(companyId: string, accountId: string): Promise<boolean> {
   const { rows } = await pool.query(
@@ -180,19 +263,9 @@ export function registerAccountRoutes(app: Express) {
         return res.status(404).json({ message: "Account not found" });
       }
 
-      // System accounts are wired into posting logic: their identity cannot change.
-      if (
-        account.isSystemAccount &&
-        ((body.type !== undefined && body.type !== account.type) ||
-          (body.code !== undefined && body.code !== account.code))
-      ) {
-        throw new DomainError(
-          "SYSTEM_ACCOUNT_LOCKED",
-          409,
-          undefined,
-          "System accounts cannot change code or type."
-        );
-      }
+      // System and control accounts are wired into posting logic and the sub-ledger ties: their
+      // identity cannot change (D2, N8; A2 H8).
+      await assertAccountRoleUnchanged(account, body);
 
       // Block account type changes once the account has any journal lines.
       // Switching e.g. an asset to an income account would silently invert all

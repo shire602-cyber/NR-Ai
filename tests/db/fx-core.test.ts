@@ -157,10 +157,12 @@ describe("R14-01 tenant-scoped exchange rates", () => {
     const a = await h.createTenant({ name: "FxA" });
     const b = await h.createSecondTenant({ name: "FxB" });
 
+    // D2 (N9): 9.99 is far from the peg, so B has to confirm it (the band starts at 3.6725).
     const bRate = await addRate(b, {
       fromCurrency: "USD",
       toCurrency: "AED",
       rate: 9.99,
+      confirmLargeMove: true,
       effectiveDate: AS_OF,
     });
     expect(bRate.status).toBe(201);
