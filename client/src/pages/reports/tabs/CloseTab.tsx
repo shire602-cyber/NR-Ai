@@ -366,7 +366,7 @@ export default function CloseTab() {
                             </Badge>
                           </TableCell>
                           <TableCell className="max-w-[360px] truncate">
-                            {activitySentence(t, row, locale).replace(/[\s·]+$/, "")}
+                            {activitySentence(t, row, locale)}
                           </TableCell>
                         </TableRow>
                       ))}
