@@ -49,6 +49,19 @@ describe("STEP1 F6 admin integrations", () => {
     expect(dl.text).toContain("admin uploaded licence");
   });
 
+  it("[F6-stats] the overview counts real companies and AI calls (was 'Active companies 0')", async () => {
+    const admin = await h.createTenant({ name: "StatsAdmin", isAdmin: true });
+    await h.sql(
+      `INSERT INTO ai_usage_events (company_id, task, provider, model) VALUES ($1, 'categorize', 'openai', 'gpt')`,
+      [admin.company.id]
+    );
+    const r = await admin.as.get("/api/admin/stats");
+    expect(r.status, r.text).toBe(200);
+    expect(r.body.totalCompanies).toBeGreaterThanOrEqual(1);
+    expect(r.body.totalCompanies).toBe(r.body.totalClients);
+    expect(r.body.aiCreditsUsed).toBe(1);
+  });
+
   it("[F6-sheets-test] without credentials the test answers not_configured (no Google call)", async () => {
     const admin = await h.createTenant({ name: "IntegrationsAdmin2", isAdmin: true });
     const r = await admin.as.post("/api/admin/integrations/google-sheets/test", {});

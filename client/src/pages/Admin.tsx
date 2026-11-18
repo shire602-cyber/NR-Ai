@@ -3,7 +3,6 @@ import { T } from "@/components/layout/T";
 import { StatCard } from "@/components/ui/stat-card";
 import { activityActionLabel, activityEntityLabel } from "@/lib/activity-log-labels";
 import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
-import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { Fragment, useState, useEffect } from "react";
 import { formatDate, formatDateTime } from "@/lib/format-date";
@@ -174,7 +173,6 @@ export default function Admin() {
     totalCompanies: number;
     totalInvoices: number;
     totalReceipts: number;
-    monthlyRevenue: number;
     aiCreditsUsed: number;
   }>({
     queryKey: ["/api/admin/stats"],
@@ -476,7 +474,7 @@ export default function Admin() {
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatCard
               label={<T k="pageLabels.totalUsers" />}
               value={stats?.totalUsers || 0}
@@ -486,11 +484,6 @@ export default function Admin() {
               label={<T k="pageLabels.activeCompanies" />}
               value={stats?.totalCompanies || 0}
               testId="stat-total-companies"
-            />
-            <StatCard
-              label={<T k="pageLabels.monthlyRevenue" />}
-              value={<Money amount={stats?.monthlyRevenue || 0} currency="AED" />}
-              testId="stat-monthly-revenue"
             />
             <StatCard
               label={<T k="pageLabels.aICreditsUsed" />}
@@ -1360,7 +1353,7 @@ export default function Admin() {
                       </TableRow>
                     ) : (
                       shownAuditLogs.map((log) => {
-                        const entries = auditDetailEntries(log.details);
+                        const entries = auditDetailEntries(log.details, t);
                         const open = expandedLog === log.id;
                         const actor = log.userId ? users.find((u) => u.id === log.userId) : null;
                         return (

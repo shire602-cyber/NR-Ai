@@ -207,6 +207,23 @@ describe("STEP1 F6: audit log search, filter and export", () => {
   });
 });
 
+describe("STEP1: audit detail keys are localised", () => {
+  it("reads Company id / Method / Device in the active language", async () => {
+    const { t } = await import("../../client/src/lib/i18n");
+    const { auditDetailEntries } = await import("../../client/src/pages/admin/audit-details");
+    const raw = '{"companyId":null,"method":"password","requireMfa":true,"zzUnknown":1}';
+    const en = auditDetailEntries(raw, t.en as Record<string, string>).map((e) => e.key);
+    expect(en).toEqual(["Company id", "Method", "Require MFA", "Zz unknown"]);
+    const ar = auditDetailEntries(raw, t.ar as Record<string, string>);
+    expect(ar.slice(0, 3).map((e) => e.key)).toEqual([
+      "معرّف الشركة",
+      "الطريقة",
+      "يتطلب التحقق الثنائي",
+    ]);
+    expect(ar[2].value).toBe("نعم");
+  });
+});
+
 describe("STEP1 F6: stored documents are read through the vault download", () => {
   it("fetchStoredBlob requests the file with credentials and reports a missing file", async () => {
     const { fetchStoredBlob, StoredFileError } = await import("../../client/src/lib/stored-file");

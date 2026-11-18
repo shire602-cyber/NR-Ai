@@ -62,7 +62,7 @@ export function auditExportRows(
     resource: activityEntityLabel(t, log.resourceType),
     user: auditActor(t, log, users),
     // Record ids never appear in the export: they are in the details popover of the table.
-    details: auditDetailEntries(log.details)
+    details: auditDetailEntries(log.details, t)
       .map((e) => withoutIds(e.key ? `${e.key}: ${e.value}` : e.value))
       .join("; "),
     ip: log.ipAddress ?? "",

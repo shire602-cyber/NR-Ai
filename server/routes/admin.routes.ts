@@ -9,7 +9,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { db } from "../db";
-import { eq, and, desc, gte, lte, type SQL } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql, type SQL } from "drizzle-orm";
 import { activityLogs } from "../../shared/schema";
 import { createSpreadsheetBuffer, parseSpreadsheet } from "../services/spreadsheet.service";
 import { errorMessage } from "../errors";
@@ -278,8 +278,16 @@ export function registerAdminRoutes(app: Express): void {
       const totalUsers = users.length;
       const adminUsers = users.filter((u) => u.isAdmin).length;
 
+      // AI calls this calendar month (the "AI credits used" tile; one metered call is one credit).
+      const aiUsed = await db.execute(
+        sql`SELECT count(*)::int AS n FROM ai_usage_events WHERE created_at >= date_trunc('month', now())`
+      );
+      const aiCreditsUsed = Number((aiUsed.rows[0] as { n?: number } | undefined)?.n ?? 0);
+
       res.json({
         totalClients: activeClients,
+        totalCompanies: companies.length,
+        aiCreditsUsed,
         totalUsers,
         adminUsers,
         clientUsers: totalUsers - adminUsers,

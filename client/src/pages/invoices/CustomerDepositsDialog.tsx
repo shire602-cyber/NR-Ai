@@ -33,7 +33,14 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { accountDisplayName } from "@/lib/account-name";
 import { postablePaymentAccounts } from "@/lib/payment-accounts";
-import { applyBody, depositBody } from "@/lib/deposit-body";
+import {
+  applyBody,
+  depositBody,
+  validateApply,
+  validateDeposit,
+  type DepositField,
+} from "@/lib/deposit-body";
+import { Link } from "wouter";
 
 interface Deposit {
   id: string;
@@ -95,16 +102,22 @@ export function CustomerDepositsDialog({
     queryKey: ["/api/companies", companyId, "invoices?all=true"],
     enabled: open,
   });
+  const { data: customers = [] } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: [`/api/companies/${companyId}/customer-contacts`],
+    enabled: open,
+  });
   const banks = postablePaymentAccounts(accounts);
   const today = uaeToday();
   const [form, setForm] = useState({
-    customerName: "",
+    contactId: "",
     date: today,
     amount: "",
     vatTreatment: "standard" as (typeof TREATMENTS)[number],
     paymentAccountId: "",
     reference: "",
   });
+  const [errors, setErrors] = useState<Partial<Record<DepositField, "required" | "amount">>>({});
+  const [applyErrors, setApplyErrors] = useState<{ invoice?: true; amount?: true }>({});
   const [applying, setApplying] = useState<Deposit | null>(null);
   const [invoiceId, setInvoiceId] = useState("");
   const [applyAmount, setApplyAmount] = useState("");
@@ -121,7 +134,8 @@ export function CustomerDepositsDialog({
       apiRequest("POST", `/api/companies/${companyId}/customer-deposits`, depositBody(form)),
     onSuccess: () => {
       refresh();
-      setForm({ ...form, customerName: "", amount: "", reference: "" });
+      setForm({ ...form, contactId: "", amount: "", reference: "" });
+      setErrors({});
       toast({ title: t["invoices.deposits.recorded"] });
     },
     onError: fail,
@@ -148,8 +162,16 @@ export function CustomerDepositsDialog({
       i.invoiceType !== "credit_note" &&
       (!applying || i.customerName === applying.customerName)
   );
-  const valid =
-    form.customerName.trim() && Number(form.amount) > 0 && form.paymentAccountId && form.date;
+  const fieldError = (field: DepositField) =>
+    errors[field] === "amount"
+      ? t["invoices.deposits.error.amount"]
+      : errors[field]
+        ? t[`invoices.deposits.error.${field}`]
+        : undefined;
+  const setField = (patch: Partial<typeof form>) => {
+    setForm({ ...form, ...patch });
+    setErrors({});
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -162,26 +184,67 @@ export function CustomerDepositsDialog({
           className="space-y-3"
           onSubmit={(e) => {
             e.preventDefault();
-            if (valid && !create.isPending) create.mutate();
+            const found = validateDeposit(form);
+            setErrors(found);
+            if (Object.keys(found).length === 0 && !create.isPending) create.mutate();
           }}
         >
           <FormGrid>
-            <Field id="dep-customer" label={t["invoices.deposits.customer"]} required>
-              <Input
-                dir="auto"
-                value={form.customerName}
-                onChange={(e) => setForm({ ...form, customerName: e.target.value })}
-              />
+            <Field
+              id="dep-customer"
+              label={t["invoices.deposits.customer"]}
+              required
+              error={fieldError("contactId")}
+              help={
+                customers.length === 0 ? (
+                  <span data-testid="deposit-no-customers">
+                    {t["invoices.deposits.noCustomers"]}{" "}
+                    <Link
+                      href="/contacts"
+                      className="text-primary underline-offset-4 hover:underline"
+                    >
+                      {t["invoices.receive.addCustomer"]}
+                    </Link>
+                  </span>
+                ) : undefined
+              }
+            >
+              <Select
+                value={form.contactId || undefined}
+                onValueChange={(v) => setField({ contactId: v })}
+              >
+                <SelectTrigger id="dep-customer" aria-invalid={!!errors.contactId || undefined}>
+                  <SelectValue placeholder={t["invoices.deposits.select"]} />
+                </SelectTrigger>
+                <SelectContent>
+                  {customers.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      <span dir="auto">{c.name}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
-            <Field id="dep-date" label={t["invoices.deposits.date"]} required>
-              <DatePicker value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
+            <Field
+              id="dep-date"
+              label={t["invoices.deposits.date"]}
+              required
+              error={fieldError("date")}
+            >
+              <DatePicker value={form.date} onChange={(v) => setField({ date: v })} />
             </Field>
-            <Field id="dep-amount" label={t["invoices.deposits.amount"]} required>
+            <Field
+              id="dep-amount"
+              label={t["invoices.deposits.amount"]}
+              required
+              error={fieldError("amount")}
+            >
               <Input
                 inputMode="decimal"
                 dir="ltr"
                 value={form.amount}
-                onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                aria-invalid={!!errors.amount || undefined}
+                onChange={(e) => setField({ amount: e.target.value })}
               />
             </Field>
             <Field id="dep-vat" label={t["invoices.deposits.vatTreatment"]}>
@@ -203,12 +266,20 @@ export function CustomerDepositsDialog({
                 </SelectContent>
               </Select>
             </Field>
-            <Field id="dep-account" label={t["invoices.deposits.account"]} required>
+            <Field
+              id="dep-account"
+              label={t["invoices.deposits.account"]}
+              required
+              error={fieldError("paymentAccountId")}
+            >
               <Select
                 value={form.paymentAccountId || undefined}
-                onValueChange={(v) => setForm({ ...form, paymentAccountId: v })}
+                onValueChange={(v) => setField({ paymentAccountId: v })}
               >
-                <SelectTrigger id="dep-account">
+                <SelectTrigger
+                  id="dep-account"
+                  aria-invalid={!!errors.paymentAccountId || undefined}
+                >
                   <SelectValue placeholder={t["invoices.deposits.select"]} />
                 </SelectTrigger>
                 <SelectContent>
@@ -228,7 +299,7 @@ export function CustomerDepositsDialog({
               />
             </Field>
           </FormGrid>
-          <Button type="submit" disabled={!valid || create.isPending}>
+          <Button type="submit" disabled={create.isPending}>
             {t["invoices.deposits.record"]}
           </Button>
         </form>
@@ -281,13 +352,26 @@ export function CustomerDepositsDialog({
             className="space-y-3 rounded border p-3"
             onSubmit={(e) => {
               e.preventDefault();
-              if (invoiceId && Number(applyAmount) > 0 && !apply.isPending) apply.mutate();
+              const found = validateApply(invoiceId, applyAmount);
+              setApplyErrors(found);
+              if (Object.keys(found).length === 0 && !apply.isPending) apply.mutate();
             }}
           >
             <p className="text-sm">{t["invoices.deposits.applyHint"]}</p>
             <FormGrid>
-              <Field id="dep-invoice" label={t["invoices.deposits.invoice"]} required>
-                <Select value={invoiceId || undefined} onValueChange={setInvoiceId}>
+              <Field
+                id="dep-invoice"
+                label={t["invoices.deposits.invoice"]}
+                required
+                error={applyErrors.invoice ? t["invoices.deposits.error.invoice"] : undefined}
+              >
+                <Select
+                  value={invoiceId || undefined}
+                  onValueChange={(v) => {
+                    setInvoiceId(v);
+                    setApplyErrors({});
+                  }}
+                >
                   <SelectTrigger id="dep-invoice">
                     <SelectValue placeholder={t["invoices.deposits.select"]} />
                   </SelectTrigger>
@@ -300,7 +384,12 @@ export function CustomerDepositsDialog({
                   </SelectContent>
                 </Select>
               </Field>
-              <Field id="dep-apply-amount" label={t["invoices.deposits.amount"]} required>
+              <Field
+                id="dep-apply-amount"
+                label={t["invoices.deposits.amount"]}
+                required
+                error={applyErrors.amount ? t["invoices.deposits.error.amount"] : undefined}
+              >
                 <Input
                   inputMode="decimal"
                   dir="ltr"
@@ -313,7 +402,7 @@ export function CustomerDepositsDialog({
               <Button type="button" variant="outline" onClick={() => setApplying(null)}>
                 {t["invoices.deposits.cancel"]}
               </Button>
-              <Button type="submit" disabled={!invoiceId || apply.isPending}>
+              <Button type="submit" disabled={apply.isPending}>
                 {t["invoices.deposits.apply"]}
               </Button>
             </div>

@@ -30,8 +30,10 @@ describe("STEP1 F1: customer deposit UI contract (AED strings on the wire)", () 
       },
     });
     const bank = await accountByCode(t, "1020");
+    const contact = await t.as.post(`${base(t)}/customer-contacts`, { name: "Palm Co" });
+    expect(contact.status, contact.text).toBeLessThan(300);
     const dep = await t.as.post(`${base(t)}/customer-deposits`, {
-      customerName: "Palm Co",
+      contactId: contact.body.id, // the dialog picks the customer from the contacts
       date: "2026-02-05",
       amount: "1050", // exactly what the dialog sends
       vatTreatment: "standard",
