@@ -9,12 +9,46 @@ lists what each needs, how to run the sandbox dry run, and what to ask each ASP 
 - **One ASP at a time.** Choose it with `EINVOICE_PROVIDER` (`acube` or `complyance`). There is
   **no default**: unset means e-invoicing is off and hidden. A selected provider without its
   credentials stays "Not connected" (`tests/unit/einvoice-provider-registry.test.ts`).
-- **ZATCA stays hidden.** It is listed only for a Saudi company
-  (`tests/unit/sidebar-nav-behaviour.test.ts`). Leave `ZATCA_ENV` unset in the UAE deployment.
+- **ZATCA stays hidden.** It is off unless `ZATCA_ENABLED=true` (`server/services/zatca/flag.ts`):
+  the endpoints answer 503, `/api/features` reports `zatca: false`, and a Saudi company is treated
+  as UAE. Leave `ZATCA_ENABLED` unset.
 - **Secrets live in the secret store only**, never in git, chat, tickets or logs. This document
   names the variables; it never holds a value.
 - **Sandbox only** until the checklist below is complete and the owner signs off. Production
   switches are `ACUBE_ENV=production` / `COMPLYANCE_ENV=production`.
+
+## Owner request sheet: first live sandbox submission (one page)
+
+What the owner (Abdurahman) asks each ASP for, and where each answer goes. Values go into the secret
+store or environment settings, never into chat, tickets or git. Once both columns are filled, run the
+dry run (below) for that ASP.
+
+| #   | Ask                                | A-Cube (MoF 188961)                                                                                                                                                                                                                                                                    | Complyance (MoF 112219)                                                                                                                                                                                                                                                                      |
+| --- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **Sandbox account**                | A-Cube UAE sandbox account (login email and password) for `ae-sandbox.api.acubeapi.com`                                                                                                                                                                                                | A Complyance sandbox workspace with a sandbox ("mock") API key                                                                                                                                                                                                                               |
+| 2   | **Credentials, as variable names** | `ACUBE_EMAIL`, `ACUBE_PASSWORD` (secrets); `ACUBE_ENV=sandbox`                                                                                                                                                                                                                         | `COMPLYANCE_API_KEY` (secret); `COMPLYANCE_ENV=sandbox`                                                                                                                                                                                                                                      |
+| 3   | **Test seller (our side)**         | A sandbox legal entity onboarded with "Simulate onboarding" for one test TRN. A-Cube routes on the supplier EndpointID `0235:<first 10 digits of that TRN>`.                                                                                                                           | A sandbox company onboarded with a **real authorised TIN** (their sandbox requires one), plus an **invoice source** created for the dry run                                                                                                                                                  |
+| 4   | **Values to record (not secrets)** | `ASP_DRYRUN_SELLER_TRN` = that legal entity's 15-digit TRN                                                                                                                                                                                                                             | `ASP_DRYRUN_SELLER_TRN` = that TIN's 15-digit TRN; `COMPLYANCE_DRYRUN_SOURCE` = the source name (optional `COMPLYANCE_SOURCE_VERSION`, default `v1`)                                                                                                                                         |
+| 5   | **Test buyer and Peppol IDs**      | A test buyer participant they accept: a 15-digit test TRN for `ASP_DRYRUN_BUYER_TRN`, giving EndpointID `0235:<10-digit TIN>`. Ask which scheme and ID to use for a buyer **without** a TRN (foreign or B2C); we refuse those today with `EINVOICE_BUYER_ENDPOINT_MISSING`.            | The same: a test buyer TRN or Peppol ID they route in sandbox, and the expected `peppolId` / scheme for a buyer without a TRN                                                                                                                                                                |
+| 6   | **Webhook (status callbacks)**     | Register `https://<public host>/api/webhooks/einvoice/acube/sandbox`; set `ACUBE_WEBHOOK_BASE_URL=https://<public host>`. Ask for their Ed25519 signing key format (optional pin `ACUBE_SIGNATURE_PUBLIC_KEY`) and, if they use token auth, the token (`ACUBE_WEBHOOK_TOKEN`, secret). | Register `https://<public host>/api/webhooks/einvoice/complyance/sandbox`; set `COMPLYANCE_WEBHOOK_BASE_URL=https://<public host>`. Ask for the HMAC signing secret, shown once (`COMPLYANCE_WEBHOOK_SECRET`, secret), and its algorithm (`COMPLYANCE_WEBHOOK_ALGORITHM`, sha256 or sha512). |
+| 7   | **Network**                        | Our host must reach `ae-sandbox.api.acubeapi.com` and `common.api.acubeapi.com` (login). Their callbacks must reach our public host.                                                                                                                                                   | Our host must reach `prod.gets.complyance.io` (both environments). Their callbacks must reach our public host.                                                                                                                                                                               |
+| 8   | **Confirm in writing**             | Submit path (`/invoices/outgoing` or `/invoices`), duplicate-UUID behaviour, the 422 body format                                                                                                                                                                                       | Whether GETS JSON (default) or Unify XML is preferred, the UAE credit cost per document, and rate limits                                                                                                                                                                                     |
+
+The webhooks are optional for the first submission: `--status` polls instead.
+
+Activation order for the first submission, one ASP at a time:
+
+1. Store the secrets from row 2.
+2. Set `EINVOICE_PROVIDER` to that ASP only. There is no default ASP.
+3. Set the row 4 values.
+4. Run:
+   ```bash
+   npx tsx scripts/ops/asp-sandbox-dryrun.ts --provider <acube|complyance> --status
+   ```
+5. Log the result in "Sandbox run log" at the end of this file.
+
+The detailed checklists further down repeat these items, plus the follow-up checks (fixture
+re-recording, status vocabulary, TDD).
 
 ## Environment variables (names only)
 
