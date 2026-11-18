@@ -143,7 +143,7 @@ export async function getCloseChecklist(
   const bankUnreconciled = bankTotal - bankReconciled;
   checklist.push({
     id: 1,
-    title: "Bank Reconciliation Complete",
+    title: "Bank reconciliation complete",
     description: "All bank transactions for the period are reconciled",
     status: bankTotal === 0 || bankUnreconciled === 0 ? "complete" : "incomplete",
     details:
@@ -168,7 +168,7 @@ export async function getCloseChecklist(
   const invDrafts = invTotal - invPosted;
   checklist.push({
     id: 2,
-    title: "All Invoices Posted",
+    title: "All invoices posted",
     description: "No draft invoices remain for the period",
     status: invTotal === 0 || invDrafts === 0 ? "complete" : "incomplete",
     details:
@@ -193,7 +193,7 @@ export async function getCloseChecklist(
   const recUncategorized = recTotal - recCategorized;
   checklist.push({
     id: 3,
-    title: "All Receipts Categorized",
+    title: "All receipts categorized",
     description: "Every receipt has an assigned expense account",
     status: recTotal === 0 || recUncategorized === 0 ? "complete" : "incomplete",
     details:
@@ -208,7 +208,7 @@ export async function getCloseChecklist(
     const criticalCount = anomalyResult.summary.critical;
     checklist.push({
       id: 4,
-      title: "Anomaly Scan Clean",
+      title: "Anomaly scan clean",
       description: "No critical anomalies detected in transactions",
       status: criticalCount === 0 ? "complete" : "incomplete",
       details:
@@ -219,7 +219,7 @@ export async function getCloseChecklist(
   } catch {
     checklist.push({
       id: 4,
-      title: "Anomaly Scan Clean",
+      title: "Anomaly scan clean",
       description: "No critical anomalies detected in transactions",
       status: "incomplete",
       details: "Unable to run anomaly scan",
@@ -324,7 +324,7 @@ export async function getCloseChecklist(
     const depPosted = parseInt(depResult.rows[0]?.posted || "0");
     checklist.push({
       id: 6,
-      title: "Depreciation Entries Posted",
+      title: "Depreciation entries posted",
       description: "Monthly depreciation has been recorded for all active fixed assets",
       status: depTotal === 0 || depPosted >= depTotal ? "complete" : "incomplete",
       details:
@@ -335,7 +335,7 @@ export async function getCloseChecklist(
   } else {
     checklist.push({
       id: 6,
-      title: "Depreciation Entries Posted",
+      title: "Depreciation entries posted",
       description: "Monthly depreciation has been recorded for all active fixed assets",
       status: "complete",
       details: "Fixed assets module not configured",
@@ -355,7 +355,7 @@ export async function getCloseChecklist(
   const vatCount = parseInt(vatResult.rows[0]?.total || "0");
   checklist.push({
     id: 7,
-    title: "VAT Return Prepared",
+    title: "VAT return prepared",
     description: "VAT 201 return has been prepared or filed for the period",
     status: vatCount > 0 ? "complete" : "incomplete",
     details:
@@ -388,7 +388,7 @@ export async function getCloseChecklist(
   checklist.push({
     id: 8,
     key: "accruals",
-    title: "Accruals Recorded",
+    title: "Accruals recorded",
     description: "Expenses incurred but not yet billed are accrued (auto-reversing journals)",
     status: expenseLines === 0 || accrualCount > 0 ? "complete" : "incomplete",
     details:
@@ -419,7 +419,7 @@ export async function getCloseChecklist(
   checklist.push({
     id: 9,
     key: "prepayments",
-    title: "Prepayments Amortised",
+    title: "Prepayments amortised",
     description: "The period's share of prepaid expenses has been released to the P&L",
     status: prepaidBalance <= 0 || prepaidReleased > 0 ? "complete" : "incomplete",
     details:
@@ -449,7 +449,7 @@ export async function getCloseChecklist(
   checklist.push({
     id: 10,
     key: "fx_revaluation",
-    title: "FX Revaluation Run",
+    title: "FX revaluation run",
     description: "Foreign-currency balances revalued at the period-end rate",
     status: fxAccounts === 0 || revaluations > 0 ? "complete" : "incomplete",
     details:
@@ -475,7 +475,7 @@ export async function getCloseChecklist(
   checklist.push({
     id: 11,
     key: "control_accounts",
-    title: "Control Accounts Reconciled",
+    title: "Control accounts reconciled",
     description:
       "Receivables, payables, inventory, VAT and payroll control accounts equal their sub-ledgers",
     status: broken.length === 0 ? "complete" : "incomplete",

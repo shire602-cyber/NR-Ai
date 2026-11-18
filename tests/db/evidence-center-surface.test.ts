@@ -8,17 +8,18 @@ import { useHarness } from "./harness";
 
 const h = useHarness();
 
+// Titles follow the sentence-case templates in shared/server-copy.ts (Fable B10).
 const WORKFLOWS: Record<string, string> = {
-  refund_pack: "Refund Pack Builder",
-  proof_drilldown: "Every Number Has Proof",
-  corporate_tax_workpaper: "Corporate Tax Workpaper",
-  missing_evidence: "Missing Evidence Inbox",
-  client_request_autopilot: "Client Request Autopilot",
-  month_end_cockpit: "Month-End Close Cockpit",
-  filing_risk_scan: "Error Detector Before Filing",
-  smart_excel_import: "Smart Import From Excel",
-  filing_timeline: "Filing Timeline With Consequences",
-  owner_actions: "Owner-Friendly What Should I Do?",
+  refund_pack: "Refund pack builder",
+  proof_drilldown: "Every number has proof",
+  corporate_tax_workpaper: "Corporate tax workpaper",
+  missing_evidence: "Missing evidence inbox",
+  client_request_autopilot: "Client request autopilot",
+  month_end_cockpit: "Month-end close cockpit",
+  filing_risk_scan: "Error detector before filing",
+  smart_excel_import: "Smart import from Excel",
+  filing_timeline: "Filing timeline with consequences",
+  owner_actions: "Owner-friendly what should I do?",
 };
 
 describe("R20-10 evidence centre API", () => {

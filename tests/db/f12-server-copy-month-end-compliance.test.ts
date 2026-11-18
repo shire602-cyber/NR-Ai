@@ -45,7 +45,7 @@ describe("F12 month-end checklist copy keys", () => {
       }
     }
     // A concrete step: no bank rows in an empty company.
-    const bank = items.find((i) => i.title === "Bank Reconciliation Complete")!;
+    const bank = items.find((i) => i.title === "Bank reconciliation complete")!;
     expect(bank.copy.details).toEqual({ key: "monthEnd.bank.none", params: {} });
   });
 
