@@ -80,7 +80,8 @@ import {
   type PendingBillFile,
 } from "@/components/bills/BillCapturePanel";
 import { SupplierPicker, type SupplierOption } from "@/components/bills/SupplierPicker";
-import { BillItemPicker, isStockItem, purchasePriceOf } from "@/components/bills/BillItemPicker";
+import { BillItemPicker } from "@/components/bills/BillItemPicker";
+import { isStockItem, purchasePriceOf } from "@/lib/purchase-pickers";
 import { ScrollTabs } from "@/components/ui/scroll-tabs";
 import type { BillCaptureResult, BillCaptureField } from "@shared/bill-capture";
 import { EInvoiceOriginTag } from "@/components/einvoice/EInvoiceListCell";

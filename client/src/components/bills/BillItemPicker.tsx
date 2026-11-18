@@ -7,33 +7,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useTranslation } from "@/lib/i18n";
-
-export interface PurchasableItem {
-  id: string;
-  name: string;
-  nameAr?: string | null;
-  sku?: string | null;
-  unitPrice?: number | string | null;
-  costPrice?: number | string | null;
-  productType?: string | null;
-  trackInventory?: boolean | null;
-  isActive?: boolean | null;
-}
+import { isStockItem, type PurchasableItem } from "@/lib/purchase-pickers";
 
 const NONE = "__none__";
-
-/** A stock item is costed into inventory by the bill (server: inventory/documents, inventory.on*). */
-export function isStockItem(p: PurchasableItem | null | undefined): boolean {
-  return !!p && (p.productType ?? "inventory") === "inventory" && p.trackInventory !== false;
-}
-
-/** The purchase price a picked item suggests: its cost price, else its selling price. */
-export function purchasePriceOf(p: PurchasableItem): number {
-  const cost = Number(p.costPrice);
-  if (Number.isFinite(cost) && cost > 0) return cost;
-  const price = Number(p.unitPrice);
-  return Number.isFinite(price) && price > 0 ? price : 0;
-}
 
 /**
  * WQ2 (11.1): pick a product or service for a bill line. Picking fills the description and the

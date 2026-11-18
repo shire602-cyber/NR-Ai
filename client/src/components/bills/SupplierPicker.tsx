@@ -18,44 +18,9 @@ import { Label } from "@/components/ui/label";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useTranslation } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { filterSuppliers, suppliersQueryKey, type SupplierOption } from "@/lib/purchase-pickers";
 
-/** A supplier row from GET /api/companies/:id/vendors. */
-export interface SupplierOption {
-  id: string;
-  name: string;
-  nameAr?: string | null;
-  trn?: string | null;
-  paymentTermsDays?: number | null;
-  currency?: string | null;
-  defaultExpenseAccountId?: string | null;
-  isActive?: boolean | null;
-}
-
-export const suppliersQueryKey = (companyId: string | undefined) => [
-  "/api/companies",
-  companyId,
-  "vendors",
-];
-
-const MAX_OPTIONS = 8;
-
-/** Suppliers whose name (EN / AR) or TRN contains the typed text. */
-export function filterSuppliers(
-  suppliers: readonly SupplierOption[],
-  query: string
-): SupplierOption[] {
-  const q = query.trim().toLowerCase();
-  const digits = q.replace(/\D/g, "");
-  const out = q
-    ? suppliers.filter(
-        (s) =>
-          s.name.toLowerCase().includes(q) ||
-          (!!s.nameAr && s.nameAr.toLowerCase().includes(q)) ||
-          (digits.length >= 3 && !!s.trn && s.trn.includes(digits))
-      )
-    : [...suppliers];
-  return out.slice(0, MAX_OPTIONS);
-}
+export type { SupplierOption };
 
 type InputProps = Omit<React.ComponentPropsWithoutRef<typeof Input>, "value" | "onChange">;
 

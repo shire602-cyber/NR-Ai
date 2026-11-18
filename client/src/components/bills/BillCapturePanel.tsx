@@ -80,36 +80,41 @@ export function BillCapturePanel({
   const { t } = useTranslation();
   const [reading, setReading] = useState(false);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
-  const [preview, setPreview] = useState<{ url: string; type: string } | null>(null);
+  const [preview, setPreview] = useState<{
+    url: string;
+    type: string;
+    source: string | null;
+  } | null>(null);
 
-  // Preview: the chosen file, else the stored attachment (fetched with the session).
+  // Preview: the chosen file, else the stored attachment (fetched with the session). The
+  // preview carries the source it was made for, so a stale one is never shown.
+  const storedBillId = storedAttachment?.billId ?? null;
+  const previewSource = file ? `file:${file.name}:${file.dataUrl.length}` : storedBillId;
   useEffect(() => {
     let revoke: string | null = null;
     let cancelled = false;
+    const source = previewSource;
+    const show = (url: string, type: string) => {
+      if (cancelled) return URL.revokeObjectURL(url);
+      revoke = url;
+      setPreview({ url, type, source });
+    };
     if (file) {
       void fetch(file.dataUrl)
         .then((r) => r.blob())
-        .then((blob) => {
-          if (cancelled) return;
-          revoke = URL.createObjectURL(blob);
-          setPreview({ url: revoke, type: file.type });
-        });
-    } else if (storedAttachment) {
-      void fetchStoredFile(`/api/bills/${storedAttachment.billId}/attachment`)
-        .then((p) => {
-          if (cancelled) return URL.revokeObjectURL(p.url);
-          revoke = p.url;
-          setPreview(p);
-        })
-        .catch(() => setPreview(null));
-    } else {
-      setPreview(null);
+        .then((blob) => show(URL.createObjectURL(blob), file.type))
+        .catch(() => undefined);
+    } else if (storedBillId) {
+      void fetchStoredFile(`/api/bills/${storedBillId}/attachment`)
+        .then((p) => show(p.url, p.type))
+        .catch(() => undefined);
     }
     return () => {
       cancelled = true;
       if (revoke) URL.revokeObjectURL(revoke);
     };
-  }, [file, storedAttachment]);
+  }, [file, storedBillId, previewSource]);
+  const shownPreview = preview && preview.source === previewSource ? preview : null;
 
   const read = async (f: PendingBillFile) => {
     if (!companyId || !aiAvailable) return;
@@ -293,17 +298,17 @@ export function BillCapturePanel({
         </div>
       )}
 
-      {preview && (
+      {shownPreview && (
         <div className="overflow-hidden rounded-lg border bg-muted/30">
-          {preview.type === "application/pdf" ? (
+          {shownPreview.type === "application/pdf" ? (
             <iframe
-              src={preview.url}
+              src={shownPreview.url}
               title={t["purchases.capture.previewTitle"]}
               className="h-[32rem] w-full"
             />
           ) : (
             <img
-              src={preview.url}
+              src={shownPreview.url}
               alt={t["purchases.capture.previewTitle"]}
               className="max-h-[32rem] w-full object-contain"
             />
