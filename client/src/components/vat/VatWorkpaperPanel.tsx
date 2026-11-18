@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { DatePicker } from "@/components/ui/date-picker";
+import { parseCalendarDate } from "@/lib/format-date";
 import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { addDays } from "date-fns";
@@ -197,7 +198,8 @@ export default function VatWorkpaperPanel({
 
   const dueDate = useMemo(() => {
     if (!periodEnd) return "";
-    const parsed = new Date(periodEnd);
+    // INTEGRATE-H: the period end is a calendar date (DF3 N1), never the browser zone's day.
+    const parsed = parseCalendarDate(periodEnd);
     if (Number.isNaN(parsed.getTime())) return "";
     return inputDate(addDays(parsed, 28));
   }, [periodEnd]);
