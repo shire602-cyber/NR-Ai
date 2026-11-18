@@ -13,6 +13,7 @@ import { EditorShell } from "@/components/ui/editor-shell";
 import { DataTableCard } from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -524,12 +525,11 @@ function DebitNoteEditor() {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="dn-date">{t["purchases.debitNote.date"]}</Label>
-            <Input
+            <DatePicker
               id="dn-date"
-              type="date"
-              ltr
               value={noteDate}
-              onChange={(e) => setNoteDate(e.target.value)}
+              onChange={setNoteDate}
+              data-testid="debit-note-date"
             />
           </div>
           <div className="space-y-1.5">

@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { expenseClaimAmount, expenseClaimStatusVariant, formatReportDate } from "../shared";
 import { format } from "date-fns";
+import { formatDateRange } from "@/lib/format-date";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
@@ -41,7 +42,10 @@ export default function ExpensesTab() {
           "rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground"
         )}
       >
-        <span className="font-medium text-foreground">Source basis:</span> {expenseReport.basis}
+        <span className="font-medium text-foreground">
+          <T k="reportCenter.tabs.sourceBasis" />
+        </span>{" "}
+        {expenseReport.basis}
       </div>
       <div
         className={reportSectionClass(
@@ -454,7 +458,7 @@ export default function ExpensesTab() {
           </CardTitle>
           <CardDescription>
             {dateRange.from && dateRange.to
-              ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+              ? formatDateRange(dateRange.from, dateRange.to, locale)
               : t["expensesTab.allPostedJournalEntryDates"]}
           </CardDescription>
         </CardHeader>
@@ -469,7 +473,9 @@ export default function ExpensesTab() {
                     <TableHead>
                       <T k="reportCenter.entry" />
                     </TableHead>
-                    <TableHead>Date</TableHead>
+                    <TableHead>
+                      <T k="reportCenter.tabs.date" />
+                    </TableHead>
                     <TableHead>
                       <T k="reportCenter.vendor" />
                     </TableHead>

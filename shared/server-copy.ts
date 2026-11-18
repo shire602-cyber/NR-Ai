@@ -62,10 +62,15 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.reportDeliveryBlocked.title", "Report delivery blocked: {title}"),
   T("notification.reportDeliveryFailed.title", "Report delivery failed: {title}"),
   T("notification.reportDeliveryQueued.title", "Report delivery queued: {title}"),
+  T("notification.aiDraftsReview.title", "AI draft journal entries to review: {count}"),
 ];
 
 /** Notification messages, most specific first. `prefix` messages carry trailing catalog text. */
 export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
+  T(
+    "notification.aiDraftsReview.message",
+    "The AI categorised {count} bank transaction(s) with high confidence. Review and approve each draft journal entry before it posts to the ledger."
+  ),
   T("notification.invoiceIssued.message", "Invoice {number} was issued[ for {amount}]."),
   T("notification.invoicePaid.message", "Invoice {number} is fully paid."),
   T(

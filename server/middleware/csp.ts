@@ -41,7 +41,9 @@ export function buildCspDirectives() {
       scriptSrc: prod
         ? ["'self'", nonceFn, ...turnstile]
         : ["'self'", "'unsafe-inline'", "'unsafe-eval'", ...turnstile],
-      ...(turnstile.length ? { frameSrc: ["'self'", ...turnstile] } : {}),
+      // Broken-path sweep: bill / receipt previews show the file from a blob: URL in an iframe
+      // (the PDF viewer); without blob: the fallback default-src 'self' blocked it.
+      frameSrc: ["'self'", "blob:", ...turnstile],
       // D4 — the ENFORCED policy keeps `'unsafe-inline'` for styles. The client
       // uses 219 React `style={{ … }}` props across 22 files (inline style
       // ATTRIBUTES), and Radix/framer-motion inject `<style>` ELEMENTS at
@@ -121,6 +123,7 @@ export function buildCspReportOnlyDirectives() {
         ? ["'self'"]
         : ["'self'", "ws://localhost:*", "http://localhost:*", "ws://127.0.0.1:*"],
       workerSrc: ["'self'", "blob:"],
+      frameSrc: ["'self'", "blob:"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],

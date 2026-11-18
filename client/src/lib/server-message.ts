@@ -61,12 +61,28 @@ export function anomalyMessage(
   locale: string
 ): string {
   const message = anomaly.message ?? describeAnomalyText(anomaly.description);
-  return renderServerMessage(message, anomaly.description, t, locale, {
-    param: (name, value) =>
-      (name === "merchant" || name === "vendor") && value === "Unknown"
-        ? t["firmOps.unknownMerchant"]
-        : undefined,
-  });
+  return withoutRecordIds(
+    renderServerMessage(message, anomaly.description, t, locale, {
+      param: (name, value) =>
+        (name === "merchant" || name === "vendor") && value === "Unknown"
+          ? t["firmOps.unknownMerchant"]
+          : undefined,
+    })
+  );
+}
+
+const RECORD_ID =
+  /\s*(?:with\s+)?(?:ID\s*)?['"‘’]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}['"‘’]?/gi;
+
+/**
+ * Broken-path sweep: AI-written anomaly text stored before the server fix quotes raw record ids
+ * ("Invoice with ID '77cb…'"). They mean nothing to the reader and are left out.
+ */
+export function withoutRecordIds(text: string): string {
+  return text
+    .replace(RECORD_ID, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 /** Value-programme sentence (action, review item, audit pack line); unknown text is unchanged. */

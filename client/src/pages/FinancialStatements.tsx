@@ -275,15 +275,17 @@ function ProfitLossTab({
   const [endDate, setEndDate] = useState(defaults.endDate);
   const [queryDates, setQueryDates] = useState(defaults);
 
-  const { data, isLoading, error } = useQuery<ProfitLossData>({
+  const { data, isLoading, error, refetch } = useQuery<ProfitLossData>({
     queryKey: [
       `/api/companies/${companyId}/financial-statements/profit-loss?startDate=${queryDates.startDate}&endDate=${queryDates.endDate}&compareTo=prior_year`,
     ],
     enabled: !!companyId,
   });
 
+  // Sweep: "Generate" with unchanged dates did nothing (cached query); it now re-reads.
   const handleGenerate = () => {
-    setQueryDates({ startDate, endDate });
+    if (startDate === queryDates.startDate && endDate === queryDates.endDate) void refetch();
+    else setQueryDates({ startDate, endDate });
   };
   const operatingExpenseLines = data
     ? operatingExpenseLinesOf(data.breakdown.expenses, data.statement?.sections.costOfSales.lines)
@@ -481,7 +483,7 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
   const [asOfDate, setAsOfDate] = useState(today);
   const [queryDate, setQueryDate] = useState(today);
 
-  const { data, isLoading, error } = useQuery<BalanceSheetData>({
+  const { data, isLoading, error, refetch } = useQuery<BalanceSheetData>({
     queryKey: [
       `/api/companies/${companyId}/financial-statements/balance-sheet?asOfDate=${queryDate}&compareTo=prior_year`,
     ],
@@ -489,7 +491,8 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
   });
 
   const handleGenerate = () => {
-    setQueryDate(asOfDate);
+    if (asOfDate === queryDate) void refetch();
+    else setQueryDate(asOfDate);
   };
 
   return (
@@ -761,15 +764,17 @@ function CashFlowTab({
   const [endDate, setEndDate] = useState(defaults.endDate);
   const [queryDates, setQueryDates] = useState(defaults);
 
-  const { data, isLoading, error } = useQuery<CashFlowData>({
+  const { data, isLoading, error, refetch } = useQuery<CashFlowData>({
     queryKey: [
       `/api/companies/${companyId}/financial-statements/cash-flow?startDate=${queryDates.startDate}&endDate=${queryDates.endDate}`,
     ],
     enabled: !!companyId,
   });
 
+  // Sweep: "Generate" with unchanged dates did nothing (cached query); it now re-reads.
   const handleGenerate = () => {
-    setQueryDates({ startDate, endDate });
+    if (startDate === queryDates.startDate && endDate === queryDates.endDate) void refetch();
+    else setQueryDates({ startDate, endDate });
   };
 
   const handleExport = async () => {

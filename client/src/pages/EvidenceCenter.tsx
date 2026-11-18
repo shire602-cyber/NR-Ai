@@ -194,6 +194,10 @@ export default function EvidenceCenter() {
     });
   }, [data, sourceFilter]);
 
+  const focusedDocumentNumber = visibleProofLines.find(
+    (line) => line.documentNumber
+  )?.documentNumber;
+
   const topMetrics = useMemo(() => {
     if (!data) return [];
     const openMissingEvidenceCount = data.missingEvidence.filter(issueIsOpen).length;
@@ -428,8 +432,11 @@ export default function EvidenceCenter() {
               </h2>
               <p className="text-sm text-muted-foreground">
                 {formatMessage(t["evidenceCenter.focus.showing"], {
+                  // SWEEP: name the document by its number, never its raw id (a UUID).
                   source: `${st(sourceFilter.sourceType)}${
-                    sourceFilter.sourceId ? ` ${sourceFilter.sourceId}` : ""
+                    sourceFilter.sourceId && focusedDocumentNumber
+                      ? ` ${focusedDocumentNumber}`
+                      : ""
                   }`,
                 })}
               </p>

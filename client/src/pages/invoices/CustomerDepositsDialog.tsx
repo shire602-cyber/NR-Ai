@@ -90,8 +90,10 @@ export function CustomerDepositsDialog({
     queryKey: [`/api/companies/${companyId}/accounts`],
     enabled: open,
   });
+  // SWEEP: the bare list endpoint answers a page ({ items, nextCursor }); `all=true` answers
+  // the plain array this dialog filters (the dialog crashed with "filter is not a function").
   const { data: invoices = [] } = useQuery<InvoiceLite[]>({
-    queryKey: [`/api/companies/${companyId}/invoices`],
+    queryKey: ["/api/companies", companyId, "invoices?all=true"],
     enabled: open,
   });
   const banks = postablePaymentAccounts(accounts);
@@ -111,7 +113,8 @@ export function CustomerDepositsDialog({
     toast({ variant: "destructive", title: t["invoices.deposits.failed"], description: e.message });
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: depositsKey });
-    queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/invoices`] });
+    queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "invoices?all=true"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "invoices"] });
   };
 
   const create = useMutation({

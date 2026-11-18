@@ -92,7 +92,14 @@ export default function EInvoicingApprove() {
             data-testid="approve-language"
           >
             <Languages className="h-4 w-4" aria-hidden />
-            {t["einvoicing.appoint.switchLanguage"]}
+            {/* Sweep: the target language's name, in that language and marked as such (as in
+                the site's LocaleToggle); it read "English · الإنجليزية" untagged before. */}
+            <span
+              lang={locale === "ar" ? "en" : "ar"}
+              title={t["einvoicing.appoint.switchLanguage"]}
+            >
+              {locale === "ar" ? "English" : "العربية"}
+            </span>
           </Button>
         </div>
 

@@ -154,7 +154,9 @@ export default function CloseTab() {
                     <TableCell className="font-medium">{item.title}</TableCell>
                     <TableCell>
                       <Badge variant={item.status === "complete" ? "success" : "warning"} dot>
-                        {item.status === "complete" ? "Complete" : t["reportCenter.needsReview"]}
+                        {item.status === "complete"
+                          ? t["reportCenter.tabs.complete"]
+                          : t["reportCenter.needsReview"]}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
@@ -311,14 +313,18 @@ export default function CloseTab() {
                   <Table className="min-w-[920px]">
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Date</TableHead>
+                        <TableHead>
+                          <T k="reportCenter.tabs.date" />
+                        </TableHead>
                         <TableHead>
                           <T k="reportCenter.action" />
                         </TableHead>
                         <TableHead>
                           <T k="reportCenter.record" />
                         </TableHead>
-                        <TableHead>Risk</TableHead>
+                        <TableHead>
+                          <T k="reportCenter.tabs.risk" />
+                        </TableHead>
                         <TableHead>
                           <T k="reportCenter.description" />
                         </TableHead>
@@ -457,7 +463,9 @@ export default function CloseTab() {
                         <TableHead>
                           <T k="reportCenter.company" />
                         </TableHead>
-                        <TableHead>Type</TableHead>
+                        <TableHead>
+                          <T k="reportCenter.tabs.type" />
+                        </TableHead>
                         <TableHead data-numeric>
                           <T k="reportCenter.revenue" />
                         </TableHead>
@@ -498,7 +506,7 @@ export default function CloseTab() {
                             </Badge>
                           </TableCell>
                           <TableCell className="max-w-[360px] text-sm text-muted-foreground">
-                            {row.reviewReason || "Ready for accountant pack."}
+                            {row.reviewReason || t["reportCenter.tabs.readyForPack"]}
                           </TableCell>
                         </TableRow>
                       ))}

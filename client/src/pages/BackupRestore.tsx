@@ -814,6 +814,7 @@ export default function BackupRestore() {
                   type="button"
                   size="sm"
                   variant={effectiveSchedule.frequency === f ? "default" : "outline"}
+                  aria-pressed={effectiveSchedule.frequency === f}
                   onClick={() => setScheduleDraft({ ...effectiveSchedule, frequency: f })}
                   data-testid={`button-schedule-${f}`}
                 >

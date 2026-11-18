@@ -52,7 +52,9 @@
     "e2e:customer": "node tests/e2e/customer-launch-crawl.mjs",
     "e2e:customer:public": "cross-env CUSTOMER_E2E_PUBLIC_ONLY=true node tests/e2e/customer-launch-crawl.mjs",
     "e2e:arabic-runtime": "node tests/e2e/arabic-runtime-crawl.mjs",
-    "e2e:arabic-public": "cross-env ARABIC_PUBLIC=true node tests/e2e/arabic-runtime-crawl.mjs"
+    "e2e:arabic-public": "cross-env ARABIC_PUBLIC=true node tests/e2e/arabic-runtime-crawl.mjs",
+    "e2e:sweep": "node tests/e2e/broken-path-sweep.mjs",
+    "e2e:flows": "node tests/e2e/core-flows.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",

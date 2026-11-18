@@ -8,6 +8,7 @@ import { DATA_BLOCK_INSTRUCTION, wrapUserData } from "./ai/data-blocks";
 import { createLogger } from "../config/logger";
 import { assertPeriodNotLocked } from "./period-lock.service";
 import { recordAudit } from "./audit.service";
+import { notificationCopy } from "../../shared/server-copy";
 import { deleteDraft, postDraft, postJournal } from "../ledger";
 import { AI_QUEUE_STILL_OPEN_SQL } from "./ai-gl-queue-sql";
 import { categorisationReasonCopy } from "../../shared/server-copy";
@@ -535,12 +536,21 @@ async function notifyOwnerOfDrafts(companyId: string, draftCount: number): Promi
   await pool.query(
     `INSERT INTO notifications
        (user_id, company_id, type, title, message, priority, related_entity_type, action_url)
-     VALUES ($1, $2, 'system', $3, $4, 'high', 'journal_entry', '/journal-entries?status=draft')`,
+     VALUES ($1, $2, 'system', $3, $4, 'high', 'journal_entry', '/journal')`,
+    // Sweep: the link was /journal-entries?status=draft (no such page: 404) and the copy was
+    // English-only; it is now catalog copy the client localises.
     [
       ownerUserId,
       companyId,
-      `${draftCount} AI draft journal ${draftCount === 1 ? "entry" : "entries"} need review`,
-      `The AI categorized ${draftCount} bank transaction${draftCount === 1 ? "" : "s"} with high confidence. Review and approve each draft journal entry before it posts to the GL.`,
+      ...Object.values(
+        notificationCopy(
+          "notification.aiDraftsReview.title",
+          "notification.aiDraftsReview.message",
+          {
+            count: draftCount,
+          }
+        )
+      ),
     ]
   );
 }

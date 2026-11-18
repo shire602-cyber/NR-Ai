@@ -155,7 +155,9 @@ export default function ChartOfAccounts() {
     const filtered = accountsWithBalances.filter((item) => {
       if (!searchQuery) return true;
       const query = searchQuery.toLowerCase();
+      // Sweep: accountants search by account code too ("6100" found nothing before).
       return (
+        item.account.code.toLowerCase().includes(query) ||
         item.account.nameEn.toLowerCase().includes(query) ||
         item.account.nameAr?.toLowerCase().includes(query)
       );

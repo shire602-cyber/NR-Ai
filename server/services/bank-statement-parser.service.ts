@@ -581,6 +581,15 @@ export const BANK_FORMAT_LABELS: Record<BankFormatId, string> = {
   ofx: "OFX/QFX",
 };
 
+/**
+ * The format named in the "statement imported" notification (en and ar): a bank's proper name or
+ * a file-format acronym, never the raw id ("generic" showed as English in Arabic).
+ */
+export function importFormatLabel(format: BankFormatId | string): string {
+  if (format === "generic") return "CSV";
+  return BANK_FORMAT_LABELS[format as BankFormatId] ?? format.toUpperCase();
+}
+
 function detectProfile(headersNorm: string[], preamble: string): BankFormatId {
   const joined = headersNorm.join(",");
   const text = preamble.toLowerCase();

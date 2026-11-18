@@ -6,11 +6,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { T } from "@/components/layout/T";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { format } from "date-fns";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function BalanceSheetTab() {
   const { balanceSheet, bsLoading, dateRange, selectedCompanyId, t } = useReportsPageContext();
+  const { locale } = useTranslation();
+  // SWEEP: Arabic statements showed English account names and dates.
+  const accountLabel = (item: { accountName?: string | null; accountNameAr?: string | null }) =>
+    (locale === "ar" && item.accountNameAr) || item.accountName || t["screens.unknownAccount"];
   return (
     <>
       <Card>
@@ -19,8 +25,10 @@ export default function BalanceSheetTab() {
             <CardTitle>{t.balanceSheet}</CardTitle>
             <CardDescription>
               {dateRange.from && dateRange.to
-                ? `As of ${format(dateRange.to, "MMM dd, yyyy")}`
-                : "Assets, liabilities, and equity as of today"}
+                ? formatMessage(t["reportCenter.tabs.asOf"], {
+                    date: formatDate(dateRange.to, locale),
+                  })
+                : t["reportCenter.tabs.balanceSheetToday"]}
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -58,7 +66,7 @@ export default function BalanceSheetTab() {
                         <TableCell className="tabular-nums text-xs text-muted-foreground">
                           {item.accountCode || "-"}
                         </TableCell>
-                        <TableCell>{item.accountName || "Unknown Account"}</TableCell>
+                        <TableCell>{accountLabel(item)}</TableCell>
                         <TableCell data-numeric className=" font-medium">
                           <Money amount={item.amount ?? 0} currency={"AED"} />
                         </TableCell>
@@ -87,7 +95,7 @@ export default function BalanceSheetTab() {
                         <TableCell className="tabular-nums text-xs text-muted-foreground">
                           {item.accountCode || "-"}
                         </TableCell>
-                        <TableCell>{item.accountName || "Unknown Account"}</TableCell>
+                        <TableCell>{accountLabel(item)}</TableCell>
                         <TableCell data-numeric className=" font-medium">
                           <Money amount={item.amount ?? 0} currency={"AED"} />
                         </TableCell>
@@ -116,7 +124,7 @@ export default function BalanceSheetTab() {
                         <TableCell className="tabular-nums text-xs text-muted-foreground">
                           {item.accountCode || "-"}
                         </TableCell>
-                        <TableCell>{item.accountName || "Unknown Account"}</TableCell>
+                        <TableCell>{accountLabel(item)}</TableCell>
                         <TableCell data-numeric className=" font-medium">
                           <Money amount={item.amount ?? 0} currency={"AED"} />
                         </TableCell>

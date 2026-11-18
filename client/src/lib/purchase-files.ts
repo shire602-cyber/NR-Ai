@@ -20,6 +20,23 @@ export function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+/**
+ * A data URL as a Blob, decoded in the page. Broken-path sweep: the bill preview used
+ * `fetch(dataUrl)`, which the production Content-Security-Policy (connect-src 'self') refuses,
+ * so the chosen file never previewed in production.
+ */
+export function dataUrlToBlob(dataUrl: string): Blob {
+  const comma = dataUrl.indexOf(",");
+  const header = dataUrl.slice(0, comma);
+  const body = dataUrl.slice(comma + 1);
+  const type = /^data:([^;,]+)/.exec(header)?.[1] ?? "application/octet-stream";
+  if (!/;base64$/i.test(header)) return new Blob([decodeURIComponent(body)], { type });
+  const binary = atob(body);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type });
+}
+
 /** Fetch a stored file with the session's credentials and return a blob URL for it. */
 export async function fetchStoredFile(path: string): Promise<{ url: string; type: string }> {
   const res = await fetch(apiUrl(path), { headers: getAuthHeaders(), credentials: "include" });

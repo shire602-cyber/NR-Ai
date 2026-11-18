@@ -1,7 +1,8 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import type { Company } from "@shared/schema";
-import { Briefcase, Check, ChevronsUpDown } from "lucide-react";
+import { Briefcase, Check, ChevronsUpDown, Plus } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +21,7 @@ import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canAccessNraCenter } from "@shared/access";
 import { useTranslation } from "@/lib/i18n";
+import { NewCompanyDialog } from "@/components/NewCompanyDialog";
 
 /**
  * Switch which company the rest of the UI is scoped to. Hidden when the
@@ -46,11 +48,15 @@ export function CompanySwitcher({
   });
 
   const canReturnToFirm = canAccessNraCenter(currentUser);
+  // Broken-path sweep: a customer (owner) can add another company from here; the plan's company
+  // cap is enforced by the server and explained by the PlanLimitDialog.
+  const canCreate = currentUser?.userType === "customer";
+  const [creating, setCreating] = useState(false);
 
   // Render when there's something to switch between, OR when an NRA-eligible
   // user is inside a client file and needs a way back to the firm workspace.
   const canSwitch = Boolean(
-    active && companies && (companies.length > 1 || (canReturnToFirm && isFirmContext))
+    active && companies && (companies.length > 1 || canCreate || (canReturnToFirm && isFirmContext))
   );
   if (!active || !companies) return null;
   if (!canSwitch) {
@@ -156,61 +162,77 @@ export function CompanySwitcher({
   );
 
   return (
-    <DropdownMenu>
-      {compact ? (
-        <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-      ) : (
-        // The sidebar truncates long names, so the full name is one hover away (CTO 12).
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" align="start">
-            <span dir="auto">{active.name}</span>
-          </TooltipContent>
-        </Tooltip>
-      )}
-      <DropdownMenuContent
-        align="start"
-        className={cn(
-          "min-w-64",
-          compact ? "max-w-[calc(100vw-2rem)]" : "w-[var(--radix-dropdown-menu-trigger-width)]"
+    <>
+      <DropdownMenu>
+        {compact ? (
+          <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+        ) : (
+          // The sidebar truncates long names, so the full name is one hover away (CTO 12).
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" align="start">
+              <span dir="auto">{active.name}</span>
+            </TooltipContent>
+          </Tooltip>
         )}
-      >
-        {canReturnToFirm && (
-          <>
-            <DropdownMenuLabel>{t["shell.nav.practice"]}</DropdownMenuLabel>
+        <DropdownMenuContent
+          align="start"
+          className={cn(
+            "min-w-64",
+            compact ? "max-w-[calc(100vw-2rem)]" : "w-[var(--radix-dropdown-menu-trigger-width)]"
+          )}
+        >
+          {canReturnToFirm && (
+            <>
+              <DropdownMenuLabel>{t["shell.nav.practice"]}</DropdownMenuLabel>
+              <DropdownMenuItem
+                onSelect={() => handleReturnToFirm()}
+                disabled={!isFirmContext}
+                className="flex items-center justify-between gap-2"
+                data-testid="company-switcher-firm-workspace"
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <Briefcase className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{t["components.switcherFirmWorkspace"]}</span>
+                </span>
+                {!isFirmContext && <Check className="w-3.5 h-3.5 text-primary" />}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          )}
+          <DropdownMenuLabel>{t["components.switcherSwitchCompany"]}</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {companies.map((c) => (
             <DropdownMenuItem
-              onSelect={() => handleReturnToFirm()}
-              disabled={!isFirmContext}
+              key={c.id}
+              onSelect={() => void handleSelect(c.id)}
               className="flex items-center justify-between gap-2"
-              data-testid="company-switcher-firm-workspace"
+              data-testid={`company-switcher-item-${c.id}`}
             >
-              <span className="flex items-center gap-2 min-w-0">
-                <Briefcase className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate">{t["components.switcherFirmWorkspace"]}</span>
+              <span className="truncate" dir="auto">
+                {c.name}
               </span>
-              {!isFirmContext && <Check className="w-3.5 h-3.5 text-primary" />}
+              {c.id === active.id && <Check className="w-3.5 h-3.5 text-primary" />}
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
-        )}
-        <DropdownMenuLabel>{t["components.switcherSwitchCompany"]}</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        {companies.map((c) => (
-          <DropdownMenuItem
-            key={c.id}
-            onSelect={() => void handleSelect(c.id)}
-            className="flex items-center justify-between gap-2"
-            data-testid={`company-switcher-item-${c.id}`}
-          >
-            <span className="truncate" dir="auto">
-              {c.name}
-            </span>
-            {c.id === active.id && <Check className="w-3.5 h-3.5 text-primary" />}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+          ))}
+          {canCreate && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => setCreating(true)}
+                className="flex items-center gap-2"
+                data-testid="company-switcher-new-company"
+              >
+                <Plus className="w-3.5 h-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                <span>{t["components.newCompanyMenu"]}</span>
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {canCreate && <NewCompanyDialog open={creating} onOpenChange={setCreating} />}
+    </>
   );
 }

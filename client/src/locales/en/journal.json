@@ -192,5 +192,7 @@
   "journal.line.ctPct": "Non-deductible share (%)",
   "journal.line.ctPctHelp": "50% for client entertainment, 100% for fines and penalties.",
   "journal.vatAddedTotal": "VAT added by the system",
-  "journal.foreignTotalsNote": "Lines in another currency are converted when you save."
+  "journal.foreignTotalsNote": "Lines in another currency are converted when you save.",
+  "journal.memo.aiDraft": "AI draft (review required): {party}",
+  "journal.memo.aiReviewed": "AI entry (reviewed): {party}"
 }

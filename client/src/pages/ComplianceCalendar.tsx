@@ -268,7 +268,12 @@ export default function ComplianceCalendar() {
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               </div>
-              <Button variant="outline" onClick={() => setCurrentDate(new Date())}>
+              {/* Sweep: already on this month, "Today" has nothing to do. */}
+              <Button
+                variant="outline"
+                onClick={() => setCurrentDate(new Date())}
+                disabled={isSameMonth(currentDate, new Date())}
+              >
                 {locale === "ar" ? "اليوم" : "Today"}
               </Button>
             </CardHeader>

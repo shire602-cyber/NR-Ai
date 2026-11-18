@@ -18,6 +18,7 @@ import {
 import { amountInAed, formatReportDate, invoiceStatusLabel, invoiceStatusVariant } from "../shared";
 import { evidenceSourceHref } from "@/lib/evidenceLinks";
 import { format } from "date-fns";
+import { formatDateRange } from "@/lib/format-date";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 import { StatementDownloads } from "../StatementParts";
@@ -247,7 +248,9 @@ export default function SalesTab() {
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <CardTitle>Sales by product/service</CardTitle>
+              <CardTitle>
+                <T k="reportCenter.tabs.salesByProduct" />
+              </CardTitle>
               <CardDescription>
                 <T k="reportCenter.salesProductHint" />
               </CardDescription>
@@ -270,7 +273,9 @@ export default function SalesTab() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Product / service</TableHead>
+                    <TableHead>
+                      <T k="reportCenter.tabs.productService" />
+                    </TableHead>
                     <TableHead data-numeric>
                       <T k="reportCenter.invoices" />
                     </TableHead>
@@ -280,7 +285,9 @@ export default function SalesTab() {
                     <TableHead data-numeric>
                       <T k="reportCenter.sales" />
                     </TableHead>
-                    <TableHead data-numeric>VAT</TableHead>
+                    <TableHead data-numeric>
+                      <T k="reportCenter.tabs.vat" />
+                    </TableHead>
                     <TableHead data-numeric>
                       <T k="reportCenter.avgUnit" />
                     </TableHead>
@@ -498,7 +505,7 @@ export default function SalesTab() {
           </CardTitle>
           <CardDescription>
             {dateRange.from && dateRange.to
-              ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
+              ? formatDateRange(dateRange.from, dateRange.to, locale)
               : t["reportCenter.allInvoiceDates"]}
           </CardDescription>
         </CardHeader>
@@ -540,7 +547,9 @@ export default function SalesTab() {
                   {reportInvoices.map((invoice) => (
                     <TableRow key={invoice.id}>
                       <TableCell className="tabular-nums font-medium">{invoice.number}</TableCell>
-                      <TableCell>{invoice.customerName || "Unknown Customer"}</TableCell>
+                      <TableCell>
+                        {invoice.customerName || t["reportCenter.tabs.unknownCustomer"]}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatReportDate(invoice.date)}
                       </TableCell>

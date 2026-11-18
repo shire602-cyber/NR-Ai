@@ -104,7 +104,7 @@ export default function PayrollTab() {
                 <T k="reportCenter.payrollSummary" />
               </CardTitle>
               <CardDescription>
-                Pay-period totals, approval state, and WPS/SIF readiness.
+                <T k="reportCenter.tabs.payrollDescription" />
               </CardDescription>
             </div>
             <Button asChild size="sm" variant="outline">
@@ -173,8 +173,12 @@ export default function PayrollTab() {
                         <TableHead data-numeric>
                           <T k="reportCenter.deductions" />
                         </TableHead>
-                        <TableHead data-numeric>Net</TableHead>
-                        <TableHead>SIF</TableHead>
+                        <TableHead data-numeric>
+                          <T k="reportCenter.tabs.net" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="reportCenter.tabs.sif" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -201,7 +205,11 @@ export default function PayrollTab() {
                           </TableCell>
                           <TableCell>
                             <Badge variant={run.sif_file_content ? "success" : "warning"} dot>
-                              {run.sif_file_content ? "Generated" : "Needed"}
+                              {run.sif_file_content ? (
+                                <T k="reportCenter.tabs.generated" />
+                              ) : (
+                                <T k="reportCenter.tabs.needed" />
+                              )}
                             </Badge>
                           </TableCell>
                         </TableRow>
@@ -221,7 +229,9 @@ export default function PayrollTab() {
 
       <Card className={reportSectionClass(["wps-sif-summary"])}>
         <CardHeader>
-          <CardTitle>WPS / SIF readiness</CardTitle>
+          <CardTitle>
+            <T k="reportCenter.tabs.wpsReadiness" />
+          </CardTitle>
           <CardDescription>
             <T k="reportCenter.payrollWpsHint" />
           </CardDescription>

@@ -954,5 +954,14 @@
   "components.planFeature_apiAccess": "الوصول عبر واجهة البرمجة",
   "components.planFeature_webhooks": "خطافات الويب",
   "components.ui.settingsNav.numbering": "الترقيم",
-  "components.ui.settingsNav.approvals": "الموافقات"
+  "components.ui.settingsNav.approvals": "الموافقات",
+  "components.newCompanyMenu": "شركة جديدة",
+  "components.newCompanyTitle": "إضافة شركة",
+  "components.newCompanyBody": "لكل شركة دفاترها وضريبتها وفريقها. تحدد خطتك عدد الشركات المسموح بها.",
+  "components.newCompanyName": "اسم الشركة",
+  "components.newCompanyNameRequired": "أدخل اسم الشركة.",
+  "components.newCompanyCancel": "إلغاء",
+  "components.newCompanyCreate": "إنشاء وإعداد",
+  "components.srv.notification.aiDraftsReview.title": "قيود يومية مسودة من الذكاء الاصطناعي للمراجعة: {count}",
+  "components.srv.notification.aiDraftsReview.message": "صنّف الذكاء الاصطناعي {count} من المعاملات البنكية بثقة عالية. راجع كل قيد مسودة واعتمده قبل ترحيله إلى الدفتر."
 }
