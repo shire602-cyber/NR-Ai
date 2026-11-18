@@ -4,6 +4,13 @@
  */
 import { formatMessage, useTranslation } from "@/lib/i18n";
 
+/**
+ * Unicode bidi isolate (FSI ... PDI): a Latin name or accreditation number inside an Arabic
+ * sentence keeps its own direction and no longer drags the neighbouring brackets and commas
+ * to the wrong side. Harmless in English.
+ */
+const isolate = (value: string) => `\u2068${value}\u2069`;
+
 export interface StepsPartner {
   displayName: string;
   legalName: string;
@@ -22,15 +29,15 @@ export function EmaraTaxSteps({
   const { t } = useTranslation();
   const partnerLabel = partner
     ? formatMessage(t["einvoicing.appoint.partnerLabel"], {
-        name: partner.displayName,
-        legal: partner.legalName,
-        number: partner.accreditationNumber,
+        name: isolate(partner.displayName),
+        legal: isolate(partner.legalName),
+        number: isolate(partner.accreditationNumber),
       })
     : t["einvoicing.appoint.partnerUnknown"];
   const steps = [
-    formatMessage(t["einvoicing.appoint.step1"], { company: companyName }),
+    formatMessage(t["einvoicing.appoint.step1"], { company: isolate(companyName) }),
     t["einvoicing.appoint.step2"],
-    formatMessage(t["einvoicing.appoint.step3"], { partner: partnerLabel }),
+    formatMessage(t["einvoicing.appoint.step3"], { partner: isolate(partnerLabel) }),
     t["einvoicing.appoint.step4"],
     ...(withDone ? [t["einvoicing.appoint.step5Done"]] : [t["einvoicing.appoint.step5"]]),
   ];
