@@ -250,6 +250,10 @@ describe("partner card", () => {
     expect(two.getAttribute("aria-checked")).toBe("false");
     expect(container.textContent).toContain("Not connected");
     expect(container.querySelector('[data-testid="partner-step-verify"]')).toBeNull();
+    // INTEGRATE-I: a partner's legal name is a proper name, kept out of translation (and out of
+    // the Arabic runtime crawl's English-line count).
+    const legal = [...one.querySelectorAll("p")].find((p) => p.textContent === "Partner One LLC");
+    expect(legal?.getAttribute("translate")).toBe("no");
 
     routes["PUT /einvoicing/partner"] = (b) => ({
       body: { ...PARTNERS, chosen: (b as { partner: string }).partner },

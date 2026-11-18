@@ -216,7 +216,9 @@ export function EInvoicePartnerCard({
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="font-semibold text-foreground">{p.displayName}</p>
-                        <p className="truncate text-caption text-muted-foreground">{p.legalName}</p>
+                        <p className="truncate text-caption text-muted-foreground" translate="no">
+                          {p.legalName}
+                        </p>
                       </div>
                       {selected && (
                         <Check className="h-5 w-5 shrink-0 text-brand-600" aria-hidden />
