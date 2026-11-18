@@ -710,5 +710,7 @@
   "marketing.prEveryAiBody": "Bank lines and receipts get suggested accounts for you to review.",
   "marketing.trialEndedReadOnly": "Your trial has ended. Your books are read-only until you choose a plan.",
   "marketing.trialSeePlans": "See plans",
-  "marketing.migrationOpeningBalancesCta": "Import opening balances"
+  "marketing.migrationOpeningBalancesCta": "Import opening balances",
+  "marketing.planContactSubject": "Muhasib.ai {plan}",
+  "marketing.planContactSubjectGeneric": "Muhasib.ai plan"
 }

@@ -244,5 +244,6 @@
   "portal.doc.tabQuotes": "Quotations",
   "portal.doc.tabDocuments": "Documents",
   "portal.doc.sections": "Portal sections",
-  "portal.switchLanguage": "العربية"
+  "portal.switchLanguage": "العربية",
+  "portal.doc.downloadFailed": "The PDF could not be downloaded. Please try again."
 }

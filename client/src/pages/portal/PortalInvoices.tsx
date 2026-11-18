@@ -21,6 +21,7 @@ import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { useTranslation } from "@/lib/i18n";
 import { getAuthHeaders } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
 
 const STATUS_TONE: Record<string, StatusTone> = {
   paid: "success",
@@ -30,11 +31,18 @@ const STATUS_TONE: Record<string, StatusTone> = {
   credit: "neutral",
 };
 
-async function downloadPdf(invoiceId: string, invoiceNumber: string) {
-  const res = await fetch(apiUrl(`/api/client-portal/invoices/${invoiceId}/pdf`), {
-    headers: getAuthHeaders(),
-  });
-  if (!res.ok) return;
+/** Downloads the invoice PDF; false when the server refused or the network failed. */
+async function downloadPdf(invoiceId: string, invoiceNumber: string): Promise<boolean> {
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(`/api/client-portal/invoices/${invoiceId}/pdf`), {
+      headers: getAuthHeaders(),
+      credentials: "include",
+    });
+  } catch {
+    return false;
+  }
+  if (!res.ok) return false;
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -42,10 +50,12 @@ async function downloadPdf(invoiceId: string, invoiceNumber: string) {
   a.download = `invoice-${invoiceNumber}.pdf`;
   a.click();
   URL.revokeObjectURL(url);
+  return true;
 }
 
 export default function PortalInvoices() {
   const { t, locale } = useTranslation();
+  const { toast } = useToast();
   const { data: invoices = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-invoices"],
     queryFn: () => apiRequest("GET", "/api/client-portal/invoices"),
@@ -63,6 +73,7 @@ export default function PortalInvoices() {
             </div>
           ) : invoices.length === 0 ? (
             <EmptyState
+              headingLevel="h2"
               icon={FileText}
               title={t["portal.doc.noInvoicesTitle"]}
               description={t["portal.doc.noInvoicesBody"]}
@@ -124,7 +135,14 @@ export default function PortalInvoices() {
                         <RowActionButton
                           label={t["portal.doc.downloadPdf"]}
                           icon={FileDown}
-                          onClick={() => downloadPdf(inv.id, inv.number)}
+                          onClick={async () => {
+                            const ok = await downloadPdf(inv.id, inv.number);
+                            if (!ok)
+                              toast({
+                                title: t["portal.doc.downloadFailed"],
+                                variant: "destructive",
+                              });
+                          }}
                         />
                       </RowActions>
                     </TableCell>

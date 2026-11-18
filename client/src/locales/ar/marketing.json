@@ -644,7 +644,7 @@
   "marketing.prFaqBillingQ": "كيف تُفوتر الخطة؟",
   "marketing.prFaqBillingA": "بالدرهم، شهرياً أو كل ربع سنة أو سنوياً. الأسعار شاملة ضريبة القيمة المضافة 5%، وتصدر فاتورة ضريبية لكل دفعة.",
   "marketing.prFaqHelpQ": "هل يمكنكم مساعدتي في نقل دفاتري؟",
-  "marketing.prFaqHelpA": "نعم. تشرح أدلة النقل الانتقال من Excel وZoho Books ووافق ومزيد، ويمكن لكل شركة جديدة استيراد دليل الحسابات والأرصدة الافتتاحية وجهات الاتصال.",
+  "marketing.prFaqHelpA": "نعم. تشرح أدلة النقل الانتقال من Excel أو زوهو بوكس أو وافق أو مزيد، ويمكن لكل شركة جديدة استيراد دليل الحسابات والأرصدة الافتتاحية وجهات الاتصال.",
   "marketing.authSignIn": "تسجيل الدخول",
   "marketing.authCreateAccount": "إنشاء حساب",
   "marketing.authTryAgainIn": "حاول مجدداً بعد {seconds} ث",
@@ -710,5 +710,7 @@
   "marketing.prEveryAiBody": "تحصل حركات البنك والإيصالات على حسابات مقترحة لتراجعها.",
   "marketing.trialEndedReadOnly": "انتهت تجربتك. دفاترك للقراءة فقط حتى تختار خطة.",
   "marketing.trialSeePlans": "عرض الخطط",
-  "marketing.migrationOpeningBalancesCta": "استيراد الأرصدة الافتتاحية"
+  "marketing.migrationOpeningBalancesCta": "استيراد الأرصدة الافتتاحية",
+  "marketing.planContactSubject": "باقة {plan} من Muhasib.ai",
+  "marketing.planContactSubjectGeneric": "استفسار عن باقات Muhasib.ai"
 }

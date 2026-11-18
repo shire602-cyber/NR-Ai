@@ -489,7 +489,8 @@
     font-feature-settings: "tnum" 1;
   }
   .money-currency {
-    font-size: 0.8em;
+    /* Never below 12px (an 11px table cell used to give a 9px currency code). */
+    font-size: max(0.8em, 0.75rem);
     font-weight: 500;
     color: hsl(var(--muted-foreground));
     unicode-bidi: isolate;

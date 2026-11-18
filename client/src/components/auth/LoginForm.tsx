@@ -148,7 +148,14 @@ export function LoginForm({ onSuccess, notice }: LoginFormProps) {
                   <Input
                     {...field}
                     type="email"
-                    autoComplete="email"
+                    // "username" is what password managers key a saved login on (the e-mail is it).
+                    autoComplete="username"
+                    inputMode="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    enterKeyHint="next"
+                    ltr
                     placeholder="you@example.com"
                     className={AUTH_INPUT}
                     disabled={isLoading || isCoolingDown}
@@ -179,6 +186,7 @@ export function LoginForm({ onSuccess, notice }: LoginFormProps) {
                     {...field}
                     type="password"
                     autoComplete="current-password"
+                    enterKeyHint="go"
                     placeholder="••••••••"
                     className={AUTH_INPUT}
                     disabled={isLoading || isCoolingDown}

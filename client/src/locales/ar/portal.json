@@ -244,5 +244,6 @@
   "portal.doc.tabQuotes": "عروض الأسعار",
   "portal.doc.tabDocuments": "المستندات",
   "portal.doc.sections": "أقسام البوابة",
-  "portal.switchLanguage": "English · الإنجليزية"
+  "portal.switchLanguage": "English · الإنجليزية",
+  "portal.doc.downloadFailed": "تعذّر تنزيل ملف PDF. يُرجى المحاولة مرة أخرى."
 }

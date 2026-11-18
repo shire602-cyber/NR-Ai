@@ -1017,6 +1017,21 @@ export function isCustomerLinkPath(pathname: string): boolean {
   );
 }
 
+/**
+ * The signed-in client portal pages (`/client-portal/dashboard|invoices|documents|statements|
+ * messages`). They get their own light root (PortalApp) and only the catalogs they read, not
+ * the whole signed-in app.
+ */
+const PORTAL_APP_PATH = /^\/client-portal\/(dashboard|invoices|documents|statements|messages)$/;
+const PORTAL_APP_NAMESPACES = ["components", "portal", "shell", "toasts", "pages", "statements"];
+/** Sign-in and password recovery read only these catalogs (not the help/legal ones). */
+const AUTH_FORM_PATH = /^\/(login|forgot-password|reset-password|verify-email)$/;
+const AUTH_FORM_NAMESPACES = [...PUBLIC_CORE_NAMESPACES, "pageLabels", "pages", "security"];
+
+export function isPortalAppPath(pathname: string): boolean {
+  return PORTAL_APP_PATH.test(normalisePath(pathname));
+}
+
 /** True for the signed-out marketing, auth, legal and help routes and the no-login links. */
 export function isPublicPath(pathname: string): boolean {
   const path = normalisePath(pathname);
@@ -1029,6 +1044,8 @@ export function namespacesForPath(pathname: string): string[] | null {
   if (APPROVER_LINK_PATH.test(path)) return ["components", "einvoicing", "customerLink"];
   if (PORTAL_LINK_PATH.test(path) || INVOICE_LINK_PATH.test(path))
     return ["components", "portal", "customerLink"];
+  if (PORTAL_APP_PATH.test(path)) return PORTAL_APP_NAMESPACES;
+  if (AUTH_FORM_PATH.test(path)) return AUTH_FORM_NAMESPACES;
   if (!PUBLIC_PATHS.has(path)) return null;
   return PUBLIC_CORE_ONLY.has(path)
     ? PUBLIC_CORE_NAMESPACES
@@ -1039,7 +1056,7 @@ let publicScope = false;
 
 /** Called once by main.tsx: restrict loading to route namespaces while on public paths. */
 export function setPublicBootScope(pathname: string): void {
-  publicScope = isPublicPath(pathname);
+  publicScope = isPublicPath(pathname) || isPortalAppPath(pathname);
 }
 
 function currentPathname(): string {

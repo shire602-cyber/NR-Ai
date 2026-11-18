@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import { Route, Switch, useLocation } from "wouter";
 import { lazyWithReload } from "@/lib/lazyWithReload";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { DeferredInstallPrompt } from "@/components/DeferredInstallPrompt";
 import { RTLProvider } from "@/components/RTLProvider";
 import { isCustomerLinkPath, isPublicPath, useI18n } from "@/lib/i18n";
 
@@ -50,9 +51,6 @@ const PublicInvoiceView = lazyWithReload(() => import("@/pages/PublicInvoiceView
 const LinkProviders = lazy(() => import("@/components/customer-link/LinkProviders"));
 const PublicProviders = lazy(() => import("@/components/marketing/PublicProviders"));
 const FullApp = lazyWithReload(() => import("./App"));
-const PWAInstallPrompt = lazy(() =>
-  import("@/components/PWAInstallPrompt").then((m) => ({ default: m.PWAInstallPrompt }))
-);
 
 /** Pages that render without React Query / tooltip / toast providers. */
 const PROVIDERLESS = new Set(["/", "/pricing"]);
@@ -89,23 +87,6 @@ function PublicRoutes() {
       <Route path="/portal/:token" component={CustomerPortal} />
       <Route path="/view/invoice/:token" component={PublicInvoiceView} />
     </Switch>
-  );
-}
-
-/** Mount the install prompt only after the page has loaded (it is never first-paint UI). */
-function DeferredInstallPrompt() {
-  const [ready, setReady] = useState(() => document.readyState === "complete");
-  useEffect(() => {
-    if (ready) return;
-    const onLoad = () => setReady(true);
-    window.addEventListener("load", onLoad, { once: true });
-    return () => window.removeEventListener("load", onLoad);
-  }, [ready]);
-  if (!ready) return null;
-  return (
-    <Suspense fallback={null}>
-      <PWAInstallPrompt />
-    </Suspense>
   );
 }
 

@@ -15,9 +15,11 @@ import "@fontsource/geist-mono/600.css";
 import "./index.css";
 import { registerServiceWorker } from "@/lib/pwa";
 import { hasAuthHint } from "@/lib/authHint";
+import { warmOnFirstInteraction } from "@/lib/warmOnInteraction";
 import {
   isCustomerLinkPath,
   isLocaleLoaded,
+  isPortalAppPath,
   isPublicPath,
   loadLocale,
   loadLocaleForPath,
@@ -34,12 +36,18 @@ const locale = useI18n.getState().locale;
 const publicShell =
   isPublicPath(pathname) && pathname !== "/auth/callback" && !(pathname === "/" && hasAuthHint());
 
+// A signed-in client opening a client-portal page gets the light PortalApp root (no accounting
+// shell); a signed-out visitor still goes through <App /> and its sign-in redirect.
+const portalShell = !publicShell && isPortalAppPath(pathname) && hasAuthHint();
+
 // The page chunk of the public route the visitor landed on, fetched in parallel with
 // the root and its catalogs so the first paint does not wait for another round trip.
 const PUBLIC_ROUTE_CHUNKS: Record<string, () => Promise<unknown>> = {
   "/": () => import("@/pages/MuhasibLanding"),
   "/pricing": () => import("@/pages/Pricing"),
   "/login": () => import("@/pages/Login"),
+  "/forgot-password": () => import("@/pages/ForgotPassword"),
+  "/reset-password": () => import("@/pages/ResetPassword"),
   "/register": () => import("@/pages/Register"),
 };
 
@@ -58,21 +66,25 @@ function customerLinkChunk(path: string): (() => Promise<unknown>) | undefined {
 // the form pages need anyway) and then its root and page chunk. PublicApp does the same before
 // it lazily opens a form page after a client-side navigation.
 const zodFree =
-  publicShell && (pathname === "/" || pathname === "/pricing" || isCustomerLinkPath(pathname));
+  portalShell ||
+  (publicShell && (pathname === "/" || pathname === "/pricing" || isCustomerLinkPath(pathname)));
 const zodReady: Promise<unknown> = zodFree ? Promise.resolve() : import("@/lib/zod-config");
 
 const loadRoot: () => Promise<{ default: ComponentType }> = publicShell
   ? () => import("./PublicApp")
-  : () => import("./App");
+  : portalShell
+    ? () => import("./PortalApp")
+    : () => import("./App");
 
 // S5: locale catalogs are code-split; load what the first route needs before the first render
 // so translated copy never flashes keys. D1b: public pages load only their own namespaces
 // (lib/i18n.ts namespacesForPath); app routes load every namespace as before. A failed
 // catalog chunk still renders (keys fall back).
-setPublicBootScope(publicShell ? pathname : "/__app");
+const lightBoot = publicShell || portalShell;
+setPublicBootScope(lightBoot ? pathname : "/__app");
 void Promise.all([
   zodReady.then(loadRoot),
-  loadLocaleForPath(locale, publicShell ? pathname : "/__app").catch(() => undefined),
+  loadLocaleForPath(locale, lightBoot ? pathname : "/__app").catch(() => undefined),
   publicShell
     ? zodReady.then(() =>
         (PUBLIC_ROUTE_CHUNKS[pathname] ?? customerLinkChunk(pathname))?.().catch(() => undefined)
@@ -82,15 +94,18 @@ void Promise.all([
   createRoot(document.getElementById("root")!).render(<Root />);
 });
 
-// Sign-in and registration lead straight into the app: warm the remaining catalogs once the
-// page is idle so the first signed-in screen renders without waiting for them.
+// Sign-in and registration lead straight into the app: warm the remaining catalogs so the first
+// signed-in screen renders without waiting for them. Registration warms once the page is idle;
+// sign-in waits for the first touch of the form (or 8 s), so on a slow phone the form paints
+// before ~40 catalog requests start (lib/warmOnInteraction.ts).
 if (pathname === "/login" || pathname === "/register") {
+  const warm = () => {
+    const current = useI18n.getState().locale;
+    if (!isLocaleLoaded(current)) void loadLocale(current).catch(() => undefined);
+  };
   window.addEventListener("load", () => {
-    const warm = () => {
-      const current = useI18n.getState().locale;
-      if (!isLocaleLoaded(current)) void loadLocale(current).catch(() => undefined);
-    };
-    if ("requestIdleCallback" in window) window.requestIdleCallback(warm, { timeout: 4000 });
+    if (pathname === "/login") warmOnFirstInteraction(warm);
+    else if ("requestIdleCallback" in window) window.requestIdleCallback(warm, { timeout: 4000 });
     else setTimeout(warm, 2000);
   });
 }

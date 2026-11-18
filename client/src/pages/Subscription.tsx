@@ -28,7 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { ApiError } from "@/lib/queryClient";
-import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
+import { planContactHref } from "@/lib/planContact";
 import { TOP_PLAN_ID, planRank, type PaidPlanId } from "@shared/plans";
 import {
   Check,
@@ -52,8 +52,7 @@ import {
 
 /** "Contact us to upgrade" link while online checkout is not configured. */
 function contactHref(planName?: string): string {
-  const subject = encodeURIComponent(`Muhasib.ai plan${planName ? `: ${planName}` : ""}`);
-  return `mailto:${UPGRADE_CONTACT_EMAIL}?subject=${subject}`;
+  return planContactHref(planName);
 }
 
 function UsageMeter({

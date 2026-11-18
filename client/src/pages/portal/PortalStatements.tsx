@@ -70,6 +70,7 @@ export default function PortalStatements() {
         <Card>
           <CardContent className="p-0">
             <EmptyState
+              headingLevel="h2"
               title={t["portal.doc.noStatementTitle"]}
               description={t["portal.doc.noStatementBody"]}
             />

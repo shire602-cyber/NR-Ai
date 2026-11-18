@@ -77,6 +77,14 @@ BASE_URL=http://localhost:<port> CORS_ORIGIN=http://localhost:<port> node dist/i
   it from the outbox, opens every link signed out at iPhone 13 and 1440x900 and checks language,
   absolute links, console, overflow, 44 px targets, PDF/print and no TRN. Route-level twin:
   `tests/db/customer-links-flow.test.ts`. `SHOT_DIR` saves screenshots.
+- Sign-in, recovery, pricing and client portal: same target, `npm run e2e:auth-portal`
+  (`tests/e2e/auth-portal-flow.mjs`; also writes a client-portal member through `DATABASE_URL`). For
+  iPhone SE, a 360x740 Android, iPhone 13 and 1440x900 in English and Arabic it opens `/login` (empty,
+  wrong password, keyboard open), `/forgot-password`, `/reset-password`, `/pricing` and the five
+  `/client-portal/*` pages and checks console, requests, overflow, 16 px inputs, 44 px targets, text
+  under 12 px, English in Arabic, axe serious/critical, autocomplete attributes, the localized Enterprise
+  mailto subject, the light portal root (no signed-in app, motion or socket) and the PDF download and
+  its failure message. Restart the app between runs (sign-in throttling); about 15 minutes.
 - Core release flows: same target, `npm run e2e:flows` (`tests/e2e/core-flows.mjs`; `FLOWS=id,..`
   and `FLOWS_LANGS` narrow it). Steps in areas still being built are tagged `wip` and reported as
   "in progress" (`FLOWS_STRICT_WIP=true` makes them fail). Report:

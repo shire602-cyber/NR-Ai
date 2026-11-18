@@ -55,6 +55,7 @@
     "e2e:arabic-public": "cross-env ARABIC_PUBLIC=true node tests/e2e/arabic-runtime-crawl.mjs",
     "e2e:sweep": "node tests/e2e/broken-path-sweep.mjs",
     "e2e:customer-links": "node tests/e2e/customer-links-flow.mjs",
+    "e2e:auth-portal": "node tests/e2e/auth-portal-flow.mjs",
     "e2e:flows": "node tests/e2e/core-flows.mjs"
   },
   "dependencies": {

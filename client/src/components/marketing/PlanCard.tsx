@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatMoneyParts, formatMoneyText } from "@/lib/format-money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
-import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
+import { planContactHref } from "@/lib/planContact";
 import {
   planAudienceKey,
   planNameKey,
@@ -102,10 +102,7 @@ export function PlanCard({
   const defaultAction =
     plan.cta === "contact" ? (
       <Button asChild variant="outline" className={cn("h-10 w-full", featured && "border-0")}>
-        <a
-          href={`mailto:${UPGRADE_CONTACT_EMAIL}?subject=${encodeURIComponent(`Muhasib.ai ${name}`)}`}
-          data-testid={`button-plan-${plan.id}`}
-        >
+        <a href={planContactHref(name)} data-testid={`button-plan-${plan.id}`}>
           {t["marketing.pricingTalkToUs"]}
         </a>
       </Button>
