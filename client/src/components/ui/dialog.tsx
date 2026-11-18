@@ -47,9 +47,14 @@ const DIALOG_SIZE_CLASS: Record<DialogSize, string> = {
 };
 const LEGACY_PANEL =
   "left-[50%] top-[50%] grid w-[calc(100%-2rem)] max-w-[30rem] max-h-[calc(100dvh-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-xl border p-6 data-[state=closed]:zoom-out-[0.98] data-[state=open]:zoom-in-[0.98]";
-/** Sized dialogs: the footer sticks to the bottom edge of the scrolling panel. */
+/**
+ * Sized dialogs: the footer sticks to the bottom edge of the scrolling panel. A sticky box is
+ * kept inside the scrollport minus the panel's padding, so `bottom-0` lifted the footer by the
+ * bottom padding and it covered the last line of a short dialog (Fable F1: "Nothing is
+ * deleted." cut in half). The negative offset equals that padding (pb-5 / sm:pb-6).
+ */
 const STICKY_FOOTER =
-  "[&_[data-dialog-footer]]:sticky [&_[data-dialog-footer]]:bottom-0 [&_[data-dialog-footer]]:z-10 [&_[data-dialog-footer]]:-mx-4 [&_[data-dialog-footer]]:-mb-5 [&_[data-dialog-footer]]:mt-auto [&_[data-dialog-footer]]:border-t [&_[data-dialog-footer]]:border-border [&_[data-dialog-footer]]:bg-card [&_[data-dialog-footer]]:px-4 [&_[data-dialog-footer]]:py-3 sm:[&_[data-dialog-footer]]:-mx-6 sm:[&_[data-dialog-footer]]:-mb-6 sm:[&_[data-dialog-footer]]:px-6";
+  "[&_[data-dialog-footer]]:sticky [&_[data-dialog-footer]]:-bottom-5 sm:[&_[data-dialog-footer]]:-bottom-6[&_[data-dialog-footer]]:z-10 [&_[data-dialog-footer]]:-mx-4 [&_[data-dialog-footer]]:-mb-5 [&_[data-dialog-footer]]:mt-auto [&_[data-dialog-footer]]:border-t [&_[data-dialog-footer]]:border-border [&_[data-dialog-footer]]:bg-card [&_[data-dialog-footer]]:px-4 [&_[data-dialog-footer]]:py-3 sm:[&_[data-dialog-footer]]:-mx-6 sm:[&_[data-dialog-footer]]:-mb-6 sm:[&_[data-dialog-footer]]:px-6";
 /** Shared from 640px: a centred panel. Below it, the form fills the sheet and its actions sit at the bottom. */
 const SIZED_PANEL =
   "flex w-full flex-col gap-4 px-4 pb-5 pt-5 max-sm:[&>form]:flex max-sm:[&>form]:flex-1 max-sm:[&>form]:flex-col data-[state=open]:slide-in-from-bottom-6 data-[state=closed]:slide-out-to-bottom-6 sm:inset-auto sm:left-[50%] sm:top-[50%] sm:h-auto sm:max-h-[calc(100dvh-4rem)] sm:w-[calc(100%-2rem)] sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-xl sm:border sm:px-6 sm:pb-6 sm:pt-6 sm:data-[state=open]:slide-in-from-bottom-2 sm:data-[state=closed]:slide-out-to-bottom-2";

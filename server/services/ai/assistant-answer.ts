@@ -90,8 +90,18 @@ export function segmentAnswer(
     const ids = Array.from(m[3].matchAll(/F\d+/g)).map((x) => x[0]);
     for (const id of ids) if (!cited.includes(id)) cited.push(id);
     const fact = ids.length === 1 ? byId.get(ids[0]) : undefined;
-    // A citation of a figure the sentence already states (or a list of ids): drop it.
-    if (!fact || statedInSentence(segments, fact.value)) continue;
+    // A citation of a figure the sentence already states, a figure the answer already gave as an
+    // amount, a marker right after a date or number ("due 2027-01-28 [F3]"), or a list of ids:
+    // drop it. Only a marker standing in for a number is replaced by its value.
+    const prev = segments[segments.length - 1];
+    if (
+      !fact ||
+      statedInSentence(segments, fact.value) ||
+      segments.some((s) => s.type !== "text" && Math.abs(s.value - fact.value) < 0.005) ||
+      (prev?.type === "text" && /\d\s*$/.test(prev.text))
+    ) {
+      continue;
+    }
     segments.push(
       fact.unit === "AED"
         ? { type: "money", value: fact.value, currency: "AED" }

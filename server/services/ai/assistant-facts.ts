@@ -607,6 +607,12 @@ export async function buildAssistantFacts(
       for (const p of periods) {
         const vat = await deps.computeVat201({ companyId, from: p.from, to: p.to });
         const isCurrent = p.from === current.from;
+        // The last period is background for "this quarter": left out when it had no VAT at all.
+        const empty =
+          vat.boxes.box12TotalDueTax === 0 &&
+          vat.boxes.box13RecoverableTax === 0 &&
+          vat.boxes.box14PayableTax === 0;
+        if (!isCurrent && !askedLast && empty) continue;
         const status = isCurrent
           ? null
           : (((await deps.query(SQL_VAT_RETURN_STATUS, [companyId, p.to])).rows[0]?.status as

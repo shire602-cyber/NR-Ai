@@ -250,5 +250,11 @@ export function factLabelValues(
     out.name = params.nameAr;
   }
   if (params.number === "") out.number = "—";
+  // Names and document numbers are data in either script: isolate them so an Arabic customer
+  // name inside an English label (or a Latin code inside Arabic) keeps its own direction.
+  for (const k of ["name", "number"] as const) {
+    const v = out[k];
+    if (typeof v === "string" && v) out[k] = `⁨${v}⁩`;
+  }
   return out;
 }

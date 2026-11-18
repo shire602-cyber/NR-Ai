@@ -451,4 +451,39 @@ describe("AS1 answer text: no markers, amounts as segments, no filler", () => {
     ]);
     expect((segments[0] as { text: string }).text).toContain("INV-2026-00003 was due 2026-10-03");
   });
+
+  it("a second citation of a figure already given (after a date) adds no second amount", () => {
+    const { segments } = segmentAnswer(
+      "Net VAT payable is AED 540.00 [F3]. It is due to the FTA by 2027-01-28 [F3].",
+      [{ id: "F3", value: 540, unit: "AED" }]
+    );
+    expect(segments.filter((s) => s.type === "money")).toHaveLength(1);
+    expect(segments[segments.length - 1]).toEqual({
+      type: "text",
+      text: ". It is due to the FTA by 2027-01-28.",
+    });
+  });
+});
+
+describe("AS1 VAT: the last period is background", () => {
+  it("is left out of 'this quarter' when it had no VAT, kept when asked for", async () => {
+    const empty = stubDeps({
+      computeVat201: vi.fn(async ({ from, to }) => ({
+        period: { from, to, dueDate: "2027-01-28" },
+        boxes:
+          from === "2026-10-01"
+            ? { box12TotalDueTax: 3232.5, box13RecoverableTax: 2692.5, box14PayableTax: 540 }
+            : { box12TotalDueTax: 0, box13RecoverableTax: 0, box14PayableTax: 0 },
+        complete: true,
+      })) as never,
+    });
+    const now = await buildAssistantFacts(COMPANY, "VAT this quarter?", { now: NOW, deps: empty });
+    expect(now.facts.filter((x) => x.topic === "vat").map((x) => x.params?.from)).toEqual([
+      "2026-10-01",
+      "2026-10-01",
+      "2026-10-01",
+    ]);
+    const last = await buildAssistantFacts(COMPANY, "VAT last quarter?", { now: NOW, deps: empty });
+    expect(last.facts.filter((x) => x.topic === "vat").map((x) => x.value)).toEqual([0, 0, 0]);
+  });
 });

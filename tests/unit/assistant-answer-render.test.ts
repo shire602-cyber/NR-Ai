@@ -138,8 +138,8 @@ describe("AS1 answer rendering", () => {
 
   it("A4: facts are labelled from the catalog, with source chips per report", async () => {
     await ask("en");
-    const rows = [...container.querySelectorAll('[data-testid="assistant-figures"] th')].map(
-      (th) => th.textContent
+    const rows = [...container.querySelectorAll('[data-testid="assistant-figures"] th')].map((th) =>
+      th.textContent?.replace(/[\u2068\u2069]/g, "")
     );
     expect(rows).toEqual([
       "Overdue invoices, total",
@@ -238,6 +238,13 @@ describe("F1 plan refusal: one upgrade prompt, no red toast", () => {
     const line = document.querySelector('[data-testid="plan-limit-data-safe"]') as HTMLElement;
     expect(line.textContent).toBe("Nothing is deleted.");
     expect(line.parentElement?.className).toContain("shrink-0");
+    // jsdom has no layout: the sticky footer's offset is asserted through its class. A sticky box
+    // stays inside the scrollport minus the panel padding, so the offset must cancel pb-5/sm:pb-6
+    // or the footer covers the last line (measured in the real build: council/design/FINAL3/AS1).
+    const panel = document.querySelector('[data-testid="plan-limit-dialog"]') as HTMLElement;
+    expect(panel.className).toContain("[&_[data-dialog-footer]]:-bottom-5");
+    expect(panel.className).toContain("sm:[&_[data-dialog-footer]]:-bottom-6");
+    expect(panel.className).not.toContain("[&_[data-dialog-footer]]:bottom-0");
   });
 });
 
