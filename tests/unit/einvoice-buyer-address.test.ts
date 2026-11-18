@@ -2,7 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { BUYER_ADDRESS_MISSING, validateForEInvoicing } from "../../server/services/einvoice.service";
+import {
+  BUYER_ADDRESS_MISSING,
+  validateForEInvoicing,
+} from "../../server/services/einvoice.service";
 import { PINT_AE_FIXTURES, fixtureCompany, uaeBuyer } from "../fixtures/pint-ae/fixtures";
 
 const f = PINT_AE_FIXTURES[0];
