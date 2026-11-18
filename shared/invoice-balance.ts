@@ -14,6 +14,11 @@ export interface InvoiceBalanceFields {
   openBalance: number;
   /** Remaining balance owed in the company base currency (openBalance x the invoice exchange rate). */
   openBalanceBase: number;
+  /**
+   * C2 (NL3): the part of amountPaid that is a bad-debt write-off, not cash (invoice currency).
+   * A fully written-off invoice is settled ("paid" status) but shown as written off.
+   */
+  amountWrittenOff?: number;
 }
 
 /** One row of the invoice list API: the invoice plus its server-computed balance fields. */

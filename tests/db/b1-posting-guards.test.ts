@@ -570,7 +570,9 @@ describe("[B1][NH3][M3] fixed assets: category accounts and disposals on credit"
       vatTreatment: "standard",
     });
     expect(d.status, d.text).toBe(200);
-    expect(d.body).toMatchObject({ gainLoss: -6000, gainLossType: "loss" });
+    // C2 (RL5): October is depreciated to the disposal date (20 of 31 days of 166.67 = 107.53)
+    // before the loss is measured: NBV 9,892.47, loss 5,892.47.
+    expect(d.body).toMatchObject({ gainLoss: -5892.47, gainLossType: "loss" });
     expect(d.body.invoiceId).toBeTruthy();
 
     // The invoice: Dr 1040 4,200 / Cr 4010 4,000 / Cr 2020 200.
@@ -583,8 +585,9 @@ describe("[B1][NH3][M3] fixed assets: category accounts and disposals on credit"
     // The disposal moves the invoiced proceeds out of revenue; no AR or VAT line of its own.
     expect(await linesOf(d.body.journalEntryId)).toEqual({
       "1220": [0, 10000],
+      "1240": [107.53, 0],
       "4010": [4000, 0],
-      "5130": [6000, 0],
+      "5130": [5892.47, 0],
     });
     expect(await bal(t, "4010")).toBe(0);
     expect(await bal(t, "1040")).toBe(4200);

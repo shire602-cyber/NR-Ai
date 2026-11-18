@@ -225,9 +225,11 @@ export const defaultChartOfAccounts: DefaultAccountTemplate[] = [
   },
   {
     code: "2032",
-    nameEn: "Pension Payable - GPSSA",
-    nameAr: "المعاش المستحق - الهيئة العامة للمعاشات",
-    description: "Employee and employer pension contributions due to GPSSA",
+    // C2 (NL6): payroll credits GPSSA and Abu Dhabi Pension Fund contributions here.
+    nameEn: "Pension Payable - GPSSA / ADPF",
+    nameAr: "المعاشات المستحقة - الهيئة العامة للمعاشات / صندوق أبوظبي للمعاشات",
+    description:
+      "Employee and employer pension contributions due to GPSSA or the Abu Dhabi Pension Fund",
     type: "liability",
     subType: "current_liability",
     isVatAccount: false,

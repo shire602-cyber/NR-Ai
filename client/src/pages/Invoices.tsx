@@ -241,6 +241,18 @@ function OverdueBadge({ invoice }: { invoice: InvoiceListItem }) {
   );
 }
 
+/** C2 (NL3): a settled invoice whose balance was written off as a bad debt, not paid. */
+function WrittenOffBadge({ invoice }: { invoice: InvoiceListItem }) {
+  const { t } = useTranslation();
+  if (!((invoice.amountWrittenOff ?? 0) > 0)) return null;
+  const full = invoice.status === "paid";
+  return (
+    <StatusBadge tone="warning" data-testid={`badge-written-off-${invoice.id}`}>
+      {full ? t["invoices.writtenOff"] : t["invoices.partlyWrittenOff"]}
+    </StatusBadge>
+  );
+}
+
 function BalanceLine({ invoice }: { invoice: InvoiceListItem }) {
   const { t } = useTranslation();
   const open = invoice.openBalance;
@@ -2109,6 +2121,7 @@ export default function Invoices() {
                       {/* E1: compact e-invoice badge on the mobile row-card. */}
                       <div className="mt-1 flex flex-wrap items-center gap-1.5 [&>button]:ms-0">
                         <OverdueBadge invoice={invoice} />
+                        <WrittenOffBadge invoice={invoice} />
                         <EInvoiceListCell
                           companyId={selectedCompanyId}
                           invoice={invoice}
@@ -2251,6 +2264,7 @@ export default function Invoices() {
                               </SelectContent>
                             </Select>
                             <OverdueBadge invoice={invoice} />
+                            <WrittenOffBadge invoice={invoice} />
                             {/* E1: two-track e-invoice status; opens the status sheet. */}
                             <EInvoiceListCell
                               companyId={selectedCompanyId}

@@ -83,8 +83,9 @@ describe("[A4][M10] first payroll run and the opening gratuity provision", () =>
     expect(refused.body.code).toBe("OPENING_GRATUITY_REQUIRED");
     const gap = refused.body.details.employees[0];
     expect(gap).toMatchObject({ employeeId: emp.id, asOf: "2026-09-30" });
-    // 5 years x 21 days + 272/365 of a 30-day year, at basic / 30 (Art. 51).
-    const expected = Math.round((5 * 21 + (272 / 365) * 30) * (10000 / 30) * 100) / 100;
+    // 5 years x 21 days + 273/365 of a 30-day year, at basic / 30 (Art. 51). C2 (NL7): 1 Jan to
+    // 30 Sep is 273 days of service, the last day included.
+    const expected = Math.round((5 * 21 + (273 / 365) * 30) * (10000 / 30) * 100) / 100;
     expect(Number(gap.suggestedOpeningProvision)).toBeCloseTo(expected, 1);
 
     const set = await t.as.patch(`/api/employees/${emp.id}`, {
@@ -173,6 +174,13 @@ describe("[A4][M11][M14][M12] ADPF, pension payments and payroll control ties", 
     const approved = await t.as.post(`/api/payroll-runs/${run}/approve`, {});
     expect(approved.status, approved.text).toBe(200);
     expect(await bal(t, "2032")).toBe(-(5000 + 4375) * 100);
+    // C2 (NL6): 2032 holds the ADPF contributions too, and says so.
+    const [p2032] = await h.sql<{ name_en: string; name_ar: string }>(
+      `SELECT name_en, name_ar FROM accounts WHERE company_id = $1 AND code = '2032'`,
+      [t.company.id]
+    );
+    expect(p2032.name_en).toBe("Pension Payable - GPSSA / ADPF");
+    expect(p2032.name_ar).toContain("صندوق أبوظبي للمعاشات");
 
     const liability = await t.as.get(`${c}/payroll/pension-liability`);
     expect(liability.status, liability.text).toBe(200);

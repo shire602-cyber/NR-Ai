@@ -940,6 +940,10 @@ export function registerInvoiceRoutes(app: Express) {
         payment: result.payment,
         totalPaid: result.totalPaid,
         status: result.invoice.status,
+        // C2 (NL8): the Art. 64(3) reversal of any bad-debt relief on this invoice.
+        ...("badDebtReliefReversal" in result
+          ? { badDebtReliefReversal: result.badDebtReliefReversal }
+          : {}),
       });
     })
   );

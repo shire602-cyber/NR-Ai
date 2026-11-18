@@ -8,6 +8,7 @@
  *   NM4  4091 unrealised FX gain is other income, not revenue (P&L and dashboard trends).
  *   NH4  settling an amended VAT return settles only the difference; 2020 / 1050 end at zero.
  *   NL1  a VAT settlement (and its reversal) is not refused by a later filed period.
+ *   RL6  (C2) a settlement a later amendment counted cannot be reversed before that one.
  *   NM2  a debit note on a bill-sourced asset re-costs the register entry (ties to GL).
  *   FA   straight line after a revaluation to exactly the original cost is re-based; the
  *        register's book columns follow asOf; NL9 the register shows the revaluation reserve.
@@ -289,12 +290,14 @@ describe("B2 NM1: direct method presents the S7 flows gross, VAT in operating", 
     expect(sale.status, sale.text).toBeLessThan(300);
     // B1 (M3): a "computers" asset is capitalised on 1230 (its class account), so the disposal
     // credits 1230 and the investing lines sit on 1230 (were 1290 before B1 and B2 met).
+    // C2 (RL5): February is depreciated up to the disposal date (28 Feb: the whole month, 1,000)
+    // before the loss is measured, so the loss is 14,000 (was 15,000 with February uncharged).
     expect(await linesOf(sale.body.journalEntryId)).toEqual({
       "1020": [21000, 0],
-      "1240": [1000, 0],
+      "1240": [2000, 0],
       "1230": [0, 36000],
       "2020": [0, 1000],
-      "5130": [15000, 0],
+      "5130": [14000, 0],
     });
     const { indirect, direct } = await bothMethods(t, "2026-01-01", "2026-02-28");
     expect(subtotals(indirect)).toEqual({ operating: -800, investing: -16000, financing: 0 });
@@ -308,8 +311,8 @@ describe("B2 NM1: direct method presents the S7 flows gross, VAT in operating", 
       )
     ).toEqual({
       "net_income:": -16000,
-      "non_cash:5100": 1000,
-      "non_cash:5130": 15000,
+      "non_cash:5100": 2000,
+      "non_cash:5130": 14000,
       "balance_change:1050": -1800,
       "balance_change:2020": 1000,
     });
@@ -406,7 +409,7 @@ describe("B2 NM4: unrealised FX gain is other income", () => {
 });
 
 describe("B2 NH4 / NL1: settling an amended VAT return", () => {
-  it("[NH4][NL1] the amendment settles only the difference; 2020 / 1050 end at zero; reversal stays consistent", async () => {
+  it("[NH4][NL1][RL6] the amendment settles only the difference; 2020 / 1050 end at zero; reversal stays consistent", async () => {
     const t = await tenant("B2X3");
     const bank = await accountByCode(t, "1020");
     const invoice = async (date: string, amount: number) => {
@@ -503,22 +506,27 @@ describe("B2 NH4 / NL1: settling an amended VAT return", () => {
     expect(await glBalance(t, "1050")).toBe(0);
     expect(await glBalance(t, "1020")).toBe(-270);
 
-    // NL1: reversing the original settlement after Q2 is filed is allowed (dated in an open
-    // period); the period's VAT is then unpaid again by exactly the original 220.
-    const rev = await t.as.post(`/api/vat-returns/${gen.body.id}/settlement/reverse`, {
+    // C2 (RL6): the amendment's delta settlement counted the original one, so the original
+    // cannot be reversed on its own (it would leave 220 neither paid nor payable on any return).
+    const refused = await t.as.post(`/api/vat-returns/${gen.body.id}/settlement/reverse`, {
       date: "2026-07-05",
       reason: "Payment returned by the bank",
     });
-    expect(rev.status, rev.text).toBe(200);
-    expect(await glBalance(t, "2020")).toBe(-450);
-    expect(await glBalance(t, "1050")).toBe(230);
-    // The amendment's delta settlement is still live: settling again is refused, and once it is
-    // reversed the amendment settles in full (nothing else is live on the chain).
-    expect((await t.as.post(url, { date: "2026-07-06", paymentAccountId: bank.id })).status).toBe(
-      409
-    );
-    const rev2 = await t.as.post(`${url}/reverse`, { date: "2026-07-06", reason: "Re-settle" });
+    expect(refused.status, refused.text).toBe(409);
+    expect(refused.body.code).toBe("VAT_SETTLEMENT_COUNTED_BY_AMENDMENT");
+    expect(await glBalance(t, "2020")).toBe(0);
+    // Latest first: reverse the amendment's delta, then the original (NL1: allowed after Q2 is
+    // filed, dated in an open period); the period's VAT is then unpaid again in full.
+    const rev2 = await t.as.post(`${url}/reverse`, { date: "2026-07-05", reason: "Re-settle" });
     expect(rev2.status, rev2.text).toBe(200);
+    const rev = await t.as.post(`/api/vat-returns/${gen.body.id}/settlement/reverse`, {
+      date: "2026-07-06",
+      reason: "Payment returned by the bank",
+    });
+    expect(rev.status, rev.text).toBe(200);
+    expect(await glBalance(t, "2020")).toBe(-500);
+    expect(await glBalance(t, "1050")).toBe(230);
+    // Nothing else is live on the chain: the amendment settles in full.
     const full = await t.as.post(url, { date: "2026-07-07", paymentAccountId: bank.id });
     expect(full.status, full.text).toBe(201);
     expect(await linesOf(full.body.journalEntryId)).toEqual({

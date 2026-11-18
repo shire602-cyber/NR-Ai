@@ -117,6 +117,40 @@ export function depreciationFor(a: AssetCalcInput, year: number, month: number):
   };
 }
 
+/**
+ * C2 (RL5): the disposal month's charge, prorated to the days the asset was held in that month
+ * up to and including the disposal day, the same day-count convention as the acquisition month
+ * (IAS 16.55: depreciation ceases when the asset is derecognised). `c` is the month's full
+ * charge from depreciationFor.
+ */
+export function prorateToDay(
+  c: DepreciationCalc,
+  purchaseDate: string,
+  year: number,
+  month: number,
+  day: number
+): DepreciationCalc {
+  if (c.skipped || c.amountFils <= 0) return c;
+  const p = parts(purchaseDate);
+  const dim = daysInMonth(year, month);
+  const start = p.y === year && p.m === month ? p.d : 1;
+  const basis = dim - start + 1;
+  const held = Math.max(0, Math.min(day, dim) - start + 1);
+  if (held >= basis) return c;
+  const amount = prorate(c.amountFils, held, basis);
+  const accBefore = c.newAccumulatedFils - c.amountFils;
+  const nbvBefore = c.newNetBookValueFils + c.amountFils;
+  return {
+    ...c,
+    amountFils: amount,
+    prorationFactor: (c.prorationFactor * held) / basis,
+    skipped: amount === 0,
+    newAccumulatedFils: accBefore + amount,
+    newNetBookValueFils: nbvBefore - amount,
+    fullyDepreciated: c.fullyDepreciated && amount === c.amountFils,
+  };
+}
+
 /** Months from the acquisition month through (year, month), inclusive, oldest first. */
 export function monthsThrough(purchaseDate: string, year: number, month: number) {
   const p = parts(purchaseDate);

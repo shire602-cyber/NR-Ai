@@ -588,7 +588,10 @@ export interface ChangesInEquity {
 }
 
 function equityOf(bs: BalanceSheet): EquityComponents {
-  const retained = bs.equity.retainedEarningsBroughtForward + bs.equity.currentYearEarnings;
+  const retained =
+    bs.equity.retainedEarningsBroughtForward +
+    (bs.equity.retainedEarningsMovements ?? 0) +
+    bs.equity.currentYearEarnings;
   return {
     capital: round2(bs.equity.capital.total),
     revaluationReserve: round2(bs.equity.reserves?.total ?? 0),

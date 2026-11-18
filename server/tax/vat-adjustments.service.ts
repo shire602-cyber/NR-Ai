@@ -28,6 +28,7 @@ import { invoiceSettlement, totalsForStoredDocument } from "../services/invoice-
 import { invoiceWrittenOffFils } from "../services/invoice-payment.service";
 import { onDomainEvent } from "../platform/domain-events";
 import { createLogger } from "../config/logger";
+import { has, provide } from "../platform/service-registry";
 import { normaliseEmirate, toBaseFils } from "./vat-boxes";
 import { loadVatCompany, returnAdjustmentDelta, type ReturnAdjustmentKind } from "./vat-engine";
 import { assertAlignedPeriod } from "./vat-periods";
@@ -296,46 +297,69 @@ export async function listBadDebtReliefClaims(companyId: string) {
     .orderBy(sql`${badDebtReliefClaims.claimDate} DESC`);
 }
 
+/**
+ * A payment received on an invoice with an active claim reverses the relief (Art. 64(3)), dated
+ * on the payment date (or, when that VAT period is filed, the next open period: Exec. Reg.
+ * Art. 70). C2 (NL8): the invoice payment service calls this synchronously after the payment is
+ * recorded and returns its outcome, so a failure is visible to the user instead of only logged;
+ * the `payment.received` hook stays as a retry (a reversed claim is not 'claimed' any more).
+ */
+export async function reverseReliefOnPayment(p: {
+  companyId: string;
+  invoiceId: string;
+  paymentId: string;
+  actorUserId?: string | null;
+}): Promise<{ claimId: string; reversed: true; date: string } | null> {
+  const { rows } = await pool.query(
+    `SELECT c.id, c.created_by FROM bad_debt_relief_claims c
+      WHERE c.company_id = $1 AND c.invoice_id = $2 AND c.status = 'claimed'`,
+    [p.companyId, p.invoiceId]
+  );
+  if (!rows[0]) return null;
+  const pay = await pool.query(
+    `SELECT to_char(date, 'YYYY-MM-DD') AS d FROM invoice_payments WHERE id = $1`,
+    [p.paymentId]
+  );
+  const date = pay.rows[0]?.d ?? new Date().toISOString().slice(0, 10);
+  const reverse = (on: string) =>
+    reverseBadDebtReliefClaim({
+      companyId: p.companyId,
+      claimId: rows[0].id,
+      userId: p.actorUserId || rows[0].created_by,
+      date: on,
+      reason: "Payment received after bad-debt relief was claimed",
+    });
+  try {
+    const saved = await reverse(date);
+    return { claimId: rows[0].id, reversed: true, date: String(saved.reversedAt ?? date) };
+  } catch (err) {
+    const next = (err as DomainError & { details?: { nextOpenPeriodStart?: string } })?.details
+      ?.nextOpenPeriodStart;
+    if ((err as DomainError)?.code !== "VAT_PERIOD_FILED" || !next) throw err;
+    const saved = await reverse(next);
+    return { claimId: rows[0].id, reversed: true, date: String(saved.reversedAt ?? next) };
+  }
+}
+
 let paymentHookInstalled = false;
-/** A payment received on an invoice with an active claim reverses the relief (Art. 64(3)). */
+/** Retry path for reverseReliefOnPayment (see above). */
 export function installBadDebtPaymentHook(): void {
   if (paymentHookInstalled) return;
   paymentHookInstalled = true;
+  if (!has("vat.reverseReliefOnPayment"))
+    provide("vat.reverseReliefOnPayment", reverseReliefOnPayment);
   onDomainEvent("payment.received", async (e) => {
     const p = e.payload as typeof e.payload & { actorUserId?: string };
     if (!p.invoiceId) return;
-    const { rows } = await pool.query(
-      `SELECT c.id, c.created_by FROM bad_debt_relief_claims c
-        WHERE c.company_id = $1 AND c.invoice_id = $2 AND c.status = 'claimed'`,
-      [p.companyId, p.invoiceId]
-    );
-    if (!rows[0]) return;
-    const pay = await pool.query(
-      `SELECT to_char(date, 'YYYY-MM-DD') AS d FROM invoice_payments WHERE id = $1`,
-      [p.entityId]
-    );
-    const date = pay.rows[0]?.d ?? new Date().toISOString().slice(0, 10);
-    const reverse = (on: string) =>
-      reverseBadDebtReliefClaim({
-        companyId: p.companyId,
-        claimId: rows[0].id,
-        userId: p.actorUserId || rows[0].created_by,
-        date: on,
-        reason: "Payment received after bad-debt relief was claimed",
-      });
     try {
-      try {
-        await reverse(date);
-      } catch (err) {
-        // A payment dated in a filed VAT period: the recovered VAT is declared in the next open
-        // period's return (Executive Regulation Art. 70), never by changing the filed one.
-        const next = (err as DomainError & { details?: { nextOpenPeriodStart?: string } })?.details
-          ?.nextOpenPeriodStart;
-        if ((err as DomainError)?.code !== "VAT_PERIOD_FILED" || !next) throw err;
-        await reverse(next);
-      }
+      await reverseReliefOnPayment({
+        companyId: p.companyId,
+        invoiceId: p.invoiceId,
+        paymentId: p.entityId,
+        actorUserId: p.actorUserId,
+      });
     } catch (err) {
-      log.error({ err, claimId: rows[0].id }, "bad-debt relief reversal on payment failed");
+      log.error({ err, invoiceId: p.invoiceId }, "bad-debt relief reversal on payment failed");
     }
   });
 }

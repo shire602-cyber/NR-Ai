@@ -134,6 +134,7 @@ export function registerFinancialStatementRoutes(app: Express) {
           breakdown: breakdown(bs.equity.lines),
           capital: bs.equity.capital,
           retainedEarningsBroughtForward: bs.equity.retainedEarningsBroughtForward,
+          retainedEarningsMovements: bs.equity.retainedEarningsMovements,
           currentYearEarnings: bs.equity.currentYearEarnings,
         },
         totalLiabilitiesAndEquity: bs.totalLiabilitiesAndEquity,
