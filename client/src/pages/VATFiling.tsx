@@ -39,6 +39,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { isVatRegistered } from "@shared/vat-registration";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Money } from "@/components/ui/money";
@@ -230,6 +231,7 @@ export default function VATFiling() {
   const dfOpts = dateFnsOptions(locale);
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { gate } = useCompanyPermission();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
@@ -1010,7 +1012,11 @@ export default function VATFiling() {
               </Link>
             </Button>
             {canGenerateVatReturn ? (
-              <Button onClick={handleCreateReturn} data-testid="button-create-return">
+              <Button
+                onClick={handleCreateReturn}
+                data-testid="button-create-return"
+                {...gate("documents.write")}
+              >
                 <Calculator className="w-4 h-4 me-2" />
                 {t["compliance.vatFilingNewVatDraft"]}
               </Button>

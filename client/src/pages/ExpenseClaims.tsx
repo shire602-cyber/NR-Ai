@@ -84,6 +84,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import type { Permission } from "@/lib/auth";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
@@ -766,7 +767,7 @@ export default function ExpenseClaims() {
     isReview?: boolean;
     emptyTitle?: string;
     emptyDescription?: string;
-    emptyAction?: { label: string; onClick: () => void };
+    emptyAction?: { label: string; onClick: () => void; permission?: Permission };
   }) => (
     <DataTableCard
       status={loading ? "loading" : claims.length === 0 ? "empty" : "ready"}
@@ -778,9 +779,7 @@ export default function ExpenseClaims() {
           emptyDescription ??
           (t as any).expenseClaimsEmptyDesc ??
           "Submit your first reimbursement to get started.",
-        action: emptyAction
-          ? { label: emptyAction.label, onClick: emptyAction.onClick, icon: Plus }
-          : undefined,
+        action: emptyAction ? { ...emptyAction, icon: Plus } : undefined,
         testId: "empty-state-expense-claims",
       }}
     >
@@ -1298,7 +1297,11 @@ export default function ExpenseClaims() {
             loading={isLoadingClaims}
             emptyTitle={t["screens.noClaimsYet"]}
             emptyDescription={t["screens.noClaimsYetBody"]}
-            emptyAction={{ label: t["pages.newClaim"], onClick: handleOpenCreateDialog }}
+            emptyAction={{
+              label: t["pages.newClaim"],
+              onClick: handleOpenCreateDialog,
+              permission: "documents.write",
+            }}
           />
         </TabsContent>
 

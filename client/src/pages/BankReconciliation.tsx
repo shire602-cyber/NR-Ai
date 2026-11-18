@@ -1,3 +1,4 @@
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { accountDisplayName } from "@/lib/account-name";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -362,6 +363,7 @@ function downloadSampleBankCsv() {
 
 export default function BankReconciliation() {
   const { t, locale } = useTranslation();
+  const { gate } = useCompanyPermission();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
@@ -866,6 +868,7 @@ export default function BankReconciliation() {
           <Button
             onClick={() => setImportDialogOpen(true)}
             data-testid="button-import-transactions"
+            {...gate("documents.write")}
           >
             <Upload aria-hidden />
             {t["banking.recon.importStatement"]}
@@ -1031,6 +1034,7 @@ export default function BankReconciliation() {
                       description: t["banking.emptyTransactionsDescription"],
                       action: {
                         label: t["banking.importStatementAction"],
+                        permission: "documents.write",
                         icon: Upload,
                         variant: "outline",
                         onClick: () => setImportDialogOpen(true),

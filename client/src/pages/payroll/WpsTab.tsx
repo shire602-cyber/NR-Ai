@@ -24,6 +24,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { errorMessage, monthName, useHr, type PayrollRun } from "./shared";
 import { apiFieldErrors, type FieldMessages } from "@/lib/api-field-errors";
 import { StatusBadge } from "./StatusBadge";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 
 interface WpsSettings {
   mohreEstablishmentId: string | null;
@@ -45,6 +46,7 @@ const WPS_FIELDS: Array<[keyof WpsSettings, string]> = [
 export function WpsSettingsCard({ companyId }: { companyId: string }) {
   const { tx } = useHr();
   const { toast } = useToast();
+  const { gate, can } = useCompanyPermission();
   const key = [`/api/companies/${companyId}/payroll/wps-settings`];
   const { data } = useQuery<WpsSettings>({ queryKey: key });
   // Local edits layered over the saved values (no effect-driven state copy).
@@ -107,7 +109,11 @@ export function WpsSettingsCard({ companyId }: { companyId: string }) {
             </div>
           ))}
         </div>
-        <Button onClick={() => save.mutate()} disabled={save.isPending}>
+        <Button
+          onClick={() => save.mutate()}
+          disabled={save.isPending}
+          {...(can("settings.company") ? {} : gate("payroll.manage"))}
+        >
           <Save className="me-2 h-4 w-4" />
           {tx("hr.save")}
         </Button>

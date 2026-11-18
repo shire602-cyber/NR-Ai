@@ -781,7 +781,11 @@ export default function CustomerContacts() {
             <Building2 className="w-4 h-4" />
             {formatMessage(t["pages.contactsTabCount"], { count: contacts.length })}
           </TabsTrigger>
-          <TabsTrigger value="import" data-testid="tab-contacts-import">
+          <TabsTrigger
+            value="import"
+            data-testid="tab-contacts-import"
+            {...gate("documents.write")}
+          >
             <Upload className="w-4 h-4" />
             <T k="pageLabels.importFromExcel" />
           </TabsTrigger>
@@ -820,12 +824,14 @@ export default function CustomerContacts() {
                     label: t["pages.contactsAddContact"],
                     onClick: () => setShowAddDialog(true),
                     testId: "button-add-first-contact",
+                    permission: "documents.write",
                   },
               secondaryAction: searchTerm
                 ? { label: t["pages.contactsClearSearch"], onClick: () => setSearchTerm("") }
                 : {
                     label: t["pageLabels.importFromExcel"],
                     onClick: () => setActiveTab("import"),
+                    permission: "documents.write",
                   },
             }}
           >

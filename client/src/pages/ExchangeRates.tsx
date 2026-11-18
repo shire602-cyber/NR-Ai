@@ -41,6 +41,7 @@ import { useTranslation } from "@/lib/i18n";
 import { pegRatePrefill } from "@/lib/document-currency";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
@@ -428,6 +429,7 @@ export default function ExchangeRates() {
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
+  const { gate } = useCompanyPermission();
 
   const ratesKey = `/api/companies/${companyId}/exchange-rates`;
   const fxKey = `/api/companies/${companyId}/reports/fx-gains-losses`;
@@ -717,7 +719,11 @@ export default function ExchangeRates() {
               <Download className="h-4 w-4 me-2" />
               <T k="pages.export" />
             </Button>
-            <Button onClick={() => setShowAddDialog(true)} data-testid="button-add-rate">
+            <Button
+              onClick={() => setShowAddDialog(true)}
+              data-testid="button-add-rate"
+              {...gate("documents.write")}
+            >
               <Plus className="h-4 w-4 me-2" />
               {s.addRate}
             </Button>

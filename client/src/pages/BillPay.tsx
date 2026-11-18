@@ -1641,6 +1641,7 @@ export default function BillPay() {
                             <>
                               {(bill.status === "draft" || bill.status === "rejected") && (
                                 <DropdownMenuItem
+                                  {...gate("documents.write")}
                                   onClick={() =>
                                     billActionMutation.mutate({ id: bill.id, action: "submit" })
                                   }
@@ -1651,6 +1652,7 @@ export default function BillPay() {
                               )}
                               {bill.status === "pending" && (
                                 <DropdownMenuItem
+                                  {...gate("documents.approve")}
                                   onClick={() => {
                                     const reason = window.prompt(c.reasonPrompt);
                                     if (reason)
@@ -1668,6 +1670,7 @@ export default function BillPay() {
                               {["draft", "pending", "approved", "overdue"].includes(bill.status) &&
                                 Number(bill.amount_paid) === 0 && (
                                   <DropdownMenuItem
+                                    {...gate("documents.write")}
                                     onClick={() => {
                                       const reason = window.prompt(c.reasonPrompt);
                                       if (reason)
@@ -1685,6 +1688,7 @@ export default function BillPay() {
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"
+                                {...gate("documents.write")}
                                 onClick={() => {
                                   if (confirm(t["screens.confirmDeleteBill"])) {
                                     deleteBillMutation.mutate(bill.id);
@@ -1702,6 +1706,7 @@ export default function BillPay() {
                               label={t["pages.approve"]}
                               icon={CheckCircle}
                               onClick={() => approveBillMutation.mutate(bill.id)}
+                              {...gate("documents.approve")}
                             />
                           )}
                           {payable && (
@@ -1709,12 +1714,14 @@ export default function BillPay() {
                               label={t["pages.recordPayment"]}
                               icon={DollarSign}
                               onClick={() => handlePayBill(bill)}
+                              {...gate("payments.release")}
                             />
                           )}
                           <RowActionButton
                             label={t.edit}
                             icon={Edit}
                             onClick={() => openBillEditor(bill)}
+                            {...gate("documents.write")}
                           />
                         </RowActions>
                       </TableCell>

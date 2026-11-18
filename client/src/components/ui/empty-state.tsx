@@ -3,6 +3,8 @@ import type { LucideIcon } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import type { Permission } from "@/lib/auth";
 
 export interface EmptyStateAction {
   label: string;
@@ -11,6 +13,11 @@ export interface EmptyStateAction {
   icon?: LucideIcon;
   variant?: React.ComponentProps<typeof Button>["variant"];
   testId?: string;
+  /**
+   * E3 (J4-r3): the company permission the action needs (a write). Without it the button is
+   * disabled with the role explanation, like every other gated write control.
+   */
+  permission?: Permission;
 }
 
 export type EmptyStateSize = "sm" | "md" | "lg";
@@ -203,6 +210,24 @@ function GhostRows({ columns }: { columns: number }) {
   );
 }
 
+/** E3 (J4-r3): the empty-state call to action, disabled with the reason for a role without it. */
+function GatedEmptyStateButton(props: EmptyStateAction & { className?: string }) {
+  const { gate } = useCompanyPermission();
+  const denied = gate(props.permission!);
+  if (!("disabled" in denied)) return <EmptyStateButton {...props} permission={undefined} />;
+  return (
+    <Button
+      variant={props.variant ?? "default"}
+      data-testid={props.testId}
+      className={props.className}
+      {...denied}
+    >
+      {props.icon && <props.icon className="w-4 h-4" />}
+      {props.label}
+    </Button>
+  );
+}
+
 function EmptyStateButton({
   label,
   onClick,
@@ -211,7 +236,15 @@ function EmptyStateButton({
   variant = "default",
   testId,
   className,
+  permission,
 }: EmptyStateAction & { className?: string }) {
+  if (permission) {
+    return (
+      <GatedEmptyStateButton
+        {...{ label, onClick, href, icon: Icon, variant, testId, className, permission }}
+      />
+    );
+  }
   const content = (
     <>
       {Icon && <Icon className="w-4 h-4" />}

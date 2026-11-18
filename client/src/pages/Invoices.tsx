@@ -2323,6 +2323,7 @@ export default function Invoices() {
                                       <DropdownMenuItem
                                         onSelect={() => openAddPayment(invoice)}
                                         data-testid={`button-add-payment-${invoice.id}`}
+                                        {...gate("ledger.post")}
                                       >
                                         <DollarSign aria-hidden />
                                         <T k="invoices.actionAddPayment" />
@@ -2402,6 +2403,7 @@ export default function Invoices() {
                                     label={t["invoices.actionAddPayment"]}
                                     onClick={() => openAddPayment(invoice)}
                                     data-testid={`button-add-payment-${invoice.id}`}
+                                    {...gate("ledger.post")}
                                   />
                                 )}
                               {invoice.status === "paid" ? (
