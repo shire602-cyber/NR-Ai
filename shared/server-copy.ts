@@ -821,6 +821,7 @@ export const MONTH_END_TEMPLATES: readonly CopyTemplate[] = [
   T("monthEnd.vat.description", "VAT 201 return has been prepared or filed for the period"),
   T("monthEnd.vat.prepared", "{n} VAT return(s) prepared"),
   T("monthEnd.vat.missing", "No VAT return prepared for this period"),
+  T("monthEnd.vat.notDue", "Not due yet: the VAT period {from} to {to} ends later"),
   T("monthEnd.accruals.title", "Accruals recorded"),
   T(
     "monthEnd.accruals.description",

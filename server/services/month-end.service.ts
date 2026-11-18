@@ -1,6 +1,7 @@
 import type { QueryResultRow } from "pg";
 import { pool } from "../db";
 import { DomainError } from "../errors";
+import { frequencyOf, periodContaining } from "../tax/vat-periods";
 import { postJournal } from "../ledger";
 import { describeMonthEndText, type CopyDescriptor } from "@shared/server-copy";
 import { detectAnomalies } from "./anomaly-detection.service";
@@ -343,26 +344,41 @@ export async function getCloseChecklist(
     });
   }
 
-  // 7. VAT return prepared
+  // 7. VAT return prepared. PR-66 port: a quarterly filer's return spans three months, so
+  //    "contained in this month" never matched and every month needed the lock override.
+  //    A non-draft return covering this month completes the step; a month that is not the
+  //    last month of its VAT period has no return due yet.
+  const vatCompany = await pool.query(
+    `SELECT vat_filing_frequency, vat_period_start_month FROM companies WHERE id = $1`,
+    [companyId]
+  );
+  const vatPeriod = periodContaining(
+    periodEnd,
+    frequencyOf(vatCompany.rows[0]?.vat_filing_frequency),
+    Number(vatCompany.rows[0]?.vat_period_start_month) || 1
+  );
   const vatResult = await pool.query(
     `SELECT COUNT(*) AS total
      FROM vat_returns
      WHERE company_id = $1
-       AND period_start >= $2::date
-       AND period_end <= $3::date
+       AND period_start <= $3::date
+       AND period_end >= $2::date
        AND status != 'draft'`,
     [companyId, periodStart, periodEnd]
   );
   const vatCount = parseInt(vatResult.rows[0]?.total || "0");
+  const vatNotDueYet = vatCount === 0 && periodEnd < vatPeriod.to;
   checklist.push({
     id: 7,
     title: "VAT return prepared",
     description: "VAT 201 return has been prepared or filed for the period",
-    status: vatCount > 0 ? "complete" : "incomplete",
+    status: vatCount > 0 || vatNotDueYet ? "complete" : "incomplete",
     details:
       vatCount > 0
         ? `${vatCount} VAT return(s) prepared`
-        : "No VAT return prepared for this period",
+        : vatNotDueYet
+          ? `Not due yet: the VAT period ${vatPeriod.from} to ${vatPeriod.to} ends later`
+          : "No VAT return prepared for this period",
   });
 
   // ── W4-A (R08-23): accruals, prepayments, FX revaluation ────────────────

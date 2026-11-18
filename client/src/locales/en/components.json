@@ -533,6 +533,7 @@
   "components.srv.monthEnd.vat.description": "VAT 201 return has been prepared or filed for the period",
   "components.srv.monthEnd.vat.prepared": "{n} VAT return(s) prepared",
   "components.srv.monthEnd.vat.missing": "No VAT return prepared for this period",
+  "components.srv.monthEnd.vat.notDue": "Not due yet: the VAT period {from} to {to} ends later",
   "components.srv.monthEnd.accruals.title": "Accruals recorded",
   "components.srv.monthEnd.accruals.description": "Expenses incurred but not yet billed are accrued (auto-reversing journals)",
   "components.srv.monthEnd.accruals.noActivity": "No expense activity in this period",

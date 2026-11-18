@@ -533,6 +533,7 @@
   "components.srv.monthEnd.vat.description": "أُعدَّ إقرار ضريبة القيمة المضافة (VAT 201) أو قُدِّم للفترة",
   "components.srv.monthEnd.vat.prepared": "تم إعداد {n} إقرار ضريبة القيمة المضافة",
   "components.srv.monthEnd.vat.missing": "لم يُعَدّ إقرار ضريبة القيمة المضافة لهذه الفترة",
+  "components.srv.monthEnd.vat.notDue": "لم يحن موعده بعد: تنتهي فترة ضريبة القيمة المضافة من {from} إلى {to} لاحقًا",
   "components.srv.monthEnd.accruals.title": "تسجيل المستحقات",
   "components.srv.monthEnd.accruals.description": "تُحتسب المصروفات المتكبَّدة غير المفوترة بعد كمستحقات (قيود عكسية تلقائيًا)",
   "components.srv.monthEnd.accruals.noActivity": "لا يوجد نشاط مصروفات في هذه الفترة",
