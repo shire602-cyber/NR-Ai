@@ -17,6 +17,7 @@ import { registerServiceWorker } from "@/lib/pwa";
 import { hasAuthHint } from "@/lib/authHint";
 import { warmOnFirstInteraction } from "@/lib/warmOnInteraction";
 import {
+  applyDocumentLocale,
   isCustomerLinkPath,
   isLocaleLoaded,
   isPortalAppPath,
@@ -82,6 +83,9 @@ const loadRoot: () => Promise<{ default: ComponentType }> = publicShell
 // catalog chunk still renders (keys fall back).
 const lightBoot = publicShell || portalShell;
 setPublicBootScope(lightBoot ? pathname : "/__app");
+// Direction and language are settled before the first render, not in an effect
+// after it: an Arabic visitor sees right-to-left Arabic on first paint, with no layout shift.
+applyDocumentLocale(locale);
 void Promise.all([
   zodReady.then(loadRoot),
   loadLocaleForPath(locale, lightBoot ? pathname : "/__app").catch(() => undefined),

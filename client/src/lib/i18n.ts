@@ -4,6 +4,20 @@ import { persist } from "zustand/middleware";
 
 export type Locale = "en" | "ar";
 
+/**
+ * Put the locale's direction and language on <html>. main.tsx calls it before the first render
+ * (and theme-init.js does the same from the stored preference before the first paint), so an
+ * Arabic page never starts left-to-right and flips after mount.
+ */
+export function applyDocumentLocale(locale: Locale): void {
+  if (typeof document === "undefined") return;
+  const html = document.documentElement;
+  html.lang = locale;
+  html.dir = locale === "ar" ? "rtl" : "ltr";
+  html.classList.toggle("rtl", locale === "ar");
+  html.classList.toggle("ltr", locale !== "ar");
+}
+
 interface I18nStore {
   locale: Locale;
   setLocale: (locale: Locale) => void;
@@ -15,8 +29,7 @@ export const useI18n = create<I18nStore>()(
       locale: "en",
       setLocale: (locale) => {
         set({ locale });
-        document.documentElement.lang = locale;
-        document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+        applyDocumentLocale(locale);
         // S5: namespace catalogs are code-split; fetch the new locale's chunks on switch
         // (D1b: only the namespaces the current route needs).
         void loadLocaleForCurrentRoute(locale);

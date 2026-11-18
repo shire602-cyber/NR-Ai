@@ -15,3 +15,21 @@
     /* storage blocked: stay light */
   }
 })();
+
+// Same for the language: the stored locale sets <html lang dir> before first paint, so an Arabic
+// visitor never sees a left-to-right shell flip after the app mounts. Keep in sync with
+// client/src/lib/i18n.ts (storage key "i18n-storage", applyDocumentLocale).
+(function () {
+  try {
+    var raw = localStorage.getItem("i18n-storage");
+    var state = raw && JSON.parse(raw).state;
+    if (state && state.locale === "ar") {
+      var html = document.documentElement;
+      html.lang = "ar";
+      html.dir = "rtl";
+      html.classList.add("rtl");
+    }
+  } catch {
+    /* storage blocked or unparsable: stay English */
+  }
+})();

@@ -19,6 +19,9 @@
  *     keyboard; no text under 12 px;
  *   - Arabic: no English text nodes (names, numbers, brands and acronyms excepted);
  *   - axe-core serious/critical violations (WCAG A/AA) = 0;
+ *   - first paint (login, forgot, reset; no throttling): `<html lang dir>` is already the language's
+ *     at DOMContentLoaded, first paint and first contentful paint and on every DOM change (no
+ *     left-to-right flash), and in Arabic no English text is visible at any of those moments;
  *   - login: e-mail is the saved `username`, password `current-password`; reset: `new-password`;
  *   - pricing: the Enterprise mailto subject follows the language, address unchanged;
  *   - client portal: the light root (no signed-in app, motion or socket; JS under 330 KB),
@@ -353,6 +356,96 @@ async function openScreen(ctx, url, opts) {
 
 // ─── Screens ─────────────────────────────────────────────────────────────────
 
+/** `<html lang dir>` and visible text at DOMContentLoaded, first paint, FCP and every DOM change. */
+async function firstPaintScreens(browser, viewport, lang) {
+  const ctx = await openContext(browser, viewport, lang, { signedIn: false });
+  await ctx.addInitScript(() => {
+    window.__snaps = [];
+    // Visible text nodes, minus elements marked with another language (the language switch).
+    const visibleLines = () => {
+      const out = [];
+      if (!document.body) return out;
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        const el = n.parentElement;
+        if (!el || /^(SCRIPT|STYLE|NOSCRIPT)$/.test(el.tagName)) continue;
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0 || r.height <= 0 || getComputedStyle(el).visibility === "hidden") continue;
+        const text = n.textContent.replace(/\s+/g, " ").trim();
+        if (!text) continue;
+        const own = el.closest("[lang]");
+        if (own && !own.getAttribute("lang").startsWith(document.documentElement.lang)) continue;
+        out.push(text);
+      }
+      return out;
+    };
+    const snap = (why) => {
+      if (window.__snaps.length > 60) return;
+      window.__snaps.push({
+        why,
+        lang: document.documentElement.lang,
+        dir: document.documentElement.dir,
+        text: visibleLines().join(" | "),
+        lines: visibleLines(),
+      });
+    };
+    document.addEventListener("DOMContentLoaded", () => snap("DOMContentLoaded"));
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) snap(e.name);
+    }).observe({ type: "paint", buffered: true });
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) window.__lcp = Math.round(e.startTime);
+    }).observe({ type: "largest-contentful-paint", buffered: true });
+    new MutationObserver(() => snap("mutation")).observe(document, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+    });
+  });
+  for (const route of ["/login", "/forgot-password", "/reset-password?token=first-paint-probe"]) {
+    const name = `first paint ${route.split("?")[0]}`;
+    const page = await ctx.newPage();
+    await page.goto(BASE + route, { waitUntil: "load" });
+    await page.waitForLoadState("networkidle", { timeout: 10000 }).catch(() => undefined);
+    await page.waitForTimeout(300);
+    const { snaps, lcp } = await page.evaluate(() => ({
+      snaps: window.__snaps,
+      lcp: window.__lcp,
+    }));
+    const dir = lang === "ar" ? "rtl" : "ltr";
+    // From DOMContentLoaded on (the first parser mutations precede the head script that applies
+    // the stored language, and nothing is painted then). An absent dir is left-to-right.
+    const from = snaps.findIndex((x) => x.why === "DOMContentLoaded");
+    const wrong = snaps
+      .filter((x, i) => i >= Math.max(from, 0) || /paint/.test(x.why))
+      .filter((x) => x.lang !== lang || (x.dir || "ltr") !== dir);
+    check(
+      snaps.some((x) => x.why === "first-contentful-paint") &&
+        snaps.some((x) => x.why === "DOMContentLoaded"),
+      `${name}: DOMContentLoaded and first contentful paint observed`,
+      snaps.map((x) => x.why)
+    );
+    check(
+      wrong.length === 0,
+      `${name}: lang=${lang} dir=${dir} at every snapshot`,
+      wrong.slice(0, 3)
+    );
+    if (lang === "ar") {
+      const english = snaps.flatMap((x) => classifyLines(x.lines, []).samples);
+      check(english.length === 0, `${name}: no English text at any snapshot`, english.slice(0, 4));
+      const fcp = snaps.find((x) => x.why === "first-contentful-paint");
+      check(
+        !!fcp && /[\u0600-\u06FF]/.test(fcp.text),
+        `${name}: Arabic text at first contentful paint`,
+        fcp?.text
+      );
+    }
+    console.log(`     LCP ${lcp} ms`);
+    await page.close();
+  }
+  await ctx.close();
+}
+
 async function signedOutScreens(browser, viewport, lang, member) {
   const phone = viewport !== "desktop";
   const base = { lang, viewport };
@@ -536,6 +629,7 @@ try {
     for (const lang of LANGS) {
       currentLabel = `${viewport} ${lang}`;
       console.log(`\n=== ${currentLabel} ===`);
+      await firstPaintScreens(browser, viewport, lang);
       await signedOutScreens(browser, viewport, lang, member);
       await portalScreens(browser, viewport, lang, member);
     }
