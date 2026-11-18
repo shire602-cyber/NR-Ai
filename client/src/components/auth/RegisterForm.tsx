@@ -15,9 +15,9 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { formatMessage, loadNamespaces, useI18n, useTranslation, translateNow } from "@/lib/i18n";
 import { apiUrl } from "@/lib/api";
-import { serverErrorMessage } from "@/lib/validation-messages";
+import { serverErrorMessage, VALIDATION_NAMESPACES } from "@/lib/validation-messages";
 import { OAuthButtons } from "./OAuthButtons";
 import { AUTH_BUTTON, AUTH_INPUT, AuthAlert, AuthHeader, AuthSwitch } from "./AuthBlocks";
 
@@ -45,8 +45,23 @@ interface RegisterFormProps {
   captcha?: ReactNode;
 }
 
+/**
+ * E3 (J2-r3 High): namespaces this form reads beyond the public /register set: the onboarding
+ * default company name and the validation / server-error copy. Declared so an in-page language
+ * switch fetches them too (it used to leave `onboarding` unloaded and registration threw).
+ */
+export const REGISTER_FORM_NAMESPACES = ["onboarding", ...VALIDATION_NAMESPACES] as const;
+
+/** "{name}'s Company" in the active language, loading its namespace first if needed. */
+async function defaultCompanyName(name: string): Promise<string> {
+  await loadNamespaces(useI18n.getState().locale, REGISTER_FORM_NAMESPACES).catch(() => undefined);
+  const key = "onboarding.defaultCompanyName";
+  const template = translateNow(key);
+  return template === key ? name : formatMessage(template, { name });
+}
+
 export function RegisterForm({ onSuccess, captchaToken, captcha }: RegisterFormProps) {
-  const { t } = useTranslation();
+  const { t } = useTranslation(REGISTER_FORM_NAMESPACES);
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +86,7 @@ export function RegisterForm({ onSuccess, captchaToken, captcha }: RegisterFormP
         ...data,
         trn: data.trn?.trim() ? data.trn.trim() : undefined,
         // Localised default so the onboarding heading is not an English "X's Company".
-        companyName: formatMessage(t["onboarding.defaultCompanyName"], { name: data.name.trim() }),
+        companyName: await defaultCompanyName(data.name.trim()),
         ...(captchaToken ? { captchaToken } : {}),
       };
       const response = await fetch(apiUrl("/api/auth/register"), {

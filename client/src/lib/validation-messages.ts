@@ -17,6 +17,12 @@ type Dict = Record<string, string | undefined>;
 
 const KEY_PATTERN = /^(?:forms|components)\.[A-Za-z0-9_.]+$/;
 
+/**
+ * E3 (J2-r3): namespaces this module reads besides `components` (always loaded). A component on a
+ * signed-out public route that shows these messages declares them: `useTranslation(VALIDATION_NAMESPACES)`.
+ */
+export const VALIDATION_NAMESPACES = ["forms"] as const;
+
 function dict(locale: "en" | "ar"): Dict {
   return t[locale] as unknown as Dict;
 }

@@ -16,7 +16,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { apiUrl } from "@/lib/api";
-import { serverErrorMessage } from "@/lib/validation-messages";
+import { serverErrorMessage, VALIDATION_NAMESPACES } from "@/lib/validation-messages";
 import { ArrowLeft } from "lucide-react";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import {
@@ -55,7 +55,7 @@ function getTokenFromUrl(): string {
 }
 
 export default function ResetPassword() {
-  const { locale, t } = useTranslation();
+  const { locale, t } = useTranslation(VALIDATION_NAMESPACES);
   const [, setLocation] = useLocation();
   const [isLoading, setIsLoading] = useState(false);
   const [done, setDone] = useState(false);
