@@ -1,3 +1,4 @@
+import { errorHeading } from "@/lib/error-heading";
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Wallet } from "lucide-react";
@@ -96,7 +97,7 @@ export function PensionTab({ companyId }: { companyId: string }) {
     queryClient.invalidateQueries({ queryKey: paymentsKey });
   };
   const fail = (err: unknown) =>
-    toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" });
+    toast({ title: errorHeading(err), description: errorMessage(err), variant: "destructive" });
 
   const pay = useMutation({
     mutationFn: () =>

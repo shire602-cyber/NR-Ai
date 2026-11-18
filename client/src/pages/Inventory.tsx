@@ -82,6 +82,7 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -158,6 +159,8 @@ export default function Inventory() {
   // Spec 3.7: costing settings live behind ⋯ → Costing method, not in a sixth tab.
   const [costingOpen, setCostingOpen] = useState(false);
   const { t, locale } = useTranslation();
+  // E2 (J4-r2): a viewer is not offered writes the server refuses (403).
+  const { gate, can } = useCompanyPermission();
   const c = INVENTORY_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -445,7 +448,11 @@ export default function Inventory() {
         title={c.inventory}
         description={t["pageLabels.manageYourProductsAndTrackInventoryMovements"]}
         primaryAction={
-          <Button onClick={handleOpenCreateDialog}>
+          <Button
+            onClick={handleOpenCreateDialog}
+            data-testid="button-add-product"
+            {...gate("documents.write")}
+          >
             <Plus aria-hidden />
             <T k="pageLabels.addProduct" />
           </Button>
@@ -512,9 +519,10 @@ export default function Inventory() {
             empty={{
               icon: Package,
               title: searchQuery ? t["pages.inventoryNoMatch"] : t["pages.inventoryEmpty"],
-              action: searchQuery
-                ? undefined
-                : { label: t["pageLabels.addProduct"], onClick: handleOpenCreateDialog },
+              action:
+                searchQuery || !can("documents.write")
+                  ? undefined
+                  : { label: t["pageLabels.addProduct"], onClick: handleOpenCreateDialog },
             }}
           >
             <Table className="row-cards">
@@ -588,6 +596,7 @@ export default function Inventory() {
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
                               onSelect={() => setProductToDelete(product.id)}
+                              disabled={!can("documents.write")}
                             >
                               <Trash2 aria-hidden />
                               {t.delete}
@@ -598,11 +607,13 @@ export default function Inventory() {
                             label={t["screens.addStock"]}
                             icon={PackagePlus}
                             onClick={() => handleOpenAddStockDialog(product)}
+                            {...gate("documents.write")}
                           />
                           <RowActionButton
                             label={t.edit}
                             icon={Edit}
                             onClick={() => handleOpenEditDialog(product)}
+                            {...gate("documents.write")}
                           />
                         </RowActions>
                       </TableCell>

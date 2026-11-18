@@ -231,5 +231,7 @@
   "screens.costCenterDialogNewDesc": "Fill in the details to create a cost center.",
   "screens.invoicesCount": "{count, plural, one {# invoice} other {# invoices}}",
   "screens.entryLines": "Entry lines",
-  "screens.statusCredited": "Credited"
+  "screens.statusCredited": "Credited",
+  "screens.claimsSubmittedCountPlural": "{count, plural, one {# claim} other {# claims}}",
+  "screens.claimsAcrossCompanyPlural": "{count, plural, one {# claim across the company} other {# claims across the company}}"
 }

@@ -1,3 +1,5 @@
+import { translateNow } from "@/lib/i18n";
+import { errorHeading } from "@/lib/error-heading";
 import { useState } from "react";
 import { FileDrop } from "@/components/ui/file-drop";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -70,7 +72,7 @@ export function WpsSettingsCard({ companyId }: { companyId: string }) {
         .map(([, label]) => tx(label))
         .join(", ");
       toast({
-        title: tx("hr.error"),
+        title: names ? translateNow("common.errorHeading.fields") : errorHeading(err),
         description: names ? tx("hr.fixFields", { fields: names }) : errorMessage(err),
         variant: "destructive",
       });
@@ -146,7 +148,7 @@ function LegalSettingsCard({ companyId }: { companyId: string }) {
       toast({ title: tx("hr.settingsSaved") });
     },
     onError: (err) =>
-      toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" }),
+      toast({ title: errorHeading(err), description: errorMessage(err), variant: "destructive" }),
   });
   if (!data) return null;
   const uae = data.legalParams.pension.AE;
@@ -245,7 +247,7 @@ export function WpsTab({ companyId }: { companyId: string }) {
   const [notes, setNotes] = useState("");
   const withSif = runs.filter((r) => r.sif_file_content);
   const fail = (err: unknown) =>
-    toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" });
+    toast({ title: errorHeading(err), description: errorMessage(err), variant: "destructive" });
 
   const validate = useMutation({
     mutationFn: () =>

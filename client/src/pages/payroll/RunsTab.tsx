@@ -1,3 +1,4 @@
+import { errorHeading } from "@/lib/error-heading";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -136,7 +137,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
       queryClient.invalidateQueries({ queryKey: [`/api/payroll-runs/${viewing}/items`] });
   };
   const fail = (err: unknown) =>
-    toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" });
+    toast({ title: errorHeading(err), description: errorMessage(err), variant: "destructive" });
 
   const action = useMutation({
     mutationFn: ({ id, path, body }: { id: string; path: string; body?: unknown }) =>
@@ -177,6 +178,14 @@ export function RunsTab({ companyId }: { companyId: string }) {
           openingGratuityProvision: e.amount,
           openingGratuityAsOf: gratuityGap!.asOf,
         });
+      }
+      // E2 (J3-r2): book the same opening provision in the ledger (Dr opening balance equity /
+      // Cr gratuity provision) so month-end reconciles; nothing to book when every amount is 0.
+      try {
+        await apiRequest("POST", `/api/companies/${companyId}/payroll/opening-gratuity/book`, {});
+      } catch (err) {
+        const code = err instanceof ApiError ? (err.body as { code?: string } | null)?.code : null;
+        if (code !== "OPENING_GRATUITY_NOTHING_TO_BOOK") throw err;
       }
       return apiRequest("POST", `/api/payroll-runs/${gratuityGap!.runId}/calculate`, {});
     },
@@ -603,7 +612,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
                 </TableBody>
               </Table>
             </div>
-            <p className="text-xs text-muted-foreground">{tx("hr.openingGratuity.ledgerNote")}</p>
+            <p className="text-xs text-muted-foreground">{tx("hr.openingGratuity.bookNote")}</p>
             <FormActions>
               <Button type="button" variant="outline" onClick={() => setGratuityGap(null)}>
                 {tx("hr.cancel")}
@@ -686,7 +695,7 @@ function RunDetail({
       toast({ title: tx("hr.itemUpdated") });
     },
     onError: (err) =>
-      toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" }),
+      toast({ title: errorHeading(err), description: errorMessage(err), variant: "destructive" }),
   });
 
   const fmt = (v: string) => formatCurrency(Number(v), "AED", locale);
@@ -720,7 +729,7 @@ function RunDetail({
               onClick={() =>
                 downloadFile(`/api/payroll-runs/${run.id}/gpssa-export`, "gpssa.csv").catch((err) =>
                   toast({
-                    title: tx("hr.error"),
+                    title: errorHeading(err),
                     description: errorMessage(err),
                     variant: "destructive",
                   })

@@ -219,15 +219,30 @@ async function loadRecurringInvoices(companyId: string, today: IsoDate, to: IsoD
 
 async function loadPayroll(companyId: string, today: IsoDate, to: IsoDate) {
   const { rows } = await db.query(
-    `SELECT period_year, period_month, total_net, status
+    `SELECT id, period_year, period_month, total_net, status
        FROM payroll_runs WHERE company_id = $1
       ORDER BY period_year DESC, period_month DESC LIMIT 12`,
     [companyId]
   );
   if (rows.length === 0) return [] as ForecastItem[];
   const latest = rows[0];
-  const monthlyNet = Number(latest.total_net) || 0;
-  if (monthlyNet <= 0) return [];
+  const latestNet = Number(latest.total_net) || 0;
+  if (latestNet <= 0) return [];
+  // E2 (J3-r2): an estimated month counts only the employees of the latest run who are still
+  // employed at the start of that month (a termination ends their pay).
+  const { rows: items } = await db.query(
+    `SELECT pi.net_salary::text AS net, (e.termination_date)::text AS terminated_on
+       FROM payroll_items pi LEFT JOIN employees e ON e.id = pi.employee_id
+      WHERE pi.payroll_run_id = $1`,
+    [latest.id]
+  );
+  const monthlyNetFor = (monthStartIso: IsoDate): number => {
+    if (!items.length) return latestNet;
+    const fils = items
+      .filter((i) => !i.terminated_on || i.terminated_on >= monthStartIso)
+      .reduce((sum, i) => sum + Math.round(Number(i.net) * 100), 0);
+    return fils / 100;
+  };
   const have = new Set(
     rows.map((r) => `${r.period_year}-${String(r.period_month).padStart(2, "0")}`)
   );
@@ -239,12 +254,13 @@ async function loadPayroll(companyId: string, today: IsoDate, to: IsoDate) {
     const run = rows.find(
       (r) => `${r.period_year}-${String(r.period_month).padStart(2, "0")}` === key
     );
-    if (payDate >= today && payDate <= to) {
+    const estimate = run ? Number(run.total_net) : monthlyNetFor(cursor);
+    if (payDate >= today && payDate <= to && estimate > 0) {
       if (!have.has(key) || (run && run.status !== "paid")) {
         out.push({
           kind: "payroll",
           date: payDate,
-          amount: -(run ? Number(run.total_net) : monthlyNet),
+          amount: -estimate,
           description: `Payroll ${key}`,
           note: run ? undefined : "Estimated from the latest payroll run",
         });

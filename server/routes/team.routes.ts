@@ -5,7 +5,11 @@ import { z } from "zod";
 import { storage, normalizeEmail } from "../storage";
 import { authMiddleware, optionalAuthUser } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { requirePermission, getCompanyRole } from "../middleware/companyRolePolicy";
+import {
+  requirePermission,
+  getCompanyRole,
+  companyHasSingleMember,
+} from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { recordAudit } from "../services/audit.service";
 import { hashToken } from "../services/auth-tokens.service";
@@ -197,6 +201,10 @@ export function registerTeamRoutes(app: Express) {
         viaFirmAccess: false,
         permissions: permissionsForRole(role),
         grantableRoles: grantableRoles(role),
+        // E2 (J3-r2): maker-checker is waived for a one-member company (assertDifferentActor), so
+        // the UI disables "approve your own item" only when someone else could approve it.
+        userId: req.user!.id,
+        soleMember: await companyHasSingleMember(companyId),
       });
     })
   );

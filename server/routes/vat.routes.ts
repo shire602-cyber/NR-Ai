@@ -81,6 +81,7 @@ import {
   upsertRecoveryRule,
 } from "../tax/vat-recovery";
 import { parseIsoDate } from "../tax/vat-periods";
+import { todayIso } from "../ledger/normalize";
 import { sendTabular } from "../reporting/http";
 import {
   prepareVat201ForExport,
@@ -692,6 +693,9 @@ export function registerVATRoutes(app: Express) {
     })
   );
 
+  /** A stored period boundary (UTC end-of-day timestamp) as YYYY-MM-DD. */
+  const isoDateOf = (d: unknown) => new Date(d as string).toISOString().slice(0, 10);
+
   // Submit VAT return. Never transmits anything to the FTA.
   app.post(
     "/api/vat-returns/:id/submit",
@@ -706,6 +710,36 @@ export function registerVATRoutes(app: Express) {
       const target = reference ? "filed" : "submitted";
       if (!vatReturnMachine.can(existing.status, target) && existing.status !== target) {
         throw new DomainError("INVALID_TRANSITION", 409, { from: existing.status, to: target });
+      }
+      // E2 (J3-r2): the EmaraTax filing date. Only with a reference; never in the future and
+      // never before the tax period has ended (EmaraTax opens the return after the period).
+      const filedOn = body.filedOn ?? null;
+      if (filedOn) {
+        const periodEndIso = isoDateOf(existing.periodEnd);
+        if (!reference) {
+          throw new DomainError(
+            "VALIDATION_ERROR",
+            400,
+            { fields: { ftaReferenceNumber: ["Enter the EmaraTax reference number"] } },
+            "A filing date needs the EmaraTax reference number"
+          );
+        }
+        if (filedOn > todayIso()) {
+          throw new DomainError(
+            "VAT_FILED_ON_FUTURE",
+            422,
+            { fields: { filedOn: ["The filing date cannot be in the future"] } },
+            "The filing date cannot be in the future"
+          );
+        }
+        if (filedOn <= periodEndIso) {
+          throw new DomainError(
+            "VAT_FILED_ON_IN_PERIOD",
+            422,
+            { periodEnd: periodEndIso, fields: { filedOn: ["File after the tax period ends"] } },
+            "A VAT return is filed after its tax period ends"
+          );
+        }
       }
       // Submitting the return finalises the VAT settlement against periodEnd.
       await assertPeriodNotLocked(existing.companyId, existing.periodEnd);
@@ -728,7 +762,7 @@ export function registerVATRoutes(app: Express) {
         notes: body.notes ?? existing.notes ?? null,
         ftaReferenceNumber: reference,
         submittedBy: userId,
-        submittedAt: new Date(),
+        submittedAt: filedOn ? new Date(`${filedOn}T08:00:00Z`) : new Date(),
         declarantName: body.declarantName ?? existing.declarantName ?? null,
         declarantPosition: body.declarantPosition ?? existing.declarantPosition ?? null,
       });
@@ -849,11 +883,6 @@ export function registerVATRoutes(app: Express) {
         ...(body.declarantName !== undefined ? { declarantName: body.declarantName } : {}),
         ...(body.declarantPosition !== undefined
           ? { declarantPosition: body.declarantPosition }
-          : {}),
-        ...(body.paymentStatus !== undefined ? { paymentStatus: body.paymentStatus } : {}),
-        ...(body.paymentAmount !== undefined ? { paymentAmount: body.paymentAmount } : {}),
-        ...(body.paymentDate !== undefined
-          ? { paymentDate: body.paymentDate ? new Date(`${body.paymentDate}T00:00:00Z`) : null }
           : {}),
       });
       res.json(vatReturn);

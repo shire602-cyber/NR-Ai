@@ -79,6 +79,9 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { errorHeading } from "@/lib/error-heading";
+import { depreciationPeriodEnded, lastEndedMonth } from "@/lib/depreciation-period";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
@@ -193,10 +196,16 @@ const disposeFormSchema = z.object({
 
 type DisposeFormData = z.infer<typeof disposeFormSchema>;
 
-const depreciationRunSchema = z.object({
-  month: z.coerce.number().int().min(1).max(12),
-  year: z.coerce.number().int().min(2000).max(2100),
-});
+// E2 (J3-r2): a month is depreciated only after it has ended (the entry is dated at month end).
+const depreciationRunSchema = z
+  .object({
+    month: z.coerce.number().int().min(1).max(12),
+    year: z.coerce.number().int().min(2000).max(2100),
+  })
+  .refine((v) => depreciationPeriodEnded(v.year, v.month), {
+    path: ["month"],
+    message: "forms.errors.depreciationMonthNotEnded",
+  });
 
 type DepreciationRunData = z.infer<typeof depreciationRunSchema>;
 
@@ -207,6 +216,8 @@ export default function FixedAssets() {
   const fa = FA_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  // E2 (J4-r2): a viewer is not offered writes the server refuses (403).
+  const { gate, can } = useCompanyPermission();
 
   const [assetDialogOpen, setAssetDialogOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<FixedAsset | null>(null);
@@ -262,11 +273,10 @@ export default function FixedAssets() {
 
   const depRunForm = useForm<DepreciationRunData>({
     resolver: zodResolver(depreciationRunSchema),
-    defaultValues: {
-      month: new Date().getMonth() + 1,
-      year: new Date().getFullYear(),
-    },
+    defaultValues: lastEndedMonth(),
   });
+  // E2 (J3-r2): the row "Record depreciation" opens the same dialog for one asset.
+  const [depAsset, setDepAsset] = useState<FixedAsset | null>(null);
 
   // ─── Mutations ──────────────────────────────────────────
 
@@ -289,7 +299,7 @@ export default function FixedAssets() {
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -320,7 +330,7 @@ export default function FixedAssets() {
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -347,7 +357,7 @@ export default function FixedAssets() {
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -368,7 +378,7 @@ export default function FixedAssets() {
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -376,8 +386,11 @@ export default function FixedAssets() {
   });
 
   const depreciateMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/fixed-assets/${id}/depreciate`, {}),
+    mutationFn: ({ id, month, year }: { id: string } & DepreciationRunData) =>
+      apiRequest("POST", `/api/fixed-assets/${id}/depreciate`, { month, year }),
     onSuccess: (data: any) => {
+      setDepRunDialogOpen(false);
+      setDepAsset(null);
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
@@ -391,7 +404,7 @@ export default function FixedAssets() {
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -428,7 +441,7 @@ export default function FixedAssets() {
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -452,11 +465,11 @@ export default function FixedAssets() {
         }),
       });
       setDepRunDialogOpen(false);
-      depRunForm.reset({ month: new Date().getMonth() + 1, year: new Date().getFullYear() });
+      depRunForm.reset(lastEndedMonth());
     },
     onError: (error: Error) => {
       toast({
-        title: translateNow("toasts.error"),
+        title: errorHeading(error),
         description: error?.message,
         variant: "destructive",
       });
@@ -528,7 +541,13 @@ export default function FixedAssets() {
   };
 
   const handleDepRunSubmit = (data: DepreciationRunData) => {
-    runDepreciationMutation.mutate(data);
+    if (depAsset) depreciateMutation.mutate({ id: depAsset.id, ...data });
+    else runDepreciationMutation.mutate(data);
+  };
+  const openDepreciationDialog = (asset: FixedAsset | null) => {
+    setDepAsset(asset);
+    depRunForm.reset(lastEndedMonth());
+    setDepRunDialogOpen(true);
   };
 
   // ─── Helpers ────────────────────────────────────────────
@@ -610,14 +629,22 @@ export default function FixedAssets() {
         title={t["pages.fixedAssets"]}
         description={t["pageLabels.manageFixedAssetsDepreciationAndDisposals"]}
         primaryAction={
-          <Button onClick={handleOpenCreateDialog}>
+          <Button
+            onClick={handleOpenCreateDialog}
+            data-testid="button-add-asset"
+            {...gate("documents.write")}
+          >
             <Plus aria-hidden />
             <T k="pageLabels.addAsset" />
           </Button>
         }
         overflow={
           <>
-            <DropdownMenuItem onSelect={() => setDepRunDialogOpen(true)}>
+            <DropdownMenuItem
+              onSelect={() => openDepreciationDialog(null)}
+              disabled={!can("ledger.post")}
+              data-testid="menu-run-depreciation"
+            >
               <PlayCircle aria-hidden />
               <T k="pageLabels.runDepreciation" />
             </DropdownMenuItem>
@@ -794,7 +821,7 @@ export default function FixedAssets() {
                                     paymentAccountId: cashAccounts[0].id,
                                   })
                                 }
-                                disabled={capitalizeMutation.isPending}
+                                disabled={capitalizeMutation.isPending || !can("ledger.post")}
                                 title={fa.capitalizeHint}
                               >
                                 <BookCheck aria-hidden />
@@ -802,7 +829,10 @@ export default function FixedAssets() {
                               </DropdownMenuItem>
                             )}
                             {asset.status === "active" && (
-                              <DropdownMenuItem onSelect={() => handleOpenDisposeDialog(asset)}>
+                              <DropdownMenuItem
+                                onSelect={() => handleOpenDisposeDialog(asset)}
+                                disabled={!can("ledger.post")}
+                              >
                                 <Ban aria-hidden />
                                 {t["screens.dispose"]}
                               </DropdownMenuItem>
@@ -811,6 +841,7 @@ export default function FixedAssets() {
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
                               onSelect={() => setAssetToDelete(asset.id)}
+                              disabled={!can("documents.write")}
                             >
                               <Trash2 aria-hidden />
                               {t.delete}
@@ -823,6 +854,7 @@ export default function FixedAssets() {
                             label={t.edit}
                             icon={Edit}
                             onClick={() => handleOpenEditDialog(asset)}
+                            {...gate("documents.write")}
                           />
                         )}
                         {asset.status === "active" && (
@@ -830,13 +862,16 @@ export default function FixedAssets() {
                             <RowActionButton
                               label={t["screens.recordDepreciation"]}
                               icon={Calculator}
-                              onClick={() => depreciateMutation.mutate(asset.id)}
+                              onClick={() => openDepreciationDialog(asset)}
                               disabled={depreciateMutation.isPending}
+                              data-testid={`button-record-depreciation-${asset.id}`}
+                              {...gate("ledger.post")}
                             />
                             <RowActionButton
                               label={t.edit}
                               icon={Edit}
                               onClick={() => handleOpenEditDialog(asset)}
+                              {...gate("documents.write")}
                             />
                           </>
                         )}
@@ -1393,14 +1428,28 @@ export default function FixedAssets() {
       </Dialog>
 
       {/* ─── Run Depreciation Dialog ───────────────────────── */}
-      <Dialog open={depRunDialogOpen} onOpenChange={setDepRunDialogOpen}>
-        <DialogContent size="sm">
+      <Dialog
+        open={depRunDialogOpen}
+        onOpenChange={(open) => {
+          setDepRunDialogOpen(open);
+          if (!open) setDepAsset(null);
+        }}
+      >
+        <DialogContent size="sm" data-testid="dialog-depreciation">
           <DialogHeader>
             <DialogTitle>
-              <T k="pageLabels.runMonthlyDepreciation" />
+              {depAsset ? (
+                formatMessage(t["fixedAssets.recordDepreciationFor"], {
+                  name: depAsset.asset_name,
+                })
+              ) : (
+                <T k="pageLabels.runMonthlyDepreciation" />
+              )}
             </DialogTitle>
             <DialogDescription>
-              {t["fixedAssets.calculateAndRecordDepreciationFor"]}
+              {depAsset
+                ? t["fixedAssets.recordDepreciationHelp"]
+                : t["fixedAssets.calculateAndRecordDepreciationFor"]}
             </DialogDescription>
           </DialogHeader>
 
@@ -1483,10 +1532,16 @@ export default function FixedAssets() {
                 <Button type="button" variant="outline" onClick={() => setDepRunDialogOpen(false)}>
                   {t.cancel || "Cancel"}
                 </Button>
-                <Button type="submit" disabled={runDepreciationMutation.isPending}>
-                  {runDepreciationMutation.isPending
+                <Button
+                  type="submit"
+                  disabled={runDepreciationMutation.isPending || depreciateMutation.isPending}
+                  data-testid="button-confirm-depreciation"
+                >
+                  {runDepreciationMutation.isPending || depreciateMutation.isPending
                     ? t.loading || "Loading..."
-                    : t["pageLabels.runDepreciation"]}
+                    : depAsset
+                      ? t["screens.recordDepreciation"]
+                      : t["pageLabels.runDepreciation"]}
                 </Button>
               </div>
             </form>

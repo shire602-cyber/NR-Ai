@@ -884,6 +884,7 @@ export default function Journal() {
                             title={t.edit}
                             onClick={() => handleEditEntry(entry)}
                             data-testid={`button-edit-journal-${entry.id}`}
+                            {...gate("ledger.post")}
                           >
                             <Edit aria-hidden />
                           </Button>
@@ -896,6 +897,7 @@ export default function Journal() {
                                 aria-label={t.delete}
                                 title={t.delete}
                                 data-testid={`button-delete-journal-${entry.id}`}
+                                {...gate("ledger.post")}
                               >
                                 <Trash2 aria-hidden />
                               </Button>
@@ -933,6 +935,7 @@ export default function Journal() {
                               size="sm"
                               aria-label={t["journal.reverse"]}
                               data-testid={`button-reverse-journal-${entry.id}`}
+                              {...gate("ledger.post")}
                             >
                               <RotateCcw className="w-4 h-4" />
                               <span className="hidden sm:inline">{t["journal.reverse"]}</span>

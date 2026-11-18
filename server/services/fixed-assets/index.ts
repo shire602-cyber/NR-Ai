@@ -35,6 +35,7 @@ import { createLogger } from "../../config/logger";
 import { fromFils, toFils } from "../../../shared/money";
 import { isNonDepreciableCategory } from "../../../shared/validators/fixed-assets";
 import { postJournal, withLedgerTx, type LedgerTx, type PostJournalLineInput } from "../../ledger";
+import { todayIso } from "../../ledger/normalize";
 import { assertAccount, ensureAccountByCode, q } from "../inventory/store";
 import { assertChosenAccountsNotControl } from "../../ledger/control-accounts";
 import { defaultPaymentAccountId, isHeaderAccount } from "../payment-accounts.service";
@@ -677,7 +678,38 @@ const SKIP_TEXT: Record<string, string> = {
   ALREADY_DEPRECIATED: "Already depreciated for this period",
   NOT_ACTIVE: "Asset is not active",
   ASSET_DRAFT: "Asset bought on a bill: set its useful life to start depreciation",
+  PERIOD_NOT_ENDED: "The month has not ended yet: depreciation is recorded after the month ends",
 };
+
+/** The month-end posting date of a depreciation period (YYYY-MM-DD). */
+export function depreciationPeriodEnd(year: number, month: number): string {
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+}
+
+/**
+ * E2 (J3-r2): depreciation is dated at month end and never in the future, so a month can be
+ * depreciated only once it has ended (UAE date). Refused 422 DEPRECIATION_PERIOD_NOT_ENDED.
+ */
+export function assertDepreciationPeriodEnded(year: number, month: number, today = todayIso()) {
+  const end = depreciationPeriodEnd(year, month);
+  if (end > today) {
+    throw new DomainError(
+      "DEPRECIATION_PERIOD_NOT_ENDED",
+      422,
+      { periodEnd: end, today },
+      `Depreciation for ${month}/${year} is dated ${end}, after today. Record it once the month has ended.`
+    );
+  }
+}
+
+/** The last month that has fully ended (the default depreciation period). */
+export function lastEndedMonth(today = todayIso()): { year: number; month: number } {
+  const [y, m] = today.split("-").map(Number);
+  const end = depreciationPeriodEnd(y, m);
+  if (end <= today) return { year: y, month: m };
+  return m === 1 ? { year: y - 1, month: 12 } : { year: y, month: m - 1 };
+}
 
 /** Depreciate one asset for one month inside `tx` (asset row should be locked by the caller). */
 export async function depreciateInTx(
@@ -705,6 +737,10 @@ export async function depreciateInTx(
     sql`SELECT id FROM depreciation_schedules WHERE asset_id = ${a.id} AND period_year = ${year} AND period_month = ${month}`
   );
   if (already[0]) return out("ALREADY_DEPRECIATED", { scheduleId: already[0].id });
+  // E2 (J3-r2): never a future-dated depreciation entry. C2 (RL5): a disposal-month charge
+  // is dated at the disposal date, so only that date has to have passed.
+  if ((opts.throughDate ?? depreciationPeriodEnd(year, month)) > todayIso())
+    return out("PERIOD_NOT_ENDED");
   const full = depreciationFor(calcInput(a), year, month);
   // C2 (RL5): the disposal month is charged up to the disposal date.
   const calc = opts.throughDate
@@ -727,10 +763,7 @@ export async function depreciateInTx(
     );
   const acc = await assetAccounts(tx, a);
   // X4 (J3): date the entry at month end, so it never predates an in-month capitalisation.
-  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const date =
-    opts.throughDate ??
-    `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+  const date = opts.throughDate ?? depreciationPeriodEnd(year, month);
   const suffix = opts.throughDate
     ? ` (${month}/${year}, to disposal on ${opts.throughDate})`
     : calc.prorationFactor < 1
@@ -1044,6 +1077,26 @@ async function assertDisposable(tx: LedgerTx, a: AssetRow, input: DisposeInput):
       422,
       undefined,
       "This asset is not on the general ledger; capitalise it before recording a disposal"
+    );
+  }
+  // E2 (J3-r2): the disposal clears the accumulated depreciation on its date. Depreciation dated
+  // after that day would be cleared before it was booked (1240 shown as a positive asset on the
+  // balance sheet in between), so the asset is disposed on or after its last depreciation.
+  const later = await q<{ period_year: number; period_month: number }>(
+    tx,
+    sql`SELECT period_year, period_month FROM depreciation_schedules
+         WHERE asset_id = ${a.id}
+           AND make_date(period_year, period_month, 1) + interval '1 month' - interval '1 day'
+               > ${input.disposalDate}::date
+         ORDER BY period_year, period_month LIMIT 1`
+  );
+  if (later[0]) {
+    const end = depreciationPeriodEnd(later[0].period_year, later[0].period_month);
+    throw new DomainError(
+      "DISPOSAL_BEFORE_DEPRECIATION",
+      409,
+      { depreciatedThrough: end, fields: { disposalDate: [`On or after ${end}`] } },
+      `Depreciation is already recorded through ${end}. Dispose of the asset on or after that date.`
     );
   }
   if (input.proceedsFils > 0 && (input.vatTreatment ?? "standard") === "standard") {

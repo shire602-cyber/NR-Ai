@@ -61,6 +61,8 @@ import {
   runDepreciation,
   scheduleTo,
   calcInput,
+  assertDepreciationPeriodEnded,
+  lastEndedMonth,
   type DepreciationOutcome,
 } from "../services/fixed-assets";
 import { assertAccount, q } from "../services/inventory/store";
@@ -769,9 +771,12 @@ export function registerFixedAssetRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       await assetForRequest(req);
       const body = parsedBody<DepreciatePeriodBody>(req);
-      const now = new Date();
-      const month = body.month ?? now.getUTCMonth() + 1;
-      const year = body.year ?? now.getUTCFullYear();
+      // E2 (J3-r2): the default is the last month that has ended; a month that has not ended is
+      // refused (the entry would be dated in the future).
+      const fallback = lastEndedMonth();
+      const month = body.month ?? fallback.month;
+      const year = body.year ?? fallback.year;
+      assertDepreciationPeriodEnded(year, month);
       const result = await withLedgerTx(async (tx) => {
         const a = await loadAsset(tx, req.params.id, { lock: true });
         if (a.status !== "active")
@@ -815,6 +820,7 @@ export function registerFixedAssetRoutes(app: Express) {
       const { companyId } = req.params;
       await assertAccess(req, companyId);
       const { month, year } = parsedBody<RunDepreciationBody>(req);
+      assertDepreciationPeriodEnded(year, month);
       await assertPeriodNotLocked(companyId, `${year}-${String(month).padStart(2, "0")}-01`);
       const results = await runDepreciation(companyId, year, month, req.user!.id);
       res.json({

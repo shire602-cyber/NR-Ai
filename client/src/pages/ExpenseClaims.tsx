@@ -83,6 +83,7 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTableCard } from "@/components/ui/data-table";
@@ -236,6 +237,8 @@ function claimPayload(data: ClaimFormData) {
 
 export default function ExpenseClaims() {
   const { t, locale } = useTranslation();
+  // E2 (J3-r2 / J4-r2): review actions follow the role and the maker-checker rule.
+  const { gate, gateApproval } = useCompanyPermission();
   const cc = CLAIM_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -903,12 +906,14 @@ export default function ExpenseClaims() {
                             icon={CheckCircle}
                             onClick={() => handleOpenReviewDialog(claim.id, "approve")}
                             data-testid={`claim-approve-${claim.id}`}
+                            {...gateApproval("documents.approve", claim.submitted_by)}
                           />
                           <RowActionButton
                             label={t["screens.reject"]}
                             icon={XCircle}
                             onClick={() => handleOpenReviewDialog(claim.id, "reject")}
                             data-testid={`claim-reject-${claim.id}`}
+                            {...gateApproval("documents.approve", claim.submitted_by)}
                           />
                         </>
                       )}
@@ -937,7 +942,11 @@ export default function ExpenseClaims() {
         title={t["pages.expenseClaims"]}
         description={t["pages.submitTrackAndManageEmployeeExpenseReimbursement"]}
         actions={
-          <Button onClick={handleOpenCreateDialog}>
+          <Button
+            onClick={handleOpenCreateDialog}
+            data-testid="button-new-claim"
+            {...gate("documents.write")}
+          >
             <Plus aria-hidden />
             <T k="pages.newClaim" />
           </Button>
@@ -996,7 +1005,7 @@ export default function ExpenseClaims() {
 
         <TabsContent value="my-claims" className="space-y-3">
           <p className="text-small text-muted-foreground">
-            {formatMessage(t["screens.claimsSubmittedCount"], { count: myClaims.length })}
+            {formatMessage(t["screens.claimsSubmittedCountPlural"], { count: myClaims.length })}
           </p>
           <ClaimsTable
             claims={myClaims}
@@ -1022,7 +1031,7 @@ export default function ExpenseClaims() {
 
         <TabsContent value="all-claims" className="space-y-3">
           <p className="text-small text-muted-foreground">
-            {formatMessage(t["screens.claimsAcrossCompany"], { count: allClaims.length })}
+            {formatMessage(t["screens.claimsAcrossCompanyPlural"], { count: allClaims.length })}
           </p>
           <ClaimsTable
             claims={allClaims}

@@ -1,3 +1,4 @@
+import { errorHeading } from "@/lib/error-heading";
 import { useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -127,7 +128,7 @@ export function SettlementTab({ companyId }: { companyId: string }) {
     ...(payNowAccount && payNowAccount !== "later" ? { paymentAccountId: payNowAccount } : {}),
   });
   const fail = (err: unknown) =>
-    toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" });
+    toast({ title: errorHeading(err), description: errorMessage(err), variant: "destructive" });
 
   const previewMut = useMutation({
     mutationFn: () =>

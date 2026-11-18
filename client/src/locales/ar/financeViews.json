@@ -108,5 +108,7 @@
   "budgets.summaryExpense": "المصروفات",
   "budgets.summaryNet": "صافي الربح",
   "budgets.favourable": "إيجابي",
-  "budgets.unfavourable": "سلبي"
+  "budgets.unfavourable": "سلبي",
+  "fixedAssets.recordDepreciationFor": "تسجيل الإهلاك: {name}",
+  "fixedAssets.recordDepreciationHelp": "اختر الشهر المراد إهلاكه. يُؤرَّخ القيد بآخر يوم في الشهر، لذلك لا يمكن تسجيل إلا شهر انتهى."
 }

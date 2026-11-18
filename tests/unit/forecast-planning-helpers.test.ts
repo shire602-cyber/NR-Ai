@@ -176,13 +176,13 @@ describe("R13-10 budget validators", () => {
   });
 
   it("rejects NaN, text and negatives (unless contra) in month amounts", () => {
-    expect(budgetLineCreateBody.safeParse({ category: "x", nov: "abc" }).success).toBe(false);
-    expect(budgetLineCreateBody.safeParse({ category: "x", nov: -1 }).success).toBe(false);
-    expect(budgetLineCreateBody.safeParse({ category: "x", isContra: true, nov: -1 }).success).toBe(
-      true
-    );
-    expect(budgetLineCreateBody.safeParse({ category: "x", nov: "12.345" }).success).toBe(false);
-    const ok = budgetLineCreateBody.parse({ category: "x", nov: "10.5" });
+    // E2 (J3-r2): a new line names its income / expense account.
+    const a = { category: "x", accountId: "11111111-1111-4111-8111-111111111111" };
+    expect(budgetLineCreateBody.safeParse({ ...a, nov: "abc" }).success).toBe(false);
+    expect(budgetLineCreateBody.safeParse({ ...a, nov: -1 }).success).toBe(false);
+    expect(budgetLineCreateBody.safeParse({ ...a, isContra: true, nov: -1 }).success).toBe(true);
+    expect(budgetLineCreateBody.safeParse({ ...a, nov: "12.345" }).success).toBe(false);
+    const ok = budgetLineCreateBody.parse({ ...a, nov: "10.5" });
     expect(ok.nov).toBe("10.50");
   });
 });

@@ -1143,6 +1143,8 @@ export const EVIDENCE_TEMPLATES: readonly CopyTemplate[] = [
     "evidence.workflow.request.bullet.draftOnly",
     "Draft only - no email, WhatsApp, or upload side effect"
   ),
+  // E2 (J4-r2): customer copy names no messaging channel (WhatsApp is NR firm-only).
+  T("evidence.workflow.request.bullet.draftOnlyNoSend", "Draft only - nothing is sent or uploaded"),
   T("evidence.workflow.request.bullet.queue", "Uses current missing evidence queue"),
   T("evidence.workflow.request.bullet.otp", "Reminds users not to send OTPs or credentials"),
   T("evidence.action.reviewDraft", "Review draft"),

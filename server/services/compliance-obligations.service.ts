@@ -177,7 +177,11 @@ interface ReturnStateRow {
 
 async function vatReturnStates(companyId: string): Promise<Map<string, ReturnStateRow>> {
   const r = await pool.query(
-    `SELECT id, ((period_end + interval '4 hours')::date)::text AS period_end, status
+    // vat_returns stores the period's calendar dates as UTC instants (period_end is
+    // `YYYY-MM-DDT23:59:59.999Z`, vat-returns.service toEndTs), so the period's own date is the
+    // UTC date part. Shifting by +4h first turned a 31 Mar period into 1 Apr, so a filed return
+    // never matched its obligation (`vatPeriodsDueInYear` keys by the calendar period end).
+    `SELECT id, (period_end::date)::text AS period_end, status
        FROM vat_returns WHERE company_id = $1 ORDER BY created_at`,
     [companyId]
   );

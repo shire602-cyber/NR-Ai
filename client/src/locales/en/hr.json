@@ -253,5 +253,7 @@
   "hr.openingGratuity.hint": "These employees joined before their first payroll run in Muhasib. Enter the gratuity provision already earned at {date}; this run then expenses only the month's movement. The suggested amounts are the entitlement at that date.",
   "hr.openingGratuity.amount": "Opening provision (AED)",
   "hr.openingGratuity.ledgerNote": "Book the same total in the 2036 opening balance. Enter 0 only if no provision existed: the whole catch-up is then expensed in this run.",
-  "hr.openingGratuity.save": "Save and calculate"
+  "hr.openingGratuity.save": "Save and calculate",
+  "hr.field.openingGratuityProvisionAtGoLive": "Opening gratuity provision at go-live (AED)",
+  "hr.openingGratuity.bookNote": "When you save, Muhasib also books this total as the opening gratuity provision in your ledger (against opening balance equity), so month-end reconciles. Enter 0 only if no provision existed: the whole catch-up is then expensed in this run."
 }

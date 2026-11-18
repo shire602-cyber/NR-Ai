@@ -107,18 +107,21 @@ export const submitVatReturnBody = z
     reconciliationOverrideReason: zText(2000).optional().nullable(),
     declarantName: zText(200).optional().nullable(),
     declarantPosition: zText(200).optional().nullable(),
+    /** E2 (J3-r2): the day the return was filed on EmaraTax (with ftaReferenceNumber). */
+    filedOn: zDate.optional().nullable(),
   })
   .strict();
 
-/** Only descriptive fields; boxes come from the engine and change through adjustments. */
+/**
+ * Only descriptive fields; boxes come from the engine and change through adjustments. E2
+ * (J3-r2): payment status is not editable here; it follows the settlement entry
+ * (POST /api/vat-returns/:id/settlement), so the return and the ledger cannot disagree.
+ */
 export const patchVatReturnBody = z
   .object({
     notes: zText(4000).optional().nullable(),
     declarantName: zText(200).optional().nullable(),
     declarantPosition: zText(200).optional().nullable(),
-    paymentStatus: z.enum(["unpaid", "paid", "partial"]).optional(),
-    paymentAmount: zAmount.optional().nullable(),
-    paymentDate: zDate.optional().nullable(),
   })
   .strict();
 

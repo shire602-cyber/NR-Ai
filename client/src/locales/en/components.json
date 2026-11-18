@@ -899,5 +899,6 @@
   "components.authErrors.resetAttemptsLocked": "Too many invalid reset attempts. Wait a few minutes, then try again.",
   "components.authErrors.failedAttemptsLocked": "Too many failed attempts. Wait a few minutes, then try again.",
   "components.authErrors.linkRequestsLimited": "Wait a moment before requesting another link.",
-  "components.authErrors.authRateLimited": "Too many sign-in attempts. Wait a minute, then try again."
+  "components.authErrors.authRateLimited": "Too many sign-in attempts. Wait a minute, then try again.",
+  "components.srv.evidence.workflow.request.bullet.draftOnlyNoSend": "Draft only - nothing is sent or uploaded"
 }

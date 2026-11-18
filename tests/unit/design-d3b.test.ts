@@ -60,7 +60,8 @@ describe("D3b design pass: screens", () => {
   it("VAT filing shows a true-state checklist and says nothing is transmitted", () => {
     const src = read("client/src/pages/VATFiling.tsx");
     expect(src).toContain('data-testid="vat-filing-checklist"');
-    expect(src).toContain("Filed on EmaraTax (by you)");
+    // E2: the step copy moved to the catalog (rendered in tests/unit/e2-launch-ui.test.ts).
+    expect(src).toContain('t["compliance.vatFlow.filedStep"]');
     expect(src).toContain("Muhasib does not transmit anything to the FTA.");
   });
 

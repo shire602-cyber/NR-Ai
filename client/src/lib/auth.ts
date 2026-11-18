@@ -23,6 +23,9 @@ export interface CompanyAccess {
   permissions: Permission[];
   grantableRoles: CompanyRole[];
   viaFirmAccess: boolean;
+  /** E2: the signed-in user, and whether they are the company's only member (maker-checker). */
+  userId?: string;
+  soleMember?: boolean;
 }
 
 /** UI gating helper: true when `access` includes `permission`. */

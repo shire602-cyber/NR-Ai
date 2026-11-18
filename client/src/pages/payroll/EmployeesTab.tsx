@@ -1,3 +1,5 @@
+import { errorHeading } from "@/lib/error-heading";
+import { translateNow } from "@/lib/i18n";
 import { useState } from "react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -102,7 +104,7 @@ const TEXT_FIELDS: Array<{ key: string; label: string; type?: string; col?: keyo
   },
   {
     key: "openingGratuityProvision",
-    label: "hr.field.openingGratuityProvision",
+    label: "hr.field.openingGratuityProvisionAtGoLive",
     type: "number",
     col: "opening_gratuity_provision",
   },
@@ -207,7 +209,7 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: key });
   const fail = (err: unknown) =>
-    toast({ title: tx("hr.error"), description: errorMessage(err), variant: "destructive" });
+    toast({ title: errorHeading(err), description: errorMessage(err), variant: "destructive" });
 
   const save = useMutation({
     mutationFn: async () => {
@@ -235,7 +237,7 @@ export function EmployeesTab({ companyId }: { companyId: string }) {
         .map((k) => (FIELD_BY_KEY.get(k) ? tx(FIELD_BY_KEY.get(k)!.label) : k))
         .join(", ");
       toast({
-        title: tx("hr.error"),
+        title: names ? translateNow("common.errorHeading.fields") : errorHeading(err),
         description: names ? tx("hr.fixFields", { fields: names }) : errorMessage(err),
         variant: "destructive",
       });

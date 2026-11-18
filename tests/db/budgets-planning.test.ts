@@ -70,9 +70,18 @@ describe("R13-10 validation", () => {
     expect(ok.status).toBe(201);
     planId = ok.body.id;
     const lines = `/api/budget-plans/${planId}/lines`;
-    expect((await a.as.post(lines, { category: "Sales", nov: "abc" })).status).toBe(400);
-    expect((await a.as.post(lines, { category: "Sales", nov: -5 })).status).toBe(400);
-    const contra = await a.as.post(lines, { category: "Discounts", isContra: true, nov: -50 });
+    expect(
+      (await a.as.post(lines, { category: "Sales", accountId: salesId, nov: "abc" })).status
+    ).toBe(400);
+    expect(
+      (await a.as.post(lines, { category: "Sales", accountId: salesId, nov: -5 })).status
+    ).toBe(400);
+    const contra = await a.as.post(lines, {
+      category: "Discounts",
+      accountId: salesId,
+      isContra: true,
+      nov: -50,
+    });
     expect(contra.status).toBe(201);
     await a.as.delete(`/api/budget-lines/${contra.body.id}`);
     const sales = await a.as.post(lines, {
@@ -112,6 +121,7 @@ describe("R13-29 approval and freeze", () => {
     expect(ok.body.approved_by).toBe(accountant.user.id);
     const add = await a.as.post(`/api/budget-plans/${planId}/lines`, {
       category: "Late add",
+      accountId: rentId,
       nov: 10,
     });
     expect(add.status).toBe(409);
@@ -333,5 +343,51 @@ describe("R13-29 variance alerts", () => {
     expect(alerts.body).toHaveLength(1);
     expect(alerts.body[0]).toMatchObject({ category: "Rent", period: "2026-11" });
     off();
+  });
+});
+
+describe("E2 (J3-r2) partial-year plans and account-mapped lines", () => {
+  it("a new line must name an income or expense account (not a balance-sheet account)", async () => {
+    const p = await a.as.post(plans(), planBody({ name: "Needs accounts" }));
+    const lines = `/api/budget-plans/${p.body.id}/lines`;
+    const none = await a.as.post(lines, { category: "Salaries & Wages", sep: 77000 });
+    expect(none.status).toBe(400);
+    expect(none.body.code).toBe("VALIDATION_ERROR");
+    const bank = (await accountByCode(a, "1020")).id;
+    const bs = await a.as.post(lines, { category: "Other", accountId: bank, sep: 10 });
+    expect(bs.status).toBe(400);
+    expect(bs.body.code).toBe("BUDGET_ACCOUNT_INVALID");
+    expect((await a.as.get(lines)).body).toHaveLength(0);
+  });
+
+  it("a Sep-Nov plan reports only its three months with actuals from the ledger", async () => {
+    const p = await a.as.post(
+      plans(),
+      planBody({ name: "Autumn", startDate: "2026-09-01", endDate: "2026-11-30" })
+    );
+    expect(p.status, p.text).toBe(201);
+    const lines = `/api/budget-plans/${p.body.id}/lines`;
+    const rev = await a.as.post(lines, { category: "Revenue", accountId: salesId, nov: 4500 });
+    expect(rev.status, rev.text).toBe(201);
+    const rentLine = await a.as.post(lines, {
+      category: "Rent",
+      accountId: rentId,
+      sep: 700,
+      oct: 600,
+      nov: 800,
+    });
+    expect(rentLine.status, rentLine.text).toBe(201);
+    const v = await a.as.get(`/api/budget-plans/${p.body.id}/variance`);
+    expect(v.status, v.text).toBe(200);
+    expect(v.body.periods).toEqual(["2026-09", "2026-10", "2026-11"]);
+    const sales = v.body.varianceLines.find((l: any) => l.category === "Revenue");
+    const rent = v.body.varianceLines.find((l: any) => l.category === "Rent");
+    expect(Object.keys(sales.months).sort()).toEqual(["nov", "oct", "sep"]);
+    expect(sales.accountType).toBe("income");
+    expect(rent.accountType).toBe("expense");
+    expect(sales.months.nov.actual).toBe(2000);
+    expect(rent.months.sep.actual).toBe(700);
+    expect(rent.months.nov.actual).toBe(800);
+    expect(rent.totals).toMatchObject({ budget: 2100, actual: 2100, variance: 0 });
   });
 });

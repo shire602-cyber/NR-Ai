@@ -47,6 +47,7 @@ import {
   type SettlementCreateBody,
 } from "../../shared/validators/payroll";
 import { calculateGratuityForEmployee, isValidDate } from "../services/payroll/calc";
+import { bookOpeningGratuity, openingGratuityStatus } from "../services/payroll/opening-gratuity";
 import {
   assertPayrollAccess,
   actorOf,
@@ -92,6 +93,7 @@ import {
   emailPayslips,
   listPayslips,
   loadPayslip,
+  payslipFilename,
   payslipLink,
   renderPayslipPdf,
   resolvePayslipToken,
@@ -702,9 +704,10 @@ export function registerPayrollRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { itemId, companyId } = await itemCompany(req);
-      const pdf = await renderPayslipPdf(await loadPayslip(itemId, companyId));
+      const payslip = await loadPayslip(itemId, companyId);
+      const pdf = await renderPayslipPdf(payslip);
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="payslip-${itemId}.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${payslipFilename(payslip)}"`);
       res.send(pdf);
     })
   );
@@ -745,6 +748,29 @@ export function registerPayrollRoutes(app: Express) {
   // =============================================
   // SETTINGS (legal parameters, approval policy)
   // =============================================
+
+  // E2 (J3-r2): the opening gratuity provision in the GL, booked from the employee records.
+  app.get(
+    "/api/companies/:companyId/payroll/opening-gratuity",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = await companyAccess(req);
+      res.json(await openingGratuityStatus(companyId));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/payroll/opening-gratuity/book",
+    authMiddleware,
+    requireCustomer,
+    strictBody(z.object({}).strict()),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, userId } = await companyAccess(req);
+      await assertPayrollAccess(req, companyId, ["ledger.post"]);
+      res.status(201).json(await bookOpeningGratuity(companyId, userId));
+    })
+  );
 
   app.get(
     "/api/companies/:companyId/payroll/settings",

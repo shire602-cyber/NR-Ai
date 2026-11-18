@@ -49,6 +49,8 @@ import VAT201Form from "@/components/VAT201Form";
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import { companyAddressLine, vatStaggerLabel } from "@/lib/company-address";
 import VatReturnControls from "@/components/vat/VatReturnControls";
+import VatFilingActions from "@/components/vat/VatFilingActions";
+import { vatChecklist, vatFilingStage } from "@/lib/vat-filing-stage";
 import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import VatWorkpaperPanel from "@/components/vat/VatWorkpaperPanel";
 import { VatPeriodPreview } from "@/components/vat/VatPeriodPreview";
@@ -317,7 +319,8 @@ export default function VATFiling() {
       pending: vatReturns.filter((r) => r.status === "draft" || r.status === "pending_review")
         .length,
       submitted: vatReturns.filter((r) => r.status === "submitted").length,
-      filed: vatReturns.filter((r) => r.status === "filed").length,
+      // E2: "Filed" counts every return filed on EmaraTax (submitted or filed, paid or not).
+      filed: vatReturns.filter((r) => r.status === "filed" || r.status === "submitted").length,
       totalPayable: vatReturns.reduce((sum, r) => sum + (r.box14PayableTax || 0), 0),
     };
   }, [vatReturns]);
@@ -374,8 +377,31 @@ export default function VATFiling() {
     };
   }, [vatReturns, currentQuarter]);
 
-  const getStatusBadge = (status: string) => {
+  // E2 (J3-r2): the badge follows the filing stage (ready, filed, paid / refund received).
+  const getStatusBadge = (
+    ret: string | { status: string; paymentStatus?: string | null; box14PayableTax?: number }
+  ) => {
+    const status = typeof ret === "string" ? ret : vatFilingStage(ret);
     switch (status) {
+      case "ready":
+        return (
+          <Badge variant="secondary" className="bg-info-subtle text-info-subtle-foreground">
+            <CheckCircle2 className="w-3 h-3 me-1" />
+            {t["compliance.vatFlow.statusReady"]}
+          </Badge>
+        );
+      case "paid":
+      case "refunded":
+        return (
+          <Badge variant="default" className="bg-success-subtle text-success-subtle-foreground">
+            <CheckCircle2 className="w-3 h-3 me-1" />
+            {status === "paid"
+              ? t["compliance.vatFlow.statusPaid"]
+              : t["compliance.vatFlow.statusRefunded"]}
+          </Badge>
+        );
+      case "amended":
+        return <Badge variant="outline">{t["compliance.vatFlow.statusAmended"]}</Badge>;
       case "draft":
         return (
           <Badge variant="secondary">
@@ -1011,7 +1037,9 @@ export default function VATFiling() {
                 {format(currentFiling.periodStart, "d MMM", dfOpts)} –{" "}
                 {format(currentFiling.periodEnd, "d MMM yyyy", dfOpts)}
               </h2>
-              {currentFiling.hasReturn && getStatusBadge(currentFiling.status)}
+              {currentFiling.hasReturn &&
+                currentFiling.return &&
+                getStatusBadge(currentFiling.return)}
             </div>
 
             <div className="mt-5">
@@ -1090,6 +1118,9 @@ export default function VATFiling() {
                       {locale === "ar" ? "تعديل" : "Edit"}
                     </Button>
                   )}
+                  {companyId && currentFiling.return && (
+                    <VatFilingActions companyId={companyId} vatReturn={currentFiling.return} />
+                  )}
                 </>
               ) : canGenerateVatReturn ? (
                 <Button onClick={handleCreateReturn} data-testid="button-hero-generate">
@@ -1152,24 +1183,20 @@ export default function VATFiling() {
             })()}
             {/* Filing checklist: true states only. Muhasib prepares the return; the user files it on EmaraTax. */}
             {(() => {
-              const st = currentFiling.status;
-              const ready = st === "pending_review" || st === "submitted" || st === "filed";
-              const filed = st === "submitted" || st === "filed";
+              // E2 (J3-r2): one reading of the stage; "ready" counts as reviewed, and the
+              // payment / refund recorded through the settlement is the last step.
+              const check = vatChecklist(currentFiling.hasReturn ? currentFiling.return : null);
               const steps = [
+                { done: check.calculated, label: t["compliance.vatFlow.calculated"] },
+                { done: check.ready, label: t["compliance.vatFlow.reviewed"] },
+                { done: check.filed, label: t["compliance.vatFlow.filedStep"] },
                 {
-                  done: Boolean(currentFiling.hasReturn),
-                  label: locale === "ar" ? "احتساب الإقرار" : "Return calculated",
-                },
-                {
-                  done: ready,
-                  label: locale === "ar" ? "المراجعة والاعتماد" : "Reviewed and ready",
-                },
-                {
-                  done: filed,
-                  label:
-                    locale === "ar"
-                      ? "التقديم عبر EmaraTax (بواسطتك)"
-                      : "Filed on EmaraTax (by you)",
+                  done: check.settled,
+                  label: check.nothingToSettle
+                    ? t["compliance.vatFlow.stepNothing"]
+                    : currentFiling.isRefund
+                      ? t["compliance.vatFlow.stepRefund"]
+                      : t["compliance.vatFlow.stepPaid"],
                 },
               ];
               return (
@@ -1302,7 +1329,7 @@ export default function VATFiling() {
                                 })}
                               </p>
                             </div>
-                            {getStatusBadge(vatReturn.status)}
+                            {getStatusBadge(vatReturn)}
                           </div>
                           <div className="grid grid-cols-3 gap-3 text-sm">
                             <div>
@@ -1359,6 +1386,15 @@ export default function VATFiling() {
                                 <Edit3 className="w-4 h-4 me-1" />
                                 {t["compliance.vatEdit"]}
                               </Button>
+                            )}
+                            {companyId && (
+                              <div className="col-span-2 flex flex-wrap items-center gap-2">
+                                <VatFilingActions
+                                  companyId={companyId}
+                                  vatReturn={vatReturn}
+                                  size="sm"
+                                />
+                              </div>
                             )}
                             <Button
                               size="sm"
@@ -1424,7 +1460,7 @@ export default function VATFiling() {
                               <Money amount={Math.abs(vatReturn.box14PayableTax || 0)} />
                               {(vatReturn.box14PayableTax || 0) >= 0 ? "" : ")"}
                             </TableCell>
-                            <TableCell>{getStatusBadge(vatReturn.status)}</TableCell>
+                            <TableCell>{getStatusBadge(vatReturn)}</TableCell>
                             <TableCell data-numeric>
                               <div className="flex items-center justify-end gap-2">
                                 <Button
@@ -1446,6 +1482,13 @@ export default function VATFiling() {
                                     <Edit3 className="w-4 h-4 me-1" />
                                     {locale === "ar" ? "تحرير" : "Edit"}
                                   </Button>
+                                )}
+                                {companyId && (
+                                  <VatFilingActions
+                                    companyId={companyId}
+                                    vatReturn={vatReturn}
+                                    size="sm"
+                                  />
                                 )}
                                 <Button
                                   size="sm"

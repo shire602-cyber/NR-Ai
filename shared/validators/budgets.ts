@@ -137,8 +137,12 @@ export function checkBudgetLineAmounts(
   }
 }
 
+/**
+ * E2 (J3-r2): a new line names the P&L account it budgets, otherwise its actuals are always 0
+ * (the variance report reads actuals per account). Updates may leave the account as it is.
+ */
 export const budgetLineCreateBody = z
-  .object(lineShape)
+  .object({ ...lineShape, accountId: zUuid })
   .strict()
   .superRefine((v, ctx) => checkBudgetLineAmounts(v, ctx));
 
