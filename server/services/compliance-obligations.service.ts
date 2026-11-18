@@ -117,7 +117,11 @@ interface CompanyFacts {
 }
 
 // E1: one rule for "does this period belong to the books", shared with the VAT Periods tab.
-import { loadVatApplicabilityFor, obligationsApplyFrom } from "./vat-applicability";
+import {
+  isFiledReturnStatus,
+  loadVatApplicabilityFor,
+  obligationsApplyFrom,
+} from "./vat-applicability";
 export { obligationsApplyFrom };
 
 async function loadCompanyFacts(companyId: string): Promise<CompanyFacts | null> {
@@ -189,13 +193,9 @@ async function vatReturnStates(companyId: string): Promise<Map<string, ReturnSta
   for (const row of r.rows as ReturnStateRow[]) {
     const prev = out.get(row.period_end);
     // Prefer a filed row over a draft for the same period.
-    if (!prev || isFiledVat(row.status)) out.set(row.period_end, row);
+    if (!prev || isFiledReturnStatus(row.status)) out.set(row.period_end, row);
   }
   return out;
-}
-
-function isFiledVat(status: string): boolean {
-  return ["submitted", "filed", "amended", "paid", "accepted"].includes(status);
 }
 
 async function ctReturnStates(companyId: string): Promise<Map<string, ReturnStateRow>> {
@@ -280,7 +280,7 @@ export async function buildObligationSpecs(
         periodStart: p.periodStart,
         periodEnd: p.periodEnd,
         legalSource: "FDL 8/2017 Art. 64; Executive Regulation Art. 59 (28 days)",
-        completed: state ? isFiledVat(state.status) : false,
+        completed: state ? isFiledReturnStatus(state.status) : false,
         relatedEntityId: state?.id ?? null,
         detail: state ? `Return status: ${state.status}` : "No VAT return prepared yet",
       });

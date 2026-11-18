@@ -224,5 +224,7 @@
   "compliance.vatFlow.stepNothing": "لا يوجد مبلغ للدفع أو الاسترداد",
   "compliance.vatFlow.calculated": "احتساب الإقرار",
   "compliance.vatFlow.reviewed": "المراجعة والاعتماد",
-  "compliance.vatFlow.filedStep": "التقديم عبر إمارات تاكس (بواسطتك)"
+  "compliance.vatFlow.filedStep": "التقديم عبر إمارات تاكس (بواسطتك)",
+  "compliance.autopilotStageFiled": "تم التقديم",
+  "compliance.autopilotStagePaid": "مدفوع"
 }

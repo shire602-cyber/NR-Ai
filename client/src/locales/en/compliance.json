@@ -224,5 +224,7 @@
   "compliance.vatFlow.stepNothing": "Nothing to pay or receive",
   "compliance.vatFlow.calculated": "Return calculated",
   "compliance.vatFlow.reviewed": "Reviewed and ready",
-  "compliance.vatFlow.filedStep": "Filed on EmaraTax (by you)"
+  "compliance.vatFlow.filedStep": "Filed on EmaraTax (by you)",
+  "compliance.autopilotStageFiled": "Filed",
+  "compliance.autopilotStagePaid": "Paid"
 }

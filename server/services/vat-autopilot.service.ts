@@ -19,7 +19,7 @@ import { pool } from "../db";
 import { UAE_VAT_RATE } from "../constants";
 import { DomainError } from "../errors";
 import { resolveNrClientVatPeriodStartMonth } from "./firm-clients.service";
-import { loadVatApplicability, periodApplies } from "./vat-applicability";
+import { isFiledReturnStatus, loadVatApplicability, periodApplies } from "./vat-applicability";
 import { computeVat201, type VatComputation } from "../tax/vat-engine";
 import { EMIRATE_BOX_PREFIX, type Vat201Key } from "../tax/vat-boxes";
 import type { VatReconciliation } from "../tax/vat-reconciliation";
@@ -142,6 +142,8 @@ export interface VatPeriodSummary {
   netVatPayable: number;
   calculatedAt: string | null;
   deadline: DeadlineStatus;
+  /** E3 (J3-r3): the period's VAT return on the Returns tab (the lifecycle's one source). */
+  lifecycle: ReturnLifecycle | null;
 }
 
 export interface DueDateView {
@@ -153,6 +155,89 @@ export interface DueDateView {
   status: VatPeriodStatus;
   daysUntilDue: number;
   level: DeadlineStatus["level"];
+  lifecycle: ReturnLifecycle | null;
+}
+
+/**
+ * E3 (J3-r3): where a period's VAT return stands, read from `vat_returns` (record filing, record
+ * payment). The Periods tab, the deadlines card and the compliance calendar all take the filed /
+ * paid state from here, so a quarter filed on the Returns tab is never shown as overdue.
+ */
+export interface ReturnLifecycle {
+  returnId: string;
+  /** vat_returns.status: draft | pending_review | ready | submitted | filed | amended. */
+  returnStatus: string;
+  /** draft / ready (still to file), filed (filed, unpaid), paid (filed and settled). */
+  stage: "draft" | "ready" | "filed" | "paid";
+  filed: boolean;
+  paymentDate: string | null;
+  outputVat: number;
+  inputVat: number;
+  netVatPayable: number;
+}
+
+/** Period-end date (YYYY-MM-DD, calendar date) -> the period's return, per company. */
+export async function loadReturnLifecycle(
+  companyIds: string[]
+): Promise<Map<string, Map<string, ReturnLifecycle>>> {
+  const out = new Map<string, Map<string, ReturnLifecycle>>();
+  if (companyIds.length === 0) return out;
+  // period_end is stored as the period's last instant in UTC (vat-returns.service toEndTs), so
+  // the calendar date is its UTC date part (as in compliance-obligations.service).
+  const r = await pool.query(
+    `SELECT id, company_id, (period_end::date)::text AS period_end, status, payment_status,
+            payment_date, box12_total_due_tax::numeric AS output_vat,
+            box13_recoverable_tax::numeric AS input_vat,
+            box14_payable_tax::numeric AS net_vat
+       FROM vat_returns
+      WHERE company_id = ANY($1::uuid[])
+      ORDER BY created_at`,
+    [companyIds]
+  );
+  for (const row of r.rows as Array<Record<string, unknown>>) {
+    const cid = String(row.company_id);
+    const byEnd = out.get(cid) ?? new Map<string, ReturnLifecycle>();
+    out.set(cid, byEnd);
+    const status = String(row.status);
+    const filed = isFiledReturnStatus(status);
+    const paid = filed && row.payment_status === "paid";
+    const entry: ReturnLifecycle = {
+      returnId: String(row.id),
+      returnStatus: status,
+      stage: paid ? "paid" : filed ? "filed" : status === "ready" ? "ready" : "draft",
+      filed,
+      paymentDate: row.payment_date ? new Date(row.payment_date as string).toISOString() : null,
+      outputVat: Number(row.output_vat) || 0,
+      inputVat: Number(row.input_vat) || 0,
+      netVatPayable: Number(row.net_vat) || 0,
+    };
+    const key = String(row.period_end);
+    const prev = byEnd.get(key);
+    // A filed return wins over a draft for the same period; later rows win ties (amendments).
+    if (!prev || filed || !prev.filed) byEnd.set(key, entry);
+  }
+  return out;
+}
+
+/** The calendar end date of a period (synthetic periods end on the last UTC instant of the day). */
+function periodEndDate(end: Date | string): string {
+  return new Date(end).toISOString().slice(0, 10);
+}
+
+/** Filed periods are not late, whatever the clock says. */
+function lifecycleDeadline(dueDate: Date, now: Date, lifecycle: ReturnLifecycle | null) {
+  const dl = deadlineStatus(dueDate, now);
+  return lifecycle?.filed ? { ...dl, level: "ok" as const, isOverdue: false } : dl;
+}
+
+/** The autopilot status shown for a period: the return's lifecycle when there is one. */
+function lifecycleStatus(
+  stored: VatPeriodStatus | undefined,
+  lifecycle: ReturnLifecycle | null
+): VatPeriodStatus {
+  if (lifecycle?.filed) return lifecycle.stage === "paid" ? "accepted" : "submitted";
+  if (lifecycle?.stage === "ready" && (!stored || stored === "draft")) return "ready";
+  return stored || "draft";
 }
 
 // ─── Pure helpers (testable without a DB) ────────────────────────────────────
@@ -842,10 +927,26 @@ export async function listPeriodsForCompany(
       storedByKey.has(periodKey(p.start, p.end))
   );
 
+  const returns = (await loadReturnLifecycle([companyId])).get(companyId) ?? new Map();
+  const withLifecycle = (
+    lifecycle: ReturnLifecycle | null,
+    stored: { output: number; input: number; net: number; calculated: boolean }
+  ) =>
+    // A filed return carries the filed figures; an unfiled one fills in a period the autopilot
+    // has not calculated; otherwise the autopilot snapshot.
+    lifecycle && (lifecycle.filed || !stored.calculated)
+      ? {
+          outputVat: lifecycle.outputVat,
+          inputVat: lifecycle.inputVat,
+          netVatPayable: lifecycle.netVatPayable,
+        }
+      : { outputVat: stored.output, inputVat: stored.input, netVatPayable: stored.net };
+
   const summaries: VatPeriodSummary[] = applicable.map((p) => {
     const key = periodKey(p.start, p.end);
     const row = storedByKey.get(key);
     if (row) storedByKey.delete(key);
+    const lifecycle = returns.get(periodEndDate(p.end)) ?? null;
     return {
       id: row ? String(row.id) : null,
       companyId,
@@ -853,12 +954,16 @@ export async function listPeriodsForCompany(
       periodEnd: p.end.toISOString(),
       dueDate: p.dueDate.toISOString(),
       frequency,
-      status: (row?.status as VatPeriodStatus) || "draft",
-      outputVat: Number(row?.output_vat) || 0,
-      inputVat: Number(row?.input_vat) || 0,
-      netVatPayable: Number(row?.net_vat_payable) || 0,
+      status: lifecycleStatus(row?.status as VatPeriodStatus | undefined, lifecycle),
+      ...withLifecycle(lifecycle, {
+        output: Number(row?.output_vat) || 0,
+        input: Number(row?.input_vat) || 0,
+        net: Number(row?.net_vat_payable) || 0,
+        calculated: !!row?.calculated_at,
+      }),
       calculatedAt: row?.calculated_at ? new Date(row.calculated_at).toISOString() : null,
-      deadline: deadlineStatus(p.dueDate, now),
+      deadline: lifecycleDeadline(p.dueDate, now, lifecycle),
+      lifecycle,
     };
   });
 
@@ -869,6 +974,7 @@ export async function listPeriodsForCompany(
     if (periodEnd.getTime() > oldestSyntheticEnd) continue;
 
     const due = new Date(row.due_date);
+    const lifecycle = returns.get(periodEndDate(periodEnd)) ?? null;
     summaries.push({
       id: String(row.id),
       companyId,
@@ -876,12 +982,16 @@ export async function listPeriodsForCompany(
       periodEnd: periodEnd.toISOString(),
       dueDate: due.toISOString(),
       frequency: (row.frequency as VatFrequency) || frequency,
-      status: row.status as VatPeriodStatus,
-      outputVat: Number(row.output_vat) || 0,
-      inputVat: Number(row.input_vat) || 0,
-      netVatPayable: Number(row.net_vat_payable) || 0,
+      status: lifecycleStatus(row.status as VatPeriodStatus, lifecycle),
+      ...withLifecycle(lifecycle, {
+        output: Number(row.output_vat) || 0,
+        input: Number(row.input_vat) || 0,
+        net: Number(row.net_vat_payable) || 0,
+        calculated: !!row.calculated_at,
+      }),
       calculatedAt: row.calculated_at ? new Date(row.calculated_at).toISOString() : null,
-      deadline: deadlineStatus(due, now),
+      deadline: lifecycleDeadline(due, now, lifecycle),
+      lifecycle,
     });
   }
 
@@ -1057,6 +1167,7 @@ export async function listDueDates(
   }
 
   const applicability = await loadVatApplicability(companyIds);
+  const lifecycle = await loadReturnLifecycle(companyIds);
   const out: DueDateView[] = [];
   for (const c of companyRes.rows as Array<Record<string, unknown>>) {
     const cid = String(c.id);
@@ -1072,11 +1183,23 @@ export async function listDueDates(
     // VAT registration / books start is skipped (it is not late, it was never due here); with
     // none left, the period in progress is the next filing.
     const applyFrom = applicability.get(cid)?.applyFrom ?? null;
+    // E3 (J3-r3): the return lifecycle decides what is still to file. A period whose return was
+    // filed on the Returns tab is done, and so is everything before the latest filed period.
+    const returns = lifecycle.get(cid) ?? new Map<string, ReturnLifecycle>();
+    const lastFiledEnd = [...returns.entries()]
+      .filter(([, r]) => r.filed)
+      .reduce<string | null>((max, [end]) => (max && max > end ? max : end), null);
+    const stillToFile = (end: Date) => {
+      const day = periodEndDate(end);
+      return !returns.get(day)?.filed && (!lastFiledEnd || day > lastFiledEnd);
+    };
     const scheduled =
       synthetic.find(
-        (p) => !applyFrom || periodApplies(p.end.toISOString().slice(0, 10), applyFrom)
+        (p) =>
+          (!applyFrom || periodApplies(p.end.toISOString().slice(0, 10), applyFrom)) &&
+          stillToFile(p.end)
       ) ??
-      (applyFrom
+      (applyFrom || lastFiledEnd
         ? detectPeriod(freq, periodStartMonth, now)
         : detectFilingPeriod(freq, periodStartMonth, now));
     let candidate: { periodEnd: Date; dueDate: Date; status: VatPeriodStatus } = {
@@ -1088,6 +1211,7 @@ export async function listDueDates(
     for (const stored of storedByCompany.get(cid) ?? []) {
       const storedPeriodKey = periodKey(stored.period_start ?? scheduled.start, stored.period_end);
       if (!syntheticKeys.has(storedPeriodKey)) continue;
+      if (!stillToFile(new Date(stored.period_end))) continue;
       const storedDue = new Date(stored.due_date);
       if (storedDue < candidate.dueDate) {
         candidate = {
@@ -1098,17 +1222,19 @@ export async function listDueDates(
       }
     }
 
-    const { periodEnd, dueDate, status } = candidate;
-    const dl = deadlineStatus(dueDate, now);
+    const { periodEnd, dueDate } = candidate;
+    const periodReturn = returns.get(periodEndDate(periodEnd)) ?? null;
+    const dl = lifecycleDeadline(dueDate, now, periodReturn);
     out.push({
       companyId: cid,
       companyName: String(c.name),
       trnVatNumber: (c.trn_vat_number as string | null) ?? null,
       periodEnd,
       dueDate,
-      status,
+      status: lifecycleStatus(candidate.status, periodReturn),
       daysUntilDue: dl.daysUntilDue,
       level: dl.level,
+      lifecycle: periodReturn,
     });
   }
   out.sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
