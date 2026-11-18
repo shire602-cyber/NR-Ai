@@ -36,6 +36,8 @@ export interface InvoicePreviewProps {
   vatAmount: number;
   total: number;
   ratesLabel: string;
+  /** Lifecycle status of the invoice being shown; the chip says "Draft" only for a draft. */
+  status?: string | null;
   /**
    * Document accent (spec 2.8 "Ledger"): used only for the top rule and the amount-due row,
    * so no colour can flood the page. Defaults to Emerald ink.
@@ -45,6 +47,24 @@ export interface InvoicePreviewProps {
 }
 
 const NS = "forms";
+
+/** Catalog key of the preview chip: the real lifecycle status, "Draft" only for a draft. */
+export function previewStatusKey(status?: string | null): string {
+  switch (status) {
+    case "paid":
+    case "partial":
+    case "void":
+      return `forms.preview.status.${status}`;
+    case "cancelled":
+      return "forms.preview.status.void";
+    case "sent":
+    case "posted":
+    case "overdue":
+      return "forms.preview.status.sent";
+    default:
+      return "forms.preview.draftBadge";
+  }
+}
 
 /** Both languages of one catalog key, active language first. */
 function useBilingual() {
@@ -121,6 +141,7 @@ export function InvoicePreview(props: InvoicePreviewProps) {
     vatAmount,
     total,
     ratesLabel,
+    status,
     accent,
     className,
   } = props;
@@ -141,7 +162,7 @@ export function InvoicePreview(props: InvoicePreviewProps) {
           {t["forms.preview.heading"]}
         </p>
         <span className="rounded-full bg-card px-2 py-0.5 text-caption text-muted-foreground">
-          {t["forms.preview.draftBadge"]}
+          {t[previewStatusKey(status)]}
         </span>
       </div>
 

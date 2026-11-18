@@ -76,6 +76,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { useOpenInvoiceParam } from "@/hooks/use-open-invoice-param";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { invoiceStatusTargets } from "@/lib/invoice-status";
@@ -607,22 +608,9 @@ export default function Invoices() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // R3 (CTO 17): command-palette record results open /invoices?open=<id> in the invoice view.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const openId = params.get("open");
-    if (!openId) return;
-    params.delete("open");
-    const query = params.toString();
-    window.history.replaceState(
-      {},
-      "",
-      window.location.pathname + (query ? `?${query}` : "") + window.location.hash
-    );
-    openInvoiceEditor({ id: openId } as Invoice);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // R3 (CTO 17) + STEP1 F3: command-palette and notification links open /invoices?open=<id> in
+  // the invoice view, on every navigation (the bell navigates while this page is mounted).
+  useOpenInvoiceParam((openId) => openInvoiceEditor({ id: openId } as Invoice));
 
   const stripNewInvoiceParam = () => {
     if (typeof window === "undefined") return;
@@ -1422,7 +1410,13 @@ export default function Invoices() {
       backHref="/invoices"
       backLabel={t["invoices.editor.back"]}
       eyebrow="Sales"
-      title={editingInvoice ? t["forms.invoice.editTitle"] : t.newInvoice}
+      title={
+        editingInvoice
+          ? isIssued
+            ? formatMessage(t["forms.invoice.viewTitle"], { number: editingInvoice.number })
+            : t["forms.invoice.editTitle"]
+          : t.newInvoice
+      }
       description={editingInvoice ? t["forms.invoice.editDesc"] : t["forms.invoice.newDesc"]}
       status={editingInvoice ? <InvoiceStatusBadge status={editingInvoice.status} /> : undefined}
       previewLabel={t["invoices.editor.preview"]}
@@ -1456,6 +1450,7 @@ export default function Invoices() {
                 sellerTrn={company?.trnVatNumber}
                 sellerAddress={company?.businessAddress}
                 number={editingInvoice ? form.watch("number") : null}
+                status={editingInvoice?.status ?? "draft"}
                 date={form.watch("date")}
                 customerName={form.watch("customerName")}
                 customerTrn={form.watch("customerTrn")}

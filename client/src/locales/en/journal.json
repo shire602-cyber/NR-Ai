@@ -194,5 +194,7 @@
   "journal.vatAddedTotal": "VAT added by the system",
   "journal.foreignTotalsNote": "Lines in another currency are converted when you save.",
   "journal.memo.aiDraft": "AI draft (review required): {party}",
-  "journal.memo.aiReviewed": "AI entry (reviewed): {party}"
+  "journal.memo.aiReviewed": "AI entry (reviewed): {party}",
+  "journal.draftsFilter": "Showing draft entries only.",
+  "journal.draftsFilterClear": "Show all entries"
 }

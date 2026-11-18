@@ -76,6 +76,8 @@ describe("stored in-app links resolve to client routes", () => {
     expect(invoiceHref("abc")).toBe("/invoices?open=abc");
     expect(matchesRoute(invoiceHref("abc"), { allowRedirects: false })).toBe(true);
     expect(redirectOnly.has("/banking")).toBe(true);
+    expect(redirectOnly.has("/journal-entries")).toBe(true);
+    expect(matchesRoute("/journal?status=draft", { allowRedirects: false })).toBe(true);
   });
 
   it("links already stored before the fix still land on a page (redirect routes)", () => {
@@ -84,6 +86,7 @@ describe("stored in-app links resolve to client routes", () => {
       "/banking",
       "/compliance",
       "/settings",
+      "/journal-entries?status=draft",
     ]) {
       expect(matchesRoute(legacy), legacy).toBe(true);
     }

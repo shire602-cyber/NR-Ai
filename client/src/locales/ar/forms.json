@@ -418,5 +418,10 @@
   "forms.contact.noDefault": "بلا قيمة افتراضية",
   "forms.contact.revenueAccount": "حساب الإيرادات",
   "forms.contact.expenseAccount": "حساب المصروفات",
-  "forms.contact.costCentre": "مركز التكلفة"
+  "forms.contact.costCentre": "مركز التكلفة",
+  "forms.preview.status.sent": "صادرة",
+  "forms.preview.status.paid": "مدفوعة",
+  "forms.preview.status.partial": "مدفوعة جزئياً",
+  "forms.preview.status.void": "ملغاة",
+  "forms.invoice.viewTitle": "الفاتورة {number}"
 }

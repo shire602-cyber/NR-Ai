@@ -696,6 +696,10 @@ function Router() {
             <Route path="/recurring-invoices/:id/edit" component={RecurringInvoices} />
             <Route path="/recurring-invoices" component={RecurringInvoices} />
             <Route path="/payment-chasing" component={PaymentChasing} />
+            {/* STEP1 F3: the AI-drafts notice stored /journal-entries?status=draft (no such page). */}
+            <Route path="/journal-entries">
+              <RedirectTo to="/journal" />
+            </Route>
             <Route path="/journal" component={Journal} />
             <Route path="/journal/:id" component={JournalEntryDetail} />
             <Route path="/reports" component={Reports} />
