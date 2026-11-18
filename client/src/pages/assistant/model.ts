@@ -199,6 +199,13 @@ export function answerSegments(answer: {
   return [{ type: "text", text: stripCitations(answer.response ?? "") }];
 }
 
+/** Facts whose label is the record's own name (a customer, a bank or expense account). */
+export const NAME_LABELLED_FACTS: ReadonlySet<string> = new Set([
+  "customerOwes",
+  "cashAccount",
+  "expenseAccount",
+]);
+
 /** Catalog keys of the source chips, by the server's source key. */
 export const SOURCE_LABEL_KEYS: Record<string, string> = {
   profitLoss: "assistant.srcProfitLoss",

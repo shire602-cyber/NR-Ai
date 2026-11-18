@@ -188,6 +188,37 @@ describe("AS1 answer rendering", () => {
     expect(container.textContent).not.toMatch(/consult|professional/i);
   });
 
+  it("customers and accounts are labelled by their own name (Arabic name in Arabic)", async () => {
+    answer = {
+      response: "x",
+      segments: [{ type: "text", text: "x" }],
+      figures: [
+        {
+          id: "F5",
+          key: "customerOwes",
+          value: 23488,
+          unit: "AED",
+          params: { name: "FX Export Client Inc" },
+          source: { key: "invoices", href: "/invoices" },
+        },
+        {
+          id: "F6",
+          key: "expenseAccount",
+          value: 84000,
+          unit: "AED",
+          params: { name: "Rent Expense", nameAr: "مصروف الإيجار", code: "5010" },
+          source: { key: "profitLoss", href: "/reports?tab=pl&report=profit-loss" },
+        },
+      ],
+      timestamp: "2026-11-18T10:00:00Z",
+    };
+    await ask("ar");
+    const rows = [...container.querySelectorAll('[data-testid="assistant-figures"] th')].map((th) =>
+      th.textContent?.replace(/[⁨⁩]/g, "")
+    );
+    expect(rows).toEqual(["FX Export Client Inc", "مصروف الإيجار"]);
+  });
+
   it("older answers without segments still lose their markers", async () => {
     answer = {
       response: "Revenue so far is AED 12,000 [F1].",

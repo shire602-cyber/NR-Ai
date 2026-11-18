@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import {
   answerSegments,
   factLabelValues,
+  NAME_LABELLED_FACTS,
   factSources,
   presentFigure,
   revealScrollDelta,
@@ -354,12 +355,16 @@ function Answer({ answer }: { answer: AskResponse }) {
   if (answer.figures) {
     rows = answer.figures
       .map((f) => {
-        const template = catalog[`assistant.fact.${f.key}`];
-        if (!template) return null;
         const values = factLabelValues(f.params ?? {}, locale, {
           date: formatDate,
           range: formatDateRange,
         });
+        // A customer, bank account or expense account is labelled by its own name (data).
+        if (NAME_LABELLED_FACTS.has(f.key) && typeof values.name === "string") {
+          return { id: f.id, label: values.name, value: f.value, unit: f.unit };
+        }
+        const template = catalog[`assistant.fact.${f.key}`];
+        if (!template) return null;
         return { id: f.id, label: formatMessage(template, values), value: f.value, unit: f.unit };
       })
       .filter((r): r is FigureRow => r !== null);
