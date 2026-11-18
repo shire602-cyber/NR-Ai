@@ -169,6 +169,14 @@ export const billAttachmentSchema = z.object({
   filename: zText(200).optional().nullable(),
 });
 
+/** WQ2 (8.2): read a supplier invoice into a bill draft (nothing is stored or posted). */
+export const billCaptureSchema = z
+  .object({
+    file: z.string().min(16).max(12_000_000),
+    filename: zText(200).optional().nullable(),
+  })
+  .strict();
+
 export const batchPaymentExportSchema = z.object({
   bill_ids: z.array(zUuid).min(1).max(500),
 });

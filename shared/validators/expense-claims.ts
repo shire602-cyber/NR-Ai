@@ -32,6 +32,13 @@ export const expenseClaimItemSchema = z
       .nullable(),
     has_tax_invoice: z.boolean().optional(),
     receipt_url: zHttpsUrl.optional().nullable(),
+    /**
+     * WQ2 (8.7): the uploaded receipt, as the opaque reference POST
+     * /companies/:id/expense-claims/receipts returned (signed for this company; a key from
+     * anywhere else is refused with 422 RECEIPT_REF_INVALID).
+     */
+    receipt_ref: z.string().min(8).max(600).optional().nullable(),
+    receipt_name: zText(200).optional().nullable(),
     merchant_name: zText(200).optional().nullable(),
   })
   .strict()

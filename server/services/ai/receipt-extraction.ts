@@ -35,9 +35,13 @@ import { errorCode, errorMessage, errorStatus } from "../../errors";
 
 const log = createLogger("receipt-extraction");
 
-export type ExtractionInput =
+export type ExtractionInput = (
   | { kind: "image"; base64: string; mediaType: string }
-  | { kind: "text"; text: string };
+  | { kind: "text"; text: string }
+) & {
+  /** Extra field rules appended to the receipt prompt (e.g. BILL_EXTRACTION_ADDENDUM). */
+  promptAddendum?: string;
+};
 
 export interface ExtractionClients {
   anthropic: Anthropic | null;
@@ -80,6 +84,13 @@ function feedbackSuffix(feedback?: string): string {
   return feedback ? `\n\nCORRECTION NEEDED: ${feedback}` : "";
 }
 
+/** The base prompt plus an optional document-specific addendum (WQ2: supplier bills). */
+function promptFor(input: ExtractionInput): string {
+  return input.promptAddendum
+    ? `${RECEIPT_EXTRACTION_PROMPT}\n\n${input.promptAddendum}`
+    : RECEIPT_EXTRACTION_PROMPT;
+}
+
 async function callAnthropic(
   client: Anthropic,
   model: string,
@@ -89,8 +100,8 @@ async function callAnthropic(
 ): Promise<unknown> {
   const prompt =
     input.kind === "text"
-      ? `${RECEIPT_EXTRACTION_PROMPT}\n\n${DATA_BLOCK_INSTRUCTION}\n\nExtract receipt data from this OCR text:\n${wrapUserData("ocr_text", input.text)}${feedbackSuffix(feedback)}`
-      : `${RECEIPT_EXTRACTION_PROMPT}${feedbackSuffix(feedback)}`;
+      ? `${promptFor(input)}\n\n${DATA_BLOCK_INSTRUCTION}\n\nExtract receipt data from this OCR text:\n${wrapUserData("ocr_text", input.text)}${feedbackSuffix(feedback)}`
+      : `${promptFor(input)}${feedbackSuffix(feedback)}`;
 
   const content: Anthropic.ContentBlockParam[] = [];
   if (input.kind === "image") {
@@ -157,7 +168,7 @@ async function callOpenAi(
     });
   }
   const messages: ChatCompletionMessageParam[] = [
-    { role: "system", content: `${RECEIPT_EXTRACTION_PROMPT}\n\n${DATA_BLOCK_INSTRUCTION}` },
+    { role: "system", content: `${promptFor(input)}\n\n${DATA_BLOCK_INSTRUCTION}` },
     { role: "user", content: userContent },
   ];
 
@@ -216,7 +227,7 @@ export async function extractReceipt(args: {
   let redactor: ReturnType<typeof createRedactor> | null = null;
   if (input.kind === "text" && isRedactionEnabled(args.env)) {
     redactor = createRedactor({ names: ctx.redactNames });
-    input = { kind: "text", text: redactor.redact(input.text) };
+    input = { ...input, kind: "text", text: redactor.redact(input.text) };
   }
 
   const failures: Array<{ provider: "Anthropic" | "OpenAI"; error: unknown }> = [];
