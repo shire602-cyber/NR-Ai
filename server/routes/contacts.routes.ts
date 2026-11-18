@@ -12,6 +12,18 @@ import { sanitizePlainText, zEmirate, zText } from "../../shared/validators/prim
 import { emitDomainEvent } from "../platform/domain-events";
 import { errorMessage } from "../errors";
 import type { InsertCustomerContact } from "@shared/schema";
+import { contactIdentityFields } from "../../shared/validators/einvoice-identity";
+import { DomainError } from "../errors";
+import {
+  assertBuyerLegalId,
+  assertContactDefaults,
+  withLegacyAddress,
+  buyerLegalIds,
+  reconcileTaxRegistrations,
+  syncBuyerLegalId,
+  syncSupplierVendor,
+  withLegalId,
+} from "../services/contact-roles.service";
 
 const log = createLogger("contacts");
 
@@ -43,9 +55,21 @@ const contactFields = {
   emirate: zEmirate.optional().nullable(),
   notes: optText(2000),
   isActive: z.boolean().optional(),
+  // WQ5: customer and/or supplier role, structured address, typed registrations, defaults,
+  // buyer legal identifier (einvoice_buyer_endpoints).
+  ...contactIdentityFields,
 };
 const contactCreateSchema = z.object(contactFields);
 const contactUpdateSchema = z.object(contactFields).partial();
+type ContactBody = z.output<typeof contactUpdateSchema>;
+
+/** Split the body into contact columns and the buyer legal identifier (another table). */
+function splitLegal(body: ContactBody) {
+  const { legalIdType, legalId, legalIdCountry, ...rest } = body;
+  const legal = { legalIdType, legalId, legalIdCountry };
+  assertBuyerLegalId(legal);
+  return { rest, legal };
+}
 
 const contactImportPreviewSchema = z.object({
   fileName: z
@@ -138,7 +162,8 @@ export function registerContactRoutes(app: Express) {
       }
 
       const contacts = await storage.getCustomerContactsByCompanyId(companyId);
-      res.json(contacts);
+      const legal = await buyerLegalIds(companyId);
+      res.json(contacts.map((c) => withLegalId(c, legal)));
     })
   );
 
@@ -157,10 +182,19 @@ export function registerContactRoutes(app: Express) {
       }
 
       // Validated + sanitised body, then pin the tenant scope.
+      const { rest, legal } = splitLegal(contactCreateSchema.parse(req.body ?? {}));
       const contactData: InsertCustomerContact = {
-        ...contactCreateSchema.parse(req.body ?? {}),
+        ...withLegacyAddress(reconcileTaxRegistrations(rest)),
         companyId,
-      };
+      } as InsertCustomerContact;
+      if (contactData.isCustomer === false && !contactData.isSupplier) {
+        throw new DomainError(
+          "CONTACT_ROLE_REQUIRED",
+          422,
+          undefined,
+          "A contact is a customer, a supplier or both"
+        );
+      }
 
       // H7: a UAE TRN is exactly 15 digits. Reject a malformed non-empty TRN so
       // a bad value (e.g. "123") cannot land on a contact and later break a tax
@@ -184,14 +218,24 @@ export function registerContactRoutes(app: Express) {
         }
       }
 
-      const contact = await storage.createCustomerContact(contactData);
+      await assertContactDefaults(companyId, contactData as never);
+      // WQ5: a supplier contact gets (or adopts) its vendors row first, so bills can pick it.
+      const vendorId = await syncSupplierVendor(companyId, {
+        ...(contactData as never as Record<string, unknown>),
+        name: contactData.name,
+        isSupplier: !!contactData.isSupplier,
+        vendorId: null,
+      });
+      let contact = await storage.createCustomerContact({ ...contactData, vendorId });
+      await syncBuyerLegalId(companyId, contact.id, legal);
       emitDomainEvent("contact.created", {
         companyId,
         entityId: contact.id,
-        kind: "customer",
+        kind: contact.isCustomer === false && contact.isSupplier ? "vendor" : "customer",
         actorUserId: userId,
       });
-      res.json(contact);
+      contact = (await storage.getCustomerContact(contact.id)) ?? contact;
+      res.json(withLegalId(contact, await buyerLegalIds(companyId)));
     })
   );
 
@@ -426,15 +470,46 @@ export function registerContactRoutes(app: Express) {
 
       // S-M1: allowlist update fields (tenant scope cannot be changed here).
       // S-L3: scope the write to the company.
-      const updateData = contactUpdateSchema.parse(req.body ?? {});
+      const { rest, legal } = splitLegal(contactUpdateSchema.parse(req.body ?? {}));
+      const updateData = withLegacyAddress(
+        reconcileTaxRegistrations(rest, {
+          trnNumber: existing.trnNumber,
+          taxRegistrations: existing.taxRegistrations,
+        }),
+        existing
+      );
       if (updateData.trnNumber && !/^[0-9]{15}$/.test(updateData.trnNumber)) {
         return res.status(422).json({
           message: "UAE TRN must be exactly 15 digits.",
           code: "INVALID_TRN",
         });
       }
-      const contact = await storage.updateCustomerContact(id, updateData, companyId);
-      res.json(contact);
+      const isCustomer = updateData.isCustomer ?? existing.isCustomer;
+      const isSupplier = updateData.isSupplier ?? existing.isSupplier;
+      if (!isCustomer && !isSupplier) {
+        throw new DomainError(
+          "CONTACT_ROLE_REQUIRED",
+          422,
+          undefined,
+          "A contact is a customer, a supplier or both"
+        );
+      }
+      await assertContactDefaults(companyId, updateData as never);
+      // WQ5: keep the linked vendors row in step (or create it when the role is switched on).
+      const merged = { ...existing, ...updateData } as Record<string, unknown>;
+      const vendorId = await syncSupplierVendor(companyId, {
+        ...(merged as Record<string, never>),
+        name: String(merged.name),
+        isSupplier,
+        vendorId: existing.vendorId ?? null,
+      });
+      const contact = await storage.updateCustomerContact(
+        id,
+        { ...(updateData as Partial<InsertCustomerContact>), vendorId },
+        companyId
+      );
+      await syncBuyerLegalId(companyId, id, legal);
+      res.json(withLegalId(contact, await buyerLegalIds(companyId)));
     })
   );
 

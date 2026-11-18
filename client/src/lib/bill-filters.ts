@@ -7,6 +7,7 @@
 
 export const BILL_STATUS_FILTERS = [
   "all",
+  "to_complete",
   "open",
   "pending",
   "approved",
@@ -18,6 +19,9 @@ export type BillStatusFilter = (typeof BILL_STATUS_FILTERS)[number];
 
 /** Bill states that still owe money (accept a payment). */
 export const PAYABLE_BILL_STATUSES = ["approved", "overdue", "partial"];
+
+/** WQ2: drafts and rejected bills still need the maker's work before approval. */
+export const TO_COMPLETE_STATUSES = ["draft", "rejected"];
 
 export const BILL_PAY_TABS = ["bills", "payments", "summary"] as const;
 export type BillPayTab = (typeof BILL_PAY_TABS)[number];
@@ -61,7 +65,9 @@ export function filterBills<T extends FilterableBill>(
   todayIso: string = new Date().toISOString().slice(0, 10)
 ): T[] {
   let out = [...bills];
-  if (status === "open") {
+  if (status === "to_complete") {
+    out = out.filter((b) => TO_COMPLETE_STATUSES.includes(b.status));
+  } else if (status === "open") {
     out = out.filter((b) => PAYABLE_BILL_STATUSES.includes(b.status));
   } else if (status === "overdue") {
     out = out.filter(
@@ -81,6 +87,51 @@ export function filterBills<T extends FilterableBill>(
     );
   }
   return out;
+}
+
+// ── WQ2 (8.15): status tabs ──────────────────────────────────────────────────
+
+/**
+ * The bill list tabs, in order. Each maps to one status filter, so the URL (?status=) and a
+ * dashboard drill-through select the same tab. "To pay" counts every bill that still owes money
+ * (overdue ones included); "Overdue" is the past-due part of it.
+ */
+export const BILL_LIST_TABS = [
+  { id: "to_complete", filter: "to_complete" },
+  { id: "to_approve", filter: "pending" },
+  { id: "to_pay", filter: "open" },
+  { id: "overdue", filter: "overdue" },
+  { id: "paid", filter: "paid" },
+  // Sixth tab: ScrollTabs (spec 2.4, at most 5 visible) puts it in the "More" menu.
+  { id: "all", filter: "all" },
+] as const;
+export type BillListTabId = (typeof BILL_LIST_TABS)[number]["id"];
+
+/** The tab a status filter belongs to (approved / partial have none: they show under All). */
+export function billTabForFilter(filter: string): BillListTabId {
+  return BILL_LIST_TABS.find((t) => t.filter === filter)?.id ?? "all";
+}
+
+export interface ApprovalQueueEntry {
+  bill_id: string;
+  awaiting_me: boolean;
+}
+
+/**
+ * Count per tab (the same rules as filterBills, so a count always equals the rows its tab shows),
+ * plus how many pending bills wait for the current user's sign-off under the approval rules.
+ */
+export function billTabCounts<T extends FilterableBill & { id: string }>(
+  bills: readonly T[],
+  queue: readonly ApprovalQueueEntry[] = [],
+  todayIso: string = new Date().toISOString().slice(0, 10)
+): Record<BillListTabId, number> & { awaitingMe: number } {
+  const counts = Object.fromEntries(
+    BILL_LIST_TABS.map((tab) => [tab.id, filterBills(bills, tab.filter, "", todayIso).length])
+  ) as Record<BillListTabId, number>;
+  const pending = new Set(bills.filter((b) => b.status === "pending").map((b) => b.id));
+  const awaitingMe = queue.filter((q) => q.awaiting_me && pending.has(q.bill_id)).length;
+  return { ...counts, awaitingMe };
 }
 
 /** An inbound e-invoice row (GET /api/companies/:id/einvoicing/inbound). */

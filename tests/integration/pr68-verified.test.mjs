@@ -10,7 +10,7 @@
 //   - payment chasing net of credit notes (PR-61); Art. 53 on expense claims (PR-61)
 //   - month-end checklist for a quarterly filer (PR-66 / E3)
 //   - e-invoice pre-flight: buyer without TRN or endpoint gets EINVOICE_BUYER_ENDPOINT_MISSING
-//   - migration 0127: both settlement indexes exist, are valid and are used by the planner
+//   - migration 0129: both settlement indexes exist, are valid and are used by the planner
 //
 // Requires BASE_URL (running server, started with STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET set
 // to test values; without them the Stripe checks are skipped) and DATABASE_URL (to set up roles
@@ -426,19 +426,19 @@ async function main() {
     );
   }
 
-  // ── migration 0127 ─────────────────────────────────────────────────────────
+  // ── migration 0129 ─────────────────────────────────────────────────────────
   {
     const idx = await q(
       `SELECT indexrelid::regclass::text AS name, indisvalid FROM pg_index
         WHERE indexrelid::regclass::text IN ('idx_invoices_original_invoice_id','idx_credit_notes_invoice_id')`
     );
     ok(
-      "0127: both settlement indexes exist and are valid",
+      "0129: both settlement indexes exist and are valid",
       idx.length === 2 && idx.every((i) => i.indisvalid),
       idx
     );
     const ledger = await q(`SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`);
-    ok("0127: migration ledger includes 0127 (127+ rows)", ledger[0].n >= 127, ledger);
+    ok("0129: migration ledger includes 0129 (129+ rows)", ledger[0].n >= 129, ledger);
     await q("SET enable_seqscan = off");
     const plan = await q(
       `EXPLAIN SELECT 1 FROM invoices c WHERE c.original_invoice_id = $1::uuid`,
@@ -446,7 +446,7 @@ async function main() {
     );
     await q("SET enable_seqscan = on");
     ok(
-      "0127: the planner can use idx_invoices_original_invoice_id",
+      "0129: the planner can use idx_invoices_original_invoice_id",
       JSON.stringify(plan).includes("idx_invoices_original_invoice_id"),
       plan
     );

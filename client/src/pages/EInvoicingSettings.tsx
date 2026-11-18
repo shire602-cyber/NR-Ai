@@ -34,6 +34,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { EInvoiceProviderCard } from "@/components/einvoice/EInvoiceProviderCard";
+import { EInvoicePartnerCard } from "@/components/einvoice/EInvoicePartnerCard";
 
 // UAE e-invoicing (PINT AE) settings: identity, scope, ASP status, per-invoice
 // validation, archive and inbound documents (W4-C, R07-04/R07-13/R03-18/R04-23).
@@ -401,6 +402,11 @@ export default function EInvoicingSettings() {
           <>
             {/* E1/E2: the configured accredited provider's guided connection (or "Not connected"). */}
             {companyId && <EInvoiceProviderCard companyId={companyId} />}
+
+            {/* WQ5: choose the accredited partner (no default), appoint it, verify it. */}
+            {companyId && (
+              <EInvoicePartnerCard companyId={companyId} companyName={activeCompany?.name ?? ""} />
+            )}
 
             <Card>
               <CardHeader>

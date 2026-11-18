@@ -19,7 +19,6 @@
 // seeded chart uses for Loss on Asset Disposal, R11-04).
 
 import { sql, type SQL } from "drizzle-orm";
-import { boolean, numeric, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { storage } from "../storage";
 import { ACCOUNT_CODES } from "../constants";
 import { createLogger } from "../config/logger";
@@ -37,6 +36,7 @@ import {
   type PostJournalLineInput,
 } from "../ledger";
 import type { Account } from "../../shared/schema";
+import { vendorBills } from "../../shared/schema";
 import { afterBillPosted, planBillStock, reverseBillStock } from "./inventory/documents";
 import { fixedAssetCostAccountIds, syncBillAssets, type BillAssetLine } from "./fixed-assets/index";
 import { loadRecoveryRules, resolveRecovery } from "../tax/vat-recovery";
@@ -92,24 +92,10 @@ export const PAYABLE_BILL_STATES: readonly BillState[] = ["approved", "overdue",
 export const EDITABLE_BILL_STATES: readonly BillState[] = ["draft", "pending", "rejected"];
 
 /**
- * Minimal Drizzle mirror of the raw-SQL vendor_bills table, so status changes go through the
- * kernel's transitionRow (one conditional UPDATE). Only the columns transitions touch.
+ * The vendor_bills table (shared/schema/purchasing.ts, WQ2 8.8), so status changes go through the
+ * kernel's transitionRow (one conditional UPDATE).
  */
-export const vendorBillsTable = pgTable("vendor_bills", {
-  id: uuid("id").primaryKey(),
-  companyId: uuid("company_id").notNull(),
-  status: text("status"),
-  approvedBy: uuid("approved_by"),
-  approvedAt: timestamp("approved_at"),
-  paidAt: timestamp("paid_at"),
-  rejectedBy: uuid("rejected_by"),
-  rejectedAt: timestamp("rejected_at"),
-  voidedBy: uuid("voided_by"),
-  voidedAt: timestamp("voided_at"),
-  statusReason: text("status_reason"),
-  amountPaid: numeric("amount_paid"),
-  reverseCharge: boolean("reverse_charge"),
-});
+export const vendorBillsTable = vendorBills;
 
 // ─── Raw SQL inside a ledger transaction ────────────────────────────────────
 

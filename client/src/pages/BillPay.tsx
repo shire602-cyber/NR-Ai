@@ -72,13 +72,27 @@ import { PurchaseAccountOptions } from "@/components/accounts/PurchaseAccountOpt
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
-import { useSearch } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { InboundCreditNotesCard } from "@/components/bills/InboundCreditNotesCard";
+import {
+  BillCapturePanel,
+  ConfidenceBadge,
+  type PendingBillFile,
+} from "@/components/bills/BillCapturePanel";
+import { SupplierPicker, type SupplierOption } from "@/components/bills/SupplierPicker";
+import { BillItemPicker } from "@/components/bills/BillItemPicker";
+import { isStockItem, purchasePriceOf } from "@/lib/purchase-pickers";
+import { ScrollTabs } from "@/components/ui/scroll-tabs";
+import type { BillCaptureResult, BillCaptureField } from "@shared/bill-capture";
 import { EInvoiceOriginTag } from "@/components/einvoice/EInvoiceListCell";
 import {
   billPayTabFromSearch,
   billStatusFilterFromSearch,
+  billTabCounts,
+  billTabForFilter,
+  BILL_LIST_TABS,
   filterBills,
+  type ApprovalQueueEntry,
   type BillPayTab,
 } from "@/lib/bill-filters";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
@@ -104,6 +118,8 @@ import {
   Send,
   Ban,
   Search,
+  Undo2,
+  Paperclip,
 } from "lucide-react";
 import {
   defaultPaymentAccountId,
@@ -253,6 +269,9 @@ interface VendorBill {
   display_status?: string;
   /** E1: "einvoice" when the bill was created from a received structured e-invoice. */
   origin?: string | null;
+  vendor_id?: string | null;
+  has_attachment?: boolean;
+  attachment_name?: string | null;
 }
 
 interface BillLineItem {
@@ -266,6 +285,7 @@ interface BillLineItem {
   account_id: string | null;
   cost_center_id?: string | null;
   vat_supply_type?: string;
+  product_id?: string | null;
   created_at: string;
 }
 
@@ -313,9 +333,11 @@ const billLineSchema = z.object({
   vat_supply_type: z.string().default("standard_rated"),
   account_id: z.string().optional(),
   cost_center_id: z.string().optional(),
+  product_id: z.string().optional(),
 });
 
 const billFormSchema = z.object({
+  vendor_id: z.string().optional(),
   vendor_name: z.string().min(1, "forms.errors.vendorNameRequired"),
   vendor_trn: z.string().optional(),
   bill_number: z.string().optional(),
@@ -360,6 +382,20 @@ type PaymentFormData = z.infer<typeof paymentFormSchema>;
 /** Select sentinel for "no cost centre" (Radix Select items cannot have an empty value). */
 const NO_COST_CENTER = "__none__";
 
+const EMPTY_LINE = {
+  description: "",
+  quantity: 1,
+  unit_price: 0,
+  vat_rate: 5,
+  vat_supply_type: "standard_rated",
+  account_id: "",
+  cost_center_id: "",
+  product_id: "",
+};
+
+/** WQ2 (8.13): enter the bill as one amount (Summary) or line by line. */
+type LineMode = "summary" | "lines";
+
 export default function BillPay() {
   const { t, locale } = useTranslation();
   const c: Copy = COPY[locale === "ar" ? "ar" : "en"];
@@ -387,6 +423,12 @@ export default function BillPay() {
     billStatusFilterFromSearch(search)
   );
   const [vendorSearch, setVendorSearch] = useState("");
+  // WQ2: the supplier invoice in the editor (uploaded as the attachment on save) and what the
+  // capture read from it; nothing is stored until the bill is saved.
+  const [pendingFile, setPendingFile] = useState<PendingBillFile | null>(null);
+  const [capture, setCapture] = useState<BillCaptureResult | null>(null);
+  const [lineMode, setLineMode] = useState<LineMode>("lines");
+  const [, navigate] = useLocation();
   // A later drill-through (?status= / ?tab=) while the page is open re-applies the filter.
   const [appliedSearch, setAppliedSearch] = useState(search);
   if (appliedSearch !== search) {
@@ -433,6 +475,25 @@ export default function BillPay() {
     queryKey: ["/api/companies", companyId, "bills", "aging"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills/aging`),
     enabled: !!companyId,
+  });
+
+  // WQ2 (8.15): pending bills and whether this user may sign the next step (approval rules).
+  const { data: approvalQueue = [] } = useQuery<ApprovalQueueEntry[]>({
+    queryKey: ["/api/companies", companyId, "bills", "approval-queue"],
+    queryFn: () => apiRequest("GET", `/api/companies/${companyId}/bills/approval-queue`),
+    enabled: !!companyId,
+    retry: false,
+  });
+  const awaitingMe = useMemo(
+    () => new Set(approvalQueue.filter((q) => q.awaiting_me).map((q) => q.bill_id)),
+    [approvalQueue]
+  );
+  const tabCounts = useMemo(() => billTabCounts(bills, approvalQueue), [bills, approvalQueue]);
+
+  // WQ2 (8.2): OCR capture says whether AI reading is enabled at all.
+  const { data: ocrStatus } = useQuery<{ aiConfigured: boolean }>({
+    queryKey: ["/api/ocr/status"],
+    retry: false,
   });
 
   // Get all payments across bills
@@ -484,6 +545,7 @@ export default function BillPay() {
   const billForm = useForm<BillFormData>({
     resolver: zodResolver(billFormSchema),
     defaultValues: {
+      vendor_id: "",
       vendor_name: "",
       vendor_trn: "",
       bill_number: "",
@@ -498,17 +560,7 @@ export default function BillPay() {
       place_of_supply: "",
       category: "",
       notes: "",
-      line_items: [
-        {
-          description: "",
-          quantity: 1,
-          unit_price: 0,
-          vat_rate: 5,
-          vat_supply_type: "standard_rated",
-          account_id: "",
-          cost_center_id: "",
-        },
-      ],
+      line_items: [{ ...EMPTY_LINE }],
     },
   });
 
@@ -552,6 +604,7 @@ export default function BillPay() {
   };
 
   const buildBillPayload = (data: BillFormData) => ({
+    vendor_id: data.vendor_id || null,
     vendor_name: data.vendor_name,
     vendor_trn: data.vendor_trn || null,
     bill_number: data.bill_number || null,
@@ -574,12 +627,36 @@ export default function BillPay() {
       vat_rate: ["zero_rated", "exempt", "out_of_scope"].includes(l.vat_supply_type) ? 0 : 5,
       account_id: l.account_id || null,
       cost_center_id: l.cost_center_id || null,
+      product_id: l.product_id || null,
     })),
   });
 
+  /** WQ2: the file chosen in the editor becomes the bill's attachment once the bill is saved. */
+  const uploadPendingFile = async (billId: string) => {
+    if (!pendingFile) return;
+    try {
+      await apiRequest("POST", `/api/bills/${billId}/attachment`, {
+        file: pendingFile.dataUrl,
+        filename: pendingFile.name.slice(0, 200),
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: t["purchases.capture.attachFailed"],
+        description: (error as Error)?.message,
+      });
+    }
+  };
+
   const createBillMutation = useMutation({
-    mutationFn: (data: BillFormData) => {
-      return apiRequest("POST", `/api/companies/${companyId}/bills`, buildBillPayload(data));
+    mutationFn: async (data: BillFormData) => {
+      const bill = await apiRequest(
+        "POST",
+        `/api/companies/${companyId}/bills`,
+        buildBillPayload(data)
+      );
+      if (bill?.id) await uploadPendingFile(bill.id);
+      return bill;
     },
     onSuccess: () => {
       invalidateBills();
@@ -599,11 +676,22 @@ export default function BillPay() {
   });
 
   const updateBillMutation = useMutation({
-    mutationFn: ({ id, data, reason }: { id: string; data: BillFormData; reason?: string }) => {
+    mutationFn: async ({
+      id,
+      data,
+      reason,
+    }: {
+      id: string;
+      data: BillFormData;
+      reason?: string;
+    }) => {
       const payload = buildBillPayload(data);
       // Approved bills are corrected by reversal + repost (POST /revise), never edited in place.
-      if (reason) return apiRequest("POST", `/api/bills/${id}/revise`, { ...payload, reason });
-      return apiRequest("PATCH", `/api/bills/${id}`, payload);
+      const out = reason
+        ? await apiRequest("POST", `/api/bills/${id}/revise`, { ...payload, reason })
+        : await apiRequest("PATCH", `/api/bills/${id}`, payload);
+      await uploadPendingFile(id);
+      return out;
     },
     onSuccess: () => {
       invalidateBills();
@@ -721,6 +809,7 @@ export default function BillPay() {
 
   const resetBillForm = () => {
     billForm.reset({
+      vendor_id: "",
       vendor_name: "",
       vendor_trn: "",
       bill_number: "",
@@ -735,26 +824,23 @@ export default function BillPay() {
       place_of_supply: "",
       category: "",
       notes: "",
-      line_items: [
-        {
-          description: "",
-          quantity: 1,
-          unit_price: 0,
-          vat_rate: 5,
-          vat_supply_type: "standard_rated",
-          account_id: "",
-          cost_center_id: "",
-        },
-      ],
+      line_items: [{ ...EMPTY_LINE }],
     });
     setEditingBill(null);
+    setPendingFile(null);
+    setCapture(null);
+    setLineMode("lines");
   };
 
   const handleEditBill = async (bill: VendorBill) => {
     try {
       const detail: BillDetail = await apiRequest("GET", `/api/bills/${bill.id}`);
       setEditingBill(detail);
+      setPendingFile(null);
+      setCapture(null);
+      setLineMode("lines");
       billForm.reset({
+        vendor_id: detail.vendor_id || "",
         vendor_name: detail.vendor_name,
         vendor_trn: detail.vendor_trn || "",
         bill_number: detail.bill_number || "",
@@ -784,18 +870,9 @@ export default function BillPay() {
                   l.vat_supply_type ?? (Number(l.vat_rate) === 0 ? "zero_rated" : "standard_rated"),
                 account_id: l.account_id || "",
                 cost_center_id: l.cost_center_id || "",
+                product_id: l.product_id || "",
               }))
-            : [
-                {
-                  description: "",
-                  quantity: 1,
-                  unit_price: 0,
-                  vat_rate: 5,
-                  vat_supply_type: "standard_rated",
-                  account_id: "",
-                  cost_center_id: "",
-                },
-              ],
+            : [{ ...EMPTY_LINE }],
       });
       setBillEditorOpen(true);
     } catch (error: any) {
@@ -895,6 +972,83 @@ export default function BillPay() {
   );
   const costCenterList = Array.isArray(costCenters) ? costCenters : [];
 
+  // ── WQ2: supplier, item and capture handlers ───────────────────────────
+  /** A supplier's default expense account goes on the lines that have none yet. */
+  const applySupplierDefaults = (supplier: {
+    defaultExpenseAccountId?: string | null;
+    paymentTermsDays?: number | null;
+  }) => {
+    const lines = billForm.getValues("line_items");
+    if (supplier.defaultExpenseAccountId) {
+      lines.forEach((l, i) => {
+        if (!l.account_id && !l.product_id)
+          billForm.setValue(`line_items.${i}.account_id`, supplier.defaultExpenseAccountId!);
+      });
+    }
+    const billDate = billForm.getValues("bill_date");
+    const terms = supplier.paymentTermsDays;
+    if (billDate && !billForm.getValues("due_date") && typeof terms === "number" && terms > 0) {
+      const due = new Date(billDate);
+      due.setDate(due.getDate() + terms);
+      billForm.setValue("due_date", due);
+    }
+  };
+
+  const pickSupplier = (s: SupplierOption) => {
+    billForm.setValue("vendor_id", s.id);
+    billForm.setValue("vendor_name", s.name, { shouldValidate: true });
+    billForm.setValue("vendor_trn", s.trn ?? "");
+    if (s.currency && !editingBill && !capture) billForm.setValue("currency", s.currency);
+    applySupplierDefaults(s);
+  };
+
+  const pickItem = (index: number, item: Parameters<typeof purchasePriceOf>[0] | null) => {
+    billForm.setValue(`line_items.${index}.product_id`, item?.id ?? "");
+    if (!item) return;
+    billForm.setValue(`line_items.${index}.description`, item.name, { shouldValidate: true });
+    billForm.setValue(`line_items.${index}.unit_price`, purchasePriceOf(item));
+    // A stock item is posted to inventory by the item itself; its line takes no expense account.
+    if (isStockItem(item)) billForm.setValue(`line_items.${index}.account_id`, "");
+  };
+
+  /** Fill the form from a capture. The user reviews it; nothing is saved here. */
+  const applyCapture = (result: BillCaptureResult) => {
+    setCapture(result);
+    const d = result.draft;
+    billForm.setValue("vendor_id", d.vendor_id ?? "");
+    billForm.setValue("vendor_name", d.vendor_name, { shouldValidate: !!d.vendor_name });
+    billForm.setValue("vendor_trn", d.vendor_trn ?? "");
+    billForm.setValue("bill_number", d.bill_number ?? "");
+    if (d.bill_date) billForm.setValue("bill_date", parseCalendarDate(d.bill_date));
+    billForm.setValue("due_date", d.due_date ? parseCalendarDate(d.due_date) : undefined);
+    billForm.setValue("currency", d.currency);
+    billForm.setValue("reverse_charge", d.reverse_charge);
+    const supplier = d.vendor_id
+      ? (
+          queryClient.getQueryData<SupplierOption[]>(["/api/companies", companyId, "vendors"]) ?? []
+        ).find((s) => s.id === d.vendor_id)
+      : undefined;
+    billForm.setValue(
+      "line_items",
+      d.line_items.map((l) => ({
+        ...EMPTY_LINE,
+        description: l.description,
+        quantity: l.quantity,
+        unit_price: Number(l.unit_price),
+        vat_supply_type: l.vat_supply_type,
+        vat_rate: l.vat_supply_type === "zero_rated" ? 0 : 5,
+        account_id: supplier?.defaultExpenseAccountId ?? "",
+      }))
+    );
+    setLineMode(d.line_items.length > 1 ? "lines" : "summary");
+  };
+
+  /** Confidence pill next to a form label, after a capture. */
+  const conf = (field: BillCaptureField) =>
+    capture ? (
+      <ConfidenceBadge band={capture.confidence[field]} testId={`field-confidence-${field}`} />
+    ) : null;
+
   // ===========================
   // Render
   // ===========================
@@ -926,6 +1080,40 @@ export default function BillPay() {
       eyebrow="Purchases"
       title={editingBill ? t["screens.editBill"] : t["screens.newVendorBill"]}
       description={editingBill ? t["screens.billDialogEditDesc"] : t["screens.billDialogNewDesc"]}
+      preview={
+        <BillCapturePanel
+          companyId={companyId}
+          file={pendingFile}
+          onFile={(f) => {
+            setPendingFile(f);
+            if (!f) setCapture(null);
+          }}
+          storedAttachment={
+            editingBill?.has_attachment
+              ? { billId: editingBill.id, name: editingBill.attachment_name ?? null }
+              : null
+          }
+          onCaptured={applyCapture}
+          result={capture}
+          aiAvailable={ocrStatus?.aiConfigured !== false}
+        />
+      }
+      previewLabel={t["purchases.capture.title"]}
+      mobilePreview="first"
+      headerActions={
+        editingBill && ["approved", "partial", "paid", "overdue"].includes(editingBill.status) ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => navigate(`/debit-notes/new?billId=${editingBill.id}`)}
+            {...gate("ledger.post")}
+            data-testid="button-supplier-credit"
+          >
+            <Undo2 className="h-4 w-4" aria-hidden />
+            {t["purchases.debitNote.fromBill"]}
+          </Button>
+        ) : undefined
+      }
       footerSummary={
         <span className="flex flex-wrap items-baseline gap-x-2" data-testid="editor-total">
           <span>{t["invoices.editor.total"]}</span>
@@ -973,13 +1161,32 @@ export default function BillPay() {
               <FormField
                 control={billForm.control}
                 name="vendor_name"
-                render={({ field }) => (
+                render={({ field, fieldState }) => (
                   <FormItem>
-                    <FormLabel required>
-                      <T k="pages.vendorName" />
+                    <FormLabel required className="flex items-center gap-2">
+                      {t["purchases.supplier.label"]}
+                      {conf("supplier")}
                     </FormLabel>
                     <FormControl>
-                      <Input {...field} dir="auto" placeholder={t["screens.vendorCompanyName"]} />
+                      <SupplierPicker
+                        ref={field.ref}
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        companyId={companyId}
+                        vendorId={billForm.watch("vendor_id")}
+                        vendorName={field.value}
+                        invalid={!!fieldState.error}
+                        onPick={pickSupplier}
+                        onFreeText={(name) => {
+                          billForm.setValue("vendor_id", "");
+                          field.onChange(name);
+                        }}
+                        createSuggestion={
+                          capture && capture.supplierMatch === "none"
+                            ? { name: capture.draft.vendor_name, trn: capture.draft.vendor_trn }
+                            : null
+                        }
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1018,8 +1225,9 @@ export default function BillPay() {
                 name="bill_number"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
+                    <FormLabel className="flex items-center gap-2">
                       <T k="pages.billNumber" />
+                      {conf("billNumber")}
                     </FormLabel>
                     <FormControl>
                       <Input {...field} ltr placeholder={t["forms.bill.numberHint"]} />
@@ -1081,8 +1289,12 @@ export default function BillPay() {
                   name={name}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel required={name === "bill_date"}>
+                      <FormLabel
+                        required={name === "bill_date"}
+                        className="flex items-center gap-2"
+                      >
                         {name === "bill_date" ? <T k="pages.billDate" /> : <T k="pages.dueDate" />}
+                        {name === "bill_date" && conf("billDate")}
                       </FormLabel>
                       <Popover>
                         <PopoverTrigger asChild>
@@ -1118,8 +1330,9 @@ export default function BillPay() {
                 name="currency"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>
+                    <FormLabel className="flex items-center gap-2">
                       <T k="pages.currency" />
+                      {conf("currency")}
                     </FormLabel>
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
@@ -1247,165 +1460,160 @@ export default function BillPay() {
           </FormSection>
 
           <FormSection
-            title={<T k="pages.lineItems" />}
-            description={t["forms.section.linesDesc"]}
+            title={
+              <span className="flex items-center gap-2">
+                {lineMode === "summary" ? t["purchases.lines.summary"] : <T k="pages.lineItems" />}
+                {conf("lines")}
+              </span>
+            }
+            description={
+              lineMode === "summary"
+                ? t["purchases.lines.summaryDesc"]
+                : t["forms.section.linesDesc"]
+            }
             actions={
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  appendLine({
-                    description: "",
-                    quantity: 1,
-                    unit_price: 0,
-                    vat_rate: 5,
-                    vat_supply_type: "standard_rated",
-                    account_id: "",
-                    cost_center_id: "",
-                  })
-                }
-              >
-                <Plus className="h-4 w-4" />
-                <T k="pages.addLine" />
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <div
+                  role="group"
+                  aria-label={t["purchases.lines.modeLabel"]}
+                  className="inline-flex rounded-lg border p-0.5"
+                  data-testid="bill-line-mode"
+                >
+                  {(["summary", "lines"] as const).map((m) => (
+                    <Button
+                      key={m}
+                      type="button"
+                      size="sm"
+                      variant={lineMode === m ? "secondary" : "ghost"}
+                      aria-pressed={lineMode === m}
+                      disabled={m === "summary" && lineFields.length > 1}
+                      title={
+                        m === "summary" && lineFields.length > 1
+                          ? t["purchases.lines.summaryNeedsOne"]
+                          : undefined
+                      }
+                      onClick={() => {
+                        if (m === "summary") billForm.setValue("line_items.0.quantity", 1);
+                        setLineMode(m);
+                      }}
+                      data-testid={`bill-line-mode-${m}`}
+                    >
+                      {m === "summary"
+                        ? t["purchases.lines.modeSummary"]
+                        : t["purchases.lines.modeLines"]}
+                    </Button>
+                  ))}
+                </div>
+                {lineMode === "lines" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => appendLine({ ...EMPTY_LINE })}
+                  >
+                    <Plus className="h-4 w-4" />
+                    <T k="pages.addLine" />
+                  </Button>
+                )}
+              </div>
             }
           >
             <LineItemList>
-              {lineFields.map((field, index) => (
-                <LineItem
-                  key={field.id}
-                  index={index}
-                  onRemove={() => removeLine(index)}
-                  canRemove={lineFields.length > 1}
-                  gridClassName="sm:grid-cols-3"
-                  main={
+              {lineFields.map((field, index) =>
+                lineMode === "summary" && index > 0 ? null : (
+                  <LineItem
+                    key={field.id}
+                    index={index}
+                    onRemove={() => removeLine(index)}
+                    canRemove={lineFields.length > 1 && lineMode === "lines"}
+                    gridClassName="sm:grid-cols-3"
+                    main={
+                      <FormField
+                        control={billForm.control}
+                        name={`line_items.${index}.description`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                dir="auto"
+                                placeholder={t.description}
+                                aria-label={formatMessage(t["forms.lineDescription"], {
+                                  n: index + 1,
+                                })}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    }
+                  >
+                    {lineMode === "lines" && (
+                      <BillItemPicker
+                        companyId={companyId}
+                        index={index}
+                        value={watchLines[index]?.product_id}
+                        onPick={(item) => pickItem(index, item)}
+                      />
+                    )}
+                    {lineMode === "lines" && (
+                      <FormField
+                        control={billForm.control}
+                        name={`line_items.${index}.quantity`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className={lineLabelClass}>{t["forms.col.qty"]}</FormLabel>
+                            <FormControl>
+                              <Input {...field} type="number" step="0.01" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
                     <FormField
                       control={billForm.control}
-                      name={`line_items.${index}.description`}
+                      name={`line_items.${index}.unit_price`}
                       render={({ field }) => (
                         <FormItem>
+                          <FormLabel className={lineLabelClass}>
+                            {lineMode === "summary"
+                              ? t["purchases.lines.amountBeforeVat"]
+                              : t["forms.col.unitPrice"]}
+                          </FormLabel>
                           <FormControl>
-                            <Input
-                              {...field}
-                              dir="auto"
-                              placeholder={t.description}
-                              aria-label={formatMessage(t["forms.lineDescription"], {
-                                n: index + 1,
-                              })}
-                            />
+                            <Input {...field} type="number" step="0.01" />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                  }
-                >
-                  <FormField
-                    control={billForm.control}
-                    name={`line_items.${index}.quantity`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={lineLabelClass}>{t["forms.col.qty"]}</FormLabel>
-                        <FormControl>
-                          <Input {...field} type="number" step="0.01" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={billForm.control}
-                    name={`line_items.${index}.unit_price`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={lineLabelClass}>{t["forms.col.unitPrice"]}</FormLabel>
-                        <FormControl>
-                          <Input {...field} type="number" step="0.01" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <LineAmount label={t["forms.col.amount"]}>
-                    <Money
-                      amount={
-                        (Number(watchLines[index]?.quantity) || 0) *
-                        (Number(watchLines[index]?.unit_price) || 0)
-                      }
-                      currency={watchCurrency || "AED"}
-                    />
-                  </LineAmount>
-                  <FormField
-                    control={billForm.control}
-                    name={`line_items.${index}.vat_supply_type`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={lineLabelClass}>{c.supplyType}</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder={c.supplyType} />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {SUPPLY_TYPES.map((st) => (
-                              <SelectItem key={st} value={st}>
-                                {supplyLabel(c, st)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={billForm.control}
-                    name={`line_items.${index}.account_id`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className={lineLabelClass}>{t["forms.col.account"]}</FormLabel>
-                        <Select value={field.value || ""} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder={t["screens.account"]} />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <PurchaseAccountOptions accounts={expenseAccounts} />
-                          </SelectContent>
-                        </Select>
-                        {index === 0 && (
-                          <FormDescription>{t["forms.controlAccountsHidden"]}</FormDescription>
-                        )}
-                      </FormItem>
-                    )}
-                  />
-                  {costCenterList.length > 0 && (
+                    <LineAmount label={t["forms.col.amount"]}>
+                      <Money
+                        amount={
+                          (Number(watchLines[index]?.quantity) || 0) *
+                          (Number(watchLines[index]?.unit_price) || 0)
+                        }
+                        currency={watchCurrency || "AED"}
+                      />
+                    </LineAmount>
                     <FormField
                       control={billForm.control}
-                      name={`line_items.${index}.cost_center_id`}
+                      name={`line_items.${index}.vat_supply_type`}
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className={lineLabelClass}>
-                            {t["purchases.costCenter"]}
-                          </FormLabel>
-                          <Select
-                            value={field.value || NO_COST_CENTER}
-                            onValueChange={(v) => field.onChange(v === NO_COST_CENTER ? "" : v)}
-                          >
+                          <FormLabel className={lineLabelClass}>{c.supplyType}</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
                             <FormControl>
-                              <SelectTrigger data-testid={`bill-line-cost-center-${index}`}>
-                                <SelectValue placeholder={t["purchases.costCenter"]} />
+                              <SelectTrigger>
+                                <SelectValue placeholder={c.supplyType} />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value={NO_COST_CENTER}>
-                                {t["purchases.noCostCenter"]}
-                              </SelectItem>
-                              {costCenterList.map((cc) => (
-                                <SelectItem key={cc.id} value={cc.id}>
-                                  {cc.code} · {cc.name}
+                              {SUPPLY_TYPES.map((st) => (
+                                <SelectItem key={st} value={st}>
+                                  {supplyLabel(c, st)}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -1413,9 +1621,64 @@ export default function BillPay() {
                         </FormItem>
                       )}
                     />
-                  )}
-                </LineItem>
-              ))}
+                    <FormField
+                      control={billForm.control}
+                      name={`line_items.${index}.account_id`}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className={lineLabelClass}>{t["forms.col.account"]}</FormLabel>
+                          <Select value={field.value || ""} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder={t["screens.account"]} />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <PurchaseAccountOptions accounts={expenseAccounts} />
+                            </SelectContent>
+                          </Select>
+                          {index === 0 && (
+                            <FormDescription>{t["forms.controlAccountsHidden"]}</FormDescription>
+                          )}
+                        </FormItem>
+                      )}
+                    />
+                    {costCenterList.length > 0 && (
+                      <FormField
+                        control={billForm.control}
+                        name={`line_items.${index}.cost_center_id`}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className={lineLabelClass}>
+                              {t["purchases.costCenter"]}
+                            </FormLabel>
+                            <Select
+                              value={field.value || NO_COST_CENTER}
+                              onValueChange={(v) => field.onChange(v === NO_COST_CENTER ? "" : v)}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid={`bill-line-cost-center-${index}`}>
+                                  <SelectValue placeholder={t["purchases.costCenter"]} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value={NO_COST_CENTER}>
+                                  {t["purchases.noCostCenter"]}
+                                </SelectItem>
+                                {costCenterList.map((cc) => (
+                                  <SelectItem key={cc.id} value={cc.id}>
+                                    {cc.code} · {cc.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormItem>
+                        )}
+                      />
+                    )}
+                  </LineItem>
+                )
+              )}
             </LineItemList>
             <FormTotals
               rows={[
@@ -1472,10 +1735,24 @@ export default function BillPay() {
         title={t["purchases.billsTitle"]}
         description={(t as any).billPaySubtitle ?? "Manage vendor bills, approvals, and payments"}
         actions={
-          <Button data-testid="button-new-bill" onClick={openNewBill} {...gate("documents.write")}>
-            <Plus className="w-4 h-4" />
-            <T k="pages.newBill" />
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              onClick={() => navigate("/debit-notes")}
+              data-testid="button-debit-notes"
+            >
+              <Undo2 className="w-4 h-4" aria-hidden />
+              {t["purchases.debitNote.listTitle"]}
+            </Button>
+            <Button
+              data-testid="button-new-bill"
+              onClick={openNewBill}
+              {...gate("documents.write")}
+            >
+              <Plus className="w-4 h-4" />
+              <T k="pages.newBill" />
+            </Button>
+          </>
         }
       />
 
@@ -1504,6 +1781,42 @@ export default function BillPay() {
         {/* ================================== */}
         <TabsContent value="bills" className="space-y-6 mt-0">
           <InboundCreditNotesCard companyId={companyId} />
+          {/* WQ2 (8.15): status tabs; each tab is one status filter (?status= keeps working). */}
+          <Tabs
+            value={billTabForFilter(statusFilter)}
+            onValueChange={(id) =>
+              setStatusFilter(BILL_LIST_TABS.find((tab) => tab.id === id)?.filter ?? "all")
+            }
+          >
+            <ScrollTabs
+              variant="line"
+              maxVisible={5}
+              value={billTabForFilter(statusFilter)}
+              onValueChange={(id) =>
+                setStatusFilter(BILL_LIST_TABS.find((tab) => tab.id === id)?.filter ?? "all")
+              }
+              moreLabel={t["purchases.tabs.more"]}
+              aria-label={t["purchases.tabs.label"]}
+              data-testid="bill-status-tabs"
+            >
+              {BILL_LIST_TABS.map((tab) => (
+                <TabsTrigger key={tab.id} value={tab.id} data-testid={`bill-tab-${tab.id}`}>
+                  {t[`purchases.tabs.${tab.id}`]}
+                  <span
+                    className="ms-1.5 rounded-full bg-muted px-1.5 text-xs tabular-nums text-muted-foreground"
+                    data-testid={`bill-tab-count-${tab.id}`}
+                  >
+                    {tabCounts[tab.id]}
+                  </span>
+                </TabsTrigger>
+              ))}
+            </ScrollTabs>
+          </Tabs>
+          {billTabForFilter(statusFilter) === "to_approve" && (
+            <p className="text-sm text-muted-foreground" data-testid="bill-awaiting-me">
+              {formatMessage(t["purchases.tabs.awaitingMe"], { n: tabCounts.awaitingMe })}
+            </p>
+          )}
           {/* Filters (one row, not in a card) */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative w-full sm:w-72">
@@ -1519,32 +1832,6 @@ export default function BillPay() {
                 aria-label={t["screens.searchVendorOrBill"]}
               />
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="h-9 w-full sm:w-44" aria-label={t.status}>
-                <SelectValue placeholder={t.status} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  <T k="pages.allStatuses" />
-                </SelectItem>
-                <SelectItem value="open">
-                  <T k="pages.billsOpenUnpaid" />
-                </SelectItem>
-                <SelectItem value="pending">
-                  <T k="pages.pending" />
-                </SelectItem>
-                <SelectItem value="approved">
-                  <T k="pages.approved" />
-                </SelectItem>
-                <SelectItem value="partial">
-                  <T k="pages.partial" />
-                </SelectItem>
-                <SelectItem value="paid">{c.paidStatus}</SelectItem>
-                <SelectItem value="overdue">
-                  <T k="pages.overdue" />
-                </SelectItem>
-              </SelectContent>
-            </Select>
           </div>
 
           <DataTableCard
@@ -1602,6 +1889,17 @@ export default function BillPay() {
                       >
                         {bill.vendor_name}
                         <EInvoiceOriginTag origin={bill.origin} />
+                        {bill.has_attachment && (
+                          <Paperclip
+                            className="ms-1.5 inline h-3.5 w-3.5 text-muted-foreground"
+                            aria-label={t["purchases.capture.hasAttachment"]}
+                          />
+                        )}
+                        {bill.status === "pending" && awaitingMe.has(bill.id) && (
+                          <span className="ms-2 rounded-full bg-info-subtle px-2 py-0.5 text-xs text-info-subtle-foreground">
+                            {t["purchases.tabs.awaitingYou"]}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
                         <MiddleTruncate text={bill.bill_number || "—"} />
@@ -1683,6 +1981,15 @@ export default function BillPay() {
                                     {c.voidBill}
                                   </DropdownMenuItem>
                                 )}
+                              {["approved", "partial", "paid", "overdue"].includes(bill.status) && (
+                                <DropdownMenuItem
+                                  {...gate("ledger.post")}
+                                  onClick={() => navigate(`/debit-notes/new?billId=${bill.id}`)}
+                                >
+                                  <Undo2 aria-hidden />
+                                  {t["purchases.debitNote.fromBill"]}
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"

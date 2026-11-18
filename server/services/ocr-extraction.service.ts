@@ -16,7 +16,7 @@ import { createOcrClients, summarizeOcrProviderError } from "./ocr-provider-clie
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { deriveConfidenceBand } from "../../shared/receipt-confidence";
 import { extractReceipt, RECEIPT_EXTRACTION_PROMPT } from "./ai/receipt-extraction";
-import { normalizeModelConfidence } from "./ai/structured-output";
+import { normalizeModelConfidence, type ReceiptExtraction } from "./ai/structured-output";
 import { errorCode } from "../errors";
 
 const log = createLogger("ocr-extraction");
@@ -188,5 +188,62 @@ export async function extractReceiptToOcr(args: {
       "OCR extraction failed"
     );
     return null; // PDF with only an OpenAI key, or all configured providers failed.
+  }
+}
+
+// ── WQ2 (8.2): supplier bills captured in the bill editor ──────────────────────────────────
+
+/**
+ * Bill-specific rules appended to the receipt prompt. A supplier invoice names two parties; the
+ * bill belongs to the BUYER (our company), so the seller's identity must never be confused with
+ * the buyer's: the self-TRN guard (4.7) relies on supplierTrn being the seller's TRN.
+ */
+export const BILL_EXTRACTION_ADDENDUM = `This document is a SUPPLIER INVOICE (a bill) received by the buyer.
+- merchant: the SELLER (the party issuing the invoice, usually in the letterhead), never the "Bill to" / "Customer" / "العميل" party.
+- supplierTrn: the SELLER's TRN only. If only the buyer's TRN is printed, return null.
+- invoiceNumber: the seller's invoice number (Invoice No. / رقم الفاتورة), not a PO or delivery-note number.
+- lineItems: one entry per billed line, quantity and unitPrice as printed, total = the line amount BEFORE VAT when the invoice shows net line amounts.`;
+
+export interface BillDocumentExtraction {
+  status: "ok" | "not_configured" | "failed";
+  data: ReceiptExtraction | null;
+  /** Validation issue codes the extraction could not fix (AMOUNT_MISMATCH, DATE_FUTURE, ...). */
+  issues: string[];
+}
+
+/**
+ * Read a supplier invoice (PDF or image bytes) for the bill editor. Never writes anything: the
+ * caller maps the result to a draft the user reviews and saves. "not_configured" when no AI
+ * provider is set; a quota error propagates (402/429 in the route).
+ */
+export async function extractBillDocument(args: {
+  content: Buffer;
+  mimeType: string;
+  companyId: string;
+  userId?: string | null;
+}): Promise<BillDocumentExtraction> {
+  const clients = createOcrClients();
+  if (!clients.anthropic && !clients.openai) {
+    return { status: "not_configured", data: null, issues: [] };
+  }
+  try {
+    const outcome = await extractReceipt({
+      clients,
+      input: {
+        kind: "image",
+        base64: args.content.toString("base64"),
+        mediaType: args.mimeType,
+        promptAddendum: BILL_EXTRACTION_ADDENDUM,
+      },
+      ctx: { companyId: args.companyId, userId: args.userId ?? null, task: "ocr" },
+    });
+    return { status: "ok", data: outcome.data, issues: outcome.issues.map((i) => i.code) };
+  } catch (err) {
+    if (errorCode(err) === "AI_QUOTA_EXCEEDED") throw err;
+    log.warn(
+      { err: summarizeOcrProviderError(err), mimeType: args.mimeType },
+      "Bill extraction failed"
+    );
+    return { status: "failed", data: null, issues: [] };
   }
 }

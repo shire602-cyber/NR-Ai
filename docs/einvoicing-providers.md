@@ -26,6 +26,30 @@ Data is kept per provider and environment (`einvoice_legal_entities.provider`,
 `einvoice_documents.provider`, `einvoice_provider_events.provider`), so switching never mixes rows; a
 company must onboard again at the new provider (the taxpayer re-authorises in EmaraTax).
 
+## Partner choice, identity and the approver link (WQ5)
+
+There is no default partner. Settings → E-invoicing lists every provider compiled into the build
+(from `registeredProviderIds()`, so the card names none in code) and the company stores its choice
+in `companies.einvoice_partner`. `EINVOICE_PROVIDER` still decides what this deployment can
+connect: a choice that is not the configured provider reads "Not connected", "Verify with partner"
+(the provider's own `…/einvoicing/<id>/sync` route) is offered only for the configured one, and
+nothing is transmitted otherwise. Without a check the company may record "Confirmed by you, not
+yet verified" (`einvoice_appointment_confirmed_at`).
+
+- Seller identity (`PUT /api/companies/:id/einvoicing/identity`, Settings → Company card and the
+  first-invoice prompt): stored TIN (`einvoice_tin`, 10 digits starting with 1, must match the
+  first 10 digits of the CT TRN and the VAT TRN when those are set), seller ID type and number
+  (`seller_id_type` TL / EID / PAS / CD; a passport needs `seller_id_country`, ibr-012-ae), district,
+  PO box, Arabic legal name and address. The EndpointID is the ASP participant id, else the stored
+  TIN, else the CT TRN's (then the VAT TRN's) first 10 digits.
+- Approver link: `einvoice_approver_links` (hashed 256-bit token, 14-day expiry, revocable,
+  single-purpose). The no-login page `/portal/einvoicing-approve/:token` shows the company's display name,
+  the chosen partner and the EmaraTax steps, never the TRN or TIN (owner decision pending), and
+  Done notifies the owner through the email outbox.
+- Code: `server/services/einvoice/identity.ts`, `server/routes/einvoice-identity.routes.ts`,
+  `client/src/components/einvoice/EInvoicePartnerCard.tsx`, `TaxReadyModal.tsx`,
+  `CompanyTaxIdentityCard.tsx`, `client/src/pages/EInvoicingApprove.tsx`, migration 0128.
+
 ## Provider-neutral layer (keep in either case)
 
 - `server/services/einvoice-provider.ts` (interface: optional `requiresLegalEntity`, `displayName`,

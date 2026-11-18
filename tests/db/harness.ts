@@ -63,8 +63,12 @@ export interface ApiClient {
 
 export type CompanyRole = "owner" | "admin" | "accountant" | "cfo" | "employee" | "viewer" | string;
 
-/** X6a: the TRN a harness company gets by default (valid format: 15 digits, starts 1, ends 03). */
-export const HARNESS_DEFAULT_TRN = "100000000000003";
+/**
+ * X6a: the TRN a harness company gets by default (valid format: 15 digits, starts 1, ends 03).
+ * WQ2 (4.7): it differs from the "100000000000003" most tests give their suppliers, because a
+ * bill whose seller TRN is the company's own TRN is refused (422 SELF_TRN_BILL).
+ */
+export const HARNESS_DEFAULT_TRN = "100300000000003";
 
 export interface CreateTenantOptions {
   /** company_users.role for the user in their own company (default owner). */

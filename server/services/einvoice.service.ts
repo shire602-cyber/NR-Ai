@@ -37,6 +37,7 @@ import {
   type PaymentMeansCode,
   type TransactionFlag,
 } from "./einvoice/pint-ae-codes";
+import { effectiveTin, sellerLegalId, tinProblem } from "../../shared/validators/einvoice-identity";
 
 // PINT AE profile identifiers (aligned-ibrp-001-ae / aligned-ibrp-002-ae).
 export const EINVOICE_CUSTOMIZATION_ID = "urn:peppol:pint:billing-1@ae-1";
@@ -335,7 +336,14 @@ function partyXml(p: EInvoiceParty, role: "seller" | "buyer"): XmlElement {
           "cbc:CompanyID",
           {
             schemeAgencyID: legalType,
-            schemeAgencyName: legalType === "TL" ? p.legalAuthority || p.emirate || null : null,
+            // TL: the issuing authority (ibr-172-ae). PAS: the passport issuing country,
+            // ISO 3166-1 (BTAE-18/19, ibr-010..013-ae).
+            schemeAgencyName:
+              legalType === "TL"
+                ? p.legalAuthority || p.emirate || null
+                : legalType === "PAS"
+                  ? p.legalAuthority?.trim().toUpperCase() || null
+                  : null,
           },
           p.legalId
         )
@@ -347,6 +355,10 @@ function partyXml(p: EInvoiceParty, role: "seller" | "buyer"): XmlElement {
 
 /** Seller party data from the company record (identity columns from migration 0102). */
 export function sellerFromCompany(company: CompanyLike): EInvoiceParty {
+  // WQ5: the stored TIN (else the CT TRN's first 10 digits) is the EndpointID when the partner
+  // registered no other participant id; the seller ID type/number replaces the TL-only rule.
+  const legal = sellerLegalId(company);
+  const tin = effectiveTin(company);
   return {
     name: company.legalName || company.name,
     trn: company.trnVatNumber,
@@ -354,11 +366,16 @@ export function sellerFromCompany(company: CompanyLike): EInvoiceParty {
     city: company.addressCity || null,
     emirate: company.emirate || null,
     country: company.addressCountry || "AE",
-    endpointId: company.peppolParticipantId || null,
+    endpointId: company.peppolParticipantId || tin || null,
     endpointScheme: company.peppolScheme || null,
-    legalId: company.tradeLicenceNo || company.registrationNumber || null,
-    legalIdType: "TL",
-    legalAuthority: company.tradeLicenceAuthority || null,
+    legalId: legal?.number ?? null,
+    legalIdType: legal?.type ?? "TL",
+    legalAuthority:
+      legal?.type === "TL"
+        ? company.tradeLicenceAuthority || null
+        : legal?.type === "PAS"
+          ? (company as CompanyLike & { sellerIdCountry?: string | null }).sellerIdCountry || null
+          : null,
     email: company.contactEmail || null,
     phone: company.contactPhone || null,
   };
@@ -755,10 +772,31 @@ export function validateForEInvoicing(
   if (countryCode(co.addressCountry) === "AE" && !emirateSubentity(co.emirate)) {
     issues.push({ field: "company.emirate", message: "Supplier emirate is required (ibr-128-ae)" });
   }
-  if (!(co.tradeLicenceNo || co.registrationNumber)) {
+  const sellerLegal = sellerLegalId(co);
+  if (!sellerLegal) {
     issues.push({
       field: "company.tradeLicenceNo",
-      message: "Trade licence number is required (ibr-150-ae)",
+      message:
+        "Seller legal identifier (trade licence, Emirates ID, passport or Cabinet decision) is required (ibr-150-ae)",
+    });
+  } else if (sellerLegal.type === "PAS" && !co.sellerIdCountry) {
+    issues.push({
+      field: "company.sellerIdCountry",
+      message: "Passport issuing country is required for a passport seller ID (ibr-012-ae)",
+    });
+  }
+  const buyerLegal = ctx.customer;
+  if (buyerLegal?.legalIdType === "PAS" && buyerLegal.legalId && !buyerLegal.legalAuthority) {
+    issues.push({
+      field: "customer.legalIdCountry",
+      message: "Passport issuing country is required for a passport buyer ID (ibr-010-ae)",
+    });
+  }
+  const storedTin = (co as CompanyLike & { einvoiceTin?: string | null }).einvoiceTin;
+  if (storedTin && tinProblem(storedTin, co)) {
+    issues.push({
+      field: "company.einvoiceTin",
+      message: "Supplier TIN must be 10 digits starting with 1 and match the TRN's first 10 digits",
     });
   }
   if (!invoice.number) {
