@@ -25,6 +25,7 @@ import { companies, invoices, receipts } from "../../shared/schema";
 import { recordAudit } from "../services/audit.service";
 import {
   buildClientSnapshots,
+  clientEInvoicingStates,
   buildFirmDashboard,
   calculateHealthScore,
   calculatePeriodComparison,
@@ -188,6 +189,8 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
         .where(and(inArray(invoices.companyId, companyIds), eq(invoices.status, "paid")))
         .groupBy(invoices.companyId)) as Array<{ companyId: string; total: string | null }>;
       const revenueMap = new Map(revenueRows.map((r) => [r.companyId, Number(r.total ?? 0)]));
+      // WQ5: the e-invoicing state column.
+      const einvoicing = await clientEInvoicingStates(companyIds);
 
       const ranked = snapshots.map((s) => {
         const health = snapshotToHealthScore(s);
@@ -196,6 +199,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
           healthScore: health.score,
           revenue: revenueMap.get(s.companyId) ?? 0,
           overdueBalance: s.overdueBalance,
+          einvoicing: einvoicing.get(s.companyId) ?? null,
           // Compliance score = 100 - (vatOverdue penalty + missingDocs penalty).
           // Used for the 'compliance' ranking key.
           complianceScore:

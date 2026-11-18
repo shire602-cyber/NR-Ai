@@ -78,6 +78,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import {
+  FirmEInvoicingCell,
+  type FirmEInvoicingValue,
+} from "@/components/einvoice/FirmEInvoicingCell";
 
 // ─── Types (mirror server) ──────────────────────────────────────────────
 
@@ -107,6 +111,8 @@ interface ClientHealthRow {
   revenue: number;
   overdueBalance: number;
   complianceScore: number;
+  /** WQ5: e-invoicing state column. */
+  einvoicing?: FirmEInvoicingValue | null;
   factors: {
     overdueBalance: number;
     overdueInvoiceCount: number;
@@ -630,6 +636,7 @@ export default function FirmCommandCenter() {
                       <T k="pages.overdueAr" />
                     </TableHead>
                     <TableHead>VAT</TableHead>
+                    <TableHead>{t["einvoicing.firmState.column"]}</TableHead>
                     <TableHead>
                       <T k="pages.lastActivity" />
                     </TableHead>
@@ -678,6 +685,9 @@ export default function FirmCommandCenter() {
                           </Badge>
                         )}
                       </TableCell>
+                      <TableCell>
+                        <FirmEInvoicingCell value={c.einvoicing} />
+                      </TableCell>
                       <TableCell className="text-muted-foreground">
                         {c.factors.daysSinceActivity === null
                           ? "—"
@@ -700,7 +710,7 @@ export default function FirmCommandCenter() {
                   ))}
                   {filteredClients.length === 0 && !healthQuery.isLoading && (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                         {search
                           ? t["firmCommandCenter.noClientsMatchYourSearch"]
                           : t["pages.noClientsYet"]}

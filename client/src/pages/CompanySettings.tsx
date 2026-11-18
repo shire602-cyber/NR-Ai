@@ -43,6 +43,7 @@ import type { Company } from "@shared/schema";
 import { companyPreferencesSchema } from "@shared/schema-values";
 import { Building2, Save, Upload } from "lucide-react";
 import { WpsSettingsCard } from "./payroll/WpsTab";
+import { CompanyTaxIdentityCard } from "@/components/einvoice/CompanyTaxIdentityCard";
 
 const CURRENCY_OPTIONS = [
   { value: "AED", label: "AED — UAE dirham" },
@@ -1070,6 +1071,9 @@ export default function CompanySettings() {
             </FormActions>
           </form>
         </Form>
+
+        {/* WQ5: e-invoicing identity (TIN, seller ID, structured and Arabic address). */}
+        {companyId && <CompanyTaxIdentityCard companyId={companyId} />}
 
         {/* W3-D: WPS / MOL settings used by the payroll SIF (SCR record). */}
         {companyId && <WpsSettingsCard companyId={companyId} />}
