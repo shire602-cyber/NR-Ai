@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/select";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
-import { useTranslation, translateNow } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
@@ -60,7 +60,21 @@ const creditNoteLineSchema = z.object({
   quantity: z.coerce.number().min(0.01, "forms.errors.quantityPositive"),
   unitPrice: z.coerce.number().min(0, "forms.errors.pricePositive"),
   vatRate: z.coerce.number().default(0.05),
+  // WQ1 (7.15): a line prefilled from the invoice keeps its VAT treatment (VAT per line).
+  vatSupplyType: z.string().optional(),
 });
+
+/** VAT rate and supply type sent for a credit-note line (the invoice line's own treatment). */
+function creditLineVat(l: { vatRate: number; vatSupplyType?: string }) {
+  const vat = Number(l.vatRate) > 0 ? Number(l.vatRate) : 0;
+  const supply =
+    l.vatSupplyType && vat > 0 === (l.vatSupplyType === "standard_rated")
+      ? l.vatSupplyType
+      : vat > 0
+        ? "standard_rated"
+        : "zero_rated";
+  return { vatRate: vat, vatSupplyType: supply };
+}
 
 const creditNoteSchema = z.object({
   companyId: z.string().guid(),
@@ -158,16 +172,12 @@ export default function CreditNotes() {
         reason: data.reason,
         restock: data.restock !== false,
         date: format(data.date, "yyyy-MM-dd"),
-        lines: data.lines.map((l) => {
-          const vat = Number(l.vatRate) > 0 ? 0.05 : 0;
-          return {
-            description: l.description,
-            quantity: Number(l.quantity),
-            unitPrice: Math.round(Number(l.unitPrice) * 100) / 100,
-            vatRate: vat,
-            vatSupplyType: vat > 0 ? "standard_rated" : "zero_rated",
-          };
-        }),
+        lines: data.lines.map((l) => ({
+          description: l.description,
+          quantity: Number(l.quantity),
+          unitPrice: Math.round(Number(l.unitPrice) * 100) / 100,
+          ...creditLineVat(l),
+        })),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -236,10 +246,68 @@ export default function CreditNotes() {
 
   const closeEditor = leaveEditor;
 
-  // /credit-notes/new opens the blank editor.
+  /**
+   * WQ1 (7.15): "Credit note" on an invoice opens /credit-notes/new?invoiceId=<id>: the invoice's
+   * lines are prefilled so part of it can be credited (remove lines, lower quantities or prices;
+   * each line keeps its VAT treatment and posts through the credit-note issue).
+   */
+  const [prefilledFrom, setPrefilledFrom] = useState<string | null>(null);
+  const [prefilledInvoice, setPrefilledInvoice] = useState<Invoice | null>(null);
+  const [documentCurrency, setDocumentCurrency] = useState("AED");
+  const prefillFromInvoice = async (invoiceId: string) => {
+    try {
+      const inv = await apiRequest("GET", `/api/invoices/${encodeURIComponent(invoiceId)}`);
+      // The invoice is an option of the picker before the form names it (a Select whose value
+      // has no option clears it).
+      setPrefilledInvoice({ id: inv.id, number: inv.number, customerName: inv.customerName });
+      await new Promise((r) => setTimeout(r, 0));
+      form.reset({
+        companyId: selectedCompanyId || "",
+        number: "",
+        invoiceId: inv.id,
+        customerName: inv.customerName ?? "",
+        customerTrn: inv.customerTrn ?? "",
+        date: new Date(),
+        reason: "",
+        restock: true,
+        lines: (inv.lines ?? []).map(
+          (l: {
+            description: string;
+            quantity: number | string;
+            unitPrice: number | string;
+            vatRate: number | string;
+            vatSupplyType?: string | null;
+          }) => ({
+            description: l.description,
+            quantity: Number(l.quantity),
+            unitPrice: Number(l.unitPrice),
+            vatRate: Number(l.vatRate),
+            vatSupplyType: l.vatSupplyType ?? undefined,
+          })
+        ),
+      });
+      setPrefilledFrom(inv.number ?? null);
+      setDocumentCurrency(inv.currency || "AED");
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: t["invoices.error"],
+        description: (error as Error)?.message,
+      });
+    }
+  };
+
+  // /credit-notes/new opens the blank editor (prefilled from ?invoiceId= when given).
   useEffect(() => {
-    if (editor === "new") setEditorOpen(true);
-  }, [editor]);
+    if (editor !== "new") return;
+    setEditorOpen(true);
+    const invoiceId =
+      typeof window === "undefined"
+        ? null
+        : new URLSearchParams(window.location.search).get("invoiceId");
+    if (invoiceId && selectedCompanyId) void prefillFromInvoice(invoiceId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, selectedCompanyId]);
 
   const onSubmit = async (data: CreditNoteFormData) => {
     const noteData = {
@@ -250,6 +318,7 @@ export default function CreditNotes() {
         quantity: Number(data.lines[index].quantity),
         unitPrice: Number(data.lines[index].unitPrice),
         vatRate: Number(data.lines[index].vatRate),
+        vatSupplyType: data.lines[index].vatSupplyType,
       })),
     };
 
@@ -293,11 +362,19 @@ export default function CreditNotes() {
       backLabel={t["invoices.editor.backCreditNotes"]}
       eyebrow="Sales"
       title={t["screens.newCreditNote"]}
-      description={t["forms.creditNote.newDesc"]}
+      description={
+        prefilledFrom
+          ? formatMessage(t["invoices.creditFrom"], { number: prefilledFrom })
+          : t["forms.creditNote.newDesc"]
+      }
       footerSummary={
         <span className="flex flex-wrap items-baseline gap-x-2" data-testid="editor-total">
           <span>{t["invoices.editor.total"]}</span>
-          <Money amount={total} currency="AED" className="text-h3 font-semibold text-foreground" />
+          <Money
+            amount={total}
+            currency={documentCurrency}
+            className="text-h3 font-semibold text-foreground"
+          />
         </span>
       }
       footer={
@@ -361,7 +438,12 @@ export default function CreditNotes() {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {invoices.map((inv: Invoice) => (
+                      {[
+                        ...invoices,
+                        ...(prefilledInvoice && !invoices.some((i) => i.id === prefilledInvoice.id)
+                          ? [prefilledInvoice]
+                          : []),
+                      ].map((inv: Invoice) => (
                         <SelectItem key={inv.id} value={inv.id}>
                           {inv.number} - {inv.customerName}
                         </SelectItem>
@@ -518,7 +600,12 @@ export default function CreditNotes() {
                     render={({ field }) => (
                       <FormItem>
                         <FormControl>
-                          <Input {...field} placeholder={t.description} />
+                          <Input
+                            {...field}
+                            dir="auto"
+                            aria-label={t.description}
+                            placeholder={t.description}
+                          />
                         </FormControl>
                       </FormItem>
                     )}
@@ -534,6 +621,8 @@ export default function CreditNotes() {
                           <Input
                             type="number"
                             step="0.01"
+                            name={field.name}
+                            aria-label={t["screens.qty"]}
                             placeholder={t["screens.qty"]}
                             value={field.value ?? ""}
                             onChange={(e) =>
@@ -555,6 +644,8 @@ export default function CreditNotes() {
                           <Input
                             type="number"
                             step="0.01"
+                            name={field.name}
+                            aria-label={t["screens.price"]}
                             placeholder={t["screens.price"]}
                             value={field.value ?? ""}
                             onChange={(e) =>
@@ -567,29 +658,35 @@ export default function CreditNotes() {
                   />
                 </div>
                 <div className="col-span-2">
-                  <FormField
-                    control={form.control}
-                    name={`lines.${index}.vatRate`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Select
-                            value={String(field.value * 100)}
-                            onValueChange={(val) => field.onChange(parseFloat(val) / 100)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="0">0%</SelectItem>
-                              <SelectItem value="5">5%</SelectItem>
-                              <SelectItem value="10">10%</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
+                  {/* WQ1 (7.15): VAT per line is the line's supply type (5% standard, 0% otherwise). */}
+                  <Select
+                    value={
+                      watchLines[index]?.vatSupplyType ??
+                      (Number(watchLines[index]?.vatRate) > 0 ? "standard_rated" : "zero_rated")
+                    }
+                    onValueChange={(val) => {
+                      form.setValue(`lines.${index}.vatSupplyType`, val, { shouldDirty: true });
+                      form.setValue(`lines.${index}.vatRate`, val === "standard_rated" ? 0.05 : 0, {
+                        shouldDirty: true,
+                      });
+                    }}
+                  >
+                    <SelectTrigger
+                      aria-label={t["invoices.supplyType"]}
+                      data-testid={`select-credit-line-vat-${index}`}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(["standard_rated", "zero_rated", "exempt", "out_of_scope"] as const).map(
+                        (st) => (
+                          <SelectItem key={st} value={st}>
+                            {t[`invoices.supply.${st}`]}
+                          </SelectItem>
+                        )
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="col-span-1">
                   <div className="h-10 flex items-center justify-end text-sm">
@@ -597,7 +694,7 @@ export default function CreditNotes() {
                       (watchLines[index]?.quantity || 0) *
                         (watchLines[index]?.unitPrice || 0) *
                         (1 + (watchLines[index]?.vatRate || 0)),
-                      "AED",
+                      documentCurrency,
                       locale
                     )}
                   </div>
@@ -618,17 +715,21 @@ export default function CreditNotes() {
               <span className="text-muted-foreground">
                 <T k="pages.subtotal" />
               </span>
-              <span className="font-medium">{formatCurrency(subtotal, "AED", locale)}</span>
+              <span className="font-medium">
+                {formatCurrency(subtotal, documentCurrency, locale)}
+              </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">{t["purchases.vat"]}</span>
-              <span className="font-medium">{formatCurrency(vatAmount, "AED", locale)}</span>
+              <span className="font-medium">
+                {formatCurrency(vatAmount, documentCurrency, locale)}
+              </span>
             </div>
             <div className="flex justify-between text-lg font-semibold pt-2 border-t">
               <span>
                 <T k="pages.total2" />
               </span>
-              <span>{formatCurrency(total, "AED", locale)}</span>
+              <span>{formatCurrency(total, documentCurrency, locale)}</span>
             </div>
           </div>
         </form>

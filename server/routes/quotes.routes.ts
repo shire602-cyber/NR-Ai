@@ -41,6 +41,13 @@ import {
 } from "../../shared/validators/quotes";
 import type { SalesLineInput } from "../../shared/validators/invoices";
 import { generateQuotePDF } from "../services/pdf-quote.service";
+import { hasEmailProvider, sendEmail } from "../services/email.service";
+import { issuePortalLink } from "../services/portal-access.service";
+import { publicBaseUrl } from "../services/payments";
+import {
+  quoteSendEmailSchema,
+  type QuoteSendEmailInput,
+} from "../../shared/validators/sales-documents";
 import { createLogger } from "../config/logger";
 import { allocateInvoiceNumber } from "../services/invoice-numbering.service";
 import {
@@ -408,6 +415,98 @@ export function registerQuoteRoutes(app: Express) {
         "Content-Length": pdfBuffer.length.toString(),
       });
       res.send(pdfBuffer);
+    })
+  );
+
+  // WQ1 (7.5): send a quote by email through the durable outbox — the PDF is attached and, when
+  // the quote has a contact, a customer-portal link where the customer can accept or decline it.
+  // Nothing reads "sent" without an email provider: the message stays queued and a draft quote
+  // keeps its status until the provider has taken it.
+  app.post(
+    "/api/quotes/:id/send-email",
+    authMiddleware,
+    requireCustomer,
+    requireFeature("quotes"),
+    strictBody(quoteSendEmailSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = userOf(req);
+      const quote = await quoteForUser(userId, req.params.id);
+      if (["declined", "expired", "converted"].includes(quote.status)) {
+        throw new DomainError(
+          "QUOTE_NOT_SENDABLE",
+          409,
+          { status: quote.status },
+          `A ${quote.status} quote is not sent again`
+        );
+      }
+      const { to, subject, message } = req.body as QuoteSendEmailInput;
+      const company = await storage.getCompany(quote.companyId);
+      if (!company) return res.status(404).json({ message: "Company not found" });
+      const lines = await storage.getQuoteLinesByQuoteId(quote.id);
+      const pdf = await generateQuotePDF(quote, lines, company);
+      let portalUrl: string | null = null;
+      if (quote.contactId) {
+        const link = await issuePortalLink({
+          companyId: quote.companyId,
+          contactId: quote.contactId,
+          createdBy: userId,
+          revokeExisting: false,
+        });
+        portalUrl = `${publicBaseUrl()}/portal/${link.token}`;
+      }
+      const body = [
+        message?.trim() || `Please find quote ${quote.number} from ${company.name} attached.`,
+        portalUrl ? `View, accept or decline the quote online: ${portalUrl}` : null,
+        `يرجى الاطلاع على عرض السعر ${quote.number} المرفق.`,
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+      const result = await sendEmail(
+        to,
+        subject?.trim() || `Quote ${quote.number} from ${company.name}`,
+        body,
+        {
+          fromName: company.name,
+          companyId: company.id,
+          category: "quote",
+          relatedEntityType: "quote",
+          relatedEntityId: quote.id,
+          replyTo: company.contactEmail ?? null,
+          attachments: [
+            { filename: `quote-${quote.number}.pdf`, content: pdf, contentType: "application/pdf" },
+          ],
+        }
+      );
+      let status = quote.status;
+      if (result.sent && quote.status === "draft") {
+        status = (
+          await transitionQuote({ companyId: quote.companyId, quoteId: quote.id, to: "sent" })
+        ).status;
+      }
+      await storage.createActivityLog({
+        userId,
+        companyId: quote.companyId,
+        action: "send",
+        entityType: "quote",
+        entityId: quote.id,
+        description: result.sent
+          ? `Quote ${quote.number} sent by email to ${to}`
+          : `Quote ${quote.number} email to ${to} queued (${result.status})`,
+        metadata: JSON.stringify({ to, outbox: result.id ?? null, status: result.status }),
+      });
+      res.status(result.sent ? 200 : 202).json({
+        sent: result.sent,
+        queued: result.queued,
+        status: result.status,
+        outboxId: result.id ?? null,
+        emailConfigured: hasEmailProvider(),
+        quoteStatus: status,
+        message: result.sent
+          ? `Quote ${quote.number} sent to ${to}`
+          : result.status === "blocked_no_provider"
+            ? `Email not configured — quote ${quote.number} is queued, not sent.`
+            : `Quote ${quote.number} is queued for delivery (${result.status}).`,
+      });
     })
   );
 }

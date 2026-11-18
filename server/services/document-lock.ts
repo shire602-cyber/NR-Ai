@@ -82,3 +82,16 @@ export const LOCK_NS = {
   INVOICE_POSTING: 1001,
   CREDIT_NOTE: 1002,
 } as const;
+
+/**
+ * WQ1: take the same advisory lock inside a caller's transaction (blocking; released when the
+ * caller commits or rolls back). For documents the caller has just created in that transaction
+ * (a cash sale), so no other session can hold the lock for long.
+ */
+export async function lockDocumentInTx(
+  tx: typeof db,
+  documentId: string,
+  namespace: number
+): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${namespace}, ${lockKey(documentId)})`);
+}

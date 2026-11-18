@@ -45,7 +45,13 @@ export interface GenerateInvoicePdfOptions {
   /** Date of supply; defaults to the invoice date when absent. */
   supplyDate?: Date | string | null;
   /** Customer details from the linked contact, used when the invoice has none stored. */
-  customer?: { name?: string | null; trn?: string | null; address?: string | null };
+  customer?: {
+    name?: string | null;
+    trn?: string | null;
+    address?: string | null;
+    /** WQ1 (14.7): the name printed on the document (the contact's Arabic name on an Arabic one). */
+    displayName?: string | null;
+  };
   /**
    * W3-A (R03-24): invoice-template branding applied to the standard layout. WP-F: the template
    * colour is the document accent (top rule, section labels, amount-due row only).
@@ -190,7 +196,7 @@ async function generateStandardInvoicePDF(
   const locale = options.locale ?? pdfLocale(company);
   const totals = computeInvoicePdfTotals(invoice, options);
   const customer = {
-    name: invoice.customerName || options.customer?.name || "",
+    name: options.customer?.displayName || invoice.customerName || options.customer?.name || "",
     trn: invoice.customerTrn || options.customer?.trn || null,
     address: invoice.customerAddress || options.customer?.address || null,
   };

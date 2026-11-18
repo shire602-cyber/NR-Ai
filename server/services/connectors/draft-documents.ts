@@ -33,6 +33,8 @@ export interface DraftInvoiceInput {
   exchangeRate?: number | null;
   placeOfSupplyEmirate?: string | null;
   notes?: string | null;
+  /** WQ1: where the draft came from (invoices.source; default "app"). */
+  source?: "app" | "api" | "import" | "shopify";
   lines: SalesLineDraft[]; // unitPrice in fils
 }
 
@@ -100,6 +102,7 @@ export async function createDraftInvoice(
         total: Number(fromFils(totals.totalFils)),
         discountAmount: Number(fromFils(totals.discountFils)),
         notes: input.notes ?? null,
+        source: input.source ?? "app",
         status: "draft",
         invoiceType: "invoice",
       } as typeof invoices.$inferInsert)
