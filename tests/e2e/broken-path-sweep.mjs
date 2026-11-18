@@ -808,7 +808,13 @@ async function mobileMoreSweep(page, state, ctx) {
 }
 
 async function sweepPersona(browser, name, persona, ids, userWords) {
-  const routes = (ONLY_ROUTES ?? ROUTES_FOR[name])
+  // A SWEEP_ROUTES param route (seeded in the owner's company) is only visited by personas whose
+  // own route list has it: another tenant's record is a deliberate 404.
+  const routes = (
+    ONLY_ROUTES
+      ? ONLY_ROUTES.filter((r) => !r.includes(":") || ROUTES_FOR[name].includes(r))
+      : ROUTES_FOR[name]
+  )
     .map((route) => resolveRoute(route, { ...ids, companyId: persona.companyId }))
     .filter(Boolean);
   for (const lang of LANGS) {

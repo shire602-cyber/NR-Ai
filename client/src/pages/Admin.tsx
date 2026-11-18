@@ -386,11 +386,18 @@ export default function Admin() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() =>
-                queryClient.invalidateQueries({
-                  predicate: (q) => String(q.queryKey[0] ?? "").startsWith("/api/admin/"),
-                })
-              }
+              onClick={() => {
+                for (const key of [
+                  "/api/admin/settings",
+                  "/api/admin/plans",
+                  "/api/admin/users",
+                  "/api/admin/companies",
+                  "/api/admin/audit-logs",
+                  "/api/admin/stats",
+                ]) {
+                  void queryClient.invalidateQueries({ queryKey: [key] });
+                }
+              }}
               data-testid="button-refresh"
             >
               <RefreshCw className="w-4 h-4 me-2" />
