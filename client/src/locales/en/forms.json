@@ -423,5 +423,6 @@
   "forms.preview.status.paid": "Paid",
   "forms.preview.status.partial": "Partially paid",
   "forms.preview.status.void": "Void",
-  "forms.invoice.viewTitle": "Invoice {number}"
+  "forms.invoice.viewTitle": "Invoice {number}",
+  "forms.preview.footnoteIssued": "Preview of the invoice. The issued PDF follows your invoice branding."
 }

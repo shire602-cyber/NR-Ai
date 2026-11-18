@@ -315,7 +315,11 @@ export function InvoicePreview(props: InvoicePreviewProps) {
           </div>
         </dl>
 
-        <p className="text-caption text-muted-foreground">{t["forms.preview.footnote"]}</p>
+        <p className="text-caption text-muted-foreground">
+          {previewStatusKey(status) === "forms.preview.draftBadge"
+            ? t["forms.preview.footnote"]
+            : t["forms.preview.footnoteIssued"]}
+        </p>
       </article>
     </div>
   );

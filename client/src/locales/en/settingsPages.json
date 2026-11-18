@@ -1,7 +1,7 @@
 {
   "settingsPages.notAvailableYet": "Not available yet",
   "settingsPages.emailNotSentYet": "The email could not be sent yet. Try again later.",
-  "settingsPages.sessionCount": "{count} sessions",
+  "settingsPages.sessionCount": "{count, plural, one {# session} other {# sessions}}",
   "settingsPages.showAllDevices": "Show all {count}",
   "settingsPages.showFewer": "Show fewer",
   "settingsPages.permissions": "Permissions",

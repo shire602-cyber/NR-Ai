@@ -423,5 +423,6 @@
   "forms.preview.status.paid": "مدفوعة",
   "forms.preview.status.partial": "مدفوعة جزئياً",
   "forms.preview.status.void": "ملغاة",
-  "forms.invoice.viewTitle": "الفاتورة {number}"
+  "forms.invoice.viewTitle": "الفاتورة {number}",
+  "forms.preview.footnoteIssued": "معاينة للفاتورة. يتبع ملف PDF الصادر هوية فواتيرك."
 }
