@@ -141,6 +141,21 @@ export async function flush(ms = 0) {
   }
 }
 
+/**
+ * Flush until `done()` holds (or `timeoutMs` passes). Lazy chunks and locale namespaces load
+ * through dynamic imports whose time grows with machine load, so a fixed number of flushes is
+ * flaky; wait on the observable condition instead.
+ */
+export async function flushUntil(done: () => boolean, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!done() && Date.now() < deadline) {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+  }
+  await flush();
+}
+
 export const byTestId = (id: string) =>
   document.querySelector(`[data-testid="${id}"]`) as HTMLElement | null;
 
