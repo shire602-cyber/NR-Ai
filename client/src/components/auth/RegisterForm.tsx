@@ -50,7 +50,7 @@ interface RegisterFormProps {
  * default company name and the validation / server-error copy. Declared so an in-page language
  * switch fetches them too (it used to leave `onboarding` unloaded and registration threw).
  */
-export const REGISTER_FORM_NAMESPACES = ["onboarding", ...VALIDATION_NAMESPACES] as const;
+const REGISTER_FORM_NAMESPACES = ["onboarding", ...VALIDATION_NAMESPACES] as const;
 
 /** "{name}'s Company" in the active language, loading its namespace first if needed. */
 async function defaultCompanyName(name: string): Promise<string> {

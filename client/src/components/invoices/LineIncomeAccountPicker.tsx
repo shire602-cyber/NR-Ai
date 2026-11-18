@@ -26,7 +26,7 @@ const AUTO = "__auto__";
 const VAT_TREATMENT_CODES = new Set(["4030", "4060", "4070"]);
 
 /** The income accounts a standard-rated invoice line can post to. */
-export function lineIncomeAccounts<T extends IncomeAccountOption>(accounts: T[]): T[] {
+function lineIncomeAccounts<T extends IncomeAccountOption>(accounts: T[]): T[] {
   return accounts
     .filter(
       (a) =>
