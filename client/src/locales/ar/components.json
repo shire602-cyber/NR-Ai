@@ -852,5 +852,6 @@
   "components.srv.valueOps.cfo.noVat": "لا يوجد إقرار ضريبة قيمة مضافة متاح لهذا العميل حاليًا.",
   "components.srv.valueOps.cfo.collect": "أعطِ الأولوية لتحصيل {amount} د.إ من الذمم المتأخرة.",
   "components.srv.valueOps.cfo.reviewVat": "راجع إقرار ضريبة القيمة المضافة المستحق في {date}.",
-  "components.srv.valueOps.cfo.requestDocs": "اطلب كشوف الحساب البنكية أو المستندات المصدرية الناقصة لهذا الشهر."
+  "components.srv.valueOps.cfo.requestDocs": "اطلب كشوف الحساب البنكية أو المستندات المصدرية الناقصة لهذا الشهر.",
+  "components.srv.evidence.workflow.request.bullet.draftOnlyNoSend": "مسودة فقط - لا يُرسل أو يُرفع أي شيء"
 }

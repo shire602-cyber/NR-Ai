@@ -52,6 +52,7 @@ import {
 import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation, formatMessage, translateNow } from "@/lib/i18n";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useSubscription } from "@/hooks/useSubscription";
 import { UpgradePrompt } from "@/components/UpgradePrompt";
@@ -158,10 +159,13 @@ interface PurchaseOrder {
   vatAmount: number;
   total: number;
   status: string;
+  createdBy?: string | null;
 }
 
 export default function PurchaseOrders() {
   const { t, locale } = useTranslation();
+  // E2 (J3-r2 / J4-r2): approve needs documents.approve and someone other than the preparer.
+  const { gate, gateApproval, can } = useCompanyPermission();
   const pc = PO_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { company: _company, companyId: selectedCompanyId } = useDefaultCompany();
@@ -864,7 +868,7 @@ export default function PurchaseOrders() {
         title={t.purchaseOrders}
         description={(t as any).purchaseOrdersSubtitle}
         actions={
-          <Button onClick={openNewPO}>
+          <Button onClick={openNewPO} data-testid="button-new-po" {...gate("documents.write")}>
             <Plus className="w-4 h-4" />
             <T k="pageLabels.newPurchaseOrder" />
           </Button>
@@ -951,7 +955,7 @@ export default function PurchaseOrders() {
                       <>
                         <DropdownMenuItem
                           onClick={() => updateStatusMutation.mutate({ id: po.id, status: "sent" })}
-                          disabled={po.status !== "draft"}
+                          disabled={po.status !== "draft" || !can("documents.write")}
                         >
                           <Send aria-hidden />
                           {t["screens.markSent"]}
@@ -960,7 +964,12 @@ export default function PurchaseOrders() {
                           onClick={() =>
                             updateStatusMutation.mutate({ id: po.id, status: "approved" })
                           }
-                          disabled={po.status !== "sent"}
+                          {...gateApproval("documents.approve", po.createdBy)}
+                          disabled={
+                            po.status !== "sent" ||
+                            "disabled" in gateApproval("documents.approve", po.createdBy)
+                          }
+                          data-testid={`menu-approve-po-${po.id}`}
                         >
                           <CheckCircle aria-hidden />
                           <T k="pages.approve" />
@@ -1015,6 +1024,7 @@ export default function PurchaseOrders() {
                         label={t.edit}
                         icon={Edit}
                         onClick={() => openPOEditor(po)}
+                        {...gate("documents.write")}
                       />
                     )}
                     <RowActionButton

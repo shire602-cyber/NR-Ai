@@ -35,6 +35,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
@@ -257,6 +258,8 @@ const parseMoneyInput = (value: string) => {
 export default function CorporateTax() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
+  // E2 (J3-r2): review / file / accrue follow the role and the maker-checker rule.
+  const { gate, gateApproval } = useCompanyPermission();
 
   const downloadBlob = async (url: string, fallbackName: string) => {
     try {
@@ -1277,6 +1280,7 @@ export default function CorporateTax() {
                                 onClick={() => accrueMutation.mutate(taxReturn.id)}
                                 disabled={accrueMutation.isPending}
                                 title={t["corporateTax.accrue"]}
+                                {...gate("ledger.post")}
                                 aria-label={t["corporateTax.accrue"]}
                                 data-testid={`button-ct-accrue-${taxReturn.id}`}
                               >
@@ -1293,6 +1297,7 @@ export default function CorporateTax() {
                                 disabled={transitionMutation.isPending}
                                 title={t["corporateTax.markReviewed"]}
                                 data-testid={`button-ct-review-${taxReturn.id}`}
+                                {...gateApproval("tax.submit", taxReturn.preparedBy)}
                               >
                                 <ClipboardCheck className="w-4 h-4 text-muted-foreground" />
                               </Button>
@@ -1305,6 +1310,7 @@ export default function CorporateTax() {
                                   onClick={() => openFileDialog(taxReturn)}
                                   disabled={transitionMutation.isPending}
                                   title={t["corporateTax.markFiled"]}
+                                  {...gate("tax.submit")}
                                   data-testid={`button-ct-file-${taxReturn.id}`}
                                 >
                                   <Send className="w-4 h-4 text-muted-foreground" />

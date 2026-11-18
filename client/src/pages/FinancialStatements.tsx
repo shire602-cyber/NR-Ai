@@ -23,6 +23,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { fiscalYearToDate } from "@/lib/fiscal-year";
 import { useToast } from "@/hooks/use-toast";
 import { exportToExcel, type ExportData } from "@/lib/export";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -161,13 +162,9 @@ function financialStatementTabFromSearch(search: string): FinancialStatementTab 
   return "profit-loss";
 }
 
-function getDefaultDateRange() {
-  const now = new Date();
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
-  return {
-    startDate: startOfYear.toISOString().slice(0, 10),
-    endDate: now.toISOString().slice(0, 10),
-  };
+// E2 (J3-r2): the default range starts on the company's fiscal-year start, not 1 January.
+function getDefaultDateRange(fyStartMonth?: number | null) {
+  return fiscalYearToDate(fyStartMonth);
 }
 
 function prepareCashFlowExport(data: CashFlowData): ExportData[] {
@@ -263,8 +260,16 @@ function BreakdownTable({ items, locale }: { items: AccountBreakdown[]; locale?:
 // Profit & Loss Tab
 // ================================
 
-function ProfitLossTab({ companyId, locale }: { companyId: string; locale: string }) {
-  const defaults = getDefaultDateRange();
+function ProfitLossTab({
+  companyId,
+  locale,
+  fyStartMonth,
+}: {
+  companyId: string;
+  locale: string;
+  fyStartMonth?: number | null;
+}) {
+  const defaults = getDefaultDateRange(fyStartMonth);
   const [startDate, setStartDate] = useState(defaults.startDate);
   const [endDate, setEndDate] = useState(defaults.endDate);
   const [queryDates, setQueryDates] = useState(defaults);
@@ -732,10 +737,18 @@ function BalanceSheetTab({ companyId, locale }: { companyId: string; locale: str
 // Cash Flow Tab
 // ================================
 
-function CashFlowTab({ companyId, locale }: { companyId: string; locale: string }) {
+function CashFlowTab({
+  companyId,
+  locale,
+  fyStartMonth,
+}: {
+  companyId: string;
+  locale: string;
+  fyStartMonth?: number | null;
+}) {
   const { toast } = useToast();
   const { t } = useTranslation();
-  const defaults = getDefaultDateRange();
+  const defaults = getDefaultDateRange(fyStartMonth);
   const [startDate, setStartDate] = useState(defaults.startDate);
   const [endDate, setEndDate] = useState(defaults.endDate);
   const [queryDates, setQueryDates] = useState(defaults);
@@ -1054,7 +1067,9 @@ function CashFlowTab({ companyId, locale }: { companyId: string; locale: string 
 
 export default function FinancialStatements() {
   const { t, locale } = useTranslation();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId, company, isLoading: isLoadingCompany } = useDefaultCompany();
+  const fyStartMonth = (company as { fiscalYearStartMonth?: number | null } | null | undefined)
+    ?.fiscalYearStartMonth;
   const search = useSearch();
   const [, navigate] = useLocation();
   const activeTab = financialStatementTabFromSearch(search ? `?${search}` : "");
@@ -1122,7 +1137,7 @@ export default function FinancialStatements() {
         </TabsList>
 
         <TabsContent value="profit-loss">
-          <ProfitLossTab companyId={companyId} locale={locale} />
+          <ProfitLossTab companyId={companyId} locale={locale} fyStartMonth={fyStartMonth} />
         </TabsContent>
 
         <TabsContent value="balance-sheet">
@@ -1130,7 +1145,7 @@ export default function FinancialStatements() {
         </TabsContent>
 
         <TabsContent value="cash-flow">
-          <CashFlowTab companyId={companyId} locale={locale} />
+          <CashFlowTab companyId={companyId} locale={locale} fyStartMonth={fyStartMonth} />
         </TabsContent>
       </Tabs>
     </div>

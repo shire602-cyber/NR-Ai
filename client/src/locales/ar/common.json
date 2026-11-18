@@ -42,5 +42,6 @@
   "common.status.upcoming": "قادم",
   "common.status.due_soon": "يستحق قريبًا",
   "common.status.on_track": "على المسار",
-  "common.status.review": "قيد المراجعة"
+  "common.status.review": "قيد المراجعة",
+  "common.preparerCannotApprove": "أنت من أعدّ هذا البند، لذلك يجب أن يعتمده عضو آخر."
 }

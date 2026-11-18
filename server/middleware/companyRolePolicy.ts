@@ -191,6 +191,8 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("MUT", "payroll-items/**", "payroll.manage"),
   r("MUT", "companies/*/employees/**", "payroll.manage"),
   r("MUT", "employees/**", "payroll.manage"),
+  // E2 (J3-r2): booking the opening gratuity provision posts Dr 3040 / Cr 2036.
+  r("POST", "companies/*/payroll/opening-gratuity/book", "payroll.manage"),
   r("*", "companies/*/payroll/**", PAYROLL_READ),
   r("*", "companies/*/payroll-runs/**", PAYROLL_READ),
   r("*", "payroll-runs/**", PAYROLL_READ),

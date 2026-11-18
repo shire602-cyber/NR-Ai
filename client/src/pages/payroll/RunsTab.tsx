@@ -178,6 +178,14 @@ export function RunsTab({ companyId }: { companyId: string }) {
           openingGratuityAsOf: gratuityGap!.asOf,
         });
       }
+      // E2 (J3-r2): book the same opening provision in the ledger (Dr opening balance equity /
+      // Cr gratuity provision) so month-end reconciles; nothing to book when every amount is 0.
+      try {
+        await apiRequest("POST", `/api/companies/${companyId}/payroll/opening-gratuity/book`, {});
+      } catch (err) {
+        const code = err instanceof ApiError ? (err.body as { code?: string } | null)?.code : null;
+        if (code !== "OPENING_GRATUITY_NOTHING_TO_BOOK") throw err;
+      }
       return apiRequest("POST", `/api/payroll-runs/${gratuityGap!.runId}/calculate`, {});
     },
     onSuccess: () => {
@@ -603,7 +611,7 @@ export function RunsTab({ companyId }: { companyId: string }) {
                 </TableBody>
               </Table>
             </div>
-            <p className="text-xs text-muted-foreground">{tx("hr.openingGratuity.ledgerNote")}</p>
+            <p className="text-xs text-muted-foreground">{tx("hr.openingGratuity.bookNote")}</p>
             <FormActions>
               <Button type="button" variant="outline" onClick={() => setGratuityGap(null)}>
                 {tx("hr.cancel")}

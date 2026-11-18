@@ -42,6 +42,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { lastEndedFiscalYear } from "@/lib/fiscal-year";
 import { apiFieldErrors, type FieldMessages } from "@/lib/api-field-errors";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -172,7 +173,9 @@ const fixRoutes: Record<number, string> = {
 export default function MonthEndClose() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { companyId, company, isLoading: isLoadingCompany } = useDefaultCompany();
+  const fyStartMonth = (company as { fiscalYearStartMonth?: number | null } | null | undefined)
+    ?.fiscalYearStartMonth;
 
   // Default to previous month
   const now = new Date();
@@ -281,7 +284,10 @@ export default function MonthEndClose() {
   const [lockReason, setLockReason] = useState("");
   const [unlockTarget, setUnlockTarget] = useState<string | null>(null);
   const [unlockReason, setUnlockReason] = useState("");
-  const [fiscalYearEnd, setFiscalYearEnd] = useState(`${now.getFullYear() - 1}-12-31`);
+  // E2 (J3-r2): the default is the company's last ended fiscal year (31 Oct for Nov-Oct), not
+  // 31 Dec of last year; a date the user picks wins.
+  const [fiscalYearEndPicked, setFiscalYearEnd] = useState<string | null>(null);
+  const fiscalYearEnd = fiscalYearEndPicked ?? lastEndedFiscalYear(fyStartMonth, now).end;
   const [hardClose, setHardClose] = useState(false);
   const [yearEndReason, setYearEndReason] = useState("");
   const [yearEndFieldErrors, setYearEndFieldErrors] = useState<FieldMessages>({});

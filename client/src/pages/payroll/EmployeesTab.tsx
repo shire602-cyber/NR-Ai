@@ -102,7 +102,7 @@ const TEXT_FIELDS: Array<{ key: string; label: string; type?: string; col?: keyo
   },
   {
     key: "openingGratuityProvision",
-    label: "hr.field.openingGratuityProvision",
+    label: "hr.field.openingGratuityProvisionAtGoLive",
     type: "number",
     col: "opening_gratuity_provision",
   },

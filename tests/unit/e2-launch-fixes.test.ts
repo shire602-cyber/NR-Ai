@@ -120,3 +120,31 @@ describe("[E2][J3-r2] VAT filing stage", () => {
     });
   });
 });
+
+describe("[E2][J3-r2] fiscal-year defaults (year-end close, P&L)", () => {
+  it("a Nov-Oct company closes the year ending 31 Oct and reports from 1 Nov", async () => {
+    const { lastEndedFiscalYear, fiscalYearToDate } =
+      await import("../../client/src/lib/fiscal-year");
+    const today = new Date(2026, 10, 18);
+    expect(lastEndedFiscalYear(11, today)).toMatchObject({
+      start: "2025-11-01",
+      end: "2026-10-31",
+    });
+    expect(fiscalYearToDate(11, today)).toEqual({ startDate: "2026-11-01", endDate: "2026-11-18" });
+    // A calendar-year company keeps 31 Dec of last year and 1 Jan.
+    expect(lastEndedFiscalYear(1, today).end).toBe("2025-12-31");
+    expect(fiscalYearToDate(null, today).startDate).toBe("2026-01-01");
+  });
+});
+
+describe("[E2][J3-r2] depreciation period", () => {
+  it("only a month that has ended can be depreciated; the default is the last ended month", async () => {
+    const { lastEndedMonth, depreciationPeriodEnded } =
+      await import("../../client/src/lib/depreciation-period");
+    expect(lastEndedMonth("2026-11-18")).toEqual({ year: 2026, month: 10 });
+    expect(lastEndedMonth("2026-01-05")).toEqual({ year: 2025, month: 12 });
+    expect(lastEndedMonth("2026-11-30")).toEqual({ year: 2026, month: 11 });
+    expect(depreciationPeriodEnded(2026, 11, "2026-11-18")).toBe(false);
+    expect(depreciationPeriodEnded(2026, 10, "2026-11-18")).toBe(true);
+  });
+});

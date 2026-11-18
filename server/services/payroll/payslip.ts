@@ -53,6 +53,28 @@ export interface PayslipData {
 
 const PAYSLIP_RUN_STATES = new Set(["approved", "paid"]);
 
+/**
+ * E2 (J3-r2): the payslip PDF file name names the employee and the month
+ * (payslip-raj-kumar-2026-10.pdf), not the payroll item id. ASCII only, for every browser and
+ * mail client; a name with no Latin letters falls back to the employee number.
+ */
+export function payslipFilename(p: {
+  run: { periodMonth: number; periodYear: number };
+  employee: { name: string; employeeNumber: string | null };
+}): string {
+  const slug = (v: string | null | undefined) =>
+    String(v ?? "")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60);
+  const who = slug(p.employee.name) || slug(p.employee.employeeNumber) || "employee";
+  const period = `${p.run.periodYear}-${String(p.run.periodMonth).padStart(2, "0")}`;
+  return `payslip-${who}-${period}.pdf`;
+}
+
 export async function loadPayslip(itemId: string, companyId?: string): Promise<PayslipData> {
   const row = await q1<Row>(
     `SELECT pi.*, pr.company_id, pr.period_month, pr.period_year, pr.status AS run_status,

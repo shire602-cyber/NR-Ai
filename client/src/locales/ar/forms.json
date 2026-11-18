@@ -347,5 +347,8 @@
   "forms.serverErrors.VAT_SETTLEMENT_DATE_IN_PERIOD": "يجب أن يكون تاريخ دفع الضريبة أو استردادها بعد نهاية فترة الإقرار.",
   "forms.serverErrors.VAT_RETURN_ALREADY_SETTLED": "يوجد دفع مسجَّل لهذا الإقرار. اعكسه أولاً لتسجيل دفع مختلف.",
   "forms.serverErrors.VAT_RETURN_NOT_SUBMITTED": "سجّل تقديم الإقرار عبر إمارات تاكس قبل تسجيل الدفع أو الاسترداد.",
-  "forms.serverErrors.VAT_RETURN_NOTHING_TO_SETTLE": "لا يوجد في هذا الإقرار مبلغ للدفع أو الاسترداد."
+  "forms.serverErrors.VAT_RETURN_NOTHING_TO_SETTLE": "لا يوجد في هذا الإقرار مبلغ للدفع أو الاسترداد.",
+  "forms.errors.depreciationMonthNotEnded": "هذا الشهر لم ينتهِ بعد. اختر شهراً انتهى.",
+  "forms.serverErrors.DEPRECIATION_PERIOD_NOT_ENDED": "هذا الشهر لم ينتهِ بعد: يُؤرَّخ الإهلاك بآخر يوم في الشهر ولا يكون بتاريخ مستقبلي أبداً.",
+  "forms.serverErrors.DISPOSAL_BEFORE_DEPRECIATION": "يوجد إهلاك مسجَّل بعد تاريخ الاستبعاد هذا. استبعد الأصل في تاريخ آخر إهلاك أو بعده."
 }

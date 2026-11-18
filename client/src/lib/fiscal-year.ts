@@ -31,6 +31,33 @@ export function fiscalYearContaining(
   return fiscalYearStartingIn(m, startYear);
 }
 
+/**
+ * E2 (J3-r2): the last fiscal year that has ended on `today` (the default year-end close). A
+ * Nov-Oct company on 18 Nov 2026 closes the year ending 31 Oct 2026.
+ */
+export function lastEndedFiscalYear(
+  startMonth: number | null | undefined,
+  today: Date = new Date()
+): FiscalYearRange {
+  const current = fiscalYearContaining(startMonth, today);
+  const [y, m] = current.start.split("-").map(Number);
+  return fiscalYearStartingIn(m, y - 1);
+}
+
+/**
+ * E2 (J3-r2): the default report range: the start of the fiscal year containing `today` up to
+ * today (local calendar dates), not 1 January.
+ */
+export function fiscalYearToDate(
+  startMonth: number | null | undefined,
+  today: Date = new Date()
+): { startDate: string; endDate: string } {
+  return {
+    startDate: fiscalYearContaining(startMonth, today).start,
+    endDate: `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`,
+  };
+}
+
 /** The fiscal year that starts in `startMonth` of `startYear`. */
 export function fiscalYearStartingIn(startMonth: number, startYear: number): FiscalYearRange {
   const m = startMonth >= 1 && startMonth <= 12 ? startMonth : 1;

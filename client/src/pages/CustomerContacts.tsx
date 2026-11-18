@@ -741,7 +741,7 @@ export default function CustomerContacts() {
                     setClearAllConfirmation("");
                     setShowClearAllDialog(true);
                   }}
-                  disabled={contacts.length === 0}
+                  disabled={contacts.length === 0 || !canDo("settings.company")}
                   data-testid="button-clear-all-contacts"
                 >
                   <Trash2 aria-hidden />
@@ -751,7 +751,7 @@ export default function CustomerContacts() {
             </DropdownMenu>
             <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
               <DialogTrigger asChild>
-                <Button data-testid="button-add-contact">
+                <Button data-testid="button-add-contact" {...gate("documents.write")}>
                   <Plus className="w-4 h-4" />
                   <T k="pageLabels.addContact" />
                 </Button>

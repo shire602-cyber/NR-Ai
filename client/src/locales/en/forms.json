@@ -347,5 +347,8 @@
   "forms.serverErrors.VAT_SETTLEMENT_DATE_IN_PERIOD": "The VAT payment or refund is dated after the end of the return period.",
   "forms.serverErrors.VAT_RETURN_ALREADY_SETTLED": "A payment is already recorded for this return. Reverse it first to record a different one.",
   "forms.serverErrors.VAT_RETURN_NOT_SUBMITTED": "Record the EmaraTax filing before recording the payment or refund.",
-  "forms.serverErrors.VAT_RETURN_NOTHING_TO_SETTLE": "This return has nothing to pay or receive."
+  "forms.serverErrors.VAT_RETURN_NOTHING_TO_SETTLE": "This return has nothing to pay or receive.",
+  "forms.errors.depreciationMonthNotEnded": "This month has not ended yet. Choose a month that has ended.",
+  "forms.serverErrors.DEPRECIATION_PERIOD_NOT_ENDED": "This month has not ended yet: depreciation is dated on the month's last day and never in the future.",
+  "forms.serverErrors.DISPOSAL_BEFORE_DEPRECIATION": "Depreciation is already recorded after this disposal date. Dispose of the asset on or after the last depreciation date."
 }

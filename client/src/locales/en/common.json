@@ -42,5 +42,6 @@
   "common.status.upcoming": "Upcoming",
   "common.status.due_soon": "Due soon",
   "common.status.on_track": "On track",
-  "common.status.review": "In review"
+  "common.status.review": "In review",
+  "common.preparerCannotApprove": "You prepared this item, so another member must approve it."
 }

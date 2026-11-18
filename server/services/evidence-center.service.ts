@@ -1558,7 +1558,7 @@ export async function buildEvidenceCenter(companyId: string): Promise<EvidenceCe
       primaryHref: "/evidence-center#request-draft",
       primaryAction: ec("evidence.action.reviewDraft"),
       bullets: [
-        ec("evidence.workflow.request.bullet.draftOnly"),
+        ec("evidence.workflow.request.bullet.draftOnlyNoSend"),
         ec("evidence.workflow.request.bullet.queue"),
         ec("evidence.workflow.request.bullet.otp"),
       ],

@@ -852,5 +852,6 @@
   "components.srv.valueOps.cfo.noVat": "No VAT return is currently available for this client.",
   "components.srv.valueOps.cfo.collect": "Prioritize collections on AED {amount} overdue AR.",
   "components.srv.valueOps.cfo.reviewVat": "Review VAT return due {date}.",
-  "components.srv.valueOps.cfo.requestDocs": "Request missing bank statements or source documents for the month."
+  "components.srv.valueOps.cfo.requestDocs": "Request missing bank statements or source documents for the month.",
+  "components.srv.evidence.workflow.request.bullet.draftOnlyNoSend": "Draft only - nothing is sent or uploaded"
 }

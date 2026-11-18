@@ -34,9 +34,27 @@ export function useCompanyPermission() {
     can(permission)
       ? {}
       : { disabled: true, title: t["common.noPermission"], "data-permission-denied": "true" };
+  /**
+   * E2 (J3-r2): props for an approve / review control. Disabled with the reason when the role
+   * lacks `permission`, or when the signed-in user prepared the item (`makerId`) and another
+   * member could approve it (the server's maker-checker rule, waived for a sole member).
+   */
+  const gateApproval = (permission: Permission, makerId: string | null | undefined) => {
+    const base = gate(permission);
+    if ("disabled" in base) return base;
+    if (known && makerId && access?.userId && makerId === access.userId && !access.soleMember) {
+      return {
+        disabled: true,
+        title: t["common.preparerCannotApprove"],
+        "data-permission-denied": "true",
+      };
+    }
+    return {};
+  };
   return {
     can,
     gate,
+    gateApproval,
     role: (access?.role ?? null) as CompanyRole | null,
     isLoading: !!companyId && isLoading,
     known,
