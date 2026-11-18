@@ -139,7 +139,7 @@ const toDate = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 const isoOf = (d: Date | string | null | undefined): string | null =>
   d ? (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10) : null;
 
-function lineDraft(
+export function lineDraft(
   l: SalesLineInput & Partial<Pick<InvoiceLineInput, "marginScheme" | "marginPurchaseCost">>
 ) {
   return {
@@ -158,7 +158,7 @@ function lineDraft(
   };
 }
 
-function lineRow(invoiceId: string, r: PreparedSalesLine) {
+export function lineRow(invoiceId: string, r: PreparedSalesLine) {
   return {
     invoiceId,
     description: r.description,
@@ -249,10 +249,21 @@ export async function invoicePdfOptions(invoice: Invoice): Promise<GenerateInvoi
   const s = await invoiceSettlement(db, invoice.id);
   const settled = s.paidFils + s.creditedFils + s.appliedFils;
   let customer: GenerateInvoicePdfOptions["customer"];
+  // WQ1 (7.21): the document's own language wins over the company locale.
+  const locale =
+    invoice.documentLanguage === "ar" || invoice.documentLanguage === "en"
+      ? invoice.documentLanguage
+      : undefined;
   if (invoice.contactId) {
     const contact = await storage.getCustomerContact(invoice.contactId);
     if (contact && contact.companyId === invoice.companyId) {
-      customer = { name: contact.name, trn: contact.trnNumber, address: contact.address };
+      customer = {
+        name: contact.name,
+        trn: contact.trnNumber,
+        address: contact.address,
+        // WQ1 (14.7): an Arabic document shows the contact's Arabic name when it has one.
+        displayName: locale === "ar" && contact.nameAr?.trim() ? contact.nameAr.trim() : null,
+      };
     }
   }
   const templates: InvoiceTemplate[] = await db
@@ -262,6 +273,7 @@ export async function invoicePdfOptions(invoice: Invoice): Promise<GenerateInvoi
   const tpl =
     templates.find((t) => t.id === invoice.templateId) ?? templates.find((t) => t.isDefault);
   return {
+    ...(locale ? { locale } : {}),
     amountPaid: invoice.invoiceType === "credit_note" ? 0 : Number(fromFils(settled)),
     customer,
     supplyDate: invoice.supplyDate ?? null,
@@ -280,7 +292,7 @@ export async function invoicePdfOptions(invoice: Invoice): Promise<GenerateInvoi
 }
 
 /** Build header + lines + totals for a new sales document (invoice or debit note). */
-async function prepareNewDocument(companyId: string, body: CreateInvoiceInput) {
+export async function prepareNewDocument(companyId: string, body: CreateInvoiceInput) {
   const header = await resolveCustomerHeader(
     companyId,
     {
@@ -349,6 +361,7 @@ export function registerInvoiceRoutes(app: Express) {
         cursor: q.cursor ?? null,
         status: q.status,
         type: q.type,
+        source: q.source,
       });
       const balances = await getInvoiceBalances(
         companyId,
@@ -491,6 +504,8 @@ export function registerInvoiceRoutes(app: Express) {
             reverseCharge: body.reverseCharge ?? false,
             notes: body.notes ?? null,
             templateId: body.templateId ?? null,
+            documentLanguage: body.documentLanguage ?? null,
+            source: "app",
             status: "draft",
             invoiceType: "invoice",
           })
@@ -597,6 +612,7 @@ export function registerInvoiceRoutes(app: Express) {
         if (body.notes !== undefined) patch.notes = body.notes;
         if (body.paymentTerms !== undefined) patch.paymentTerms = body.paymentTerms;
         if (body.dueDate !== undefined) patch.dueDate = body.dueDate ? toDate(body.dueDate) : null;
+        if (body.documentLanguage !== undefined) patch.documentLanguage = body.documentLanguage;
         const updated = Object.keys(patch).length
           ? await storage.updateInvoice(invoice.id, invoice.companyId, patch)
           : invoice;
@@ -610,6 +626,7 @@ export function registerInvoiceRoutes(app: Express) {
             notes: invoice.notes,
             paymentTerms: invoice.paymentTerms,
             dueDate: invoice.dueDate,
+            documentLanguage: invoice.documentLanguage,
           },
           after: patch,
           req,
@@ -646,6 +663,10 @@ export function registerInvoiceRoutes(app: Express) {
           body.discountValue !== undefined ? body.discountValue : invoice.discountValue,
         notes: body.notes !== undefined ? body.notes : invoice.notes,
         templateId: body.templateId !== undefined ? body.templateId : invoice.templateId,
+        documentLanguage:
+          body.documentLanguage !== undefined
+            ? body.documentLanguage
+            : ((invoice.documentLanguage as "en" | "ar" | null) ?? null),
         lines:
           body.lines ??
           (await storage.getInvoiceLinesByInvoiceId(invoice.id)).map((l) => ({
@@ -658,6 +679,7 @@ export function registerInvoiceRoutes(app: Express) {
             discountValue: l.discountValue ?? null,
             productId: l.productId ?? null,
             costCenterId: l.costCenterId ?? null,
+            revenueAccountId: l.revenueAccountId ?? null,
             marginScheme: l.marginScheme ?? false,
             marginPurchaseCost: l.marginScheme
               ? toFils(l.marginPurchaseCost ?? 0, { rounding: "halfUp" })
@@ -688,6 +710,7 @@ export function registerInvoiceRoutes(app: Express) {
             reverseCharge: merged.reverseCharge ?? false,
             notes: merged.notes ?? null,
             templateId: merged.templateId ?? null,
+            documentLanguage: merged.documentLanguage ?? null,
           })
           .where(
             and(
@@ -886,22 +909,6 @@ export function registerInvoiceRoutes(app: Express) {
         }).catch(() => {});
       }
       res.json(updated);
-    })
-  );
-
-  // DEPRECATED — 410. The scheduler reads recurring_invoices templates
-  // (POST /api/companies/:companyId/recurring-invoices).
-  app.post(
-    "/api/companies/:companyId/invoices/:invoiceId/set-recurring",
-    authMiddleware,
-    requireCustomer,
-    asyncHandler(async (_req: Request, res: Response) => {
-      return res.status(410).json({
-        message:
-          "This endpoint is deprecated and no longer schedules invoices. Use POST /api/companies/:companyId/recurring-invoices instead.",
-        code: "ENDPOINT_DEPRECATED",
-        replacement: "/api/companies/:companyId/recurring-invoices",
-      });
     })
   );
 

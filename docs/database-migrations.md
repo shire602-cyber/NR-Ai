@@ -28,7 +28,7 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   Drizzle column must be created by some migration. Storage methods for a new table go in the
   matching `server/storage/<domain>.ts` class, with the signature added to
   `server/storage/types.ts` (`IStorage`).
-- Owner exception (2026-11-18, PR #68): `0129_settlement_open_balance_indexes` was added after the chain
-  was frozen, with the owner's explicit approval, as the next free number (journal idx 128, after the base's 0125-0128). It follows
+- Owner exception (2026-11-18, PR #68): `0130_settlement_open_balance_indexes` was added after the chain
+  was frozen, with the owner's explicit approval, as the next free number (journal idx 129, after the base's 0125-0129). It follows
   the header, `Idempotent` and `IF NOT EXISTS` rules. This does not lift the freeze for other changes;
   see docs/release/MIGRATION-REHEARSAL.md.

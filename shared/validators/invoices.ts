@@ -77,7 +77,7 @@ export const zDiscountValue = z
   .transform((v) => (typeof v === "number" ? v : Number(String(v).trim())))
   .refine((n) => Number.isFinite(n) && n >= 0, "Discount must be zero or more");
 
-function discountRefine(
+export function discountRefine(
   v: { discountType?: string | null; discountValue?: number | null },
   ctx: z.RefinementCtx
 ) {
@@ -196,6 +196,22 @@ export const zPaymentTerms = z
   .trim()
   .regex(/^(due_on_receipt|net\d{1,3}|custom)$/, "Payment terms must be due_on_receipt or netN");
 
+/** WQ1: languages a sales document can be printed in (the PDF engine's locales). */
+export const DOCUMENT_LANGUAGES = ["en", "ar"] as const;
+export type DocumentLanguage = (typeof DOCUMENT_LANGUAGES)[number];
+
+/** WQ1: where an invoice came from (invoices.source). */
+export const INVOICE_SOURCES = [
+  "app",
+  "api",
+  "recurring",
+  "quote",
+  "cash_sale",
+  "import",
+  "shopify",
+] as const;
+export type InvoiceSource = (typeof INVOICE_SOURCES)[number];
+
 const zExchangeRateInput = z
   .union([z.number(), z.string()])
   .transform((v) => Number(v))
@@ -207,7 +223,7 @@ const zExchangeRateInput = z
 /** Invoice dates: a supply that has happened (today + 1 day tolerance for timezone skew). */
 const zInvoiceDate = zDateIn({ maxDaysAhead: 1 });
 
-const headerShape = {
+export const invoiceHeaderShape = {
   contactId: zUuid.optional().nullable(),
   customerName: zText(300).optional(),
   customerTrn: z
@@ -229,21 +245,35 @@ const headerShape = {
   discountValue: zDiscountValue.optional().nullable(),
   notes: zText(4000).optional().nullable(),
   templateId: zUuid.optional().nullable(),
+  /** WQ1: the PDF language of this document (null = the company's locale). */
+  documentLanguage: z.enum(DOCUMENT_LANGUAGES).optional().nullable(),
   lines: invoiceLinesSchema,
 };
 
-export const createInvoiceSchema = z.object(headerShape).strict().superRefine(discountRefine);
+export const createInvoiceSchema = z
+  .object(invoiceHeaderShape)
+  .strict()
+  .superRefine(discountRefine);
 export type CreateInvoiceInput = z.output<typeof createInvoiceSchema>;
 
 /** PUT /api/invoices/:id — same fields, all optional (drafts only, except EDITABLE_AFTER_ISSUE). */
 export const updateInvoiceSchema = z
-  .object({ ...headerShape, date: zInvoiceDate.optional(), lines: invoiceLinesSchema.optional() })
+  .object({
+    ...invoiceHeaderShape,
+    date: zInvoiceDate.optional(),
+    lines: invoiceLinesSchema.optional(),
+  })
   .strict()
   .superRefine(discountRefine);
 export type UpdateInvoiceInput = z.output<typeof updateInvoiceSchema>;
 
 /** Fields an issued tax invoice may still change (they do not alter the supply or the tax). */
-export const EDITABLE_AFTER_ISSUE = ["notes", "paymentTerms", "dueDate"] as const;
+export const EDITABLE_AFTER_ISSUE = [
+  "notes",
+  "paymentTerms",
+  "dueDate",
+  "documentLanguage",
+] as const;
 
 /** PATCH /api/invoices/:id/status — issue / void / cancel only. Payment goes through /payments. */
 export const INVOICE_STATUS_TARGETS = ["sent", "posted", "void", "cancelled"] as const;
@@ -283,4 +313,6 @@ export const invoiceListQuerySchema = z.object({
   all: z.enum(["true", "false"]).optional(),
   status: z.string().max(40).optional(),
   type: z.enum(["invoice", "credit_note", "debit_note"]).optional(),
+  /** WQ1 (13.5): "Source: API" and the other origins. */
+  source: z.enum(INVOICE_SOURCES).optional(),
 });

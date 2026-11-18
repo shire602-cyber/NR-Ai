@@ -14,7 +14,12 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EditorShell } from "@/components/ui/editor-shell";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { useEditorRoute } from "@/hooks/useEditorRoute";
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
+
+// WQ1: the email dialog loads when a quote is sent.
+const SendQuoteDialog = lazy(() =>
+  import("@/components/invoices/SendQuoteDialog").then((m) => ({ default: m.SendQuoteDialog }))
+);
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -63,7 +68,16 @@ import { UpgradePrompt } from "@/components/UpgradePrompt";
 import { formatDate } from "@/lib/format";
 import { lineVatRate } from "@/lib/invoice-totals";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, CalendarIcon, Trash2, Download, Edit, FileText, ArrowRightLeft } from "lucide-react";
+import {
+  Plus,
+  CalendarIcon,
+  Trash2,
+  Download,
+  Edit,
+  FileText,
+  ArrowRightLeft,
+  Send,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { parseCalendarDate } from "@/lib/format-date";
 
@@ -132,8 +146,10 @@ export default function Quotes() {
     enabled: !!selectedCompanyId,
   });
 
+  // WQ1 (7.5): the quote being emailed.
+  const [quoteToSend, setQuoteToSend] = useState<Quote | null>(null);
   const { data: contacts = [] } = useQuery<
-    Array<{ id: string; name: string; trnNumber?: string | null }>
+    Array<{ id: string; name: string; trnNumber?: string | null; email?: string | null }>
   >({
     queryKey: ["/api/companies", selectedCompanyId, "customer-contacts"],
     enabled: !!selectedCompanyId,
@@ -861,6 +877,15 @@ export default function Quotes() {
                     menu={
                       <>
                         <DropdownMenuItem
+                          onClick={() => setQuoteToSend(quote)}
+                          disabled={["declined", "expired", "converted"].includes(quote.status)}
+                          data-testid={`button-send-quote-${quote.id}`}
+                          {...gate("documents.write")}
+                        >
+                          <Send aria-hidden />
+                          {t["invoices.quoteSend.action"]}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
                           onClick={() => convertMutation.mutate(quote.id)}
                           disabled={quote.status === "converted"}
                         >
@@ -899,6 +924,17 @@ export default function Quotes() {
           </TableBody>
         </Table>
       </DataTableCard>
+      {quoteToSend && (
+        <Suspense fallback={null}>
+          <SendQuoteDialog
+            key={quoteToSend.id}
+            quote={quoteToSend}
+            companyId={selectedCompanyId}
+            defaultEmail={contacts.find((c) => c.id === quoteToSend.contactId)?.email ?? null}
+            onClose={() => setQuoteToSend(null)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

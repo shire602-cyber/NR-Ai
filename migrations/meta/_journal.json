@@ -902,7 +902,14 @@
    "idx": 128,
    "version": "7",
    "when": 1781430440000,
-   "tag": "0129_settlement_open_balance_indexes",
+   "tag": "0129_wq1_sales_documents",
+   "breakpoints": false
+  },
+  {
+   "idx": 129,
+   "version": "7",
+   "when": 1781430450000,
+   "tag": "0130_settlement_open_balance_indexes",
    "breakpoints": false
   }
  ]

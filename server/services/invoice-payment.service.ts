@@ -21,6 +21,7 @@ import {
   customerCreditAllocations,
   customerCredits,
   invoicePayments,
+  invoices,
   journalEntries,
   type CustomerCredit,
   type Invoice,
@@ -114,6 +115,11 @@ export interface RecordPaymentInput {
   paymentExchangeRate?: number | null;
   createdBy: string;
   allowCredit?: boolean;
+  /**
+   * WQ1: run inside the caller's ledger transaction (one receipt over several invoices, a cash
+   * sale). Reads see the caller's uncommitted rows; events fire after the caller commits.
+   */
+  tx?: LedgerTx;
 }
 
 /**
@@ -122,7 +128,16 @@ export interface RecordPaymentInput {
  * the commit.
  */
 export async function recordInvoicePayment(input: RecordPaymentInput) {
-  let invoice = await storage.getInvoice(input.invoiceId, input.companyId);
+  const exec: LedgerTx = input.tx ?? db;
+  const loadInvoice = async (): Promise<Invoice | undefined> => {
+    if (!input.tx) return storage.getInvoice(input.invoiceId, input.companyId);
+    const [row] = await exec
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.id, input.invoiceId), eq(invoices.companyId, input.companyId)));
+    return row as Invoice | undefined;
+  };
+  let invoice = await loadInvoice();
   if (!invoice) throw new DomainError("INVOICE_NOT_FOUND", 404, undefined, "Invoice not found");
   if ((input.method ?? "").toLowerCase() === WRITE_OFF_METHOD) {
     throw new DomainError(
@@ -134,7 +149,11 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
   }
   // A3 (H1): a receipt on a written-off invoice first reinstates the write-off (bad debt
   // recovered: Dr A/R / Cr bad-debt expense), then settles as an ordinary payment.
-  if (invoice.invoiceType !== "credit_note" && ["paid", "partial"].includes(invoice.status)) {
+  if (
+    !input.tx &&
+    invoice.invoiceType !== "credit_note" &&
+    ["paid", "partial"].includes(invoice.status)
+  ) {
     const target = invoice;
     const { written, open } = await withLedgerTx(async (tx) => ({
       written: await invoiceWrittenOffFils(tx, target.id),
@@ -177,7 +196,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
       `Cannot record payment on ${invoice.status} invoice`
     );
   }
-  const acct = await assertCashOrBankAccount(input.companyId, input.paymentAccountId);
+  const acct = await assertCashOrBankAccount(input.companyId, input.paymentAccountId, exec);
   // R03-22: a foreign invoice settles at the payment-date rate (company rate,
   // then system rate via fx.getRate) so realised FX is booked; with no rate on
   // file it settles at the invoice rate (no FX), as before.
@@ -197,7 +216,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
       paymentExchangeRate = null;
     }
   }
-  const receivableAccountId = await getArAccount(db, input.companyId);
+  const receivableAccountId = await getArAccount(exec, input.companyId);
   // A2 (C4, IAS 21): a bank account holds only its own currency. Receipts into a base-currency
   // account carry no foreign tag; into a third-currency account they are converted explicitly.
   const bankCur = (await bankCurrencyOf(input.companyId, input.paymentAccountId)) ?? baseCurrency;
@@ -233,6 +252,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
       receivableAccountId,
       createdBy: input.createdBy,
       allowCredit: input.allowCredit === true,
+      ...(input.tx ? { tx: input.tx } : {}),
     });
   } catch (err) {
     const e = err as { code?: string; message?: string; details?: unknown };
@@ -253,6 +273,28 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
     throw err;
   }
   const amountFils = toFils(input.amount, { rounding: "halfUp" });
+  if (input.tx) {
+    // WQ1: inside a caller's transaction the events wait for its commit. A new cash sale or an
+    // open invoice has no bad-debt relief to reverse (relief needs a written-off, overdue debt);
+    // the relief check still runs after the commit.
+    const settled = result;
+    await withLedgerTx(async (_tx, hooks) => {
+      hooks.afterCommit(async () => {
+        await afterPaymentRecorded(input, settled, amountFils);
+      });
+    }, input.tx);
+    return result;
+  }
+  const relief = await afterPaymentRecorded(input, result, amountFils);
+  return relief ? { ...result, badDebtReliefReversal: relief } : result;
+}
+
+/** Bad-debt relief reversal (C2 NL8) and the payment.received / invoice.paid events. */
+async function afterPaymentRecorded(
+  input: RecordPaymentInput,
+  result: { payment: { id: string }; invoice: Invoice },
+  amountFils: number
+) {
   // C2 (NL8): reverse any bad-debt relief claimed on this invoice now (Art. 64(3)), so the VAT
   // return is right as soon as the receipt is; a failure is returned, not only logged.
   let badDebtReliefReversal:
@@ -293,7 +335,7 @@ export async function recordInvoicePayment(input: RecordPaymentInput) {
       actorUserId: input.createdBy,
     });
   }
-  return badDebtReliefReversal ? { ...result, badDebtReliefReversal } : result;
+  return badDebtReliefReversal;
 }
 
 type ReverseReliefOnPayment = (p: {

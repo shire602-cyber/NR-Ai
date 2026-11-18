@@ -98,9 +98,14 @@ export const invoices = pgTable(
     issuedAt: timestamp("issued_at"),
     // S1 (migration 0110): credit notes only — return goods to stock (true / null) or write off (false).
     restock: boolean("restock"),
+    // WQ1 (migration 0129): the PDF language of this document (en | ar; null = company locale) and
+    // where the document came from (app | api | recurring | quote | cash_sale | import | shopify).
+    documentLanguage: text("document_language"),
+    source: text("source").notNull().default("app"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => ({
+    companySourceIdx: index("idx_invoices_company_source").on(table.companyId, table.source),
     companyNumberUnique: unique("invoices_company_number_unique").on(table.companyId, table.number),
     companyCreatedIdx: index("idx_invoices_company_created_id").on(
       table.companyId,
@@ -111,7 +116,7 @@ export const invoices = pgTable(
     companyDateIdx: index("idx_invoices_company_date").on(table.companyId, table.date),
     companyStatusIdx: index("idx_invoices_company_status").on(table.companyId, table.status),
     contactIdIdx: index("idx_invoices_contact_id").on(table.contactId),
-    // 0129 (owner exception): the settlement rule's credited subquery filters on this column.
+    // 0130 (owner exception): the settlement rule's credited subquery filters on this column.
     originalInvoiceIdx: index("idx_invoices_original_invoice_id")
       .on(table.originalInvoiceId)
       .where(sql`original_invoice_id IS NOT NULL`),
@@ -128,6 +133,64 @@ export const insertInvoiceSchema = createInsertSchema(invoices).omit({
 
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 export type Invoice = typeof invoices.$inferSelect;
+
+/** WQ1 (migration 0129): files kept with an invoice (bytes in file storage under storage_key). */
+export const invoiceAttachments = pgTable(
+  "invoice_attachments",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    fileName: text("file_name").notNull(),
+    contentType: text("content_type").notNull(),
+    storageKey: text("storage_key").notNull(),
+    sizeBytes: integer("size_bytes").notNull().default(0),
+    uploadedBy: uuid("uploaded_by").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    invoiceIdx: index("idx_invoice_attachments_invoice").on(table.invoiceId),
+  })
+);
+export type InvoiceAttachment = typeof invoiceAttachments.$inferSelect;
+
+/**
+ * WQ1 (migration 0129): the sent / viewed log of an invoice. kind = emailed (status is the
+ * outbox status: sent, queued, blocked_no_provider, ...) | viewed (the share link was opened).
+ */
+export const invoiceEvents = pgTable(
+  "invoice_events",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    recipient: text("recipient"),
+    status: text("status"),
+    outboxId: uuid("outbox_id"),
+    userId: uuid("user_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    invoiceCreatedIdx: index("idx_invoice_events_invoice_created").on(
+      table.invoiceId,
+      table.createdAt
+    ),
+  })
+);
+export type InvoiceEvent = typeof invoiceEvents.$inferSelect;
 
 // ===========================
 // Invoice Lines
@@ -303,7 +366,7 @@ export const creditNotes = pgTable(
     ),
     companyIdIdx: index("idx_credit_notes_company_id").on(table.companyId),
     companyStatusIdx: index("idx_credit_notes_company_status").on(table.companyId, table.status),
-    // 0129 (owner exception): legacy credit notes in the settlement rule's credited subquery.
+    // 0130 (owner exception): legacy credit notes in the settlement rule's credited subquery.
     invoiceIdx: index("idx_credit_notes_invoice_id")
       .on(table.invoiceId)
       .where(sql`invoice_id IS NOT NULL`),

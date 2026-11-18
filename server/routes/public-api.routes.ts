@@ -291,6 +291,8 @@ export function registerPublicApiRoutes(app: Express) {
         companyOf(req),
         {
           ...body,
+          // WQ1 (13.5): the invoice list's "Source: API" filter.
+          source: "api",
           lines: body.lines.map((l) => ({
             description: l.description,
             quantity: l.quantity,
