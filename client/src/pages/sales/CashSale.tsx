@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
 import { Plus, Trash2 } from "lucide-react";
 import { EditorShell } from "@/components/ui/editor-shell";
@@ -89,6 +89,13 @@ export default function CashSale() {
     enabled: !!companyId,
   });
   const paymentAccounts = postablePaymentAccounts(accounts);
+  // CASH-SERIES: the number comes from the cash sale series (Settings › Numbering), not the
+  // tax-invoice series; the server allocates it on save, so this is the next one, not a hold.
+  const numberingKey = ["/api/companies", companyId, "numbering"];
+  const { data: numbering } = useQuery<{
+    numbering: Array<{ docType: string; nextFormatted: string }>;
+  }>({ queryKey: numberingKey, enabled: !!companyId });
+  const nextNumber = numbering?.numbering.find((n) => n.docType === "cash_sale")?.nextFormatted;
 
   const [contactId, setContactId] = useState(NO_CONTACT);
   const [customerName, setCustomerName] = useState("");
@@ -142,6 +149,7 @@ export default function CashSale() {
       }),
     onSuccess: (inv: { number: string }) => {
       void queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "invoices"] });
+      void queryClient.invalidateQueries({ queryKey: numberingKey });
       toast({
         title: t["invoices.cashSale.recorded"],
         description: formatMessage(t["invoices.cashSale.recordedBody"], { number: inv.number }),
@@ -198,6 +206,24 @@ export default function CashSale() {
       }
     >
       <FormSection title={t["invoices.cashSale.section.sale"]}>
+        <div className="mb-4 rounded-md border bg-muted/40 p-3" data-testid="cash-sale-number">
+          <p className="text-small">
+            <span className="text-muted-foreground">{t["invoices.cashSale.number"]}</span>{" "}
+            <span
+              dir="ltr"
+              className="font-medium tabular-nums [unicode-bidi:isolate]"
+              data-testid="cash-sale-next-number"
+            >
+              {nextNumber ?? "—"}
+            </span>
+          </p>
+          <p className="mt-1 text-caption text-muted-foreground">
+            {t["invoices.cashSale.numberHint"]}{" "}
+            <Link href="/settings/numbering" className="underline underline-offset-2">
+              {t["invoices.cashSale.numberSettings"]}
+            </Link>
+          </p>
+        </div>
         <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="cash-customer">{t["invoices.cashSale.customer"]}</Label>

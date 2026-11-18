@@ -73,6 +73,12 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   `overdue`). Callers that aggregate over every invoice must pass `?all=true` (Dashboard, Reports,
   CreditNotes, BankReconciliation) and keep the `["/api/companies", id, "invoices"]` query key so
   invalidations still match. Invoices and BillPay read the dashboard drill-through `?status=`.
+- Document numbers come only from `server/services/invoice-numbering.service.ts`
+  (`allocateInvoiceNumber`, inside the document's insert transaction, so a failed save rolls the
+  number back). Each doc type (`invoice`, `cash_sale`, `credit_note`, `debit_note`, `quote`) has
+  its own per-company series and Settings › Numbering row; prefixes are unique across types.
+  Cash sales (owner decision 2026-11-18) use the `cash_sale` series (default `CS`), never the
+  tax-invoice one; cash sales from before migration 0130 kept their `INV-` numbers.
 - Statements, trial balance, aging, cash flow and corporate-tax figures read the reporting kernel in
   `server/reporting/` (see its README); other ledger readers should use it or `NOT_CLOSING_SQL`.
 - Tenant-owned rows are loaded with `server/tenancy` (`scopedGet` / `scopedUpdate` /
