@@ -66,6 +66,7 @@ import {
   type DepreciationOutcome,
 } from "../services/fixed-assets";
 import { assertAccount, q } from "../services/inventory/store";
+import { companyIsVatRegistered } from "../tax/vat-registration";
 
 const log = createLogger("fixed-assets");
 const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -168,6 +169,12 @@ async function createAssetRecord(
       ],
       { tx }
     );
+    // E3 (J3-r3 / J2-r3): input VAT paid with the asset is recoverable (Dr 1050) only for a VAT
+    // registered company; otherwise it is part of the asset's cost.
+    const paidVatFils = body.paymentAccountId && body.inputVat ? body.inputVat : 0;
+    const vatRegistered = paidVatFils > 0 ? await companyIsVatRegistered(companyId) : true;
+    if (!vatRegistered) body = { ...body, purchaseCost: body.purchaseCost + paidVatFils };
+    const acquisitionVatFils = vatRegistered ? paidVatFils : 0;
     const cost = fromFils(body.purchaseCost);
     const [row] = await q<{ id: string }>(
       tx,
@@ -185,7 +192,7 @@ async function createAssetRecord(
             ${body.accumulatedAccountId ?? cls?.accumulated_account_id ?? null},
             ${body.expenseAccountId ?? cls?.expense_account_id ?? null}, ${body.costCenterId ?? null},
             ${body.taxUsefulLifeYears ?? cls?.tax_useful_life_years ?? null}, ${body.taxDepreciationMethod ?? null},
-            ${fromFils(body.paymentAccountId && body.inputVat ? body.inputVat : 0)})
+            ${fromFils(acquisitionVatFils)})
           RETURNING id`
     );
     const asset = await loadAsset(tx, row.id, { lock: true });

@@ -40,6 +40,7 @@ import type { Account } from "../../shared/schema";
 import { afterBillPosted, planBillStock, reverseBillStock } from "./inventory/documents";
 import { fixedAssetCostAccountIds, syncBillAssets, type BillAssetLine } from "./fixed-assets/index";
 import { loadRecoveryRules, resolveRecovery } from "../tax/vat-recovery";
+import { companyIsVatRegistered } from "../tax/vat-registration";
 
 const log = createLogger("bill-posting");
 
@@ -503,8 +504,22 @@ export async function planBillJournal(
   const vatDoc = filsOf(bill.vat_amount);
   const whtDoc = filsOf(bill.withholding_amount);
   const netBase = nets.map((n) => toBase(n, rate, foreign));
-  const vatBase = toBase(vatDoc, rate, foreign);
-  const pct = Number(bill.recoverable_vat_percent ?? 100);
+  const vatRegistered = await companyIsVatRegistered(companyId);
+  // E3 (J2-r3): a company that is not VAT registered does not self-account reverse-charge VAT
+  // (it is not charged at all) and cannot recover the VAT a supplier charged: that VAT is part
+  // of the line's cost, nothing goes to Input VAT 1050.
+  let rcVatBase = 0;
+  if (bill.reverse_charge || bill.is_import) {
+    rcVatBase = toBase(vatDoc, rate, foreign);
+  } else {
+    const rcLines = lineItems.filter((l) => l.reverse_charge);
+    rcVatBase = toBase(sumFils(rcLines.map((l) => filsOf(l.vat_amount))), rate, foreign);
+  }
+  const vatBase = vatRegistered
+    ? toBase(vatDoc, rate, foreign)
+    : Math.max(0, toBase(vatDoc, rate, foreign) - rcVatBase);
+  if (!vatRegistered) rcVatBase = 0;
+  const pct = vatRegistered ? Number(bill.recoverable_vat_percent ?? 100) : 0;
   const lineAccountIds: string[] = [];
   for (const item of lineItems) {
     lineAccountIds.push(
@@ -596,13 +611,6 @@ export async function planBillJournal(
   }
 
   const totalDebit = sumFils(lines.map((l) => l.debitFils ?? 0));
-  let rcVatBase = 0;
-  if (bill.reverse_charge || bill.is_import) {
-    rcVatBase = vatBase;
-  } else {
-    const rcLines = lineItems.filter((l) => l.reverse_charge);
-    rcVatBase = toBase(sumFils(rcLines.map((l) => filsOf(l.vat_amount))), rate, foreign);
-  }
   if (rcVatBase > 0) {
     const outputVat =
       accounts.find(

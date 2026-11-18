@@ -39,6 +39,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { isVatRegistered } from "@shared/vat-registration";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Money } from "@/components/ui/money";
 import { exportToExcel } from "@/lib/export";
@@ -160,6 +161,7 @@ interface Company {
   name: string;
   nameAr: string | null;
   trnVatNumber: string | null;
+  taxRegistrationType?: string | null;
   vatFilingFrequency: string | null;
   emirate: string | null;
   address?: string | null;
@@ -957,6 +959,32 @@ export default function VATFiling() {
             {t["compliance.vatFilingSubmitForFiling"]}
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  // E3 (J2-r3): a company that is not VAT registered files no VAT return and recovers no input
+  // VAT, so the page says so instead of showing return figures.
+  if (company && !isVatRegistered(company)) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow={locale === "ar" ? "الامتثال الضريبي" : "Compliance"}
+          title={locale === "ar" ? "إقرار ضريبة القيمة المضافة 201" : "UAE VAT 201 return"}
+          backHref="/reports"
+          backLabel={t["compliance.vatFilingBackToReports"]}
+        />
+        <Card data-testid="card-vat-not-registered">
+          <CardContent className="pt-6 space-y-3">
+            <p className="font-medium">{t["compliance.vatNotRegisteredTitle"]}</p>
+            <p className="text-sm text-muted-foreground">{t["compliance.vatNotRegisteredBody"]}</p>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/company-profile" data-testid="link-vat-registration-settings">
+                {t["compliance.vatFilingOpenCompanyProfile"]}
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
