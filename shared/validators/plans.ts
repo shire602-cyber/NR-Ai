@@ -46,7 +46,13 @@ export const onboardingProgressBody = z
   .strict();
 export type OnboardingProgressBody = z.infer<typeof onboardingProgressBody>;
 
-export const NUMBERED_DOC_TYPES = ["invoice", "credit_note", "debit_note", "quote"] as const;
+export const NUMBERED_DOC_TYPES = [
+  "invoice",
+  "cash_sale",
+  "credit_note",
+  "debit_note",
+  "quote",
+] as const;
 
 /** PUT /api/companies/:companyId/numbering/:docType */
 export const numberingSettingsBody = z
