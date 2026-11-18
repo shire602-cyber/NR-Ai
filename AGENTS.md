@@ -27,7 +27,7 @@ Scope: this file applies to the whole repository. It is a concise index; detail 
   exceeds 1,500 lines.
 - `migrations/` Drizzle migrations (`migrations/meta/` is generated; never edit by hand).
 - `tests/` Vitest unit tests (`tests/unit`), DB-backed tests (`tests/db`) and smoke/E2E scripts.
-- `docs/release/DEPLOY-RUNBOOK.md` deploy runbook: backup, migration 0089-0122 rehearsal, env,
+- `docs/release/DEPLOY-RUNBOOK.md` deploy runbook: backup, migration 0089-0123 rehearsal, env,
   smoke, rollback.
 - `docs/` engineering notes. Do not edit `dist/` or `node_modules/`; `.claude/` and `.claire/`
   worktrees are excluded from Vitest/ESLint and are not a source of truth.
@@ -138,6 +138,9 @@ Detail: [docs/testing-runtime.md](docs/testing-runtime.md).
 - [docs/dev-commands.md](docs/dev-commands.md): QA fixtures, benchmark audit, audit generators.
 - [docs/database-migrations.md](docs/database-migrations.md), [docs/testing-runtime.md](docs/testing-runtime.md).
 - [docs/release/SELF-HOSTING.md](docs/release/SELF-HOSTING.md): on-prem production (compose prod profile, TLS, backups, monitoring).
+- [docs/release/MIGRATION-REHEARSAL.md](docs/release/MIGRATION-REHEARSAL.md) (scripted rehearsal in
+  `docs/release/rehearsal/`), [docs/release/PLATFORM-OWNER.md](docs/release/PLATFORM-OWNER.md)
+  (0054 neutralised; opt-in `scripts/ops/platform-owner.ts`), [docs/release/SUPERSEDED-PRS.md](docs/release/SUPERSEDED-PRS.md).
 - [docs/einvoicing-providers.md](docs/einvoicing-providers.md): the two accredited e-invoicing
   providers (A-Cube, Complyance), `EINVOICE_PROVIDER` switching and the files to delete for each.
 - Other: `docs/corporate-tax-rules.md`, `docs/faf-export.md`, `docs/payroll-legal-parameters.md`,

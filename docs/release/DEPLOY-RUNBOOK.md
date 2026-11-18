@@ -1,8 +1,8 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0122)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0123)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
-Owner-run. The first deploy of this branch applies 30 migrations that rewrite some production data
+Owner-run. The first deploy of this branch applies 35 migrations (0089-0123) that rewrite some production data
 (users, roles, FX rates, reconciliation rules, portal tokens, audit chain, subscriptions). Do not
 merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived or external items
 (A-Cube, email, Stripe, WPS, GPSSA, FAF) are listed in section 9 and stay off until proven.
@@ -29,7 +29,7 @@ Restore the dump from section 1 (or a Railway snapshot) into a scratch database,
 ```
 export DATABASE_URL=postgres://.../rehearsal   # the restored copy
 \timing on                                     # in psql; or time the command below
-time npm run db:migrate                         # applies 0089-0122; record total and slowest file
+time npm run db:migrate                         # applies 0089-0123; record total and slowest file
 npm run build && PORT=<free port> npm start     # boot check: /health/ready 200, /api/version
 ```
 
@@ -59,9 +59,10 @@ SELECT (SELECT count(*) FROM companies) AS companies,
        count(*) FILTER (WHERE source <> 'fta') AS non_fta_rates,
        count(*) FILTER (WHERE source = 'manual') AS manual_rates
   FROM exchange_rates;
--- 0097: reconciliation rules that will be switched off
+-- 0097: reconciliation rules that will be switched off. account_id does not exist before 0097, so
+-- on a main schema every active rule counts as "without account" and is deactivated.
 SELECT count(*) FILTER (WHERE match_type NOT IN ('exact','contains','starts_with','regex','equals','equal','is')) AS bad_match_type,
-       count(*) FILTER (WHERE account_id IS NULL AND is_active) AS active_without_account
+       count(*) FILTER (WHERE is_active) AS active_rules_all_deactivated_by_0097
   FROM reconciliation_rules;
 -- 0103: plaintext portal tokens that will be hashed (links then expire within 90 days)
 SELECT count(*) FROM customer_contacts WHERE portal_access_token IS NOT NULL;
@@ -118,8 +119,9 @@ records it again (same date, amount, rate, reference) on the primary bank accoun
 already matched to a bank line, or dated in a locked period, are skipped and reported. Run the
 repair only after the owner has reviewed the findings, with a fresh backup.
 
-Pre-deploy SQL check (read-only, run on production or the snapshot BEFORE the deploy): parent/child
-posting accounts. Any parent (header) account that already carries posted journal lines needs an
+Pre-deploy SQL check (read-only): parent/child posting accounts. `accounts.parent_id` is created by
+0093, so on a pre-0089 (main) schema this script errors; run it on the MIGRATED rehearsal copy before
+the deploy (rehearsal: [MIGRATION-REHEARSAL.md](MIGRATION-REHEARSAL.md), finding 4). Any parent (header) account that already carries posted journal lines needs an
 owner decision before a build that refuses posting to parent accounts goes live:
 
 ```
@@ -165,6 +167,13 @@ and attach to the PR:
 
 The owner reviews and signs off the findings before the deploy. Findings are flagged, not repaired:
 historic unbalanced entries and duplicate reversals need accountant review per tenant afterwards.
+
+### 2e. Scripted rehearsal and the 2026-11-18 record
+
+`docs/release/rehearsal/rehearse.sh` runs sections 1, 2a-2d, the idempotency re-runs and the
+section 7 restore in one command against a restored snapshot (never production). The production-like
+rehearsal record, with its findings (two missing indexes on the settlement rule, 0097 deactivating
+every pre-existing rule, 0109 time per audit row), is in [MIGRATION-REHEARSAL.md](MIGRATION-REHEARSAL.md).
 
 ## 3. Environment to set on Railway BEFORE the deploy
 
@@ -217,7 +226,8 @@ network (SSH) once a key is registered.
 - **Invitations (0092):** placeholder users created by the old team invite became pending
   invitations with a new token that is never shown. Inviters must re-send pending invitations.
 - **Reconciliation rules (0097):** rules with an unknown match type or no GL account were
-  deactivated. Tenants review them in Banking and re-enable.
+  deactivated. Rules created before this release have no GL account, so on the first deploy that is
+  every active rule. Tenants choose an account for each in Banking and re-enable it.
 - **Customer portal links (0103):** existing links keep working but expire within 90 days.
 - **Roles (0092):** free-text roles were mapped (`cfo`/`manager` to admin, read-only to viewer,
   anything else to employee). Tell owners to review team roles.
@@ -253,7 +263,7 @@ and FTA. The PR description must say so, so "394 fixed" is not read as "certifie
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
 `einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
 safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
-0089-0122, then run it a second time to confirm it is a no-op.
+0089-0123, then run it a second time to confirm it is a no-op.
 
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):
