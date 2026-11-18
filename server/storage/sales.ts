@@ -131,7 +131,13 @@ export class SalesStorage extends LedgerStorage {
    */
   async getInvoicesPage(
     companyId: string,
-    opts: { limit: number; cursor?: string | null; status?: string; type?: string }
+    opts: {
+      limit: number;
+      cursor?: string | null;
+      status?: string;
+      type?: string;
+      source?: string;
+    }
   ): Promise<{
     items: Omit<Invoice, "einvoiceXml" | "einvoiceHash">[];
     nextCursor: string | null;
@@ -153,6 +159,8 @@ export class SalesStorage extends LedgerStorage {
       conds.push(eq(invoices.status, opts.status));
     }
     if (opts.type) conds.push(eq(invoices.invoiceType, opts.type));
+    // WQ1 (13.5): "Source: API" filter.
+    if (opts.source) conds.push(eq(invoices.source, opts.source));
     if (opts.cursor) {
       let createdAt: Date | null = null;
       let cursorTs = "";
@@ -507,13 +515,15 @@ export class SalesStorage extends LedgerStorage {
      *  opts in. Without this flag, an over-balance payment is rejected so a
      *  fat-fingered figure cannot post a phantom liability. */
     allowCredit?: boolean;
+    /** WQ1: run inside the caller's transaction (receive payment, cash sale) as a savepoint. */
+    tx?: typeof db;
   }): Promise<{
     payment: InvoicePayment;
     invoice: Invoice;
     journalEntryId: string;
     totalPaid: number;
   }> {
-    return await db.transaction(async (tx: typeof db) => {
+    return await (input.tx ?? db).transaction(async (tx: typeof db) => {
       // Lock the invoice row. Concurrent payment writers will queue here.
       const lockResult = await tx.execute(sql`
         SELECT id, company_id, currency, total, status, number, exchange_rate

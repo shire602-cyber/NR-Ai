@@ -38,7 +38,7 @@ import {
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
 import { DomainError } from "../errors";
-import { withDocumentLock, LOCK_NS } from "./document-lock";
+import { lockDocumentInTx, withDocumentLock, LOCK_NS } from "./document-lock";
 import {
   DEFAULT_BASE_CURRENCY,
   documentCurrency,
@@ -670,7 +670,34 @@ export async function issueInvoice(
   userId: string,
   target: "sent" | "posted" = "sent"
 ): Promise<{ invoice: Invoice; posted: boolean; alreadyIssued: boolean }> {
-  return withDocumentLock(invoiceId, LOCK_NS.INVOICE_POSTING, async (tx) => {
+  return withDocumentLock(invoiceId, LOCK_NS.INVOICE_POSTING, (tx) =>
+    issueLocked(tx, invoiceId, companyId, userId, target)
+  );
+}
+
+/**
+ * WQ1 (cash sale): issue a draft inside the caller's ledger transaction, under the same document
+ * lock, so the invoice, its revenue entry and its payment commit together or not at all.
+ */
+export async function issueInvoiceInTx(
+  tx: LedgerTx,
+  invoiceId: string,
+  companyId: string,
+  userId: string,
+  target: "sent" | "posted" = "sent"
+): Promise<{ invoice: Invoice; posted: boolean; alreadyIssued: boolean }> {
+  await lockDocumentInTx(tx, invoiceId, LOCK_NS.INVOICE_POSTING);
+  return issueLocked(tx, invoiceId, companyId, userId, target);
+}
+
+async function issueLocked(
+  tx: LedgerTx,
+  invoiceId: string,
+  companyId: string,
+  userId: string,
+  target: "sent" | "posted"
+): Promise<{ invoice: Invoice; posted: boolean; alreadyIssued: boolean }> {
+  {
     const inv = await lockInvoice(tx, invoiceId, companyId);
     if (inv.status !== "draft") {
       if (isIssuedStatus(inv.status)) return { invoice: inv, posted: false, alreadyIssued: true };
@@ -699,7 +726,7 @@ export async function issueInvoice(
       ? false
       : await postRevenueInTx(tx, row, userId);
     return { invoice: row, posted, alreadyIssued: false };
-  });
+  }
 }
 
 /**

@@ -72,6 +72,7 @@ export const APP_SECTIONS: ReadonlySet<string> = new Set([
   "recurring-invoices",
   "reminders",
   "reports",
+  "sales",
   "settings",
   "smart-assistant",
   "subscription",

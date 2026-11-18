@@ -31,6 +31,8 @@ import { registerEInvoiceProviderRoutes } from "./routes/einvoice-provider.route
 import { registerEInvoiceIdentityRoutes } from "./routes/einvoice-identity.routes";
 import { registerZatcaRoutes } from "./routes/zatca.routes";
 import { registerInvoiceShareRoutes } from "./routes/invoice-share.routes";
+import { registerSalesReceiptRoutes } from "./routes/sales-receipts.routes";
+import { registerInvoiceDocumentRoutes } from "./routes/invoice-documents.routes";
 import { registerChasingRoutes } from "./routes/chasing.routes";
 import { registerReceiptRoutes } from "./routes/receipts.routes";
 import { registerContactRoutes } from "./routes/contacts.routes";
@@ -151,6 +153,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerEInvoiceIdentityRoutes(app); // WQ5: tax identity, partner choice, approver links
   registerZatcaRoutes(app);
   registerInvoiceShareRoutes(app);
+  registerSalesReceiptRoutes(app);
+  registerInvoiceDocumentRoutes(app);
   registerRecurringInvoiceRoutes(app);
   registerChasingRoutes(app);
   registerReceiptRoutes(app);

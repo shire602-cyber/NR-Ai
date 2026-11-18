@@ -21,6 +21,7 @@ import { paymentsAvailability, publicBaseUrl } from "../services/payments";
 import { logPortalAccess } from "../services/portal-access.service";
 import { db } from "../db";
 import { invoiceOpenFils } from "../services/invoice-posting.service";
+import { recordInvoiceView } from "../services/invoice-activity.service";
 
 const sendEmailBody = z.object({
   to: zEmail,
@@ -170,6 +171,8 @@ export function registerInvoiceShareRoutes(app: Express) {
       }
 
       void logPortalAccess({ req, outcome: "share_ok", companyId: invoice.companyId });
+      // WQ1 (7.25): the invoice's viewed log (throttled; never blocks the page).
+      void recordInvoiceView(invoice);
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
       const company = await storage.getCompany(invoice.companyId);
       if (!company) {

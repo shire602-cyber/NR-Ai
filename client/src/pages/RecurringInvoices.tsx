@@ -76,9 +76,15 @@ const lineItemSchema = z.object({
   quantity: z.coerce.number().min(0.01, "forms.errors.quantityPositive"),
   unitPrice: z.coerce.number().min(0, "forms.errors.pricePositive"),
   vatRate: z.coerce.number().default(0.05),
+  // WQ1: a line seeded from an invoice keeps its VAT treatment (exempt, out of scope, ...).
+  vatSupplyType: z.string().optional(),
 });
 
 const recurringInvoiceSchema = z.object({
+  // WQ1 (7.13): a schedule made from an invoice keeps its contact, place of supply and terms.
+  contactId: z.string().optional(),
+  placeOfSupplyEmirate: z.string().optional(),
+  paymentTerms: z.string().optional(),
   customerName: z.string().min(1, "forms.errors.customerNameRequired"),
   customerTrn: z.string().optional(),
   currency: z.string().default("AED"),
@@ -108,6 +114,33 @@ const frequencyLabelsAr: Record<string, string> = {
   yearly: "سنوي",
 };
 
+/** The line payload: an explicit supply type wins; otherwise 5% is standard, 0% zero-rated. */
+function linePayload(l: RecurringInvoiceFormData["lines"][number]) {
+  const vat = Number(l.vatRate) > 0 ? 0.05 : 0;
+  const supply =
+    l.vatSupplyType && vat > 0 === (l.vatSupplyType === "standard_rated")
+      ? l.vatSupplyType
+      : vat > 0
+        ? "standard_rated"
+        : "zero_rated";
+  return {
+    description: l.description,
+    quantity: Number(l.quantity),
+    unitPrice: Math.round(Number(l.unitPrice) * 100) / 100,
+    vatRate: vat,
+    vatSupplyType: supply,
+  };
+}
+
+/** Fields a schedule made from an invoice carries over (sent only when set). */
+function seededHeader(data: RecurringInvoiceFormData) {
+  return {
+    ...(data.contactId ? { contactId: data.contactId } : {}),
+    ...(data.placeOfSupplyEmirate ? { placeOfSupplyEmirate: data.placeOfSupplyEmirate } : {}),
+    ...(data.paymentTerms ? { paymentTerms: data.paymentTerms } : {}),
+  };
+}
+
 export default function RecurringInvoices() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -116,6 +149,8 @@ export default function RecurringInvoices() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<RecurringInvoice | null>(null);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+  /** WQ1: the invoice number this new schedule was made from (shown in the header). */
+  const [seededFrom, setSeededFrom] = useState<string | null>(null);
 
   const { data: recurringInvoices, isLoading } = useQuery<RecurringInvoice[]>({
     queryKey: ["/api/companies", selectedCompanyId, "recurring-invoices"],
@@ -148,19 +183,14 @@ export default function RecurringInvoices() {
   const createMutation = useMutation({
     mutationFn: async (data: RecurringInvoiceFormData) => {
       return await apiRequest("POST", `/api/companies/${selectedCompanyId}/recurring-invoices`, {
+        ...seededHeader(data),
         customerName: data.customerName,
         customerTrn: data.customerTrn || null,
         currency: data.currency,
         frequency: data.frequency,
         startDate: format(data.startDate, "yyyy-MM-dd"),
         endDate: data.endDate ? format(data.endDate, "yyyy-MM-dd") : null,
-        lines: data.lines.map((l) => ({
-          description: l.description,
-          quantity: Number(l.quantity),
-          unitPrice: Math.round(Number(l.unitPrice) * 100) / 100,
-          vatRate: Number(l.vatRate) > 0 ? 0.05 : 0,
-          vatSupplyType: Number(l.vatRate) > 0 ? "standard_rated" : "zero_rated",
-        })),
+        lines: data.lines.map(linePayload),
         autoIssue: data.autoIssue,
         autoSend: data.autoSend,
         sendToEmail: data.autoSend && data.sendToEmail ? data.sendToEmail : null,
@@ -195,13 +225,7 @@ export default function RecurringInvoices() {
         startDate: format(data.startDate, "yyyy-MM-dd"),
         nextRunDate: format(data.startDate, "yyyy-MM-dd"),
         endDate: data.endDate ? format(data.endDate, "yyyy-MM-dd") : null,
-        lines: data.lines.map((l) => ({
-          description: l.description,
-          quantity: Number(l.quantity),
-          unitPrice: Math.round(Number(l.unitPrice) * 100) / 100,
-          vatRate: Number(l.vatRate) > 0 ? 0.05 : 0,
-          vatSupplyType: Number(l.vatRate) > 0 ? "standard_rated" : "zero_rated",
-        })),
+        lines: data.lines.map(linePayload),
         autoIssue: data.autoIssue,
         autoSend: data.autoSend,
         sendToEmail: data.autoSend && data.sendToEmail ? data.sendToEmail : null,
@@ -268,6 +292,7 @@ export default function RecurringInvoices() {
 
   const handleCreate = () => {
     setEditingItem(null);
+    setSeededFrom(null);
     form.reset({
       customerName: "",
       customerTrn: "",
@@ -295,11 +320,12 @@ export default function RecurringInvoices() {
       frequency: item.frequency as "weekly" | "monthly" | "quarterly" | "yearly",
       startDate: parseCalendarDate(item.startDate),
       endDate: item.endDate ? parseCalendarDate(item.endDate) : null,
-      lines: parsedLines.map((l) => ({
+      lines: parsedLines.map((l: { vatSupplyType?: string } & (typeof parsedLines)[number]) => ({
         description: l.description,
         quantity: Number(l.quantity),
         unitPrice: Number(l.unitPrice),
         vatRate: Number(l.vatRate),
+        vatSupplyType: l.vatSupplyType ?? undefined,
       })),
       autoIssue: (item as RecurringInvoice & { autoIssue?: boolean }).autoIssue ?? true,
       autoSend: (item as RecurringInvoice & { autoSend?: boolean }).autoSend ?? false,
@@ -328,9 +354,73 @@ export default function RecurringInvoices() {
 
   const closeEditor = leaveEditor;
 
+  /**
+   * WQ1 (7.13): "Make recurring" on an invoice opens this editor seeded from that invoice: its
+   * customer, currency, lines and place of supply, monthly from today, issued and emailed
+   * automatically to the contact's email (through the email outbox).
+   */
+  const seedFromInvoice = async (invoiceId: string) => {
+    try {
+      const inv = await apiRequest("GET", `/api/invoices/${encodeURIComponent(invoiceId)}`);
+      let email = "";
+      if (inv.contactId) {
+        const contacts: Array<{ id: string; email?: string | null }> = await apiRequest(
+          "GET",
+          `/api/companies/${selectedCompanyId}/customer-contacts`
+        ).catch(() => []);
+        email = contacts.find((c) => c.id === inv.contactId)?.email ?? "";
+      }
+      setEditingItem(null);
+      form.reset({
+        contactId: inv.contactId ?? undefined,
+        placeOfSupplyEmirate: inv.placeOfSupplyEmirate ?? undefined,
+        paymentTerms: inv.paymentTerms ?? undefined,
+        customerName: inv.customerName ?? "",
+        customerTrn: inv.customerTrn ?? "",
+        currency: inv.currency ?? "AED",
+        frequency: "monthly",
+        startDate: new Date(),
+        endDate: null,
+        lines: (inv.lines ?? []).map(
+          (l: {
+            description: string;
+            quantity: number | string;
+            unitPrice: number | string;
+            vatRate: number | string;
+            vatSupplyType?: string | null;
+          }) => ({
+            description: l.description,
+            quantity: Number(l.quantity),
+            unitPrice: Number(l.unitPrice),
+            vatRate: Number(l.vatRate),
+            vatSupplyType: l.vatSupplyType ?? undefined,
+          })
+        ),
+        autoIssue: true,
+        autoSend: !!email,
+        sendToEmail: email,
+      });
+      setSeededFrom(inv.number ?? null);
+      setEditorOpen(true);
+    } catch (error) {
+      toast({
+        title: translateNow("toasts.error"),
+        description: (error as Error)?.message,
+        variant: "destructive",
+      });
+      handleCreate();
+    }
+  };
+
   // The editor routes: a blank template, or the one being edited once the list has loaded.
   useEffect(() => {
-    if (editor === "new") {
+    const fromInvoice =
+      typeof window === "undefined"
+        ? null
+        : new URLSearchParams(window.location.search).get("fromInvoice");
+    if (editor === "new" && fromInvoice && selectedCompanyId) {
+      if (!editorOpen) void seedFromInvoice(fromInvoice);
+    } else if (editor === "new") {
       if (!editorOpen) handleCreate();
     } else if (editor && !editingItem && recurringInvoices) {
       const item = recurringInvoices.find((r) => r.id === editor);
@@ -338,7 +428,7 @@ export default function RecurringInvoices() {
       else toList();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, recurringInvoices]);
+  }, [editor, recurringInvoices, selectedCompanyId]);
 
   const onSubmit = (data: RecurringInvoiceFormData) => {
     if (editingItem) {
@@ -392,7 +482,11 @@ export default function RecurringInvoices() {
       backLabel={t["invoices.editor.backRecurring"]}
       eyebrow="Sales"
       title={editingItem ? t["forms.recurring.editTitle"] : t["forms.recurring.newTitle"]}
-      description={t["forms.recurring.desc"]}
+      description={
+        seededFrom && !editingItem
+          ? formatMessage(t["invoices.recurringFrom"], { number: seededFrom })
+          : t["forms.recurring.desc"]
+      }
       footerSummary={
         <span className="flex flex-wrap items-baseline gap-x-2" data-testid="editor-total">
           <span>{t["invoices.editor.total"]}</span>
@@ -462,7 +556,7 @@ export default function RecurringInvoices() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t["forms.recurring.currency"]}</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue />
@@ -494,7 +588,7 @@ export default function RecurringInvoices() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel required>{t["forms.recurring.frequency"]}</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <Select onValueChange={field.onChange} value={field.value}>
                       <FormControl>
                         <SelectTrigger>
                           <SelectValue />

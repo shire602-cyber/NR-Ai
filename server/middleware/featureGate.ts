@@ -451,7 +451,6 @@ export const PLAN_FEATURE_RULES: readonly GateRule[] = [
   // Recurring invoices (every plan)
   mut("companies/*/recurring-invoices/**", "recurringInvoices"),
   mut("recurring-invoices/**", "recurringInvoices"),
-  mut("companies/*/invoices/*/set-recurring", "recurringInvoices"),
   // Bulk operations (Professional+)
   mut("companies/*/document-chases/bulk-send", "bulkOps"),
   mut("chasing/bulk-send/**", "bulkOps"),

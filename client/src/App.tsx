@@ -127,6 +127,9 @@ const ExchangeRates = lazyWithReload(() => import("@/pages/ExchangeRates"));
 const CompanyGroups = lazyWithReload(() => import("@/pages/CompanyGroups"));
 const Consolidation = lazyWithReload(() => import("@/pages/Consolidation"));
 const RecurringInvoices = lazyWithReload(() => import("@/pages/RecurringInvoices"));
+// WQ1: one receipt over several invoices, and a sale paid on the spot.
+const ReceivePayment = lazyWithReload(() => import("@/pages/sales/ReceivePayment"));
+const CashSale = lazyWithReload(() => import("@/pages/sales/CashSale"));
 const PaymentChasing = lazyWithReload(() => import("@/pages/PaymentChasing"));
 
 const CustomerContacts = lazyWithReload(() => import("@/pages/CustomerContacts"));
@@ -678,6 +681,8 @@ function Router() {
               {(params) => <RedirectTo to={`/invoices?open=${params.id}`} />}
             </Route>
             <Route path="/invoices" component={Invoices} />
+            <Route path="/sales/receive-payment" component={ReceivePayment} />
+            <Route path="/sales/cash-sale" component={CashSale} />
             <Route path="/banking">
               <RedirectTo to="/bank-feeds" />
             </Route>
