@@ -555,7 +555,8 @@ describe("end-of-service settlement (R09-17)", () => {
     });
     const body = {
       employeeId: emp.id,
-      terminationDate: "2025-07-02",
+      // C2 (NL7): the last working day counts, so 182 trailing days end on 1 Jul.
+      terminationDate: "2025-07-01",
       reason: "Resignation",
       leaveEncashmentDays: 0,
     };
