@@ -14,6 +14,9 @@
 import { describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 
+// The invited-customer case onboards a second (non-NR) firm on purpose (X6b closes sign-up by default).
+process.env.FIRM_SELF_SIGNUP = "true";
+
 const h = useHarness();
 const TRN = "100000000000003";
 
@@ -193,5 +196,70 @@ describe("PR-62 member lists never expose credentials", () => {
       "name",
       "userType",
     ]);
+  });
+});
+
+describe("Owner decision: firms keep editing profiles of customers that invited them, scoped to that firm", () => {
+  /** A second, non-NR accounting firm approved by a platform admin. */
+  async function secondFirmOwner() {
+    const owner = await h.createTenant({ name: "P65FirmBOwner" });
+    const applied = await owner.as.post("/api/firms/apply", { name: "P65 Second Firm LLC" });
+    expect(applied.status, applied.text).toBe(201);
+    const admin = await h.createTenant({ name: "P65PlatformAdmin", isAdmin: true });
+    const decided = await admin.as.post(`/api/admin/firms/${applied.body.firm.id}/decision`, {
+      decision: "approve",
+    });
+    expect(decided.status, decided.text).toBe(200);
+    return owner;
+  }
+
+  it("PR-65 owner decision: the inviting firm edits the customer's profile; another firm gets 404; a revoked link ends it", async () => {
+    const firmB = await secondFirmOwner();
+    const nr = await h.createTenant({ name: "P65NROwnerX", firmRole: "firm_owner" });
+    const customer = await h.createTenant({ name: "P65InvitedCustomer" });
+    const cid = customer.company.id;
+
+    const invite = await nr.as.post("/api/firm/client-links", { inviteeEmail: customer.email });
+    expect(invite.status, invite.text).toBe(201);
+    const accepted = await customer.as.post(`/api/firm-invitations/${invite.body.link.id}/accept`, {
+      companyId: cid,
+    });
+    expect(accepted.status, accepted.text).toBe(200);
+
+    // The inviting (NR) firm keeps the right to edit the customer's profile. Inviting a customer
+    // is NR-only (NR_FIRM_ONLY), so the other firm here is an approved second firm.
+    const edit = await nr.as.put(`/api/firm/clients/${cid}`, {
+      name: "P65 Invited Customer LLC",
+    });
+    expect(edit.status, edit.text).toBe(200);
+    const nameOf = async () =>
+      (await h.sql(`SELECT name FROM companies WHERE id = $1`, [cid]))[0].name as string;
+    expect(await nameOf()).toBe("P65 Invited Customer LLC");
+
+    // Any other firm is refused. /api/firm/* is NR-only, so an approved second firm is stopped at
+    // the router (403 NR_FIRM_ONLY) before any row is looked up; nothing about this company leaks.
+    // (The NR firm editing a company that never invited it is a 404: see the SaaS case above.)
+    const other = await firmB.as.put(`/api/firm/clients/${cid}`, { name: "Hijacked LLC" });
+    expect(other.status, other.text).toBe(403);
+    expect(other.body.code).toBe("NR_FIRM_ONLY");
+    expect(JSON.stringify(other.body)).not.toContain(customer.company.name);
+    // A second customer that never invited the NR firm stays out of reach of that firm too.
+    const stranger = await h.createTenant({ name: "P65NotInvited" });
+    const strangerEdit = await nr.as.put(`/api/firm/clients/${stranger.company.id}`, {
+      name: "Hijacked LLC",
+    });
+    expect(strangerEdit.status, strangerEdit.text).toBe(404);
+    expect(await nameOf()).toBe("P65 Invited Customer LLC");
+
+    // Once the customer revokes the link, the inviting firm is outside too.
+    const links = await customer.as.get(`/api/companies/${cid}/firm-links`);
+    const revoked = await customer.as.post(
+      `/api/companies/${cid}/firm-links/${links.body.links[0].id}/revoke`,
+      { reason: "Changed accountant" }
+    );
+    expect(revoked.status, revoked.text).toBe(200);
+    const after = await nr.as.put(`/api/firm/clients/${cid}`, { name: "After Revoke LLC" });
+    expect(after.status, after.text).toBe(404);
+    expect(await nameOf()).toBe("P65 Invited Customer LLC");
   });
 });

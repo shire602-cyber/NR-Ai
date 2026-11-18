@@ -61,6 +61,42 @@ This clears `is_admin`, resets `user_type` to `customer`, clears `firm_role` and
 `firm_members` row, with an audit row (`platform_owner.revoke`). Company memberships the account holds
 are reported, not deleted; remove them per tenant if they are unwanted.
 
+## Staging and demo: revoke approved, not run (no access)
+
+**Owner decision (2026-11-18):** run the revoke in staging and demo, never in production.
+
+**Status: not run.** The session that prepared PR #68 has no access to either environment. Its
+environment has no staging or demo `DATABASE_URL`, no Railway credentials and no `.env`, so nothing was
+attempted and nothing was guessed. To run it, provide each of the following for **each** of staging and
+demo:
+
+1. **A Postgres connection string** for that environment's database, as `DATABASE_URL`, supplied
+   through the session's secret or environment settings, never pasted in chat. The role must be able
+   to `SELECT`/`UPDATE` `users`, `SELECT`/`DELETE` `firm_members`, `SELECT` `company_users` and
+   `INSERT` into `audit_logs` (the audit chain trigger seals the row).
+2. **Network reachability** from where the command runs: the database host and port, for example
+   Railway's public TCP proxy host for that service, must be on the session environment's allowed
+   hosts. Alternatively, run the command yourself inside the Railway network with `railway run` or SSH.
+3. **Proof that the target is not production.** Give the Railway project and service names, or the
+   host of each environment, and confirm that `/api/version` and the `DATABASE_URL` host differ from
+   production's. The command has no environment guard of its own, so this check is the safeguard.
+4. **A fresh backup** of each database before the change (`pg_dump -Fc`, as in DEPLOY-RUNBOOK
+   section 1).
+
+Then, per environment, read first, then revoke:
+
+```bash
+DATABASE_URL="$STAGING_DATABASE_URL" npx tsx scripts/ops/platform-owner.ts --email shire602@gmail.com
+```
+
+```bash
+DATABASE_URL="$STAGING_DATABASE_URL" npx tsx scripts/ops/platform-owner.ts --email shire602@gmail.com --revoke --confirm shire602@gmail.com
+```
+
+Repeat with `$DEMO_DATABASE_URL`. Record the JSON output, which shows `before`, `after`, `changed` and
+`memberships`, against each environment. `changed: false` means that environment never had the
+promotion. The account's company memberships are reported, not removed.
+
 ## Decision on `docs/proposed-migrations/revoke-shire602-admin.sql`
 
 **It does not become a migration, and it has been removed.** It has been replaced by the `--revoke`
