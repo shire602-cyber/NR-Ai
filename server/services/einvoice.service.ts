@@ -693,7 +693,12 @@ function resolveDueDate(inv: InvoiceLike): string | null {
 export interface EInvoiceIssue {
   field: string;
   message: string;
+  /** Stable machine code for issues the UI explains with its own localised fix text. */
+  code?: string;
 }
+
+/** IBT-049: the buyer's electronic address (cbc:EndpointID) cannot be built. */
+export const BUYER_ENDPOINT_MISSING = "EINVOICE_BUYER_ENDPOINT_MISSING";
 
 const TRN_RE = /^[0-9]{15}$/;
 
@@ -770,6 +775,18 @@ export function validateForEInvoicing(
     issues.push({
       field: "invoice.customerTrn",
       message: "Buyer TRN must be exactly 15 digits when provided",
+    });
+  } else if (!ctx.customer?.endpointId?.trim() && !tinFromTrn(buyerTrn ?? null)) {
+    // PINT AE requires a buyer EndpointID (IBT-049) with a scheme; partyXml derives it from the
+    // TRN (0235 + 10-digit TIN) or takes the contact's recorded Peppol endpoint. Without either
+    // the document can never pass PINT-EndpointID, so say what to add before anything is built.
+    issues.push({
+      field: "customer.endpointId",
+      code: BUYER_ENDPOINT_MISSING,
+      message:
+        "Buyer has no electronic address (IBT-049): add the buyer's 15-digit TRN to the invoice " +
+        "or customer, or record the customer's Peppol endpoint (scheme 0235 with its 10-digit TIN, " +
+        "or its own Peppol scheme and ID) (PINT-EndpointID)",
     });
   }
   if (lines.length === 0) {

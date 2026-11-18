@@ -51,6 +51,7 @@ import {
   deliveryLabelKey,
   errorKey,
   fieldLabelKey,
+  issueTextKey,
   reportingLabelKey,
   sourceKey,
   type ChecklistState,
@@ -465,12 +466,22 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
               <ul className="mt-2 space-y-1.5">
                 {view.issues.map((issue, i) => {
                   const label = fieldLabelKey(issue.field);
+                  const fixKey = issueTextKey(issue.code);
                   return (
                     <li key={`${issue.field}-${i}`} className="text-small text-foreground">
                       <span className="font-medium">{label ? t[label] : issue.field}</span>
-                      {/* The validator message is English source text: in Arabic show the
+                      {/* A coded issue carries its own localised, actionable fix text. Otherwise
+                          the validator message is English source text: in Arabic show the
                           localised field label plus the LTR rule code, never a mixed sentence. */}
-                      {locale === "ar" && label ? (
+                      {fixKey ? (
+                        <span
+                          className="text-muted-foreground"
+                          data-testid={`einvoice-issue-${issue.code}`}
+                        >
+                          {" "}
+                          — {t[fixKey]}
+                        </span>
+                      ) : locale === "ar" && label ? (
                         issue.message.match(/\(([a-z0-9-]+)\)\s*$/i) ? (
                           <bdi
                             dir="ltr"

@@ -84,6 +84,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import {
   einvoiceFieldHint,
+  einvoiceIssueTextKey,
   einvoiceIssuesFromError,
   type EInvoiceIssueItem,
 } from "@/lib/einvoice-issues";
@@ -1856,12 +1857,17 @@ export default function Invoices() {
               // X5 (J1 L3): a readable field name and where to fix it, never a raw data path.
               const hint = einvoiceFieldHint(issue.field);
               const label = hint.labelKey ? t[hint.labelKey] : hint.ruleLabel;
+              const fixKey = einvoiceIssueTextKey(issue.code);
               return (
                 <li key={`${issue.field}-${i}`} className="rounded-md border p-2">
                   {label && (
                     <span className="block text-xs font-medium text-muted-foreground">{label}</span>
                   )}
-                  {issue.message}
+                  {fixKey ? (
+                    <span data-testid={`einvoice-issue-${issue.code}`}>{t[fixKey]}</span>
+                  ) : (
+                    issue.message
+                  )}
                   {hint.whereKey && (
                     <span className="mt-1 block text-xs">
                       {hint.href ? (

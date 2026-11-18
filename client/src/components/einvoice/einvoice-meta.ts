@@ -34,6 +34,17 @@ export type TransmissionBlock =
 export interface EInvoiceIssue {
   field: string;
   message: string;
+  /** Stable server code (e.g. EINVOICE_BUYER_ENDPOINT_MISSING) with its own localised fix text. */
+  code?: string;
+}
+
+/** Issue codes the UI explains in the user's language instead of the English validator text. */
+const ISSUE_TEXT_KEYS: Record<string, string> = {
+  EINVOICE_BUYER_ENDPOINT_MISSING: "einvoicing.issue_buyerEndpointMissing",
+};
+
+export function issueTextKey(code: string | undefined): string | null {
+  return code ? (ISSUE_TEXT_KEYS[code] ?? null) : null;
 }
 
 export interface EInvoiceEvent {
@@ -254,6 +265,7 @@ export function fieldLabelKey(field: string): string | null {
     "customer.address": "einvoicing.field_customerAddress",
     "invoice.customerName": "einvoicing.field_customerName",
     "invoice.customerTrn": "einvoicing.field_customerTrn",
+    "customer.endpointId": "einvoicing.field_customerEndpoint",
     "invoice.currency": "einvoicing.field_currency",
     "invoice.date": "einvoicing.field_date",
     "invoice.dueDate": "einvoicing.field_dueDate",

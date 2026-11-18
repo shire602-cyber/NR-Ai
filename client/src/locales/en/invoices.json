@@ -130,6 +130,8 @@
   "invoices.einvoiceField.currency": "Invoice currency",
   "invoices.einvoiceField.customerName": "Customer name",
   "invoices.einvoiceField.customerTrn": "Customer TRN",
+  "invoices.einvoiceField.customerEndpoint": "Customer electronic address",
+  "invoices.einvoiceIssue.buyerEndpointMissing": "The buyer has no electronic address for the e-invoice. Add the customer's 15-digit TRN to the invoice or the customer, or record the customer's Peppol endpoint (scheme 0235 with its 10-digit TIN, or its own Peppol scheme and ID).",
   "invoices.einvoiceField.invoiceDate": "Invoice date",
   "invoices.einvoiceField.dueDate": "Due date",
   "invoices.einvoiceField.invoiceNumber": "Invoice number",

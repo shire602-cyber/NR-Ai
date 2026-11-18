@@ -54,6 +54,8 @@
   "einvoicing.field_customerAddress": "عنوان العميل",
   "einvoicing.field_customerName": "اسم العميل",
   "einvoicing.field_customerTrn": "رقم التسجيل الضريبي للعميل",
+  "einvoicing.field_customerEndpoint": "العنوان الإلكتروني للعميل",
+  "einvoicing.issue_buyerEndpointMissing": "لا يوجد عنوان إلكتروني للمشتري في الفاتورة الإلكترونية. أضف رقم التسجيل الضريبي للعميل المكوّن من 15 رقمًا إلى الفاتورة أو إلى بيانات العميل، أو سجّل نقطة Peppol الخاصة بالعميل (المخطط 0235 مع رقم التعريف الضريبي المكوّن من 10 أرقام، أو مخطط Peppol ومعرّفه الخاصين به).",
   "einvoicing.field_currency": "العملة",
   "einvoicing.field_date": "تاريخ الفاتورة",
   "einvoicing.field_dueDate": "تاريخ الاستحقاق",

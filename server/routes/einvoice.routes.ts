@@ -248,9 +248,13 @@ export function registerEInvoiceRoutes(app: Express) {
       const pre = await preflightEInvoice(invoice, lines, company, ctx, {
         uuid: invoice.einvoiceUuid ?? undefined,
       });
-      const issues: Array<{ field: string; message: string; ruleId?: string; layer?: string }> = [
-        ...pre.issues,
-      ];
+      const issues: Array<{
+        field: string;
+        message: string;
+        code?: string;
+        ruleId?: string;
+        layer?: string;
+      }> = [...pre.issues];
       const document = pre.validation;
       if (document) {
         for (const layer of ["xsd", "schematron", "rules"] as const) {
