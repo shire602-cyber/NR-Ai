@@ -109,5 +109,8 @@
   "assistant.automation_reportDeliveries_title": "إرسال التقارير",
   "assistant.automation_reportDeliveries_body": "كل ساعة، يرسل حزم التقارير التي جدولتها بالبريد الإلكتروني.",
   "assistant.automation_anomalyChecks_title": "فحص التكرار والقيود غير المعتادة",
-  "assistant.automation_anomalyChecks_body": "يوميًا، يبحث عن الدفعات المكررة والمبالغ اللافتة. تظهر الملاحظات في المراجعة."
+  "assistant.automation_anomalyChecks_body": "يوميًا، يبحث عن الدفعات المكررة والمبالغ اللافتة. تظهر الملاحظات في المراجعة.",
+  "assistant.automationSummary_depreciated": "{count, plural, zero {لم يُستهلك أي أصل} one {استُهلك أصل واحد} two {استُهلك أصلان} few {استُهلكت # أصول} many {استُهلك # أصلًا} other {استُهلك # أصل}}",
+  "assistant.automation_monthlyDepreciation_title": "الاستهلاك الشهري",
+  "assistant.automation_monthlyDepreciation_body": "يوميًا، بعد انتهاء الشهر، يرحّل استهلاك ذلك الشهر لأصولك الثابتة النشطة. تُتخطّى الفترة المقفلة."
 }

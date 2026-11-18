@@ -35,6 +35,7 @@ const AUTOMATION_LINKS: Record<string, string> = {
   recurringJournals: "/journal",
   reportDeliveries: "/reports",
   anomalyChecks: "/assistant?tab=review",
+  monthlyDepreciation: "/fixed-assets",
 };
 
 /** "3 sent", "2 created" … from the run summary (catalog keys per summary field). */

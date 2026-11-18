@@ -905,6 +905,7 @@
   "components.authErrors.linkRequestsLimited": "انتظر قليلاً قبل طلب رابط آخر.",
   "components.authErrors.authRateLimited": "محاولات تسجيل دخول كثيرة. انتظر دقيقة ثم حاول مرة أخرى.",
   "components.srv.evidence.workflow.request.bullet.draftOnlyNoSend": "مسودة فقط - لا يُرسل أو يُرفع أي شيء",
+  "components.ui.settingsNav.taxRates": "نسب الضريبة",
   "components.srv.monthEnd.vat.notRegistered": "غير مسجل في ضريبة القيمة المضافة: لا يوجد إقرار لإعداده",
   "components.srv.monthEnd.vat.notReturnMonth": "لا يستحق إقرار ضريبة القيمة المضافة هذا الشهر: تنتهي فترة الضريبة في {date}",
   "components.planLimitTrialEndedTitle": "انتهت تجربتك المجانية",

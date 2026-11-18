@@ -9,7 +9,13 @@ import {
   CT_SMALL_BUSINESS_RELIEF_REVENUE_CAP,
   type CtAccountTaxTag,
 } from "../../../shared/ct-workpaper";
-import { accountTotals, aed, loadAccounts } from "../../reporting";
+import {
+  accountTotals,
+  aed,
+  ctLineTreatmentTotals,
+  loadAccounts,
+  type CtLineTreatmentTotal,
+} from "../../reporting";
 
 /** Statuses that represent the live return for a period (not superseded or voided). */
 export const LIVE_CT_STATUSES = ["draft", "computed", "reviewed", "filed", "paid"] as const;
@@ -491,10 +497,17 @@ export interface CtBooksRow {
   notes: string;
   accountId: string;
   taxTag: CtAccountTaxTag | null;
+  /**
+   * WQ3: the part of `amount` the account's tax tag applies to (AED): the account's net less the
+   * lines that carry their own CT treatment, which take precedence over the tag. Absent = amount.
+   */
+  taggedAmount?: number;
 }
 
 export interface CtBooksSnapshot {
   rows: CtBooksRow[];
+  /** WQ3 (9.16): per-line CT treatments of the period (server/reporting ct-line-treatments). */
+  lineTreatments?: CtLineTreatmentTotal[];
   /** Tag aggregates in AED (natural sign: expense debit-positive, income credit-positive). */
   tags: {
     interestExpense: number;
@@ -517,13 +530,18 @@ export async function readCtBooks(
   from: string,
   to: string
 ): Promise<CtBooksSnapshot> {
-  const [accounts, totals, taggedRows] = await Promise.all([
+  const [accounts, totals, taggedRows, lineTreatments] = await Promise.all([
     loadAccounts(companyId),
     accountTotals(companyId, { from, to }),
     pool.query(`SELECT id, tax_tag FROM accounts WHERE company_id = $1 AND tax_tag IS NOT NULL`, [
       companyId,
     ]),
+    ctLineTreatmentTotals(companyId, { from, to }),
   ]);
+  // A line's own CT treatment overrides its account's tax tag for that line.
+  const treatedFils = new Map<string, number>();
+  for (const t of lineTreatments)
+    treatedFils.set(t.accountId, (treatedFils.get(t.accountId) ?? 0) + t.amountFils);
   const tagOf = new Map<string, CtAccountTaxTag>(
     taggedRows.rows.map((r: { id: string; tax_tag: CtAccountTaxTag }) => [r.id, r.tax_tag])
   );
@@ -571,6 +589,9 @@ export async function readCtBooks(
       notes: `Posted net for ${account.code ?? ""}`.trim(),
       accountId: account.id,
       taxTag: tag,
+      ...(tag && treatedFils.has(account.id)
+        ? { taggedAmount: aed(fils - (treatedFils.get(account.id) ?? 0)) }
+        : {}),
     });
   }
   rows.sort((a, b) => (a.type === b.type ? b.amount - a.amount : a.type === "revenue" ? -1 : 1));
@@ -581,5 +602,5 @@ export async function readCtBooks(
   tags.qfzpQualifyingIncome = r2(tags.qfzpQualifyingIncome);
   tags.qfzpNonQualifyingIncome = r2(tags.qfzpNonQualifyingIncome);
   tags.corporateTaxExpenseExcluded = r2(tags.corporateTaxExpenseExcluded);
-  return { rows, tags };
+  return { rows, tags, lineTreatments };
 }

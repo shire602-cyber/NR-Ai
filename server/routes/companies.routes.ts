@@ -19,8 +19,9 @@ import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
 import { deleteReceiptImage, readReceiptImage, saveReceiptFile } from "../services/fileStorage";
 import { z } from "zod";
 import { zUaeTrn } from "../../shared/validators/vat";
-import { vatJurisdictionForCountry } from "../../shared/vat-classification";
+import { STANDARD_VAT_RATES, vatJurisdictionForCountry } from "../../shared/vat-classification";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
+import { vatJurisdictionWithFlag } from "../services/zatca/flag";
 import { createLogger } from "../config/logger";
 import { ensureCriticalSchema } from "../db";
 import { withNrClientVatGroup } from "../services/firm-clients.service";
@@ -356,6 +357,32 @@ export function registerCompanyRoutes(app: Express) {
           ? (updateData.addressCountry as string | null)
           : current.addressCountry
       );
+    }
+
+    // WQ3 (12.10): the default VAT rate is 0% or the standard rate of the company's own
+    // jurisdiction: 15% is a KSA (ZATCA) rate and is never offered to, or stored for, a UAE company.
+    if ("defaultVatRate" in updateData || "addressCountry" in updateData) {
+      const country =
+        "addressCountry" in updateData
+          ? (updateData.addressCountry as string | null)
+          : current.addressCountry;
+      const rate = Number(
+        "defaultVatRate" in updateData ? updateData.defaultVatRate : current.defaultVatRate
+      );
+      // Saudi Arabia (15%) only while ZATCA is enabled (owner decision 2026-11-18).
+      const standard = STANDARD_VAT_RATES[vatJurisdictionWithFlag(country)];
+      const mismatch = rate !== 0 && Math.abs(rate - standard) > 1e-9;
+      // A country change alone moves a standard default rate to the new country's standard.
+      if (mismatch && !("defaultVatRate" in updateData)) {
+        updateData.defaultVatRate = standard;
+      } else if (mismatch) {
+        throw new DomainError(
+          "VAT_RATE_NOT_FOR_COUNTRY",
+          422,
+          { fields: { defaultVatRate: [`Use 0% or ${Math.round(standard * 100)}%`] } },
+          `The default VAT rate must be 0% or ${Math.round(standard * 100)}%, the standard rate where the company is registered.`
+        );
+      }
     }
 
     // PRIVILEGE ESCALATION GUARD (R17-05). `companyType` decides whether a company is a

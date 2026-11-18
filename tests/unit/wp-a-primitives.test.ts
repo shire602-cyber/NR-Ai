@@ -227,8 +227,8 @@ describe("WP-A primitives", () => {
     render(h(Router, { hook }, h(SettingsLayout, null, h("p", null, "body"))));
     const current = container.querySelector('[aria-current="page"]');
     expect(current?.getAttribute("data-testid")).toBe("settings-nav-data");
-    // WQ7 adds Approvals and Numbering.
-    expect(container.querySelectorAll("nav a[href]").length).toBe(12);
+    // WQ7 adds Approvals and Numbering; WQ3 adds Tax rates.
+    expect(container.querySelectorAll("nav a[href]").length).toBe(13);
   });
 
   it("EditorShell renders the form, a labelled preview and a sticky footer", async () => {

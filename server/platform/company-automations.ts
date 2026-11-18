@@ -14,6 +14,7 @@
 import { pool } from "../db";
 import { createLogger } from "../config/logger";
 import { getJobStatus, listJobs } from "./job-registry";
+import { has, provide } from "./service-registry";
 
 const log = createLogger("company-automations");
 
@@ -25,6 +26,8 @@ export const COMPANY_AUTOMATIONS = [
   { key: "recurringJournals", job: "ledger.recurringJournals" },
   { key: "reportDeliveries", job: "reports.deliveryScan" },
   { key: "anomalyChecks", job: "anomalies.scan" },
+  // WQ3 (9.11): posts last month's depreciation once the month has ended.
+  { key: "monthlyDepreciation", job: "fixedAssets.monthlyDepreciation" },
 ] as const;
 
 export type CompanyAutomationKey = (typeof COMPANY_AUTOMATIONS)[number]["key"];
@@ -112,6 +115,41 @@ export async function runForCompany<T>(
       err instanceof Error ? err.message : String(err)
     );
     throw err;
+  }
+}
+
+/** The automation a registered job runs, or undefined when the job is not a company automation. */
+export function automationKeyForJob(jobName: string): CompanyAutomationKey | undefined {
+  return COMPANY_AUTOMATIONS.find((a) => a.job === jobName)?.key;
+}
+
+/**
+ * Services for jobs owned by other workstreams, looked up by job name so they need no import of
+ * this module (e.g. `fixedAssets.monthlyDepreciation`):
+ *   automations.isEnabled(companyId, jobName)  -> on/off (a job that is not listed is always on)
+ *   automations.recordRun(companyId, jobName, status, summary?, error?)  -> last run / result
+ */
+export function registerAutomationServices(): void {
+  if (!has("automations.isEnabled")) {
+    provide("automations.isEnabled", async (companyId: string, jobName: string) => {
+      const key = automationKeyForJob(jobName);
+      return key ? automationEnabled(key, companyId) : true;
+    });
+  }
+  if (!has("automations.recordRun")) {
+    provide(
+      "automations.recordRun",
+      async (
+        companyId: string,
+        jobName: string,
+        status: AutomationRunStatus,
+        summary: Record<string, unknown> | null = null,
+        error: string | null = null
+      ) => {
+        const key = automationKeyForJob(jobName);
+        if (key) await recordAutomationRun(key, companyId, status, summary, error);
+      }
+    );
   }
 }
 

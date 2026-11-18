@@ -26,6 +26,7 @@ import {
 import {
   isCompanyAutomationKey,
   listCompanyAutomations,
+  registerAutomationServices,
   setAutomationEnabled,
 } from "../platform/company-automations";
 import {
@@ -47,6 +48,8 @@ async function requireMember(req: Request): Promise<string> {
 }
 
 export function registerCompanyAutomationRoutes(app: Express) {
+  // automations.isEnabled / automations.recordRun for jobs owned elsewhere (WQ3 depreciation).
+  registerAutomationServices();
   app.get(
     "/api/companies/:companyId/automations",
     authMiddleware,

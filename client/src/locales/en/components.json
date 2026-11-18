@@ -905,6 +905,7 @@
   "components.authErrors.linkRequestsLimited": "Wait a moment before requesting another link.",
   "components.authErrors.authRateLimited": "Too many sign-in attempts. Wait a minute, then try again.",
   "components.srv.evidence.workflow.request.bullet.draftOnlyNoSend": "Draft only - nothing is sent or uploaded",
+  "components.ui.settingsNav.taxRates": "Tax rates",
   "components.srv.monthEnd.vat.notRegistered": "Not VAT registered: no VAT return to prepare",
   "components.srv.monthEnd.vat.notReturnMonth": "No VAT return due this month: the VAT period ends {date}",
   "components.planLimitTrialEndedTitle": "Your free trial has ended",

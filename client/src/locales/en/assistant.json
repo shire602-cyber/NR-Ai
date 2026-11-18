@@ -109,5 +109,8 @@
   "assistant.automation_reportDeliveries_title": "Report deliveries",
   "assistant.automation_reportDeliveries_body": "Hourly, emails the report packs you scheduled.",
   "assistant.automation_anomalyChecks_title": "Check for duplicates and unusual entries",
-  "assistant.automation_anomalyChecks_body": "Daily, looks for repeated payments and amounts that stand out. Findings appear in Review."
+  "assistant.automation_anomalyChecks_body": "Daily, looks for repeated payments and amounts that stand out. Findings appear in Review.",
+  "assistant.automationSummary_depreciated": "{count, plural, one {# asset depreciated} other {# assets depreciated}}",
+  "assistant.automation_monthlyDepreciation_title": "Monthly depreciation",
+  "assistant.automation_monthlyDepreciation_body": "Daily, once a month has ended, posts that month's depreciation for your active fixed assets. A locked period is skipped."
 }

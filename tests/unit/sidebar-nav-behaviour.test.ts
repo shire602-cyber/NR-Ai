@@ -25,6 +25,8 @@ vi.mock("@/hooks/useCurrentUser", () => ({
 const activeCompany = vi.hoisted(() => ({
   current: { addressCountry: "AE" } as { addressCountry: string } | undefined,
 }));
+// Saudi ZATCA is behind a server flag (GET /api/features), off at launch.
+const features = vi.hoisted(() => ({ zatca: false }));
 vi.mock("@/components/ActiveCompanyProvider", () => ({
   useActiveCompany: () => ({ isFirmContext: false, company: activeCompany.current }),
 }));
@@ -83,6 +85,7 @@ async function renderSidebar(currentUser: Record<string, unknown> = user.current
   user.current = currentUser;
   const { AppSidebar } = await import("../../client/src/components/layout/AppSidebar");
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  qc.setQueryData(["/api/features"], { zatca: features.zatca });
   await act(async () => {
     root.render(
       createElement(
@@ -129,8 +132,17 @@ describe("AppSidebar navigation (rendered)", () => {
     expect(links.has("/referrals")).toBe(false);
   });
 
-  it("CL-B: ZATCA settings are listed only for a Saudi company", async () => {
+  it("ZATCA hidden at launch: no ZATCA link with the flag off, even for a Saudi company", async () => {
     const customer = { isAdmin: false, userType: "customer", firmRole: null };
+    features.zatca = false;
+    activeCompany.current = { addressCountry: "SA" };
+    expect((await renderSidebar(customer)).links.has("/settings/zatca")).toBe(false);
+    activeCompany.current = { addressCountry: "AE" };
+  });
+
+  it("CL-B: with the ZATCA flag on, ZATCA settings are listed only for a Saudi company", async () => {
+    const customer = { isAdmin: false, userType: "customer", firmRole: null };
+    features.zatca = true;
     activeCompany.current = { addressCountry: "AE" };
     expect((await renderSidebar(customer)).links.has("/settings/zatca")).toBe(false);
     act(() => root.unmount());
@@ -138,6 +150,7 @@ describe("AppSidebar navigation (rendered)", () => {
     activeCompany.current = { addressCountry: "SA" };
     expect((await renderSidebar(customer)).links.has("/settings/zatca")).toBe(true);
     activeCompany.current = { addressCountry: "AE" };
+    features.zatca = false;
   });
 
   it("CL-B: the firm workspace group is NR-only (customers never see /firm links)", async () => {
