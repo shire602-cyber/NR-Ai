@@ -555,13 +555,14 @@ export default function JournalEntryDetail() {
       <SectionCard title={t["pageLabels.entryDetails"]}>
         <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm md:grid-cols-2">
           <div className="min-w-0">
-            <dt className="text-caption text-muted-foreground">{t["screens.entryId"]}</dt>
+            {/* Fable B11: the entry number is the identifier; the row UUID is never shown. */}
+            <dt className="text-caption text-muted-foreground">{t["accountLedger.entryNumber"]}</dt>
             <dd
               dir="ltr"
               className="truncate tabular-nums [unicode-bidi:isolate]"
               data-testid="text-entry-id"
             >
-              {entry.id}
+              {entry.entryNumber}
             </dd>
           </div>
           <div>

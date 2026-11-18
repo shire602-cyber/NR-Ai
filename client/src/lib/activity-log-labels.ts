@@ -73,3 +73,44 @@ export function activityDescription(t: Translations, log: ActivityLogLike, local
   if (log.entityId) parts.push(log.entityId);
   return parts.join(" · ");
 }
+
+const UUID_RE = /\s*\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+/** Spec 3.10: ids live in a details popover, never in the sentence. */
+export function withoutIds(text: string): string {
+  return text
+    .replace(UUID_RE, "")
+    .replace(/\s+([.,;:])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/** The `changes` list from a log row's metadata JSON, joined ("name, rate"); "" otherwise. */
+export function metadataChanges(metadata: string | null | undefined): string {
+  if (!metadata) return "";
+  try {
+    const parsed = JSON.parse(metadata);
+    return Array.isArray(parsed.changes) ? parsed.changes.join(", ") : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * The server's generic audit text reads "Company group create on company group"; when the action
+ * has a catalog label ("Company group created") show that instead. Specific sentences
+ * ("Invoice INV-2026-0042 created") are kept.
+ */
+export function readableSentence(sentence: string, actionLabel: string | undefined): string {
+  if (actionLabel && / on [a-z][a-z ]*$/.test(sentence)) return actionLabel;
+  return sentence;
+}
+
+/** One sentence for a log row: localised, no ids, generic server text replaced. */
+export function activitySentence(t: Translations, log: ActivityLogLike, locale: string): string {
+  const sentence = readableSentence(
+    withoutIds(activityDescription(t, log, locale)),
+    t[`activityLog.action.${log.action}`]
+  );
+  return sentence || activityActionLabel(t, log.action);
+}

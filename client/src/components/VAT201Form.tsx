@@ -159,7 +159,7 @@ export default function VAT201Form({
       <section className="rounded-xl border border-border bg-card p-5 shadow-card-soft">
         <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-border pb-3">
           {/* i18n-ignore: FTA VAT 201 bilingual form title, English is paired with a fixed Arabic line */}
-          <h2 className="text-h3 font-semibold text-foreground">VAT 201 Return</h2>
+          <h2 className="text-h3 font-semibold text-foreground">VAT 201 return</h2>
           <span dir="rtl" lang="ar" className="text-small text-muted-foreground">
             إقرار ضريبة القيمة المضافة
           </span>

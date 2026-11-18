@@ -405,148 +405,157 @@ export default function CostCenters() {
         }
       />
 
-      {/* P&L by cost center */}
-      <section className="space-y-4" aria-labelledby="cc-pl-title">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0">
-            <h2 id="cc-pl-title" className="text-h2 text-foreground">
-              <T k="pageLabels.costCenterPAndL" />
-            </h2>
-            <p className="mt-1 text-small text-muted-foreground">
-              {formatMessage(t["screens.costCenterPlBasis"], { period: profitabilityPeriodLabel })}
-            </p>
+      {/* P&L by cost center. Spec 2.6: hidden until the first cost center exists, so an
+          empty company sees no KPI row of zeros above the empty register. */}
+      {(isLoading || costCenters.length > 0) && (
+        <section className="space-y-4" aria-labelledby="cc-pl-title">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0">
+              <h2 id="cc-pl-title" className="text-h2 text-foreground">
+                <T k="pageLabels.costCenterPAndL" />
+              </h2>
+              <p className="mt-1 text-small text-muted-foreground">
+                {formatMessage(t["screens.costCenterPlBasis"], {
+                  period: profitabilityPeriodLabel,
+                })}
+              </p>
+            </div>
+            <Badge variant="neutral">
+              <T k="pageLabels.accrualBasis" />
+            </Badge>
           </div>
-          <Badge variant="neutral">
-            <T k="pageLabels.accrualBasis" />
-          </Badge>
-        </div>
-        <div className="mobile-keep-cols grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <StatCard
-            label={t["pageLabels.activeCenters"]}
-            loading={isLoadingProfitability}
-            value={
-              <span className="tabular-nums">
-                {profitabilityTotals.activeCostCenterCount}/{profitabilityTotals.costCenterCount}
-              </span>
+          <div className="mobile-keep-cols grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <StatCard
+              label={t["pageLabels.activeCenters"]}
+              loading={isLoadingProfitability}
+              value={
+                <span className="tabular-nums">
+                  {profitabilityTotals.activeCostCenterCount}/{profitabilityTotals.costCenterCount}
+                </span>
+              }
+            />
+            <StatCard
+              label={t["pages.income"]}
+              loading={isLoadingProfitability}
+              value={<Money amount={profitabilityTotals.totalIncome} />}
+            />
+            <StatCard
+              label={t["pages.expenses"]}
+              loading={isLoadingProfitability}
+              value={<Money amount={profitabilityTotals.totalExpenses} />}
+            />
+            <StatCard
+              label={t["pageLabels.netIncome"]}
+              loading={isLoadingProfitability}
+              value={<Money amount={profitabilityTotals.netIncome} tone="auto" />}
+            />
+          </div>
+          <DataTableCard
+            status={
+              isLoadingProfitability
+                ? "loading"
+                : profitabilityRows.length === 0
+                  ? "empty"
+                  : "ready"
             }
-          />
-          <StatCard
-            label={t["pages.income"]}
-            loading={isLoadingProfitability}
-            value={<Money amount={profitabilityTotals.totalIncome} />}
-          />
-          <StatCard
-            label={t["pages.expenses"]}
-            loading={isLoadingProfitability}
-            value={<Money amount={profitabilityTotals.totalExpenses} />}
-          />
-          <StatCard
-            label={t["pageLabels.netIncome"]}
-            loading={isLoadingProfitability}
-            value={<Money amount={profitabilityTotals.netIncome} tone="auto" />}
-          />
-        </div>
-        <DataTableCard
-          status={
-            isLoadingProfitability ? "loading" : profitabilityRows.length === 0 ? "empty" : "ready"
-          }
-          empty={{
-            icon: Building2,
-            title: t["pageLabels.noCostCenterAllocationsHaveBeenPostedYet"],
-          }}
-        >
-          <Table className="row-cards">
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t["screens.code"]}</TableHead>
-                <TableHead className="w-full">
-                  <T k="pageLabels.costCenter" />
-                </TableHead>
-                <TableHead>
-                  <T k="pages.status" />
-                </TableHead>
-                <TableHead data-numeric="">
-                  <T k="pages.income" />
-                </TableHead>
-                <TableHead data-numeric="">
-                  <T k="pages.expenses" />
-                </TableHead>
-                <TableHead data-numeric="">
-                  <T k="pages.netIncome" />
-                </TableHead>
-                <TableHead data-numeric="">{cc.rollup}</TableHead>
-                <TableHead data-numeric="">{cc.lines}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {profitabilityRows.map((row) => (
-                <TableRow
-                  key={row.costCenterId}
-                  className={row.isUnallocated ? "bg-surface-sunken/60" : undefined}
-                >
-                  <TableCell
-                    data-nowrap=""
-                    data-cell="meta"
-                    className="tabular-nums text-muted-foreground"
-                  >
-                    {row.code}
-                  </TableCell>
-                  <TableCell
-                    data-truncate=""
-                    data-cell="title"
-                    className={cn("font-medium", row.isUnallocated && "text-muted-foreground")}
-                    style={{ paddingInlineStart: `${(row.depth ?? 0) * 16 + 16}px` }}
-                  >
-                    <span dir="auto">
-                      {row.isUnallocated
-                        ? cc.unallocated
-                        : locale === "ar" && row.nameAr
-                          ? row.nameAr
-                          : row.name}
-                    </span>
-                    {row.type && row.type !== "cost_centre" && !row.isUnallocated && (
-                      <Badge variant="outline" className="ms-2">
-                        {row.type === "project" ? cc.typeProject : cc.typeJob}
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell data-nowrap="" data-cell="status">
-                    {!row.isUnallocated && (
-                      <StatusBadge status={row.isActive ? "active" : "inactive"} />
-                    )}
-                  </TableCell>
-                  <MoneyCell
-                    amount={row.totalIncome}
-                    showCurrency={false}
-                    className="text-muted-foreground"
-                  />
-                  <MoneyCell
-                    amount={row.totalExpenses}
-                    showCurrency={false}
-                    className="text-muted-foreground"
-                  />
-                  <MoneyCell
-                    amount={row.netIncome}
-                    tone="auto"
-                    className="font-medium"
-                    data-cell="amount"
-                  />
-                  <TableCell data-numeric="" className="text-muted-foreground">
-                    {row.rollup ? (
-                      <Money amount={row.rollup.netIncome} showCurrency={false} />
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
-                  <TableCell data-numeric="" className="text-muted-foreground">
-                    {row.lineCount}
-                  </TableCell>
+            empty={{
+              icon: Building2,
+              title: t["pageLabels.noCostCenterAllocationsHaveBeenPostedYet"],
+            }}
+          >
+            <Table className="row-cards">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t["screens.code"]}</TableHead>
+                  <TableHead className="w-full">
+                    <T k="pageLabels.costCenter" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead data-numeric="">
+                    <T k="pages.income" />
+                  </TableHead>
+                  <TableHead data-numeric="">
+                    <T k="pages.expenses" />
+                  </TableHead>
+                  <TableHead data-numeric="">
+                    <T k="pages.netIncome" />
+                  </TableHead>
+                  <TableHead data-numeric="">{cc.rollup}</TableHead>
+                  <TableHead data-numeric="">{cc.lines}</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </DataTableCard>
-      </section>
+              </TableHeader>
+              <TableBody>
+                {profitabilityRows.map((row) => (
+                  <TableRow
+                    key={row.costCenterId}
+                    className={row.isUnallocated ? "bg-surface-sunken/60" : undefined}
+                  >
+                    <TableCell
+                      data-nowrap=""
+                      data-cell="meta"
+                      className="tabular-nums text-muted-foreground"
+                    >
+                      {row.code}
+                    </TableCell>
+                    <TableCell
+                      data-truncate=""
+                      data-cell="title"
+                      className={cn("font-medium", row.isUnallocated && "text-muted-foreground")}
+                      style={{ paddingInlineStart: `${(row.depth ?? 0) * 16 + 16}px` }}
+                    >
+                      <span dir="auto">
+                        {row.isUnallocated
+                          ? cc.unallocated
+                          : locale === "ar" && row.nameAr
+                            ? row.nameAr
+                            : row.name}
+                      </span>
+                      {row.type && row.type !== "cost_centre" && !row.isUnallocated && (
+                        <Badge variant="outline" className="ms-2">
+                          {row.type === "project" ? cc.typeProject : cc.typeJob}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell data-nowrap="" data-cell="status">
+                      {!row.isUnallocated && (
+                        <StatusBadge status={row.isActive ? "active" : "inactive"} />
+                      )}
+                    </TableCell>
+                    <MoneyCell
+                      amount={row.totalIncome}
+                      showCurrency={false}
+                      className="text-muted-foreground"
+                    />
+                    <MoneyCell
+                      amount={row.totalExpenses}
+                      showCurrency={false}
+                      className="text-muted-foreground"
+                    />
+                    <MoneyCell
+                      amount={row.netIncome}
+                      tone="auto"
+                      className="font-medium"
+                      data-cell="amount"
+                    />
+                    <TableCell data-numeric="" className="text-muted-foreground">
+                      {row.rollup ? (
+                        <Money amount={row.rollup.netIncome} showCurrency={false} />
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell data-numeric="" className="text-muted-foreground">
+                      {row.lineCount}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </DataTableCard>
+        </section>
+      )}
 
       {/* Register */}
       <section className="space-y-4" aria-labelledby="cc-register-title">
@@ -903,7 +912,7 @@ const CC_COPY = {
     typeCostCentre: "Cost centre",
     typeProject: "Project",
     typeJob: "Job",
-    unallocated: "Unallocated (no cost centre)",
+    unallocated: "Unallocated (no cost center)",
     rollup: "Net incl. children",
     lines: "Lines",
     active: "Active",

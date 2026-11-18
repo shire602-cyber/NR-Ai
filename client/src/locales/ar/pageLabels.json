@@ -309,7 +309,7 @@
   "pageLabels.enableUserReferralRewards": "تفعيل مكافآت إحالة المستخدمين",
   "pageLabels.endpointURL": "رابط نقطة الاتصال",
   "pageLabels.english": "الإنجليزية",
-  "pageLabels.enterExpenseDetailsWithoutOcrScanning": "أدخل تفاصيل المصروف بدون مسح ضوئي",
+  "pageLabels.enterExpenseDetailsWithoutOcrScanning": "أدخل تفاصيل المصروف بنفسك",
   "pageLabels.entryDetails": "تفاصيل القيد",
   "pageLabels.errorDetectorBeforeFiling": "كاشف الأخطاء قبل التقديم",
   "pageLabels.errorOccurred": "حدث خطأ",
@@ -1040,5 +1040,14 @@
   "pageLabels.notificationsPageTitle": "الإشعارات والأخبار",
   "pageLabels.notificationsPageDesc": "تابع المواعيد النهائية والتذكيرات والتغييرات التنظيمية",
   "pageLabels.notificationsTab": "الإشعارات",
-  "pageLabels.countryUaeName": "الإمارات العربية المتحدة"
+  "pageLabels.countryUaeName": "الإمارات العربية المتحدة",
+  "pageLabels.backupCount": "{count} نسخ احتياطية",
+  "pageLabels.lastBackupAt": "آخر نسخة {date}",
+  "pageLabels.defaultBackupName": "نسخة احتياطية {date}",
+  "pageLabels.backupAccountsCount": "{count} حسابات",
+  "pageLabels.backupInvoicesEntriesCount": "{invoices} فواتير، {entries} قيود",
+  "pageLabels.backupColName": "الاسم",
+  "pageLabels.backupColType": "النوع",
+  "pageLabels.backupColSize": "الحجم",
+  "pageLabels.investingActivitiesHint": "النقد من شراء الأصول طويلة الأجل أو بيعها"
 }

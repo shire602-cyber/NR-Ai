@@ -43,15 +43,15 @@ import { WpsSettingsCard } from "./payroll/WpsTab";
 
 const CURRENCY_OPTIONS = [
   { value: "AED", label: "AED — UAE Dirham" },
-  { value: "USD", label: "USD — US Dollar" },
+  { value: "USD", label: "USD — US dollar" },
   { value: "EUR", label: "EUR — Euro" },
-  { value: "GBP", label: "GBP — British Pound" },
-  { value: "SAR", label: "SAR — Saudi Riyal" },
-  { value: "QAR", label: "QAR — Qatari Riyal" },
-  { value: "KWD", label: "KWD — Kuwaiti Dinar" },
-  { value: "BHD", label: "BHD — Bahraini Dinar" },
-  { value: "OMR", label: "OMR — Omani Rial" },
-  { value: "INR", label: "INR — Indian Rupee" },
+  { value: "GBP", label: "GBP — British pound" },
+  { value: "SAR", label: "SAR — Saudi riyal" },
+  { value: "QAR", label: "QAR — Qatari riyal" },
+  { value: "KWD", label: "KWD — Kuwaiti dinar" },
+  { value: "BHD", label: "BHD — Bahraini dinar" },
+  { value: "OMR", label: "OMR — Omani rial" },
+  { value: "INR", label: "INR — Indian rupee" },
 ];
 
 const MONTH_OPTIONS = [

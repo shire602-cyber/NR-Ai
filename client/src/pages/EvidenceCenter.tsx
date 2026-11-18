@@ -440,8 +440,8 @@ export default function EvidenceCenter() {
 
       {ctPack ? (
         <Card data-testid="ct-evidence-pack">
-          <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-            <div>
+          <CardHeader className="flex flex-col gap-3 space-y-0 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 flex-1 sm:min-w-[280px]">
               <CardTitle className="text-base">
                 <T k="compliance.ctPackTitle" />
               </CardTitle>
@@ -449,7 +449,7 @@ export default function EvidenceCenter() {
                 <T k="compliance.ctPackDescription" />
               </CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <Badge variant={ctPack.readinessScore >= 80 ? "default" : "secondary"}>
                 {ctPack.readinessScore}%
               </Badge>
@@ -666,8 +666,10 @@ export default function EvidenceCenter() {
         <div className="grid gap-3 p-4 lg:grid-cols-3">
           {data.ownerActions.map((action) => (
             <div key={action.id} className="rounded-md border p-3">
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="font-medium">{ev(action.title, action.copy?.title)}</h3>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <h3 className="min-w-0 flex-1 font-medium">
+                  {ev(action.title, action.copy?.title)}
+                </h3>
                 <Badge variant={priorityBadge(action) as any}>{st(action.priority)}</Badge>
               </div>
               <p className="mt-2 text-sm text-muted-foreground">
@@ -695,7 +697,7 @@ export default function EvidenceCenter() {
             </p>
           </div>
           <div className="w-full overflow-x-auto">
-            <Table>
+            <Table className="min-w-[44rem]">
               <TableHeader>
                 <TableRow>
                   <TableHead>
@@ -737,7 +739,7 @@ export default function EvidenceCenter() {
                           {st(issue.resolutionStatus ?? "open")}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="min-w-[16rem]">
                         <p className="font-medium">{ev(issue.title, issue.copy?.title)}</p>
                         <p className="text-sm text-muted-foreground">
                           {ev(issue.detail, issue.copy?.detail)}
@@ -871,7 +873,7 @@ export default function EvidenceCenter() {
           </p>
         </div>
         <div className="w-full overflow-x-auto">
-          <Table>
+          <Table className="min-w-[60rem]">
             <TableHeader>
               <TableRow>
                 <TableHead>
@@ -909,10 +911,14 @@ export default function EvidenceCenter() {
               ) : (
                 visibleProofLines.slice(0, 20).map((line) => (
                   <TableRow key={line.id}>
-                    <TableCell>{ev(line.label, line.copy?.label)}</TableCell>
-                    <TableCell>{formatDate(line.date)}</TableCell>
-                    <TableCell>{line.party || "-"}</TableCell>
-                    <TableCell>{line.documentNumber || "-"}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {ev(line.label, line.copy?.label)}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">{formatDate(line.date)}</TableCell>
+                    <TableCell className="min-w-[10rem]">{line.party || "-"}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <bdi>{line.documentNumber || "-"}</bdi>
+                    </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         <Badge variant="outline">{st(line.status)}</Badge>

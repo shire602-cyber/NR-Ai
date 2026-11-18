@@ -229,7 +229,7 @@ export function AppSidebar() {
                           <span className="min-w-0 flex-1 overflow-hidden">
                             <span className="block truncate">{label}</span>
                             {description ? (
-                              <span className="block truncate text-[11px] font-normal leading-tight text-sidebar-muted">
+                              <span className="block truncate text-caption font-normal text-sidebar-muted">
                                 {description}
                               </span>
                             ) : null}
@@ -292,7 +292,7 @@ export function AppSidebar() {
         {/* ── Client portal — simplified flat view ── */}
         {userType === "client" && (
           <>
-            <div className="px-3 pt-5 pb-1.5 text-[11px] font-medium text-sidebar-muted">
+            <div className="px-3 pt-5 pb-1.5 text-caption font-medium text-sidebar-muted">
               {t["shell.sidebarWorkspace"]}
             </div>
             <SidebarMenu className="px-1.5">
@@ -308,21 +308,21 @@ export function AppSidebar() {
               </SidebarMenuItem>
             </SidebarMenu>
 
-            <div className="px-3 pt-5 pb-1.5 text-[11px] font-medium text-sidebar-muted">
+            <div className="px-3 pt-5 pb-1.5 text-caption font-medium text-sidebar-muted">
               {t["shell.sidebarDocuments"]}
             </div>
             <SidebarMenu className="px-1.5">
               {CLIENT_PORTAL_DOCUMENT_ITEMS.map(renderClientPortalItem)}
             </SidebarMenu>
 
-            <div className="px-3 pt-5 pb-1.5 text-[11px] font-medium text-sidebar-muted">
+            <div className="px-3 pt-5 pb-1.5 text-caption font-medium text-sidebar-muted">
               {t.compliance ?? "Compliance"}
             </div>
             <SidebarMenu className="px-1.5">
               {CLIENT_PORTAL_COMPLIANCE_ITEMS.map(renderClientPortalItem)}
             </SidebarMenu>
 
-            <div className="px-3 pt-5 pb-1.5 text-[11px] font-medium text-sidebar-muted">
+            <div className="px-3 pt-5 pb-1.5 text-caption font-medium text-sidebar-muted">
               {t["shell.sidebarInsights"]}
             </div>
             <SidebarMenu className="px-1.5">
@@ -345,7 +345,7 @@ export function AppSidebar() {
             userType must never strand the owner with an empty sidebar. */}
         {userType !== "client" && (
           <>
-            <div className="px-3 pt-5 pb-1.5 text-[11px] font-medium text-sidebar-muted">
+            <div className="px-3 pt-5 pb-1.5 text-caption font-medium text-sidebar-muted">
               {t["shell.sidebarOverview"]}
             </div>
             <SidebarMenu className="px-1.5">
@@ -361,7 +361,7 @@ export function AppSidebar() {
               </SidebarMenuItem>
             </SidebarMenu>
 
-            <div className="px-3 pt-5 pb-1.5 text-[11px] font-medium text-sidebar-muted">
+            <div className="px-3 pt-5 pb-1.5 text-caption font-medium text-sidebar-muted">
               {t["shell.sidebarOperations"]}
             </div>
             <SidebarMenu className="px-1.5 pb-4">{allGroups.map(renderNavGroup)}</SidebarMenu>

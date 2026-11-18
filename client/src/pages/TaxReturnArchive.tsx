@@ -117,7 +117,7 @@ export default function TaxReturnArchive() {
         queryKey: ["/api/companies", companyId, "tax-returns-archive"],
       });
       toast({
-        title: locale === "ar" ? "تمت الإضافة بنجاح" : "Added Successfully",
+        title: locale === "ar" ? "تمت الإضافة بنجاح" : "Added successfully",
         description: locale === "ar" ? "تم حفظ الإقرار الضريبي" : "Tax return has been saved",
       });
       setAddDialogOpen(false);
@@ -156,7 +156,7 @@ export default function TaxReturnArchive() {
     ) {
       toast({
         variant: "destructive",
-        title: locale === "ar" ? "معلومات ناقصة" : "Missing Information",
+        title: locale === "ar" ? "معلومات ناقصة" : "Missing information",
         description:
           locale === "ar" ? "يرجى ملء جميع الحقول المطلوبة" : "Please fill in all required fields",
       });
@@ -481,7 +481,7 @@ export default function TaxReturnArchive() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "رقم مرجع الهيئة" : "FTA Reference No."}</Label>
+                <Label>{locale === "ar" ? "رقم مرجع الهيئة" : "FTA reference no."}</Label>
                 <Input
                   value={newReturn.ftaReferenceNumber}
                   onChange={(e) =>

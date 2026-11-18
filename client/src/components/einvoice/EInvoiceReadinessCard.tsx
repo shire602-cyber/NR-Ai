@@ -23,7 +23,10 @@ export function EInvoiceReadinessCard({
 }: {
   companyId: string | null | undefined;
   className?: string;
-  /** Onboarding: no card chrome padding, same content. */
+  /**
+   * Onboarding: header, progress and the go-live line only. The per-area checklist and its fix
+   * links (which would leave onboarding) stay on the dashboard card.
+   */
   compact?: boolean;
 }) {
   const { t, locale } = useTranslation();
@@ -74,7 +77,7 @@ export function EInvoiceReadinessCard({
           )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className={compact ? "space-y-3" : "space-y-4"}>
         {isLoading || !data ? (
           <Skeleton className="h-40 w-full" />
         ) : (
@@ -88,57 +91,59 @@ export function EInvoiceReadinessCard({
                 {t["launchProof.readinessDateNote"]}
               </p>
             </div>
-            <ul className="divide-y divide-border" data-testid="einvoice-readiness-list">
-              {data.items.map((item) => {
-                const done = item.status === "done";
-                const Icon = done ? CheckCircle2 : Circle;
-                return (
-                  <li
-                    key={item.key}
-                    className="flex items-start gap-3 py-2.5"
-                    data-testid={`einvoice-readiness-${item.key}`}
-                    data-status={item.status}
-                  >
-                    <Icon
-                      aria-hidden
-                      className={cn(
-                        "mt-0.5 h-4 w-4 shrink-0",
-                        done ? "text-success" : "text-muted-foreground"
-                      )}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-small font-medium text-foreground">
-                        {t[`launchProof.readinessItem_${item.key}`]}
-                      </p>
-                      <p className="text-caption text-muted-foreground">
-                        {done
-                          ? t[`launchProof.readinessDone_${item.key}`]
-                          : t[`launchProof.readinessHint_${item.key}`]}
-                      </p>
-                      {!done && item.samples.length > 0 && (
-                        <p className="text-caption text-foreground">
-                          {formatMessage(t["launchProof.readinessAttention"], {
-                            count: String(item.count),
-                            total: String(item.total),
-                            names: sampleText(item),
-                          })}
+            {!compact && (
+              <ul className="divide-y divide-border" data-testid="einvoice-readiness-list">
+                {data.items.map((item) => {
+                  const done = item.status === "done";
+                  const Icon = done ? CheckCircle2 : Circle;
+                  return (
+                    <li
+                      key={item.key}
+                      className="flex items-start gap-3 py-2.5"
+                      data-testid={`einvoice-readiness-${item.key}`}
+                      data-status={item.status}
+                    >
+                      <Icon
+                        aria-hidden
+                        className={cn(
+                          "mt-0.5 h-4 w-4 shrink-0",
+                          done ? "text-success" : "text-muted-foreground"
+                        )}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-small font-medium text-foreground">
+                          {t[`launchProof.readinessItem_${item.key}`]}
                         </p>
+                        <p className="text-caption text-muted-foreground">
+                          {done
+                            ? t[`launchProof.readinessDone_${item.key}`]
+                            : t[`launchProof.readinessHint_${item.key}`]}
+                        </p>
+                        {!done && item.samples.length > 0 && (
+                          <p className="text-caption text-foreground">
+                            {formatMessage(t["launchProof.readinessAttention"], {
+                              count: String(item.count),
+                              total: String(item.total),
+                              names: sampleText(item),
+                            })}
+                          </p>
+                        )}
+                      </div>
+                      {!done && (
+                        <Link
+                          href={item.fixHref}
+                          className="inline-flex shrink-0 items-center gap-1 text-small font-medium text-primary hover:underline"
+                          data-testid={`einvoice-readiness-fix-${item.key}`}
+                        >
+                          {t["launchProof.readinessFix"]}
+                          <ArrowRight aria-hidden className="h-3.5 w-3.5 rtl:rotate-180" />
+                        </Link>
                       )}
-                    </div>
-                    {!done && (
-                      <Link
-                        href={item.fixHref}
-                        className="inline-flex shrink-0 items-center gap-1 text-small font-medium text-primary hover:underline"
-                        data-testid={`einvoice-readiness-fix-${item.key}`}
-                      >
-                        {t["launchProof.readinessFix"]}
-                        <ArrowRight aria-hidden className="h-3.5 w-3.5 rtl:rotate-180" />
-                      </Link>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
             <p className="text-caption text-muted-foreground" data-testid="einvoice-readiness-tx">
               {data.transmission.enabled
                 ? formatMessage(t["launchProof.readinessTxOn"], {

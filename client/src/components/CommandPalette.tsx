@@ -651,7 +651,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     },
     {
       id: "nav-contacts",
-      label: "Customer Contacts",
+      label: "Customer contacts",
       group: "Navigate",
       icon: Users,
       href: "/contacts",
@@ -1250,7 +1250,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     },
     {
       id: "nav-vat",
-      label: "VAT Filing",
+      label: "VAT filing",
       group: "Navigate",
       icon: FileSpreadsheet,
       href: "/vat-filing",
@@ -1264,14 +1264,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     },
     {
       id: "nav-aichat",
-      label: "AI Chat",
+      label: "AI chat",
       group: "Navigate",
       icon: Sparkles,
       href: "/ai?tab=chat",
     },
     {
       id: "create-invoice",
-      label: "New Invoice",
+      label: "New invoice",
       group: "Create",
       icon: Plus,
       href: "/invoices?new=1",
@@ -1280,7 +1280,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     },
     {
       id: "create-journal",
-      label: "New Journal Entry",
+      label: "New journal entry",
       group: "Create",
       icon: Plus,
       href: "/journal?new=1",
@@ -1288,7 +1288,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     },
     {
       id: "create-receipt",
-      label: "Upload Receipt",
+      label: "Upload receipt",
       group: "Create",
       icon: Plus,
       href: "/receipts?upload=1",
@@ -1296,14 +1296,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     },
     {
       id: "settings-company",
-      label: "Company Profile",
+      label: "Company profile",
       group: "Settings",
       icon: Settings,
       href: "/company-profile",
     },
     {
       id: "settings-team",
-      label: "Team Management",
+      label: "Team management",
       group: "Settings",
       icon: Users,
       href: "/team",

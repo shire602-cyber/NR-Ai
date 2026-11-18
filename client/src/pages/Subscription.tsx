@@ -604,9 +604,9 @@ export default function Subscription() {
                       label: "pages.subscriptionOcrReceiptScanning",
                       values: [
                         false,
-                        "pages.subscriptionComingSoon",
-                        "pages.subscriptionComingSoon",
-                        "pages.subscriptionComingSoon",
+                        "pages.subscriptionArrivesLater",
+                        "pages.subscriptionArrivesLater",
+                        "pages.subscriptionArrivesLater",
                       ],
                     },
                     {

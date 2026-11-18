@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { EInvoiceReadinessCard } from "@/components/einvoice/EInvoiceReadinessCard";
 import { Link, useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import {
@@ -633,6 +634,8 @@ function Wizard({ company }: { company: Company | null }) {
           </button>
         ))}
       </div>
+      {/* Spec 3.4 step 3 (Fable P13): X6d's readiness card, compact, under the task grid. */}
+      <EInvoiceReadinessCard companyId={company?.id} compact className="mt-6" />
     </OnboardingShell>
   );
 }

@@ -38,7 +38,7 @@ export default function VatTab() {
                       </span>
                     </div>
                     <div className="flex justify-between font-medium">
-                      <span>VAT Collected (5%)</span>
+                      <span>VAT collected (5%)</span>
                       <span className="tabular-nums">
                         <Money amount={vatSummary?.salesVAT || 0} currency={"AED"} />
                       </span>
@@ -58,7 +58,7 @@ export default function VatTab() {
                       </span>
                     </div>
                     <div className="flex justify-between font-medium">
-                      <span>VAT Paid (5%)</span>
+                      <span>VAT paid (5%)</span>
                       <span className="tabular-nums">
                         <Money amount={vatSummary?.purchasesVAT || 0} currency={"AED"} />
                       </span>

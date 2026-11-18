@@ -156,7 +156,7 @@ interface ReportData {
 const matchTypeConfig = {
   journal_entry: {
     icon: BookOpen,
-    label: "Journal Entry",
+    label: "Journal entry",
     color: "text-muted-foreground",
     bg: "bg-muted",
   },
@@ -859,7 +859,7 @@ export default function BankReconciliation() {
     <div className="space-y-6">
       {/* ── Header ── */}
       <PageHeader
-        eyebrow="Accounting"
+        eyebrow={t["shell.nav.banking"]}
         title={t.bankReconciliation}
         description={t.bankReconciliationDescription}
         primaryAction={
@@ -893,38 +893,40 @@ export default function BankReconciliation() {
         overflowLabel={t["banking.recon.moreActions"]}
       />
 
-      {/* ── Summary: exceptions first ── */}
-      <div className="mobile-keep-cols grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard
-          label={t["screens.needsReview"]}
-          value={<span className="tabular-nums">{stats.total - stats.reconciled}</span>}
-          hint={formatMessage(t["screens.suggestedCount"], { count: stats.suggested })}
-        />
-        <StatCard
-          label={t["pages.reconciled"]}
-          value={<span className="tabular-nums">{stats.reconciled}</span>}
-          hint={formatMessage(t["screens.reconciledOfTotal"], {
-            done: stats.reconciled,
-            total: stats.total,
-          })}
-          visualOverlay
-          visual={
-            stats.total > 0 ? (
-              <Progress value={(stats.reconciled / stats.total) * 100} className="h-1" />
-            ) : undefined
-          }
-        />
-        <StatCard
-          label={t["pages.total2"]}
-          value={<span className="tabular-nums">{stats.total}</span>}
-          hint={t["screens.bankLinesInView"]}
-        />
-        <StatCard
-          label={t["pageLabels.netAmount"]}
-          value={<Money amount={stats.totalAmount} tone="auto" />}
-          hint={t["screens.netAmountHint"]}
-        />
-      </div>
+      {/* ── Summary: exceptions first. Spec 2.6: no KPI row while there are no bank lines. ── */}
+      {stats.total > 0 && (
+        <div className="mobile-keep-cols grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatCard
+            label={t["screens.needsReview"]}
+            value={<span className="tabular-nums">{stats.total - stats.reconciled}</span>}
+            hint={formatMessage(t["screens.suggestedCount"], { count: stats.suggested })}
+          />
+          <StatCard
+            label={t["pages.reconciled"]}
+            value={<span className="tabular-nums">{stats.reconciled}</span>}
+            hint={formatMessage(t["screens.reconciledOfTotal"], {
+              done: stats.reconciled,
+              total: stats.total,
+            })}
+            visualOverlay
+            visual={
+              stats.total > 0 ? (
+                <Progress value={(stats.reconciled / stats.total) * 100} className="h-1" />
+              ) : undefined
+            }
+          />
+          <StatCard
+            label={t["pages.total2"]}
+            value={<span className="tabular-nums">{stats.total}</span>}
+            hint={t["screens.bankLinesInView"]}
+          />
+          <StatCard
+            label={t["pageLabels.netAmount"]}
+            value={<Money amount={stats.totalAmount} tone="auto" />}
+            hint={t["screens.netAmountHint"]}
+          />
+        </div>
+      )}
 
       <Tabs value={reconTab} onValueChange={setReconTab} className="space-y-4">
         <TabsList>
@@ -1311,7 +1313,7 @@ export default function BankReconciliation() {
                       <T k="pageLabels.direction" />
                     </p>
                     <Badge variant="outline" className="text-xs">
-                      {selectedTransaction.amount >= 0 ? "↑ Credit / Inflow" : "↓ Debit / Outflow"}
+                      {selectedTransaction.amount >= 0 ? "↑ Credit / Inflow" : "↓ Debit / outflow"}
                     </Badge>
                   </div>
                 </div>

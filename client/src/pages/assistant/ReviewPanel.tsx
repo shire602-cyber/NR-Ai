@@ -181,7 +181,7 @@ export default function ReviewPanel() {
               aria-pressed={filter === f.id}
               onClick={() => setFilter(f.id)}
               className={cn(
-                "rounded-md px-3 py-1.5 text-small font-medium transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-small font-medium transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 filter === f.id
                   ? "bg-secondary text-foreground"
                   : "text-muted-foreground hover:text-foreground"
@@ -189,7 +189,7 @@ export default function ReviewPanel() {
               data-testid={`review-filter-${f.id}`}
             >
               {f.label}
-              {f.count > 0 && <span className="ms-1.5 tabular-nums">{f.count}</span>}
+              {f.count > 0 && <span className="tabular-nums">{f.count}</span>}
             </button>
           ))}
         </div>

@@ -13,7 +13,6 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
-  HardDrive,
   FileJson,
   RefreshCw,
 } from "lucide-react";
@@ -53,13 +52,13 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
-import { format } from "date-fns";
+import { formatDate, formatDateTime } from "@/lib/format-date";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import type { Backup } from "@shared/schema";
-import { useI18n, useTranslation, translateNow } from "@/lib/i18n";
+import { formatMessage, useI18n, useTranslation, translateNow } from "@/lib/i18n";
 
 type BackupWithoutData = Omit<Backup, "dataSnapshot">;
 
@@ -182,6 +181,9 @@ export default function BackupRestore() {
   const [confirmName, setConfirmName] = useState("");
   const { locale } = useI18n();
   const c = BACKUP_COPY[locale === "ar" ? "ar" : "en"];
+  const defaultBackupName = formatMessage(t["pageLabels.defaultBackupName"], {
+    date: formatDate(new Date(), locale),
+  });
   const [selectedBackupForRestore, setSelectedBackupForRestore] =
     useState<BackupWithoutData | null>(null);
 
@@ -439,14 +441,16 @@ export default function BackupRestore() {
                 </Label>
                 <Input
                   id="backup-name"
-                  placeholder={`Backup ${new Date().toLocaleDateString()}`}
+                  placeholder={defaultBackupName}
                   value={newBackupName}
                   onChange={(e) => setNewBackupName(e.target.value)}
                   data-testid="input-backup-name"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="backup-description">Description (Optional)</Label>
+                <Label htmlFor="backup-description">
+                  <T k="firmOps.docDescriptionOptional" />
+                </Label>
                 <Textarea
                   id="backup-description"
                   placeholder={t["backupRestore.addNotesAboutThisBackup"]}
@@ -463,7 +467,7 @@ export default function BackupRestore() {
               <Button
                 onClick={() =>
                   createBackupMutation.mutate({
-                    name: newBackupName || `Backup ${new Date().toLocaleDateString()}`,
+                    name: newBackupName || defaultBackupName,
                     description: newBackupDescription,
                   })
                 }
@@ -486,61 +490,6 @@ export default function BackupRestore() {
           </DialogContent>
         </Dialog>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Database className="h-4 w-4" />
-                <T k="pageLabels.totalBackups" />
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold" data-testid="text-total-backups">
-                {backups.length}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                <T k="pageLabels.backupHistory" />
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <HardDrive className="h-4 w-4" />
-                <T k="pageLabels.storageUsed" />
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold" data-testid="text-storage-used">
-                {formatBytes(backups.reduce((sum, b) => sum + (b.sizeBytes || 0), 0))}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                <T k="pageLabels.totalBackupSize" />
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                <T k="pageLabels.lastBackup" />
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold" data-testid="text-last-backup">
-                {backups.length > 0 && backups[0].createdAt
-                  ? format(new Date(backups[0].createdAt), "MMM d, yyyy")
-                  : t["banking.feeds.never"]}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {backups.length > 0 && backups[0].createdAt
-                  ? format(new Date(backups[0].createdAt), "h:mm a")
-                  : t["backupRestore.createYourFirstBackup"]}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
         <Card>
           <CardHeader>
             <CardTitle>
@@ -549,6 +498,31 @@ export default function BackupRestore() {
             <CardDescription>
               <T k="pageLabels.viewAndManageYourFinancialDataBackups" />
             </CardDescription>
+            {/* Spec 2.6/2.7 (Fable B9): no tile row; one summary line once a backup exists. */}
+            {backups.length > 0 && (
+              <p
+                className="text-small text-muted-foreground tabular-nums"
+                data-testid="backup-summary"
+              >
+                <span data-testid="text-total-backups">
+                  {formatMessage(t["pageLabels.backupCount"], { count: backups.length })}
+                </span>
+                {" · "}
+                <span data-testid="text-storage-used" dir="ltr">
+                  {formatBytes(backups.reduce((sum, b) => sum + (b.sizeBytes || 0), 0))}
+                </span>
+                {backups[0].createdAt && (
+                  <>
+                    {" · "}
+                    <span data-testid="text-last-backup">
+                      {formatMessage(t["pageLabels.lastBackupAt"], {
+                        date: formatDateTime(backups[0].createdAt, locale),
+                      })}
+                    </span>
+                  </>
+                )}
+              </p>
+            )}
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -562,35 +536,36 @@ export default function BackupRestore() {
                 testId="state-backups-error"
               />
             ) : backups.length === 0 ? (
-              <div className="text-center py-8">
-                <Database className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium mb-2">
-                  <T k="pageLabels.noBackupsYet" />
-                </h3>
-                <p className="text-muted-foreground mb-4">
-                  <T k="pageLabels.createYourFirstBackupToProtectYourFinancialRecords" />
-                </p>
-                <Button
-                  onClick={() => setIsCreateDialogOpen(true)}
-                  data-testid="button-create-first-backup"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  <T k="pageLabels.createFirstBackup" />
-                </Button>
-              </div>
+              <EmptyState
+                icon={Database}
+                title={t["pageLabels.noBackupsYet"]}
+                description={t["pageLabels.createYourFirstBackupToProtectYourFinancialRecords"]}
+                action={{
+                  label: t["pageLabels.createFirstBackup"],
+                  icon: Plus,
+                  onClick: () => setIsCreateDialogOpen(true),
+                  testId: "button-create-first-backup",
+                }}
+              />
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>
+                      <T k="pageLabels.backupColName" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pageLabels.backupColType" />
+                    </TableHead>
                     <TableHead>
                       <T k="pages.status" />
                     </TableHead>
                     <TableHead>
                       <T k="pageLabels.records" />
                     </TableHead>
-                    <TableHead>Size</TableHead>
+                    <TableHead>
+                      <T k="pageLabels.backupColSize" />
+                    </TableHead>
                     <TableHead>
                       <T k="pages.created" />
                     </TableHead>
@@ -616,24 +591,25 @@ export default function BackupRestore() {
                       <TableCell>{getStatusBadge(backup.status)}</TableCell>
                       <TableCell>
                         <div className="text-sm">
-                          <p>{backup.accountsCount || 0} accounts</p>
+                          <p>
+                            {formatMessage(t["pageLabels.backupAccountsCount"], {
+                              count: backup.accountsCount || 0,
+                            })}
+                          </p>
                           <p className="text-muted-foreground">
-                            {backup.invoicesCount || 0} invoices, {backup.journalEntriesCount || 0}{" "}
-                            entries
+                            {formatMessage(t["pageLabels.backupInvoicesEntriesCount"], {
+                              invoices: backup.invoicesCount || 0,
+                              entries: backup.journalEntriesCount || 0,
+                            })}
                           </p>
                         </div>
                       </TableCell>
                       <TableCell>{formatBytes(backup.sizeBytes || 0)}</TableCell>
                       <TableCell>
                         {backup.createdAt && (
-                          <div>
-                            <p className="text-sm">
-                              {format(new Date(backup.createdAt), "MMM d, yyyy")}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {format(new Date(backup.createdAt), "h:mm a")}
-                            </p>
-                          </div>
+                          <span className="whitespace-nowrap text-sm tabular-nums">
+                            {formatDateTime(backup.createdAt, locale)}
+                          </span>
                         )}
                       </TableCell>
                       <TableCell className="text-right">
@@ -868,7 +844,7 @@ export default function BackupRestore() {
             </Button>
             {schedule?.lastRunAt && (
               <p className="text-xs text-muted-foreground">
-                {c.lastRun}: {format(new Date(schedule.lastRunAt), "PPpp")}
+                {c.lastRun}: {formatDateTime(schedule.lastRunAt, locale)}
               </p>
             )}
           </CardContent>

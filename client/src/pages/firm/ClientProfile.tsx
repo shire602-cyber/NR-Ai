@@ -1,12 +1,11 @@
 import { formatAedText } from "@/lib/format";
+import { PageHeader } from "@/components/ui/page-header";
 import { T } from "@/components/layout/T";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation, useSearch } from "wouter";
 import {
-  ArrowLeft,
-  Building2,
   FileText,
   Users,
   Edit,
@@ -316,63 +315,54 @@ export default function ClientProfile() {
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/firm/clients")}>
-          <ArrowLeft className="w-4 h-4 me-1" />
-          <T k="pages.nraClientPortfolio" />
-        </Button>
-        <span className="text-muted-foreground">/</span>
-        <span className="text-sm font-medium">{company.name}</span>
-      </div>
-
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-            <Building2 className="w-6 h-6 text-primary" />
+      {/* Fable P18 / spec G5: the standard PageHeader (back link, eyebrow, title, description,
+          actions); no icon tile beside the title. */}
+      <PageHeader
+        backHref="/firm/clients"
+        backLabel={t["pages.nraClientPortfolio"]}
+        eyebrow="Firm"
+        title={company.name}
+        description={
+          <>
+            {company.trnVatNumber
+              ? formatMessage(t["firmOps.healthTrn"], { trn: company.trnVatNumber })
+              : t["clientProfile.noTrnRegistered"]}
+            {company.emirate ? ` · ${emirateLabel(t, company.emirate)}` : ""}
+          </>
+        }
+        actions={
+          <div className="flex gap-2">
+            {editing ? (
+              <>
+                <Button variant="outline" onClick={handleCancel}>
+                  <X className="w-4 h-4 me-1" />
+                  <T k="pages.cancel" />
+                </Button>
+                <Button onClick={handleSave} disabled={updateMutation.isPending}>
+                  <Save className="w-4 h-4 me-1" />
+                  {updateMutation.isPending ? "Saving..." : t["pages.saveChanges"]}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={handleEdit}>
+                  <Edit className="w-4 h-4 me-1" />
+                  {t["firmOps.edit"]}
+                </Button>
+                <Button
+                  onClick={() => switchMutation.mutate()}
+                  disabled={switchMutation.isPending}
+                  data-testid="button-open-books-profile"
+                >
+                  <BookOpen className="w-4 h-4 me-2" />
+                  {switchMutation.isPending ? "Switching..." : t["pages.openBooks"]}
+                  <ExternalLink className="w-3.5 h-3.5 ms-1.5" />
+                </Button>
+              </>
+            )}
           </div>
-          <div>
-            <h1 className="text-2xl font-bold">{company.name}</h1>
-            <p className="text-muted-foreground text-sm mt-0.5">
-              {company.trnVatNumber
-                ? formatMessage(t["firmOps.healthTrn"], { trn: company.trnVatNumber })
-                : t["clientProfile.noTrnRegistered"]}
-              {company.emirate ? ` · ${emirateLabel(t, company.emirate)}` : ""}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          {editing ? (
-            <>
-              <Button variant="outline" onClick={handleCancel}>
-                <X className="w-4 h-4 me-1" />
-                <T k="pages.cancel" />
-              </Button>
-              <Button onClick={handleSave} disabled={updateMutation.isPending}>
-                <Save className="w-4 h-4 me-1" />
-                {updateMutation.isPending ? "Saving..." : t["pages.saveChanges"]}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="outline" onClick={handleEdit}>
-                <Edit className="w-4 h-4 me-1" />
-                {t["firmOps.edit"]}
-              </Button>
-              <Button
-                onClick={() => switchMutation.mutate()}
-                disabled={switchMutation.isPending}
-                data-testid="button-open-books-profile"
-              >
-                <BookOpen className="w-4 h-4 me-2" />
-                {switchMutation.isPending ? "Switching..." : t["pages.openBooks"]}
-                <ExternalLink className="w-3.5 h-3.5 ms-1.5" />
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
+        }
+      />
 
       <Tabs value={tab} onValueChange={selectTab}>
         <TabsList aria-label={t["firmOps.clientTabOverview"]}>

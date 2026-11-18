@@ -201,5 +201,6 @@
   "banking.feeds.status.active": "متصل",
   "banking.feeds.status.error": "يحتاج إلى مراجعة",
   "banking.feeds.status.disconnected": "غير متصل",
-  "banking.feeds.status.pending": "بانتظار البنك"
+  "banking.feeds.status.pending": "بانتظار البنك",
+  "banking.imports.sourceImport": "استيراد {format}"
 }

@@ -284,7 +284,8 @@ function Answer({ answer }: { answer: AskResponse }) {
             <Link
               key={s.sourceKey}
               href={s.href}
-              className="rounded-full border border-border px-2.5 py-0.5 text-caption font-medium text-primary hover:bg-secondary"
+              // Fable P19: chip height follows its text; the 44 px tap area comes from ::after.
+              className="relative inline-flex !min-h-0 items-center rounded-full border border-border px-2.5 py-0.5 text-caption font-medium text-primary after:absolute after:inset-x-0 after:-inset-y-2.5 after:content-[''] hover:bg-secondary"
             >
               {t[s.sourceKey]}
             </Link>

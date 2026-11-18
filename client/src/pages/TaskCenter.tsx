@@ -240,7 +240,7 @@ export function TaskListPanel() {
         queryKey: ["/api/companies", companyId, "compliance-tasks"],
       });
       toast({
-        title: locale === "ar" ? "تمت الإضافة" : "Task Created",
+        title: locale === "ar" ? "تمت الإضافة" : "Task created",
         description:
           locale === "ar" ? "تم إنشاء المهمة بنجاح" : "Task has been created successfully",
       });
@@ -250,7 +250,7 @@ export function TaskListPanel() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: locale === "ar" ? "فشل الإنشاء" : "Creation Failed",
+        title: locale === "ar" ? "فشل الإنشاء" : "Creation failed",
         description: error?.message,
       });
     },
@@ -300,7 +300,7 @@ export function TaskListPanel() {
     if (!newTask.title || !newTask.dueDate) {
       toast({
         variant: "destructive",
-        title: locale === "ar" ? "معلومات ناقصة" : "Missing Information",
+        title: locale === "ar" ? "معلومات ناقصة" : "Missing information",
         description:
           locale === "ar"
             ? "يرجى إدخال العنوان وتاريخ الاستحقاق"
