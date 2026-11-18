@@ -73,8 +73,8 @@
   "evidenceCenter.pack.proofLines": "{count} أسطر إثبات",
   "evidenceCenter.pack.linkedFiles": "{count} ملفات مصدر مرتبطة",
   "evidenceCenter.pack.openGaps": "{count} فجوات مفتوحة",
-  "evidenceCenter.focus.showing": "عرض صفوف الإثبات الخاصة بـ {source}.",
-  "evidenceCenter.focus.matching": "{count} صف/صفوف مطابقة",
+  "evidenceCenter.focus.showing": "عرض صفوف الإثبات الخاصة بالمصدر: {source}.",
+  "evidenceCenter.focus.matching": "{count, plural, zero {لا صفوف مطابقة} one {صف مطابق واحد} two {صفان مطابقان} few {# صفوف مطابقة} many {# صفًا مطابقًا} other {# صف مطابق}}",
   "evidenceCenter.auditReason": "سبب التدقيق: {reason}",
   "evidenceCenter.reason": "السبب: {reason}",
   "evidenceCenter.noRecipient": "لم يُحدَّد مستلم",
@@ -174,5 +174,9 @@
   "documentVersions.versionHistory": "سجل الإصدارات",
   "documentVault.expiryAlert": "{expiring} تنتهي خلال 30 يومًا · {expired} منتهية",
   "documentVault.noDocumentsYet": "لا توجد مستندات بعد",
-  "documentVault.emptyBody": "تظهر هنا التراخيص والعقود والشهادات التي ترفعها."
+  "documentVault.emptyBody": "تظهر هنا التراخيص والعقود والشهادات التي ترفعها.",
+  "complianceCalendar.today": "اليوم",
+  "complianceCalendar.viewCalendar": "التقويم",
+  "complianceCalendar.viewList": "القائمة",
+  "complianceCalendar.daysShort": "{count, plural, one {يوم} two {يومان} few {# أيام} other {# يومًا}}"
 }
