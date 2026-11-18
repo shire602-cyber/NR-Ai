@@ -13,7 +13,10 @@ import { eq, and, desc, gte, lte, type SQL } from "drizzle-orm";
 import { activityLogs } from "../../shared/schema";
 import { createSpreadsheetBuffer, parseSpreadsheet } from "../services/spreadsheet.service";
 import { errorMessage } from "../errors";
+import { z } from "zod";
 import { strictBody } from "../http/strict-body";
+import { adminIntegrationStatus } from "../services/admin-integrations";
+import * as googleSheets from "../integrations/googleSheets";
 import { parsedBody } from "../http/parsed-body";
 import {
   adminCreateClientBody,
@@ -228,6 +231,32 @@ export function registerAdminRoutes(app: Express): void {
       const limit = parseInt(req.query.limit as string) || 100;
       const logs = await storage.getAuditLogs(limit);
       res.json(logs);
+    })
+  );
+
+  // =====================================
+  // ADMIN PANEL - INTEGRATIONS (STEP1 F6)
+  // =====================================
+
+  // Which platform credentials are configured. Secrets live in the server environment and are
+  // never entered through the UI.
+  router.get(
+    "/admin/integrations/status",
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json(adminIntegrationStatus());
+    })
+  );
+
+  // Real Google Sheets connectivity check (creates and removes a scratch spreadsheet).
+  router.post(
+    "/admin/integrations/google-sheets/test",
+    strictBody(z.object({}).strict()),
+    asyncHandler(async (_req: Request, res: Response) => {
+      if (!adminIntegrationStatus().googleSheets.configured) {
+        return res.json({ ok: false, code: "not_configured" });
+      }
+      const ok = await googleSheets.isGoogleSheetsConnected();
+      res.json({ ok, code: ok ? "connected" : "failed" });
     })
   );
 

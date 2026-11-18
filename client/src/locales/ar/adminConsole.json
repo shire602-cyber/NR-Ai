@@ -589,5 +589,19 @@
   "admin.export.type": "النوع",
   "admin.export.created": "تاريخ الإنشاء",
   "admin.export.trn": "الرقم الضريبي",
-  "admin.export.currency": "العملة"
+  "admin.export.currency": "العملة",
+  "adminDocuments.chooseFile": "اختر ملفاً لرفعه.",
+  "adminDocuments.fileUnavailable": "لا يوجد ملف مخزّن لهذا المستند",
+  "adminDocuments.noneFor": "لا توجد مستندات لدى {name}",
+  "adminDocuments.uploadFor": "رفع مستند لـ {name}",
+  "adminDocuments.view": "عرض المستند",
+  "adminDocuments.download": "تنزيل المستند",
+  "adminDocuments.delete": "حذف المستند",
+  "admin.export.auditSheet": "سجل التدقيق",
+  "admin.integrations.configured": "مُهيّأ",
+  "admin.integrations.testOk": "تم التحقق من اتصال جداول بيانات Google",
+  "admin.integrations.testFailed": "فشل الاتصال",
+  "admin.integrations.stripeNote": "تُضبط مفاتيح الدفع في بيئة الخادم (STRIPE_SECRET_KEY) ولا تُدخل ولا تُخزَّن هنا.",
+  "admin.integrations.openaiNote": "يُضبط مفتاح الذكاء الاصطناعي في بيئة الخادم (OPENAI_API_KEY) ولا يُدخل ولا يُخزَّن هنا.",
+  "admin.integrations.sheetsNote": "تُضبط بيانات الاعتماد في بيئة الخادم. يتحقق اختبار الاتصال من أنها تعمل."
 }

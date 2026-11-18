@@ -589,5 +589,19 @@
   "admin.export.type": "Type",
   "admin.export.created": "Created",
   "admin.export.trn": "TRN",
-  "admin.export.currency": "Currency"
+  "admin.export.currency": "Currency",
+  "adminDocuments.chooseFile": "Choose a file to upload.",
+  "adminDocuments.fileUnavailable": "This document has no stored file",
+  "adminDocuments.noneFor": "No documents found for {name}",
+  "adminDocuments.uploadFor": "Upload document for {name}",
+  "adminDocuments.view": "View document",
+  "adminDocuments.download": "Download document",
+  "adminDocuments.delete": "Delete document",
+  "admin.export.auditSheet": "Audit log",
+  "admin.integrations.configured": "Configured",
+  "admin.integrations.testOk": "Google Sheets connection verified",
+  "admin.integrations.testFailed": "Connection failed",
+  "admin.integrations.stripeNote": "Payment keys are set in the server environment (STRIPE_SECRET_KEY) and are never entered or stored here.",
+  "admin.integrations.openaiNote": "The AI key is set in the server environment (OPENAI_API_KEY) and is never entered or stored here.",
+  "admin.integrations.sheetsNote": "Credentials are set in the server environment. Test connection checks that they work."
 }

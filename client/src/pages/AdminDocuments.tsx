@@ -5,7 +5,7 @@ import { formatDate, parseCalendarDate } from "@/lib/format-date";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, differenceInDays } from "date-fns";
+import { differenceInDays } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { downloadStoredFile, fileToDataUrl, openStoredFile } from "@/lib/stored-file";
 import {
   Upload,
   FileText,
@@ -98,6 +99,20 @@ const DOCUMENT_CATEGORIES = [
   { value: "other", labelKey: "forms.claim.cat.Other" },
 ];
 
+/** Categories the document vault accepts on upload (DOC_CATEGORIES); older rows may carry others. */
+const UPLOAD_CATEGORIES = DOCUMENT_CATEGORIES.filter((c) =>
+  [
+    "trade_license",
+    "contract",
+    "tax_certificate",
+    "audit_report",
+    "bank_statement",
+    "insurance",
+    "visa",
+    "other",
+  ].includes(c.value)
+);
+
 export default function AdminDocuments() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
@@ -110,7 +125,7 @@ export default function AdminDocuments() {
   const [newDocument, setNewDocument] = useState({
     name: "",
     nameAr: "",
-    category: "invoice",
+    category: "other",
     description: "",
     expiryDate: "",
     reminderDays: 30,
@@ -126,6 +141,8 @@ export default function AdminDocuments() {
   });
 
   const uploadMutation = useMutation({
+    // The bytes go to the document vault (JSON base64 contract); the server sniffs the type and
+    // stores the file, so View / Download work afterwards.
     mutationFn: async (data: {
       name: string;
       nameAr: string;
@@ -133,13 +150,18 @@ export default function AdminDocuments() {
       description: string;
       expiryDate: string;
       reminderDays: number;
-      fileName: string;
-      fileSize: number;
-      mimeType: string;
+      file: File;
     }) => {
       return apiRequest("POST", `/api/companies/${selectedCompanyId}/documents`, {
-        ...data,
-        fileUrl: `/uploads/${data.fileName}`,
+        name: data.name,
+        nameAr: data.nameAr || null,
+        category: data.category,
+        description: data.description || null,
+        expiryDate: data.expiryDate || null,
+        reminderDays: data.reminderDays,
+        fileName: data.file.name,
+        mimeType: data.file.type || undefined,
+        fileData: await fileToDataUrl(data.file),
       });
     },
     onSuccess: () => {
@@ -179,7 +201,7 @@ export default function AdminDocuments() {
     setNewDocument({
       name: "",
       nameAr: "",
-      category: "invoice",
+      category: "other",
       description: "",
       expiryDate: "",
       reminderDays: 30,
@@ -193,6 +215,15 @@ export default function AdminDocuments() {
         variant: "destructive",
         title: translateNow("toasts.missingInformation"),
         description: translateNow("toasts.pleaseEnterDocumentName"),
+      });
+      return;
+    }
+
+    if (!selectedFile) {
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.missingInformation"),
+        description: translateNow("adminDocuments.chooseFile"),
       });
       return;
     }
@@ -215,12 +246,26 @@ export default function AdminDocuments() {
         description: newDocument.description,
         expiryDate: newDocument.expiryDate,
         reminderDays: newDocument.reminderDays,
-        fileName: selectedFile?.name || "document.pdf",
-        fileSize: selectedFile?.size || 0,
-        mimeType: selectedFile?.type || "application/pdf",
+        file: selectedFile,
       });
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  // View / Download read the stored file from the vault. Rows saved before uploads were stored
+  // (metadata only) have no bytes: say so instead of failing silently.
+  const openStored = async (doc: Document, mode: "view" | "download") => {
+    try {
+      const url = `/api/documents/${doc.id}/download`;
+      if (mode === "view") await openStoredFile(url);
+      else await downloadStoredFile(url, doc.fileName);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: t["adminDocuments.fileUnavailable"],
+        description: (error as Error)?.message,
+      });
     }
   };
 
@@ -420,7 +465,11 @@ export default function AdminDocuments() {
               ) : filteredDocuments.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>No documents found for {selectedCompany?.name}</p>
+                  <p>
+                    {formatMessage(t["adminDocuments.noneFor"], {
+                      name: selectedCompany?.name ?? "",
+                    })}
+                  </p>
                   <Button variant="ghost" onClick={() => setUploadDialogOpen(true)}>
                     <T k="pages.uploadADocument" />
                   </Button>
@@ -506,7 +555,7 @@ export default function AdminDocuments() {
                             </TableCell>
                             <TableCell>
                               <div className="text-sm text-muted-foreground">
-                                {format(parseCalendarDate(doc.createdAt), "MMM d, yyyy")}
+                                {formatDate(doc.createdAt, locale)}
                               </div>
                             </TableCell>
                             <TableCell data-numeric>
@@ -514,6 +563,9 @@ export default function AdminDocuments() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  aria-label={t["adminDocuments.view"]}
+                                  title={t["adminDocuments.view"]}
+                                  onClick={() => void openStored(doc, "view")}
                                   data-testid={`button-view-${doc.id}`}
                                 >
                                   <Eye className="w-4 h-4" />
@@ -521,6 +573,9 @@ export default function AdminDocuments() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  aria-label={t["adminDocuments.download"]}
+                                  title={t["adminDocuments.download"]}
+                                  onClick={() => void openStored(doc, "download")}
                                   data-testid={`button-download-${doc.id}`}
                                 >
                                   <Download className="w-4 h-4" />
@@ -528,6 +583,8 @@ export default function AdminDocuments() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  aria-label={t["adminDocuments.delete"]}
+                                  title={t["adminDocuments.delete"]}
                                   onClick={() => deleteMutation.mutate(doc.id)}
                                   data-testid={`button-delete-${doc.id}`}
                                 >
@@ -552,7 +609,7 @@ export default function AdminDocuments() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="w-5 h-5" />
-              Upload Document for {selectedCompany?.name}
+              {formatMessage(t["adminDocuments.uploadFor"], { name: selectedCompany?.name ?? "" })}
             </DialogTitle>
             <DialogDescription>
               <T k="pages.addAnInvoiceBillOrOtherDocumentForThisClient" />
@@ -581,7 +638,7 @@ export default function AdminDocuments() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {DOCUMENT_CATEGORIES.map((cat) => (
+                    {UPLOAD_CATEGORIES.map((cat) => (
                       <SelectItem key={cat.value} value={cat.value}>
                         {t[cat.labelKey]}
                       </SelectItem>
@@ -675,7 +732,7 @@ export default function AdminDocuments() {
             </Button>
             <Button
               onClick={handleUpload}
-              disabled={isUploading || !newDocument.name}
+              disabled={isUploading || !newDocument.name || !selectedFile}
               data-testid="button-submit-upload"
             >
               {isUploading ? (
