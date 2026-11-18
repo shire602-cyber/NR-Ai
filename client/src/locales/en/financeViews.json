@@ -114,5 +114,6 @@
   "budgets.favourable": "Favourable",
   "budgets.unfavourable": "Unfavourable",
   "fixedAssets.recordDepreciationFor": "Record depreciation: {name}",
-  "fixedAssets.recordDepreciationHelp": "Choose the month to depreciate. The entry is dated on the month's last day, so only a month that has ended can be recorded."
+  "fixedAssets.recordDepreciationHelp": "Choose the month to depreciate. The entry is dated on the month's last day, so only a month that has ended can be recorded.",
+  "accounts.groupCount": "{count, plural, one {# account} other {# accounts}}"
 }

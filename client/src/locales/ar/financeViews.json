@@ -114,5 +114,6 @@
   "budgets.favourable": "إيجابي",
   "budgets.unfavourable": "سلبي",
   "fixedAssets.recordDepreciationFor": "تسجيل الإهلاك: {name}",
-  "fixedAssets.recordDepreciationHelp": "اختر الشهر المراد إهلاكه. يُؤرَّخ القيد بآخر يوم في الشهر، لذلك لا يمكن تسجيل إلا شهر انتهى."
+  "fixedAssets.recordDepreciationHelp": "اختر الشهر المراد إهلاكه. يُؤرَّخ القيد بآخر يوم في الشهر، لذلك لا يمكن تسجيل إلا شهر انتهى.",
+  "accounts.groupCount": "{count, plural, zero {لا حسابات} one {حساب واحد} two {حسابان} few {# حسابات} many {# حسابًا} other {# حساب}}"
 }
