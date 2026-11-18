@@ -14,7 +14,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 
 let container: HTMLDivElement;
 let root: Root;
-let calls: Array<{ method: string; url: string }> = [];
+let calls: Array<{ method: string; url: string; body?: string }> = [];
 let responses: Record<string, unknown> = {};
 
 const json = (body: unknown, status = 200) =>
@@ -33,7 +33,7 @@ beforeEach(() => {
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : String(input);
       const method = (init?.method ?? "GET").toUpperCase();
-      calls.push({ method, url });
+      calls.push({ method, url, body: typeof init?.body === "string" ? init.body : undefined });
       if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
       for (const [key, body] of Object.entries(responses)) {
         const [m, frag] = key.split(" ");
@@ -120,6 +120,49 @@ describe("STEP1 F6: Admin > Integrations", () => {
       "Connection failed"
     );
   });
+});
+
+describe("STEP1 F6: Activity logs 'Export logs' button", () => {
+  it.each(["en", "ar"] as const)(
+    "posts the localised rows (no UUIDs) and an RTL flag in %s",
+    async (locale) => {
+      const uuid = "30cbacca-1a2b-4c3d-8e9f-0a1b2c3d4e5f";
+      localStorage.setItem("muhasib_auth_hint", "1");
+      (URL as unknown as { createObjectURL: (b: Blob) => string }).createObjectURL = () => "blob:x";
+      (URL as unknown as { revokeObjectURL: (u: string) => void }).revokeObjectURL = () => {};
+      const i18n = await import("../../client/src/lib/i18n");
+      await act(async () => i18n.useI18n.getState().setLocale(locale));
+      responses["GET /api/admin/activity-logs"] = [
+        {
+          id: "l1",
+          userId: "u1",
+          companyId: null,
+          action: "auth.login_success",
+          entityType: "security",
+          entityId: uuid,
+          description: `Auth login success on security ${uuid}`,
+          createdAt: "2026-11-18T08:00:00Z",
+          metadata: null,
+        },
+      ];
+      responses["GET /api/admin/users"] = [{ id: "u1", name: "Sara", email: "sara@example.com" }];
+      const { default: ActivityLogs } = await import("../../client/src/pages/ActivityLogs");
+      await mount(createElement(ActivityLogs));
+      const button = container.querySelector('[data-testid="button-export-logs"]') as HTMLElement;
+      expect(button).not.toBeNull();
+      await act(async () => button.click());
+      await flush();
+      const post = calls.find((c) => c.method === "POST" && c.url.includes("/api/export/excel"));
+      expect(post, "the button posted an export request").toBeDefined();
+      const body = JSON.parse(post!.body!);
+      expect(body.sheets[0].rtl).toBe(locale === "ar");
+      expect(JSON.stringify(body.sheets[0].rows)).not.toContain(uuid);
+      expect(body.sheets[0].rows).toHaveLength(1);
+      // The visible sentence has no id and no dangling separator either.
+      expect(container.textContent).not.toContain(uuid);
+      expect(container.textContent).not.toMatch(/·\s*$/m);
+    }
+  );
 });
 
 describe("STEP1 F6: audit log search, filter and export", () => {
