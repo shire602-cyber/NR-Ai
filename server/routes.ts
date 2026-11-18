@@ -28,6 +28,7 @@ import { registerEInvoiceRoutes } from "./routes/einvoice.routes";
 import { registerEInvoiceAcubeRoutes } from "./routes/einvoice-acube.routes";
 import { registerEInvoiceComplyanceRoutes } from "./routes/einvoice-complyance.routes";
 import { registerEInvoiceProviderRoutes } from "./routes/einvoice-provider.routes";
+import { registerEInvoiceIdentityRoutes } from "./routes/einvoice-identity.routes";
 import { registerZatcaRoutes } from "./routes/zatca.routes";
 import { registerInvoiceShareRoutes } from "./routes/invoice-share.routes";
 import { registerChasingRoutes } from "./routes/chasing.routes";
@@ -146,6 +147,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerEInvoiceProviderRoutes(app); // E2: which accredited provider is configured
   registerEInvoiceAcubeRoutes(app); // E1: A-Cube onboarding + signed webhooks
   registerEInvoiceComplyanceRoutes(app); // E2: Complyance onboarding + signed webhooks
+  registerEInvoiceIdentityRoutes(app); // WQ5: tax identity, partner choice, approver links
   registerZatcaRoutes(app);
   registerInvoiceShareRoutes(app);
   registerRecurringInvoiceRoutes(app);

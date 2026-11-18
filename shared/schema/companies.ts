@@ -85,6 +85,25 @@ export const companies = pgTable("companies", {
   einvoiceScope: text("einvoice_scope"), // b2b | b2g | b2b_b2g | none
   einvoiceTurnoverBand: text("einvoice_turnover_band"), // large | standard | government
   einvoiceGoLiveDate: pgDate("einvoice_go_live_date"),
+  // WQ5 (0125): stored TIN (10 digits starting with 1, the first 10 of the CT TRN), used for the
+  // PINT AE EndpointID when no ASP-registered participant id is set; seller legal identifier
+  // (TL trade licence, EID Emirates ID, PAS passport, CD Cabinet decision); the rest of the
+  // structured address; Arabic legal name and address; the accredited partner the company chose
+  // (no default: EINVOICE_PROVIDER decides what this deployment can connect) and the
+  // "confirmed by you, not yet verified" appointment fallback.
+  einvoiceTin: text("einvoice_tin"),
+  sellerIdType: text("seller_id_type"),
+  sellerIdNumber: text("seller_id_number"),
+  /** Passport issuing country (ISO 3166-1 alpha-2, PINT AE BTAE-18, ibr-012-ae). */
+  sellerIdCountry: text("seller_id_country"),
+  addressDistrict: text("address_district"),
+  addressPoBox: text("address_po_box"),
+  legalNameAr: text("legal_name_ar"),
+  addressAr: text("address_ar"),
+  einvoicePartner: text("einvoice_partner"),
+  einvoiceAppointmentConfirmedAt: timestamp("einvoice_appointment_confirmed_at"),
+  einvoiceAppointmentConfirmedBy: uuid("einvoice_appointment_confirmed_by"),
+  einvoiceTaxReadyPromptedAt: timestamp("einvoice_tax_ready_prompted_at"),
   // Partial exemption: fraction of supplies that are exempt (0..1). When > 0, input VAT
   // is reduced by this ratio per FTA partial-exemption rules.
   exemptSupplyRatio: vatRateType("exempt_supply_ratio").notNull().default(0),

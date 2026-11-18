@@ -46,6 +46,7 @@ const LandingPage = lazyWithReload(() => import("@/pages/MuhasibLanding"));
 const Services = lazyWithReload(() => import("@/pages/Services"));
 const Pricing = lazyWithReload(() => import("@/pages/Pricing"));
 const PublicInvoiceView = lazyWithReload(() => import("@/pages/PublicInvoiceView"));
+const EInvoicingApprove = lazyWithReload(() => import("@/pages/EInvoicingApprove"));
 const CustomerPortal = lazyWithReload(() => import("@/pages/CustomerPortal"));
 const PrivacyPolicy = lazyWithReload(() => import("@/pages/PrivacyPolicy"));
 const TermsOfService = lazyWithReload(() => import("@/pages/TermsOfService"));
@@ -574,7 +575,8 @@ function Router() {
     pathname === "/terms" ||
     pathname === "/cookies" ||
     pathname.startsWith("/view/invoice/") ||
-    pathname.startsWith("/portal/")
+    pathname.startsWith("/portal/") ||
+    pathname.startsWith("/einvoicing/approve/")
   ) {
     return (
       <AnimatePresence mode="wait">
@@ -596,6 +598,7 @@ function Router() {
               <Route path="/services" component={Services} />
               <Route path="/view/invoice/:token" component={PublicInvoiceView} />
               <Route path="/portal/:token" component={CustomerPortal} />
+              <Route path="/einvoicing/approve/:token" component={EInvoicingApprove} />
               <Route path="/pricing" component={Pricing} />
               <Route path="/trust" component={TrustSecurity} />
               <Route path="/help" component={HelpCenter} />

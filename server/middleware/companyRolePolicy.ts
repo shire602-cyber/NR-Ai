@@ -112,6 +112,13 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("MUT", "companies/*/bank-accounts/**", "settings.company"),
   r("MUT", "companies/*/invoice-templates/**", "settings.company"),
   r("MUT", "invoice-templates/**", "settings.company"),
+  // WQ5: e-invoicing tax identity, partner choice and approver links (links carry an email and a
+  // no-login URL, so even listing them is an admin action). The first-invoice prompt's "shown"
+  // marker is written by whoever drafts the invoice.
+  r("MUT", "companies/*/einvoicing/identity", "settings.company"),
+  r("MUT", "companies/*/einvoicing/partner/**", "settings.company"),
+  r("*", "companies/*/einvoicing/approver-links/**", "settings.company"),
+  r("POST", "companies/*/einvoicing/tax-ready/shown", "documents.write"),
 
   // Activity History (J4): the feed merges audit rows (IP address, user agent, before/after
   // metadata), so it is not general reporting data. Same audience as the audit log's finance

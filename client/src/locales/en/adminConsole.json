@@ -444,5 +444,11 @@
   "adminConsole.inviteAssignClient": "Assign to client (optional)",
   "adminConsole.inviteUserType": "User type *",
   "adminConsole.userTypeClient": "Client (NR-managed portal access)",
-  "adminConsole.userTypeCustomer": "Customer (full SaaS bookkeeping)"
+  "adminConsole.userTypeCustomer": "Customer (full SaaS bookkeeping)",
+  "activityLog.action.company.einvoicing_identity_update": "E-invoicing identity updated",
+  "activityLog.action.company.einvoicing_partner_choose": "E-invoicing partner chosen",
+  "activityLog.action.company.einvoicing_appointment_self_confirm": "E-invoicing appointment confirmed by the company",
+  "activityLog.action.company.einvoicing_approver_link_create": "E-invoicing approval link created",
+  "activityLog.action.company.einvoicing_approver_link_revoke": "E-invoicing approval link withdrawn",
+  "activityLog.action.company.einvoicing_approver_done": "E-invoicing approval marked done"
 }

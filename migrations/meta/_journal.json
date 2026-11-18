@@ -869,6 +869,13 @@
    "when": 1781430390000,
    "tag": "0124_e3_invoice_line_income",
    "breakpoints": false
+  },
+  {
+   "idx": 124,
+   "version": "7",
+   "when": 1781430400000,
+   "tag": "0125_wq5_einvoice_identity",
+   "breakpoints": false
   }
  ]
 }

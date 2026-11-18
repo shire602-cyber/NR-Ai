@@ -26,7 +26,11 @@ export async function loadEInvoiceContext(
   if (invoice.contactId) {
     const contact = await storage.getCustomerContact(invoice.contactId);
     if (contact && contact.companyId === company.id) {
-      customer.address = invoice.customerAddress || contact.address || null;
+      // WQ5: the structured street / building / district, else the legacy single line.
+      const structured = [contact.addressStreet, contact.addressBuilding, contact.addressDistrict]
+        .filter((v) => v && v.trim())
+        .join(", ");
+      customer.address = invoice.customerAddress || structured || contact.address || null;
       customer.city = contact.city || null;
       customer.emirate =
         (invoice as Invoice & { placeOfSupplyEmirate?: string | null }).placeOfSupplyEmirate ||
