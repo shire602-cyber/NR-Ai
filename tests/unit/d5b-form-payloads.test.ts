@@ -415,7 +415,7 @@ describe("[D5b] vendor form payload unchanged", () => {
     setFixtures({ [`${C}/vendors/aging`]: null });
     const { default: Vendors } = await import("../../client/src/pages/Vendors");
     await renderPage(Vendors);
-    await click(buttonByText(/^\s*new vendor\s*$/i));
+    await click(buttonByText(/^\s*new supplier\s*$/i));
     const byId = (id: string) => document.getElementById(id);
     await type(byId("vendor-name"), "Atlas Office Supplies");
     await type(byId("vendor-name_ar"), "أطلس للوازم المكتبية");

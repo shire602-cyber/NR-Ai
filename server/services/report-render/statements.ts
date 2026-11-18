@@ -61,20 +61,20 @@ const L = {
 } satisfies Record<string, Bilingual>;
 
 export const STATEMENT_TITLES = {
-  "profit-loss": { en: "Profit and Loss", ar: "قائمة الأرباح والخسائر" },
-  "balance-sheet": { en: "Balance Sheet", ar: "الميزانية العمومية" },
-  "trial-balance": { en: "Trial Balance", ar: "ميزان المراجعة" },
-  "cash-flow": { en: "Cash Flow Statement", ar: "قائمة التدفقات النقدية" },
-  "general-ledger": { en: "General Ledger", ar: "دفتر الأستاذ العام" },
-  "ar-aging": { en: "Aged Receivables", ar: "أعمار الذمم المدينة" },
-  "ap-aging": { en: "Aged Payables", ar: "أعمار الذمم الدائنة" },
+  "profit-loss": { en: "Profit and loss", ar: "قائمة الأرباح والخسائر" },
+  "balance-sheet": { en: "Balance sheet", ar: "الميزانية العمومية" },
+  "trial-balance": { en: "Trial balance", ar: "ميزان المراجعة" },
+  "cash-flow": { en: "Cash flow statement", ar: "قائمة التدفقات النقدية" },
+  "general-ledger": { en: "General ledger", ar: "دفتر الأستاذ العام" },
+  "ar-aging": { en: "Aged receivables", ar: "أعمار الذمم المدينة" },
+  "ap-aging": { en: "Aged payables", ar: "أعمار الذمم الدائنة" },
   "changes-in-equity": {
-    en: "Statement of Changes in Equity",
+    en: "Statement of changes in equity",
     ar: "قائمة التغيرات في حقوق الملكية",
   },
-  "executive-summary": { en: "Executive Summary", ar: "الملخص التنفيذي" },
+  "executive-summary": { en: "Executive summary", ar: "الملخص التنفيذي" },
   "vat-summary": {
-    en: "VAT Return Summary (VAT 201)",
+    en: "VAT return summary (VAT 201)",
     ar: "ملخص الإقرار الضريبي (ضريبة القيمة المضافة 201)",
   },
 } satisfies Record<string, Bilingual>;

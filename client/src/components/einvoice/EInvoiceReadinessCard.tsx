@@ -30,7 +30,11 @@ export function EInvoiceReadinessCard({
   compact?: boolean;
 }) {
   const { t, locale } = useTranslation();
-  const { data, isLoading, isError } = useEInvoiceReadiness(companyId);
+  const query = useEInvoiceReadiness(companyId);
+  const { isLoading, isError } = query;
+  // A response without the readiness shape (older API, empty mock) renders the skeleton,
+  // never a crash.
+  const data = query.data && query.data.mandate ? query.data : undefined;
   if (!companyId) return null;
   if (isError) return null;
 

@@ -171,7 +171,11 @@ const CASES: FormCase[] = [
     name: "expense claim",
     load: async () => ({ page: (await import("../../client/src/pages/ExpenseClaims")).default }),
     open: () => click(buttonByText(/new (expense )?claim/i)),
-    submit: submitButton,
+    // Fable P2: a claim has line items, so it is a full-page editor (submit in the footer).
+    submit: () =>
+      document
+        .querySelector('[data-testid="editor-shell-footer"]')!
+        .querySelector('button[type="submit"]')!,
   },
   {
     name: "contact",
@@ -185,7 +189,8 @@ const CASES: FormCase[] = [
     name: "vendor",
     fixtures: { [`${C}/vendors/aging`]: null },
     load: async () => ({ page: (await import("../../client/src/pages/Vendors")).default }),
-    open: () => click(buttonByText(/^\s*new vendor\s*$/i)),
+    // Fable P7: the page says "Suppliers" like the nav.
+    open: () => click(buttonByText(/^\s*new supplier\s*$/i)),
     submit: lastButton,
   },
   {

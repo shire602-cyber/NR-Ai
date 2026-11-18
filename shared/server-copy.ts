@@ -51,7 +51,7 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.vatReturnDue.title", "VAT return due {dueDate}"),
   T("notification.newSignIn.title", "New sign-in to your account"),
   T("notification.signInLocked.title", "Sign-in temporarily locked"),
-  T("notification.referralSignup.title", "New Referral Signup!"),
+  T("notification.referralSignup.title", "New referral signup!"),
   T("notification.emailSentToClient.title", "Email sent to client"),
   T("notification.whatsappLogged.title", "WhatsApp message logged"),
   T("notification.bankStatementImported.title", "Bank statement imported"),
@@ -173,9 +173,11 @@ const PARAM_PATTERNS: Record<string, string> = {
 };
 
 const compiled = new WeakMap<CopyTemplate, RegExp>();
+const compiledLoose = new WeakMap<CopyTemplate, RegExp>();
 
-function compile(t: CopyTemplate): RegExp {
-  const cached = compiled.get(t);
+function compile(t: CopyTemplate, loose = false): RegExp {
+  const cache = loose ? compiledLoose : compiled;
+  const cached = cache.get(t);
   if (cached) return cached;
   let out = "";
   const seen = new Set<string>();
@@ -189,8 +191,10 @@ function compile(t: CopyTemplate): RegExp {
       seen.add(name);
     } else out += escapeRe(part);
   }
-  const re = new RegExp(`^${out}${t.prefix ? "(?:\\s|$)" : "$"}`, "s");
-  compiled.set(t, re);
+  // `loose` (case-insensitive) is the second pass: text stored or emitted before the
+  // sentence-case pass (Fable B10) reads "Bank Reconciliation Complete" and still maps to its key.
+  const re = new RegExp(`^${out}${t.prefix ? "(?:\\s|$)" : "$"}`, loose ? "si" : "s");
+  cache.set(t, re);
   return re;
 }
 
@@ -246,13 +250,15 @@ export function parseServerCopy(
   templates: readonly CopyTemplate[]
 ): CopyDescriptor | null {
   if (!text) return null;
-  for (const t of templates) {
-    const m = compile(t).exec(text);
-    if (!m) continue;
-    const params: Record<string, string> = {};
-    for (const [k, v] of Object.entries(m.groups ?? {})) if (v !== undefined) params[k] = v;
-    for (const [k, v] of Object.entries(t.defaults ?? {})) if (!(k in params)) params[k] = v;
-    return { key: t.key, params };
+  for (const loose of [false, true]) {
+    for (const t of templates) {
+      const m = compile(t, loose).exec(text);
+      if (!m) continue;
+      const params: Record<string, string> = {};
+      for (const [k, v] of Object.entries(m.groups ?? {})) if (v !== undefined) params[k] = v;
+      for (const [k, v] of Object.entries(t.defaults ?? {})) if (!(k in params)) params[k] = v;
+      return { key: t.key, params };
+    }
   }
   return null;
 }
@@ -685,7 +691,7 @@ export const FIRM_TEMPLATES: readonly CopyTemplate[] = [
   T("firm.queue.corporateTax", "Corporate Tax"),
   T("firm.queue.bookkeeping", "Bookkeeping"),
   T("firm.queue.accounting", "Accounting"),
-  T("firm.queue.accountingReview", "Accounting Review"),
+  T("firm.queue.accountingReview", "Accounting review"),
   T("firm.queue.vat", "VAT"),
   T("firm.label.close", "Close"),
   T("firm.label.profile", "Profile"),
@@ -693,11 +699,11 @@ export const FIRM_TEMPLATES: readonly CopyTemplate[] = [
   T("firm.label.ct", "CT"),
   T("firm.label.books", "Books"),
   T("firm.ui.overdueDueNow", "Overdue / Due Now"),
-  T("firm.ui.thisWeek", "This Week"),
-  T("firm.ui.next28", "Next 28 Days"),
-  T("firm.ui.closeBlockers", "Close Blockers"),
-  T("firm.ui.vatCohorts", "VAT Cohorts"),
-  T("firm.ui.bookkeepingClose", "Bookkeeping Close"),
+  T("firm.ui.thisWeek", "This week"),
+  T("firm.ui.next28", "Next 28 days"),
+  T("firm.ui.closeBlockers", "Close blockers"),
+  T("firm.ui.vatCohorts", "VAT cohorts"),
+  T("firm.ui.bookkeepingClose", "Bookkeeping close"),
   T("firm.ui.dueBlocked", "{n} due · {m} blocked"),
   T("firm.ui.clearBlockers", "Clear blockers"),
   T("firm.ui.prepareReturns", "Prepare returns"),
@@ -780,30 +786,30 @@ export function localizeFirmText(
 
 /** Checklist step titles, descriptions, detail lines and the computed-close memo. */
 export const MONTH_END_TEMPLATES: readonly CopyTemplate[] = [
-  T("monthEnd.bank.title", "Bank Reconciliation Complete"),
+  T("monthEnd.bank.title", "Bank reconciliation complete"),
   T("monthEnd.bank.description", "All bank transactions for the period are reconciled"),
   T("monthEnd.bank.none", "No bank transactions in this period"),
   T("monthEnd.bank.progress", "{done}/{total} reconciled ({left} remaining)"),
-  T("monthEnd.invoices.title", "All Invoices Posted"),
+  T("monthEnd.invoices.title", "All invoices posted"),
   T("monthEnd.invoices.description", "No draft invoices remain for the period"),
   T("monthEnd.invoices.none", "No invoices in this period"),
   T("monthEnd.invoices.progress", "{done}/{total} posted ({left} drafts remaining)"),
-  T("monthEnd.receipts.title", "All Receipts Categorized"),
+  T("monthEnd.receipts.title", "All receipts categorized"),
   T("monthEnd.receipts.description", "Every receipt has an assigned expense account"),
   T("monthEnd.receipts.none", "No receipts in this period"),
   T("monthEnd.receipts.progress", "{done}/{total} categorized ({left} remaining)"),
-  T("monthEnd.anomaly.title", "Anomaly Scan Clean"),
+  T("monthEnd.anomaly.title", "Anomaly scan clean"),
   T("monthEnd.anomaly.description", "No critical anomalies detected in transactions"),
   T("monthEnd.anomaly.clean", "Scan clean ({n} non-critical items)"),
   T("monthEnd.anomaly.critical", "{n} critical anomalies require attention"),
   T("monthEnd.anomaly.failed", "Unable to run anomaly scan"),
-  T("monthEnd.aiInbox.title", "AI Inbox Clear"),
+  T("monthEnd.aiInbox.title", "Assistant review clear"),
   T("monthEnd.aiInbox.descriptionQueue", "All AI-suggested entries reviewed and processed"),
   T("monthEnd.aiInbox.descriptionClassifications", "All AI-suggested classifications reviewed"),
   T("monthEnd.aiInbox.clear", "All AI suggestions processed"),
   T("monthEnd.aiInbox.pendingItems", "{n} items pending review"),
   T("monthEnd.aiInbox.pendingClassifications", "{n} classifications pending review"),
-  T("monthEnd.depreciation.title", "Depreciation Entries Posted"),
+  T("monthEnd.depreciation.title", "Depreciation entries posted"),
   T(
     "monthEnd.depreciation.description",
     "Monthly depreciation has been recorded for all active fixed assets"
@@ -811,11 +817,11 @@ export const MONTH_END_TEMPLATES: readonly CopyTemplate[] = [
   T("monthEnd.depreciation.none", "No active fixed assets"),
   T("monthEnd.depreciation.progress", "{done}/{total} assets depreciated for this period"),
   T("monthEnd.depreciation.notConfigured", "Fixed assets module not configured"),
-  T("monthEnd.vat.title", "VAT Return Prepared"),
+  T("monthEnd.vat.title", "VAT return prepared"),
   T("monthEnd.vat.description", "VAT 201 return has been prepared or filed for the period"),
   T("monthEnd.vat.prepared", "{n} VAT return(s) prepared"),
   T("monthEnd.vat.missing", "No VAT return prepared for this period"),
-  T("monthEnd.accruals.title", "Accruals Recorded"),
+  T("monthEnd.accruals.title", "Accruals recorded"),
   T(
     "monthEnd.accruals.description",
     "Expenses incurred but not yet billed are accrued (auto-reversing journals)"
@@ -827,7 +833,7 @@ export const MONTH_END_TEMPLATES: readonly CopyTemplate[] = [
     "monthEnd.accruals.missing",
     "No accrual entries found. Post accruals or sign this step off as not required."
   ),
-  T("monthEnd.prepayments.title", "Prepayments Amortised"),
+  T("monthEnd.prepayments.title", "Prepayments amortised"),
   T(
     "monthEnd.prepayments.description",
     "The period's share of prepaid expenses has been released to the P&L"
@@ -835,13 +841,13 @@ export const MONTH_END_TEMPLATES: readonly CopyTemplate[] = [
   T("monthEnd.prepayments.none", "No prepaid balance"),
   T("monthEnd.prepayments.released", "AED {released} released; AED {balance} remaining"),
   T("monthEnd.prepayments.unreleased", "AED {balance} prepaid with no release this period"),
-  T("monthEnd.fx.title", "FX Revaluation Run"),
+  T("monthEnd.fx.title", "FX revaluation run"),
   T("monthEnd.fx.description", "Foreign-currency balances revalued at the period-end rate"),
   T("monthEnd.fx.none", "No foreign-currency balances"),
   T("monthEnd.fx.postedOne", "1 revaluation entry posted"),
   T("monthEnd.fx.posted", "{n} revaluation entries posted"),
   T("monthEnd.fx.missing", "{n} account(s) hold foreign-currency balances; run the revaluation"),
-  T("monthEnd.controls.title", "Control Accounts Reconciled"),
+  T("monthEnd.controls.title", "Control accounts reconciled"),
   T(
     "monthEnd.controls.description",
     "Receivables, payables, inventory, VAT and payroll control accounts equal their sub-ledgers"
@@ -1087,7 +1093,7 @@ export const EVIDENCE_TEMPLATES: readonly CopyTemplate[] = [
     "Keep recording source rows and proof links as new documents arrive."
   ),
   T("evidence.action.monitorEvidence", "Monitor evidence"),
-  T("evidence.workflow.refundPack.title", "Refund Pack Builder"),
+  T("evidence.workflow.refundPack.title", "Refund pack builder"),
   T(
     "evidence.workflow.refundPack.description",
     "Builds a refund-ready support pack from input VAT rows, attachments, and evidence gaps."
@@ -1098,7 +1104,7 @@ export const EVIDENCE_TEMPLATES: readonly CopyTemplate[] = [
   T("evidence.workflow.refundPack.bullet.gaps", "{count} refund evidence gap(s)"),
   T("evidence.workflow.refundPack.bullet.certs", "{count} tax certificate document(s) in vault"),
   T("evidence.action.openVatEvidence", "Open VAT evidence"),
-  T("evidence.workflow.proof.title", "Every Number Has Proof"),
+  T("evidence.workflow.proof.title", "Every number has proof"),
   T(
     "evidence.workflow.proof.description",
     "Shows the exact invoices, receipts, and workpaper rows behind each headline number."
@@ -1108,7 +1114,7 @@ export const EVIDENCE_TEMPLATES: readonly CopyTemplate[] = [
   T("evidence.workflow.proof.bullet.input", "VAT input rows: {count}"),
   T("evidence.workflow.proof.bullet.invoices", "Current-period invoices: {count}"),
   T("evidence.action.reviewProof", "Review proof"),
-  T("evidence.workflow.ct.title", "Corporate Tax Workpaper"),
+  T("evidence.workflow.ct.title", "Corporate tax workpaper"),
   T(
     "evidence.workflow.ct.description",
     "Turns accounting profit into a taxable-profit bridge with add-backs, deductions, relief, and loss review."
@@ -1123,7 +1129,7 @@ export const EVIDENCE_TEMPLATES: readonly CopyTemplate[] = [
     "evidence.workflow.ct.bullet.engine",
     "Uses UAE zero-rate band and existing CT computation engine"
   ),
-  T("evidence.workflow.missing.title", "Missing Evidence Inbox"),
+  T("evidence.workflow.missing.title", "Missing evidence inbox"),
   T(
     "evidence.workflow.missing.description",
     "Collects missing documents, TRNs, tax invoices, and source proof into one queue."
@@ -1133,7 +1139,7 @@ export const EVIDENCE_TEMPLATES: readonly CopyTemplate[] = [
   T("evidence.workflow.missing.bullet.receipts", "{count} receipt(s) scanned in VAT period"),
   T("evidence.workflow.missing.bullet.critical", "{count} critical blocker(s)"),
   T("evidence.action.workInbox", "Work inbox"),
-  T("evidence.workflow.request.title", "Client Request Autopilot"),
+  T("evidence.workflow.request.title", "Client request autopilot"),
   T(
     "evidence.workflow.request.description",
     "Creates a focused draft message for missing evidence without sending anything automatically."
@@ -1146,7 +1152,7 @@ export const EVIDENCE_TEMPLATES: readonly CopyTemplate[] = [
   T("evidence.workflow.request.bullet.queue", "Uses current missing evidence queue"),
   T("evidence.workflow.request.bullet.otp", "Reminds users not to send OTPs or credentials"),
   T("evidence.action.reviewDraft", "Review draft"),
-  T("evidence.workflow.monthEnd.title", "Month-End Close Cockpit"),
+  T("evidence.workflow.monthEnd.title", "Month-end close cockpit"),
   T(
     "evidence.workflow.monthEnd.description",
     "Combines bank, invoices, receipts, anomaly review, AI inbox, reports, and lock readiness."
@@ -1159,7 +1165,7 @@ export const EVIDENCE_TEMPLATES: readonly CopyTemplate[] = [
   T("evidence.workflow.monthEnd.bullet.blockers", "{count} close blocker(s)"),
   T("evidence.workflow.monthEnd.bullet.period", "Period {start} to {end}"),
   T("evidence.action.openMonthEnd", "Open month-end"),
-  T("evidence.workflow.risk.title", "Error Detector Before Filing"),
+  T("evidence.workflow.risk.title", "Error detector before filing"),
   T(
     "evidence.workflow.risk.description",
     "Flags missing TRNs, draft rows, unposted input VAT, pending bills, and close blockers."
@@ -1169,7 +1175,7 @@ export const EVIDENCE_TEMPLATES: readonly CopyTemplate[] = [
   T("evidence.workflow.risk.bullet.draftRows", "{count} draft VAT workpaper row(s)"),
   T("evidence.workflow.risk.bullet.bills", "{count} supplier bill(s) in VAT period"),
   T("evidence.action.reviewRisks", "Review risks"),
-  T("evidence.workflow.excel.title", "Smart Import From Excel"),
+  T("evidence.workflow.excel.title", "Smart import from Excel"),
   T(
     "evidence.workflow.excel.description",
     "Accepts spreadsheet-style VAT rows and maps columns such as Date, Vendor, Sr. Number, and Amount."
@@ -1180,7 +1186,7 @@ export const EVIDENCE_TEMPLATES: readonly CopyTemplate[] = [
   T("evidence.workflow.excel.bullet.dates", "Normalizes DD/MM/YYYY evidence dates"),
   T("evidence.workflow.excel.bullet.category", "Defaults pasted rows into the active VAT category"),
   T("evidence.action.pasteVatRows", "Paste VAT rows"),
-  T("evidence.workflow.timeline.title", "Filing Timeline With Consequences"),
+  T("evidence.workflow.timeline.title", "Filing timeline with consequences"),
   T(
     "evidence.workflow.timeline.description",
     "Shows deadlines together with the operational consequence and readiness score."
@@ -1193,7 +1199,7 @@ export const EVIDENCE_TEMPLATES: readonly CopyTemplate[] = [
     "VAT and CT deadlines are tied back to evidence readiness"
   ),
   T("evidence.action.openCalendar", "Open calendar"),
-  T("evidence.workflow.owner.title", "Owner-Friendly What Should I Do?"),
+  T("evidence.workflow.owner.title", "Owner-friendly what should I do?"),
   T(
     "evidence.workflow.owner.description",
     "Translates accounting evidence into plain business actions for the owner."
@@ -1225,16 +1231,16 @@ export const EVIDENCE_TEMPLATES: readonly CopyTemplate[] = [
   T("evidence.ct.detail.adjustmentsSupported", "{supported} of {total} adjustments supported"),
   T("evidence.ct.detail.relatedRecorded", "{count} related parties recorded"),
   T("evidence.ct.detail.noRelatedActivity", "No related-party activity found"),
-  T("evidence.close.title.bank", "Bank Reconciliation Complete"),
-  T("evidence.close.title.invoices", "All Invoices Posted"),
-  T("evidence.close.title.receipts", "All Receipts Categorized"),
-  T("evidence.close.title.anomaly", "Anomaly Scan Clean"),
-  T("evidence.close.title.aiInbox", "AI Inbox Clear"),
-  T("evidence.close.title.depreciation", "Depreciation Entries Posted"),
-  T("evidence.close.title.vat", "VAT Return Prepared"),
-  T("evidence.close.title.accruals", "Accruals Recorded"),
-  T("evidence.close.title.prepayments", "Prepayments Amortised"),
-  T("evidence.close.title.fx", "FX Revaluation Run"),
+  T("evidence.close.title.bank", "Bank reconciliation complete"),
+  T("evidence.close.title.invoices", "All invoices posted"),
+  T("evidence.close.title.receipts", "All receipts categorized"),
+  T("evidence.close.title.anomaly", "Anomaly scan clean"),
+  T("evidence.close.title.aiInbox", "Assistant review clear"),
+  T("evidence.close.title.depreciation", "Depreciation entries posted"),
+  T("evidence.close.title.vat", "VAT return prepared"),
+  T("evidence.close.title.accruals", "Accruals recorded"),
+  T("evidence.close.title.prepayments", "Prepayments amortised"),
+  T("evidence.close.title.fx", "FX revaluation run"),
   T("evidence.close.desc.bank", "All bank transactions for the period are reconciled"),
   T("evidence.close.desc.invoices", "No draft invoices remain for the period"),
   T("evidence.close.desc.receipts", "Every receipt has an assigned expense account"),
