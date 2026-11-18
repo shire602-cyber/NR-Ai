@@ -22,7 +22,10 @@ import {
   fixedAssetStatusVariant,
   formatReportDate,
   inventoryMovementVariant,
+  reportCodeLabel,
+  reportMonthYear,
 } from "../shared";
+import { localizeJournalMemo } from "@/lib/journal-memo";
 import { format } from "date-fns";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
@@ -707,10 +710,13 @@ export default function BalancesTab() {
                       >
                         <div>
                           <Badge variant={inventoryMovementVariant(row.type)} dot>
-                            {row.type}
+                            {reportCodeLabel(row.type)}
                           </Badge>
                           <div className="mt-1 text-xs text-muted-foreground">
-                            {row.count} movements / {row.quantity.toLocaleString(locale)} units
+                            {formatMessage(t["reportCenter.text.movementsUnits"], {
+                              movements: row.count,
+                              units: row.quantity.toLocaleString(locale),
+                            })}
                           </div>
                         </div>
                         <div className="text-end tabular-nums">
@@ -762,7 +768,7 @@ export default function BalancesTab() {
                           </TableCell>
                           <TableCell>
                             <Badge variant={inventoryMovementVariant(movement.type)} dot>
-                              {movement.type}
+                              {reportCodeLabel(movement.type)}
                             </Badge>
                           </TableCell>
                           <TableCell data-numeric>
@@ -778,7 +784,9 @@ export default function BalancesTab() {
                             <Money amount={movement.valueAed} currency={"AED"} />
                           </TableCell>
                           <TableCell className="text-muted-foreground">
-                            {movement.reference || "-"}
+                            {movement.reference
+                              ? localizeJournalMemo(t, movement.reference, locale)
+                              : "-"}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -803,8 +811,9 @@ export default function BalancesTab() {
                 <T k="reportCenter.depreciationSchedule" />
               </CardTitle>
               <CardDescription>
-                Estimated depreciation for {format(depreciationPeriodDate, "MMMM yyyy")} from the
-                fixed asset register.
+                {formatMessage(t["reportCenter.text.depreciationFor"], {
+                  month: reportMonthYear(depreciationPeriodDate),
+                })}
               </CardDescription>
             </div>
             <Button asChild size="sm" variant="outline" className="min-h-11 md:min-h-8">
@@ -893,9 +902,7 @@ export default function BalancesTab() {
                             {row.assetNumber || row.category}
                           </div>
                         </TableCell>
-                        <TableCell className="capitalize">
-                          {row.method.replace(/_/g, " ")}
-                        </TableCell>
+                        <TableCell>{reportCodeLabel(row.method)}</TableCell>
                         <TableCell data-numeric>
                           <Money amount={row.remainingDepreciable} currency={"AED"} />
                         </TableCell>
@@ -1034,7 +1041,7 @@ export default function BalancesTab() {
                             <Badge variant={fixedAssetStatusVariant(asset.status)} dot>
                               {asset.needs_capitalization_je
                                 ? t["balancesTab.capitalizationReview"]
-                                : asset.status}
+                                : reportCodeLabel(asset.status)}
                             </Badge>
                           </TableCell>
                           <TableCell data-numeric>
@@ -1071,7 +1078,9 @@ export default function BalancesTab() {
                           <div>
                             <div className="font-medium">{category.category}</div>
                             <div className="text-xs text-muted-foreground">
-                              {category.count} assets
+                              {formatMessage(t["reportCenter.text.assetsCount"], {
+                                count: category.count,
+                              })}
                             </div>
                           </div>
                           <div className="text-end tabular-nums">

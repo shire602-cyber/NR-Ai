@@ -5,6 +5,9 @@
  *
  *   trial      new owner on the 14-day trial, onboarding done, no books
  *   owner      owner with populated books (tests/e2e/report-audit-fixture.mjs) + links/tokens
+ *   ownerAr    owner of the same populated books written with Arabic names and descriptions
+ *              (REPORT_AUDIT_ARABIC=true): no English user data, so the strict "no English in
+ *              Arabic mode" rule runs here without excusing anything (Step 1 / F13)
  *   accountant invited into the owner's company as `accountant`
  *   viewer     invited into the owner's company as `viewer`
  *   firmStaff  firm `preparer` assigned to the owner's company
@@ -243,6 +246,38 @@ export async function setupPersonas(base, { log = console.log } = {}) {
   const ownerToken = await login(api, ownerEmail);
   const ownerCompany = await firstCompany(api, ownerToken);
   personas.owner = { email: ownerEmail, token: ownerToken, companyId: ownerCompany.id };
+
+  // Arabic-data owner: the same fixture with Arabic record names (skipped by SWEEP_ARABIC_DATA=false).
+  if (process.env.SWEEP_ARABIC_DATA !== "false") {
+    const arEmail = mail("owner-ar");
+    log("personas: seeding the Arabic-data owner (report-audit-fixture, Arabic) ...");
+    const arFixture = spawnSync(
+      process.execPath,
+      [path.join(__dirname, "..", "report-audit-fixture.mjs")],
+      {
+        env: {
+          ...process.env,
+          BASE_URL: base,
+          REPORT_AUDIT_EMAIL: arEmail,
+          REPORT_AUDIT_PASSWORD: PASSWORD,
+          REPORT_AUDIT_ARABIC: "true",
+        },
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+      }
+    );
+    if (arFixture.status !== 0) {
+      throw new Error(
+        `Arabic report-audit-fixture failed:\n${(arFixture.stdout + arFixture.stderr).slice(-3000)}`
+      );
+    }
+    const arToken = await login(api, arEmail);
+    personas.ownerAr = {
+      email: arEmail,
+      token: arToken,
+      companyId: (await firstCompany(api, arToken)).id,
+    };
+  }
 
   const trialEmail = mail("trial");
   // Arabic names: the trial persona is the strict "no English in Arabic mode" check, so its own

@@ -27,6 +27,7 @@ import type {
   VendorBillReportRow,
 } from "./reportTypes";
 import { invoiceStatusLabels } from "./reportWorkspace";
+import { reportDate, reportLocale, reportMonthYear, reportText } from "./reportLabels";
 
 export function amountInAed(invoice: InvoiceReportRow): number {
   return Number(invoice.baseCurrencyAmount ?? invoice.total ?? 0) || 0;
@@ -166,7 +167,7 @@ export function payrollAmount(value: string | number | null | undefined): number
 export function payrollPeriodLabel(run?: PayrollRunReportRow | null): string {
   if (!run) return "-";
   const periodDate = payrollRunPeriodDate(run);
-  return periodDate ? format(periodDate, "MMM yyyy") : `${run.period_month}/${run.period_year}`;
+  return periodDate ? reportMonthYear(periodDate) : `${run.period_month}/${run.period_year}`;
 }
 
 export function fixedAssetAmount(value: string | number | null | undefined): number {
@@ -195,11 +196,11 @@ export function daysInReportMonth(date: Date): number {
 }
 
 export function depreciationStatusLabel(status: DepreciationScheduleStatus): string {
-  if (status === "ready") return "Ready to post";
-  if (status === "fully_depreciated") return "Fully depreciated";
-  if (status === "non_depreciable") return "Non-depreciable";
-  if (status === "not_acquired") return "Not acquired";
-  return "Review";
+  if (status === "ready") return reportText("deprReady", "Ready to post");
+  if (status === "fully_depreciated") return reportText("deprFully", "Fully depreciated");
+  if (status === "non_depreciable") return reportText("deprNon", "Non-depreciable");
+  if (status === "not_acquired") return reportText("deprNotAcquired", "Not acquired");
+  return reportText("deprReview", "Review");
 }
 
 export function depreciationStatusVariant(
@@ -254,7 +255,7 @@ export function calculateDepreciationScheduleRow(
       ...baseRow,
       status: "non_depreciable",
       statusLabel: depreciationStatusLabel("non_depreciable"),
-      reviewReason: "Land and other non-depreciable assets are excluded.",
+      reviewReason: reportText("deprLand", "Land and other non-depreciable assets are excluded."),
     };
   }
 
@@ -264,10 +265,10 @@ export function calculateDepreciationScheduleRow(
       status: "review",
       statusLabel: depreciationStatusLabel("review"),
       reviewReason: !purchaseMonth
-        ? "Purchase date is missing or invalid."
+        ? reportText("deprNoDate", "Purchase date is missing or invalid.")
         : !asset.purchaseCost
-          ? "Purchase cost is missing."
-          : "Useful life is missing.",
+          ? reportText("deprNoCost", "Purchase cost is missing.")
+          : reportText("deprNoLife", "Useful life is missing."),
     };
   }
 
@@ -277,7 +278,7 @@ export function calculateDepreciationScheduleRow(
       ...baseRow,
       status: "not_acquired",
       statusLabel: depreciationStatusLabel("not_acquired"),
-      reviewReason: "Asset was not acquired by this report period.",
+      reviewReason: reportText("deprNotYet", "Asset was not acquired by this report period."),
     };
   }
 
@@ -287,7 +288,7 @@ export function calculateDepreciationScheduleRow(
       monthsRemaining: 0,
       status: "fully_depreciated",
       statusLabel: depreciationStatusLabel("fully_depreciated"),
-      reviewReason: "Net book value is at or below salvage value.",
+      reviewReason: reportText("deprAtSalvage", "Net book value is at or below salvage value."),
     };
   }
 
@@ -328,8 +329,8 @@ export function calculateDepreciationScheduleRow(
     statusLabel: depreciationStatusLabel(monthlyDepreciation > 0 ? "ready" : "review"),
     reviewReason:
       monthlyDepreciation > 0
-        ? "Estimated depreciation for the report period."
-        : "No depreciation amount calculated for this period.",
+        ? reportText("deprEstimated", "Estimated depreciation for the report period.")
+        : reportText("deprNone", "No depreciation amount calculated for this period."),
   };
 }
 
@@ -449,8 +450,8 @@ export function buildConsolidatedStatementsReport(
             : status === "unbalanced"
               ? translateNow("reportCenter.statusBalanceReview")
               : status === "multi_currency"
-                ? "FX review"
-                : "Included",
+                ? reportText("consFxReview", "FX review")
+                : reportText("consIncluded", "Included"),
         reviewReason: reviewReasons.join(" "),
         workflow: "/financial-statements",
       };
@@ -499,7 +500,10 @@ export function buildConsolidatedStatementsReport(
   return {
     periodLabel,
     currency,
-    consolidationBasis: "Management roll-up of accessible companies; no eliminations applied.",
+    consolidationBasis: reportText(
+      "consolidationBasis",
+      "Management roll-up of accessible companies; no eliminations applied."
+    ),
     rows,
     entityCount: rows.length,
     loadedEntityCount: loadedRows.length,
@@ -525,9 +529,9 @@ export function buildConsolidatedStatementsReport(
     statusLabel:
       reviewCount > 0
         ? singleEntityOnly
-          ? "Single entity roll-up"
+          ? reportText("consSingle", "Single entity roll-up")
           : translateNow("reportCenter.statusReviewBeforeDelivery")
-        : "Ready for pack",
+        : reportText("consReady", "Ready for pack"),
   };
 }
 
@@ -547,8 +551,10 @@ export function journalEntryInDateRange(
   return valueInDateRange(entry.date, dateRange);
 }
 
+/** Account name for display: the Arabic name in Arabic mode when the account has one. */
 export function journalAccountName(account?: JournalAccount | null): string {
-  return account?.nameEn || account?.nameAr || "Unknown Account";
+  if (reportLocale() === "ar" && account?.nameAr) return account.nameAr;
+  return account?.nameEn || account?.nameAr || reportText("unknownAccount", "Unknown Account");
 }
 
 export function journalSourceLabel(source?: string | null): string {
@@ -559,7 +565,7 @@ export function journalSourceLabel(source?: string | null): string {
 export function formatReportDate(value?: string | null): string {
   if (!value) return "-";
   const date = parseCalendarDate(value);
-  return Number.isNaN(date.getTime()) ? "-" : format(date, "MMM dd, yyyy");
+  return Number.isNaN(date.getTime()) ? "-" : reportDate(date);
 }
 
 export function consolidatedStatusVariant(
@@ -636,31 +642,37 @@ export function corporateTaxEstimateStatus(report?: CorporateTaxEstimateReport |
 } {
   if (!report) {
     return {
-      label: "Pending estimate",
-      detail: "Waiting for posted journal data.",
+      label: reportText("ctPending", "Pending estimate"),
+      detail: reportText("ctPendingDetail", "Waiting for posted journal data."),
       variant: "neutral",
     };
   }
 
   if (report.taxPayable > 0.005) {
     return {
-      label: "Tax due",
-      detail: "Review the tax workpaper before drafting the return.",
+      label: reportText("ctDue", "Tax due"),
+      detail: reportText("ctDueDetail", "Review the tax workpaper before drafting the return."),
       variant: "warning",
     };
   }
 
   if (report.taxableIncome <= 0) {
     return {
-      label: "No taxable income",
-      detail: "The selected period is at or below break-even before adjustments.",
+      label: reportText("ctNoIncome", "No taxable income"),
+      detail: reportText(
+        "ctNoIncomeDetail",
+        "The selected period is at or below break-even before adjustments."
+      ),
       variant: "success",
     };
   }
 
   return {
-    label: "Below threshold",
-    detail: "Taxable income is below the zero-rate band used by the workspace.",
+    label: reportText("ctBelow", "Below threshold"),
+    detail: reportText(
+      "ctBelowDetail",
+      "Taxable income is below the zero-rate band used by the workspace."
+    ),
     variant: "success",
   };
 }

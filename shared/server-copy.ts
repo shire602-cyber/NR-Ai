@@ -109,6 +109,15 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
     "notification.whatsappLogged.message",
     "WhatsApp draft logged for {phone}; no provider delivery occurred."
   ),
+  // Step 1 / F4: re-imports say what was skipped; the Arabic catalog entries use ICU plurals.
+  T(
+    "notification.bankStatementImportedSkipped.message",
+    "{count} transaction(s) imported from {bank} ({format} format); {skipped} already imported"
+  ),
+  T(
+    "notification.bankStatementNothingNew.message",
+    "No new transactions from {bank} ({format} format); {skipped} already imported"
+  ),
   T(
     "notification.bankStatementImported.message",
     "{count} transaction(s) imported from {bank} ({format} format)"
@@ -217,7 +226,49 @@ function compile(t: CopyTemplate, loose = false): RegExp {
   return re;
 }
 
-/** Fill `{param}` and `[optional {param}]` segments. Missing params drop their segment. */
+/**
+ * ICU-style plurals in a catalog template: `{count, plural, one {# item} other {# items}}`.
+ * The language is read from the template itself (Arabic letters select the Arabic CLDR rules:
+ * zero, one, two, few, many, other), so the same shared renderer serves both catalogs.
+ */
+function expandCopyPlurals(
+  template: string,
+  params: Record<string, string | number | null | undefined>
+): string {
+  if (!template.includes(", plural,")) return template;
+  const rules = new Intl.PluralRules(/[\u0600-\u06FF]/.test(template) ? "ar" : "en");
+  const head = /\{(\w+),\s*plural,\s*/g;
+  let out = "";
+  let last = 0;
+  for (let m = head.exec(template); m; m = head.exec(template)) {
+    let depth = 1;
+    let i = m.index + m[0].length;
+    const bodyStart = i;
+    while (i < template.length && depth > 0) {
+      if (template[i] === "{") depth++;
+      else if (template[i] === "}") depth--;
+      i++;
+    }
+    if (depth !== 0) break;
+    const body = template.slice(bodyStart, i - 1);
+    const forms: Record<string, string> = {};
+    const formRe = /(\w+)\s*\{([^{}]*)\}/g;
+    for (let f = formRe.exec(body); f; f = formRe.exec(body)) forms[f[1]] = f[2];
+    const raw = params[m[1]];
+    const n = Number(raw);
+    const category = Number.isFinite(n) ? rules.select(n) : "other";
+    const chosen = (n === 0 && forms.zero) || forms[category] || forms.other || "";
+    out += template.slice(last, m.index) + chosen.replace(/#/g, String(raw ?? ""));
+    last = i;
+    head.lastIndex = i;
+  }
+  return out + template.slice(last);
+}
+
+/**
+ * Fill `{param}`, `[optional {param}]` segments and `{n, plural, ...}` blocks. Missing params
+ * drop their segment.
+ */
 export function renderCopyTemplate(
   template: string,
   params: Record<string, string | number | null | undefined> = {}
@@ -226,7 +277,7 @@ export function renderCopyTemplate(
     const v = params[name];
     return v !== undefined && v !== null && String(v) !== "";
   };
-  return template
+  return expandCopyPlurals(template, params)
     .replace(/\[([^\]]*)\]/g, (_m, inner: string) => {
       const names = [...inner.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
       return names.every(has) ? inner : "";

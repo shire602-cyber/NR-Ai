@@ -15,7 +15,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Money } from "@/components/ui/money";
-import { formatReportDate } from "../shared";
+import { formatMessage } from "@/lib/i18n";
+import { reportDateRange } from "../shared";
 import { useReportsPageContext } from "../context";
 
 export default function CorporateTaxTab() {
@@ -25,6 +26,7 @@ export default function CorporateTaxTab() {
     corporateTaxLoading,
     corporateTaxPeriodLabel,
     corporateTaxStatus,
+    t,
   } = useReportsPageContext();
   return (
     <>
@@ -78,7 +80,9 @@ export default function CorporateTaxTab() {
                   <Money amount={corporateTaxEstimate?.taxableAmount ?? 0} currency={"AED"} />
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {((corporateTaxEstimate?.taxRate ?? 0) * 100).toFixed(2)}% returned rate
+                  {formatMessage(t["reportCenter.text.ctRate"], {
+                    rate: ((corporateTaxEstimate?.taxRate ?? 0) * 100).toFixed(2),
+                  })}
                 </p>
               </>
             )}
@@ -112,7 +116,10 @@ export default function CorporateTaxTab() {
               </CardTitle>
               <CardDescription>
                 {corporateTaxEstimate
-                  ? `${formatReportDate(corporateTaxEstimate.periodStart)} - ${formatReportDate(corporateTaxEstimate.periodEnd)}`
+                  ? reportDateRange(
+                      corporateTaxEstimate.periodStart,
+                      corporateTaxEstimate.periodEnd
+                    )
                   : corporateTaxPeriodLabel}
               </CardDescription>
             </div>
@@ -136,8 +143,7 @@ export default function CorporateTaxTab() {
                   <p className="mt-2 text-sm text-muted-foreground">{corporateTaxStatus.detail}</p>
                 </div>
                 <p className="max-w-md text-sm text-muted-foreground">
-                  Estimate only. Open Corporate Tax to adjust the workpaper or save a draft; this
-                  report does not submit to the FTA or post accounting entries.
+                  {t["reportCenter.text.ctNote"]}
                 </p>
               </div>
 

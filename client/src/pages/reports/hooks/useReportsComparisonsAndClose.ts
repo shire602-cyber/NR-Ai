@@ -18,6 +18,8 @@ import {
   journalSourceLabel,
   ledgerDetailPageSize,
   matchesReportPersona,
+  reportDateRange,
+  reportText,
 } from "../shared";
 import {
   type ReportCatalogItem,
@@ -26,7 +28,6 @@ import {
   reportComparisonPresets,
 } from "@/lib/reportCatalog";
 import { buildComparisonRows } from "../comparisons/buildComparisonRows";
-import { format } from "date-fns";
 import { useMemo } from "react";
 import type { ReportsDataQueriesState } from "./useReportsDataQueries";
 import type { ReportsDerivedReportsState } from "./useReportsDerivedReports";
@@ -614,8 +615,8 @@ export function useReportsComparisonsAndClose({
   }, [reportActivityLogs]);
   const auditTrailPeriodLabel =
     dateRange.from && dateRange.to
-      ? `${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")}`
-      : "Latest 200 activity events";
+      ? reportDateRange(dateRange.from, dateRange.to)
+      : reportText("auditLatest", "Latest 200 activity events");
   const auditTrailLoading = activityLogsLoading;
   const monthEndChecklist = useMemo(
     () => monthEndCloseStatus?.checklist ?? [],

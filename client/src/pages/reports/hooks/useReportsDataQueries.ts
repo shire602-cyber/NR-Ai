@@ -38,6 +38,9 @@ import {
   buildComparisonRanges,
   comparisonParams,
   corporateTaxEstimateStatus,
+  reportDateRange,
+  reportMonthYear,
+  reportText,
   startOfReportMonth,
 } from "../shared";
 import type { Company } from "@shared/schema";
@@ -82,14 +85,14 @@ export function useReportsDataQueries({
   const comparisonRanges = useMemo(() => buildComparisonRanges(dateRange), [dateRange]);
   const comparisonCurrentParams = comparisonParams(comparisonRanges.current);
   const comparisonPreviousParams = comparisonParams(comparisonRanges.previous);
-  const comparisonCurrentLabel = `${format(comparisonRanges.current.from, "MMM dd, yyyy")} - ${format(
-    comparisonRanges.current.to,
-    "MMM dd, yyyy"
-  )}`;
-  const comparisonPreviousLabel = `${format(
+  const comparisonCurrentLabel = reportDateRange(
+    comparisonRanges.current.from,
+    comparisonRanges.current.to
+  );
+  const comparisonPreviousLabel = reportDateRange(
     comparisonRanges.previous.from,
-    "MMM dd, yyyy"
-  )} - ${format(comparisonRanges.previous.to, "MMM dd, yyyy")}`;
+    comparisonRanges.previous.to
+  );
   const comparisonCurrentRange = comparisonRanges.current;
   const comparisonPreviousRange = comparisonRanges.previous;
   const corporateTaxPeriodStart = format(comparisonCurrentRange.from, "yyyy-MM-dd");
@@ -98,13 +101,13 @@ export function useReportsDataQueries({
   const corporateTaxPreviousPeriodStart = format(comparisonPreviousRange.from, "yyyy-MM-dd");
   const corporateTaxPreviousPeriodEnd = format(comparisonPreviousRange.to, "yyyy-MM-dd");
   const corporateTaxPreviousParams = `?periodStart=${corporateTaxPreviousPeriodStart}&periodEnd=${corporateTaxPreviousPeriodEnd}`;
-  const corporateTaxPeriodLabel = `${format(comparisonCurrentRange.from, "MMM dd, yyyy")} - ${format(
-    comparisonCurrentRange.to,
-    "MMM dd, yyyy"
-  )}`;
+  const corporateTaxPeriodLabel = reportDateRange(
+    comparisonCurrentRange.from,
+    comparisonCurrentRange.to
+  );
   const monthEndPeriodAnchor = useMemo(() => dateRange.to ?? new Date(), [dateRange.to]);
   const monthEndPeriod = format(monthEndPeriodAnchor, "yyyy-MM");
-  const monthEndPeriodLabel = format(monthEndPeriodAnchor, "MMMM yyyy");
+  const monthEndPeriodLabel = reportMonthYear(monthEndPeriodAnchor);
   const depreciationPeriodDate = useMemo(
     () => startOfReportMonth(monthEndPeriodAnchor),
     [monthEndPeriodAnchor]
@@ -260,42 +263,48 @@ export function useReportsDataQueries({
   const corporateTaxBridgeRows = useMemo(
     () => [
       {
-        metric: "Revenue",
+        metric: reportText("ctRevenue", "Revenue"),
         amount: corporateTaxEstimate?.totalRevenue ?? 0,
-        note: "Posted income accounts in the selected period.",
+        note: reportText("ctRevenueNote", "Posted income accounts in the selected period."),
       },
       {
-        metric: "Less: expenses",
+        metric: reportText("ctExpenses", "Less: expenses"),
         amount: -(corporateTaxEstimate?.totalExpenses ?? 0),
-        note: "Posted expense accounts in the selected period.",
+        note: reportText("ctExpensesNote", "Posted expense accounts in the selected period."),
       },
       {
-        metric: "Gross profit",
+        metric: reportText("ctGross", "Gross profit"),
         amount: corporateTaxEstimate?.grossProfit ?? 0,
-        note: "Revenue less expenses before tax-specific deductions.",
+        note: reportText("ctGrossNote", "Revenue less expenses before tax-specific deductions."),
       },
       {
-        metric: "Less: deductions",
+        metric: reportText("ctDeductions", "Less: deductions"),
         amount: -(corporateTaxEstimate?.totalDeductions ?? 0),
-        note: "Adjustable in the Corporate Tax workspace.",
+        note: reportText("ctDeductionsNote", "Adjustable in the Corporate Tax workspace."),
       },
       {
-        metric: "Taxable income",
+        metric: reportText("ctTaxable", "Taxable income"),
         amount: corporateTaxEstimate?.taxableIncome ?? 0,
-        note: "Income before applying the zero-rate band.",
+        note: reportText("ctTaxableNote", "Income before applying the zero-rate band."),
       },
       {
-        metric: "Less: zero-rate band",
+        metric: reportText("ctBand", "Less: zero-rate band"),
         amount: -(corporateTaxEstimate?.exemptionThreshold ?? 0),
-        note: "Threshold returned by the Corporate Tax calculation endpoint.",
+        note: reportText(
+          "ctBandNote",
+          "Threshold returned by the Corporate Tax calculation endpoint."
+        ),
       },
       {
-        metric: "Income above zero-rate band",
+        metric: reportText("ctAbove", "Income above zero-rate band"),
         amount: corporateTaxEstimate?.taxableAmount ?? 0,
-        note: "Positive income above the zero-rate band before applying the returned rate.",
+        note: reportText(
+          "ctAboveNote",
+          "Positive income above the zero-rate band before applying the returned rate."
+        ),
       },
       {
-        metric: "Corporate tax payable",
+        metric: reportText("ctPayable", "Corporate tax payable"),
         amount: corporateTaxEstimate?.taxPayable ?? 0,
         note: corporateTaxStatus.detail,
       },

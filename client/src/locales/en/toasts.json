@@ -183,7 +183,7 @@
   "toasts.failedToExportToGoogleSheets": "Failed to export to Google Sheets",
   "toasts.uuid": "UUID: {uuid}",
   "toasts.importFailed": "Import failed",
-  "toasts.importedTransactions": "Imported {count} transactions",
+  "toasts.importedTransactions": "{count, plural, one {Imported # transaction} other {Imported # transactions}}",
   "toasts.importSuccessful": "Import successful",
   "toasts.tryADifferentFormat": "Try a different format.",
   "toasts.noTransactionsFound": "No transactions found",
@@ -427,8 +427,8 @@
   "toasts.selectTextCopyManually": "Select the text and copy manually.",
   "toasts.acceptedAndFailed": "{accepted} accepted, {failed} failed.",
   "toasts.acceptedCount": "{accepted} accepted.",
-  "toasts.importedSkippedDuplicates": "Imported {imported} new transaction(s); skipped {skipped} duplicate(s).",
-  "toasts.importedMatchingPrepared": "Imported {imported} transaction(s). Matching suggestions are being prepared.",
+  "toasts.importedSkippedDuplicates": "{imported, plural, one {Imported # new transaction} other {Imported # new transactions}}; skipped {skipped, plural, one {# duplicate} other {# duplicates}}.",
+  "toasts.importedMatchingPrepared": "{imported, plural, one {Imported # transaction} other {Imported # transactions}}. Matching suggestions are being prepared.",
   "toasts.couldNotReachEndpoint": "Could not reach endpoint",
   "toasts.integrationConnected": "{name} integration connected successfully",
   "toasts.monthlyDepreciationRecorded": "Monthly depreciation of {amount} recorded.",
@@ -440,5 +440,6 @@
   "toasts.rowsAddedAsApproved": "{count} row(s) added as approved import rows.",
   "toasts.noDraftRowsToApprove": "No draft rows to approve",
   "toasts.queuedForRun": "{title} queued for {when}.",
-  "toasts.queuedAsReminder": "{title} queued as an in-app reminder."
+  "toasts.queuedAsReminder": "{title} queued as an in-app reminder.",
+  "toasts.importedNothingNew": "No new transactions: {skipped, plural, one {# was} other {# were}} already imported."
 }

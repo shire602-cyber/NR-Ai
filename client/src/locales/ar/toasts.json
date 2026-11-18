@@ -183,7 +183,7 @@
   "toasts.failedToExportToGoogleSheets": "فشل التصدير إلى Google Sheets",
   "toasts.uuid": "المعرّف: {uuid}",
   "toasts.importFailed": "فشل الاستيراد",
-  "toasts.importedTransactions": "تم استيراد {count} معاملة",
+  "toasts.importedTransactions": "{count, plural, zero {لم تُستورد أي معاملة} one {تم استيراد معاملة واحدة} two {تم استيراد معاملتين} few {تم استيراد # معاملات} many {تم استيراد # معاملة} other {تم استيراد # معاملة}}",
   "toasts.importSuccessful": "تم الاستيراد بنجاح",
   "toasts.tryADifferentFormat": "جرّب صيغة مختلفة.",
   "toasts.noTransactionsFound": "لم يتم العثور على معاملات",
@@ -427,8 +427,8 @@
   "toasts.selectTextCopyManually": "حدّد النص وانسخه يدوياً.",
   "toasts.acceptedAndFailed": "تم قبول {accepted}، وفشل {failed}.",
   "toasts.acceptedCount": "تم قبول {accepted}.",
-  "toasts.importedSkippedDuplicates": "تم استيراد {imported} معاملة جديدة؛ وتم تخطي {skipped} مكررة.",
-  "toasts.importedMatchingPrepared": "تم استيراد {imported} معاملة. يجري تجهيز اقتراحات المطابقة.",
+  "toasts.importedSkippedDuplicates": "{imported, plural, zero {لم تُستورد معاملات جديدة} one {تم استيراد معاملة جديدة واحدة} two {تم استيراد معاملتين جديدتين} few {تم استيراد # معاملات جديدة} many {تم استيراد # معاملة جديدة} other {تم استيراد # معاملة جديدة}}؛ وتم تخطي {skipped, plural, one {معاملة مكررة واحدة} two {معاملتين مكررتين} few {# معاملات مكررة} many {# معاملة مكررة} other {# معاملة مكررة}}.",
+  "toasts.importedMatchingPrepared": "{imported, plural, zero {لم تُستورد أي معاملة} one {تم استيراد معاملة واحدة} two {تم استيراد معاملتين} few {تم استيراد # معاملات} many {تم استيراد # معاملة} other {تم استيراد # معاملة}}. يجري تجهيز اقتراحات المطابقة.",
   "toasts.couldNotReachEndpoint": "تعذّر الوصول إلى نقطة النهاية",
   "toasts.integrationConnected": "تم ربط تكامل {name} بنجاح",
   "toasts.monthlyDepreciationRecorded": "تم تسجيل إهلاك شهري بقيمة {amount}.",
@@ -440,5 +440,6 @@
   "toasts.rowsAddedAsApproved": "تمت إضافة {count} صف كصفوف استيراد معتمدة.",
   "toasts.noDraftRowsToApprove": "لا توجد صفوف مسودة للاعتماد",
   "toasts.queuedForRun": "تمت إضافة {title} إلى الطابور لـ {when}.",
-  "toasts.queuedAsReminder": "تمت إضافة {title} إلى الطابور كتذكير داخل التطبيق."
+  "toasts.queuedAsReminder": "تمت إضافة {title} إلى الطابور كتذكير داخل التطبيق.",
+  "toasts.importedNothingNew": "لا توجد معاملات جديدة: {skipped, plural, one {معاملة واحدة مستوردة مسبقًا} two {معاملتان مستوردتان مسبقًا} few {# معاملات مستوردة مسبقًا} many {# معاملة مستوردة مسبقًا} other {# معاملة مستوردة مسبقًا}}."
 }

@@ -268,77 +268,6 @@ interface StatementOverrides {
   mapping?: Partial<Record<MapperField, number | null>>;
 }
 
-const IMPORT_STRINGS = {
-  en: {
-    detected: "Detected",
-    genericFormat: "Generic (Arabic/English)",
-    reviewTitle: "Review before importing",
-    rows: "rows",
-    valid: "valid",
-    withErrors: "with errors",
-    dateOrder: "Date order",
-    decimalSeparator: "Decimal separator",
-    decimalPoint: "Point (1,234.50)",
-    decimalComma: "Comma (1.234,50)",
-    columnMapping: "Column mapping",
-    notMapped: "— not mapped —",
-    confirmAssumption: "Import using the settings shown above",
-    previewLoading: "Reading statement...",
-    previewFailed: "Could not read the statement",
-    sampleRows: "First rows",
-    colDate: "Date",
-    colDescription: "Description",
-    colDebit: "Debit",
-    colCredit: "Credit",
-    fields: {
-      date: "Date",
-      description: "Description",
-      reference: "Reference",
-      debit: "Debit",
-      credit: "Credit",
-      amount: "Amount",
-      direction: "Dr/Cr or Type",
-      balance: "Balance",
-    } as Record<MapperField, string>,
-    formats:
-      "CSV, XLSX, MT940, CAMT.053, OFX — Emirates NBD, ADCB, FAB, Mashreq, Mashreq Neo, RAKBANK, CBD, Wio",
-  },
-  ar: {
-    detected: "تم اكتشاف",
-    genericFormat: "عام (عربي/إنجليزي)",
-    reviewTitle: "مراجعة قبل الاستيراد",
-    rows: "صفوف",
-    valid: "صالحة",
-    withErrors: "بها أخطاء",
-    dateOrder: "ترتيب التاريخ",
-    decimalSeparator: "الفاصل العشري",
-    decimalPoint: "نقطة (1,234.50)",
-    decimalComma: "فاصلة (1.234,50)",
-    columnMapping: "ربط الأعمدة",
-    notMapped: "— غير مربوط —",
-    confirmAssumption: "استيراد بالإعدادات الموضحة أعلاه",
-    previewLoading: "جارٍ قراءة الكشف...",
-    previewFailed: "تعذرت قراءة الكشف",
-    sampleRows: "أول الصفوف",
-    colDate: "التاريخ",
-    colDescription: "البيان",
-    colDebit: "مدين",
-    colCredit: "دائن",
-    fields: {
-      date: "التاريخ",
-      description: "البيان",
-      reference: "المرجع",
-      debit: "مدين",
-      credit: "دائن",
-      amount: "المبلغ",
-      direction: "مدين/دائن أو النوع",
-      balance: "الرصيد",
-    } as Record<MapperField, string>,
-    formats:
-      "CSV وXLSX وMT940 وCAMT.053 وOFX — بنك الإمارات دبي الوطني، أبوظبي التجاري، أبوظبي الأول، مشرق، مشرق نيو، راك بنك، التجاري دبي، ويو",
-  },
-};
-
 async function fileToBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   let binary = "";
@@ -505,10 +434,14 @@ export default function BankReconciliation() {
         title: translateNow("toasts.importSuccessful"),
         description:
           data.skippedDuplicates > 0
-            ? formatMessage(translateNow("toasts.importedSkippedDuplicates"), {
-                imported: data.imported ?? 0,
-                skipped: data.skippedDuplicates,
-              })
+            ? formatMessage(
+                translateNow(
+                  (data.imported ?? 0) > 0
+                    ? "toasts.importedSkippedDuplicates"
+                    : "toasts.importedNothingNew"
+                ),
+                { imported: data.imported ?? 0, skipped: data.skippedDuplicates }
+              )
             : formatMessage(translateNow("toasts.importedMatchingPrepared"), {
                 imported: data.imported ?? 0,
               }),
@@ -643,7 +576,45 @@ export default function BankReconciliation() {
 
   // ─── File import handlers ─────────────────────────────────────────────────
 
-  const strings = IMPORT_STRINGS[locale === "ar" ? "ar" : "en"];
+  // Step 1 / F4: the import dialog copy lives in the banking catalog (en + ar).
+  const strings = {
+    detected: t["banking.import.detected"],
+    genericFormat: t["banking.import.genericFormat"],
+    reviewTitle: t["banking.import.reviewTitle"],
+    rows: t["banking.import.rows"],
+    valid: t["banking.import.valid"],
+    withErrors: t["banking.import.withErrors"],
+    dateOrder: t["banking.import.dateOrder"],
+    decimalSeparator: t["banking.import.decimalSeparator"],
+    decimalPoint: t["banking.import.decimalPoint"],
+    decimalComma: t["banking.import.decimalComma"],
+    columnMapping: t["banking.import.columnMapping"],
+    notMapped: t["banking.import.notMapped"],
+    confirmAssumption: t["banking.import.confirmAssumption"],
+    previewLoading: t["banking.import.previewLoading"],
+    previewFailed: t["banking.import.previewFailed"],
+    sampleRows: t["banking.import.sampleRows"],
+    colDate: t["banking.import.colDate"],
+    colDescription: t["banking.import.colDescription"],
+    colDebit: t["banking.import.colDebit"],
+    colCredit: t["banking.import.colCredit"],
+    formats: t["banking.import.formats"],
+    formatCsv: t["banking.import.formatCsv"],
+    formatDelimiters: t["banking.import.formatDelimiters"],
+    formatDrCr: t["banking.import.formatDrCr"],
+    formatPdf: t["banking.import.formatPdf"],
+    importAction: t["banking.import.importAction"],
+    fields: {
+      date: t["banking.import.field.date"],
+      description: t["banking.import.field.description"],
+      reference: t["banking.import.field.reference"],
+      debit: t["banking.import.field.debit"],
+      credit: t["banking.import.field.credit"],
+      amount: t["banking.import.field.amount"],
+      direction: t["banking.import.field.direction"],
+      balance: t["banking.import.field.balance"],
+    } as Record<MapperField, string>,
+  };
 
   const resetStatementPreview = () => {
     setImportFile(null);
@@ -1450,7 +1421,7 @@ export default function BankReconciliation() {
           if (!open) resetStatementPreview();
         }}
       >
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto grid-cols-[minmax(0,1fr)]">
           <DialogHeader>
             <DialogTitle>{t.importBankStatement}</DialogTitle>
             <DialogDescription>{t.uploadBankStatement}</DialogDescription>
@@ -1710,7 +1681,7 @@ export default function BankReconciliation() {
                   </p>
                   <div className="flex items-center gap-2 text-xs">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-success" />
-                    <span>CSV — Emirates NBD, ADCB, FAB, Mashreq, Arabic/English generic</span>
+                    <span>{strings.formatCsv}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-success" />
@@ -1718,15 +1689,15 @@ export default function BankReconciliation() {
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <CheckCircle2 className="w-3.5 h-3.5 text-success" />
-                    <span>Comma, semicolon, and tab-delimited Excel exports are supported</span>
+                    <span>{strings.formatDelimiters}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <CheckCircle2 className="w-3.5 h-3.5 text-success" />
-                    <span>Amount + Dr/Cr type columns are supported</span>
+                    <span>{strings.formatDrCr}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <FileText className="w-3.5 h-3.5 text-destructive" />
-                    <span>PDF — text extraction with OCR fallback</span>
+                    <span>{strings.formatPdf}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {t["bankReconciliation.liveBankFeedsAreNot"]}
@@ -1771,7 +1742,7 @@ export default function BankReconciliation() {
               data-testid="button-confirm-import"
             >
               {isImporting && <Loader2 className="w-4 h-4 animate-spin" />}
-              Import
+              {strings.importAction}
             </Button>
           </DialogFooter>
         </DialogContent>

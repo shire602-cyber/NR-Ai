@@ -17,7 +17,8 @@ import {
 import { cn } from "@/lib/utils";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
-import { useTranslation, translateNow } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { reportDateRange } from "../shared";
 import { describeCashForecastText, renderDescriptor } from "@shared/server-copy";
 
 export default function PlanningTab() {
@@ -210,7 +211,7 @@ export default function PlanningTab() {
                 <CardTitle>
                   <T k="reportCenter.cashFlowForecast" />
                 </CardTitle>
-                <CardDescription>90-day projected inflows, outflows, and balance.</CardDescription>
+                <CardDescription>{t["reportCenter.text.forecastHint"]}</CardDescription>
               </div>
               <Button asChild size="sm" variant="outline">
                 <Link href="/cashflow-forecast">
@@ -247,9 +248,11 @@ export default function PlanningTab() {
                   <TableBody>
                     {planningReport.projections.map((row) => (
                       <TableRow key={row.week}>
-                        <TableCell className="font-medium">Week {row.week}</TableCell>
+                        <TableCell className="font-medium">
+                          {formatMessage(t["reportCenter.text.weekN"], { week: row.week })}
+                        </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {row.weekStart} - {row.weekEnd}
+                          {reportDateRange(row.weekStart, row.weekEnd)}
                         </TableCell>
                         <TableCell data-numeric>
                           <Money amount={row.expectedInflows} currency={"AED"} />

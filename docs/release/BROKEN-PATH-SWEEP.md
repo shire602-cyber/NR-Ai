@@ -32,7 +32,9 @@ Details: [docs/testing-runtime.md](../testing-runtime.md).
    invoices, bills, receipts, payroll, assets, budgets, bank, VAT, close), **accountant** and
    **viewer** (invited into the owner's company), **NR firm staff** (firm `preparer` assigned to
    the owner's company), **NR admin** (platform admin, firm owner), **client-portal user** (bound
-   to one customer contact) and the **signed-out visitor**.
+   to one customer contact), the **signed-out visitor** and (Step 1 / F13) the **Arabic-data
+   owner** (`ownerAr`: the same books written with Arabic customer, vendor, item, account and
+   memo text via `REPORT_AUDIT_ARABIC=true`), which runs the Arabic check with nothing excused.
 2. Routes: every App.tsx route (`tests/e2e/launch-routes.mjs`, pinned to the router by
    `tests/unit/launch-routes-all.test.ts`), param routes resolved against seeded records
    (account ledger, journal entry, invoice / quote / PO / bill / recurring edit, client pages,
@@ -44,7 +46,13 @@ Details: [docs/testing-runtime.md](../testing-runtime.md).
    response (401/402/403 are gates), the 404 page, an error boundary, a blank main area, a
    console error, a page error or unhandled rejection, a failed request, horizontal scroll,
    a visible native date/select/file input, raw i18n keys / `{placeholders}` / UUIDs /
-   `undefined` in visible text, and (Arabic) English UI copy or a non-RTL document.
+   `undefined` in visible text, and (Arabic) English UI copy or a non-RTL document. English is
+   excused only where a whole user-data string (a seeded customer, vendor or item, harvested
+   from the API, never a system `nameEn` that has a `nameAr`) appears in the line; a word that
+   merely occurs somewhere in the data excuses nothing. Mark data you render with
+   `translate="no"`. Every individual report the catalog opens (`tests/e2e/lib/report-urls.mjs`,
+   kept in step with the catalog by `tests/unit/sweep-english-rule.test.ts`) is visited, not only
+   the catalog page.
 4. Clicks: every enabled button, tab, switch, radio and menu item (destructive actions and
    paid AI calls skipped); a click fails when it throws, makes a failed request or does nothing
    observable (no navigation, DOM change, request, download, file chooser, scroll, print or

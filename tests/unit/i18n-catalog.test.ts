@@ -38,7 +38,10 @@ function walk(dir: string): string[] {
   return out;
 }
 
-const placeholders = (value: string) => [...value.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
+// `{name}` and the head of an ICU plural, `{name, plural, one {...} other {...}}`: an Arabic
+// message may count with a plural block where the English source says `{name}`.
+const placeholders = (value: string) =>
+  [...value.matchAll(/\{(\w+)(?:\}|,\s*plural,)/g)].map((m) => m[1]).sort();
 
 describe("i18n catalogs", () => {
   const en = loadNamespaces("en");

@@ -20,10 +20,13 @@ import {
   payrollAmount,
   payrollPeriodLabel,
   payrollStatusVariant,
+  reportCodeLabel,
 } from "../shared";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useReportsPageContext } from "../context";
 
 export default function PayrollTab() {
+  const { t } = useTranslation();
   const { payrollLoading, payrollReport, reportSectionClass } = useReportsPageContext();
   return (
     <>
@@ -137,10 +140,13 @@ export default function PayrollTab() {
                       >
                         <div>
                           <Badge variant={payrollStatusVariant(row.status)} dot>
-                            {row.status}
+                            {reportCodeLabel(row.status)}
                           </Badge>
                           <div className="mt-1 text-xs text-muted-foreground">
-                            {row.count} runs / {row.employeeCount} employees
+                            {formatMessage(t["reportCenter.text.runsEmployees"], {
+                              runs: row.count,
+                              employees: row.employeeCount,
+                            })}
                           </div>
                         </div>
                         <div className="text-end tabular-nums">
@@ -187,7 +193,7 @@ export default function PayrollTab() {
                           <TableCell className="font-medium">{payrollPeriodLabel(run)}</TableCell>
                           <TableCell>
                             <Badge variant={payrollStatusVariant(run.status)} dot>
-                              {run.status}
+                              {reportCodeLabel(run.status)}
                             </Badge>
                           </TableCell>
                           <TableCell data-numeric>{run.employee_count}</TableCell>
