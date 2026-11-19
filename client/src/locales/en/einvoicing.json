@@ -1,4 +1,7 @@
 {
+  "einvoicing.downloadXml": "Download XML",
+  "einvoicing.downloadPdf": "Download PDF",
+  "einvoicing.downloadFailed": "The file could not be downloaded. Try again.",
   "einvoicing.navEInvoicing": "E-invoicing (UAE)",
   "einvoicing.navZatca": "E-invoicing (KSA ZATCA)",
   "einvoicing.trackDelivery": "Delivery to customer",
@@ -341,6 +344,7 @@
   "einvoicing.partnerChoice.failed": "Could not update the partner",
   "einvoicing.partnerChoice.state_not_started": "Not started",
   "einvoicing.partnerChoice.state_awaiting_approval": "Awaiting approval",
+  "einvoicing.partnerChoice.state_approver_done": "Approver marked it done, not yet verified",
   "einvoicing.partnerChoice.state_self_confirmed": "Confirmed by you, not yet verified",
   "einvoicing.partnerChoice.state_verified": "Verified with partner",
   "einvoicing.partnerChoice.stepDetails": "1. Check your company details",

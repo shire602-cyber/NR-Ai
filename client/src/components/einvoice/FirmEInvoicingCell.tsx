@@ -9,6 +9,7 @@ import { formatMessage, useTranslation } from "@/lib/i18n";
 export type FirmEInvoicingState =
   | "connected"
   | "self_confirmed"
+  | "approver_done"
   | "awaiting_approval"
   | "appoint_partner"
   | "partner_not_chosen"
@@ -23,6 +24,7 @@ export interface FirmEInvoicingValue {
 const TONE: Record<FirmEInvoicingState, StatusTone> = {
   connected: "success",
   self_confirmed: "warning",
+  approver_done: "info",
   awaiting_approval: "info",
   appoint_partner: "accent",
   partner_not_chosen: "neutral",

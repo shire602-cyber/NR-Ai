@@ -555,7 +555,9 @@ export function buildApproverRequestEmail(input: {
         `<strong>${co}</strong> asked you to approve its e-invoicing partner in EmaraTax. The page shows the steps; you do not need an account with us.`,
       ],
       ar: [
-        input.approverName ? greeting(input.approverName).ar : "مرحباً،",
+        // The Arabic block greets by an Arabic-script name only; a Latin-script name (or none)
+        // gets a neutral "hello" (not the customer greeting: an approver is not a customer).
+        arabicOnly(input.approverName) ? arabicGreeting({ nameAr: input.approverName }) : "مرحباً،",
         `طلبت <strong>${co}</strong> منكم الموافقة على شريك الفوترة الإلكترونية في إمارات تاكس. تعرض الصفحة الخطوات المطلوبة، ولا تحتاجون إلى حساب لدينا.`,
       ],
     },
@@ -613,6 +615,37 @@ export function buildApproverDoneEmail(input: {
   return build(content, language, {
     en: `${input.companyName}: the e-invoicing partner approval is marked done`,
     ar: `${input.companyName}: تم تأكيد الموافقة على شريك الفوترة الإلكترونية`,
+  });
+}
+
+// ─── Email verification ──────────────────────────────────────────
+
+export function buildEmailVerificationEmail(verifyUrl: string, name?: string | null): BuiltEmail {
+  const content: BilingualEmailContent = {
+    brandName: "Muhasib.ai",
+    footer: "Muhasib.ai",
+    heading: { en: "Confirm your email address", ar: "تأكيد عنوان البريد الإلكتروني" },
+    preheader: {
+      en: "Confirm your email address for Muhasib.ai. The link is valid for 48 hours.",
+      ar: "أكّدوا عنوان بريدكم الإلكتروني لدى Muhasib.ai. الرابط صالح لمدة 48 ساعة.",
+    },
+    paragraphs: {
+      en: [
+        name ? `Hello ${isolateInline(name)},` : "Hello,",
+        "Confirm your email address for Muhasib.ai. The link is valid for 48 hours.",
+        "If you did not create an account, you can ignore this message.",
+      ],
+      ar: [
+        arabicOnly(name) ? `مرحباً ${isolateInline(arabicOnly(name) as string)}،` : "مرحباً،",
+        "أكّدوا عنوان بريدكم الإلكتروني لدى Muhasib.ai. الرابط صالح لمدة 48 ساعة.",
+        "إذا لم تنشئوا حساباً فيمكنكم تجاهل هذه الرسالة.",
+      ],
+    },
+    button: { url: verifyUrl, label: { en: "Confirm email", ar: "تأكيد البريد الإلكتروني" } },
+  };
+  return build(content, "bilingual", {
+    en: "Confirm your email address",
+    ar: "تأكيد عنوان البريد الإلكتروني",
   });
 }
 

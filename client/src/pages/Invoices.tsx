@@ -2269,7 +2269,8 @@ export default function Invoices() {
           <DialogHeader>
             <DialogTitle>
               {formatMessage(t["invoices.einvoiceIssuesTitle"], {
-                number: einvoiceIssues?.number ?? "",
+                // Isolated so "INV-2026-00001" keeps its order inside Arabic text.
+                number: `\u2068${einvoiceIssues?.number ?? ""}\u2069`,
               })}
             </DialogTitle>
             <DialogDescription>
@@ -2297,7 +2298,7 @@ export default function Invoices() {
                       {hint.href ? (
                         <Link
                           href={hint.href}
-                          className="text-accent hover:underline"
+                          className="inline-flex min-h-11 items-center text-accent hover:underline sm:min-h-0"
                           data-testid={`link-einvoice-fix-${i}`}
                         >
                           {t[hint.whereKey]}
@@ -2680,8 +2681,19 @@ export default function Invoices() {
                               <T k="invoices.actionAddPayment" />
                             </DropdownMenuItem>
                           )}
+                          {/* The phone card offers the same e-invoice action as the table row. */}
+                          {invoiceRowActions(invoice).canGenerateEinvoice && (
+                            <DropdownMenuItem
+                              onSelect={() => void generateEinvoice(invoice)}
+                              data-testid={`mobile-button-einvoice-${invoice.id}`}
+                            >
+                              <FileCode aria-hidden />
+                              <T k="invoices.actionGenerateEinvoice" />
+                            </DropdownMenuItem>
+                          )}
                         </>
                       }
+                      menuTestId={`mobile-button-invoice-actions-${invoice.id}`}
                     />
                   </div>
                 ))}

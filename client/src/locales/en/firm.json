@@ -176,6 +176,7 @@
   "firm.assignmentRole.preparer": "Preparer",
   "firm.einvoicingState.column": "E-invoicing",
   "firm.einvoicingState.connected": "Connected",
+  "firm.einvoicingState.approver_done": "Approver marked done",
   "firm.einvoicingState.self_confirmed": "Client confirmed",
   "firm.einvoicingState.awaiting_approval": "Awaiting approval",
   "firm.einvoicingState.appoint_partner": "Appoint partner",

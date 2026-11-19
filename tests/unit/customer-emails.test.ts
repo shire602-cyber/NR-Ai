@@ -453,10 +453,27 @@ describe("footers are consistent", () => {
       }),
     ];
     for (const e of all) {
-      expect(e.html).toContain("This is an automated message from Al Noor Trading LLC.");
-      expect(e.html).toContain("Questions? Write to billing@alnoor.example.");
-      expect(e.html).toContain("Sent with Muhasib.ai");
+      expect(e.html).toContain("This is an automated message from <bdi>Al Noor Trading LLC</bdi>.");
+      expect(e.html).toContain("Questions? Write to <bdi>billing@alnoor.example</bdi>.");
+      expect(e.html).toContain("Sent with <bdi>Muhasib.ai</bdi>");
       expect(e.text).toContain("This is an automated message from Al Noor Trading LLC.");
     }
+  });
+});
+
+describe("email verification e-mail", () => {
+  it("is bilingual with a bulletproof button, no raw link-only body, bilingual subject", async () => {
+    const { buildEmailVerificationEmail } = await import("../../server/services/customer-emails");
+    const m = buildEmailVerificationEmail(
+      "https://app.example/verify-email?token=" + "a".repeat(64),
+      "Omar"
+    );
+    expect(m.html).toContain('lang="en"');
+    expect(m.html).toContain('lang="ar"');
+    expect(m.html).toContain("em-btn");
+    expect(m.html).toContain("word-break:break-all");
+    expect(m.subject).toMatch(/[؀-ۿ]/);
+    expect(m.text).toContain("https://app.example/verify-email?token=");
+    expect(m.html).toContain("مرحباً،");
   });
 });

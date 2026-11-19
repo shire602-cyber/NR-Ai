@@ -78,6 +78,14 @@ BASE_URL=http://localhost:<port> CORS_ORIGIN=http://localhost:<port> node dist/i
   it from the outbox, opens every link signed out at iPhone 13 and 1440x900 and checks language,
   absolute links, console, overflow, 44 px targets, PDF/print and no TRN. Route-level twin:
   `tests/db/customer-links-flow.test.ts`. `SHOT_DIR` saves screenshots.
+- Per-client e-invoicing: `BASE_URL=http://localhost:<port> DATABASE_URL=<app db> npm run e2e:einvoice-client`
+  (`tests/e2e/einvoice-client-flow.mjs`; local production build, no provider credentials). From a
+  client's books (company owner, and NR firm staff via "Open books") at iPhone 13, 360 px and
+  1440x900 in English and Arabic: settings and provider choice (none pre-selected), generate with
+  the two coded buyer issues, the status sheet and XML/PDF download, submit refused without a
+  provider, the approval request, the bilingual approver e-mail, the no-login page (done, used,
+  expired, revoked, invalid), the outcome in the client's page and the firm column, failing lists,
+  and every customer e-mail template rendered at 375/700/1000 px. `SHOT_DIR` saves screenshots.
 - Sign-in, recovery, pricing and client portal: same target, `npm run e2e:auth-portal`
   (`tests/e2e/auth-portal-flow.mjs`; also writes a client-portal member through `DATABASE_URL`). For
   iPhone SE, a 360x740 Android, iPhone 13 and 1440x900 in English and Arabic it opens `/login` (empty,

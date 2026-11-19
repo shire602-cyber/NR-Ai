@@ -156,8 +156,16 @@ describe("contact language drives messages and the invoice page", () => {
 
   it("Arabic company: an explicit ar contact gets Arabic, an en contact gets English", async () => {
     const t = await h.createTenant({ companyColumns: { locale: "ar" } });
-    const ar = await contact(t, { name: "Ar Pref", email: "arp@x.example", preferredLanguage: "ar" });
-    const en = await contact(t, { name: "En Pref", email: "enp@x.example", preferredLanguage: "en" });
+    const ar = await contact(t, {
+      name: "Ar Pref",
+      email: "arp@x.example",
+      preferredLanguage: "ar",
+    });
+    const en = await contact(t, {
+      name: "En Pref",
+      email: "enp@x.example",
+      preferredLanguage: "en",
+    });
     const i1 = await issued(t, ar.id);
     const i2 = await issued(t, en.id);
     await t.as.post(`${base(t)}/invoices/${i1.id}/send-email`, { to: "arp@c.test" });

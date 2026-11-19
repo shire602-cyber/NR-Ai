@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useTranslation } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
@@ -80,6 +81,7 @@ const COPY = {
     save: "Save",
     saved: "E-invoicing settings saved",
     saveFailed: "Could not save settings",
+    downloadFailed: "The file could not be downloaded. Try again.",
     validationTitle: "Validation",
     xsd: "UBL 2.1 XSD",
     schematron: "PINT AE schematron",
@@ -112,6 +114,23 @@ const COPY = {
     bill: "Draft bill",
     zatcaLink: "KSA (ZATCA) settings",
     loading: "Loading…",
+    loadFailed: "Could not load this list.",
+    retry: "Retry",
+    problemReported:
+      "The provider reported a problem. Open the invoice's e-invoice status for details.",
+    st_generated: "Generated",
+    st_submitted: "Submitted",
+    st_accepted: "Accepted",
+    st_cleared: "Cleared",
+    st_rejected: "Rejected",
+    st_failed: "Failed",
+    st_cancelled: "Withdrawn",
+    st_pending: "Pending",
+    st_received: "Received",
+    st_bill_created: "Bill created",
+    st_error: "Error",
+    dir_outbound: "Sent",
+    dir_inbound: "Received",
   },
   ar: {
     eyebrow: "الإعدادات",
@@ -151,6 +170,7 @@ const COPY = {
     save: "حفظ",
     saved: "تم حفظ إعدادات الفوترة الإلكترونية",
     saveFailed: "تعذّر حفظ الإعدادات",
+    downloadFailed: "تعذّر تنزيل الملف. حاول مرة أخرى.",
     validationTitle: "التحقق",
     xsd: "مخطط UBL 2.1",
     schematron: "قواعد PINT AE الرسمية",
@@ -183,10 +203,32 @@ const COPY = {
     bill: "فاتورة مورد مسودة",
     zatcaLink: "إعدادات السعودية (هيئة الزكاة)",
     loading: "جارٍ التحميل…",
+    loadFailed: "تعذّر تحميل هذه القائمة.",
+    retry: "إعادة المحاولة",
+    problemReported: "أبلغ المزود عن مشكلة. افتح حالة الفاتورة الإلكترونية لمعرفة التفاصيل.",
+    st_generated: "تم الإنشاء",
+    st_submitted: "تم الإرسال",
+    st_accepted: "مقبولة",
+    st_cleared: "تم الاعتماد",
+    st_rejected: "مرفوضة",
+    st_failed: "فشلت",
+    st_cancelled: "مسحوبة",
+    st_pending: "قيد الانتظار",
+    st_received: "مستلمة",
+    st_bill_created: "تم إنشاء الفاتورة",
+    st_error: "خطأ",
+    dir_outbound: "مرسلة",
+    dir_inbound: "مستلمة",
   },
 } as const;
 
 type Copy = Record<keyof (typeof COPY)["en"], string>;
+
+/** A stored status/direction/kind word in the page language (unknown values show as stored). */
+function word(s: Copy, prefix: "st" | "dir", value: string | null | undefined): string {
+  if (!value) return "—";
+  return (s as Record<string, string>)[`${prefix}_${value}`] ?? value;
+}
 
 interface Localized {
   en: string;
@@ -296,12 +338,12 @@ function layerText(l: LayerSummary | undefined, s: Copy): string {
   return l.valid ? s.valid : `${l.errorCount} ${s.invalid}`;
 }
 
-async function downloadArchive(companyId: string, row: ArchiveRow) {
+async function downloadArchive(companyId: string, row: ArchiveRow): Promise<boolean> {
   const res = await fetch(apiUrl(`/api/companies/${companyId}/einvoicing/archive/${row.id}`), {
     credentials: "include",
     headers: getAuthHeaders(),
-  });
-  if (!res.ok) return;
+  }).catch(() => null);
+  if (!res || !res.ok) return false;
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -309,6 +351,7 @@ async function downloadArchive(companyId: string, row: ArchiveRow) {
   a.download = `einvoice-${row.kind}-${row.documentNumber}.xml`;
   a.click();
   URL.revokeObjectURL(url);
+  return true;
 }
 
 export default function EInvoicingSettings() {
@@ -362,8 +405,7 @@ export default function EInvoicingSettings() {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "einvoicing"] });
       toast({ title: s.saved });
     },
-    onError: (err: Error) =>
-      toast({ title: s.saveFailed, description: err.message, variant: "destructive" }),
+    onError: () => toast({ title: s.saveFailed, variant: "destructive" }),
   });
 
   const paymentOptions = useMemo(
@@ -591,7 +633,27 @@ export default function EInvoicingSettings() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(documents.data?.items ?? []).length === 0 ? (
+                {documents.isError ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-muted-foreground" role="alert">
+                      {s.loadFailed}{" "}
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="min-h-11"
+                        onClick={() => void documents.refetch()}
+                      >
+                        {s.retry}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ) : documents.isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-muted-foreground" role="status">
+                      {s.loading}
+                    </TableCell>
+                  </TableRow>
+                ) : (documents.data?.items ?? []).length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-muted-foreground">
                       {s.none}
@@ -601,7 +663,12 @@ export default function EInvoicingSettings() {
                   (documents.data?.items ?? []).map((d) => (
                     <TableRow key={d.id}>
                       <TableCell>
-                        <Link href="/invoices">{d.invoiceNumber ?? d.invoiceId.slice(0, 8)}</Link>
+                        <Link
+                          href="/invoices"
+                          className="inline-flex min-h-11 min-w-11 items-center"
+                        >
+                          <bdi>{d.invoiceNumber ?? d.invoiceId.slice(0, 8)}</bdi>
+                        </Link>
                       </TableCell>
                       <TableCell>
                         <Badge
@@ -611,15 +678,15 @@ export default function EInvoicingSettings() {
                               : "outline"
                           }
                         >
-                          {d.status}
+                          {word(s, "st", d.status)}
                         </Badge>
                         {d.lastError ? (
-                          <div className="text-xs text-muted-foreground">{d.lastError}</div>
+                          <div className="text-xs text-muted-foreground">{s.problemReported}</div>
                         ) : null}
                       </TableCell>
                       <TableCell>{d.attempts}</TableCell>
                       <TableCell>
-                        {d.nextRetryAt ? new Date(d.nextRetryAt).toLocaleString(locale) : "—"}
+                        {d.nextRetryAt ? formatDate(d.nextRetryAt, locale) : "—"}
                       </TableCell>
                       <TableCell>{layerText(d.validation?.xsd, s)}</TableCell>
                       <TableCell
@@ -661,7 +728,27 @@ export default function EInvoicingSettings() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(archive.data?.items ?? []).length === 0 ? (
+                {archive.isError ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-muted-foreground" role="alert">
+                      {s.loadFailed}{" "}
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="min-h-11"
+                        onClick={() => void archive.refetch()}
+                      >
+                        {s.retry}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ) : archive.isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-muted-foreground" role="status">
+                      {s.loading}
+                    </TableCell>
+                  </TableRow>
+                ) : (archive.data?.items ?? []).length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-muted-foreground">
                       {s.none}
@@ -670,19 +757,25 @@ export default function EInvoicingSettings() {
                 ) : (
                   (archive.data?.items ?? []).map((a) => (
                     <TableRow key={a.id}>
-                      <TableCell>{a.documentNumber}</TableCell>
-                      <TableCell>{a.direction}</TableCell>
-                      <TableCell>{a.kind}</TableCell>
+                      <TableCell>
+                        <bdi>{a.documentNumber}</bdi>
+                      </TableCell>
+                      <TableCell>{word(s, "dir", a.direction)}</TableCell>
+                      <TableCell>{word(s, "st", a.kind)}</TableCell>
                       <TableCell className="tabular-nums text-xs" dir="ltr">
                         {a.sha256.slice(0, 16)}…
                       </TableCell>
-                      <TableCell>{a.retainUntil}</TableCell>
+                      <TableCell>{formatDate(a.retainUntil, locale)}</TableCell>
                       <TableCell>
                         <Button
                           size="sm"
                           variant="ghost"
+                          className="h-11 w-11"
                           aria-label={s.download}
-                          onClick={() => companyId && downloadArchive(companyId, a)}
+                          onClick={async () => {
+                            if (companyId && !(await downloadArchive(companyId, a)))
+                              toast({ title: s.downloadFailed, variant: "destructive" });
+                          }}
                         >
                           <Download className="h-4 w-4" />
                         </Button>
@@ -739,7 +832,27 @@ export default function EInvoicingSettings() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(inbound.data?.items ?? []).length === 0 ? (
+                {inbound.isError ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-muted-foreground" role="alert">
+                      {s.loadFailed}{" "}
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="min-h-11"
+                        onClick={() => void inbound.refetch()}
+                      >
+                        {s.retry}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ) : inbound.isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-muted-foreground" role="status">
+                      {s.loading}
+                    </TableCell>
+                  </TableRow>
+                ) : (inbound.data?.items ?? []).length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="text-muted-foreground">
                       {s.none}
@@ -749,17 +862,28 @@ export default function EInvoicingSettings() {
                   (inbound.data?.items ?? []).map((d) => (
                     <TableRow key={d.id}>
                       <TableCell>{d.supplierName ?? "—"}</TableCell>
-                      <TableCell>{d.documentNumber}</TableCell>
+                      <TableCell>
+                        <bdi>{d.documentNumber}</bdi>
+                      </TableCell>
                       <TableCell>
                         <Badge variant={d.status === "bill_created" ? "default" : "outline"}>
-                          {d.status}
+                          {word(s, "st", d.status)}
                         </Badge>
                         {d.error ? (
-                          <div className="text-xs text-muted-foreground">{d.error}</div>
+                          <div className="text-xs text-muted-foreground">{s.problemReported}</div>
                         ) : null}
                       </TableCell>
                       <TableCell>
-                        {d.billId ? <Link href="/bill-pay">{d.billId.slice(0, 8)}</Link> : "—"}
+                        {d.billId ? (
+                          <Link
+                            href="/bill-pay"
+                            className="inline-flex min-h-11 min-w-11 items-center"
+                          >
+                            {d.billId.slice(0, 8)}
+                          </Link>
+                        ) : (
+                          "—"
+                        )}
                       </TableCell>
                     </TableRow>
                   ))

@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   Circle,
   CircleDashed,
+  Download,
   History,
   Landmark,
   Loader2,
@@ -335,7 +336,27 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
   const { companyId: handoffCompanyId } = useDefaultCompany();
   const { t, locale } = useTranslation();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [downloading, setDownloading] = useState<"xml" | "pdf" | null>(null);
+  const [downloadFailed, setDownloadFailed] = useState(false);
   const status = useEInvoiceStatus(invoiceId);
+  // The generated e-invoice (UBL XML) and the invoice PDF, with a localized failure message.
+  const download = async (kind: "xml" | "pdf") => {
+    setDownloading(kind);
+    setDownloadFailed(false);
+    try {
+      const { downloadServerFile } = await import("@/lib/export");
+      await downloadServerFile(
+        kind === "xml"
+          ? `/api/invoices/${invoiceId}/einvoice-xml`
+          : `/api/invoices/${invoiceId}/pdf`,
+        `einvoice-${invoiceId}.${kind}`
+      );
+    } catch {
+      setDownloadFailed(true);
+    } finally {
+      setDownloading(null);
+    }
+  };
   const key = einvoiceStatusKey(invoiceId);
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: key });
@@ -733,6 +754,30 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
             {t["einvoicing.refreshStatus"]}
           </Button>
         )}
+        {view.status !== "not_generated" && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void download("xml")}
+              disabled={downloading !== null}
+              data-testid="einvoice-download-xml"
+            >
+              <Download aria-hidden className="h-3.5 w-3.5" />
+              {t["einvoicing.downloadXml"]}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void download("pdf")}
+              disabled={downloading !== null}
+              data-testid="einvoice-download-pdf"
+            >
+              <Download aria-hidden className="h-3.5 w-3.5" />
+              {t["einvoicing.downloadPdf"]}
+            </Button>
+          </>
+        )}
         <Button
           size="sm"
           variant="ghost"
@@ -749,6 +794,12 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
           </span>
         )}
       </div>
+
+      {downloadFailed && (
+        <p className="text-small text-danger" role="alert" data-testid="einvoice-download-error">
+          {t["einvoicing.downloadFailed"]}
+        </p>
+      )}
 
       <EInvoiceHistory view={view} open={historyOpen} onOpenChange={setHistoryOpen} />
     </div>

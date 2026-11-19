@@ -45,6 +45,7 @@ export {
   buildApproverDoneEmail,
   buildApproverRequestEmail,
   buildInvoiceEmail,
+  buildEmailVerificationEmail,
   buildPasswordResetEmail,
   buildPortalCodeEmail,
   buildQuoteEmail,

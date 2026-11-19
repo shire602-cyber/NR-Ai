@@ -144,3 +144,31 @@ describe("the five senders' builders", () => {
     });
   });
 });
+
+describe("approver request e-mail greeting (both languages)", () => {
+  it("Latin approver name: English block names them, Arabic block is a neutral hello", async () => {
+    const { buildApproverRequestEmail } = await import("../../server/services/customer-emails");
+    const m = buildApproverRequestEmail({
+      companyName: "Al Noor Trading LLC",
+      approverName: "Khalid Al Mansoori",
+      url: "https://app.example/portal/einvoicing-approve/abc",
+      language: "bilingual",
+    });
+    expect(m.html).toContain("Dear <bdi>Khalid Al Mansoori</bdi>,");
+    expect(m.html).toContain("مرحباً،");
+    expect(m.html).not.toContain("عزيزنا العميل");
+    expect(m.html).not.toMatch(/عزيزنا[^<]*Khalid/);
+    expect(m.subject).toMatch(/[؀-ۿ]/);
+    expect(m.subject).toMatch(/[A-Za-z]/);
+    expect(m.text).toMatch(/[؀-ۿ]/);
+  });
+  it("Arabic approver name is used in the Arabic block", async () => {
+    const { buildApproverRequestEmail } = await import("../../server/services/customer-emails");
+    const m = buildApproverRequestEmail({
+      companyName: "Al Noor Trading LLC",
+      approverName: "خالد المنصوري",
+      url: "https://app.example/portal/einvoicing-approve/abc",
+    });
+    expect(m.html).toContain("عزيزنا <bdi>خالد المنصوري</bdi>،");
+  });
+});

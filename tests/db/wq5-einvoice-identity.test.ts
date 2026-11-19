@@ -485,3 +485,29 @@ describe("WQ5 firm console e-invoicing column", () => {
     }
   });
 });
+
+describe("approver outcome shows back (2026-11-19)", () => {
+  it("a used approver link moves the client to approver_done; a new partner withdraws it", async () => {
+    const { clientEInvoicingStates } =
+      await import("../../server/services/firm-command-center.service");
+    const t = await h.createTenant({ name: "Approved", companyColumns: SELLER });
+    const [p, q] = await partnerIds(t);
+    await t.as.put(`${base(t)}/partner`, { partner: p });
+    const link = await t.as.post(`${base(t)}/approver-links`, { approverName: "Khalid" });
+    expect(link.status, link.text).toBeLessThan(300);
+    const token = (link.body.url as string).split("/").pop()!;
+    const state = async () => (await t.as.get(`${base(t)}/partner`)).body.appointment.state;
+    expect(await state()).toBe("awaiting_approval");
+    const done = await h.anon.post(`/api/portal/einvoicing-approve/${token}/done`, {});
+    expect(done.status, done.text).toBe(200);
+    // The approver finished: the client sees it, and so does the firm column.
+    expect(await state()).toBe("approver_done");
+    const states = await clientEInvoicingStates([t.company.id]);
+    expect(states.get(t.company.id)?.state).toBe("approver_done");
+    // A different partner is a different appointment: the approval no longer applies.
+    await t.as.put(`${base(t)}/partner`, { partner: q });
+    expect(await state()).toBe("not_started");
+    const used = await h.anon.get(`/api/portal/einvoicing-approve/${token}`);
+    expect(used.status).toBe(410);
+  });
+});

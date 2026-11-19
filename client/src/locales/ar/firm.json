@@ -176,6 +176,7 @@
   "firm.assignmentRole.preparer": "معدّ",
   "firm.einvoicingState.column": "الفوترة الإلكترونية",
   "firm.einvoicingState.connected": "مربوط",
+  "firm.einvoicingState.approver_done": "أكّده المسؤول عن الموافقة",
   "firm.einvoicingState.self_confirmed": "أكّده العميل",
   "firm.einvoicingState.awaiting_approval": "بانتظار الموافقة",
   "firm.einvoicingState.appoint_partner": "تعيين الشريك",

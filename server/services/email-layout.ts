@@ -176,11 +176,20 @@ const FOOTER_SENT_WITH: BilingualBlock = {
   ar: "أُرسلت عبر Muhasib.ai",
 };
 
-function footerLines(c: BilingualEmailContent, lang: "en" | "ar"): string[] {
-  const lines = [`${FOOTER_AUTOMATED[lang]} ${c.brandName}.`];
-  if (c.contactEmail) lines.push(`${FOOTER_REPLY[lang]} ${c.contactEmail}.`);
-  if (c.brandName !== "Muhasib.ai") lines.push(FOOTER_SENT_WITH[lang]);
+/** Footer sentences; `html` isolates the company name and the reply address so a Latin name
+ * inside an Arabic sentence (or the reverse) keeps its own order and full stops. */
+function footerLines(c: BilingualEmailContent, lang: "en" | "ar", html = false): string[] {
+  const wrap = (v: string) => (html ? `<bdi>${escapeHtml(v)}</bdi>` : v);
+  const lines = [`${FOOTER_AUTOMATED[lang]} ${wrap(c.brandName)}.`];
+  if (c.contactEmail) lines.push(`${FOOTER_REPLY[lang]} ${wrap(c.contactEmail)}.`);
+  if (c.brandName !== "Muhasib.ai") lines.push(wrap_sent(lang, html));
   return lines;
+}
+
+function wrap_sent(lang: "en" | "ar", html: boolean): string {
+  return html
+    ? FOOTER_SENT_WITH[lang].replace("Muhasib.ai", "<bdi>Muhasib.ai</bdi>")
+    : FOOTER_SENT_WITH[lang];
 }
 
 function preheaderOf(c: BilingualEmailContent, language: EmailLanguage): string {
@@ -204,12 +213,7 @@ export function renderBilingualEmail(c: BilingualEmailContent, language: EmailLa
     language === "bilingual" ? (["en", "ar"] as const) : ([rootLang] as const)
   ).map(
     (lang) =>
-      `<p dir="${lang === "ar" ? "rtl" : "ltr"}" lang="${lang}" style="color:#6B7280;font-size:12px;line-height:1.6;margin:0 0 6px;text-align:center;">${footerLines(
-        c,
-        lang
-      )
-        .map(escapeHtml)
-        .join(" ")}</p>`
+      `<p dir="${lang === "ar" ? "rtl" : "ltr"}" lang="${lang}" style="color:#6B7280;font-size:12px;line-height:1.6;margin:0 0 6px;text-align:center;">${footerLines(c, lang, true).join(" ")}</p>`
   );
   const title = c.heading[rootLang] || c.brandName;
   const pre = escapeHtml(preheaderOf(c, language));

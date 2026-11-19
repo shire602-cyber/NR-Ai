@@ -321,7 +321,6 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
       const done = state === "completed" ? link : await completeApproverLink(link);
       if (state === "active") {
         const view = await publicApproverView(done);
-        const doneCompany = await storage.getCompany(done.companyId);
         for (const to of await approverNotifyRecipients(done)) {
           try {
             const built = buildApproverDoneEmail({
