@@ -231,7 +231,10 @@ describe("migrations", () => {
 
   it("[STEP5] 0136 is idempotent and removes client_portal memberships only", async () => {
     const owner = await h.createTenant({ name: "Step5Owner" });
-    const portalUser = await h.createSecondTenant({ userType: "client_portal", name: "Step5Portal" });
+    const portalUser = await h.createSecondTenant({
+      userType: "client_portal",
+      name: "Step5Portal",
+    });
     await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')`, [
       owner.company.id,
       portalUser.user.id,
@@ -250,7 +253,9 @@ describe("migrations", () => {
     );
     expect(cols).toHaveLength(3);
     expect(
-      await h.sql(`SELECT 1 FROM information_schema.tables WHERE table_name = 'customer_portal_invitations'`)
+      await h.sql(
+        `SELECT 1 FROM information_schema.tables WHERE table_name = 'customer_portal_invitations'`
+      )
     ).toHaveLength(1);
   });
 

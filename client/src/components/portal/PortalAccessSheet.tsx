@@ -40,6 +40,7 @@ import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { ApiError, apiRequest } from "@/lib/queryClient";
 import { formatDate } from "@/lib/format-date";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { defaultInviteLanguage, portalAccessKey, portalSummaryKey } from "@/lib/portal-invite";
 import {
   PORTAL_INVITE_MESSAGE_MAX,
   PORTAL_INVITE_TTL_DAYS,
@@ -87,20 +88,200 @@ const STATUS_TONE: Record<string, StatusTone> = {
   accepted: "success",
 };
 
-/** The contact's language preference, else both languages (the customer's language is unknown). */
-export function defaultInviteLanguage(pref: string | null | undefined): PortalInviteLanguage {
-  return pref === "ar" ? "ar" : pref === "en" ? "en" : "bilingual";
-}
-
-const accessKey = (companyId: string, contactId: string) =>
-  [`/api/companies/${companyId}/customer-contacts/${contactId}/portal-access`] as const;
-export const portalSummaryKey = (companyId: string) =>
-  [`/api/companies/${companyId}/portal-access/summary`] as const;
-
 type Confirm =
   | { kind: "revoke"; id: string; email: string }
   | { kind: "remove"; id: string; name: string }
   | null;
+
+/**
+ * The invite form. It lives inside the sheet's content, so it mounts fresh (prefilled from the
+ * contact) every time the sheet opens.
+ */
+function InviteForm({
+  contact,
+  companyId,
+  supplierName,
+  canInvite,
+  onDelivered,
+}: {
+  contact: PortalSheetContact;
+  companyId: string;
+  supplierName: string;
+  canInvite: boolean;
+  onDelivered: (res: InviteResponse) => void;
+}) {
+  const { t } = useTranslation();
+  const { toast } = useToast();
+  const { gate } = useCompanyPermission();
+  const [email, setEmail] = useState(contact.email ?? "");
+  const [name, setName] = useState(contact.contactPerson ?? "");
+  const [language, setLanguage] = useState<PortalInviteLanguage>(
+    defaultInviteLanguage(contact.preferredLanguage)
+  );
+  const [note, setNote] = useState("");
+
+  const invite = useMutation({
+    mutationFn: () =>
+      apiRequest(
+        "POST",
+        `/api/companies/${companyId}/customer-contacts/${contact.id}/portal-invitations`,
+        {
+          email: email.trim() || undefined,
+          name: name.trim() || undefined,
+          language,
+          message: note.trim() || undefined,
+          saveEmailToContact: !contact.email && !!email.trim() ? true : undefined,
+        }
+      ) as Promise<InviteResponse>,
+    onSuccess: (res) => {
+      setNote("");
+      onDelivered(res);
+    },
+    onError: (err) =>
+      toast({
+        title: err instanceof ApiError ? err.message : t["portal.invite.failed"],
+        variant: "destructive",
+      }),
+  });
+
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  // The subject the customer will see, one line per language (each in its own direction).
+  const preview = useMemo(() => {
+    const en = {
+      lang: "en",
+      // The English subject mirrors server/services/portal-invite-email.ts.
+      text: `${supplierName} invited you to view your invoices`, // i18n-ignore: the English email subject
+    };
+    const ar = {
+      lang: "ar",
+      text: formatMessage(t["portal.invite.previewSubjectAr"], { supplier: supplierName }),
+    };
+    return language === "ar" ? [ar] : language === "bilingual" ? [en, ar] : [en];
+  }, [language, supplierName, t]);
+
+  const langs: Array<{ id: PortalInviteLanguage; label: string; lang?: string }> = [
+    { id: "en", label: "English", lang: "en" },
+    { id: "ar", label: "العربية", lang: "ar" },
+    { id: "bilingual", label: t["portal.invite.both"] },
+  ];
+
+  return (
+    <form
+      className="mt-3 space-y-4"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (emailOk && canInvite) invite.mutate();
+      }}
+      data-testid="pa-invite-form"
+    >
+      <div>
+        <Label htmlFor="pa-email">{t["portal.email"]}</Label>
+        <Input
+          id="pa-email"
+          type="email"
+          inputMode="email"
+          autoComplete="off"
+          dir="ltr"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="mt-1.5 h-11 text-base"
+          aria-describedby={!contact.email ? "pa-email-help" : undefined}
+          data-testid="pa-email"
+        />
+        {!contact.email && (
+          <p id="pa-email-help" className="mt-1 text-caption text-muted-foreground">
+            {t["portal.invite.noEmailHelp"]}
+          </p>
+        )}
+      </div>
+      <div>
+        <Label htmlFor="pa-name">{t["portal.invite.nameLabel"]}</Label>
+        <Input
+          id="pa-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="mt-1.5 h-11 text-base"
+          dir="auto"
+          maxLength={100}
+          data-testid="pa-name"
+        />
+      </div>
+      <fieldset>
+        <legend className="text-small font-medium">{t["portal.invite.languageLabel"]}</legend>
+        <div
+          className="mt-1.5 inline-flex w-full rounded-md border border-border p-0.5 sm:w-auto"
+          role="radiogroup"
+        >
+          {langs.map((l) => (
+            <button
+              key={l.id}
+              type="button"
+              role="radio"
+              aria-checked={language === l.id}
+              lang={l.lang}
+              onClick={() => setLanguage(l.id)}
+              className={`min-h-11 flex-1 rounded px-4 text-small font-medium sm:flex-none ${
+                language === l.id ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+              }`}
+              data-testid={`pa-lang-${l.id}`}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <div>
+        <Label htmlFor="pa-note">{t["portal.invite.noteLabel"]}</Label>
+        <Textarea
+          id="pa-note"
+          value={note}
+          onChange={(e) => setNote(e.target.value.slice(0, PORTAL_INVITE_MESSAGE_MAX))}
+          rows={3}
+          className="mt-1.5 text-base"
+          dir="auto"
+          data-testid="pa-note"
+        />
+        <p className="mt-1 text-end text-caption text-muted-foreground tabular-nums">
+          {note.length}/{PORTAL_INVITE_MESSAGE_MAX}
+        </p>
+      </div>
+      <div className="rounded-lg bg-muted/50 p-3" data-testid="pa-preview">
+        <p className="flex items-center gap-1.5 text-caption font-medium text-muted-foreground">
+          <Mail className="h-3.5 w-3.5" aria-hidden />
+          {t["portal.invite.previewTitle"]}
+        </p>
+        {preview.map((line) => (
+          <p
+            key={line.lang}
+            className="mt-1 text-small font-medium"
+            lang={line.lang}
+            dir={line.lang === "ar" ? "rtl" : "ltr"}
+            data-testid={`pa-preview-${line.lang}`}
+          >
+            {line.text}
+          </p>
+        ))}
+        <p className="mt-0.5 text-caption text-muted-foreground">
+          {formatMessage(t["portal.invite.previewExpiry"], { days: PORTAL_INVITE_TTL_DAYS })}
+        </p>
+      </div>
+      <Button
+        type="submit"
+        className="h-11 w-full"
+        disabled={!emailOk || invite.isPending || !canInvite}
+        {...(canInvite ? {} : gate("documents.write"))}
+        data-testid="pa-send"
+      >
+        {invite.isPending ? (
+          <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />
+        ) : (
+          <Send className="me-2 h-4 w-4 rtl:-scale-x-100" aria-hidden />
+        )}
+        {t["portal.invite.send"]}
+      </Button>
+    </form>
+  );
+}
 
 /**
  * "Portal access" for one customer: who can sign in, the invitations (resend, revoke) and a form
@@ -129,52 +310,32 @@ export function PortalAccessSheet({
   const canInvite = can("documents.write");
   const contactId = contact?.id ?? "";
 
-  const { data, isLoading } = useQuery<AccessData>({
-    queryKey: accessKey(companyId, contactId),
+  const { data, isLoading, dataUpdatedAt } = useQuery<AccessData>({
+    queryKey: portalAccessKey(companyId, contactId),
     enabled: open && !!contactId && !!companyId,
     staleTime: 0,
   });
 
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
-  const [language, setLanguage] = useState<PortalInviteLanguage>("en");
-  const [note, setNote] = useState("");
-  const [shownLink, setShownLink] = useState<string | null>(null);
+  const [shownLink, setShownLink] = useState<{ contactId: string; url: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [confirm, setConfirm] = useState<Confirm>(null);
-  // Seconds left before Resend works again, per invitation id (counts down once a second).
-  const [cooldown, setCooldown] = useState<Record<string, number>>({});
-
-  // Prefill from the contact each time the sheet opens for a customer.
+  // A clock for the Resend countdown: it ticks once a second only while a cooldown is running.
+  const [now, setNow] = useState(() => Date.now());
+  const remaining = (resendIn: number) =>
+    Math.max(0, resendIn - Math.floor((now - dataUpdatedAt) / 1000));
+  const cooling = (data?.invitations ?? []).some((i) => remaining(i.resendIn) > 0);
   useEffect(() => {
-    if (!open || !contact) return;
-    setEmail(contact.email ?? "");
-    setName(contact.contactPerson ?? "");
-    setLanguage(defaultInviteLanguage(contact.preferredLanguage));
-    setNote("");
-    setShownLink(null);
-    setCopied(false);
-  }, [open, contact?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!data) return;
-    setCooldown(Object.fromEntries(data.invitations.map((i) => [i.id, i.resendIn])));
-  }, [data]);
-  useEffect(() => {
-    if (!Object.values(cooldown).some((n) => n > 0)) return;
-    const id = window.setInterval(
-      () =>
-        setCooldown((c) =>
-          Object.fromEntries(Object.entries(c).map(([k, v]) => [k, Math.max(0, v - 1)]))
-        ),
-      1000
-    );
+    if (!cooling) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [cooldown]);
+  }, [cooling]);
+
+  const linkUrl = shownLink && shownLink.contactId === contactId ? shownLink.url : null;
 
   const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: accessKey(companyId, contactId) });
+    void queryClient.invalidateQueries({ queryKey: portalAccessKey(companyId, contactId) });
     void queryClient.invalidateQueries({ queryKey: portalSummaryKey(companyId) });
+    setNow(Date.now());
   };
   const fail = (err: unknown) =>
     toast({
@@ -183,39 +344,22 @@ export function PortalAccessSheet({
     });
   const reportDelivery = (res: InviteResponse) => {
     if (res.delivery === "link" && res.inviteUrl) {
-      setShownLink(res.inviteUrl);
+      setShownLink({ contactId, url: res.inviteUrl });
+      setCopied(false);
       toast({ title: t["portal.invite.linkCreated"] });
     } else if (res.delivery === "email") {
       toast({ title: formatMessage(t["portal.invite.sentTo"], { email: res.invitation.email }) });
     } else {
       toast({ title: t["portal.invite.queued"] });
     }
+    refresh();
   };
 
   const base = `/api/companies/${companyId}`;
-  const invite = useMutation({
-    mutationFn: () =>
-      apiRequest("POST", `${base}/customer-contacts/${contactId}/portal-invitations`, {
-        email: email.trim() || undefined,
-        name: name.trim() || undefined,
-        language,
-        message: note.trim() || undefined,
-        saveEmailToContact: !contact?.email && !!email.trim() ? true : undefined,
-      }) as Promise<InviteResponse>,
-    onSuccess: (res) => {
-      reportDelivery(res);
-      setNote("");
-      refresh();
-    },
-    onError: fail,
-  });
   const resend = useMutation({
     mutationFn: (id: string) =>
       apiRequest("POST", `${base}/portal-invitations/${id}/resend`, {}) as Promise<InviteResponse>,
-    onSuccess: (res) => {
-      reportDelivery(res);
-      refresh();
-    },
+    onSuccess: reportDelivery,
     onError: fail,
   });
   const revoke = useMutation({
@@ -235,37 +379,16 @@ export function PortalAccessSheet({
     onError: fail,
   });
 
-  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
-  // The subject the customer will see, one line per language (each in its own direction).
-  const preview = useMemo(() => {
-    const en = {
-      lang: "en",
-      // The English subject mirrors server/services/portal-invite-email.ts.
-      text: `${supplierName} invited you to view your invoices`, // i18n-ignore: the English email subject
-    };
-    const ar = {
-      lang: "ar",
-      text: formatMessage(t["portal.invite.previewSubjectAr"], { supplier: supplierName }),
-    };
-    return language === "ar" ? [ar] : language === "bilingual" ? [en, ar] : [en];
-  }, [language, supplierName, t]);
-
   const copyLink = async () => {
-    if (!shownLink) return;
+    if (!linkUrl) return;
     try {
-      await navigator.clipboard.writeText(shownLink);
+      await navigator.clipboard.writeText(linkUrl);
       setCopied(true);
       toast({ title: t["customerContacts.linkCopiedToClipboard"] });
     } catch {
       /* the field is selectable */
     }
   };
-
-  const langs: Array<{ id: PortalInviteLanguage; label: string; lang?: string }> = [
-    { id: "en", label: "English", lang: "en" },
-    { id: "ar", label: "العربية", lang: "ar" },
-    { id: "bilingual", label: t["portal.invite.both"] },
-  ];
 
   return (
     <>
@@ -349,7 +472,7 @@ export function PortalAccessSheet({
               ) : (
                 <ul className="mt-2 space-y-2">
                   {(data?.invitations ?? []).map((inv) => {
-                    const wait = cooldown[inv.id] ?? 0;
+                    const wait = remaining(inv.resendIn);
                     const closed = inv.status === "revoked";
                     return (
                       <li
@@ -420,13 +543,13 @@ export function PortalAccessSheet({
               )}
             </section>
 
-            {shownLink && (
+            {linkUrl && (
               <Alert tone="info" title={t["portal.invite.linkTitle"]} data-testid="pa-link-panel">
                 <p className="mb-2 text-small">{t["portal.invite.linkBody"]}</p>
                 <div className="flex items-center gap-2">
                   <Input
                     readOnly
-                    value={shownLink}
+                    value={linkUrl}
                     dir="ltr"
                     className="h-11 text-sm"
                     onFocus={(e) => e.currentTarget.select()}
@@ -456,126 +579,16 @@ export function PortalAccessSheet({
               <h3 id="pa-invite" className="text-small font-semibold">
                 {t["portal.access.inviteSomeone"]}
               </h3>
-              <form
-                className="mt-3 space-y-4"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  if (emailOk && canInvite) invite.mutate();
-                }}
-                data-testid="pa-invite-form"
-              >
-                <div>
-                  <Label htmlFor="pa-email">{t["portal.email"]}</Label>
-                  <Input
-                    id="pa-email"
-                    type="email"
-                    inputMode="email"
-                    autoComplete="off"
-                    dir="ltr"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="mt-1.5 h-11 text-base"
-                    aria-describedby={!contact?.email ? "pa-email-help" : undefined}
-                    data-testid="pa-email"
-                  />
-                  {!contact?.email && (
-                    <p id="pa-email-help" className="mt-1 text-caption text-muted-foreground">
-                      {t["portal.invite.noEmailHelp"]}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <Label htmlFor="pa-name">{t["portal.invite.nameLabel"]}</Label>
-                  <Input
-                    id="pa-name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="mt-1.5 h-11 text-base"
-                    dir="auto"
-                    maxLength={100}
-                    data-testid="pa-name"
-                  />
-                </div>
-                <fieldset>
-                  <legend className="text-small font-medium">
-                    {t["portal.invite.languageLabel"]}
-                  </legend>
-                  <div
-                    className="mt-1.5 inline-flex w-full rounded-md border border-border p-0.5 sm:w-auto"
-                    role="radiogroup"
-                  >
-                    {langs.map((l) => (
-                      <button
-                        key={l.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={language === l.id}
-                        lang={l.lang}
-                        onClick={() => setLanguage(l.id)}
-                        className={`min-h-11 flex-1 rounded px-4 text-small font-medium sm:flex-none ${
-                          language === l.id
-                            ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground"
-                        }`}
-                        data-testid={`pa-lang-${l.id}`}
-                      >
-                        {l.label}
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
-                <div>
-                  <Label htmlFor="pa-note">{t["portal.invite.noteLabel"]}</Label>
-                  <Textarea
-                    id="pa-note"
-                    value={note}
-                    onChange={(e) => setNote(e.target.value.slice(0, PORTAL_INVITE_MESSAGE_MAX))}
-                    rows={3}
-                    className="mt-1.5 text-base"
-                    dir="auto"
-                    data-testid="pa-note"
-                  />
-                  <p className="mt-1 text-end text-caption text-muted-foreground tabular-nums">
-                    {note.length}/{PORTAL_INVITE_MESSAGE_MAX}
-                  </p>
-                </div>
-                <div className="rounded-lg bg-muted/50 p-3" data-testid="pa-preview">
-                  <p className="flex items-center gap-1.5 text-caption font-medium text-muted-foreground">
-                    <Mail className="h-3.5 w-3.5" aria-hidden />
-                    {t["portal.invite.previewTitle"]}
-                  </p>
-                  {preview.map((line) => (
-                    <p
-                      key={line.lang}
-                      className="mt-1 text-small font-medium"
-                      lang={line.lang}
-                      dir={line.lang === "ar" ? "rtl" : "ltr"}
-                      data-testid={`pa-preview-${line.lang}`}
-                    >
-                      {line.text}
-                    </p>
-                  ))}
-                  <p className="mt-0.5 text-caption text-muted-foreground">
-                    {formatMessage(t["portal.invite.previewExpiry"], {
-                      days: PORTAL_INVITE_TTL_DAYS,
-                    })}
-                  </p>
-                </div>
-                <Button
-                  type="submit"
-                  className="h-11 w-full"
-                  disabled={!emailOk || invite.isPending || !canInvite}
-                  {...(canInvite ? {} : gate("documents.write"))}
-                  data-testid="pa-send"
-                >
-                  {invite.isPending ? (
-                    <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden />
-                  ) : (
-                    <Send className="me-2 h-4 w-4 rtl:-scale-x-100" aria-hidden />
-                  )}
-                  {t["portal.invite.send"]}
-                </Button>
-              </form>
+              {contact && (
+                <InviteForm
+                  key={contact.id}
+                  contact={contact}
+                  companyId={companyId}
+                  supplierName={supplierName}
+                  canInvite={canInvite}
+                  onDelivered={reportDelivery}
+                />
+              )}
             </section>
 
             {/* Share link (no sign-in) */}

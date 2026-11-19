@@ -193,7 +193,10 @@ async function enforceInviteRate(companyId: string): Promise<void> {
     })
     .from(customerPortalInvitations)
     .where(eq(customerPortalInvitations.companyId, companyId));
-  if ((row?.hour ?? 0) >= PORTAL_INVITE_MAX_PER_HOUR || (row?.day ?? 0) >= PORTAL_INVITE_MAX_PER_DAY) {
+  if (
+    (row?.hour ?? 0) >= PORTAL_INVITE_MAX_PER_HOUR ||
+    (row?.day ?? 0) >= PORTAL_INVITE_MAX_PER_DAY
+  ) {
     throw new DomainError(
       "PORTAL_INVITE_RATE_LIMITED",
       429,
@@ -240,7 +243,12 @@ export async function createInvitation(args: {
     )
     .limit(1);
   if (active) {
-    throw new DomainError("PORTAL_ALREADY_ACTIVE", 409, undefined, "This person already has access");
+    throw new DomainError(
+      "PORTAL_ALREADY_ACTIVE",
+      409,
+      undefined,
+      "This person already has access"
+    );
   }
 
   // A stale pending invite is retired first, so it no longer blocks a new one.
@@ -296,7 +304,12 @@ export async function createInvitation(args: {
       .returning();
   } catch (err) {
     if ((err as { code?: string })?.code === "23505") {
-      throw new DomainError("INVITATION_PENDING", 409, undefined, "An invitation is already pending");
+      throw new DomainError(
+        "INVITATION_PENDING",
+        409,
+        undefined,
+        "An invitation is already pending"
+      );
     }
     throw err;
   }
@@ -409,11 +422,21 @@ export async function revokeInvitation(args: {
 }): Promise<PublicInvitation> {
   const inv = await loadInvitation(args.companyId, args.invitationId);
   if (inv.status !== "pending") {
-    throw new DomainError("INVITATION_NOT_REVOCABLE", 409, undefined, "Only pending invitations can be revoked");
+    throw new DomainError(
+      "INVITATION_NOT_REVOCABLE",
+      409,
+      undefined,
+      "Only pending invitations can be revoked"
+    );
   }
   const [row] = await db
     .update(customerPortalInvitations)
-    .set({ status: "revoked", revokedAt: new Date(), revokedBy: args.actorId, updatedAt: new Date() })
+    .set({
+      status: "revoked",
+      revokedAt: new Date(),
+      revokedBy: args.actorId,
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(customerPortalInvitations.id, inv.id),
@@ -423,7 +446,12 @@ export async function revokeInvitation(args: {
     )
     .returning();
   if (!row) {
-    throw new DomainError("INVITATION_NOT_REVOCABLE", 409, undefined, "Only pending invitations can be revoked");
+    throw new DomainError(
+      "INVITATION_NOT_REVOCABLE",
+      409,
+      undefined,
+      "Only pending invitations can be revoked"
+    );
   }
   await recordAudit({
     userId: args.actorId,
@@ -545,7 +573,10 @@ export async function portalSummary(companyId: string) {
       })
       .from(customerPortalAccounts)
       .where(
-        and(eq(customerPortalAccounts.companyId, companyId), isNull(customerPortalAccounts.revokedAt))
+        and(
+          eq(customerPortalAccounts.companyId, companyId),
+          isNull(customerPortalAccounts.revokedAt)
+        )
       )
       .groupBy(customerPortalAccounts.contactId),
     db
@@ -565,12 +596,20 @@ export async function portalSummary(companyId: string) {
   ]);
   const out: Record<
     string,
-    { active: number; state: "active" | "invited" | "expired" | "revoked"; expiresAt: string | null }
+    {
+      active: number;
+      state: "active" | "invited" | "expired" | "revoked";
+      expiresAt: string | null;
+    }
   > = {};
   for (const r of inviteRows) {
     const exp = new Date(r.expiresAt);
     const state =
-      r.status === "pending" ? (exp.getTime() > Date.now() ? "invited" : "expired") : (r.status as "expired" | "revoked");
+      r.status === "pending"
+        ? exp.getTime() > Date.now()
+          ? "invited"
+          : "expired"
+        : (r.status as "expired" | "revoked");
     const prev = out[r.contactId];
     // Pending beats expired beats revoked.
     const rank = { invited: 3, expired: 2, revoked: 1, active: 4 } as const;
@@ -643,7 +682,9 @@ export async function accountCaseFor(
   signedIn: { id: string; email: string } | null
 ): Promise<AccountCase> {
   if (signedIn) {
-    return normEmail(signedIn.email) === normEmail(invitation.email) ? "signed_in" : "signed_in_other";
+    return normEmail(signedIn.email) === normEmail(invitation.email)
+      ? "signed_in"
+      : "signed_in_other";
   }
   const existing = await storage.getUserByEmail(invitation.email);
   return existing && !isPlaceholderPasswordHash(existing.passwordHash) ? "existing" : "new";
@@ -726,7 +767,10 @@ export async function acceptInvitation(args: {
     let existingUserType: string | null = null;
     if (kind === "signed_in") {
       userId = args.signedIn!.id;
-      const [u] = await tx.select({ userType: users.userType }).from(users).where(eq(users.id, userId));
+      const [u] = await tx
+        .select({ userType: users.userType })
+        .from(users)
+        .where(eq(users.id, userId));
       existingUserType = u?.userType ?? null;
     } else {
       const displayName = (args.name || locked.name || resolved.contact.name).trim();
@@ -735,7 +779,12 @@ export async function acceptInvitation(args: {
         // A placeholder account (no credential) is claimed by the real owner of the address.
         await tx
           .update(users)
-          .set({ passwordHash: passwordHash!, name: displayName, emailVerified: true, emailVerifiedAt: new Date() })
+          .set({
+            passwordHash: passwordHash!,
+            name: displayName,
+            emailVerified: true,
+            emailVerifiedAt: new Date(),
+          })
           .where(eq(users.id, existing.id));
         userId = existing.id;
         existingUserType = existing.userType;

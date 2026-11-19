@@ -19,7 +19,6 @@ export type GeneratePortalAccessBody = z.output<typeof generatePortalAccessBody>
 
 export const revokePortalAccessBody = z.object({ contactId: zUuid });
 
-
 export const portalLoginRequestBody = z.object({
   companyId: zUuid,
   email: zEmail,

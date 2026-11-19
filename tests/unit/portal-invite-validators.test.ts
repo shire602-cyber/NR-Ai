@@ -27,8 +27,9 @@ describe("STEP5 portal invitation validators", () => {
     expect(portalBulkInviteBody.parse({ contactIds: [UUID] }).language).toBe("contact");
     expect(portalBulkInviteBody.safeParse({ contactIds: [] }).success).toBe(false);
     expect(
-      portalBulkInviteBody.safeParse({ contactIds: Array.from({ length: PORTAL_BULK_MAX + 1 }, () => UUID) })
-        .success
+      portalBulkInviteBody.safeParse({
+        contactIds: Array.from({ length: PORTAL_BULK_MAX + 1 }, () => UUID),
+      }).success
     ).toBe(false);
     expect(portalBulkInviteBody.safeParse({ contactIds: ["nope"] }).success).toBe(false);
   });

@@ -68,7 +68,12 @@ describe("STEP5 portal invitation email", () => {
     expect(m.html).toContain("Desert Rose &lt;LLC&gt;");
     expect(m.html).toContain("<br>");
     const injected = renderPortalInviteEmail({
-      company: { name: "Evil\r\nBcc: x@y", trnVatNumber: null, businessAddress: null, contactEmail: null },
+      company: {
+        name: "Evil\r\nBcc: x@y",
+        trnVatNumber: null,
+        businessAddress: null,
+        contactEmail: null,
+      },
       contact: { name: "C", nameAr: null },
       invitation: { language: "en", name: null, message: null, expiresAt } as never,
       url: URL,

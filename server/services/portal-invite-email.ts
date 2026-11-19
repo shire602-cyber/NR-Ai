@@ -89,7 +89,11 @@ export function renderPortalInviteEmail(input: PortalInviteEmailInput): {
     ar: renderPlainTemplate("دعتك {{company}} للاطلاع على فواتيرك", { company: company.name }),
   };
   const subject =
-    language === "ar" ? subjects.ar : language === "bilingual" ? `${subjects.en} | ${subjects.ar}` : subjects.en;
+    language === "ar"
+      ? subjects.ar
+      : language === "bilingual"
+        ? `${subjects.en} | ${subjects.ar}`
+        : subjects.en;
 
   const textEn = [
     `Hi ${greetName},`,
@@ -112,7 +116,11 @@ export function renderPortalInviteEmail(input: PortalInviteEmailInput): {
     "إذا لم تكن تتوقع هذه الرسالة، يمكنك تجاهلها بأمان.",
   ].join("\n");
   const text =
-    language === "ar" ? textAr : language === "bilingual" ? `${textEn}\n\n----\n\n${textAr}` : textEn;
+    language === "ar"
+      ? textAr
+      : language === "bilingual"
+        ? `${textEn}\n\n----\n\n${textAr}`
+        : textEn;
 
   return { subject, html, text };
 }

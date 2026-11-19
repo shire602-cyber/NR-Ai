@@ -76,11 +76,8 @@ import { getAuthHeaders } from "@/lib/auth";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import type { CustomerContact } from "@shared/schema";
 import { ContactForm } from "@/components/contacts/ContactForm";
-import {
-  PortalAccessSheet,
-  portalSummaryKey,
-  type PortalSheetContact,
-} from "@/components/portal/PortalAccessSheet";
+import { PortalAccessSheet, type PortalSheetContact } from "@/components/portal/PortalAccessSheet";
+import { portalSummaryKey } from "@/lib/portal-invite";
 import { PortalStatusChip, type PortalSummaryEntry } from "@/components/portal/PortalStatusChip";
 import { BulkPortalInviteDialog } from "@/components/portal/BulkPortalInviteDialog";
 
