@@ -944,7 +944,14 @@
    "idx": 134,
    "version": "7",
    "when": 1781430500000,
-   "tag": "0135_settlement_open_balance_indexes",
+   "tag": "0135_step4_signup_plan_choice",
+   "breakpoints": false
+  },
+  {
+   "idx": 135,
+   "version": "7",
+   "when": 1781430510000,
+   "tag": "0136_settlement_open_balance_indexes",
    "breakpoints": false
   }
  ]

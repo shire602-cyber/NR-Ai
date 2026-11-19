@@ -160,7 +160,7 @@ describe("X6b free trial + cost caps keeps only the cost caps", () => {
     expect(sub.body.trial.daysLeft).toBeGreaterThan(12);
     // The trial never locks anything: an expired trial still serves the app.
     await h.sql(
-      `UPDATE subscriptions SET created_at = now() - interval '30 days' WHERE company_id = $1`,
+      `UPDATE subscriptions SET created_at = now() - interval '30 days', trial_ends_at = NULL WHERE company_id = $1`,
       [t.company.id]
     );
     const after = await t.as.get(`/api/companies/${t.company.id}/billing/subscription`);

@@ -1014,5 +1014,18 @@
   "pages.subscriptionChoosePlanContact": "اختر {plan}",
   "pages.subscriptionChoosePlanNamed": "اختر {plan}",
   "pages.subscriptionContactNote": "الدفع عبر الإنترنت غير متاح بعد. اختيار خطة يرسل إلينا بريدًا إلكترونيًا، ثم نفعّل خطتك ونرسل فاتورة ضريبية.",
-  "pages.subscriptionCompareHelp": "ما تشمله كل خطة. تبقى الوحدات خارج خطتك متاحة للقراءة."
+  "pages.subscriptionCompareHelp": "ما تشمله كل خطة. تبقى الوحدات خارج خطتك متاحة للقراءة.",
+  "pages.subscriptionChosenTitle": "اخترت {plan}.",
+  "pages.subscriptionChosenStarts": "تبدأ بعد انتهاء فترتك التجريبية في {date}، عند تفعيلها.",
+  "pages.subscriptionChosenPrice": "{price} · فوترة {cycle}",
+  "pages.subscriptionNothingCharged": "لا يُحصَّل أي مبلغ حتى تفعّلها.",
+  "pages.subscriptionActivatePlan": "فعّل {plan}",
+  "pages.subscriptionChangePlan": "تغيير الخطة",
+  "pages.subscriptionYourChoice": "اختيارك",
+  "pages.subscriptionChooseForAfterTrial": "اختر {plan}",
+  "pages.subscriptionChoiceSaved": "تم الحفظ: {plan} بعد الفترة التجريبية",
+  "pages.subscriptionActivationRequested": "طُلب التفعيل في {date}",
+  "pages.subscriptionActivationNext": "سنراسلك بالبريد للتأكيد. تبقى دفاترك مفتوحة بالكامل حتى {date}.",
+  "pages.subscriptionNoChoice": "اختر الخطة التي تريدها بعد فترتك التجريبية.",
+  "pages.subscriptionSeePlans": "عرض الخطط"
 }

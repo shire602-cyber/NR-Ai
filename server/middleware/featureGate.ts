@@ -5,6 +5,7 @@ import {
   NO_PLAN_ID,
   PLAN_FEATURES,
   UNLIMITED,
+  afterTrialPlan,
   isPaidPlanId,
   planDefinition,
   planFeatures,
@@ -12,7 +13,9 @@ import {
   publicPlanCatalog,
   requiredPlanFor,
   resolveEntitlement,
+  type BillingCycle,
   type Entitlement,
+  type PaidPlanId,
   type PlanFeature,
   type PlanLimits,
 } from "../../shared/plans";
@@ -52,6 +55,15 @@ export interface CompanyEntitlement extends Entitlement {
   storedPlanId: string;
   status: string;
   trialStartedAt: string | null;
+  /** STEP4: the plan chosen for after the trial. Informational only: the gates never read it. */
+  chosenPlan: {
+    planId: PaidPlanId;
+    billingCycle: BillingCycle;
+    source: string | null;
+    chosenAt: string | null;
+    price: number;
+  } | null;
+  activationRequestedAt: string | null;
 }
 
 /**
@@ -74,12 +86,21 @@ export async function companyEntitlement(
     status: string | null;
     sub_created_at: Date | string | null;
     trial_ends_at: Date | string | null;
+    chosen_plan_id: string | null;
+    chosen_billing_cycle: string | null;
+    chosen_plan_source: string | null;
+    chosen_plan_at: Date | string | null;
+    plan_activation_requested_at: Date | string | null;
   }>(
     `SELECT c.company_type, c.created_at AS company_created_at,
-            s.plan_id, s.status, s.created_at AS sub_created_at, s.trial_ends_at
+            s.plan_id, s.status, s.created_at AS sub_created_at, s.trial_ends_at,
+            s.chosen_plan_id, s.chosen_billing_cycle, s.chosen_plan_source, s.chosen_plan_at,
+            s.plan_activation_requested_at
        FROM companies c
        LEFT JOIN LATERAL (
-         SELECT plan_id, status, created_at, trial_ends_at FROM subscriptions
+         SELECT plan_id, status, created_at, trial_ends_at, chosen_plan_id, chosen_billing_cycle,
+                chosen_plan_source, chosen_plan_at, plan_activation_requested_at
+           FROM subscriptions
           WHERE company_id = c.id ORDER BY created_at DESC LIMIT 1
        ) s ON true
       WHERE c.id = $1`,
@@ -105,6 +126,24 @@ export async function companyEntitlement(
     storedPlanId,
     status: row.status ?? "active",
     trialStartedAt: trialStartedAt ? new Date(trialStartedAt).toISOString() : null,
+    chosenPlan: (() => {
+      const plan = afterTrialPlan({
+        chosenPlanId: row.chosen_plan_id,
+        chosenBillingCycle: row.chosen_billing_cycle,
+      });
+      return plan
+        ? {
+            planId: plan.planId,
+            billingCycle: plan.billingCycle,
+            source: row.chosen_plan_source,
+            chosenAt: row.chosen_plan_at ? new Date(row.chosen_plan_at).toISOString() : null,
+            price: plan.price,
+          }
+        : null;
+    })(),
+    activationRequestedAt: row.plan_activation_requested_at
+      ? new Date(row.plan_activation_requested_at).toISOString()
+      : null,
   };
 }
 

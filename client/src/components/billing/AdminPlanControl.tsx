@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -18,6 +18,19 @@ import { TRIAL_DAYS } from "@shared/trial";
 
 type Choice = (typeof PAID_PLAN_IDS)[number] | "none";
 
+interface PlanDetail {
+  state: "trial" | "active" | "expired" | "firm";
+  planId: string | null;
+  trialEndsAt: string | null;
+  chosenPlan: {
+    planId: (typeof PAID_PLAN_IDS)[number];
+    billingCycle: "monthly" | "yearly";
+    source: string | null;
+    chosenAt: string | null;
+  } | null;
+  activationRequestedAt: string | null;
+}
+
 interface PlanResult {
   state: "trial" | "active" | "expired" | null;
   planId: string | null;
@@ -33,15 +46,28 @@ interface PlanResult {
 export function AdminPlanControl({ companyId }: { companyId: string }) {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const [plan, setPlan] = useState<Choice>("starter");
-  const [cycle, setCycle] = useState<"monthly" | "yearly">("monthly");
+  // The customer's choice preselects the controls until the admin changes them.
+  const [planPick, setPlan] = useState<Choice | null>(null);
+  const [cyclePick, setCycle] = useState<"monthly" | "yearly" | null>(null);
   const [result, setResult] = useState<PlanResult | null>(null);
+  const queryClient = useQueryClient();
+
+  // STEP4: what the customer chose (and asked for), so the admin applies it in one click.
+  const detail = useQuery<PlanDetail>({
+    queryKey: ["/api/admin/companies", companyId, "plan"],
+    queryFn: () => apiRequest("GET", `/api/admin/companies/${companyId}/plan`),
+    retry: false,
+  });
+  const chosen = detail.data?.chosenPlan ?? null;
+  const plan: Choice = planPick ?? chosen?.planId ?? "starter";
+  const cycle: "monthly" | "yearly" = cyclePick ?? chosen?.billingCycle ?? "monthly";
 
   const apply = useMutation({
     mutationFn: (body: Record<string, unknown>): Promise<PlanResult> =>
       apiRequest("PUT", `/api/admin/companies/${companyId}/plan`, body),
     onSuccess: (r) => {
       setResult(r);
+      void queryClient.invalidateQueries({ queryKey: ["/api/admin/companies", companyId, "plan"] });
       toast({ title: translateNow("adminConsole.planSaved") });
     },
     onError: (e: Error) =>
@@ -71,6 +97,40 @@ export function AdminPlanControl({ companyId }: { companyId: string }) {
         {t["adminConsole.planTitle"]}
       </h3>
       <p className="text-caption text-muted-foreground">{t["adminConsole.planHelp"]}</p>
+      {detail.data ? (
+        <div className="space-y-1 text-small" data-testid="admin-plan-choice">
+          <p>
+            {formatMessage(t["adminConsole.planNow"], {
+              state: stateText({
+                state: detail.data.state === "firm" ? null : detail.data.state,
+                planId: detail.data.planId,
+                storedPlanId: detail.data.planId ?? "free",
+                trialEndsAt: detail.data.trialEndsAt,
+              }),
+            })}
+          </p>
+          <p data-testid="admin-plan-customer-choice">
+            {chosen
+              ? formatMessage(t["adminConsole.planCustomerChoice"], {
+                  plan: t[`marketing.prPlan_${chosen.planId}`],
+                  cycle:
+                    t[
+                      `marketing.pr${chosen.billingCycle === "yearly" ? "CycleYearly" : "CycleMonthly"}`
+                    ],
+                  date: chosen.chosenAt ? formatDate(chosen.chosenAt, locale) : "",
+                  source: t[`adminConsole.planSource_${chosen.source ?? "settings"}`] ?? "",
+                })
+              : t["adminConsole.planNoChoice"]}
+          </p>
+          {detail.data.activationRequestedAt ? (
+            <p className="font-medium text-warning" data-testid="admin-plan-activation">
+              {formatMessage(t["adminConsole.planActivationRequested"], {
+                date: formatDate(detail.data.activationRequestedAt, locale),
+              })}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor={`admin-plan-select-${companyId}`}>{t["adminConsole.planLabel"]}</Label>
@@ -102,9 +162,29 @@ export function AdminPlanControl({ companyId }: { companyId: string }) {
         </div>
       </div>
       <div className="flex flex-wrap gap-2">
+        {chosen ? (
+          <Button
+            type="button"
+            size="sm"
+            disabled={apply.isPending}
+            onClick={() =>
+              apply.mutate({ planId: chosen.planId, billingCycle: chosen.billingCycle })
+            }
+            data-testid="admin-plan-apply-chosen"
+          >
+            {formatMessage(t["adminConsole.planApplyChosen"], {
+              plan: t[`marketing.prPlan_${chosen.planId}`],
+              cycle:
+                t[
+                  `marketing.pr${chosen.billingCycle === "yearly" ? "CycleYearly" : "CycleMonthly"}`
+                ],
+            })}
+          </Button>
+        ) : null}
         <Button
           type="button"
           size="sm"
+          variant={chosen ? "outline" : "default"}
           disabled={apply.isPending}
           onClick={() =>
             apply.mutate(

@@ -347,6 +347,13 @@ export const subscriptions = pgTable(
     dunningStage: integer("dunning_stage").notNull().default(0),
     lastPaymentFailedAt: timestamp("last_payment_failed_at"),
 
+    // STEP4 (0135): the plan the customer chose for after the trial. Never read by the gates.
+    chosenPlanId: text("chosen_plan_id"), // starter | professional | enterprise
+    chosenBillingCycle: text("chosen_billing_cycle"), // monthly | yearly
+    chosenPlanSource: text("chosen_plan_source"), // signup_default | signup_picked | pricing_link | settings
+    chosenPlanAt: timestamp("chosen_plan_at"),
+    planActivationRequestedAt: timestamp("plan_activation_requested_at"),
+
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

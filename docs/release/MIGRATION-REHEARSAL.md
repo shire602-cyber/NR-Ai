@@ -1,4 +1,4 @@
-# Migration rehearsal: main (0000-0088) to #67 (0089-0135)
+# Migration rehearsal: main (0000-0088) to #67 (0089-0136)
 
 Rehearsed on 2026-11-18 on branch `launch/hardening-on-67` (PR #67 head `ea6d1bd` plus this
 branch's changes), following [DEPLOY-RUNBOOK.md](DEPLOY-RUNBOOK.md) sections 1, 2 and 7. **This is a
@@ -36,24 +36,24 @@ Until `rehearse.sh` has run on a restored production dump, treat the first produ
 
 This stays open until the owner runs it.
 
-## Owner exception: migration 0135 (settlement indexes)
+## Owner exception: migration 0136 (settlement indexes)
 
 AGENTS.md freezes the migration chain ("never edit `migrations/meta/_journal.json` or add new numbers").
 **The owner approved an explicit exception on 2026-11-18 (PR #68)** for
-`0135_settlement_open_balance_indexes`.
+`0136_settlement_open_balance_indexes`.
 
 It was added as 0125 and renumbered three times, before any deploy, because the base branch kept
 taking numbers: 0125 and 0126 (WQ7, WQ3), 0127 and 0128 (WQ2, WQ5), 0129 (WQ1), then 0130
-(cash-sale numbering). It is now 0135 (the base took 0131 to 0134 in turn, last 0134_step3_remove_price_editor), journal idx 134, `when` +10 s as the migrations test requires. The header
+(cash-sale numbering). It is now 0136 (the base took 0131 to 0135 in turn, last 0135_step4_signup_plan_choice), journal idx 135, `when` +10 s as the migrations test requires. The header
 and `IF NOT EXISTS` rules are followed.
 
 It adds two partial indexes, `idx_invoices_original_invoice_id` and `idx_credit_notes_invoice_id`.
 They are also declared in `shared/schema/sales.ts`, so `db:push` keeps them. The build is not
 `CONCURRENTLY`, because `drizzle-kit migrate` runs inside one transaction.
 
-Re-rehearsed from scratch after the renumber to 0133 (renumbered again to 0134 and then 0135 on 2026-11-19 when the base took 0133 (ZATCA removal) and 0134 (price editor removal); `db:migrate` on a fresh database and the db-harness migration tests cover it) (2026-11-18, merged tree on top of the base's
+Re-rehearsed from scratch after the renumber to 0133 (renumbered again to 0134, 0135 and finally 0136 on 2026-11-19 when the base took 0133 (ZATCA removal), 0134 (price editor removal) and 0135 (STEP4 sign-up plan choice); `db:migrate` on a fresh database and the db-harness migration tests cover it) (2026-11-18, merged tree on top of the base's
 `0130_cash_sale_numbering`): fresh 1x and 20x pre-0089 databases (main's chain 0000-0088 plus
-`ensureCriticalSchema()`, then the seed), the full `rehearse.sh`, 0089-0135 (47 files).
+`ensureCriticalSchema()`, then the seed), the full `rehearse.sh`, 0089-0136 (48 files).
 
 | Check                                           | 1x                                | 20x                                            |
 | ----------------------------------------------- | --------------------------------- | ---------------------------------------------- |
@@ -230,7 +230,7 @@ on the migrated schema. Treat it as unverified. The data-preserving rollback is 
 
 ## Findings for the owner
 
-1. **Missing indexes made the settlement rule quadratic. Fixed by migration 0135 (owner exception).**
+1. **Missing indexes made the settlement rule quadratic. Fixed by migration 0136 (owner exception).**
    `invoices.original_invoice_id` and `credit_notes.invoice_id` had no index. The settlement rule
    (`server/reporting/settlement.ts`, used by the invoice list balances, ageing, dashboard,
    statements and payment chasing) runs a correlated subquery on each.
@@ -238,7 +238,7 @@ on the migrated schema. Treat it as unverified. The data-preserving rollback is 
    On the 20x data, open balances for one company with 10,000 invoices took 35 s; with both
    indexes, 0.45 s, and after the settlement-index migration on the re-rehearsed database 57-114 ms.
    `find-sales-ledger-drift.mjs` went from 388 s to under 1 s. See "Owner exception: migration
-   0135" above, and the evidence in
+   0136" above, and the evidence in
    [proposed-migrations/settlement-open-balance-indexes.md](proposed-migrations/settlement-open-balance-indexes.md).
 
 2. **0097 deactivates every reconciliation rule on main data.** `reconciliation_rules.account_id`

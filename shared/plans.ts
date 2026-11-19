@@ -337,3 +337,51 @@ export function publicPlanCatalog() {
     })),
   };
 }
+
+// ── STEP4: the plan a customer chose for after the trial ─────────────────────────────────────
+//
+// The choice is recorded next to the subscription and NEVER feeds the gates: the trial stays a
+// planless trial of the top plan (resolveEntitlement above is unchanged), and after the trial the
+// workspace is read-only until the chosen plan is activated.
+
+/** Where a recorded choice came from (the audit trail shows the funnel). */
+export const PLAN_CHOICE_SOURCES = [
+  "signup_default",
+  "signup_picked",
+  "pricing_link",
+  "settings",
+] as const;
+export type PlanChoiceSource = (typeof PLAN_CHOICE_SOURCES)[number];
+/** Sources a sign-up request may send (settings is set by the server). */
+export const SIGNUP_PLAN_SOURCES = ["signup_default", "signup_picked", "pricing_link"] as const;
+
+/** The plan preselected on the sign-up plan step (the featured, "most popular" plan). */
+export const DEFAULT_SIGNUP_PLAN: PaidPlanId = "professional";
+export const DEFAULT_SIGNUP_CYCLE: BillingCycle = "monthly";
+
+export function isBillingCycle(v: unknown): v is BillingCycle {
+  return v === "monthly" || v === "yearly";
+}
+
+export interface AfterTrialPlan {
+  planId: PaidPlanId;
+  billingCycle: BillingCycle;
+  /** Price per billing period in AED (one figure for the client, the emails and the admin). */
+  price: number;
+}
+
+/** The plan chosen for after the trial, or null when none (or an invalid one) is stored. */
+export function afterTrialPlan(input: {
+  chosenPlanId?: string | null;
+  chosenBillingCycle?: string | null;
+}): AfterTrialPlan | null {
+  if (!isPaidPlanId(input.chosenPlanId)) return null;
+  const billingCycle: BillingCycle = isBillingCycle(input.chosenBillingCycle)
+    ? input.chosenBillingCycle
+    : "monthly";
+  return {
+    planId: input.chosenPlanId,
+    billingCycle,
+    price: planPrice(input.chosenPlanId, billingCycle),
+  };
+}

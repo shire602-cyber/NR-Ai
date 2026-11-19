@@ -103,6 +103,9 @@ export async function billableSeats(companyId: string): Promise<number> {
 
 const perSeat = () => process.env.STRIPE_PER_SEAT === "true";
 
+// TODO(STEP4): a company still in its product trial (see docs/release/DEPLOY-RUNBOOK.md, STEP4 note)
+// should pass subscription_data.trial_end = its trial end instead of trial_period_days, so the
+// trial is not given twice; the chosen plan and cycle prefill checkout.
 export async function createCheckoutSession(
   companyId: string,
   planId: string,

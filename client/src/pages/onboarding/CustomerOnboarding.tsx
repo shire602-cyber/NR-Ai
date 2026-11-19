@@ -32,6 +32,7 @@ import { canRunCompanyOnboarding, withoutBlankValues } from "@/lib/companyRole";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { useSubscription } from "@/hooks/useSubscription";
 import type { Company } from "@shared/schema";
 import {
   Field,
@@ -144,6 +145,8 @@ function Wizard({
   progress: OnboardingProgress | null;
 }) {
   const { t, locale } = useTranslation();
+  // STEP4: the plan chosen at sign-up, named under the first heading (hidden when none).
+  const { chosenPlan } = useSubscription();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [step, setStepState] = useState<1 | 2 | 3>(() => stepFromProgress(progress));
@@ -350,6 +353,16 @@ function Wizard({
           }
           lead={t["onboarding.v3CompanyLead"]}
         />
+        {chosenPlan ? (
+          <p
+            className="-mt-4 mb-6 text-caption text-muted-foreground"
+            data-testid="onboarding-trial-note"
+          >
+            {formatMessage(t["onboarding.trialStartedNote"], {
+              plan: t[`marketing.prPlan_${chosenPlan.planId}`],
+            })}
+          </p>
+        ) : null}
         <StepForm onSubmit={() => void saveCompany()}>
           <Field
             label={t["onboarding.v3CompanyName"]}

@@ -317,7 +317,11 @@ export default function Pricing() {
       </section>
 
       {/* 4 · Compare plans */}
-      <section className="mk-section mk-section--sunken" aria-labelledby="mk-compare-title">
+      <section
+        id="compare"
+        className="mk-section mk-section--sunken"
+        aria-labelledby="mk-compare-title"
+      >
         <div className="mk-container">
           <SectionHeading id="mk-compare-title" title={t["marketing.prCompareTitle"]} />
           <div className="mk-compare">

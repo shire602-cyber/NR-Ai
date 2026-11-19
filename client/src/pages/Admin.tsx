@@ -1,4 +1,5 @@
 import { AdminPlanControl } from "@/components/billing/AdminPlanControl";
+import { AdminTrialsCard } from "@/components/billing/AdminTrialsCard";
 import { T } from "@/components/layout/T";
 import { StatCard } from "@/components/ui/stat-card";
 import { activityActionLabel, activityEntityLabel } from "@/lib/activity-log-labels";
@@ -292,6 +293,16 @@ export default function Admin() {
               testId="stat-ai-credits"
             />
           </div>
+
+          {/* STEP4: trials, the plan each customer chose and activation requests. */}
+          <AdminTrialsCard
+            onOpen={(companyId) => {
+              const company = companies.find((c) => c.id === companyId);
+              if (!company) return;
+              setActiveTab("users");
+              setEditingCompany(company);
+            }}
+          />
 
           {/* WP-E (spec 3.16): the hard-coded "all green" system status and the quick actions
               that only showed toasts (backup, newsletter, sync) were removed; nothing here may

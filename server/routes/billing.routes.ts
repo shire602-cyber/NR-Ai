@@ -31,7 +31,19 @@ import { createLogger } from "../config/logger";
 import { errorMessage } from "../errors";
 import { TRIAL_DAYS, TRIAL_END_BEHAVIOUR, trialState, type TrialState } from "../../shared/trial";
 import { NO_PLAN_ID, PAID_PLAN_IDS } from "../../shared/plans";
-import { adminSetPlanBody, type AdminSetPlanBody } from "../../shared/validators/plans";
+import {
+  activationRequestBody,
+  adminSetPlanBody,
+  chosenPlanBody,
+  type ActivationRequestBody,
+  type AdminSetPlanBody,
+  type ChosenPlanBody,
+} from "../../shared/validators/plans";
+import {
+  listTrialsForAdmin,
+  recordPlanChoice,
+  requestActivation,
+} from "../services/billing/plan-choice";
 import { zUuid } from "../../shared/validators/primitives";
 import { recordAudit } from "../services/audit.service";
 import { companyStorageBytes } from "../services/storage-usage";
@@ -91,6 +103,9 @@ export function registerBillingRoutes(app: Express) {
               features: ent.features,
               limits: ent.limits,
               trialEndsAt: ent.trialEndsAt,
+              // STEP4: informational (the gates never read it).
+              chosenPlan: ent.chosenPlan,
+              activationRequestedAt: ent.activationRequestedAt,
             }
           : { state: "firm", planId: null, storedPlanId: subscription.planId, features: null },
         // Plan gates follow server/middleware/featureGate.ts billingEnforced(): the client locks
@@ -202,6 +217,7 @@ export function registerBillingRoutes(app: Express) {
         entityId: companyId,
         before: before ? { planId: before.storedPlanId, state: before.state } : null,
         after: {
+          chosenPlanId: before?.chosenPlan?.planId ?? null,
           planId: after?.storedPlanId ?? planId,
           state: after?.state ?? null,
           billingCycle: body.billingCycle ?? null,
@@ -217,6 +233,133 @@ export function registerBillingRoutes(app: Express) {
         storedPlanId: after?.storedPlanId ?? planId,
         trialEndsAt: after?.trialEndsAt ?? null,
       });
+    })
+  );
+
+  // STEP4 (admin): one company's plan, the customer's choice and any activation request.
+  app.get(
+    "/api/admin/companies/:companyId/plan",
+    authMiddleware,
+    adminMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const company = zUuid.safeParse(companyId).success
+        ? await storage.getCompany(companyId)
+        : undefined;
+      if (!company) {
+        return res.status(404).json({ message: "Company not found", code: "NOT_FOUND" });
+      }
+      const ent = await companyEntitlement(companyId);
+      res.json(
+        ent
+          ? {
+              companyId,
+              state: ent.state,
+              planId: ent.planId,
+              storedPlanId: ent.storedPlanId,
+              trialEndsAt: ent.trialEndsAt,
+              chosenPlan: ent.chosenPlan,
+              activationRequestedAt: ent.activationRequestedAt,
+            }
+          : { companyId, state: "firm", planId: null, storedPlanId: null, chosenPlan: null }
+      );
+    })
+  );
+
+  // STEP4 (admin): trials and the plan each customer chose, activation requests first.
+  app.get(
+    "/api/admin/billing/trials",
+    authMiddleware,
+    adminMiddleware,
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json({ trials: await listTrialsForAdmin() });
+    })
+  );
+
+  // STEP4: the plan the customer wants after the trial (never changes what they can do now).
+  // RBAC: covered by the central rule MUT companies/*/billing/** -> billing.manage.
+  async function chosenPlanContext(req: Request, res: Response, forActivation = false) {
+    const { companyId } = req.params;
+    if (!zUuid.safeParse(companyId).success || !(await storage.getCompany(companyId))) {
+      res.status(404).json({ message: "Company not found", code: "NOT_FOUND" });
+      return null;
+    }
+    const ent = await companyEntitlement(companyId);
+    if (!ent) {
+      res.status(409).json({
+        message: "This company is billed through your accounting firm.",
+        code: "FIRM_BILLED",
+        messageKey: "forms.serverErrors.FIRM_BILLED",
+      });
+      return null;
+    }
+    if (ent.state === "active") {
+      res.status(409).json({
+        message: "This company is already on a paid plan.",
+        code: "PLAN_ALREADY_ACTIVE",
+        messageKey: "forms.serverErrors.PLAN_ALREADY_ACTIVE",
+      });
+      return null;
+    }
+    if (forActivation && isStripeConfigured()) {
+      res.status(409).json({
+        message: "Online checkout is available: activate your plan there.",
+        code: "CHECKOUT_AVAILABLE",
+        messageKey: "forms.serverErrors.CHECKOUT_AVAILABLE",
+      });
+      return null;
+    }
+    return { companyId, ent };
+  }
+
+  app.put(
+    "/api/companies/:companyId/billing/chosen-plan",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("billing.manage"),
+    strictBody(chosenPlanBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const ctx = await chosenPlanContext(req, res);
+      if (!ctx) return;
+      const body = parsedBody<ChosenPlanBody>(req);
+      const { after } = await recordPlanChoice(
+        ctx.companyId,
+        { planId: body.planId, billingCycle: body.billingCycle, source: "settings" },
+        { userId: req.user!.id, req }
+      );
+      res.json({ chosenPlan: after });
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/billing/activation-request",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("billing.manage"),
+    strictBody(activationRequestBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const ctx = await chosenPlanContext(req, res, true);
+      if (!ctx) return;
+      if (!ctx.ent.chosenPlan) {
+        return res.status(409).json({
+          message: "Choose a plan first.",
+          code: "NO_PLAN_CHOSEN",
+          messageKey: "forms.serverErrors.NO_PLAN_CHOSEN",
+        });
+      }
+      const body = parsedBody<ActivationRequestBody>(req);
+      const user = await storage.getUser(req.user!.id);
+      const result = await requestActivation(
+        ctx.companyId,
+        {
+          id: req.user!.id,
+          name: user?.name ?? req.user!.email ?? "",
+          email: user?.email ?? req.user!.email ?? "",
+        },
+        body.note,
+        req
+      );
+      res.status(202).json(result);
     })
   );
 
@@ -356,12 +499,10 @@ export function registerBillingRoutes(app: Express) {
 
       const subscription = await storage.getSubscription(companyId);
       if (!subscription?.stripeCustomerId) {
-        return res
-          .status(400)
-          .json({
-            message: "No billing account found. Please subscribe first.",
-            code: "NO_BILLING_ACCOUNT",
-          });
+        return res.status(400).json({
+          message: "No billing account found. Please subscribe first.",
+          code: "NO_BILLING_ACCOUNT",
+        });
       }
 
       const origin = req.headers.origin || req.headers.referer || "http://localhost:5000";

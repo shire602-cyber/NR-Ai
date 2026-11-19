@@ -20,6 +20,16 @@ import { apiUrl } from "@/lib/api";
 import { serverErrorMessage, VALIDATION_NAMESPACES } from "@/lib/validation-messages";
 import { OAuthButtons } from "./OAuthButtons";
 import { AUTH_BUTTON, AUTH_INPUT, AuthAlert, AuthHeader, AuthSwitch } from "./AuthBlocks";
+import { oauthNextForPlan, type SignupPlanSource } from "./signup-plan";
+import { ArrowLeft } from "lucide-react";
+import { formatMoneyText } from "@/lib/format-money";
+import {
+  planNameKey,
+  planPrice,
+  PLANS,
+  type BillingCycle,
+  type PlanId,
+} from "@/components/marketing/plans";
 
 // TRN is optional at sign-up — many users register before they have one — but
 // when supplied it must match the FTA's 15-digit format so the company record
@@ -43,6 +53,10 @@ interface RegisterFormProps {
   captchaToken?: string | null;
   /** The CAPTCHA widget, rendered just above the submit button. */
   captcha?: ReactNode;
+  /** STEP4: the plan chosen on step 1; sent with the sign-up and carried through OAuth. */
+  plan?: { planId: PlanId; cycle: BillingCycle; source: SignupPlanSource };
+  /** STEP4: back to the plan step. */
+  onChangePlan?: () => void;
 }
 
 /**
@@ -60,8 +74,14 @@ async function defaultCompanyName(name: string): Promise<string> {
   return template === key ? name : formatMessage(template, { name });
 }
 
-export function RegisterForm({ onSuccess, captchaToken, captcha }: RegisterFormProps) {
-  const { t } = useTranslation(REGISTER_FORM_NAMESPACES);
+export function RegisterForm({
+  onSuccess,
+  captchaToken,
+  captcha,
+  plan,
+  onChangePlan,
+}: RegisterFormProps) {
+  const { t, locale } = useTranslation(REGISTER_FORM_NAMESPACES);
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +108,7 @@ export function RegisterForm({ onSuccess, captchaToken, captcha }: RegisterFormP
         // Localised default so the onboarding heading is not an English "X's Company".
         companyName: await defaultCompanyName(data.name.trim()),
         ...(captchaToken ? { captchaToken } : {}),
+        ...(plan ? { plan: plan.planId, billingCycle: plan.cycle, planSource: plan.source } : {}),
       };
       const response = await fetch(apiUrl("/api/auth/register"), {
         method: "POST",
@@ -134,10 +155,67 @@ export function RegisterForm({ onSuccess, captchaToken, captcha }: RegisterFormP
 
   return (
     <div className="w-full">
+      {plan ? (
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={onChangePlan}
+            className="-ms-2 inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-small font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-testid="button-back-to-plans"
+          >
+            <ArrowLeft className="mk-flip h-4 w-4" aria-hidden="true" />
+            {t["marketing.signupBackToPlans"]}
+          </button>
+          <p className="mt-1 text-caption text-muted-foreground" data-testid="signup-step-caption">
+            {formatMessage(t["marketing.signupStep"], { n: 2 })}
+          </p>
+        </div>
+      ) : null}
       <AuthHeader
         title={t["components.authStartBooks"]}
         description={t["components.authRegisterDescription"]}
       />
+      {plan ? (
+        <div
+          className="mb-6 flex min-h-14 items-center justify-between gap-3 rounded-xl border border-border px-4 py-2"
+          data-testid="signup-plan-summary"
+        >
+          <p className="min-w-0 text-small">
+            <span className="block text-caption text-muted-foreground">
+              {t["marketing.signupPlanAfterTrial"]}
+            </span>
+            <strong className="font-semibold text-foreground">{t[planNameKey(plan.planId)]}</strong>{" "}
+            <span aria-hidden="true">·</span>{" "}
+            <span className="text-muted-foreground">
+              {formatMessage(
+                t[
+                  plan.cycle === "yearly"
+                    ? "marketing.signupPricePerYear"
+                    : "marketing.signupPricePerMonth"
+                ],
+                {
+                  amount: formatMoneyText(
+                    planPrice(PLANS.find((p) => p.id === plan.planId)!, plan.cycle),
+                    "AED",
+                    locale,
+                    { fractionDigits: 0 }
+                  ),
+                }
+              )}
+            </span>
+          </p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="min-h-11 flex-none"
+            onClick={onChangePlan}
+            data-testid="button-change-plan"
+          >
+            {t["marketing.signupChange"]}
+          </Button>
+        </div>
+      ) : null}
       {error ? (
         <AuthAlert
           tone="danger"
@@ -255,7 +333,7 @@ export function RegisterForm({ onSuccess, captchaToken, captcha }: RegisterFormP
         </form>
       </Form>
       <div className="mt-6">
-        <OAuthButtons />
+        <OAuthButtons nextPath={plan ? oauthNextForPlan(plan) : undefined} />
       </div>
       <AuthSwitch>
         {t.alreadyHaveAccount}{" "}

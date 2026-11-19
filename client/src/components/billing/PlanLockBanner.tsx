@@ -19,14 +19,22 @@ const ALWAYS_OPEN = ["/subscription", "/settings", "/onboarding", "/help", "/pro
 export function PlanLockBanner() {
   const { t } = useTranslation();
   const [location] = useLocation();
-  const { enforcement, entitlement, isReadOnly, getRequiredTier, canWrite } = useSubscription();
+  const { enforcement, entitlement, isReadOnly, getRequiredTier, canWrite, chosenPlan } =
+    useSubscription();
   if (!enforcement || !entitlement) return null;
   if (ALWAYS_OPEN.some((p) => location === p || location.startsWith(`${p}/`))) return null;
 
   const action = (
     <Button asChild size="sm" variant="outline">
-      <Link href="/subscription" data-testid="plan-lock-upgrade">
-        {t[isReadOnly ? "components.planLockChoosePlan" : "components.planLockUpgrade"]}
+      <Link
+        href={isReadOnly && chosenPlan ? "/subscription#after-trial" : "/subscription"}
+        data-testid="plan-lock-upgrade"
+      >
+        {isReadOnly && chosenPlan
+          ? formatMessage(t["components.planLockActivate"], {
+              plan: t[`marketing.prPlan_${chosenPlan.planId}`],
+            })
+          : t[isReadOnly ? "components.planLockChoosePlan" : "components.planLockUpgrade"]}
       </Link>
     </Button>
   );

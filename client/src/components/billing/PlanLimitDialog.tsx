@@ -25,7 +25,7 @@ import type { PlanFeature } from "@shared/plans";
  */
 export function PlanLimitDialog() {
   const { t } = useTranslation();
-  const { checkoutAvailable } = useSubscription();
+  const { checkoutAvailable, chosenPlan } = useSubscription();
   const [detail, setDetail] = useState<PlanLimitDetail | null>(null);
 
   useEffect(() => {
@@ -80,7 +80,15 @@ export function PlanLimitDialog() {
           <Button variant="outline" onClick={() => setDetail(null)}>
             {t["components.planLimitNotNow"]}
           </Button>
-          {checkoutAvailable ? (
+          {detail.code === "PLAN_REQUIRED" && chosenPlan ? (
+            <Button asChild onClick={() => setDetail(null)}>
+              <Link href="/subscription#after-trial" data-testid="plan-limit-activate">
+                {formatMessage(t["components.planLockActivate"], {
+                  plan: t[`marketing.prPlan_${chosenPlan.planId}`],
+                })}
+              </Link>
+            </Button>
+          ) : checkoutAvailable ? (
             <Button asChild onClick={() => setDetail(null)}>
               <Link href="/subscription" data-testid="plan-limit-see-plans">
                 {t["components.planLimitSeePlans"]}
