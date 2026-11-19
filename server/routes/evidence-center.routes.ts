@@ -31,7 +31,7 @@ async function authorizeEvidenceCenter(req: Request, res: Response) {
   const hasAccess = await storage.hasCompanyAccess(userId, companyId);
 
   if (!hasAccess) {
-    res.status(403).json({ message: "Access denied" });
+    res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
     return null;
   }
 
@@ -231,7 +231,11 @@ export function registerEvidenceCenterRoutes(app: Express) {
       if (!parsed.success) {
         return res
           .status(400)
-          .json({ message: "Invalid evidence action", errors: parsed.error.flatten() });
+          .json({
+            message: "Invalid evidence action",
+            code: "VALIDATION_ERROR",
+            errors: parsed.error.flatten(),
+          });
       }
 
       const center = await buildEvidenceCenter(authorized.companyId);
@@ -241,7 +245,9 @@ export function registerEvidenceCenterRoutes(app: Express) {
       );
 
       if (!issue) {
-        return res.status(404).json({ message: "Evidence issue not found" });
+        return res
+          .status(404)
+          .json({ message: "Evidence issue not found", code: "EVIDENCE_ISSUE_NOT_FOUND" });
       }
 
       await writeEvidenceActivity({
@@ -274,7 +280,11 @@ export function registerEvidenceCenterRoutes(app: Express) {
       if (!parsed.success) {
         return res
           .status(400)
-          .json({ message: "Invalid reviewed request", errors: parsed.error.flatten() });
+          .json({
+            message: "Invalid reviewed request",
+            code: "VALIDATION_ERROR",
+            errors: parsed.error.flatten(),
+          });
       }
 
       const center = await buildEvidenceCenter(authorized.companyId);
@@ -285,6 +295,7 @@ export function registerEvidenceCenterRoutes(app: Express) {
         return res.status(409).json({
           message:
             "Draft content changed. Refresh the Evidence Center and review the exact request again.",
+          code: "EVIDENCE_DRAFT_CHANGED",
         });
       }
 

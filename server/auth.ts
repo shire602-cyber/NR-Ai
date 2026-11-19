@@ -146,5 +146,5 @@ export const sessionAuthMiddleware = (req: Request, res: Response, next: NextFun
   if (req.isAuthenticated()) {
     return next();
   }
-  return res.status(401).json({ message: "Unauthorized" });
+  return res.status(401).json({ message: "Unauthorized", code: "AUTH_REQUIRED" });
 };

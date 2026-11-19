@@ -486,7 +486,8 @@ export function registerPortalPublicRoutes(app: Express) {
       }
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
       const company = await storage.getCompany(invoice.companyId);
-      if (!company) return res.status(404).json({ message: "Company not found" });
+      if (!company)
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       const { invoicePdfOptions } = await import("./invoices.routes");
       const pdfBuffer = await generateInvoicePDF(
         invoice,

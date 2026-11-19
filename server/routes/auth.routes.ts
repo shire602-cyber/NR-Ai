@@ -753,7 +753,9 @@ export function registerAuthRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const provider = req.params.provider;
       if (!isOAuthProviderId(provider)) {
-        return res.status(404).json({ message: "Unknown OAuth provider" });
+        return res
+          .status(404)
+          .json({ message: "Unknown OAuth provider", code: "UNKNOWN_OAUTH_PROVIDER" });
       }
 
       try {
@@ -820,12 +822,16 @@ export function registerAuthRoutes(app: Express): void {
       (typeof bodyToken === "string" && bodyToken) || getRefreshTokenFromRequest(req);
 
     if (!refreshToken) {
-      return res.status(400).json({ message: "Refresh token is required" });
+      return res
+        .status(400)
+        .json({ message: "Refresh token is required", code: "REFRESH_TOKEN_REQUIRED" });
     }
 
     const payload = verifyRefreshToken(refreshToken);
     if (!payload) {
-      return res.status(401).json({ message: "Invalid or expired refresh token" });
+      return res
+        .status(401)
+        .json({ message: "Invalid or expired refresh token", code: "REFRESH_TOKEN_INVALID" });
     }
 
     if (await isTokenBlacklisted(refreshToken)) {
@@ -845,7 +851,7 @@ export function registerAuthRoutes(app: Express): void {
     // Verify user still exists in DB
     const user = await storage.getUser(payload.userId);
     if (!user) {
-      return res.status(401).json({ message: "User not found" });
+      return res.status(401).json({ message: "User not found", code: "USER_NOT_FOUND" });
     }
     if ((payload.tv ?? 0) !== (user.tokenVersion ?? 0)) {
       return res
@@ -1081,7 +1087,7 @@ export function registerAuthRoutes(app: Express): void {
           );
       }
       const user = await storage.getUser(userId);
-      if (!user) return res.status(401).json({ message: "User not found" });
+      if (!user) return res.status(401).json({ message: "User not found", code: "USER_NOT_FOUND" });
       const ok =
         !isPlaceholderPasswordHash(user.passwordHash) &&
         (await bcrypt.compare(currentPassword, user.passwordHash));
@@ -1165,7 +1171,7 @@ export function registerAuthRoutes(app: Express): void {
       const userId = req.user!.id;
       const user = await storage.getUser(userId);
       if (!user) {
-        return res.status(404).json({ message: "User not found" });
+        return res.status(404).json({ message: "User not found", code: "USER_NOT_FOUND" });
       }
       res.json(publicUser(user));
     })
@@ -1470,15 +1476,24 @@ export function registerAuthRoutes(app: Express): void {
       const invitation = await storage.getInvitationByToken(token);
 
       if (!invitation) {
-        return res.status(404).json({ message: "Invitation not found" });
+        return res
+          .status(404)
+          .json({ message: "Invitation not found", code: "INVITATION_NOT_FOUND" });
       }
 
       if (invitation.status !== "pending") {
-        return res.status(400).json({ message: `Invitation has been ${invitation.status}` });
+        return res
+          .status(400)
+          .json({
+            message: `Invitation has been ${invitation.status}`,
+            code: "INVITATION_NOT_PENDING",
+          });
       }
 
       if (new Date() > invitation.expiresAt) {
-        return res.status(400).json({ message: "Invitation has expired" });
+        return res
+          .status(400)
+          .json({ message: "Invitation has expired", code: "INVITATION_EXPIRED" });
       }
 
       // Get company details if associated
@@ -1507,21 +1522,35 @@ export function registerAuthRoutes(app: Express): void {
       const invitation = await storage.getInvitationByToken(token);
 
       if (!invitation) {
-        return res.status(404).json({ message: "Invitation not found" });
+        return res
+          .status(404)
+          .json({ message: "Invitation not found", code: "INVITATION_NOT_FOUND" });
       }
 
       if (invitation.status !== "pending") {
-        return res.status(400).json({ message: `Invitation has been ${invitation.status}` });
+        return res
+          .status(400)
+          .json({
+            message: `Invitation has been ${invitation.status}`,
+            code: "INVITATION_NOT_PENDING",
+          });
       }
 
       if (new Date() > invitation.expiresAt) {
-        return res.status(400).json({ message: "Invitation has expired" });
+        return res
+          .status(400)
+          .json({ message: "Invitation has expired", code: "INVITATION_EXPIRED" });
       }
 
       // Check if user already exists
       const existingUser = await storage.getUserByEmail(invitation.email);
       if (existingUser) {
-        return res.status(400).json({ message: "User already exists with this email" });
+        return res
+          .status(400)
+          .json({
+            message: "User already exists with this email",
+            code: "EMAIL_ALREADY_REGISTERED",
+          });
       }
 
       // Create user with appropriate userType from invitation.

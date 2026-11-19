@@ -268,7 +268,7 @@ export function applySecurityMiddleware(app: Express): void {
     const contentLength = parseInt(req.headers["content-length"] || "0", 10);
     if (contentLength > 10_485_760) {
       // 10MB
-      return res.status(413).json({ message: "Request too large" });
+      return res.status(413).json({ message: "Request too large", code: "PAYLOAD_TOO_LARGE" });
     }
     next();
   });

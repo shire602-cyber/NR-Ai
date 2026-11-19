@@ -90,6 +90,7 @@ async function parsePeriod(
 function badRequest(res: Response, err: z.ZodError) {
   return res.status(400).json({
     message: "Invalid request",
+    code: "VALIDATION_ERROR",
     issues: err.issues.map((i) => ({ path: i.path, message: i.message })),
   });
 }
@@ -122,9 +123,10 @@ export function registerVATAutopilotRoutes(app: Express) {
 
       const { companyId } = params.data;
       const uid = userId(req);
-      if (!uid) return res.status(401).json({ message: "Unauthenticated" });
+      if (!uid) return res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
       const hasAccess = await storage.hasCompanyAccess(uid, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       // Optional period override via query string for historical calculations.
       const period = await parsePeriod(companyId, query.data);
@@ -155,9 +157,10 @@ export function registerVATAutopilotRoutes(app: Express) {
 
       const { companyId } = params.data;
       const uid = userId(req);
-      if (!uid) return res.status(401).json({ message: "Unauthenticated" });
+      if (!uid) return res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
       const hasAccess = await storage.hasCompanyAccess(uid, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       const periods = await listPeriodsForCompany(companyId);
       res.json(periods);
     })
@@ -178,15 +181,17 @@ export function registerVATAutopilotRoutes(app: Express) {
 
       const { companyId, periodId } = params.data;
       const uid = userId(req);
-      if (!uid) return res.status(401).json({ message: "Unauthenticated" });
+      if (!uid) return res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
       const hasAccess = await storage.hasCompanyAccess(uid, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const result = await pool.query(
         `SELECT * FROM vat_return_periods WHERE id = $1 AND company_id = $2`,
         [periodId, companyId]
       );
-      if (result.rows.length === 0) return res.status(404).json({ message: "Period not found" });
+      if (result.rows.length === 0)
+        return res.status(404).json({ message: "Period not found", code: "VAT_PERIOD_NOT_FOUND" });
       res.json(result.rows[0]);
     })
   );
@@ -200,9 +205,10 @@ export function registerVATAutopilotRoutes(app: Express) {
       const { companyId, periodId, box, amount, reason } =
         parsedBody<z.output<typeof adjustmentBodySchema>>(req);
       const uid = userId(req);
-      if (!uid) return res.status(401).json({ message: "Unauthenticated" });
+      if (!uid) return res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
       const hasAccess = await storage.hasCompanyAccess(uid, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       // Service-layer also filters by company_id on the UPDATE — that's the
       // authoritative gate. The pre-check here only exists so we can surface a
@@ -218,7 +224,12 @@ export function registerVATAutopilotRoutes(app: Express) {
         });
         res.status(201).json(adjustment);
       } catch (err: unknown) {
-        res.status(400).json({ message: errorMessage(err) || "Could not add adjustment" });
+        res
+          .status(400)
+          .json({
+            message: errorMessage(err) || "Could not add adjustment",
+            code: "VAT_ADJUSTMENT_FAILED",
+          });
       }
     })
   );
@@ -236,9 +247,10 @@ export function registerVATAutopilotRoutes(app: Express) {
       const { companyId, status, ftaReferenceNumber, overrideReason } =
         parsedBody<z.output<typeof vatAutopilotStatusBody>>(req);
       const uid = userId(req);
-      if (!uid) return res.status(401).json({ message: "Unauthenticated" });
+      if (!uid) return res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
       const hasAccess = await storage.hasCompanyAccess(uid, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       // E1 (J3-r2): one state machine. Submitting / filing a return goes through the VAT return
       // flow (Returns tab), never a one-click flip of the period.
       if (status === "submitted" || status === "accepted") {
@@ -258,7 +270,10 @@ export function registerVATAutopilotRoutes(app: Express) {
           ftaReferenceNumber,
           overrideReason: overrideReason ?? null,
         });
-        if (!summary) return res.status(404).json({ message: "Period not found" });
+        if (!summary)
+          return res
+            .status(404)
+            .json({ message: "Period not found", code: "VAT_PERIOD_NOT_FOUND" });
         await recordAudit({
           userId: uid,
           companyId,
@@ -285,12 +300,13 @@ export function registerVATAutopilotRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const uid = userId(req);
-      if (!uid) return res.status(401).json({ message: "Unauthenticated" });
+      if (!uid) return res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
       const query = dueDatesQuerySchema.safeParse(req.query);
       if (!query.success) return badRequest(res, query.error);
       if (query.data.companyId) {
         const hasAccess = await storage.hasCompanyAccess(uid, query.data.companyId);
-        if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+        if (!hasAccess)
+          return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
         const dueDates = await listDueDates([query.data.companyId]);
         return res.json(dueDates);
       }

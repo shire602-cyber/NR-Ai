@@ -53,11 +53,13 @@ const scopeOf = (req: Request): PortalScope => (req as Request & { portal: Porta
 async function requirePortalUser(req: Request, res: Response, next: NextFunction): Promise<void> {
   const user = req.user as { id: string; userType?: string; isAdmin?: boolean } | undefined;
   if (!user) {
-    res.status(401).json({ message: "Authentication required" });
+    res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
     return;
   }
   if (user.userType !== "client_portal" && !user.isAdmin) {
-    res.status(403).json({ message: "Client portal access required" });
+    res
+      .status(403)
+      .json({ message: "Client portal access required", code: "PORTAL_CONTACT_NOT_LINKED" });
     return;
   }
   const binding = await portalAccountForUser(user.id);
@@ -171,7 +173,8 @@ export function registerClientPortalRoutes(app: Express): void {
               )
             )
         : [];
-      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      if (!invoice)
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
       const pdfBuffer = await generateInvoicePDF(invoice, lines, company);
       res.set({

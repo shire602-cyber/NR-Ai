@@ -226,7 +226,8 @@ export function registerEmailIntakeRoutes(app: Express) {
       const firmId = req.user!.id as string;
       const patch = parsedBody<z.output<typeof updateSourceBody>>(req);
       const updated = await storage.updateClientEmailSource(req.params.id, firmId, patch);
-      if (!updated) return res.status(404).json({ message: "Source not found" });
+      if (!updated)
+        return res.status(404).json({ message: "Source not found", code: "SOURCE_NOT_FOUND" });
       res.json(updated);
     })
   );
@@ -239,7 +240,8 @@ export function registerEmailIntakeRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const firmId = req.user!.id as string;
       const ok = await storage.deleteClientEmailSource(req.params.id, firmId);
-      if (!ok) return res.status(404).json({ message: "Source not found" });
+      if (!ok)
+        return res.status(404).json({ message: "Source not found", code: "SOURCE_NOT_FOUND" });
       await recordAudit({
         userId: firmId,
         action: "email_intake_source.delete",
@@ -282,9 +284,11 @@ export function registerEmailIntakeRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const user = req.user!;
       const companyId = await intakeMessageCompany(req.params.messageId);
-      if (!companyId) return res.status(404).json({ message: "Message not found" });
+      if (!companyId)
+        return res.status(404).json({ message: "Message not found", code: "MESSAGE_NOT_FOUND" });
       const allowed = await storage.hasCompanyAccess(user.id, companyId, user.firmRole);
-      if (!allowed) return res.status(404).json({ message: "Message not found" });
+      if (!allowed)
+        return res.status(404).json({ message: "Message not found", code: "MESSAGE_NOT_FOUND" });
       const body = parsedBody<z.output<typeof emailTaskBody>>(req);
       const { task, created } = await createTaskFromIntakeMessage(req.params.messageId, {
         actorId: user.id,

@@ -158,7 +158,7 @@ export function registerContactRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const contacts = await storage.getCustomerContactsByCompanyId(companyId);
@@ -178,7 +178,7 @@ export function registerContactRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       // Validated + sanitised body, then pin the tenant scope.
@@ -214,7 +214,12 @@ export function registerContactRoutes(app: Express) {
       if (contactData.email) {
         const existing = await storage.getCustomerContactByEmail(companyId, contactData.email);
         if (existing) {
-          return res.status(400).json({ message: "A contact with this email already exists" });
+          return res
+            .status(400)
+            .json({
+              message: "A contact with this email already exists",
+              code: "CONTACT_EMAIL_EXISTS",
+            });
         }
       }
 
@@ -249,7 +254,7 @@ export function registerContactRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const buffer = await createSpreadsheetBuffer({
@@ -276,19 +281,27 @@ export function registerContactRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const parsedBody = contactImportPreviewSchema.safeParse(req.body);
       if (!parsedBody.success) {
         return res
           .status(400)
-          .json({ message: parsedBody.error.issues[0]?.message || "Invalid import file" });
+          .json({
+            message: parsedBody.error.issues[0]?.message || "Invalid import file",
+            code: "CONTACT_IMPORT_INVALID",
+          });
       }
 
       const buffer = Buffer.from(parsedBody.data.contentBase64, "base64");
       if (buffer.byteLength > 5 * 1024 * 1024) {
-        return res.status(413).json({ message: "Contact import file must be 5 MB or smaller" });
+        return res
+          .status(413)
+          .json({
+            message: "Contact import file must be 5 MB or smaller",
+            code: "CONTACT_IMPORT_TOO_LARGE",
+          });
       }
 
       const parsed = await parseSpreadsheet(buffer, parsedBody.data.fileName);
@@ -309,13 +322,15 @@ export function registerContactRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const { contacts } = parsedBody<{ contacts: ContactImportRow[] }>(req);
 
       if (!Array.isArray(contacts) || contacts.length === 0) {
-        return res.status(400).json({ message: "No contacts provided for import" });
+        return res
+          .status(400)
+          .json({ message: "No contacts provided for import", code: "CONTACT_IMPORT_EMPTY" });
       }
 
       const results = {
@@ -405,7 +420,7 @@ export function registerContactRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const [contactCount, linkedInvoiceCount] = await Promise.all([
@@ -429,13 +444,15 @@ export function registerContactRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       // Require an explicit confirmation phrase in the body to guard against accidental calls
       const { confirm } = parsedBody<{ confirm?: string }>(req);
       if (confirm !== "DELETE ALL") {
-        return res.status(400).json({ message: "Confirmation phrase required" });
+        return res
+          .status(400)
+          .json({ message: "Confirmation phrase required", code: "CONFIRMATION_REQUIRED" });
       }
 
       const deletedCount = await storage.deleteAllCustomerContactsByCompanyId(companyId);
@@ -459,13 +476,13 @@ export function registerContactRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       // Verify contact belongs to this company
       const existing = await storage.getCustomerContact(id);
       if (!existing || existing.companyId !== companyId) {
-        return res.status(404).json({ message: "Contact not found" });
+        return res.status(404).json({ message: "Contact not found", code: "CONTACT_NOT_FOUND" });
       }
 
       // S-M1: allowlist update fields (tenant scope cannot be changed here).
@@ -524,13 +541,13 @@ export function registerContactRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       // Verify contact belongs to this company
       const existing = await storage.getCustomerContact(id);
       if (!existing || existing.companyId !== companyId) {
-        return res.status(404).json({ message: "Contact not found" });
+        return res.status(404).json({ message: "Contact not found", code: "CONTACT_NOT_FOUND" });
       }
 
       await storage.deleteCustomerContact(id, companyId); // S-L3: tenant-scoped delete

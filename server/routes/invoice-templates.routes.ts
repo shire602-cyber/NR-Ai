@@ -59,7 +59,7 @@ export function registerInvoiceTemplateRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const templates = await storage.getInvoiceTemplatesByCompanyId(companyId);
@@ -79,12 +79,14 @@ export function registerInvoiceTemplateRoutes(app: Express) {
 
       const template = await storage.getInvoiceTemplate(id);
       if (!template) {
-        return res.status(404).json({ message: "Invoice template not found" });
+        return res
+          .status(404)
+          .json({ message: "Invoice template not found", code: "INVOICE_TEMPLATE_NOT_FOUND" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, template.companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       res.json(template);
@@ -104,7 +106,7 @@ export function registerInvoiceTemplateRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const template = await storage.createInvoiceTemplate({
@@ -131,12 +133,16 @@ export function registerInvoiceTemplateRoutes(app: Express) {
 
       const template = await storage.getInvoiceTemplate(id);
       if (!template) {
-        return res.status(404).json({ message: "Invoice template not found" });
+        return res
+          .status(404)
+          .json({ message: "Invoice template not found", code: "INVOICE_TEMPLATE_NOT_FOUND" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, template.companyId);
       if (!hasAccess) {
-        return res.status(404).json({ message: "Invoice template not found" });
+        return res
+          .status(404)
+          .json({ message: "Invoice template not found", code: "INVOICE_TEMPLATE_NOT_FOUND" });
       }
 
       // S-M1: strict update fields (tenant scope cannot be changed here).
@@ -157,12 +163,14 @@ export function registerInvoiceTemplateRoutes(app: Express) {
 
       const template = await storage.getInvoiceTemplate(id);
       if (!template) {
-        return res.status(404).json({ message: "Invoice template not found" });
+        return res
+          .status(404)
+          .json({ message: "Invoice template not found", code: "INVOICE_TEMPLATE_NOT_FOUND" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, template.companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       await storage.deleteInvoiceTemplate(id);
@@ -182,12 +190,14 @@ export function registerInvoiceTemplateRoutes(app: Express) {
 
       const template = await storage.getInvoiceTemplate(id);
       if (!template) {
-        return res.status(404).json({ message: "Invoice template not found" });
+        return res
+          .status(404)
+          .json({ message: "Invoice template not found", code: "INVOICE_TEMPLATE_NOT_FOUND" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, template.companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       // Unset any existing default for this company

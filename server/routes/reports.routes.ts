@@ -77,7 +77,10 @@ export function registerReportRoutes(app: Express) {
       if (persona !== undefined && !isReportCatalogPersona(persona)) {
         return res
           .status(400)
-          .json({ message: "persona must be owner, freelancer, or accountant" });
+          .json({
+            message: "persona must be owner, freelancer, or accountant",
+            code: "INVALID_PERSONA",
+          });
       }
 
       // S4: the catalog is derived from static code (changes only on deploy),
@@ -250,7 +253,8 @@ export function registerReportRoutes(app: Express) {
       const companyId = req.params.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const [customerResult, vendorResult] = await Promise.all([
         // Open balances use the one settlement rule (server/reporting/settlement.ts, D5c), the
@@ -354,7 +358,8 @@ export function registerReportRoutes(app: Express) {
       };
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const periodStart = startDate ?? from;
       const periodEnd = endDate ?? to;
@@ -480,7 +485,10 @@ export function registerReportRoutes(app: Express) {
       if (!fromQ || !toQ) {
         return res
           .status(400)
-          .json({ message: "from and to date params are required (YYYY-MM-DD)" });
+          .json({
+            message: "from and to date params are required (YYYY-MM-DD)",
+            code: "REPORT_RANGE_REQUIRED",
+          });
       }
       const range = readRange({ from: fromQ, to: toQ });
       await assertReportAccess(req, companyId);

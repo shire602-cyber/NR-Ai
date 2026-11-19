@@ -223,11 +223,11 @@ export async function authMiddleware(
  */
 export function adminMiddleware(req: Request, res: Response, next: NextFunction): void {
   if (!req.user) {
-    res.status(401).json({ message: "Authentication required" });
+    res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
     return;
   }
   if (!req.user.isAdmin) {
-    res.status(403).json({ message: "Admin access required" });
+    res.status(403).json({ message: "Admin access required", code: "ADMIN_REQUIRED" });
     return;
   }
   next();
@@ -238,13 +238,15 @@ export function adminMiddleware(req: Request, res: Response, next: NextFunction)
  */
 export function requireClient(req: Request, res: Response, next: NextFunction): void {
   if (!req.user) {
-    res.status(401).json({ message: "Authentication required" });
+    res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
     return;
   }
   if (req.user.userType === "client" || req.user.isAdmin) {
     next();
   } else {
-    res.status(403).json({ message: "Access restricted to managed clients" });
+    res
+      .status(403)
+      .json({ message: "Access restricted to managed clients", code: "ACCESS_RESTRICTED" });
   }
 }
 
@@ -253,13 +255,15 @@ export function requireClient(req: Request, res: Response, next: NextFunction): 
  */
 export function requireCustomer(req: Request, res: Response, next: NextFunction): void {
   if (!req.user) {
-    res.status(401).json({ message: "Authentication required" });
+    res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
     return;
   }
   if (req.user.userType === "customer" || req.user.isAdmin) {
     next();
   } else {
-    res.status(403).json({ message: "Access restricted to SaaS customers" });
+    res
+      .status(403)
+      .json({ message: "Access restricted to SaaS customers", code: "ACCESS_RESTRICTED" });
   }
 }
 
@@ -269,7 +273,7 @@ export function requireCustomer(req: Request, res: Response, next: NextFunction)
 export function requireUserType(...allowedTypes: string[]) {
   return function (req: Request, res: Response, next: NextFunction): void {
     if (!req.user) {
-      res.status(401).json({ message: "Authentication required" });
+      res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
       return;
     }
     if (req.user.isAdmin || allowedTypes.includes(req.user.userType)) {
@@ -277,6 +281,7 @@ export function requireUserType(...allowedTypes: string[]) {
     } else {
       res.status(403).json({
         message: `Access restricted to: ${allowedTypes.join(", ")}`,
+        code: "ACCESS_RESTRICTED",
       });
     }
   };
@@ -290,7 +295,7 @@ export function requireUserType(...allowedTypes: string[]) {
 export function requireCompanyAccess(paramSource?: "params" | "body" | "query") {
   return async function (req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!req.user) {
-      res.status(401).json({ message: "Authentication required" });
+      res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
       return;
     }
 
@@ -306,7 +311,7 @@ export function requireCompanyAccess(paramSource?: "params" | "body" | "query") 
               (req.query?.companyId as string | undefined));
 
     if (!candidate || typeof candidate !== "string") {
-      res.status(400).json({ message: "Company ID required" });
+      res.status(400).json({ message: "Company ID required", code: "COMPANY_REQUIRED" });
       return;
     }
 
@@ -316,7 +321,9 @@ export function requireCompanyAccess(paramSource?: "params" | "body" | "query") 
         { userId: req.user.id, companyId: candidate, path: req.path },
         "requireCompanyAccess denied"
       );
-      res.status(403).json({ message: "Access denied to this company" });
+      res
+        .status(403)
+        .json({ message: "Access denied to this company", code: "COMPANY_ACCESS_DENIED" });
       return;
     }
 

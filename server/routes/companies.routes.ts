@@ -105,28 +105,33 @@ export function handleCompanyWriteError(
     case "23505": // unique_violation
       res.status(409).json({
         message: "That value is already taken by another tenant. Please pick a different one.",
+        code: "COMPANY_VALUE_TAKEN",
         field: pgErr.constraint?.includes("name") ? "name" : undefined,
       });
       return true;
     case "23502": // not_null_violation
       res.status(400).json({
         message: `Required field is missing: ${pgErr.column ?? "unknown"}`,
+        code: "REQUIRED_FIELD_MISSING",
         field: pgErr.column,
       });
       return true;
     case "23514": // check_violation
       res.status(400).json({
         message: `Value rejected by validation rule: ${pgErr.constraint ?? "check constraint"}`,
+        code: "CONSTRAINT_VIOLATION",
       });
       return true;
     case "22001": // string_data_right_truncation (value too long)
       res.status(400).json({
         message: "One of the values you entered is too long for this field.",
+        code: "VALUE_TOO_LONG",
       });
       return true;
     case "22P02": // invalid_text_representation (e.g. bad uuid)
       res.status(400).json({
         message: "One of the values you entered is not valid for this field.",
+        code: "INVALID_IDENTIFIER",
       });
       return true;
     case "42703": // undefined_column — schema/DB drift
@@ -316,12 +321,12 @@ export function registerCompanyRoutes(app: Express) {
       // Check if user has access to this company (or via firm role)
       const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const company = await storage.getCompany(id);
       if (!company) {
-        return res.status(404).json({ message: "Company not found" });
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       }
 
       res.json(company);
@@ -338,11 +343,11 @@ export function registerCompanyRoutes(app: Express) {
 
     const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
     if (!hasAccess) {
-      return res.status(403).json({ message: "Access denied" });
+      return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
     }
     const current = await storage.getCompany(id);
     if (!current) {
-      return res.status(404).json({ message: "Company not found" });
+      return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
     }
 
     const updateData: Record<string, unknown> = {};
@@ -512,7 +517,7 @@ export function registerCompanyRoutes(app: Express) {
       const { id } = req.params;
       const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, id))) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       let inspected;
       try {
@@ -562,12 +567,14 @@ export function registerCompanyRoutes(app: Express) {
       const { id } = req.params;
       const { id: userId, firmRole } = req.user!;
       if (!(await storage.hasCompanyAccess(userId, id, firmRole))) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const company = await storage.getCompany(id);
-      if (!company?.logoPath) return res.status(404).json({ message: "No logo uploaded" });
+      if (!company?.logoPath)
+        return res.status(404).json({ message: "No logo uploaded", code: "LOGO_NOT_FOUND" });
       const image = await readReceiptImage(company.logoPath);
-      if (!image) return res.status(404).json({ message: "No logo uploaded" });
+      if (!image)
+        return res.status(404).json({ message: "No logo uploaded", code: "LOGO_NOT_FOUND" });
       res.setHeader("Content-Type", image.contentType);
       res.setHeader("Cache-Control", "private, max-age=300");
       res.send(image.buffer);
@@ -585,7 +592,7 @@ export function registerCompanyRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, id);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const company = await storage.updateCompany(id, { onboardingCompleted: true });
@@ -618,7 +625,7 @@ export function registerCompanyRoutes(app: Express) {
       // Check if user has access to this company (or via firm role)
       const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       // Seed Chart of Accounts
@@ -629,6 +636,7 @@ export function registerCompanyRoutes(app: Express) {
       if (result.alreadyExisted) {
         return res.status(409).json({
           message: "Chart of Accounts already exists for this company",
+          code: "CHART_ALREADY_EXISTS",
           accounts: accountsWithBalances,
         });
       }

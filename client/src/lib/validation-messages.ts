@@ -23,6 +23,13 @@ const KEY_PATTERN = /^(?:forms|components)\.[A-Za-z0-9_.]+$/;
  */
 export const VALIDATION_NAMESPACES = ["forms"] as const;
 
+/**
+ * G3: the per-code server error copy (`serverErrors.<CODE>`) and the form field labels live in the
+ * `serverErrors` catalog, which is loaded where API errors are turned into text (queryClient,
+ * failed downloads); the sign-in forms only need `forms`.
+ */
+export const SERVER_ERROR_NAMESPACES = [...VALIDATION_NAMESPACES, "serverErrors"] as const;
+
 function dict(locale: "en" | "ar"): Dict {
   return t[locale] as unknown as Dict;
 }
@@ -133,6 +140,8 @@ export function zodErrorMap(iss: RawIssue): string | undefined {
  * messages fall back to the generic "invalid value" text, never to raw English.
  */
 export function localizeServerIssue(message: string): string {
+  const shared = SHARED_MESSAGE_KEYS[message];
+  if (shared) return tr(shared);
   if (message === "Required") return v("required");
   if (message === "Unknown field") return v("unknownField");
   if (/^Invalid (email|uuid)/i.test(message))
@@ -155,38 +164,97 @@ export function localizeServerIssue(message: string): string {
   return v("invalid");
 }
 
+/** Same wording as the server's `DomainError` default: "COST_CENTER_INACTIVE" -> "Cost center inactive". */
+function humanizeCode(code: string): string {
+  const words = code.toLowerCase().replace(/_/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "";
+}
+
+/** Catalog sentence for an error code in a language: `forms.serverErrors.<CODE>` or `serverErrors.<CODE>`. */
+export function serverErrorCopy(locale: "en" | "ar", code: string): string | undefined {
+  const d = dict(locale);
+  return d[`forms.serverErrors.${code}`] ?? d[`serverErrors.${code}`];
+}
+
+/** "dueDate" -> "Due date" (English fallback for a field without a catalog label). */
+function humanizeField(id: string): string {
+  const words = id
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase()
+    .trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : id;
+}
+
 /**
- * Arabic text for a failed API response, or undefined when the language is English or the body
- * has no code we know (callers then keep the server's own message). Validation errors list each
- * field name with a localised reason; other known codes use `forms.serverErrors.<CODE>`.
+ * The label of a validation field path ("lines.0.amount" -> "Lines - #1 - Amount") in the active
+ * language. A field without a label is humanised in English and named "Field" in Arabic: the raw
+ * id is never shown.
+ */
+export function fieldLabel(path: string): string {
+  const { locale } = useI18n.getState();
+  const d = dict(locale);
+  const out: string[] = [];
+  for (const part of path.split(".")) {
+    if (/^\d+$/.test(part)) {
+      out.push(`#${Number(part) + 1}`);
+      continue;
+    }
+    const label =
+      d[`serverErrors.field.${part}`] ??
+      (locale === "en" ? humanizeField(part) : d["serverErrors.field._unknown"]);
+    if (label && out[out.length - 1] !== label) out.push(label);
+  }
+  return out.join(" - ") || (d["serverErrors.field._unknown"] ?? "Field");
+}
+
+function validationText(body: Record<string, unknown>, locale: "en" | "ar"): string | undefined {
+  const code = typeof body.code === "string" ? body.code : undefined;
+  const fields = body.fields;
+  const hasFields = !!fields && typeof fields === "object";
+  if (code !== "VALIDATION_ERROR" && !hasFields) return undefined;
+  const parts: string[] = [];
+  if (hasFields) {
+    for (const [name, msgs] of Object.entries(fields as Record<string, unknown>)) {
+      const first = Array.isArray(msgs) ? String(msgs[0] ?? "") : String(msgs ?? "");
+      const reason = locale === "ar" ? localizeServerIssue(first) : first;
+      parts.push(name === "_root" ? reason : `${fieldLabel(name)}: ${reason}`);
+    }
+  }
+  return parts.length
+    ? v("serverFields", { fields: parts.join(locale === "ar" ? "؛ " : "; ") })
+    : v("serverGeneric");
+}
+
+/**
+ * Text for a failed API response in the active language, or undefined when the server's own
+ * message should be kept. Validation errors list each field by its form label with a reason;
+ * a coded error uses its catalog copy (Arabic always; English when the server only sent the
+ * generic words of the code). Field ids and English server text never reach an Arabic user.
  */
 export function localizeApiError(body: Record<string, unknown> | undefined): string | undefined {
   const guard = localizeLedgerGuard(body);
   if (guard) return guard;
-  if (useI18n.getState().locale !== "ar" || !body) return undefined;
+  if (!body) return undefined;
+  const { locale } = useI18n.getState();
+  const code = typeof body.code === "string" ? body.code : undefined;
+  if (locale !== "ar") {
+    if (!code) return undefined;
+    if (code === "VALIDATION_ERROR" || (body.fields && typeof body.fields === "object")) {
+      return validationText(body, "en");
+    }
+    // A DomainError sent without its own sentence only carries "Receipt not found"-style words.
+    if (body.message === humanizeCode(code)) return serverErrorCopy("en", code);
+    return undefined;
+  }
   // B14: throttles and lockouts name their sentence by catalog key (`messageKey`).
   const messageKey = typeof body.messageKey === "string" ? body.messageKey : undefined;
   if (messageKey && KEY_PATTERN.test(messageKey) && dict("ar")[messageKey]) {
     return dict("ar")[messageKey];
   }
-  const code = typeof body.code === "string" ? body.code : undefined;
-  const fields = body.fields;
-  if (code === "VALIDATION_ERROR" || (fields && typeof fields === "object")) {
-    const parts: string[] = [];
-    if (fields && typeof fields === "object") {
-      for (const [name, msgs] of Object.entries(fields as Record<string, unknown>)) {
-        const first = Array.isArray(msgs) ? String(msgs[0] ?? "") : String(msgs ?? "");
-        const reason = localizeServerIssue(first);
-        parts.push(name === "_root" ? reason : `${name}: ${reason}`);
-      }
-    }
-    return parts.length ? v("serverFields", { fields: parts.join("؛ ") }) : v("serverGeneric");
-  }
-  if (code) {
-    const key = `forms.serverErrors.${code}`;
-    if (dict("ar")[key]) return dict("ar")[key];
-  }
-  return undefined;
+  const validation = validationText(body, "ar");
+  if (validation) return validation;
+  return code ? serverErrorCopy("ar", code) : undefined;
 }
 
 const HAS_ARABIC = /[\u0600-\u06FF]/;
@@ -217,7 +285,7 @@ export async function failedResponseMessage(
   body: unknown,
   fallback: string
 ): Promise<string> {
-  await loadNamespaces(useI18n.getState().locale, VALIDATION_NAMESPACES).catch(() => undefined);
+  await loadNamespaces(useI18n.getState().locale, SERVER_ERROR_NAMESPACES).catch(() => undefined);
   const record = body && typeof body === "object" ? (body as Record<string, unknown>) : undefined;
   return localizeApiError(record) ?? localizeApiErrorByStatus(status, fallback) ?? fallback;
 }

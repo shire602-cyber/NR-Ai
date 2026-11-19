@@ -75,11 +75,23 @@ export function registerReferralRoutes(app: Express) {
       const referralCode = await storage.getReferralCodeByCode(code);
 
       if (!referralCode || !referralCode.isActive) {
-        return res.status(404).json({ valid: false, message: "Invalid or expired referral code" });
+        return res
+          .status(404)
+          .json({
+            valid: false,
+            message: "Invalid or expired referral code",
+            code: "REFERRAL_CODE_INVALID",
+          });
       }
 
       if (referralCode.expiresAt && new Date(referralCode.expiresAt) < new Date()) {
-        return res.status(400).json({ valid: false, message: "Referral code has expired" });
+        return res
+          .status(400)
+          .json({
+            valid: false,
+            message: "Referral code has expired",
+            code: "REFERRAL_CODE_EXPIRED",
+          });
       }
 
       res.json({
@@ -106,7 +118,9 @@ export function registerReferralRoutes(app: Express) {
 
       const referralCode = await storage.getReferralCodeByCode(code);
       if (!referralCode || !referralCode.isActive) {
-        return res.status(400).json({ message: "Invalid referral code" });
+        return res
+          .status(400)
+          .json({ message: "Invalid referral code", code: "REFERRAL_CODE_INVALID" });
       }
       const self = await pq<{ email: string }>(`SELECT email FROM users WHERE id = $1`, [
         referralCode.userId,
