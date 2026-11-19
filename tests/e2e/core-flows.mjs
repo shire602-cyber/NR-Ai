@@ -522,11 +522,24 @@ const FLOWS = [
         invoiceId = all[0].id;
         expect(all[0].status !== "draft", `status ${all[0].status}`);
       });
-      await h.step("invoice editor Checks tab lists the checks", async () => {
-        await goto(page, `/invoices/${invoiceId}/edit`);
+      await h.step("draft invoice editor Checks tab lists the checks", async () => {
+        // Issued invoices are read-only since S1: the Checks tab belongs to a draft in the editor.
+        await goto(page, "/invoices/new");
+        await fill(page, "input-customer-name", h.ar ? "مؤسسة الواحة" : "Oasis Draft");
+        await fill(page, "input-line-description-0", h.ar ? "خدمات" : "Services");
+        await fill(page, "input-line-quantity-0", "1");
+        await fill(page, "input-line-price-0", "100");
         await click(page, "tab-invoice-checks");
         const text = await page.locator("main").innerText();
         expect(text.length > 40, "Checks tab is empty");
+      });
+      await h.step("issued invoice opens as the locked read-only document", async () => {
+        await goto(page, `/invoices/${invoiceId}/edit`);
+        expect(await visible(page, "issued-invoice-locked", 10000), "locked document not shown");
+        expect(
+          (await page.locator('[data-testid="tab-invoice-checks"]').count()) === 0,
+          "Checks tab shown on an issued invoice"
+        );
       });
       await h.step("PDF downloads", async () => {
         await goto(page, "/invoices");
