@@ -1,4 +1,4 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0135)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0136)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
@@ -29,7 +29,7 @@ Restore the dump from section 1 (or a Railway snapshot) into a scratch database,
 ```
 export DATABASE_URL=postgres://.../rehearsal   # the restored copy
 \timing on                                     # in psql; or time the command below
-time npm run db:migrate                         # applies 0089-0135; record total and slowest file
+time npm run db:migrate                         # applies 0089-0136; record total and slowest file
 npm run build && PORT=<free port> npm start     # boot check: /health/ready 200, /api/version
 ```
 
@@ -168,6 +168,19 @@ After migrating, confirm migration 0134 removed both price-editor tables (expect
 ```sql
 SELECT table_name FROM information_schema.tables
  WHERE table_schema = 'public' AND table_name IN ('subscription_plans', 'user_subscriptions');
+```
+
+#### Customer portal invitations (0136)
+
+Migration `0136_step5_portal_invitations.sql` creates `customer_portal_invitations`, adds
+`invitation_id`, `last_seen_at` and `revoked_by` to `customer_portal_accounts`, and DELETES every
+`company_users` row of a `client_portal` user (portal customers are never company members; their
+access comes only from `customer_portal_accounts`). It is idempotent. Before migrating, list what
+will be removed (expect only stray rows from the old staff bind flow):
+
+```sql
+SELECT cu.company_id, u.email FROM company_users cu JOIN users u ON u.id = cu.user_id
+ WHERE u.user_type = 'client_portal';
 ```
 
 #### Skipped `uq_employees_*` unique indexes (0118)

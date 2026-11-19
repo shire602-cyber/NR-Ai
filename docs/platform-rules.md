@@ -214,3 +214,17 @@ One model for every migrating company (D1, accounting re-audit 3: N1-N4, N7, N14
   Timestamp columns carry no zone; dates people read and the once-a-day email keys use `Asia/Dubai`.
 - In a read-only workspace `ReadOnlyForms` disables write forms under the lock banner; mark a form
   `data-readonly-ok` (or `role="search"`) to keep it usable.
+
+## Customer portal identity (STEP5)
+
+- Portal access comes only from `customer_portal_accounts` (user to one contact of one company). A
+  `client_portal` user is never a `company_users` member: `storage.getUserRole`,
+  `getCompaniesByUserId` and `getCompanyRolesByUserId` ignore such rows and the RBAC policy answers
+  403 `PORTAL_USER_APP_DENIED` for company routes. Every portal query is scoped by (company,
+  contact); another contact's document is a 404.
+- Invitations (`customer_portal_invitations`) store only the SHA-256 of a 256-bit token, expire in
+  7 days and are single use. The link carries the token in the URL fragment; opening it (GET) never
+  consumes it, only the accept POST does, in one transaction that locks the row.
+- Staff routes live under `/api/companies/:companyId/...` (RBAC rule, plan gate `customerPortal`,
+  verified email, strictBody). `/api/portal/*` is CSRF-exempt only for the token and OTP routes.
+- Portal pages (`/client-portal`, `/portal`) are always open in `PLAN_LOCK_ALWAYS_OPEN`.

@@ -72,7 +72,8 @@ reversePayment` (service registry) and `bank-reconciliation.service.ts` (`applyM
   `unmatchTransaction`). Do not write `invoice_payments`/`bill_payments` or reconciliation state
   elsewhere. Inventory/COGS changes go through `inventory.on*` registry calls.
 - Tenancy: load tenant-owned rows with `server/tenancy` (`scopedGet`/`scopedUpdate`/`scopedDelete`/
-  `requireOwned`); another tenant's row is a 404, never a 403.
+  `requireOwned`); another tenant's row is a 404, never a 403. Portal users act only through
+  `customer_portal_accounts` (never `company_users`); see platform-rules.
 - RBAC: enforced centrally by `server/middleware/companyRolePolicy.ts` (`POLICY_RULES`,
   `shared/permissions.ts`). Add a rule for each new sensitive route and new row-id path prefixes to
   `RESOURCES`. Fix test fixtures with the right `company_users.role`; never turn enforcement off
