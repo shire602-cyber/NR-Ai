@@ -133,7 +133,7 @@ export default function AdminDocuments() {
   });
 
   const { data: companies, isLoading: isLoadingCompanies } = useQuery<Company[]>({
-    queryKey: ["/api/admin/companies"],
+    queryKey: ["/api/admin/documents/companies"],
   });
 
   const { data: documents, isLoading: isLoadingDocs } = useQuery<Document[]>({
@@ -196,6 +196,13 @@ export default function AdminDocuments() {
         description: translateNow("toasts.documentHasBeenDeleted"),
       });
     },
+    onError: (error: unknown) => {
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.deleteFailed"),
+        description: error instanceof Error ? error.message : undefined,
+      });
+    },
   });
 
   const resetForm = () => {
@@ -249,6 +256,8 @@ export default function AdminDocuments() {
         reminderDays: newDocument.reminderDays,
         file: selectedFile,
       });
+    } catch {
+      // A refused upload is reported by the mutation's onError toast; the dialog stays open.
     } finally {
       setIsUploading(false);
     }
@@ -360,6 +369,14 @@ export default function AdminDocuments() {
               ))}
             </SelectContent>
           </Select>
+          {!isLoadingCompanies && (companies?.length ?? 0) === 0 && (
+            <p
+              className="mt-3 text-sm text-muted-foreground"
+              data-testid="text-no-writable-clients"
+            >
+              <T k="adminDocuments.noWritableClients" />
+            </p>
+          )}
         </CardContent>
       </Card>
 

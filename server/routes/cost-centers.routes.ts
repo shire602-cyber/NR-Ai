@@ -498,9 +498,17 @@ export function registerCostCenterRoutes(app: Express) {
       const { companyId, id: costCenterId } = req.params;
       await assertAccess(req, companyId);
       const costCenter = await storage.getCostCenter(costCenterId);
-      if (!costCenter) return res.status(404).json({ message: "Cost center not found" });
+      if (!costCenter)
+        return res
+          .status(404)
+          .json({ message: "Cost center not found", code: "COST_CENTER_NOT_FOUND" });
       if (costCenter.companyId !== companyId) {
-        return res.status(403).json({ message: "Cost center does not belong to this company" });
+        return res
+          .status(403)
+          .json({
+            message: "Cost center does not belong to this company",
+            code: "COST_CENTER_NOT_FOUND",
+          });
       }
       // Optional period (UAE calendar days), like the profitability summary.
       const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };

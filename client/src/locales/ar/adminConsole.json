@@ -645,5 +645,6 @@
   "auditDetail.key.status": "الحالة",
   "auditDetail.key.count": "العدد",
   "auditDetail.yes": "نعم",
-  "auditDetail.no": "لا"
+  "auditDetail.no": "لا",
+  "adminDocuments.noWritableClients": "ليس لديك صلاحية الوصول إلى أي شركة عميلة بعد، لذلك لا يوجد مكان لحفظ المستندات. اطلب من المالك أو مسؤول المكتب منحك الصلاحية."
 }

@@ -6,7 +6,7 @@ import { isOnline, queueForSync } from "./pwa";
 import {
   localizeApiError,
   localizeApiErrorByStatus,
-  VALIDATION_NAMESPACES,
+  SERVER_ERROR_NAMESPACES,
 } from "./validation-messages";
 import { loadNamespaces, useI18n } from "./i18n";
 import { announcePlanLimit } from "./plan-limit";
@@ -55,7 +55,7 @@ async function throwIfResNotOk(res: Response) {
       errorMessage = res.statusText;
     }
     // E3 (J2-r3): the localised error copy lives in `forms`, which public routes do not load.
-    await loadNamespaces(useI18n.getState().locale, VALIDATION_NAMESPACES).catch(() => undefined);
+    await loadNamespaces(useI18n.getState().locale, SERVER_ERROR_NAMESPACES).catch(() => undefined);
     // WQ7: a plan refusal (402/403 with a plan code) also opens the upgrade prompt.
     announcePlanLimit(body);
     // Arabic never shows the server's English: a known code has catalog copy, anything else a

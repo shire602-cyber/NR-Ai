@@ -330,19 +330,28 @@ describe("[F11] message resolution", () => {
     expect(missing.error!.issues[0].message).not.toMatch(LATIN);
   });
 
-  it("server validation errors keep the field name with a localised reason", () => {
+  it("server validation errors name each field by its form label with a localised reason", () => {
     const body = {
       code: "VALIDATION_ERROR",
       message: "Validation error",
-      fields: { customerName: ["Required"], "lines.0.quantity": ["Number must be greater than 0"] },
+      fields: {
+        customerName: ["Required"],
+        "lines.0.quantity": ["Number must be greater than 0"],
+        someInternalFieldId: ["Required"],
+      },
     };
-    expect(localizeApiError(body)).toBeUndefined(); // English mode keeps the server text
+    // English lists the same labels (no raw ids) with the server's reason.
+    const en = localizeApiError(body)!;
+    expect(en).toContain("Customer name: Required");
+    expect(en).toContain("Lines - #1 - Quantity");
+    expect(en).not.toContain("customerName");
     useI18n.setState({ locale: "ar" });
     const text = localizeApiError(body)!;
     expect(text).toMatch(ARABIC);
-    expect(text).toContain("customerName");
-    expect(text).toContain("lines.0.quantity");
-    expect(text.replace(/customerName|lines\.0\.quantity/g, "")).not.toMatch(LATIN);
+    expect(text).toContain("اسم العميل");
+    expect(text).toContain("البنود - #1 - الكمية");
+    // Never a raw field id, even for a field without a label.
+    expect(text).not.toMatch(LATIN);
     expect(localizeApiError({ code: "VALIDATION_ERROR" })).toMatch(ARABIC);
     expect(localizeApiError({ code: "TIER_LOCKED" })).toMatch(ARABIC);
     expect(localizeApiError({ code: "SOMETHING_UNMAPPED" })).toBeUndefined();

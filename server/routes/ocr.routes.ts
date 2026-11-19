@@ -86,7 +86,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
     asyncHandler(async (req: Request, res: Response) => {
       const userId = req.user?.id;
       if (!userId) {
-        return res.status(401).json({ message: "Unauthorized" });
+        return res.status(401).json({ message: "Unauthorized", code: "AUTH_REQUIRED" });
       }
 
       const {
@@ -110,7 +110,7 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       if (requestedCompanyId && typeof requestedCompanyId === "string") {
         const hasAccess = await storage.hasCompanyAccess(userId, requestedCompanyId);
         if (!hasAccess) {
-          return res.status(403).json({ message: "Access denied" });
+          return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
         }
         companyId = requestedCompanyId;
       } else {
@@ -119,11 +119,12 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
         // explicit companyId so we never silently pick the wrong tenant.
         const companies = await storage.getCompaniesByUserId(userId);
         if (companies.length === 0) {
-          return res.status(404).json({ message: "No company found" });
+          return res.status(404).json({ message: "No company found", code: "COMPANY_NOT_FOUND" });
         }
         if (companies.length > 1) {
           return res.status(400).json({
             message: "companyId is required when the user has access to multiple companies",
+            code: "COMPANY_REQUIRED",
           });
         }
         companyId = companies[0].id;
@@ -147,7 +148,9 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
       const validCategories: string[] = [...VALID_RECEIPT_CATEGORIES];
 
       if (!imageData && !sanitizedContent) {
-        return res.status(400).json({ message: "Missing imageData or content" });
+        return res
+          .status(400)
+          .json({ message: "Missing imageData or content", code: "IMAGE_REQUIRED" });
       }
 
       // Validate the image from its bytes before it goes to any provider (R05-06/R05-08).
@@ -348,7 +351,9 @@ export function registerOCRRoutes(app: Express, deps: OcrRouteDeps = {}) {
         }
       }
 
-      return res.status(400).json({ message: "Missing imageData or content" });
+      return res
+        .status(400)
+        .json({ message: "Missing imageData or content", code: "IMAGE_REQUIRED" });
     })
   );
 

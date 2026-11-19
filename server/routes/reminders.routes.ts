@@ -31,7 +31,7 @@ export function registerReminderRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const settings = await storage.getReminderSettingsByCompanyId(companyId);
@@ -50,7 +50,7 @@ export function registerReminderRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const validated = parsedBody<CreateReminderSettingBody>(req);
@@ -125,7 +125,7 @@ export function registerReminderRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const { rows: logs } = await pool.query(
@@ -158,7 +158,7 @@ export function registerReminderRoutes(app: Express) {
       const { companyId } = req.params;
       const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const { runDunningScan } = await import("../services/scheduler.service");
       const summary = await runDunningScan(new Date(), { companyId });
@@ -185,12 +185,12 @@ export function registerReminderRoutes(app: Express) {
       const { companyId } = req.query;
 
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res.status(400).json({ message: "Company ID required", code: "COMPANY_REQUIRED" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId as string);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const company = await storage.getCompany(companyId as string);

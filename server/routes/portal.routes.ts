@@ -230,7 +230,7 @@ export function registerPortalRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const logs = await storage.getActivityLogsByCompany(companyId, limit);
@@ -276,7 +276,7 @@ export function registerPortalRoutes(app: Express) {
       const userId = req.user!.id;
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const contactId =
         typeof req.query.contactId === "string" && /^[0-9a-f-]{36}$/i.test(req.query.contactId)
@@ -302,7 +302,7 @@ export function registerPortalRoutes(app: Express) {
       const userId = req.user!.id;
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const jsonBody = (req.body ?? {}) as Record<string, unknown>;
       if (!isMultipart(req) && jsonBody.fileData === undefined) {
@@ -321,6 +321,7 @@ export function registerPortalRoutes(app: Express) {
         if (!ALLOWED_DOC_MIME_TYPES.includes(mimeType)) {
           return res.status(400).json({
             message: "Invalid file type. Allowed: PDF, images, Word, Excel, and text files.",
+            code: "UNSUPPORTED_FILE",
           });
         }
         const document = await storage.createDocument({
@@ -604,7 +605,7 @@ export function registerPortalRoutes(app: Express) {
       const userId = req.user!.id;
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const returns = await storage.getTaxReturnArchive(companyId);
       res.json(returns);
@@ -624,7 +625,7 @@ export function registerPortalRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const taxReturn = await storage.createTaxReturnArchive({
@@ -744,7 +745,7 @@ export function registerPortalRoutes(app: Express) {
       const userId = req.user!.id;
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const tasks = await storage.getComplianceTasks(companyId);
       res.json(tasks);
@@ -763,7 +764,7 @@ export function registerPortalRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       if (body.assignedTo && !(await storage.hasCompanyAccess(body.assignedTo, companyId))) {
         throw new DomainError(
@@ -817,11 +818,13 @@ export function registerPortalRoutes(app: Express) {
 
       const existing = await storage.getComplianceTask(taskId);
       if (!existing) {
-        return res.status(404).json({ message: "Compliance task not found" });
+        return res
+          .status(404)
+          .json({ message: "Compliance task not found", code: "COMPLIANCE_TASK_NOT_FOUND" });
       }
       const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const updates: Record<string, unknown> = {};
@@ -850,11 +853,13 @@ export function registerPortalRoutes(app: Express) {
       const userId = req.user!.id;
       const existing = await storage.getComplianceTask(taskId);
       if (!existing) {
-        return res.status(404).json({ message: "Compliance task not found" });
+        return res
+          .status(404)
+          .json({ message: "Compliance task not found", code: "COMPLIANCE_TASK_NOT_FOUND" });
       }
       const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       await storage.deleteComplianceTask(taskId);
       res.json({ success: true });
@@ -874,7 +879,7 @@ export function registerPortalRoutes(app: Express) {
       const userId = req.user!.id;
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const all = await storage.getMessages(companyId);
       const contactId = typeof req.query.contactId === "string" ? req.query.contactId : null;
@@ -894,7 +899,7 @@ export function registerPortalRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       // A recipient must be someone who can see this company's messages (R16-13).
       if (body.recipientId && !(await storage.hasCompanyAccess(body.recipientId, companyId))) {

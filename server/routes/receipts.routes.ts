@@ -158,7 +158,7 @@ export function registerReceiptRoutes(app: Express) {
       // Check if user has access to this company
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const receipts = await storage.getReceiptsByCompanyId(companyId);
@@ -181,7 +181,7 @@ export function registerReceiptRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const { ids } = req.body as z.infer<typeof receiptsExportSchema>;
@@ -226,7 +226,7 @@ export function registerReceiptRoutes(app: Express) {
       const { companyId } = req.params;
       const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       let usedBytes: number | null = null;
       try {
@@ -262,7 +262,7 @@ export function registerReceiptRoutes(app: Express) {
       // Check if user has access to this company
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       // merchant is optional (R05-18): similarity then relies on amount and date alone.
@@ -300,7 +300,7 @@ export function registerReceiptRoutes(app: Express) {
       // Check if user has access to this company
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const body = parsedBody<CreateReceiptBody>(req);
@@ -583,7 +583,7 @@ export function registerReceiptRoutes(app: Express) {
       const { companyId, id } = req.params;
       const userId = req.user!.id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const parsed = z
         .object({
@@ -598,7 +598,8 @@ export function registerReceiptRoutes(app: Express) {
           .json({ message: "Invalid review decision", code: "VALIDATION_ERROR" });
       }
       const receipt = await storage.getReceipt(id, companyId);
-      if (!receipt) return res.status(404).json({ message: "Receipt not found" });
+      if (!receipt)
+        return res.status(404).json({ message: "Receipt not found", code: "RECEIPT_NOT_FOUND" });
 
       await recordAudit({
         userId,
@@ -707,7 +708,7 @@ export function registerReceiptRoutes(app: Express) {
 
       const before = await findReceiptForUser(userId, id);
       if (!before) {
-        return res.status(404).json({ message: "Receipt not found" });
+        return res.status(404).json({ message: "Receipt not found", code: "RECEIPT_NOT_FOUND" });
       }
       if (before.posted) {
         throw new DomainError(
@@ -758,7 +759,7 @@ export function registerReceiptRoutes(app: Express) {
 
       const before = await findReceiptForUser(userId, id);
       if (!before) {
-        return res.status(404).json({ message: "Receipt not found" });
+        return res.status(404).json({ message: "Receipt not found", code: "RECEIPT_NOT_FOUND" });
       }
       if (!before.posted) {
         throw new DomainError(
@@ -811,7 +812,7 @@ export function registerReceiptRoutes(app: Express) {
 
       const source = await findReceiptForUser(userId, id);
       if (!source) {
-        return res.status(404).json({ message: "Receipt not found" });
+        return res.status(404).json({ message: "Receipt not found", code: "RECEIPT_NOT_FOUND" });
       }
       for (const part of parts) {
         if (part.date) await assertPeriodNotLocked(source.companyId, receiptDateToDate(part.date));
@@ -860,11 +861,11 @@ export function registerReceiptRoutes(app: Express) {
       // Remove image file before deleting DB row (best-effort; don't block on failure)
       const existing = await findReceiptForUser(userId, id);
       if (!existing) {
-        return res.status(404).json({ message: "Receipt not found" });
+        return res.status(404).json({ message: "Receipt not found", code: "RECEIPT_NOT_FOUND" });
       }
       const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       if (existing.posted) {
         throw new DomainError(
@@ -925,13 +926,16 @@ export function registerReceiptRoutes(app: Express) {
       // Get receipt — findReceiptForUser also enforces tenant access.
       let receipt = await findReceiptForUser(userId, id);
       if (!receipt) {
-        return res.status(404).json({ message: "Receipt not found" });
+        return res.status(404).json({ message: "Receipt not found", code: "RECEIPT_NOT_FOUND" });
       }
       const hasLines = Array.isArray(receipt.lines) && receipt.lines.length > 0;
       if (!hasLines && !body.accountId) {
         return res
           .status(400)
-          .json({ message: "Expense account and payment account are required" });
+          .json({
+            message: "Expense account and payment account are required",
+            code: "RECEIPT_ACCOUNTS_REQUIRED",
+          });
       }
 
       // W4-E: a foreign-currency receipt with no stated rate (stored default 1) takes the
@@ -976,10 +980,12 @@ export function registerReceiptRoutes(app: Express) {
       const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const company = await storage.getCompany(companyId);
-      if (!company) return res.status(404).json({ message: "Company not found" });
+      if (!company)
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
 
       let receipts = await storage.getReceiptsByCompanyId(companyId);
 
@@ -997,7 +1003,9 @@ export function registerReceiptRoutes(app: Express) {
       }
 
       if (!receipts.length) {
-        return res.status(404).json({ message: "No receipts found for the given filters" });
+        return res
+          .status(404)
+          .json({ message: "No receipts found for the given filters", code: "RECEIPTS_NOT_FOUND" });
       }
 
       const pdfBuffer = await renderReceiptsExportPdf(receipts, company, { from, to, category });
@@ -1024,11 +1032,12 @@ export function registerReceiptRoutes(app: Express) {
       const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const receipt = await storage.getReceipt(id, companyId);
       if (!receipt) {
-        return res.status(404).json({ message: "Receipt not found" });
+        return res.status(404).json({ message: "Receipt not found", code: "RECEIPT_NOT_FOUND" });
       }
 
       // S-L1: prevent MIME-sniffing and force the browser to treat receipt
@@ -1040,7 +1049,12 @@ export function registerReceiptRoutes(app: Express) {
       if (receipt.imagePath) {
         const image = await readReceiptImage(receipt.imagePath);
         if (!image) {
-          return res.status(404).json({ message: "No image available for this receipt" });
+          return res
+            .status(404)
+            .json({
+              message: "No image available for this receipt",
+              code: "RECEIPT_IMAGE_NOT_FOUND",
+            });
         }
         // Serve the TRUE type (sniffed from the stored bytes), with a matching extension.
         const trueMime = sniffFileType(image.buffer)?.mime ?? receipt.fileMime ?? image.contentType;
@@ -1072,7 +1086,9 @@ export function registerReceiptRoutes(app: Express) {
         return res.send(buffer);
       }
 
-      return res.status(404).json({ message: "No image available for this receipt" });
+      return res
+        .status(404)
+        .json({ message: "No image available for this receipt", code: "RECEIPT_IMAGE_NOT_FOUND" });
     })
   );
 
@@ -1086,15 +1102,17 @@ export function registerReceiptRoutes(app: Express) {
       const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const receipt = await storage.getReceipt(id, companyId);
       if (!receipt) {
-        return res.status(404).json({ message: "Receipt not found" });
+        return res.status(404).json({ message: "Receipt not found", code: "RECEIPT_NOT_FOUND" });
       }
 
       const company = await storage.getCompany(companyId);
-      if (!company) return res.status(404).json({ message: "Company not found" });
+      if (!company)
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
 
       const pdfBuffer = await renderReceiptPdf(receipt, company);
 

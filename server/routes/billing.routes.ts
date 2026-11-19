@@ -65,7 +65,8 @@ export function registerBillingRoutes(app: Express) {
       const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const ent = await companyEntitlement(companyId);
       // A company with no subscription row has no paid plan (the 0113 trigger normally creates
@@ -114,7 +115,8 @@ export function registerBillingRoutes(app: Express) {
       const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const ent = await companyEntitlement(companyId);
       const limits = ent?.limits ?? getTierLimits(NO_PLAN_ID);
@@ -299,7 +301,8 @@ export function registerBillingRoutes(app: Express) {
       const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       if (!isStripeConfigured()) {
         return res
@@ -308,15 +311,19 @@ export function registerBillingRoutes(app: Express) {
       }
 
       if (!planId || !billingCycle) {
-        return res.status(400).json({ message: "planId and billingCycle are required" });
+        return res
+          .status(400)
+          .json({ message: "planId and billingCycle are required", code: "PLAN_REQUIRED_FIELDS" });
       }
 
       if (!(PAID_PLAN_IDS as readonly string[]).includes(planId)) {
-        return res.status(400).json({ message: "Invalid plan" });
+        return res.status(400).json({ message: "Invalid plan", code: "INVALID_PLAN" });
       }
 
       if (!["monthly", "yearly"].includes(billingCycle)) {
-        return res.status(400).json({ message: "Invalid billing cycle" });
+        return res
+          .status(400)
+          .json({ message: "Invalid billing cycle", code: "INVALID_BILLING_CYCLE" });
       }
 
       const origin = req.headers.origin || req.headers.referer || "http://localhost:5000";
@@ -344,13 +351,17 @@ export function registerBillingRoutes(app: Express) {
       const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const subscription = await storage.getSubscription(companyId);
       if (!subscription?.stripeCustomerId) {
         return res
           .status(400)
-          .json({ message: "No billing account found. Please subscribe first." });
+          .json({
+            message: "No billing account found. Please subscribe first.",
+            code: "NO_BILLING_ACCOUNT",
+          });
       }
 
       const origin = req.headers.origin || req.headers.referer || "http://localhost:5000";
@@ -375,7 +386,9 @@ export function registerBillingRoutes(app: Express) {
       const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
       if (!sig || !webhookSecret) {
-        return res.status(400).json({ message: "Missing signature or webhook secret" });
+        return res
+          .status(400)
+          .json({ message: "Missing signature or webhook secret", code: "INVALID_SIGNATURE" });
       }
 
       let event;
@@ -383,7 +396,9 @@ export function registerBillingRoutes(app: Express) {
         event = stripeClient.webhooks.constructEvent(req.body, sig, webhookSecret);
       } catch (err: unknown) {
         log.error({ error: errorMessage(err) }, "Stripe webhook signature verification failed");
-        return res.status(400).json({ message: `Webhook Error: ${errorMessage(err)}` });
+        return res
+          .status(400)
+          .json({ message: `Webhook Error: ${errorMessage(err)}`, code: "INVALID_SIGNATURE" });
       }
 
       await handleWebhookEvent(event);
