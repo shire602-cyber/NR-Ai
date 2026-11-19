@@ -20,6 +20,7 @@
  * return filed before go-live are entered here and feed the next return's brought-forward pool
  * (repository.getPriorCtFacts).
  */
+import { journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { pool } from "../../db";
 import { DomainError } from "../../errors";
@@ -317,7 +318,9 @@ export async function postDeferredTax(
       {
         companyId,
         date: input.asOf,
-        memo: `Deferred tax adjustment at ${input.asOf}${input.note ? ` - ${input.note}` : ""}`,
+        ...(input.note
+          ? journalMemo("deferredTaxNote", { date: input.asOf, note: input.note })
+          : journalMemo("deferredTax", { date: input.asOf })),
         source: DEFERRED_TAX_SOURCE,
         sourceId: id,
         idempotencyKey: `deferred-tax:${id}`,

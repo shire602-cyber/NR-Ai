@@ -78,6 +78,9 @@ export interface PostJournalInput {
   /** "YYYY-MM-DD" (preferred) or a Date. */
   date: string | Date;
   memo?: string | null;
+  /** System description key + params (shared/journal-memo.ts); see `journalMemo()`. */
+  memoKey?: string | null;
+  memoParams?: Record<string, string> | null;
   /** manual | invoice | receipt | payment | bill | payroll | ... (default "manual"). */
   source?: string;
   sourceId?: string | null;
@@ -149,6 +152,8 @@ export interface NormalizedEntry {
   dateIso: string;
   dateAt: Date;
   memo: string | null;
+  memoKey: string | null;
+  memoParams: Record<string, string> | null;
   reference: string | null;
   source: string;
   sourceId: string | null;
@@ -185,6 +190,8 @@ export interface ReverseOptions {
   sourceId?: string | null;
   /** Memo of the reversal entry (default "Reversal of <entry number>[: reason]"). */
   memo?: string | null;
+  memoKey?: string | null;
+  memoParams?: Record<string, string> | null;
 }
 
 export interface ReverseResult {

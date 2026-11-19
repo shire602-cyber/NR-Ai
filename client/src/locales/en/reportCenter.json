@@ -972,5 +972,7 @@
   "reportCenter.text.unknownReceiptVendor": "Unknown receipt vendor",
   "reportCenter.text.unknownAccount": "Unknown Account",
   "reportCenter.text.ctRate": "{rate}% returned rate",
-  "reportCenter.text.creditLinePrefix": "[Credit]"
+  "reportCenter.text.creditLinePrefix": "[Credit]",
+  "reportCenter.downloadPdfArabic": "PDF (العربية)",
+  "reportCenter.downloadPdfEnglish": "PDF (English)"
 }

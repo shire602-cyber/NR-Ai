@@ -435,7 +435,7 @@ export default function JournalEntryDetail() {
       {entry.memo && (
         <SectionCard title={t["screens.memo"]}>
           <p dir="auto" className="text-sm text-muted-foreground" data-testid="text-memo">
-            {localizeJournalMemo(t, entry.memo, locale)}
+            {localizeJournalMemo(t, entry.memo, locale, entry)}
           </p>
         </SectionCard>
       )}

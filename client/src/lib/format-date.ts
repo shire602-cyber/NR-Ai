@@ -179,10 +179,42 @@ export function formatTime(value: DateInput): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/** "16 Nov 2026, 14:05" / "16 نوفمبر 2026، 14:05": one line, for logs and timestamps. */
-export function formatDateTime(value: DateInput, locale: string = "en"): string {
+/**
+ * "16 Nov 2026, 14:05" / "16 نوفمبر 2026، 14:05" as plain text, with no bidi control characters:
+ * for spreadsheets, CSV and anything that is not shown on screen. Use `formatDateTime` for the UI.
+ */
+export function formatDateTimePlain(value: DateInput, locale: string = "en"): string {
+  const parts = dateTimeParts(value, locale);
+  return parts ? `${parts.date}${parts.separator}${parts.time}` : "";
+}
+
+function dateTimeParts(
+  value: DateInput,
+  locale: string
+): { date: string; time: string; separator: string } | null {
   const d = toInstant(value);
-  if (!d) return "";
+  if (!d) return null;
   // A timestamp: day and time both in the viewer's zone (never the calendar-day reading).
-  return `${d.getDate()} ${monthName(d, locale)} ${d.getFullYear()}${locale === "ar" ? "، " : ", "}${formatTime(d)}`;
+  return {
+    date: `${d.getDate()} ${monthName(d, locale)} ${d.getFullYear()}`,
+    time: formatTime(d),
+    separator: locale === "ar" ? "، " : ", ",
+  };
+}
+
+const RLI = "\u2067";
+const LRI = "\u2066";
+const PDI = "\u2069";
+
+/**
+ * "16 Nov 2026, 14:05" / "16 نوفمبر 2026، 14:05": one line, for logs and timestamps on screen.
+ * In Arabic the date and the time are separate bidi isolates inside one right-to-left run, so the
+ * day number stays at the start of the date and the time never flips into the middle, wherever the
+ * text sits (a flex row, a table cell, a sentence).
+ */
+export function formatDateTime(value: DateInput, locale: string = "en"): string {
+  const parts = dateTimeParts(value, locale);
+  if (!parts) return "";
+  if (locale !== "ar") return `${parts.date}${parts.separator}${parts.time}`;
+  return `${RLI}${RLI}${parts.date}${PDI}${parts.separator}${LRI}${parts.time}${PDI}${PDI}`;
 }

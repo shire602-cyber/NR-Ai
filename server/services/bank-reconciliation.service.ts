@@ -21,6 +21,7 @@
  * lock, validates the target belongs to the company (404 otherwise) and records allocations in
  * bank_transaction_matches with an idempotency key. Journals are written only via server/ledger.
  */
+import { journalMemo } from "@shared/journal-memo";
 import { randomUUID } from "node:crypto";
 import type { Request } from "express";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -353,6 +354,9 @@ export type MatchTarget =
 export interface CreateEntryOptions {
   accountId: string;
   memo?: string | null;
+  /** System description key + params (shared/journal-memo.ts) stored with the entry. */
+  memoKey?: string | null;
+  memoParams?: Record<string, string> | null;
   vatTreatment?: VatTreatment;
   vatAmountFils?: number;
   bankFeeFils?: number;
@@ -1063,10 +1067,10 @@ export async function applyMatch(input: ApplyMatchInput): Promise<ApplyMatchResu
         {
           companyId,
           date: isoDate(txn.transactionDate),
-          memo: `Transfer ${inflow ? "from" : "to"} ${other.nameEn}: ${txn.description}`.slice(
-            0,
-            500
-          ),
+          ...journalMemo(inflow ? "transferFrom" : "transferTo", {
+            account: other.nameEn,
+            description: txn.description,
+          }),
           source: "bank_transfer",
           sourceId: txn.id,
           idempotencyKey: `bankmatch:${groupId}`,
@@ -1144,14 +1148,19 @@ export async function applyMatch(input: ApplyMatchInput): Promise<ApplyMatchResu
     const built = await buildEntryLines(txn, bank, target);
     const draft = target.postingMode === "draft";
     let memo = target.memo || txn.description;
-    if (target.vatTreatment && target.vatTreatment !== "none" && target.vatTreatment !== "standard")
+    let memoKey = target.memoKey ?? null;
+    if (target.vatTreatment && target.vatTreatment !== "none" && target.vatTreatment !== "standard") {
       memo = `${memo} (VAT: ${target.vatTreatment})`;
+      memoKey = null; // the English VAT suffix is not part of the key's template
+    }
     ledgerWork = async (tx) => {
       const entry = await postJournal(
         {
           companyId,
           date: isoDate(txn.transactionDate),
           memo: memo.slice(0, 500),
+          memoKey,
+          memoParams: memoKey ? (target.memoParams ?? null) : null,
           reference: txn.reference ?? null,
           source: "bank_reconciliation",
           sourceId: txn.id,

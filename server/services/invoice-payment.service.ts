@@ -14,6 +14,7 @@
 // A-B1 (kept): the old Stripe helpers marked invoices paid with a plain column
 // write and no journal. Online payment, when built, must call this service.
 
+import { journalMemo } from "@shared/journal-memo";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
@@ -592,7 +593,12 @@ export async function applyCustomerCredit(args: {
       {
         companyId: args.companyId,
         date: args.date,
-        memo: isDeposit ? `Deposit ${deposit!.deposit.number} applied to ${invoice.number}` : label,
+        ...(isDeposit
+          ? journalMemo("depositApplied", {
+              ref: deposit!.deposit.number,
+              invoice: invoice.number,
+            })
+          : journalMemo("creditApplied", { invoice: invoice.number })),
         status: "posted",
         source: isDeposit ? CUSTOMER_DEPOSIT_SOURCE : "customer_credit",
         sourceId: alloc.id,
@@ -721,7 +727,9 @@ export async function refundCustomerCredit(args: {
       {
         companyId: args.companyId,
         date: args.date,
-        memo: label,
+        ...journalMemo(isDeposit ? "refundDeposit" : "refundCredit", {
+          party: credit.customerName,
+        }),
         status: "posted",
         source: isDeposit ? CUSTOMER_DEPOSIT_SOURCE : "customer_credit",
         sourceId: alloc.id,
@@ -904,7 +912,7 @@ export async function writeOffInvoice(input: WriteOffInput) {
       {
         companyId: input.companyId,
         date: input.date,
-        memo: `${label}: ${input.reason}`.slice(0, 500),
+        ...journalMemo("badDebtWriteOff", { invoice: invoice.number, reason: input.reason }),
         status: "posted",
         source: WRITE_OFF_SOURCE,
         sourceId: invoice.id,
@@ -1026,12 +1034,21 @@ export async function setDoubtfulDebtAllowance(input: {
       delta > 0
         ? "Increase in allowance for doubtful debts"
         : "Release of allowance for doubtful debts";
-    const memo = input.memo ? `${label}: ${input.memo}` : label;
+    const memoFields = journalMemo(
+      delta > 0
+        ? input.memo
+          ? "allowanceIncreaseNote"
+          : "allowanceIncrease"
+        : input.memo
+          ? "allowanceReleaseNote"
+          : "allowanceRelease",
+      { note: input.memo ?? "" }
+    );
     const { entry } = await postJournal(
       {
         companyId: input.companyId,
         date: input.date,
-        memo: memo.slice(0, 500),
+        ...memoFields,
         status: "posted",
         source: ALLOWANCE_SOURCE,
         sourceId: allowance.id,

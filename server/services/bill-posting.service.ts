@@ -18,6 +18,7 @@
 // Uncategorised lines post to 5000 General Expenses (created on demand), never 5130 (which the
 // seeded chart uses for Loss on Asset Disposal, R11-04).
 
+import { journalMemo } from "@shared/journal-memo";
 import { sql, type SQL } from "drizzle-orm";
 import { storage } from "../storage";
 import { ACCOUNT_CODES } from "../constants";
@@ -456,6 +457,8 @@ export interface BillJournalPlan {
   lines: PostJournalLineInput[];
   apCreditFils: number;
   memo: string;
+  memoKey?: string;
+  memoParams?: Record<string, string>;
   date: string;
   /** W4-B inventory hook: bill-line index behind each planned line (null for VAT / A/P). */
   lineSources?: Array<number | null>;
@@ -656,7 +659,7 @@ export async function planBillJournal(
   return {
     lines,
     apCreditFils,
-    memo: `Vendor Bill ${billRef} - ${bill.vendor_name}`.slice(0, 500),
+    ...journalMemo("vendorBill", { ref: billRef, party: bill.vendor_name }),
     date: isoDateOf(bill.bill_date),
     lineSources: [...lineSources, null],
     lineItems: lineItems.map((l) => ({ description: l.description, amount: l.amount })),
@@ -734,6 +737,8 @@ export async function postBillJournal(
       companyId: bill.company_id,
       date: plan.date,
       memo: plan.memo,
+      memoKey: plan.memoKey ?? null,
+      memoParams: plan.memoParams ?? null,
       status: "posted",
       source: BILL_JE_SOURCE,
       sourceId: bill.id,

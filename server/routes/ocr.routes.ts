@@ -442,7 +442,7 @@ const genericExportSchema = z.object({
       })
     )
     .min(1)
-    .max(10),
+    .max(30),
   filename: z.string().max(80).optional(),
 });
 

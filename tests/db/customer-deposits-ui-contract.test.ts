@@ -81,4 +81,92 @@ describe("STEP1 F1: customer deposit UI contract (AED strings on the wire)", () 
     );
     expect(Number(alloc[0].n)).toBe(1050);
   });
+
+  it("[S2] every system posting stores its description key + params and the API returns them", async () => {
+    const t = await h.createTenant({
+      companyColumns: {
+        trn_vat_number: "100000000000003",
+        emirate: "dubai",
+        vat_filing_frequency: "Quarterly",
+        vat_period_start_month: 1,
+      },
+    });
+    const bank = await accountByCode(t, "1020");
+    const contact = await t.as.post(`${base(t)}/customer-contacts`, { name: "Palm Co" });
+    const dep = await t.as.post(`${base(t)}/customer-deposits`, {
+      contactId: contact.body.id,
+      date: "2026-02-05",
+      amount: "1050",
+      vatTreatment: "standard",
+      paymentAccountId: bank.id,
+      reference: null,
+    });
+    expect(dep.status, dep.text).toBe(201);
+    const inv = await t.as.post(`${base(t)}/invoices`, {
+      customerName: "Palm Co",
+      date: "2026-03-01",
+      placeOfSupplyEmirate: "dubai",
+      lines: [{ description: "Job", quantity: 1, unitPrice: 2000, vatRate: 5 }],
+    });
+    await t.as.patch(`/api/invoices/${inv.body.id}/status`, { status: "sent" });
+    const applied = await t.as.post(`${base(t)}/customer-credits/${dep.body.creditId}/apply`, {
+      invoiceId: inv.body.id,
+      amount: "1050",
+    });
+    expect(applied.status, applied.text).toBe(201);
+
+    const rows = await h.sql<{
+      memo: string;
+      memo_key: string | null;
+      memo_params: Record<string, string> | null;
+    }>(
+      `SELECT memo, memo_key, memo_params FROM journal_entries WHERE company_id = $1 ORDER BY created_at`,
+      [t.company.id]
+    );
+    const deposit = rows.find((r) => r.memo_key === "customerDeposit");
+    expect(deposit, JSON.stringify(rows)).toBeTruthy();
+    expect(deposit!.memo).toMatch(/^Customer deposit DEP-.* - Palm Co$/);
+    expect(deposit!.memo_params).toMatchObject({ party: "Palm Co" });
+    expect(rows.find((r) => r.memo_key === "depositApplied")?.memo_params).toMatchObject({
+      invoice: expect.stringMatching(/^INV-/),
+    });
+    expect(rows.find((r) => r.memo_key === "salesInvoice")?.memo_params).toMatchObject({
+      party: "Palm Co",
+    });
+    // No system posting is left without a key.
+    expect(rows.filter((r) => !r.memo_key).map((r) => r.memo)).toEqual([]);
+
+    // The journal list and the entry carry the key so the UI can render it in Arabic.
+    const list = await t.as.get(`${base(t)}/journal`);
+    expect(list.status, list.text).toBe(200);
+    const listed = (list.body as Array<{ memoKey: string | null }>).find(
+      (e) => e.memoKey === "customerDeposit"
+    );
+    expect(listed).toMatchObject({ memoKey: "customerDeposit" });
+
+    // A reversal is keyed too (kernel default memo); a manual entry has no key.
+    const manual = await t.as.post(`${base(t)}/journal`, {
+      date: "2026-03-02",
+      status: "posted",
+      memo: "Office rent",
+      lines: [
+        { accountId: (await accountByCode(t, "1020")).id, debit: 0, credit: 10 },
+        { accountId: (await accountByCode(t, "5020")).id, debit: 10, credit: 0 },
+      ],
+    });
+    expect(manual.status, manual.text).toBeLessThan(300);
+    const [typed] = await h.sql<{ memo_key: string | null }>(
+      `SELECT memo_key FROM journal_entries WHERE id = $1`,
+      [manual.body.id]
+    );
+    expect(typed.memo_key).toBeNull();
+    const rev = await t.as.post(`/api/journal/${manual.body.id}/reverse`, { reason: "test" });
+    expect(rev.status, rev.text).toBeLessThan(300);
+    const [reversal] = await h.sql<{ memo_key: string | null; memo_params: Record<string, string> }>(
+      `SELECT memo_key, memo_params FROM journal_entries WHERE reversed_entry_id = $1`,
+      [manual.body.id]
+    );
+    expect(reversal.memo_key).toBe("reversalOfReason");
+    expect(reversal.memo_params.reason).toBe("test");
+  });
 });

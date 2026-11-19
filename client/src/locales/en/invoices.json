@@ -546,5 +546,6 @@
   "invoices.deposits.error.amount": "Enter an amount greater than zero, with at most 2 decimals.",
   "invoices.deposits.error.paymentAccountId": "Choose the account it was received into.",
   "invoices.deposits.error.invoice": "Choose the invoice to apply it to.",
-  "invoices.deposits.noCustomers": "No customers yet. Add one to record a deposit."
+  "invoices.deposits.noCustomers": "No customers yet. Add one to record a deposit.",
+  "invoices.issued.locked": "This invoice is issued, so its customer, date and lines are locked. You can still change the notes, payment terms, due date and language below. To correct anything else, issue a credit note."
 }

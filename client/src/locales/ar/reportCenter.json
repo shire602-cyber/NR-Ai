@@ -972,5 +972,7 @@
   "reportCenter.text.unknownReceiptVendor": "تاجر إيصال غير معروف",
   "reportCenter.text.unknownAccount": "حساب غير معروف",
   "reportCenter.text.ctRate": "نسبة الضريبة المحتسبة {rate}%",
-  "reportCenter.text.creditLinePrefix": "[إشعار دائن]"
+  "reportCenter.text.creditLinePrefix": "[إشعار دائن]",
+  "reportCenter.downloadPdfArabic": "PDF (العربية)",
+  "reportCenter.downloadPdfEnglish": "PDF (الإنجليزية)"
 }

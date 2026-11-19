@@ -19,6 +19,7 @@ import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { reportDateRange } from "../shared";
+import { budgetCategoryLabel } from "@/lib/budget-categories";
 import { describeCashForecastText, renderDescriptor } from "@shared/server-copy";
 
 export default function PlanningTab() {
@@ -175,7 +176,9 @@ export default function PlanningTab() {
                 <TableBody>
                   {planningReport.largestVarianceLines.map((line) => (
                     <TableRow key={line.id}>
-                      <TableCell className="font-medium">{line.category}</TableCell>
+                      <TableCell className="font-medium">
+                        {budgetCategoryLabel(t, line.category)}
+                      </TableCell>
                       <TableCell data-numeric>
                         <Money amount={line.totals.budget} currency={"AED"} />
                       </TableCell>

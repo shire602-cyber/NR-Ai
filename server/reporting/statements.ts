@@ -1124,6 +1124,8 @@ export interface GeneralLedgerAccount {
     entryId: string;
     entryNumber: string;
     memo: string | null;
+    memoKey?: string | null;
+    memoParams?: Record<string, string> | null;
     description: string | null;
     source: string;
     debit: number;
@@ -1217,6 +1219,8 @@ export async function generalLedger(
         entryId: l.entryId,
         entryNumber: l.entryNumber,
         memo: l.memo,
+        memoKey: l.memoKey,
+        memoParams: l.memoParams,
         description: l.description,
         source: l.source,
         debit: aed(l.debit),

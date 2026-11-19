@@ -17,6 +17,7 @@
  * it to this seam (migration-import), and saving an opening provision on the employee form
  * books it at once (`syncOpeningGratuity`), so no path can book it twice or leave it unbooked.
  */
+import { journalMemo } from "@shared/journal-memo";
 import { DomainError } from "../../errors";
 import { fromFils, toFils } from "../../../shared/money";
 import { postJournal, withLedgerTx, type LedgerTx } from "../../ledger";
@@ -161,7 +162,7 @@ export async function syncOpeningGratuity(
         {
           companyId,
           date: d.asOf,
-          memo: `Opening gratuity provision at ${d.asOf} (${d.employees} employee(s))`,
+          ...journalMemo("openingGratuity", { date: d.asOf, n: d.employees }),
           status: "posted",
           kind: "opening",
           source: OPENING_GRATUITY_SOURCE,

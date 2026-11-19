@@ -448,6 +448,10 @@ export function useReportsComparisonsAndClose({
           entryNumber: entry.entryNumber,
           date: entry.date,
           memo: line.memo || entry.memo || "",
+          // The stored key describes the entry memo only; a line with its own description is
+          // localised by pattern instead.
+          memoKey: line.memo && line.memo !== entry.memo ? null : (entry.memoKey ?? null),
+          memoParams: line.memo && line.memo !== entry.memo ? null : (entry.memoParams ?? null),
           source: journalSourceLabel(entry.source),
           accountId: line.accountId,
           accountCode: line.account?.code || "",

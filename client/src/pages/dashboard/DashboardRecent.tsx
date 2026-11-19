@@ -115,7 +115,7 @@ export function DashboardRecent({ m }: { m: DashboardModel }) {
                     <li key={entry.id} className="group flex items-center gap-3 py-2.5">
                       <div className="flex-1 min-w-0">
                         <div className="truncate text-sm font-medium text-foreground">
-                          {localizeJournalMemo(t, entry.memo, locale) ||
+                          {localizeJournalMemo(t, entry.memo, locale, entry) ||
                             t["dashboard.journalEntryFallback"]}
                         </div>
                         <div className="text-caption text-muted-foreground">

@@ -16,6 +16,11 @@ import { apiUrl } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import {
+  pdfLanguageOptions,
+  statementDownloadPath,
+  statementLang,
+} from "./model/statementDownloads";
 import type { ReportDataBasis } from "@/lib/reportCatalog";
 
 export interface PlSectionLine {
@@ -272,23 +277,41 @@ export function StatementDownloads({
   /** Quiet ghost buttons for dense statement lists. */
   compact?: boolean;
 }) {
+  const { t, locale } = useTranslation();
   if (!companyId) return null;
   const base = `/api/companies/${companyId}/reports/statements/${kind}`;
   const range = toQuery({ from, to });
   const variant = compact ? "ghost" : "outline";
+  // E3: the PDF comes in Arabic and English (the reader's language first); dense lists keep one.
+  const pdfOptions = pdfLanguageOptions(locale).slice(0, compact ? 1 : 2);
   return (
     <div
       className={compact ? "flex shrink-0 gap-1" : "flex flex-wrap gap-2"}
       data-testid={`statement-downloads-${kind}`}
     >
+      {pdfOptions.map((option) => (
+        <Button
+          key={option.lang}
+          asChild
+          variant={variant}
+          size="sm"
+          className={compact ? "h-8 px-2.5" : undefined}
+        >
+          <a
+            href={apiUrl(statementDownloadPath(base, "pdf", option.lang, range))}
+            download
+            data-testid={`link-pdf-${kind}-${option.lang}`}
+          >
+            <FileText className="w-4 h-4 me-1.5" aria-hidden />
+            {compact ? t["reportCenter.downloadPdf"] : t[option.labelKey]}
+          </a>
+        </Button>
+      ))}
       <Button asChild variant={variant} size="sm" className={compact ? "h-8 px-2.5" : undefined}>
-        <a href={apiUrl(`${base}?format=pdf${range}`)} download>
-          <FileText className="w-4 h-4 me-1.5" aria-hidden />
-          <T k="reportCenter.downloadPdf" />
-        </a>
-      </Button>
-      <Button asChild variant={variant} size="sm" className={compact ? "h-8 px-2.5" : undefined}>
-        <a href={apiUrl(`${base}?format=xlsx${range}`)} download>
+        <a
+          href={apiUrl(statementDownloadPath(base, "xlsx", statementLang(locale), range))}
+          download
+        >
           <Download className="w-4 h-4 me-1.5" aria-hidden />
           <T k="reportCenter.downloadExcel" />
         </a>
@@ -332,7 +355,7 @@ export function StatementsQuickPanel({
   to?: string;
   onShowAdvanced: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   if (!companyId) return null;
   const range = toQuery({ from, to }).replace(/^&/, "");
   return (
@@ -354,7 +377,7 @@ export function StatementsQuickPanel({
           <Button asChild size="sm" variant="outline">
             <a
               href={apiUrl(
-                `/api/companies/${companyId}/reports/share-pack${range ? `?${range}` : ""}`
+                `/api/companies/${companyId}/reports/share-pack?${range ? `${range}&` : ""}lang=${statementLang(locale)}`
               )}
               download
               data-testid="link-accountant-share-pack"

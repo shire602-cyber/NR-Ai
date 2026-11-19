@@ -131,12 +131,12 @@ export default function ComparisonView({ companyId }: { companyId: string }) {
               {
                 label: t["analytics.exportProfitLossPdf"],
                 format: "pdf",
-                href: `/api/companies/${companyId}/reports/statements/profit-loss?format=pdf&${range}`,
+                href: `/api/companies/${companyId}/reports/statements/profit-loss?format=pdf&lang=${locale}&${range}`,
               },
               {
                 label: t["analytics.exportProfitLossExcel"],
                 format: "xlsx",
-                href: `/api/companies/${companyId}/reports/statements/profit-loss?format=xlsx&${range}`,
+                href: `/api/companies/${companyId}/reports/statements/profit-loss?format=xlsx&lang=${locale}&${range}`,
               },
             ]}
           />

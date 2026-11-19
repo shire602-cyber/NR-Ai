@@ -265,6 +265,8 @@ export interface LedgerLineRow {
   entryNumber: string;
   date: IsoDate;
   memo: string | null;
+  memoKey: string | null;
+  memoParams: Record<string, string> | null;
   source: string;
   sourceId: string | null;
   accountId: string;
@@ -282,6 +284,7 @@ export async function ledgerLines(
 ): Promise<LedgerLineRow[]> {
   const { rows } = await q.query(
     `SELECT je.id AS entry_id, je.entry_number, ${ENTRY_LOCAL_DATE_SQL}::text AS d, je.memo,
+            je.memo_key, je.memo_params,
             je.source, je.source_id, jl.account_id, jl.description,
             ROUND(jl.debit * 100)::bigint AS dr, ROUND(jl.credit * 100)::bigint AS cr,
             ${CLOSING_ENTRY_SQL} AS is_closing
@@ -309,6 +312,8 @@ export async function ledgerLines(
     entryNumber: r.entry_number,
     date: r.d,
     memo: r.memo ?? null,
+    memoKey: r.memo_key ?? null,
+    memoParams: r.memo_params ?? null,
     source: r.source,
     sourceId: r.source_id ?? null,
     accountId: r.account_id,

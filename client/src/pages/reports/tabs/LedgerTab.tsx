@@ -351,7 +351,7 @@ export default function LedgerTab() {
                         </TableCell>
                         <TableCell>{reportCodeLabel(line.source)}</TableCell>
                         <TableCell className="max-w-[240px] truncate text-muted-foreground">
-                          {line.memo ? localizeJournalMemo(t, line.memo, locale) : "-"}
+                          {line.memo ? localizeJournalMemo(t, line.memo, locale, line) : "-"}
                         </TableCell>
                         <TableCell data-numeric>
                           {line.debit > 0 ? formatCurrency(line.debit, "AED", locale) : "-"}

@@ -100,6 +100,10 @@ export const journalEntries = pgTable(
     entryNumber: text("entry_number").notNull(),
     date: timestamp("date").notNull(),
     memo: text("memo"),
+    // Migration 0131: key + params of a system description (shared/journal-memo.ts) so the UI
+    // renders it in the user's language; NULL on manual entries and rows posted before 0131.
+    memoKey: text("memo_key"),
+    memoParams: jsonb("memo_params").$type<Record<string, string>>(),
     // Status: draft entries can be edited, posted entries are immutable
     status: text("status").notNull().default("draft"), // draft | posted | void
     // Source tracking: where did this entry come from?

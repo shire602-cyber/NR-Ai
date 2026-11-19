@@ -50,12 +50,15 @@ export async function buildReportWorkbook(
   const loc = company.locale;
 
   for (const report of reports) {
-    const ws = wb.addWorksheet(safeSheetName(report.title.en, used), {
+    const ws = wb.addWorksheet(safeSheetName(label(loc, report.title), used), {
       views: [{ rightToLeft: loc === "ar" }],
     });
     ws.addRow([guardCell(company.legalName || company.name)]).font = { bold: true, size: 13 };
     ws.addRow([guardCell(bilingualLabel(loc, report.title))]).font = { bold: true, size: 12 };
-    ws.addRow([guardCell(report.period), company.trn ? guardCell(`TRN ${company.trn}`) : null]);
+    ws.addRow([
+      guardCell(report.period),
+      company.trn ? guardCell(`${loc === "ar" ? "الرقم الضريبي" : "TRN"} ${company.trn}`) : null,
+    ]);
     ws.addRow([]);
     let widest = 0;
     for (const table of report.tables) {
@@ -84,13 +87,26 @@ export async function buildReportWorkbook(
   }
 
   if (opts.coverage?.length) {
-    const ws = wb.addWorksheet(safeSheetName("Coverage", used));
-    const header = ws.addRow(["Report", "Status", "Data basis", "Open in app"]);
+    const ar = loc === "ar";
+    const ws = wb.addWorksheet(safeSheetName(ar ? "التغطية" : "Coverage", used), {
+      views: [{ rightToLeft: ar }],
+    });
+    const header = ws.addRow(
+      ar
+        ? ["التقرير", "الحالة", "أساس البيانات", "افتح في التطبيق"]
+        : ["Report", "Status", "Data basis", "Open in app"]
+    );
     header.font = { bold: true };
     for (const c of opts.coverage) {
       ws.addRow([
         guardCell(c.name),
-        c.status === "rendered" ? "Included in this pack" : "Indicator report: open in app",
+        c.status === "rendered"
+          ? ar
+            ? "ضمن هذه الحزمة"
+            : "Included in this pack"
+          : ar
+            ? "تقرير مؤشرات: افتحه في التطبيق"
+            : "Indicator report: open in app",
         guardCell(c.basis),
         guardCell(c.link),
       ]);

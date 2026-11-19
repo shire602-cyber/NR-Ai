@@ -10,7 +10,7 @@
  *   dotted field paths) into Arabic text that keeps the field names.
  */
 import type { z } from "zod";
-import { formatMessage, t, useI18n } from "./i18n";
+import { formatMessage, loadNamespaces, t, useI18n } from "./i18n";
 
 type RawIssue = z.core.$ZodRawIssue;
 type Dict = Record<string, string | undefined>;
@@ -187,6 +187,39 @@ export function localizeApiError(body: Record<string, unknown> | undefined): str
     if (dict("ar")[key]) return dict("ar")[key];
   }
   return undefined;
+}
+
+const HAS_ARABIC = /[\u0600-\u06FF]/;
+
+/**
+ * Arabic sentence for a failed response whose code has no catalog copy: never the server's raw
+ * English (which may even name a field id). Chosen by HTTP status; undefined in English, and when
+ * the server's own message is already Arabic.
+ */
+export function localizeApiErrorByStatus(status: number, message: string): string | undefined {
+  if (useI18n.getState().locale !== "ar") return undefined;
+  if (HAS_ARABIC.test(message)) return undefined;
+  const bucket =
+    status >= 500
+      ? "5xx"
+      : [400, 401, 403, 404, 409, 413, 422, 429].includes(status)
+        ? String(status)
+        : "other";
+  return tr(`forms.serverErrors.status.${bucket}`);
+}
+
+/**
+ * The text of a failed `fetch` (file downloads, plain fetch calls): catalog copy for the code in
+ * the active language, else a sentence for the status in Arabic, else the server's message.
+ */
+export async function failedResponseMessage(
+  status: number,
+  body: unknown,
+  fallback: string
+): Promise<string> {
+  await loadNamespaces(useI18n.getState().locale, VALIDATION_NAMESPACES).catch(() => undefined);
+  const record = body && typeof body === "object" ? (body as Record<string, unknown>) : undefined;
+  return localizeApiError(record) ?? localizeApiErrorByStatus(status, fallback) ?? fallback;
 }
 
 /**

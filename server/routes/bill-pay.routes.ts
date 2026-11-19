@@ -4,6 +4,7 @@
  * journal. Payments only on approved / partial bills (R04-01); approved bills are corrected by
  * POST /bills/:id/revise (kernel reversal + repost, R04-02) or voided (R04-08).
  */
+import { journalMemo } from "@shared/journal-memo";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
@@ -827,7 +828,9 @@ export function registerBillPayRoutes(app: Express) {
               {
                 companyId,
                 date: new Date(p.payment_date).toISOString().slice(0, 10),
-                memo: `Payment - Bill ${bill.bill_number || bill.id.slice(0, 8)} (backfill)`,
+                ...journalMemo("billPaymentBackfill", {
+                  ref: bill.bill_number || bill.id.slice(0, 8),
+                }),
                 status: "posted",
                 source: BILL_PAYMENT_JE_SOURCE,
                 sourceId: p.id,

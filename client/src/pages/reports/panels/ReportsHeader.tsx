@@ -29,7 +29,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { BooksStatusStrip } from "@/components/reports/BooksStatusStrip";
 import { ReportWorkspaceTab, personaFilters, reportWorkspaceTabs } from "../shared";
 import { SiGooglesheets } from "react-icons/si";
-import { formatMessage } from "@/lib/i18n";
+import { formatMessage, useI18n } from "@/lib/i18n";
+import { pdfLanguageOptions, statementDownloadPath } from "../model/statementDownloads";
 import { T } from "@/components/layout/T";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { evidenceSectionHref } from "@/lib/evidenceLinks";
@@ -79,6 +80,7 @@ export default function ReportsHeader() {
     setReportWorkspaceTab,
     t,
   } = useReportsPageContext();
+  const locale = useI18n((s) => s.locale);
   const focusedReportId = hasFocusedReportSelection ? activeReportViewerOption?.reportId : null;
   const pdfKind =
     focusedReportId && SERVER_PDF_REPORTS.has(focusedReportId) ? focusedReportId : null;
@@ -106,19 +108,30 @@ export default function ReportsHeader() {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {/* X5 (J1): server-rendered PDF (en/ar) for the focused statement, aging or GL. */}
-              {pdfKind && selectedCompanyId && (
-                <DropdownMenuItem asChild data-testid="menu-export-pdf">
-                  <a
-                    href={apiUrl(
-                      `/api/companies/${selectedCompanyId}/reports/statements/${pdfKind}?format=pdf${pdfRange}`
-                    )}
-                    download
+              {pdfKind &&
+                selectedCompanyId &&
+                pdfLanguageOptions(locale).map((option, index) => (
+                  <DropdownMenuItem
+                    key={option.lang}
+                    asChild
+                    data-testid={index === 0 ? "menu-export-pdf" : `menu-export-pdf-${option.lang}`}
                   >
-                    <FileText className="w-4 h-4 me-2" />
-                    <T k="reportCenter.downloadPdf" />
-                  </a>
-                </DropdownMenuItem>
-              )}
+                    <a
+                      href={apiUrl(
+                        statementDownloadPath(
+                          `/api/companies/${selectedCompanyId}/reports/statements/${pdfKind}`,
+                          "pdf",
+                          option.lang,
+                          pdfRange
+                        )
+                      )}
+                      download
+                    >
+                      <FileText className="w-4 h-4 me-2" />
+                      {t[option.labelKey]}
+                    </a>
+                  </DropdownMenuItem>
+                ))}
               <DropdownMenuItem onClick={handleExportExcel} data-testid="menu-export-excel">
                 <FileSpreadsheet className="w-4 h-4 me-2" />
                 <T k="reportCenter.exportToExcel" />

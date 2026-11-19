@@ -84,6 +84,7 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslation, translateNow } from "@/lib/i18n";
+import { budgetCategoryLabel } from "@/lib/budget-categories";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -1163,7 +1164,7 @@ export default function Budgets() {
                           >
                             <TableCell className="sticky start-0 bg-background z-10 font-medium">
                               <div>
-                                {line.category}
+                                {budgetCategoryLabel(t, line.category)}
                                 <div className="text-xs text-muted-foreground">
                                   {line.account_id && accountById.get(line.account_id)
                                     ? `${accountById.get(line.account_id)!.code} · ${accountDisplayName(accountById.get(line.account_id), locale)}`
@@ -1306,7 +1307,7 @@ export default function Budgets() {
                           <TableRow key={line.id}>
                             <TableCell className="sticky start-0 bg-background z-10 font-medium">
                               <div>
-                                {line.category}
+                                {budgetCategoryLabel(t, line.category)}
                                 {line.description && (
                                   <div className="text-xs text-muted-foreground">
                                     {line.description}

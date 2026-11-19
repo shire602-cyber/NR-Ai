@@ -215,6 +215,8 @@ export class LedgerStorage extends ReportDeliveryStorage {
         entryNumber: journalEntries.entryNumber,
         date: journalEntries.date,
         memo: journalEntries.memo,
+        memoKey: journalEntries.memoKey,
+        memoParams: journalEntries.memoParams,
         source: journalEntries.source,
         status: journalEntries.status,
       })
@@ -284,6 +286,8 @@ export class LedgerStorage extends ReportDeliveryStorage {
         journalEntryId: line.entryId,
         journalLineId: line.lineId,
         memo: line.memo,
+        memoKey: line.memoKey,
+        memoParams: line.memoParams,
         source: line.source,
         status: line.status,
       };

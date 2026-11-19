@@ -367,6 +367,8 @@ export function normalizeEntry(
     dateIso: iso,
     dateAt: at,
     memo: input.memo == null ? null : String(input.memo),
+    memoKey: input.memoKey ? String(input.memoKey).slice(0, 80) : null,
+    memoParams: input.memoKey && input.memoParams ? input.memoParams : null,
     reference: input.reference == null || input.reference === "" ? null : String(input.reference),
     source: input.source || "manual",
     sourceId: input.sourceId ? input.sourceId.toLowerCase() : null,

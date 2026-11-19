@@ -25,6 +25,7 @@
 // the one settlement rule (server/reporting/settlement.ts) sees the application. Deposits are in
 // the company's functional currency; journals post only through server/ledger.
 
+import { journalMemo } from "@shared/journal-memo";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
@@ -261,7 +262,7 @@ export async function createCustomerDeposit(input: CreateDepositInput) {
       {
         companyId: input.companyId,
         date: input.date,
-        memo: label,
+        ...journalMemo("customerDeposit", { ref: number, party: customerName }),
         reference: input.reference ?? number,
         status: "posted",
         source: CUSTOMER_DEPOSIT_SOURCE,

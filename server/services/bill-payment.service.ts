@@ -11,6 +11,7 @@
  *   "bills.recordPayment"        → recordBillPayment
  *   "bills.createDraftFromInbound" → createDraftFromInbound
  */
+import { journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { eq } from "drizzle-orm";
 import { db, pool } from "../db";
@@ -985,7 +986,7 @@ export async function recordBillPayment(
       {
         companyId,
         date: args.date,
-        memo: `Payment - Bill ${billRef} - ${bill.vendor_name}`.slice(0, 500),
+        ...journalMemo("billPayment", { ref: billRef, party: bill.vendor_name }),
         status: "posted",
         source: BILL_PAYMENT_JE_SOURCE,
         sourceId: String(payment.id),
@@ -1194,7 +1195,7 @@ export async function createPrepayment(args: {
       {
         companyId,
         date: input.payment_date,
-        memo: `Advance to ${vendor.vendorName}`.slice(0, 500),
+        ...journalMemo("advanceToVendor", { party: vendor.vendorName }),
         status: "posted",
         source: "vendor_prepayment",
         sourceId: pre.id,
@@ -1314,7 +1315,7 @@ export async function applyPrepayment(args: {
       {
         companyId,
         date,
-        memo: `Prepayment applied to bill ${bill.bill_number ?? bill.id.slice(0, 8)}`,
+        ...journalMemo("prepaymentApplied", { ref: bill.bill_number ?? bill.id.slice(0, 8) }),
         status: "posted",
         source: BILL_PAYMENT_JE_SOURCE,
         sourceId: ins[0].id,
@@ -1526,7 +1527,7 @@ export async function createDebitNote(args: {
       {
         companyId,
         date: input.note_date,
-        memo: `Debit note ${number} - ${vendor.vendorName}`.slice(0, 500),
+        ...journalMemo("vendorDebitNote", { ref: number, party: vendor.vendorName }),
         status: "posted",
         source: "vendor_debit_note",
         sourceId: note.id,
@@ -1767,7 +1768,7 @@ export async function applyDebitNote(args: {
         {
           companyId,
           date,
-          memo: `FX on debit note ${note.debit_note_number} applied`,
+          ...journalMemo("fxOnDebitNote", { ref: note.debit_note_number }),
           status: "posted",
           source: "bill_credit_fx",
           sourceId: ins[0].id,

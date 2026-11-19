@@ -1,8 +1,16 @@
-// System-generated journal memos are written by the server in English (invoice posting, payments,
-// bills, receipts). In Arabic mode the UI rebuilds the known shapes from catalog templates and
-// keeps the document number / party name from the server text. Memos typed by a person, and any
-// shape not listed here, are shown unchanged.
+// System-generated journal memos are written by the server in English. Entries posted after
+// migration 0131 also carry `memoKey` + `memoParams` (shared/journal-memo.ts): in Arabic mode the
+// UI renders them straight from the catalog (`journal.memo.<key>`). Older rows have no key, so the
+// UI rebuilds the known shapes by matching the English text (shapes generated from the shared
+// template registry, then the hand-written shapes below) and keeps the document number / party
+// name from the server text. Memos typed by a person, and any shape not listed, are unchanged.
 import { formatMessage } from "@/lib/i18n";
+import {
+  JOURNAL_LINE_TEMPLATES,
+  JOURNAL_MEMO_TEMPLATES,
+  isJournalMemoKey,
+  journalMemoCatalogKey,
+} from "@shared/journal-memo";
 
 type Translations = Record<string, string>;
 
@@ -217,16 +225,80 @@ const METHOD_KEYS: Record<string, string> = {
   wire: "journal.memo.method.wire",
   customer_deposit: "journal.memo.method.customer_deposit",
   credit_note: "journal.memo.method.credit_note",
+  rule: "journal.memo.method.rule",
+  keyword: "journal.memo.method.keyword",
+  statistical: "journal.memo.method.statistical",
+  openai: "journal.memo.method.openai",
 };
+
+const escapeRegExp = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** A matcher for one registry template: literal text, `{name}` -> lazy capture. */
+function shapeFromTemplate(catalogKey: string, template: string): MemoShape {
+  const params: string[] = [];
+  const source = template
+    .split(/(\{\w+\})/)
+    .map((part) => {
+      const m = part.match(/^\{(\w+)\}$/);
+      if (!m) return escapeRegExp(part);
+      params.push(m[1]);
+      return "(.*?)";
+    })
+    .join("");
+  return { pattern: new RegExp(`^${source}$`), key: catalogKey, params };
+}
+
+const literalLength = (template: string) => template.replace(/\{\w+\}/g, "").length;
+
+// Generated shapes first, most specific (longest literal text) first, so "Depreciation: X (3/2026,
+// catch-up)" wins over the generic "Depreciation: X"; the hand-written shapes stay as a fallback.
+const GENERATED_SHAPES: MemoShape[] = [
+  ...Object.entries(JOURNAL_MEMO_TEMPLATES).map(([k, tpl]) => ({
+    tpl: tpl as string,
+    shape: shapeFromTemplate(journalMemoCatalogKey(k), tpl),
+  })),
+  ...Object.entries(JOURNAL_LINE_TEMPLATES).map(([k, tpl]) => ({
+    tpl: tpl as string,
+    shape: shapeFromTemplate(`journal.memo.line.${k}`, tpl),
+  })),
+]
+  .sort((a, b) => literalLength(b.tpl) - literalLength(a.tpl))
+  .map((x) => x.shape);
+
+const ALL_SHAPES: MemoShape[] = [...GENERATED_SHAPES, ...SHAPES];
+
+function localizeValues(t: Translations, values: Record<string, string>): Record<string, string> {
+  if (values.method) {
+    const methodKey = METHOD_KEYS[values.method.toLowerCase()];
+    values.method = (methodKey && t[methodKey]) || values.method;
+  }
+  return values;
+}
+
+/** The stored key + params of an entry, when the server wrote them. */
+export interface JournalMemoSource {
+  memo?: string | null;
+  memoKey?: string | null;
+  memoParams?: Record<string, string> | null;
+}
 
 export function localizeJournalMemo(
   t: Translations,
   memo: string | null | undefined,
-  locale: string
+  locale: string,
+  source?: JournalMemoSource | null
 ): string {
   const text = memo ?? "";
   if (locale !== "ar" || !text) return text;
-  for (const shape of SHAPES) {
+  // Render from the stored key when the shown text is the entry's own memo (a line description
+  // that differs from the memo goes through the pattern matcher below).
+  if (source?.memoKey && isJournalMemoKey(source.memoKey) && (source.memo ?? text) === text) {
+    const template = t[journalMemoCatalogKey(source.memoKey)];
+    if (template) {
+      return formatMessage(template, localizeValues(t, { ...(source.memoParams ?? {}) }));
+    }
+  }
+  for (const shape of ALL_SHAPES) {
     const match = text.match(shape.pattern);
     const template = t[shape.key];
     if (!match || !template) continue;
@@ -234,11 +306,7 @@ export function localizeJournalMemo(
     shape.params.forEach((name, i) => {
       values[name] = (match[i + 1] ?? "").trim();
     });
-    if (values.method) {
-      const methodKey = METHOD_KEYS[values.method.toLowerCase()];
-      values.method = (methodKey && t[methodKey]) || values.method;
-    }
-    return formatMessage(template, values);
+    return formatMessage(template, localizeValues(t, values));
   }
   return text;
 }

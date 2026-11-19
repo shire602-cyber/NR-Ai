@@ -108,22 +108,22 @@ export default function AgeingView({ companyId }: { companyId: string }) {
               {
                 label: t["analytics.exportReceivablesPdf"],
                 format: "pdf",
-                href: `/api/companies/${companyId}/reports/statements/ar-aging?format=pdf&to=${asOf}`,
+                href: `/api/companies/${companyId}/reports/statements/ar-aging?format=pdf&lang=${locale}&to=${asOf}`,
               },
               {
                 label: t["analytics.exportPayablesPdf"],
                 format: "pdf",
-                href: `/api/companies/${companyId}/reports/statements/ap-aging?format=pdf&to=${asOf}`,
+                href: `/api/companies/${companyId}/reports/statements/ap-aging?format=pdf&lang=${locale}&to=${asOf}`,
               },
               {
                 label: t["analytics.exportReceivablesExcel"],
                 format: "xlsx",
-                href: `/api/companies/${companyId}/reports/statements/ar-aging?format=xlsx&to=${asOf}`,
+                href: `/api/companies/${companyId}/reports/statements/ar-aging?format=xlsx&lang=${locale}&to=${asOf}`,
               },
               {
                 label: t["analytics.exportPayablesExcel"],
                 format: "xlsx",
-                href: `/api/companies/${companyId}/reports/statements/ap-aging?format=xlsx&to=${asOf}`,
+                href: `/api/companies/${companyId}/reports/statements/ap-aging?format=xlsx&lang=${locale}&to=${asOf}`,
               },
             ]}
           />

@@ -21,6 +21,7 @@
 // Status is server-owned and moves only through `invoiceMachine`
 // (invoice-state-machine.ts) with conditional transitionRow updates.
 
+import { journalMemo } from "@shared/journal-memo";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
@@ -593,12 +594,12 @@ async function postRevenueInTx(tx: LedgerTx, invoice: Invoice, userId: string): 
     accounts: acc,
     baseCurrency,
   });
-  const docLabel = invoice.invoiceType === "debit_note" ? "Debit Note" : "Sales Invoice";
+  const docMemoKey = invoice.invoiceType === "debit_note" ? "debitNote" : "salesInvoice";
   const { replayed, entry } = await postJournal(
     {
       companyId: invoice.companyId,
       date: dateOnly(invoice.date),
-      memo: `${docLabel} ${invoice.number} - ${invoice.customerName}`,
+      ...journalMemo(docMemoKey, { ref: invoice.number, party: invoice.customerName }),
       status: "posted",
       source: "invoice",
       sourceId: invoice.id,
@@ -1088,10 +1089,10 @@ async function postCreditNoteInTx(args: {
     {
       companyId,
       date: dateOnly(creditNote.date),
-      memo:
-        mode === "remaining"
-          ? `Credit Note ${creditNote.number} - reversal of Invoice ${original.number}`
-          : `Credit Note ${creditNote.number} - partial credit of Invoice ${original.number}`,
+      ...journalMemo(mode === "remaining" ? "creditNoteReversal" : "creditNotePartial", {
+        ref: creditNote.number,
+        invoice: original.number,
+      }),
       status: "posted",
       source: "invoice",
       sourceId: creditNote.id,

@@ -157,6 +157,9 @@ describe("W3-A sales cycle", () => {
     expect(cur.body.code).toBe("INVOICE_ISSUED_IMMUTABLE");
     const cust = await t.as.put(`/api/invoices/${inv.id}`, { customerName: "Renamed" });
     expect(cust.status).toBe(409);
+    // S1: the message never names a field id (the UI shows catalog copy for the code).
+    expect(cust.body.message).not.toMatch(/customerName/);
+    expect(cust.body.details.fields).toContain("customerName");
     const lines = await t.as.put(`/api/invoices/${inv.id}`, {
       lines: [{ description: "Consulting", quantity: 2, unitPrice: 1000, vatRate: 5 }],
     });
