@@ -8,6 +8,8 @@ import { t as catalogs } from "./i18n";
 import { currentExportLocale, localizeExportSheets } from "./export-localize";
 import { localizeServerText } from "@shared/server-copy";
 import { budgetCategoryLabel } from "./budget-categories";
+import { activityActionLabel, activityEntityLabel, activitySentence } from "./activity-log-labels";
+import { localizeJournalMemo } from "./journal-memo";
 
 // Shape of one row in the OCR-format Excel export. Matches the server-side
 // schema in `server/services/excel-export.service.ts` so the request body and
@@ -1282,7 +1284,11 @@ export function prepareLedgerReportsForExport(report: any): ExportData[] {
           accountCode: line.accountCode || "",
           accountName: line.accountName || "",
           accountType: line.accountType || "",
-          memo: line.memo || "",
+          memo: localizeJournalMemo(
+            catalogs[currentExportLocale()],
+            line.memo,
+            currentExportLocale()
+          ),
           source: line.source || "Unknown",
           debit: formatExportAmount(line.debit),
           credit: formatExportAmount(line.credit),
@@ -1339,6 +1345,22 @@ export function prepareMonthEndCloseStatusForExport(report: any): ExportData[] {
   ];
 }
 
+/**
+ * An audit action or record-type label in the exporting user's language: the app's catalog label
+ * for an Arabic user (as on the Audit trail screen), the stored English words otherwise.
+ */
+function auditLabel(
+  code: string | null | undefined,
+  english: string | null | undefined,
+  labelFor: (catalog: Record<string, string>, code: string) => string,
+  fallback = "Unknown"
+): string {
+  if (currentExportLocale() === "ar" && code && code !== "unknown") {
+    return labelFor(catalogs.ar, code);
+  }
+  return english || fallback;
+}
+
 export function prepareAuditTrailForExport(report: any): ExportData[] {
   const rows = report?.rows ?? [];
   const actionRows = report?.actionRows ?? [];
@@ -1368,7 +1390,7 @@ export function prepareAuditTrailForExport(report: any): ExportData[] {
         { header: "Latest Activity", key: "latestAt", width: 16 },
       ],
       rows: actionRows.map((row: any) => ({
-        action: row.label || row.action || "Unknown",
+        action: auditLabel(row.key, row.label || row.action, activityActionLabel),
         count: row.count ?? 0,
         latestAt: formatDateForExport(row.latestAt),
       })),
@@ -1381,7 +1403,7 @@ export function prepareAuditTrailForExport(report: any): ExportData[] {
         { header: "Latest Activity", key: "latestAt", width: 16 },
       ],
       rows: entityRows.map((row: any) => ({
-        entity: row.label || row.entityType || "Unknown",
+        entity: auditLabel(row.key, row.label || row.entityType, activityEntityLabel),
         count: row.count ?? 0,
         latestAt: formatDateForExport(row.latestAt),
       })),
@@ -1400,11 +1422,19 @@ export function prepareAuditTrailForExport(report: any): ExportData[] {
       ],
       rows: rows.map((row: any) => ({
         date: formatDateForExport(row.createdAt),
-        action: row.actionLabel || row.action || "",
-        entity: row.entityLabel || row.entityType || "",
+        action: auditLabel(row.action, row.actionLabel || row.action, activityActionLabel, ""),
+        entity: auditLabel(
+          row.entityType,
+          row.entityLabel || row.entityType,
+          activityEntityLabel,
+          ""
+        ),
         entityId: row.entityId || "",
         risk: row.riskLevel || "Low",
-        description: row.description || "",
+        description:
+          currentExportLocale() === "ar" && row.action
+            ? activitySentence(catalogs.ar, row, "ar")
+            : row.description || "",
         userId: row.userId || "",
         metadata: row.metadata || "",
       })),
@@ -1577,7 +1607,13 @@ export function preparePlanningReportsForExport(report: any): ExportData[] {
           actual: formatExportAmount(line.totals?.actual),
           variance: formatExportAmount(line.totals?.variance),
           variancePercent: formatExportPercent(line.totals?.variancePercent),
-          status: Number(line.totals?.variance ?? 0) < 0 ? "Over budget" : "Within budget",
+          // Same rule as the screen (W3-E): only a spend line above its budget is over budget; an
+          // income line below target is not.
+          status:
+            line.accountType !== "income" &&
+            Number(line.totals?.actual ?? 0) > Number(line.totals?.budget ?? 0)
+              ? "Over budget"
+              : "Within budget",
         })) ?? [],
     },
     {

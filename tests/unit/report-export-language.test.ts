@@ -602,6 +602,55 @@ describe("E1: report Excel exports in the exporting user's language", () => {
     expect(checklist.rows[0].status).toBe("يحتاج إلى مراجعة");
   });
 
+  it("audit trail sheets use the Audit trail screen's Arabic action, record and sentence labels", () => {
+    const report = {
+      actionRows: [{ key: "invoice.create", label: "invoice create", count: 1, latestAt: stamp }],
+      entityRows: [{ key: "invoice", label: "invoice", count: 1, latestAt: stamp }],
+      rows: [
+        {
+          createdAt: stamp,
+          action: "invoice.create",
+          actionLabel: "invoice create",
+          entityType: "invoice",
+          entityLabel: "invoice",
+          description: "Invoice INV-2026-001 created",
+          riskLevel: "Low",
+        },
+      ],
+    };
+    setLocale("ar");
+    const ar = localizeExportSheetsWith(prepareAuditTrailForExport(report), "ar", EXPORT_AR);
+    const byName = Object.fromEntries(ar.map((sheet) => [sheet.sheetName, sheet.rows]));
+    expect(byName["إجراءات التدقيق"][0].action).toBe("أُنشئت فاتورة");
+    expect(byName["كيانات التدقيق"][0].entity).toBe("فاتورة");
+    const detail = byName["تفاصيل سجل التدقيق"][0];
+    expect(detail.action).toBe("أُنشئت فاتورة");
+    expect(detail.description).toBe("أُنشئت الفاتورة INV-2026-001");
+    expect(detail.risk).toBe("منخفض");
+    setLocale("en");
+    const en = prepareAuditTrailForExport(report);
+    expect(en[3].rows[0]).toMatchObject({
+      action: "invoice create",
+      description: "Invoice INV-2026-001 created",
+    });
+  });
+
+  it("budget variance status follows the screen rule: an income line under target is not over budget", () => {
+    setLocale("en");
+    const sheet = preparePlanningReportsForExport({
+      varianceLines: [
+        { category: "Revenue", accountType: "income", totals: { budget: 100, actual: 40 } },
+        { category: "Marketing", accountType: "expense", totals: { budget: 100, actual: 140 } },
+        { category: "Rent", accountType: "expense", totals: { budget: 100, actual: 90 } },
+      ],
+    }).find((s) => s.sheetName === "Budget Variance")!;
+    expect(sheet.rows.map((row) => row.status)).toEqual([
+      "Within budget",
+      "Over budget",
+      "Within budget",
+    ]);
+  });
+
   it("S5: budget categories are Arabic for an Arabic user and unchanged for others", () => {
     setLocale("ar");
     const planning = preparePlanningReportsForExport({
