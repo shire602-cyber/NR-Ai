@@ -223,7 +223,7 @@ export function registerCompanyRoutes(app: Express) {
   app.post(
     "/api/companies",
     authMiddleware,
-    // H8: the free tier's caps (1 user, 20 invoices/month) were bypassable by
+    // H8: the old plan caps were bypassable by
     // simply creating another company. maxCompanies is now actually enforced.
     checkCompanyQuota(),
     strictBody(createCompanyBody),

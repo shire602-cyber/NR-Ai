@@ -529,7 +529,7 @@ const DUNNING_COPY = [
   },
   {
     subject: "Final notice: your Muhasib.ai plan will be downgraded",
-    body: "We have not been able to collect your subscription payment. If it stays unpaid, your company moves to the Free plan when Stripe ends the subscription.",
+    body: "We have not been able to collect your subscription payment. If it stays unpaid, your company loses access to paid features and its books become read-only when Stripe ends the subscription.",
   },
 ];
 

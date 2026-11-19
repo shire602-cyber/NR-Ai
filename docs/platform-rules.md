@@ -136,7 +136,7 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
 - Free trial (owner decision): every new company gets a `TRIAL_DAYS` (14) free trial of all
   features, no card required (`shared/trial.ts`, with the end behaviour constant). The trial start
   is the company's subscription row `created_at` (existing companies count from their row), and
-  `/billing/subscription` returns `trial { daysLeft, ended, ... }` for the free plan. Nothing is
+  `/billing/subscription` returns `trial { daysLeft, ended, ... }` for a company on no paid plan. Nothing is
   locked when it ends: the dashboard and subscription page show a trial banner ("X days left" /
   "Your trial has ended - contact us to choose a plan", mailto support@muhasib.ai), and monthly
   invoice/receipt/seat figures stay unenforced until the owner decides. The public "14-day free

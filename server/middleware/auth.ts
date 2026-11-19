@@ -21,7 +21,7 @@ export interface AuthUser {
   firmRole: "firm_owner" | "firm_admin" | null;
 }
 
-/** Subscription cached on a request: the company's row, or the implicit Free plan. */
+/** Subscription cached on a request: the company's row, or the implicit no-plan state (trial, then read-only). */
 export type RequestSubscription =
   | Subscription
   | { companyId: string; planId: string; implicit: true };
