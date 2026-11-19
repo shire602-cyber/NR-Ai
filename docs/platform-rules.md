@@ -113,6 +113,8 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   (the server still refuses). A 403 list must render as "no access", never as empty data.
 - `TRUST_PROXY_HOPS` (default 1, warning in production when unset) sets Express `trust proxy` for
   `req.ip` and per-IP rate limits; `true` is refused.
+- One VAT jurisdiction: UAE (5% standard). Saudi ZATCA and the 15% KSA rate were removed in STEP2
+  (migration 0133); do not reintroduce country-specific rates without an owner decision.
 - FX rate convention: a row (X, Y, r) means 1 X = r Y; company rates are stored as (foreign, base)
   with `company_id` set (NULL = admin-only system row) and `rate_type` spot | closing | average.
   Migration 0094 assigns pre-0094 non-FTA rates to the company only when the database has exactly

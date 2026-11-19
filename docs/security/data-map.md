@@ -30,7 +30,7 @@ capability report (`shared/capabilities.ts`, `/api/integrations/status`) shows w
 | Email (Resend or SMTP provider)               | recipient address, message body, attachments                                    | `RESEND_API_KEY`, `SMTP_*`            |
 | Payments (Stripe)                             | billing contact, invoice amount, payer details                                  | `STRIPE_*`                            |
 | Bank feeds (Lean, Tarabut, Wio)               | bank account and transaction data (inbound)                                     | provider env vars                     |
-| E-invoicing ASP / ZATCA                       | e-invoice XML (buyer/seller identifiers)                                        | `EINVOICE_ASP_*`, `ZATCA_*`           |
+| E-invoicing ASP                               | e-invoice XML (buyer/seller identifiers)                                        | `EINVOICE_ASP_*`, `ACUBE_*`, `COMPLYANCE_*` |
 | SMS / WhatsApp (Twilio, Meta)                 | phone numbers, message text                                                     | `TWILIO_*`, `WHATSAPP_*`              |
 | Error monitoring (Sentry)                     | stack traces, request metadata                                                  | `SENTRY_DSN`                          |
 | CAPTCHA (Cloudflare Turnstile)                | widget token, client IP                                                         | `TURNSTILE_*`                         |

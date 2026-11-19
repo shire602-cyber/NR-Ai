@@ -1,4 +1,4 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0122)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0133)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
@@ -29,7 +29,7 @@ Restore the dump from section 1 (or a Railway snapshot) into a scratch database,
 ```
 export DATABASE_URL=postgres://.../rehearsal   # the restored copy
 \timing on                                     # in psql; or time the command below
-time npm run db:migrate                         # applies 0089-0122; record total and slowest file
+time npm run db:migrate                         # applies 0089-0133; record total and slowest file
 npm run build && PORT=<free port> npm start     # boot check: /health/ready 200, /api/version
 ```
 
@@ -128,7 +128,30 @@ psql "$DATABASE_URL" -f scripts/qa/find-header-posting-accounts.sql
 
 Zero rows means clear. Attach the output (even when empty) to the rehearsal record.
 
-### 2d. Post-migrate check: skipped `uq_employees_*` unique indexes (0118)
+Pre-deploy SQL check for the STEP2 removal of Saudi ZATCA and the 15% KSA VAT rate (migration 0133;
+read-only, run on production or the snapshot BEFORE the deploy):
+
+```
+psql "$DATABASE_URL" -f scripts/qa/find-ksa-zatca-data.sql
+```
+
+All counts 0 means clear. Stop rule: a non-zero `zatca_egs_units` / `zatca_documents` count blocks
+migration 0133 (it refuses to drop a table that holds rows; export it and get owner sign-off first).
+A non-zero count of POSTED 15% documents needs an owner decision before the deploy: their stored
+totals and the ledger stay as posted, but re-rendering a stored 15% line (PDF, e-invoice) would
+recompute it at 5%. Draft 15% documents, 15% company defaults (reset to 5% by 0133) and
+Saudi-address companies are informational.
+
+### 2d. Post-migrate checks
+
+After migrating, confirm migration 0133 removed both Saudi ZATCA tables (expect zero rows):
+
+```sql
+SELECT table_name FROM information_schema.tables
+ WHERE table_schema = 'public' AND table_name LIKE 'zatca\_%';
+```
+
+#### Skipped `uq_employees_*` unique indexes (0118)
 
 Migration `0118_x4_payroll.sql` creates three partial unique indexes on `employees`, but each one is
 SKIPPED with only a `RAISE NOTICE` when the existing data already holds duplicates. A skipped index
@@ -186,7 +209,8 @@ that has no git metadata. If it is `null` after deploy, set `COMMIT_SHA=<full or
 variable and redeploy. The smoke test below fails when the SHA does not match, so confirm it first.
 
 Feature variables stay unset until proven (section 9): `EINVOICE_PROVIDER`, `ACUBE_*`, `COMPLYANCE_*`,
-`EINVOICE_INBOUND_WEBHOOK_SECRET`, Stripe keys, email provider, `ZATCA_ENV`.
+`EINVOICE_INBOUND_WEBHOOK_SECRET`, Stripe keys, email provider. Unset any `ZATCA_*` variables: Saudi ZATCA was removed in STEP2 and
+nothing reads them any more.
 
 ## 4. Deploy
 
@@ -244,7 +268,7 @@ Work `ledger_repair_findings` per tenant with an accountant; they are flagged, n
 A-Cube e-invoicing (built from documentation only; stays off until proven in the A-Cube sandbox with
 owner credentials), email provider (runs stay `blocked_no_provider` until configured), Stripe billing
 and online payments, WPS SIF (bank acceptance), GPSSA, gratuity and corporate-tax rules (adviser
-sign-off), FAF export (check against the current FTA specification), ZATCA. The e-invoice mandate dates
+sign-off), FAF export (check against the current FTA specification). The e-invoice mandate dates
 and the 14-day reporting window are assumptions shown as guidance in the UI; confirm them with the MoF
 and FTA. The PR description must say so, so "394 fixed" is not read as "certified".
 
@@ -253,7 +277,7 @@ and FTA. The PR description must say so, so "394 fixed" is not read as "certifie
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
 `einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
 safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
-0089-0122, then run it a second time to confirm it is a no-op.
+0089-0133, then run it a second time to confirm it is a no-op.
 
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):
