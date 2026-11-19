@@ -79,6 +79,8 @@ export interface CreateTenantOptions {
   userType?: "customer" | "client" | "admin" | "client_portal";
   /** Display name prefix; used in the generated email too. */
   name?: string;
+  /** Mark the user's email verified (S5: portal invitations need a verified inviter). */
+  emailVerified?: boolean;
   /** Subscription plan id to set (default: leave the free plan). */
   planId?: string;
   /** Company fields to set directly after registration (snake_case columns). */
@@ -406,6 +408,11 @@ export async function startHarness(): Promise<Harness> {
            user_type = COALESCE($4, user_type) WHERE id = $1`,
         [user.id, opts.firmRole ?? null, opts.isAdmin ?? null, opts.userType ?? null]
       );
+    }
+    if (opts.emailVerified) {
+      await sql(`UPDATE users SET email_verified = true, email_verified_at = now() WHERE id = $1`, [
+        user.id,
+      ]);
     }
     if (opts.planId) {
       await sql(`UPDATE subscriptions SET plan_id = $2, plan_name = $2 WHERE company_id = $1`, [

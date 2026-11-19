@@ -46,7 +46,7 @@ async function portalLink(t: Tenant, contactId: string) {
 
 describe("W4-D portal identity and visibility", () => {
   it("[R16-04] drafts are not listed in the portal and their PDF is 404; issued invoices are", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Portal Customer");
     const draft = await invoice(t, cid, false);
     const issued = await invoice(t, cid, true);
@@ -65,7 +65,7 @@ describe("W4-D portal identity and visibility", () => {
   });
 
   it("[R16-06] identity is the contact id: renaming keeps access and same-name contacts are isolated", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const a = await contact(t, "Twin Trading");
     const b = await contact(t, "Twin Trading");
     const invA = await invoice(t, a);
@@ -85,7 +85,7 @@ describe("W4-D portal identity and visibility", () => {
   });
 
   it("[R16-07] tokens are hashed, shown once, 90-day, revocable; 60 bad tokens get 429; access is logged", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Token Customer");
     await invoice(t, cid);
     const link = await portalLink(t, cid);
@@ -145,7 +145,7 @@ describe("W4-D portal identity and visibility", () => {
   });
 
   it("[R16-05] a client-portal user sees only their contact's invoices and customer thread, never staff threads", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const mine = await contact(t, "Bound Customer");
     const theirs = await contact(t, "Other Customer");
     const myInv = await invoice(t, mine);
@@ -206,8 +206,14 @@ describe("W4-D portal identity and visibility", () => {
     ]);
     const reply = await pu.as.post("/api/client-portal/messages", { content: "Thanks!" });
     expect(reply.status, reply.text).toBe(201);
-    expect(reply.body.contactId).toBe(mine);
-    expect(reply.body.visibility).toBe("customer");
+    // S5-SEC-6: a DTO without internal ids; the row itself is bound to the contact.
+    expect(reply.body.contactId).toBeUndefined();
+    expect(reply.body.senderId).toBeUndefined();
+    expect(reply.body.fromMe).toBe(true);
+    const stored = await h.sql(`SELECT contact_id, visibility FROM messages WHERE id = $1`, [
+      reply.body.id,
+    ]);
+    expect(stored[0]).toMatchObject({ contact_id: mine, visibility: "customer" });
     // Statements are the customer's statement of account, not the company P&L.
     const st = await pu.as.get("/api/client-portal/statements");
     expect(st.status).toBe(200);
@@ -219,7 +225,7 @@ describe("W4-D portal identity and visibility", () => {
 
 describe("W4-D statements of account", () => {
   it("[R16-15] the customer statement ties to the customer's AR balance and the aging report", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Statement Customer");
     const a = await invoice(t, cid);
     const b = await invoice(t, cid, true, 2000);
@@ -297,7 +303,7 @@ describe("W4-D statements of account", () => {
   });
 
   it("[R11-15] supplier statement: bills less payments, closing balance and aging", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const v = await h.sql(
       `INSERT INTO vendors (company_id, name) VALUES ($1, 'Paper Supplies FZE') RETURNING id`,
       [t.company.id]
@@ -329,7 +335,7 @@ describe("W4-D statements of account", () => {
 
 describe("W4-D customer self-service", () => {
   it("[R16-16] one-time-code login, quote acceptance and customer upload into the vault", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Self Service Co", "buyer@selfservice.example");
     const req = await h.anon.post("/api/portal/login/request", {
       companyId: t.company.id,
@@ -422,7 +428,7 @@ describe("W4-D customer self-service", () => {
   });
 
   it("[R16-19] the portal shows the e-invoice status and serves the e-invoice XML when one exists", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "E-Invoice Co");
     const inv = await invoice(t, cid);
     await h.sql(
@@ -443,9 +449,9 @@ describe("W4-D customer self-service", () => {
 
 describe("J4 portal link management follows the company role", () => {
   it("J4: a viewer can list link metadata but cannot mint or revoke links; the owner can", async () => {
-    const t = await h.createTenant({ name: "PortalRole" });
+    const t = await h.createTenant({ emailVerified: true, name: "PortalRole" });
     const cid = await contact(t, "Role Customer");
-    const v = await h.createTenant({ name: "PortalViewer" });
+    const v = await h.createTenant({ emailVerified: true, name: "PortalViewer" });
     await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')`, [
       t.company.id,
       v.user.id,

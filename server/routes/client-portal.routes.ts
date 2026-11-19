@@ -21,8 +21,6 @@ import { DomainError } from "../errors";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
 import {
   customerPortalAccounts,
-  firmClientLinks,
-  firms,
   invoices,
   messages,
   type Company,
@@ -157,6 +155,30 @@ export function totalsByCurrency(
     .sort((a, b) => a.currency.localeCompare(b.currency));
 }
 
+/** S5-SEC-6: what a customer sees of a message: no sender, recipient, company or contact ids. */
+export function portalMessageDto(
+  m: {
+    id: string;
+    threadId: string | null;
+    subject: string | null;
+    content: string;
+    senderId: string;
+    isRead: boolean | null;
+    createdAt: Date;
+  },
+  viewerId: string
+) {
+  return {
+    id: m.id,
+    threadId: m.threadId,
+    subject: m.subject,
+    content: m.content,
+    isRead: !!m.isRead,
+    fromMe: m.senderId === viewerId,
+    createdAt: m.createdAt,
+  };
+}
+
 export function registerClientPortalRoutes(app: Express): void {
   const chain: RequestHandler[] = [
     authMiddleware as RequestHandler,
@@ -170,15 +192,9 @@ export function registerClientPortalRoutes(app: Express): void {
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
       const { company, contact } = scopeOf(req);
-      // The accounting firm serving this client (active engagement), for the portal header.
-      const [firm] = await db
-        .select({ name: firms.name })
-        .from(firmClientLinks)
-        .innerJoin(firms, eq(firms.id, firmClientLinks.firmId))
-        .where(and(eq(firmClientLinks.companyId, company.id), eq(firmClientLinks.status, "active")))
-        .limit(1);
+      // S5-SEC-6: the customer sees the supplier only; the supplier's accounting firm is NR firm
+      // context and is never returned here.
       res.json({
-        firmName: firm?.name ?? null,
         id: company.id,
         name: company.name,
         logoUrl: company.logoUrl ?? null,
@@ -389,7 +405,7 @@ export function registerClientPortalRoutes(app: Express): void {
     "/api/client-portal/messages",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, contact } = scopeOf(req);
+      const { companyId, contact, userId } = scopeOf(req);
       const rows = await db
         .select()
         .from(messages)
@@ -401,7 +417,7 @@ export function registerClientPortalRoutes(app: Express): void {
           )
         )
         .orderBy(asc(messages.createdAt));
-      res.json(rows);
+      res.json(rows.map((m) => portalMessageDto(m, userId)));
     })
   );
 
@@ -446,7 +462,7 @@ export function registerClientPortalRoutes(app: Express): void {
           visibility: "customer",
         })
         .returning();
-      res.status(201).json(message);
+      res.status(201).json(portalMessageDto(message, userId));
     })
   );
 }

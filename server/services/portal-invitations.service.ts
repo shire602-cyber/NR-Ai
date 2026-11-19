@@ -32,6 +32,7 @@ import {
 } from "../../shared/schema";
 import {
   PORTAL_INVITE_MAX_PER_DAY,
+  PORTAL_INVITE_MAX_PER_DAY_TRIAL,
   PORTAL_INVITE_MAX_PER_HOUR,
   PORTAL_INVITE_MAX_SENDS_PER_DAY,
   PORTAL_INVITE_RESEND_COOLDOWN_S,
@@ -52,6 +53,8 @@ import { paymentsAvailability, publicBaseUrl } from "./payments";
 import { recordAudit } from "./audit.service";
 import { isPlaceholderPasswordHash, passwordPolicySchema } from "../auth";
 import { notificationCopy } from "../../shared/server-copy";
+import { companyEntitlement } from "../middleware/featureGate";
+import { revokeAllUserTokens } from "./auth-tokens.service";
 
 const log = createLogger("portal-invitations");
 
@@ -138,6 +141,25 @@ async function loadCompany(companyId: string): Promise<Company> {
 
 // ─── Delivery ───────────────────────────────────────────────────────────────
 
+/**
+ * S5-SEC-4: the From display name is the company's registered name only, stripped of anything that
+ * could pose as someone else (addresses, links, brackets, control characters) and length-capped.
+ * Falls back to the platform name when nothing usable is left.
+ */
+export function inviteSenderName(company: Pick<Company, "name" | "legalName">): string {
+  const raw = (company.legalName || company.name || "").normalize("NFKC");
+  const clean = raw
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f<>"\\;:,@]/g, " ")
+    .replace(/\b(?:https?|ftp)\s*\/\/\S*/gi, " ")
+    .replace(/\bwww\.\S+/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60)
+    .trim();
+  return clean || "Muhasib.ai";
+}
+
 async function deliverInvitation(
   inv: CustomerPortalInvitation,
   rawToken: string,
@@ -155,7 +177,7 @@ async function deliverInvitation(
   });
   const result = await sendEmail(inv.email, mail.subject, mail.text, {
     html: mail.html,
-    fromName: company.name,
+    fromName: inviteSenderName(company),
     companyId: inv.companyId,
     category: "portal_invite",
     sensitive: true,
@@ -186,6 +208,10 @@ async function deliverInvitation(
 // ─── Staff operations ───────────────────────────────────────────────────────
 
 async function enforceInviteRate(companyId: string): Promise<void> {
+  // S5-SEC-4: a company still on its free trial may send far fewer invitations a day.
+  const ent = await companyEntitlement(companyId).catch(() => null);
+  const dayCap =
+    ent?.state === "trial" ? PORTAL_INVITE_MAX_PER_DAY_TRIAL : PORTAL_INVITE_MAX_PER_DAY;
   const [row] = await db
     .select({
       hour: sql<number>`count(*) FILTER (WHERE ${customerPortalInvitations.createdAt} > now() - interval '1 hour')::int`,
@@ -193,15 +219,25 @@ async function enforceInviteRate(companyId: string): Promise<void> {
     })
     .from(customerPortalInvitations)
     .where(eq(customerPortalInvitations.companyId, companyId));
-  if (
-    (row?.hour ?? 0) >= PORTAL_INVITE_MAX_PER_HOUR ||
-    (row?.day ?? 0) >= PORTAL_INVITE_MAX_PER_DAY
-  ) {
+  if ((row?.hour ?? 0) >= PORTAL_INVITE_MAX_PER_HOUR || (row?.day ?? 0) >= dayCap) {
     throw new DomainError(
       "PORTAL_INVITE_RATE_LIMITED",
       429,
       { retryAfter: (row?.hour ?? 0) >= PORTAL_INVITE_MAX_PER_HOUR ? 3600 : 86_400 },
       "Too many invitations sent. Try again later."
+    );
+  }
+}
+
+/** S5-SEC-2/4: only an inviter with a verified email may invite (no grace period for this). */
+async function requireVerifiedInviter(userId: string): Promise<void> {
+  const inviter = await storage.getUser(userId);
+  if (!inviter?.emailVerified) {
+    throw new DomainError(
+      "EMAIL_VERIFICATION_REQUIRED",
+      403,
+      { resendUrl: "/api/auth/verify-email/resend" },
+      "Verify your email address before inviting customers to the portal."
     );
   }
 }
@@ -214,6 +250,7 @@ export async function createInvitation(args: {
   req?: Request;
 }): Promise<InviteResult> {
   const { companyId, body } = args;
+  await requireVerifiedInviter(args.invitedBy);
   const contact = await loadContact(companyId, args.contactId);
   if (!contact.isActive) {
     throw new DomainError("CONTACT_NOT_FOUND", 404, undefined, "Contact not found");
@@ -342,6 +379,7 @@ export async function resendInvitation(args: {
   actorId: string;
   req?: Request;
 }): Promise<InviteResult> {
+  await requireVerifiedInviter(args.actorId);
   const inv = await loadInvitation(args.companyId, args.invitationId);
   if (inv.status !== "pending" && inv.status !== "expired") {
     throw new DomainError("INVITATION_NOT_RESENDABLE", 409, undefined, "This invitation is closed");
@@ -687,7 +725,55 @@ export async function accountCaseFor(
       : "signed_in_other";
   }
   const existing = await storage.getUserByEmail(invitation.email);
-  return existing && !isPlaceholderPasswordHash(existing.passwordHash) ? "existing" : "new";
+  if (!existing) return "new";
+  if (!isPlaceholderPasswordHash(existing.passwordHash)) return "existing";
+  // S5-SEC-3: a placeholder is claimable only while it has no company membership (the same rule
+  // as /register); one that belongs to a company must go through its normal sign-in paths.
+  return (await storage.getCompaniesByUserId(existing.id)).length === 0 ? "new" : "existing";
+}
+
+/**
+ * S5-SEC-2: an account made by accepting a link that was never delivered to the inbox (no
+ * provider: the inviter held the link) has an unproven email. It is a squat candidate, so the real
+ * owner may take it over through registration or OAuth sign-in.
+ */
+export function isUnverifiedPortalAccount(user: {
+  userType?: string | null;
+  emailVerified?: boolean | null;
+}): boolean {
+  return user.userType === "client_portal" && !user.emailVerified;
+}
+
+/**
+ * Strip an unverified portal account of everything the squatter put in it, so the verified owner
+ * of the address can take it over: no usable credential, a plain customer type, no portal
+ * bindings and no live sessions.
+ */
+export async function reclaimUnverifiedPortalAccount(userId: string): Promise<void> {
+  await db
+    .update(users)
+    .set({
+      passwordHash: `$placeholder$${crypto.randomBytes(16).toString("hex")}`,
+      userType: "customer",
+    })
+    .where(eq(users.id, userId));
+  await db
+    .update(customerPortalAccounts)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(eq(customerPortalAccounts.userId, userId), isNull(customerPortalAccounts.revokedAt))
+    );
+  await revokeAllUserTokens(userId);
+}
+
+/** True when the provider actually accepted the invitation email (the inbox was reached). */
+async function invitationEmailDelivered(inv: CustomerPortalInvitation): Promise<boolean> {
+  if (!inv.lastOutboxId) return false;
+  const [row] = await db
+    .select({ status: emailOutbox.status })
+    .from(emailOutbox)
+    .where(eq(emailOutbox.id, inv.lastOutboxId));
+  return row?.status === "sent";
 }
 
 export interface AcceptOutcome {
@@ -718,6 +804,8 @@ export async function acceptInvitation(args: {
   if (resolved.status !== "ok") throw inviteStateError(resolved.status);
   const inv = resolved.invitation;
   const kind = await accountCaseFor(inv, args.signedIn);
+  // S5-SEC-2: the address counts as verified only if the email really went out through a provider.
+  const emailProven = await invitationEmailDelivered(inv);
 
   if (kind === "signed_in_other") {
     throw new DomainError(
@@ -782,8 +870,7 @@ export async function acceptInvitation(args: {
           .set({
             passwordHash: passwordHash!,
             name: displayName,
-            emailVerified: true,
-            emailVerifiedAt: new Date(),
+            ...(emailProven ? { emailVerified: true, emailVerifiedAt: new Date() } : {}),
           })
           .where(eq(users.id, existing.id));
         userId = existing.id;
@@ -797,9 +884,9 @@ export async function acceptInvitation(args: {
             userType: "client_portal",
             isAdmin: false,
             passwordHash: passwordHash!,
-            // The link reached the inbox: the address is proven.
-            emailVerified: true,
-            emailVerifiedAt: new Date(),
+            // Proven only when the provider delivered the link to the inbox.
+            emailVerified: emailProven,
+            emailVerifiedAt: emailProven ? new Date() : null,
           })
           .returning({ id: users.id });
         userId = created.id;

@@ -6,6 +6,12 @@ import { AppError, RetentionError, ValidationError, AuthError } from "../errors"
 import { captureException } from "../services/monitoring";
 import { MoneyError } from "../../shared/money";
 import { flattenIssues, zodFieldErrors } from "../http/strict-body";
+import { redactUrl } from "../http/redact-url";
+
+/** 5xx answers that are the documented "not configured" state, not faults: never reported. */
+export const EXPECTED_UNAVAILABLE_CODES: ReadonlySet<string> = new Set([
+  "PAYMENTS_REQUIRES_EXTERNAL",
+]);
 
 // Re-export AppError so existing imports of AppError from this module keep working.
 export { AppError };
@@ -200,11 +206,14 @@ export function globalErrorHandler(
 
   // Any AppError (or subclass, including DomainError).
   if (err instanceof AppError) {
-    if (!err.isOperational || err.statusCode >= 500) {
+    // S5-SEC-6: a refusal the product expects (no payment gateway configured) is not an incident.
+    const expected = err.isOperational && EXPECTED_UNAVAILABLE_CODES.has(err.code);
+    if (expected) res.locals.expectedRefusal = true;
+    if (!expected && (!err.isOperational || err.statusCode >= 500)) {
       captureException(err, {
         requestId: req.id,
         method: req.method,
-        url: req.url,
+        url: redactUrl(req.url),
         userId: req.user?.id,
         code: err.code,
         operational: err.isOperational,
@@ -219,7 +228,7 @@ export function globalErrorHandler(
   captureException(err, {
     requestId: req.id,
     method: req.method,
-    url: req.url,
+    url: redactUrl(req.url),
     userId: req.user?.id,
     unhandled: true,
   });

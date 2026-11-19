@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, NextFunction, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -217,6 +217,16 @@ export function registerCompanyRoutes(app: Express) {
   app.post(
     "/api/companies",
     authMiddleware,
+    // S5-SEC-5: a customer-portal account is not a SaaS customer; it cannot own a company.
+    (req: Request, res: Response, next: NextFunction) => {
+      if (req.user?.userType === "client_portal") {
+        return res.status(403).json({
+          message: "Customer portal accounts cannot use the company app",
+          code: "PORTAL_USER_APP_DENIED",
+        });
+      }
+      next();
+    },
     // H8: the free tier's caps (1 user, 20 invoices/month) were bypassable by
     // simply creating another company. maxCompanies is now actually enforced.
     checkCompanyQuota(),

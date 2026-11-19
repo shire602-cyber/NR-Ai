@@ -79,7 +79,14 @@ export const ISSUED_STATUSES = ["sent", "posted", "partial", "paid"] as const;
 export function portalGuard(scope: string): RequestHandler {
   return (req: Request, res: Response, next: NextFunction) => {
     const ip = clientIp(req);
-    const raw = req.params.token ?? req.params.shareToken ?? null;
+    const bodyToken = (req.body as { token?: unknown } | undefined)?.token;
+    const raw =
+      req.params.token ??
+      req.params.shareToken ??
+      (scope === "invite"
+        ? req.get("x-portal-invite-token") || (typeof bodyToken === "string" ? bodyToken : null)
+        : null) ??
+      null;
     const reason = checkPortalThrottle(ip, raw ? `${scope}:${hashPortalToken(raw)}` : null);
     if (reason) {
       void logPortalAccess({ req, outcome: "throttled" });

@@ -159,7 +159,13 @@ for (const locale of ["en", "ar"] as const) {
       expect(window.location.href).not.toContain(TOKEN);
       expect(window.sessionStorage.getItem("muhasib.portalInvite")).toBe(TOKEN);
       expect(byId("join-form")).toBeTruthy();
-      expect(mocks.apiRequest).toHaveBeenCalledWith("GET", `/api/portal-invitations/${TOKEN}`);
+      // S5-SEC-1: the token is sent in a header, never in the URL path.
+      expect(mocks.apiRequest).toHaveBeenCalledWith(
+        "GET",
+        "/api/portal-invitations/current",
+        undefined,
+        { "X-Portal-Invite-Token": TOKEN }
+      );
       expect((byId("join-name") as HTMLInputElement).value).toBe("Layla");
       expect(container.textContent).toContain("layla@alnoor.test");
     });
@@ -198,11 +204,12 @@ for (const locale of ["en", "ar"] as const) {
       await click(byId("join-terms"));
       await click(byId("join-submit"));
       const post = mocks.apiRequest.mock.calls.find((c) => c[0] === "POST");
-      expect(post?.[1]).toBe(`/api/portal-invitations/${TOKEN}/accept`);
+      expect(post?.[1]).toBe("/api/portal-invitations/accept");
       expect(post?.[2]).toMatchObject({
         name: "Layla",
         password: "Portal9Strong!x",
         acceptTerms: true,
+        token: TOKEN,
       });
       const alert = container.querySelector("#join-password-error");
       expect(alert?.textContent).toBe("Too common");
@@ -257,7 +264,7 @@ for (const locale of ["en", "ar"] as const) {
       expect(byId("join-signed-in")).toBeTruthy();
       await click(byId("join-confirm-add"));
       const post = mocks.apiRequest.mock.calls.find((c) => c[0] === "POST");
-      expect(post?.[2]).toEqual({ acceptTerms: true });
+      expect(post?.[2]).toEqual({ acceptTerms: true, token: TOKEN });
       await act(async () => root.unmount());
       container.remove();
 

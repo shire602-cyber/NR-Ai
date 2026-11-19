@@ -159,7 +159,7 @@ async function onboard(t: Tenant, cid: string, email = `portal-${uniq()}@example
 
 describe("STEP5 portal invitations", () => {
   it("[S5-01] an invitation stores only a token hash, queues one outbox email (Arabic for ar) and audits without the token", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Desert Rose LLC", {
       email: "owner@desertrose.test",
       contactPerson: "Layla",
@@ -209,11 +209,11 @@ describe("STEP5 portal invitations", () => {
   });
 
   it("[S5-02] RBAC, tenancy, plan and verification gates", async () => {
-    const a = await h.createTenant({ name: "A", planId: "professional" });
-    const b = await h.createTenant({ name: "B", planId: "professional" });
+    const a = await h.createTenant({ emailVerified: true, name: "A", planId: "professional" });
+    const b = await h.createTenant({ emailVerified: true, name: "B", planId: "professional" });
     const cidA = await contact(a, "A customer");
     // Viewer is read-only; employee may invite.
-    const viewer = await h.createTenant({ role: "viewer" });
+    const viewer = await h.createTenant({ emailVerified: true, role: "viewer" });
     const viewerCid = await h.sql(
       `INSERT INTO customer_contacts (company_id, name, email) VALUES ($1, 'V cust', 'v@example.test') RETURNING id`,
       [viewer.company.id]
@@ -225,7 +225,7 @@ describe("STEP5 portal invitations", () => {
       `/api/companies/${viewer.company.id}/customer-contacts/${viewerCid[0].id}/portal-access`
     );
     expect(read.status, read.text).toBe(200);
-    const employee = await h.createTenant({ role: "employee" });
+    const employee = await h.createTenant({ emailVerified: true, role: "employee" });
     const empCid = await h.sql(
       `INSERT INTO customer_contacts (company_id, name, email) VALUES ($1, 'E cust', 'e@example.test') RETURNING id`,
       [employee.company.id]
@@ -267,7 +267,7 @@ describe("STEP5 portal invitations", () => {
 
     // Plan gate: Starter after the trial is TIER_LOCKED, but revoking still works.
     process.env.BILLING_ENFORCEMENT = "true";
-    const starter = await h.createTenant({ planId: "starter" });
+    const starter = await h.createTenant({ emailVerified: true, planId: "starter" });
     const sCid = await contact(starter, "Starter cust");
     const locked = await invite(starter, sCid);
     expect(locked.status).toBe(403);
@@ -286,8 +286,8 @@ describe("STEP5 portal invitations", () => {
     delete process.env.BILLING_ENFORCEMENT;
   });
 
-  it("[S5-03] accepting creates a verified client_portal user bound to the contact, never a company member; reuse and parallel accepts are safe", async () => {
-    const t = await h.createTenant();
+  it("[S5-03] accepting creates a client_portal user bound to the contact, never a company member; reuse and parallel accepts are safe", async () => {
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Accepting LLC");
     const r = await invite(t, cid, { language: "en" });
     const token = tokenOf(r.body.inviteUrl);
@@ -334,7 +334,7 @@ describe("STEP5 portal invitations", () => {
       await h.sql(`SELECT * FROM users WHERE email = $1`, [r.body.invitation.email])
     )[0];
     expect(user.user_type).toBe("client_portal");
-    expect(user.email_verified).toBe(true);
+    expect(user.email_verified).toBe(false); // S5-SEC-2: no provider delivered the link, so unproven
     expect(await h.sql(`SELECT 1 FROM company_users WHERE user_id = $1`, [user.id])).toHaveLength(
       0
     );
@@ -366,7 +366,7 @@ describe("STEP5 portal invitations", () => {
   });
 
   it("[S5-04] an expired invitation is 410, resend rotates the token and extends the expiry", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Expiring LLC");
     const r = await invite(t, cid);
     const oldToken = tokenOf(r.body.inviteUrl);
@@ -405,7 +405,7 @@ describe("STEP5 portal invitations", () => {
   });
 
   it("[S5-05] revoking an invitation or removing an account takes effect immediately", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Revoked LLC");
     const r = await invite(t, cid);
     const token = tokenOf(r.body.inviteUrl);
@@ -447,8 +447,8 @@ describe("STEP5 portal invitations", () => {
   });
 
   it("[S5-06] a portal user sees only their contact's documents and never reaches company routes", async () => {
-    const a = await h.createTenant({ name: "Iso A" });
-    const b = await h.createTenant({ name: "Iso B" });
+    const a = await h.createTenant({ emailVerified: true, name: "Iso A" });
+    const b = await h.createTenant({ emailVerified: true, name: "Iso B" });
     const mine = await contact(a, "Mine");
     const theirs = await contact(a, "Theirs");
     const other = await contact(b, "Other tenant");
@@ -512,9 +512,9 @@ describe("STEP5 portal invitations", () => {
   });
 
   it("[S5-07] existing accounts sign in first; same-email binds without a password; mismatch is refused; several suppliers switch", async () => {
-    const supplier1 = await h.createTenant({ name: "Supplier One" });
-    const supplier2 = await h.createTenant({ name: "Supplier Two" });
-    const saas = await h.createTenant({ name: "Saas Owner" }); // a real customer user with their own company
+    const supplier1 = await h.createTenant({ emailVerified: true, name: "Supplier One" });
+    const supplier2 = await h.createTenant({ emailVerified: true, name: "Supplier Two" });
+    const saas = await h.createTenant({ emailVerified: true, name: "Saas Owner" }); // a real customer user with their own company
     const c1 = await contact(supplier1, "Buyer 1");
     const c2 = await contact(supplier2, "Buyer 2");
     const inv1 = await invoice(supplier1, c1);
@@ -532,7 +532,7 @@ describe("STEP5 portal invitations", () => {
     expect(needLogin.body.code).toBe("LOGIN_REQUIRED");
 
     // Signed in as someone else: refused.
-    const stranger = await h.createTenant({ name: "Stranger" });
+    const stranger = await h.createTenant({ emailVerified: true, name: "Stranger" });
     const wrong = await (
       await browser()
     ).post(
@@ -594,7 +594,7 @@ describe("STEP5 portal invitations", () => {
   });
 
   it("[S5-08] validation: strict bodies, email required, duplicates and already-active", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const noEmail = await contact(t, "No Email", {});
     const r = await invite(t, noEmail, { language: "en" });
     expect(r.status).toBe(400);
@@ -650,7 +650,7 @@ describe("STEP5 portal invitations", () => {
   });
 
   it("[S5-09] limits: invites per hour, resend cooldown, bad-token lock", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Rate LLC");
     const first = await invite(t, cid, { language: "en" });
     const tooSoon = await t.as.post(
@@ -673,7 +673,7 @@ describe("STEP5 portal invitations", () => {
     expect(over.body.code).toBe("PORTAL_INVITE_RATE_LIMITED");
 
     // 21 bad tokens from one IP lock even a good token.
-    const t2 = await h.createTenant();
+    const t2 = await h.createTenant({ emailVerified: true });
     const good = tokenOf(
       (await invite(t2, await contact(t2, "Lock LLC"), { language: "en" })).body.inviteUrl
     );
@@ -693,7 +693,7 @@ describe("STEP5 portal invitations", () => {
   });
 
   it("[S5-11] audit rows and the access log never hold the token", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Audit LLC");
     const r = await invite(t, cid, { language: "en" });
     const token = tokenOf(r.body.inviteUrl);
@@ -735,7 +735,7 @@ describe("STEP5 portal invitations", () => {
 
   it("[S5-12] with an email provider the email is sent and the link is not returned", async () => {
     const sent: OutgoingEmail[] = [];
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const none = await invite(t, await contact(t, "No provider"), { language: "en" });
     expect(none.body.delivery).toBe("link"); // honest: not "sent"
     const { setEmailTransportOverride } = await import("../../server/outbox");
@@ -759,7 +759,7 @@ describe("STEP5 portal invitations", () => {
   });
 
   it("[S5-13] bulk invite reports a per-contact outcome and caps at 100", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const ok = await contact(t, "Bulk OK", { email: "bulk-ok@example.test" });
     await h.sql(`UPDATE customer_contacts SET preferred_language = 'ar' WHERE id = $1`, [ok]);
     const none = await contact(t, "Bulk none", {});
@@ -796,7 +796,7 @@ describe("STEP5 portal invitations", () => {
   });
 
   it("[S5-14] pay: 503 without a gateway, own invoice only", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const mine = await contact(t, "Payer");
     const other = await contact(t, "Other payer");
     const inv = await invoice(t, mine);
@@ -809,7 +809,7 @@ describe("STEP5 portal invitations", () => {
   });
 
   it("[S5-15] dashboard totals are per currency in whole fils", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Multi currency");
     await invoice(t, cid, true, 1000);
     await invoice(t, cid, true, 200, "USD");
@@ -825,7 +825,7 @@ describe("STEP5 portal invitations", () => {
   });
 
   it("[S5-16] CSRF: staff portal routes need a token with cookie auth; customer token routes stay exempt", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Csrf LLC");
     // A cookie-authenticated staff request without X-CSRF-Token is refused.
     const login = await fetch(h.baseUrl + "/api/auth/login", {
@@ -861,7 +861,7 @@ describe("STEP5 portal invitations", () => {
   });
 
   it("[S5-17] sign-out clears the session cookies and the portal user is then anonymous", async () => {
-    const t = await h.createTenant();
+    const t = await h.createTenant({ emailVerified: true });
     const cid = await contact(t, "Signout LLC");
     const { b } = await onboard(t, cid);
     expect(b.jar.names().length).toBeGreaterThan(0);

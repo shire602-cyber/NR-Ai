@@ -176,7 +176,11 @@ export default function PortalJoin() {
 
   const query = useQuery<InviteInfo>({
     queryKey: ["portal-invite", token],
-    queryFn: () => apiRequest("GET", `/api/portal-invitations/${token}`),
+    // S5-SEC-1: the token rides in a header, never in the URL path (access logs).
+    queryFn: () =>
+      apiRequest("GET", "/api/portal-invitations/current", undefined, {
+        "X-Portal-Invite-Token": token ?? "",
+      }),
     enabled: validToken,
     retry: false,
     staleTime: 0,
@@ -381,11 +385,10 @@ function JoinPanel({
     setBusy(true);
     setError(null);
     try {
-      const res = (await apiRequest(
-        "POST",
-        `/api/portal-invitations/${token}/accept`,
-        body
-      )) as AcceptResult;
+      const res = (await apiRequest("POST", "/api/portal-invitations/accept", {
+        ...body,
+        token,
+      })) as AcceptResult;
       await onDone(res);
     } catch (err) {
       const api = err instanceof ApiError ? err : null;

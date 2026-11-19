@@ -4,6 +4,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { getEnv, isProduction } from "../config/env";
 import { createLogger } from "../config/logger";
 import { buildLimiter, clientIp, limiterProfiles } from "./rateLimit";
+import { redactUrl } from "../http/redact-url";
 import {
   cspNonce,
   buildCspDirectives,
@@ -308,7 +309,10 @@ export function applySecurityMiddleware(app: Express): void {
     const fullUrl = req.originalUrl || req.url;
     for (const pattern of suspiciousPatterns) {
       if (pattern.test(fullUrl) || pattern.test(JSON.stringify(req.body || ""))) {
-        log.warn({ ip: req.ip, method: req.method, url: fullUrl }, "Suspicious request detected");
+        log.warn(
+          { ip: req.ip, method: req.method, url: redactUrl(fullUrl) },
+          "Suspicious request detected"
+        );
         break;
       }
     }

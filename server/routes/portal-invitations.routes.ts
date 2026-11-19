@@ -26,6 +26,8 @@ import { scopedGet } from "../tenancy";
 import { customerContacts } from "../../shared/schema";
 import {
   portalAcceptBody,
+  portalAcceptWithTokenBody,
+  PORTAL_INVITE_TOKEN_HEADER,
   portalBulkInviteBody,
   portalInviteBody,
   type PortalAcceptBody,
@@ -228,11 +230,12 @@ export function registerPortalInvitationRoutes(app: Express): void {
     message: "This link is not valid",
   };
 
-  app.get(
-    "/api/portal-invitations/:token",
-    portalGuard("invite"),
+  // S5-SEC-1: the token travels in a header (view) or the body (accept), never in the path, so it
+  // cannot land in an access log. The path forms are kept for links already in the wild; the
+  // request logger redacts them.
+  const viewInvitation = (tokenOf: (req: Request) => string) =>
     asyncHandler(async (req: Request, res: Response) => {
-      const r = await resolveInvitation(req.params.token);
+      const r = await resolveInvitation(tokenOf(req));
       if (r.status === "invalid") {
         // Malformed and unknown tokens are answered identically and count against the IP.
         notePortalFailure(req);
@@ -275,20 +278,24 @@ export function registerPortalInvitationRoutes(app: Express): void {
         signedInAs: signedIn && account === "signed_in_other" ? signedIn.email : null,
         onlinePayment: { available: paymentsAvailability().available },
       });
-    })
+    });
+
+  const headerToken = (req: Request) => String(req.get(PORTAL_INVITE_TOKEN_HEADER) ?? "");
+  app.get("/api/portal-invitations/current", portalGuard("invite"), viewInvitation(headerToken));
+  app.get(
+    "/api/portal-invitations/:token",
+    portalGuard("invite"),
+    viewInvitation((req) => req.params.token)
   );
 
-  app.post(
-    "/api/portal-invitations/:token/accept",
-    portalGuard("invite"),
-    strictBody(portalAcceptBody),
+  const acceptInvite = (tokenOf: (req: Request, body: PortalAcceptBody) => string) =>
     asyncHandler(async (req: Request, res: Response) => {
-      const body = parsedBody<PortalAcceptBody>(req);
+      const body = parsedBody<PortalAcceptBody & { token?: string }>(req);
       const signedIn = await optionalAuthUser(req);
       let outcome;
       try {
         outcome = await acceptInvitation({
-          rawToken: req.params.token,
+          rawToken: tokenOf(req, body),
           signedIn: signedIn ? { id: signedIn.id, email: signedIn.email } : null,
           name: body.name,
           password: body.password,
@@ -319,6 +326,18 @@ export function registerPortalInvitationRoutes(app: Express): void {
       }
       res.set("Cache-Control", "no-store");
       res.json(payload);
-    })
+    });
+
+  app.post(
+    "/api/portal-invitations/accept",
+    portalGuard("invite"),
+    strictBody(portalAcceptWithTokenBody),
+    acceptInvite((_req, body) => String((body as { token?: string }).token ?? ""))
+  );
+  app.post(
+    "/api/portal-invitations/:token/accept",
+    portalGuard("invite"),
+    strictBody(portalAcceptBody),
+    acceptInvite((req) => req.params.token)
   );
 }

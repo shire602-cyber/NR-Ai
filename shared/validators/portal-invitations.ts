@@ -13,6 +13,8 @@ export const PORTAL_INVITE_RESEND_COOLDOWN_S = 60;
 export const PORTAL_INVITE_MAX_SENDS_PER_DAY = 5;
 export const PORTAL_INVITE_MAX_PER_HOUR = 60;
 export const PORTAL_INVITE_MAX_PER_DAY = 300;
+/** Trial companies are capped lower: a brand-new account cannot mail hundreds of strangers. */
+export const PORTAL_INVITE_MAX_PER_DAY_TRIAL = 20;
 export const PORTAL_INVITE_MESSAGE_MAX = 500;
 export const PORTAL_BULK_MAX = 100;
 
@@ -40,5 +42,9 @@ export const portalAcceptBody = z.object({
   acceptTerms: z.literal(true),
 });
 export type PortalAcceptBody = z.output<typeof portalAcceptBody>;
+/** S5-SEC-1: the accept form that carries the token in the body, not the URL path. */
+export const portalAcceptWithTokenBody = portalAcceptBody.extend({ token: z.string().max(200) });
+/** Header that carries the token for the join page's read. */
+export const PORTAL_INVITE_TOKEN_HEADER = "x-portal-invite-token";
 
 export const PORTAL_INVITE_TOKEN_RE = /^[0-9a-f]{64}$/i;

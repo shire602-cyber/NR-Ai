@@ -1,4 +1,8 @@
 import { portalAccountsForUser } from "../services/portal-access.service";
+import {
+  isUnverifiedPortalAccount,
+  reclaimUnverifiedPortalAccount,
+} from "../services/portal-invitations.service";
 import type { Request, Response } from "express";
 import { Router } from "express";
 import type { Express } from "express";
@@ -263,6 +267,12 @@ async function resolveOAuthUser(
 
   const existingUser = await getUserByNormalizedOAuthEmail(profile.email);
   if (existingUser) {
+    // S5-SEC-2: a portal account made from a link that never reached the inbox was not proven by
+    // anyone. The provider-verified owner of the address takes it over; the earlier credential,
+    // bindings and sessions are dropped, never inherited.
+    if (profile.emailVerified && isUnverifiedPortalAccount(existingUser)) {
+      await reclaimUnverifiedPortalAccount(existingUser.id);
+    }
     await linkAuthIdentity(existingUser.id, profile);
     await markOAuthLogin(existingUser.id, profile);
     return {
@@ -557,9 +567,11 @@ export function registerAuthRoutes(app: Express): void {
       // Checked before the account lookup so the answer never depends on the email.
       if (await refuseBreachedPassword(res, body.password)) return;
       const existingUser = await storage.getUserByEmail(body.email);
+      // A placeholder, or an unverified portal account (S5-SEC-2), with no company is claimable.
+      const squatted = !!existingUser && isUnverifiedPortalAccount(existingUser);
       const claimable =
         !!existingUser &&
-        isPlaceholderPasswordHash(existingUser.passwordHash) &&
+        (isPlaceholderPasswordHash(existingUser.passwordHash) || squatted) &&
         (await storage.getCompaniesByUserId(existingUser.id)).length === 0;
 
       // Hash first in every branch so timing does not reveal the outcome.
@@ -584,6 +596,7 @@ export function registerAuthRoutes(app: Express): void {
       let user;
       try {
         if (claimable && existingUser) {
+          if (squatted) await reclaimUnverifiedPortalAccount(existingUser.id);
           await storage.updateUserPassword(existingUser.id, passwordHash);
           user = await storage.updateUser(existingUser.id, { name: body.name });
         } else {

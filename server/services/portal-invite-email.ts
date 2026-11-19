@@ -31,6 +31,21 @@ export function formatInviteDate(date: Date, lang: "en" | "ar"): string {
   }).format(date);
 }
 
+/**
+ * S5-SEC-4: the personal note is plain text from the sender. Anything a mail client would turn into
+ * a link or an address (scheme URLs, www. hosts, bare domains, email addresses) is replaced, so the
+ * note cannot carry a phishing link in a message that arrives from the platform.
+ */
+export function neutraliseInviteNote(note: string): string {
+  return note
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u200b-\u200f\u2060\ufeff]/g, "")
+    .replace(/[A-Za-z][A-Za-z0-9+.-]*:\/\/\S*/g, "[link removed]")
+    .replace(/\b(?:mailto|tel|javascript|data):\S*/gi, "[link removed]")
+    .replace(/[^\s@]+@[^\s@]+\.[A-Za-z]{2,}/g, "[link removed]")
+    .replace(/\bwww\.\S*/gi, "[link removed]")
+    .replace(/(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?:\/\S*)?/g, "[link removed]");
+}
+
 export function normaliseInviteLanguage(value: string | null | undefined): EmailLanguage {
   return value === "ar" || value === "bilingual" ? value : "en";
 }
@@ -45,7 +60,7 @@ export function renderPortalInviteEmail(input: PortalInviteEmailInput): {
   const e = escapeHtml;
   const greetName = (invitation.name || contact.name).trim();
   const customerAr = contact.nameAr?.trim() || contact.name;
-  const note = invitation.message?.trim() || "";
+  const note = neutraliseInviteNote(invitation.message?.trim() || "");
   const quote = (text: string, dir: "ltr" | "rtl") =>
     `<span style="display:block;border-${dir === "rtl" ? "right" : "left"}:3px solid #D1D5DB;padding:4px 12px;color:#4B5563;" dir="auto">${e(text).replace(/\n/g, "<br>")}</span>`;
 

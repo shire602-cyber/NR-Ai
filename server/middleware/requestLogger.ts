@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { createLogger } from "../config/logger";
+import { redactUrl } from "../http/redact-url";
 
 const log = createLogger("http");
 
@@ -17,7 +18,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
 
   res.on("finish", () => {
     const duration = Date.now() - start;
-    const path = req.originalUrl || req.url;
+    const path = redactUrl(req.originalUrl || req.url); // S5-SEC-1: no bearer tokens in logs
 
     // Only log API requests (skip static files)
     if (!path.startsWith("/api") && path !== "/health") return;
@@ -34,7 +35,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
     };
 
     const msg = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-    if (res.statusCode >= 500) {
+    if (res.statusCode >= 500 && !res.locals.expectedRefusal) {
       log.error(logData, msg);
     } else if (res.statusCode >= 400) {
       log.warn(logData, msg);
