@@ -476,6 +476,18 @@ export const PLAN_FEATURE_RULES: readonly GateRule[] = [
   // Customer portal access (Professional+); revoking access always works.
   { methods: "POST|PUT|PATCH", pattern: "portal/generate-access", feature: "customerPortal" },
   { methods: "POST|PUT|PATCH", pattern: "portal/contacts/**", feature: "customerPortal" },
+  // STEP5 invitations: sending is gated, revoking an invitation or an account never is.
+  {
+    methods: "POST",
+    pattern: "companies/*/customer-contacts/*/portal-invitations",
+    feature: "customerPortal",
+  },
+  { methods: "POST", pattern: "companies/*/portal-invitations/bulk", feature: "customerPortal" },
+  {
+    methods: "POST",
+    pattern: "companies/*/portal-invitations/*/resend",
+    feature: "customerPortal",
+  },
   // Corporate tax (Professional+)
   mut("companies/*/corporate-tax/**", "corporateTax"),
   mut("corporate-tax/**", "corporateTax"),

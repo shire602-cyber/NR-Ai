@@ -40,6 +40,7 @@ const T = (
 export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.invoiceIssued.title", "Invoice {number} issued"),
   T("notification.invoicePaid.title", "Invoice {number} paid"),
+  T("notification.portalJoined.title", "{customer} joined your customer portal"),
   T("notification.paymentReceived.title", "Payment received[ for {number}]"),
   T("notification.billApproved.title", "Bill approved {label}"),
   T("notification.billPaid.title", "Bill paid {label}"),
@@ -73,6 +74,10 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   ),
   T("notification.invoiceIssued.message", "Invoice {number} was issued[ for {amount}]."),
   T("notification.invoicePaid.message", "Invoice {number} is fully paid."),
+  T(
+    "notification.portalJoined.message",
+    "{email} accepted your invitation and can now see the invoices issued to {customer}."
+  ),
   T(
     "notification.paymentReceived.message",
     "A payment of {amount} was recorded[ against invoice {number}]."

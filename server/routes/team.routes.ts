@@ -27,7 +27,9 @@ import {
   zCompanyRole,
   type CompanyRole,
 } from "../../shared/permissions";
-import type { CompanyInvitation } from "../../shared/schema";
+import { users, type CompanyInvitation } from "../../shared/schema";
+import { eq } from "drizzle-orm";
+import { db } from "../db";
 
 const log = createLogger("team");
 
@@ -545,6 +547,11 @@ export function registerTeamRoutes(app: Express) {
         createdUser = true;
       }
 
+      // A portal customer who becomes a team member is a real company user from now on; their
+      // portal bindings stay (they act through customer_portal_accounts, not membership).
+      if (signedIn && signedIn.userType === "client_portal") {
+        await db.update(users).set({ userType: "customer" }).where(eq(users.id, userId));
+      }
       if (!(await storage.getUserRole(inv.companyId, userId))) {
         await storage.createCompanyUser({ companyId: inv.companyId, userId, role });
       }

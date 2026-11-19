@@ -5,8 +5,6 @@
  *   POST   /api/portal/generate-access          { contactId, ttlDays? } → link shown once (90 days)
  *   POST   /api/portal/revoke-access            { contactId }
  *   GET    /api/portal/contacts/:contactId/access          link metadata + access log
- *   POST   /api/portal/contacts/:contactId/portal-users    { userId } bind a client_portal user
- *   DELETE /api/portal/contacts/:contactId/portal-users/:userId
  *
  * Customer (portal link or OTP session token; throttled and logged):
  *   POST /api/portal/login/request  { companyId, email }        one-time code by email
@@ -32,9 +30,8 @@ import { DomainError } from "../errors";
 import { resolve } from "../platform/service-registry";
 import { registerQuoteServices, type QuotesRespond } from "../services/quote-state.service";
 import { generateInvoicePDF } from "../services/pdf-invoice.service";
-import { invoices, quotes, users, type CustomerContact } from "../../shared/schema";
+import { invoices, quotes, type CustomerContact } from "../../shared/schema";
 import {
-  bindPortalUserBody,
   generatePortalAccessBody,
   portalLoginRequestBody,
   portalLoginVerifyBody,
@@ -46,7 +43,6 @@ import {
 } from "../../shared/validators/portal";
 import {
   allowCodeRequest,
-  bindPortalUser,
   checkPortalThrottle,
   clientIp,
   createLoginCode,
@@ -58,7 +54,6 @@ import {
   recordPortalFailure,
   resolvePortalToken,
   revokePortalLinks,
-  unbindPortalUser,
   verifyLoginCode,
 } from "../services/portal-access.service";
 import { buildCustomerStatement, renderStatementPdf } from "../services/customer-statement.service";
@@ -289,49 +284,6 @@ export function registerPortalPublicRoutes(app: Express) {
         links: await listPortalLinks(contact.companyId, contact.id),
         accessLog: await listPortalAccessLog(contact.companyId, contact.id),
       });
-    })
-  );
-
-  app.post(
-    "/api/portal/contacts/:contactId/portal-users",
-    authMiddleware,
-    strictBody(bindPortalUserBody),
-    asyncHandler(async (req: Request, res: Response) => {
-      const contact = await staffContact(req, req.params.contactId, "documents.write");
-      const { userId } = parsedBody<{ userId: string }>(req);
-      const [target] = await db
-        .select({ id: users.id, userType: users.userType })
-        .from(users)
-        .where(eq(users.id, userId));
-      if (
-        !target ||
-        target.userType !== "client_portal" ||
-        !(await storage.hasCompanyAccess(userId, contact.companyId))
-      ) {
-        throw new DomainError(
-          "PORTAL_USER_INVALID",
-          400,
-          { field: "userId" },
-          "The user must be a client-portal member of this company"
-        );
-      }
-      await bindPortalUser({
-        companyId: contact.companyId,
-        contactId: contact.id,
-        userId,
-        createdBy: (req.user as { id: string }).id,
-      });
-      res.status(201).json({ contactId: contact.id, userId });
-    })
-  );
-
-  app.delete(
-    "/api/portal/contacts/:contactId/portal-users/:userId",
-    authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const contact = await staffContact(req, req.params.contactId, "documents.write");
-      if (!UUID_RE.test(req.params.userId)) throw new DomainError("PORTAL_USER_INVALID", 400);
-      res.json({ revoked: await unbindPortalUser(contact.companyId, req.params.userId) });
     })
   );
 

@@ -239,6 +239,16 @@ export function applySecurityMiddleware(app: Express): void {
       skipIf: (req) => !isCredentialAuthPath(req.path),
     })
   );
+  // STEP5: accepting a portal invitation sets a password, so it shares the credential budget.
+  app.use(
+    "/api/portal-invitations/",
+    buildLimiter({
+      ...limiterProfiles.auth,
+      keyGenerator: clientIp,
+      skipSuccessfulRequests: true,
+      skipIf: (req) => req.method !== "POST" || !/\/accept$/.test(req.path),
+    })
+  );
   app.use("/api/ai/", buildLimiter(limiterProfiles.ai));
   app.use("/api/ocr/", buildLimiter(limiterProfiles.ai));
   app.use("/api/firm/bulk/ocr", buildLimiter(limiterProfiles.ai));

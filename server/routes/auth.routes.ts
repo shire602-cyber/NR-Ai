@@ -1,3 +1,4 @@
+import { portalAccountsForUser } from "../services/portal-access.service";
 import type { Request, Response } from "express";
 import { Router } from "express";
 import type { Express } from "express";
@@ -1211,7 +1212,9 @@ export function registerAuthRoutes(app: Express): void {
       if (!user) {
         return res.status(404).json({ message: "User not found", code: "USER_NOT_FOUND" });
       }
-      res.json(publicUser(user));
+      // STEP5: how many customer portals this login can open (drives "Supplier portals").
+      const portalAccounts = (await portalAccountsForUser(user.id)).length;
+      res.json({ ...publicUser(user), portalAccounts });
     })
   );
 

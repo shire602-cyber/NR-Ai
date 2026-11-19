@@ -132,6 +132,12 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   // posts to the ledger. Viewers and employees are refused, matching the denied audit-log API.
   r("GET", "companies/*/activity-logs", ACTIVITY_READ),
 
+  // STEP5: customer-portal invitations. Anyone who can create documents may invite a customer
+  // (the same audience as the portal share link); viewers see the status read-only.
+  r("MUT", "companies/*/customer-contacts/*/portal-invitations", "documents.write"),
+  r("MUT", "companies/*/portal-invitations/**", "documents.write"),
+  r("DELETE", "companies/*/portal-accounts/*", "documents.write"),
+
   // Team, billing, backups
   r("*", "companies/*/team/invitations/**", "team.manage"),
   r("MUT", "companies/*/team/**", "team.manage"),
@@ -260,6 +266,7 @@ const SKIP_PREFIXES = [
   "admin",
   "nra",
   "portal",
+  "portal-invitations",
   "client-portal",
   "team-invitations",
   "invitations",
@@ -497,6 +504,17 @@ export async function companyRolePolicy(
     const resolved = await resolveRequestCompanyWithSource(req, req.path);
     if (!resolved) return next();
     const { companyId } = resolved;
+
+    // Defence in depth (STEP5): a portal customer never reaches company routes. The membership
+    // lookup below already finds no role for them (storage.getUserRole ignores client_portal).
+    if (user.userType === "client_portal") {
+      log.info({ userId: user.id, method: req.method, path: req.path }, "Portal user denied");
+      res.status(403).json({
+        message: "Customer portal accounts cannot use the company app",
+        code: "PORTAL_USER_APP_DENIED",
+      });
+      return;
+    }
 
     const role = await getCompanyRole(user.id, companyId);
     const allowed = !!role && roleHasAnyPermission(role, permissions);

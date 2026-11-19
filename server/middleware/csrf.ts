@@ -20,7 +20,11 @@ const CSRF_BEARER_EXEMPT = [
   // W5-E: pre-session steps authenticated by their own single-use token.
   /^\/api\/auth\/mfa\/verify-login$/,
   /^\/api\/auth\/verify-email$/,
-  /^\/api\/portal\//,
+  // Customer-facing portal endpoints only (the token in the path, or the OTP sign-in). The
+  // cookie-authenticated STAFF routes under /api/portal/ (generate-access, revoke-access,
+  // contacts/*) are NOT exempt and need X-CSRF-Token.
+  /^\/api\/portal\/login\/(request|verify)$/,
+  /^\/api\/portal\/[0-9a-f]{64}(\/|$)/i,
   // Provider webhooks are authenticated by their own HMAC signature, not a CSRF
   // token (the caller is an external service, not the browser).
   /^\/api\/webhooks\/email-intake$/,

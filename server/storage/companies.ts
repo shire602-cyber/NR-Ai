@@ -20,9 +20,12 @@ import {
   type FirmContext,
 } from "../services/firm/scope";
 import { db } from "../db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { scopedDelete, scopedGet, scopedUpdate } from "../tenancy";
 import { UserStorage } from "./users";
+
+/** users.user_type of a customer-portal login (never a company member). */
+const PORTAL_USER_TYPE = "client_portal";
 
 export class CompanyStorage extends UserStorage {
   // Companies
@@ -79,7 +82,15 @@ export class CompanyStorage extends UserStorage {
       .select()
       .from(companies)
       .innerJoin(companyUsers, eq(companies.id, companyUsers.companyId))
-      .where(and(eq(companyUsers.userId, userId), isNull(companies.deletedAt)));
+      .innerJoin(users, eq(users.id, companyUsers.userId))
+      .where(
+        and(
+          eq(companyUsers.userId, userId),
+          isNull(companies.deletedAt),
+          // Portal customers are never company members (see PORTAL_USER_TYPE).
+          ne(users.userType, PORTAL_USER_TYPE)
+        )
+      );
 
     return results.map((r) => r.companies);
   }
@@ -89,7 +100,8 @@ export class CompanyStorage extends UserStorage {
     const rows = await db
       .select({ companyId: companyUsers.companyId, role: companyUsers.role })
       .from(companyUsers)
-      .where(eq(companyUsers.userId, userId));
+      .innerJoin(users, eq(users.id, companyUsers.userId))
+      .where(and(eq(companyUsers.userId, userId), ne(users.userType, PORTAL_USER_TYPE)));
     const out: Record<string, string> = {};
     for (const r of rows) out[r.companyId] = r.role;
     return out;
@@ -112,11 +124,20 @@ export class CompanyStorage extends UserStorage {
   }
 
   async getUserRole(companyId: string, userId: string): Promise<CompanyUser | undefined> {
-    const [companyUser] = await db
-      .select()
+    // A `client_portal` user is a customer, never a member: a stray company_users row grants
+    // nothing. This is the single choke point for hasCompanyAccess and the RBAC role lookup.
+    const [row] = await db
+      .select({ companyUser: companyUsers })
       .from(companyUsers)
-      .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, userId)));
-    return companyUser || undefined;
+      .innerJoin(users, eq(users.id, companyUsers.userId))
+      .where(
+        and(
+          eq(companyUsers.companyId, companyId),
+          eq(companyUsers.userId, userId),
+          ne(users.userType, PORTAL_USER_TYPE)
+        )
+      );
+    return row?.companyUser || undefined;
   }
 
   /**

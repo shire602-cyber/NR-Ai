@@ -106,6 +106,7 @@ import { registerFirmValueOpsRoutes } from "./routes/firm-value-ops.routes";
 import { registerFirmGrowthRoutes } from "./routes/firm-growth.routes";
 import { registerFirmVatWorkspaceRoutes } from "./routes/firm-vat-workspace.routes";
 import { registerClientPortalRoutes } from "./routes/client-portal.routes";
+import { registerPortalInvitationRoutes } from "./routes/portal-invitations.routes";
 import { registerPaymentLinkRoutes } from "./routes/payment-links.routes";
 import { registerPublicPaymentRoutes } from "./routes/public-payments.routes";
 import { registerOutboxRoutes } from "./outbox";
@@ -238,6 +239,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerPortalRoutes(app);
   registerPortalPublicRoutes(app);
   registerClientPortalRoutes(app);
+  registerPortalInvitationRoutes(app);
   registerPaymentLinkRoutes(app);
   registerPublicPaymentRoutes(app);
   registerOutboxRoutes(app);

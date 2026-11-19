@@ -129,6 +129,10 @@ export const customerPortalAccounts = pgTable(
     createdBy: uuid("created_by"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     revokedAt: timestamp("revoked_at"),
+    // STEP5 (0136): the invitation this binding came from, last portal request, who removed it.
+    invitationId: uuid("invitation_id"),
+    lastSeenAt: timestamp("last_seen_at"),
+    revokedBy: uuid("revoked_by"),
   },
   (table) => ({
     activeUserUnique: uniqueIndex("uq_customer_portal_accounts_user")
@@ -137,6 +141,61 @@ export const customerPortalAccounts = pgTable(
   })
 );
 export type CustomerPortalAccount = typeof customerPortalAccounts.$inferSelect;
+
+/**
+ * STEP5 (0136): an invitation for a customer to open the authenticated portal. Only the SHA-256
+ * of the single-use token is stored; it expires after 7 days. Accepting it creates (or reuses) a
+ * portal login and binds it to the contact through customer_portal_accounts.
+ */
+export const customerPortalInvitations = pgTable(
+  "customer_portal_invitations",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    companyId: uuid("company_id")
+      .notNull()
+      .references(() => companies.id, { onDelete: "cascade" }),
+    contactId: uuid("contact_id")
+      .notNull()
+      .references(() => customerContacts.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    name: text("name"),
+    language: text("language").notNull().default("en"), // en | ar | bilingual
+    message: text("message"),
+    tokenHash: text("token_hash").notNull(),
+    status: text("status").notNull().default("pending"), // pending | accepted | revoked | expired
+    expiresAt: timestamp("expires_at").notNull(),
+    invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+    lastSentAt: timestamp("last_sent_at"),
+    sendCount: integer("send_count").notNull().default(0),
+    lastOutboxId: uuid("last_outbox_id"),
+    acceptedAt: timestamp("accepted_at"),
+    acceptedUserId: uuid("accepted_user_id").references(() => users.id, { onDelete: "set null" }),
+    termsAcceptedAt: timestamp("terms_accepted_at"),
+    revokedAt: timestamp("revoked_at"),
+    revokedBy: uuid("revoked_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    tokenUnique: uniqueIndex("uq_customer_portal_invitations_token").on(table.tokenHash),
+    contactIdx: index("idx_customer_portal_invitations_contact").on(
+      table.companyId,
+      table.contactId,
+      table.status
+    ),
+    companyCreatedIdx: index("idx_customer_portal_invitations_company_created").on(
+      table.companyId,
+      table.createdAt
+    ),
+    pendingUnique: uniqueIndex("uq_customer_portal_invitations_pending")
+      .on(table.companyId, table.contactId, sql`lower(${table.email})`)
+      .where(sql`status = 'pending'`),
+  })
+);
+export type CustomerPortalInvitation = typeof customerPortalInvitations.$inferSelect;
+export type InsertCustomerPortalInvitation = typeof customerPortalInvitations.$inferInsert;
 
 export const portalQuoteResponses = pgTable(
   "portal_quote_responses",

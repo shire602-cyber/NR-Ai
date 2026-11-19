@@ -92,6 +92,10 @@ export const VERIFIED_EMAIL_RULES: readonly PathRule[] = [
   rule("POST", "invoices/*/einvoice/submit"),
   rule("POST", "credit-notes/*/issue"),
   rule("POST", "companies/*/invoices/*/send-email"),
+  // STEP5: inviting a customer to the portal sends email in the company's name.
+  rule("POST", "companies/*/customer-contacts/*/portal-invitations"),
+  rule("POST", "companies/*/portal-invitations/bulk"),
+  rule("POST", "companies/*/portal-invitations/*/resend"),
 ];
 
 /** Never subject to the company MFA policy (so a covered user can still enrol). */

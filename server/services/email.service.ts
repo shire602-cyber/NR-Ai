@@ -222,7 +222,7 @@ function wrapPlainTextInHtml(body: string, fromName?: string): string {
   );
 }
 
-function companyFooter(company: Company): string {
+export function companyFooter(company: Company): string {
   return [
     company.name,
     company.trnVatNumber ? `TRN: ${company.trnVatNumber}` : null,

@@ -344,29 +344,76 @@ export async function verifyLoginCode(
 
 // ─── Authenticated client-portal users ───────────────────────────────────────
 
-/** The contact an authenticated client_portal user acts for (active binding), or null. */
-export async function portalAccountForUser(
-  userId: string
-): Promise<{ companyId: string; contactId: string } | null> {
-  const [row] = await db
+export interface PortalBinding {
+  id: string;
+  companyId: string;
+  contactId: string;
+}
+
+/**
+ * Every active binding of a user (newest first). Portal access comes ONLY from these rows: a
+ * portal customer is never a company member (company_users).
+ */
+export async function portalAccountsForUser(userId: string): Promise<PortalBinding[]> {
+  return db
     .select({
+      id: customerPortalAccounts.id,
       companyId: customerPortalAccounts.companyId,
       contactId: customerPortalAccounts.contactId,
     })
     .from(customerPortalAccounts)
     .where(and(eq(customerPortalAccounts.userId, userId), isNull(customerPortalAccounts.revokedAt)))
-    .orderBy(desc(customerPortalAccounts.createdAt))
-    .limit(1);
-  return row ?? null;
+    .orderBy(desc(customerPortalAccounts.createdAt));
 }
 
-export async function bindPortalUser(args: {
-  companyId: string;
-  contactId: string;
-  userId: string;
-  createdBy: string;
-}): Promise<void> {
-  await db.transaction(async (tx: typeof db) => {
+/**
+ * The binding a request acts on: `preferredAccountId` (the X-Portal-Account header) when it is one
+ * of the user's own active bindings, otherwise the newest. A foreign id is ignored, never honoured.
+ */
+export async function portalAccountForUser(
+  userId: string,
+  preferredAccountId?: string | null
+): Promise<PortalBinding | null> {
+  const all = await portalAccountsForUser(userId);
+  if (preferredAccountId) {
+    const wanted = all.find((b) => b.id === preferredAccountId.toLowerCase());
+    if (wanted) return wanted;
+  }
+  return all[0] ?? null;
+}
+
+/** Remember the last portal request (at most once every 5 minutes per binding). */
+export async function touchPortalAccount(id: string): Promise<void> {
+  try {
+    await db
+      .update(customerPortalAccounts)
+      .set({ lastSeenAt: new Date() })
+      .where(
+        and(
+          eq(customerPortalAccounts.id, id),
+          sql`(${customerPortalAccounts.lastSeenAt} IS NULL OR ${customerPortalAccounts.lastSeenAt} < now() - interval '5 minutes')`
+        )
+      );
+  } catch (err) {
+    log.warn({ err: (err as Error)?.message }, "portal last-seen update failed");
+  }
+}
+
+/**
+ * Bind a user to a contact. One active binding per (company, user): an older binding of the same
+ * user in the same company is revoked first. Runs inside the caller's transaction when given.
+ */
+export async function bindPortalUser(
+  args: {
+    companyId: string;
+    contactId: string;
+    userId: string;
+    createdBy: string | null;
+    invitationId?: string | null;
+  },
+  executor: typeof db = db
+): Promise<string> {
+  const run = async (tx: typeof db) => {
     await tx
       .update(customerPortalAccounts)
       .set({ revokedAt: new Date() })
@@ -377,21 +424,17 @@ export async function bindPortalUser(args: {
           isNull(customerPortalAccounts.revokedAt)
         )
       );
-    await tx.insert(customerPortalAccounts).values(args);
-  });
-}
-
-export async function unbindPortalUser(companyId: string, userId: string): Promise<number> {
-  const rows = await db
-    .update(customerPortalAccounts)
-    .set({ revokedAt: new Date() })
-    .where(
-      and(
-        eq(customerPortalAccounts.companyId, companyId),
-        eq(customerPortalAccounts.userId, userId),
-        isNull(customerPortalAccounts.revokedAt)
-      )
-    )
-    .returning({ id: customerPortalAccounts.id });
-  return rows.length;
+    const [row] = await tx
+      .insert(customerPortalAccounts)
+      .values({
+        companyId: args.companyId,
+        contactId: args.contactId,
+        userId: args.userId,
+        createdBy: args.createdBy,
+        invitationId: args.invitationId ?? null,
+      })
+      .returning({ id: customerPortalAccounts.id });
+    return row.id as string;
+  };
+  return executor === db ? db.transaction(run) : run(executor);
 }
