@@ -1,5 +1,6 @@
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { accountDisplayName } from "@/lib/account-name";
+import { localizeServerWarning } from "@/lib/validation-messages";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -1529,7 +1530,7 @@ export default function BankReconciliation() {
                             : "text-xs text-muted-foreground"
                         }
                       >
-                        {w.message}
+                        {localizeServerWarning(w)}
                       </li>
                     ))}
                   </ul>

@@ -645,5 +645,6 @@
   "auditDetail.key.status": "Status",
   "auditDetail.key.count": "Count",
   "auditDetail.yes": "Yes",
-  "auditDetail.no": "No"
+  "auditDetail.no": "No",
+  "adminDocuments.noWritableClients": "You do not have access to any client company yet, so there is nowhere to store documents. Ask an owner or firm admin to grant you access."
 }

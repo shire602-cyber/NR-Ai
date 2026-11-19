@@ -342,3 +342,13 @@ export function localizeLedgerGuard(body: Record<string, unknown> | undefined): 
   }
   return undefined;
 }
+
+/**
+ * A warning a server importer attached to a parsed file ({ code, message }): in Arabic the
+ * catalog sentence for its code (the server text is English and may carry counts), else the
+ * server's own message.
+ */
+export function localizeServerWarning(w: { code: string; message: string }): string {
+  if (useI18n.getState().locale !== "ar") return w.message;
+  return serverErrorCopy("ar", w.code) ?? tr("forms.serverErrors.status.other");
+}
