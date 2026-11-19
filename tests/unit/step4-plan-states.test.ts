@@ -326,6 +326,14 @@ describe.each(["en", "ar"] as const)("plan-lock banner and plan-limit dialog (%s
     }
   );
 
+  it("the dashboard shows the state once: its trial banner, not a second lock banner", async () => {
+    sub.state = stateFor("ended-chosen");
+    window.history.replaceState(null, "", "/dashboard");
+    const { PlanLockBanner } = await import("../../client/src/components/billing/PlanLockBanner");
+    await render(createElement(PlanLockBanner));
+    expect(q("plan-lock-banner")).toBeNull();
+  });
+
   it.each(cases)(
     "limit dialog, $name: never asks someone who chose to choose",
     async ({ name, cta }) => {
