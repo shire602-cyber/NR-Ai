@@ -152,6 +152,12 @@ describe("STEP1 F6: Activity logs 'Export logs' button", () => {
       expect(button).not.toBeNull();
       await act(async () => button.click());
       await flush();
+      // An Arabic export loads its label table on demand (E1), so the POST can land a tick later.
+      await vi.waitFor(() =>
+        expect(calls.some((c) => c.method === "POST" && c.url.includes("/api/export/excel"))).toBe(
+          true
+        )
+      );
       const post = calls.find((c) => c.method === "POST" && c.url.includes("/api/export/excel"));
       expect(post, "the button posted an export request").toBeDefined();
       const body = JSON.parse(post!.body!);
