@@ -322,6 +322,32 @@ describe("general ledger and exports", () => {
     expect(row.getCell(1).value).toBe("1020");
     expect(row.getCell(2).value).toBe(112_200);
   });
+
+  it("[STEP1-C] generic Excel export takes the 15-sheet Balance Reports workbook, Arabic and RTL", async () => {
+    // Customer balances, inventory and fixed assets download one workbook of 15 sheets; the
+    // route used to refuse more than 10 ("Array must contain at most 10 element(s)").
+    const sheets = Array.from({ length: 15 }, (_, i) => ({
+      sheetName: `ورقة ${i + 1}`,
+      rtl: true,
+      columns: [
+        { header: "المقياس", key: "metric" },
+        { header: "القيمة", key: "value" },
+      ],
+      rows: [{ metric: "الإجمالي", value: "10.50" }],
+    }));
+    const res = await fetch(`${h.baseUrl}/api/export/excel`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${t.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ sheets }),
+    });
+    expect(res.status).toBe(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(Buffer.from(await res.arrayBuffer()) as unknown as ArrayBuffer);
+    expect(wb.worksheets).toHaveLength(15);
+    expect(wb.worksheets[14].name).toBe("ورقة 15");
+    expect(wb.worksheets.every((sheet) => sheet.views[0]?.rightToLeft === true)).toBe(true);
+    expect(wb.worksheets[0].getRow(2).getCell(2).value).toBe(10.5);
+  });
 });
 
 describe("route naming and params (R12-05)", () => {
