@@ -154,9 +154,11 @@ describe("portal.public.routes [R20-14]", () => {
        VALUES ($1, 'Portal Buyer', 'buyer@portal.test') RETURNING id`,
       [customer.company.id]
     );
-    expect(
+    // STEP5 (G3): the staff route is no longer CSRF-exempt, so a cookie-less anonymous POST is
+    // refused at the CSRF check (403) before authentication (401).
+    expect([401, 403]).toContain(
       (await h.anon.post("/api/portal/generate-access", { contactId: contact.id })).status
-    ).toBe(401);
+    );
     const leak = await other.as.post("/api/portal/generate-access", { contactId: contact.id });
     expect([403, 404]).toContain(leak.status);
     const bad = await customer.as.post("/api/portal/generate-access", {

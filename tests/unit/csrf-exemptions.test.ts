@@ -31,6 +31,9 @@ describe("STEP5 CSRF exemptions (G3)", () => {
       `/api/portal/${TOKEN}/documents`,
       "/api/portal/login/request",
       "/api/portal/login/verify",
+      "/api/portal/einvoicing-approve/abc/done",
+      "/api/portal/pay/abc",
+      "/api/portal/public-invoices/abc/pay",
     ]) {
       expect(isCsrfExemptPath(p), p).toBe(true);
     }

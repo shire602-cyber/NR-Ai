@@ -25,6 +25,11 @@ const CSRF_BEARER_EXEMPT = [
   // contacts/*) are NOT exempt and need X-CSRF-Token.
   /^\/api\/portal\/login\/(request|verify)$/,
   /^\/api\/portal\/[0-9a-f]{64}(\/|$)/i,
+  // Other single-purpose public links: the signed token is in the path (e-invoicing approver,
+  // hosted payment link).
+  /^\/api\/portal\/einvoicing-approve\/[^/]+(\/|$)/,
+  /^\/api\/portal\/pay\/[^/]+$/,
+  /^\/api\/portal\/public-invoices\/[^/]+\/pay$/,
   // Provider webhooks are authenticated by their own HMAC signature, not a CSRF
   // token (the caller is an external service, not the browser).
   /^\/api\/webhooks\/email-intake$/,
