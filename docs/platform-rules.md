@@ -228,3 +228,10 @@ One model for every migrating company (D1, accounting re-audit 3: N1-N4, N7, N14
 - Staff routes live under `/api/companies/:companyId/...` (RBAC rule, plan gate `customerPortal`,
   verified email, strictBody). `/api/portal/*` is CSRF-exempt only for the token and OTP routes.
 - Portal pages (`/client-portal`, `/portal`) are always open in `PLAN_LOCK_ALWAYS_OPEN`.
+- Overdue in the portal is a calendar rule (`contactInvoices`): an invoice with an open balance
+  whose due date (Asia/Dubai date) is before today is overdue, partly paid or not; due today is
+  not. "Next payment due" is the earliest open invoice that is not overdue. A binding whose contact
+  was deactivated is skipped: requests fall back to another active supplier (`X-Portal-Account-Used`),
+  and only when none is left is access "removed". With no email provider the bulk invite returns each
+  `inviteUrl` (same as a single invite); the customer's display name is edited via
+  `PATCH /api/client-portal/profile` (name only).

@@ -131,7 +131,7 @@ BASE_URL=http://localhost:<port> CORS_ORIGIN=http://localhost:<port> node dist/i
 - Document chasing is also an NR firm-management-only feature. Keep its UI under
   `/firm/document-chasing` and verify with
   `npx vitest run tests/unit/document-chasing-boundary.test.ts` after related route/nav/API changes.
-- Customer portal invitations: `tests/db/portal-invitations.test.ts` (DB), `tests/unit/portal-join-page.test.ts`,
+- Customer portal invitations: `tests/db/portal-invitations.test.ts` (DB), `tests/unit/portal-join-page.test.ts`, `portal-product-step5` (unit) and `tests/db/portal-product-step5.test.ts`,
   `portal-invite-email`, `portal-invite-validators`, `csrf-exemptions` after portal, auth-cookie or CSRF changes;
   e2e `FLOWS=portal-invite,portal-invite-phone,portal-invite-existing`.
 - `npm run test:coverage` is a baseline ratchet, not proof of broad route coverage; raise the
