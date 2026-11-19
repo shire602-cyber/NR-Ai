@@ -1,4 +1,4 @@
-// UAE e-invoicing (PINT AE / ASP) and ZATCA (W4-C).
+// UAE e-invoicing (PINT AE / ASP) (W4-C).
 // Part of the shared/schema.ts barrel (R20-09); import from "@shared/schema".
 
 import {
@@ -17,7 +17,7 @@ import { sql } from "drizzle-orm";
 import { companies } from "./companies";
 
 // ===========================
-// W4-C (migration 0102): UAE e-invoicing (PINT AE / ASP) and ZATCA (KSA)
+// W4-C (migration 0102): UAE e-invoicing (PINT AE / ASP)
 // ===========================
 
 /** Per-invoice e-invoice state: validation, ASP lifecycle, retries. */
@@ -329,79 +329,3 @@ export const einvoiceApproverLinks = pgTable(
   })
 );
 export type EInvoiceApproverLink = typeof einvoiceApproverLinks.$inferSelect;
-
-/** ZATCA e-invoice generation solution (EGS) unit: keys, CSIDs and hash chain. */
-export const zatcaEgsUnits = pgTable(
-  "zatca_egs_units",
-  {
-    id: uuid("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    companyId: uuid("company_id")
-      .notNull()
-      .references(() => companies.id, { onDelete: "cascade" }),
-    name: text("name").notNull(),
-    environment: text("environment").notNull(), // sandbox | simulation | production
-    vatNumber: text("vat_number").notNull(),
-    organizationName: text("organization_name").notNull(),
-    organizationUnit: text("organization_unit").notNull(),
-    commonName: text("common_name").notNull(),
-    serialNumber: text("serial_number").notNull(),
-    invoiceTypes: text("invoice_types").notNull().default("1100"),
-    locationAddress: text("location_address").notNull(),
-    industry: text("industry").notNull(),
-    /** Seller block for the ZATCA UBL (Arabic name, CRN, national address). */
-    sellerProfile: jsonb("seller_profile").notNull(),
-    privateKeyEnc: text("private_key_enc").notNull(),
-    csrPem: text("csr_pem").notNull(),
-    complianceRequestId: text("compliance_request_id"),
-    complianceCsid: text("compliance_csid"),
-    complianceSecretEnc: text("compliance_secret_enc"),
-    productionCsid: text("production_csid"),
-    productionSecretEnc: text("production_secret_enc"),
-    status: text("status").notNull().default("created"), // created | compliance | production | failed
-    statusDetail: text("status_detail"),
-    icv: integer("icv").notNull().default(0),
-    lastInvoiceHash: text("last_invoice_hash").notNull(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
-  (table) => ({
-    companyIdx: index("idx_zatca_egs_units_company").on(table.companyId),
-  })
-);
-export type ZatcaEgsUnit = typeof zatcaEgsUnits.$inferSelect;
-
-/** Every ZATCA document in an EGS chain (ICV order), with its clearance/reporting outcome. */
-export const zatcaDocuments = pgTable(
-  "zatca_documents",
-  {
-    id: uuid("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    companyId: uuid("company_id")
-      .notNull()
-      .references(() => companies.id, { onDelete: "cascade" }),
-    egsUnitId: uuid("egs_unit_id")
-      .notNull()
-      .references(() => zatcaEgsUnits.id, { onDelete: "restrict" }),
-    invoiceId: uuid("invoice_id"),
-    icv: integer("icv").notNull(),
-    uuid: text("uuid").notNull(),
-    profile: text("profile").notNull(), // standard | simplified
-    invoiceHash: text("invoice_hash").notNull(),
-    previousHash: text("previous_hash").notNull(),
-    signedXml: text("signed_xml").notNull(),
-    qr: text("qr").notNull(),
-    status: text("status").notNull().default("signed"), // signed | cleared | reported | rejected | failed
-    response: jsonb("response"),
-    attempts: integer("attempts").notNull().default(0),
-    nextRetryAt: timestamp("next_retry_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-  },
-  (table) => ({
-    chainUnique: unique("zatca_documents_chain_unique").on(table.egsUnitId, table.icv),
-    invoiceIdx: index("idx_zatca_documents_invoice").on(table.invoiceId),
-  })
-);
-export type ZatcaDocument = typeof zatcaDocuments.$inferSelect;

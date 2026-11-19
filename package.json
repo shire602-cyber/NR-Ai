@@ -59,7 +59,8 @@
     "e2e:einvoice-client": "node tests/e2e/einvoice-client-flow.mjs",
     "e2e:auth-portal": "node tests/e2e/auth-portal-flow.mjs",
     "e2e:firm-tools": "node tests/e2e/firm-tools-flow.mjs",
-    "e2e:flows": "node tests/e2e/core-flows.mjs"
+    "e2e:flows": "node tests/e2e/core-flows.mjs",
+    "check:no-zatca-bundle": "node scripts/qa/check-no-zatca-bundle.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
@@ -150,7 +151,6 @@
     "web-push": "^3.6.7",
     "wouter": "^3.3.5",
     "ws": "8.21.0",
-    "xml-crypto": "^6.4.0",
     "xmllint-wasm": "^5.3.0",
     "zod": "^4.6.7",
     "zustand": "^5.0.8"

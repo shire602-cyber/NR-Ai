@@ -28,7 +28,6 @@ export type CapabilityId =
   | "bank_feed_tarabut"
   | "bank_feed_wio"
   | "einvoicing_asp"
-  | "zatca"
   | "shopify"
   | "stripe_payouts"
   | "google_sheets"
@@ -259,22 +258,6 @@ const DEFS: readonly CapabilityDef[] = [
               ? "live"
               : "sandbox"
             : null,
-  },
-  {
-    id: "zatca",
-    label: { en: "ZATCA e-invoicing (KSA)", ar: "الفوترة الإلكترونية لهيئة الزكاة (السعودية)" },
-    externalAction: {
-      en: "Onboard each KSA entity with ZATCA Fatoora and obtain production CSIDs.",
-      ar: "سجّل كل منشأة سعودية في منصة فاتورة واحصل على شهادات CSID الإنتاجية.",
-    },
-    envVars: ["ZATCA_ENV", "ZATCA_API_BASE_URL"],
-    whenUnconfigured: "requires_external",
-    detect: (env) =>
-      set(env, "ZATCA_ENV")
-        ? (env.ZATCA_ENV ?? "").toLowerCase() === "production"
-          ? "live"
-          : "sandbox"
-        : null,
   },
   {
     id: "shopify",

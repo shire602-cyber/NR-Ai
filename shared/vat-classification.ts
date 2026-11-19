@@ -29,48 +29,6 @@ export type RevenueAccountRole =
 
 export const UAE_STANDARD_VAT_RATE = 0.05;
 
-/**
- * S1 (W4-C follow-up): the standard rate is per tax jurisdiction. UAE documents charge 5%; a
- * company whose address country is Saudi Arabia issues ZATCA invoices at 15%. Zero-rated, exempt
- * and out-of-scope stay 0% everywhere; reverse charge stays 0% on the supplier's document.
- */
-export type VatJurisdiction = "AE" | "SA";
-export const STANDARD_VAT_RATES: Record<VatJurisdiction, number> = { AE: 0.05, SA: 0.15 };
-
-/** The VAT jurisdiction of a company from its address country (default UAE). */
-export function vatJurisdictionForCountry(country: string | null | undefined): VatJurisdiction {
-  const c = String(country ?? "")
-    .trim()
-    .toLowerCase();
-  return c === "sa" || c === "ksa" || c === "sau" || c === "saudi arabia" ? "SA" : "AE";
-}
-
-/** Normalise a rate for `jurisdiction`: 0, or its standard rate as percent or decimal; else null. */
-export function normaliseVatRate(
-  raw: unknown,
-  jurisdiction: VatJurisdiction = "AE"
-): number | null {
-  if (jurisdiction === "AE") return normaliseUaeVatRate(raw);
-  if (raw === null || raw === undefined || raw === "") return null;
-  const n = typeof raw === "number" ? raw : Number(raw);
-  if (!Number.isFinite(n)) return null;
-  const std = STANDARD_VAT_RATES[jurisdiction];
-  if (n === std || n === Math.round(std * 100)) return std;
-  if (n === 0) return 0;
-  return null;
-}
-
-/** Any rate a supported jurisdiction accepts (shape check before the company is known). */
-export function normaliseSupportedVatRate(raw: unknown): number | null {
-  return normaliseUaeVatRate(raw) ?? normaliseVatRate(raw, "SA");
-}
-
-function rateLabel(jurisdiction: VatJurisdiction): string {
-  return jurisdiction === "SA"
-    ? "VAT rate must be 0% or 15% (KSA)"
-    : "VAT rate must be 0% or 5% (UAE)";
-}
-
 /** Default chart-of-accounts codes for each revenue role. */
 export const REVENUE_ACCOUNT_CODES: Record<RevenueAccountRole, string> = {
   standard_sales: "4010",
@@ -164,13 +122,11 @@ export function resolveSupplyType(input: {
   supplyType?: SupplyType | null;
   vatRate: unknown;
   reverseCharge?: boolean | null;
-  jurisdiction?: VatJurisdiction;
 }): SupplyType {
-  const jurisdiction = input.jurisdiction ?? "AE";
-  const standard = STANDARD_VAT_RATES[jurisdiction];
-  const rate = normaliseVatRate(input.vatRate, jurisdiction);
+  const standard = UAE_STANDARD_VAT_RATE;
+  const rate = normaliseUaeVatRate(input.vatRate);
   if (rate === null) {
-    throw new SupplyClassificationError("INVALID_VAT_RATE", rateLabel(jurisdiction));
+    throw new SupplyClassificationError("INVALID_VAT_RATE", "VAT rate must be 0% or 5% (UAE)");
   }
   if (input.reverseCharge) {
     if (input.supplyType && input.supplyType !== "reverse_charge") {
@@ -206,8 +162,6 @@ export function classifySupply(input: {
   supplyType?: SupplyType | string | null;
   vatRate?: unknown;
   reverseCharge?: boolean | null;
-  /** Standard rate jurisdiction; omitted: inferred from a stored 15% rate (KSA), else UAE. */
-  jurisdiction?: VatJurisdiction;
 }): SupplyClassification {
   let type: SupplyType;
   if (input.reverseCharge) type = "reverse_charge";
@@ -216,20 +170,13 @@ export function classifySupply(input: {
     // Legacy rows: 0% lines were stored as standard_rated (R07-01). Treat
     // them as zero-rated, which is what the ledger did before W3-A, and let
     // scripts/qa/find-sales-ledger-drift.mjs list them for owner review.
-    if (type === "standard_rated" && normaliseSupportedVatRate(input.vatRate) === 0) {
+    if (type === "standard_rated" && normaliseUaeVatRate(input.vatRate) === 0) {
       type = "zero_rated";
     }
   } else {
-    type = normaliseSupportedVatRate(input.vatRate) === 0 ? "zero_rated" : "standard_rated";
+    type = normaliseUaeVatRate(input.vatRate) === 0 ? "zero_rated" : "standard_rated";
   }
-  const out: SupplyClassification = { supplyType: type, ...TABLE[type] };
-  if (type === "standard_rated") {
-    const jurisdiction =
-      input.jurisdiction ??
-      (normaliseVatRate(input.vatRate, "SA") === STANDARD_VAT_RATES.SA ? "SA" : "AE");
-    out.chargedVatRate = STANDARD_VAT_RATES[jurisdiction];
-  }
-  return out;
+  return { supplyType: type, ...TABLE[type] };
 }
 
 /** Bilingual labels for UI selectors and PDFs. */

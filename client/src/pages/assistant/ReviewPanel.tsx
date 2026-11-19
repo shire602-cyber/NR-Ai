@@ -42,6 +42,7 @@ interface QueueItem {
   transaction_date: string;
   suggested_account_id: string | null;
   suggested_account_name: string | null;
+  suggested_account_name_ar?: string | null;
   suggested_account_code: string | null;
   ai_confidence: string;
   ai_reason: string | null;
@@ -253,7 +254,7 @@ export default function ReviewPanel() {
                     {hasSuggestion
                       ? formatMessage(t["assistant.suggestAccount"], {
                           account:
-                            `${item.suggested_account_code ?? ""} ${item.suggested_account_name ?? ""}`.trim(),
+                            `${item.suggested_account_code ?? ""} ${accountDisplayName({ nameEn: item.suggested_account_name, nameAr: item.suggested_account_name_ar }, locale)}`.trim(),
                         })
                       : t["assistant.noSuggestion"]}
                     {hasSuggestion && (

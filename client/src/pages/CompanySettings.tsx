@@ -37,8 +37,6 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { companyLogoFileError, companyLogoSrc, uploadCompanyLogo } from "@/lib/company-logo";
-import { vatRateOptionsFor } from "@/lib/company-country";
-import { useZatcaFlag } from "@/hooks/useZatcaAvailable";
 import type { Company } from "@shared/schema";
 import { companyPreferencesSchema } from "@shared/schema-values";
 import { Building2, Save, Upload } from "lucide-react";
@@ -76,7 +74,6 @@ const MONTH_OPTIONS = [
 const VAT_RATE_OPTIONS = [
   { value: "0", label: "0% — Zero-rated / Out of scope" },
   { value: "0.05", label: "5% — UAE Standard rate" },
-  { value: "0.15", label: "15% — KSA Standard rate" },
 ];
 
 const EMIRATE_OPTIONS = [
@@ -235,20 +232,18 @@ export default function CompanySettings() {
     setLogoPreview(companyLogoSrc(company));
   }, [company, form]);
 
-  // WQ3 (12.10): a country change keeps the default VAT rate one that country offers.
-  const watchedCountry = useWatch({ control: form.control, name: "addressCountry" });
-  // Saudi ZATCA is hidden at launch: no Saudi option or 15% rate unless the server flag is on.
-  const zatcaFlag = useZatcaFlag();
+  // Saudi Arabia is no longer offered as a company country; a stored legacy value still shows.
   const countryOptions = COUNTRY_OPTIONS.filter(
-    (c) => c.value !== "SA" || zatcaFlag || company?.addressCountry === "SA"
+    (c) => c.value !== "SA" || company?.addressCountry === "SA"
   );
+  // A stored default VAT rate outside the offered list (a legacy 15%) falls back to 5%.
+  const watchedVatRate = useWatch({ control: form.control, name: "defaultVatRate" });
   useEffect(() => {
-    const allowed = vatRateOptionsFor(watchedCountry, VAT_RATE_OPTIONS, zatcaFlag);
-    const current = String(form.getValues("defaultVatRate") ?? 0.05);
-    if (!allowed.some((o) => o.value === current)) {
-      form.setValue("defaultVatRate", parseFloat(allowed[allowed.length - 1].value));
+    const current = String(watchedVatRate ?? 0.05);
+    if (!VAT_RATE_OPTIONS.some((o) => o.value === current)) {
+      form.setValue("defaultVatRate", 0.05);
     }
-  }, [watchedCountry, form, zatcaFlag]);
+  }, [watchedVatRate, form]);
 
   const updateMutation = useMutation({
     mutationFn: (data: SubmitValues) =>
@@ -645,13 +640,11 @@ export default function CompanySettings() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {vatRateOptionsFor(watchedCountry, VAT_RATE_OPTIONS, zatcaFlag).map(
-                              (r) => (
-                                <SelectItem key={r.value} value={r.value}>
-                                  {optionLabel(t, "vat", r.value, r.label)}
-                                </SelectItem>
-                              )
-                            )}
+                            {VAT_RATE_OPTIONS.map((r) => (
+                              <SelectItem key={r.value} value={r.value}>
+                                {optionLabel(t, "vat", r.value, r.label)}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                         <FormDescription>

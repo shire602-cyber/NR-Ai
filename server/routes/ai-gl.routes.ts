@@ -50,6 +50,7 @@ export function registerAIGLRoutes(app: Express) {
         SELECT
           q.*,
           sa.name_en as suggested_account_name,
+          sa.name_ar as suggested_account_name_ar,
           sa.code as suggested_account_code,
           sa.type as suggested_account_type,
           ua.name_en as user_account_name,

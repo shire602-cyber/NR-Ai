@@ -9,7 +9,7 @@
  *   VAT       = Σ net × charged rate, rounded ONCE at document level (A-B13)
  *   total     = Σ net + VAT
  *
- * Only standard-rated lines charge VAT (at the jurisdiction's standard rate: 5% UAE, 15% KSA);
+ * Only standard-rated lines charge VAT (at the UAE standard rate, 5%);
  * zero-rated, exempt, out-of-scope and reverse-charge lines charge 0%.
  *
  * Profit-margin scheme lines (S8, R07-15; second-hand goods, standard-rated only): the price is

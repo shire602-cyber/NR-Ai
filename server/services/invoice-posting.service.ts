@@ -54,10 +54,8 @@ import {
 import { allocate, fromFils, mulRate, sumFils, toFils } from "../../shared/money";
 import {
   REVENUE_ACCOUNT_CODES,
-  vatJurisdictionForCountry,
   type RevenueAccountRole,
   type SupplyType,
-  type VatJurisdiction,
 } from "../../shared/vat-classification";
 import { defaultChartOfAccounts } from "../defaultChartOfAccounts";
 import { allocateInvoiceNumber, type InvoiceDocType } from "./invoice-numbering.service";
@@ -289,16 +287,6 @@ export function toBase(docFils: number, rate: string): number {
 
 const dateOnly = (d: Date | string) =>
   (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
-
-/** S1: the company's VAT jurisdiction (standard rate AE 5% / SA 15%) from its address country. */
-export async function loadVatJurisdiction(companyId: string): Promise<VatJurisdiction> {
-  const [row] = await db
-    .select({ addressCountry: companies.addressCountry })
-    .from(companies)
-    .where(eq(companies.id, companyId))
-    .limit(1);
-  return vatJurisdictionForCountry(row?.addressCountry ?? null);
-}
 
 /** Compute a stored document's totals from its stored lines. */
 export function totalsForStoredDocument(

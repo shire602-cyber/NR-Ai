@@ -36,20 +36,16 @@ const baseCurrency = z
 
 /**
  * TRN (S1, W4-E follow-up): validated with the shared `zUaeTrn` rule (15 digits, starts with 100;
- * spaces and dashes ignored), so company, VAT and firm-client TRNs follow ONE rule. A KSA VAT
- * number (15 digits, starts and ends with 3) is accepted here for a Saudi company; the route
- * checks the number against the company's country. "" clears it. This is a FORMAT check only:
+ * spaces and dashes ignored), so company, VAT and firm-client TRNs follow ONE rule. "" clears it.
+ * This is a FORMAT check only:
  * the FTA TRN lookup/verification service is EXTERNAL (no public API is integrated).
  */
-export const KSA_VAT_NUMBER = /^3\d{13}3$/;
 const trn = z
   .union([z.literal(""), z.string(), z.null()])
   .transform((v, ctx) => {
     if (v === "" || v === null) return null;
     const uae = zUaeTrn.safeParse(v);
     if (uae.success) return uae.data;
-    const digits = v.replace(/[\s-]/g, "");
-    if (KSA_VAT_NUMBER.test(digits)) return digits;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: uae.error.issues[0]?.message ?? "Invalid TRN",

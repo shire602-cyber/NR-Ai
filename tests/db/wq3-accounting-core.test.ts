@@ -5,7 +5,7 @@
  *        duplicate code is 409 ACCOUNT_CODE_TAKEN; a control parent (1040) is refused 422
  *        CONTROL_ACCOUNT_NOT_ALLOWED on create and on a parent change; a reserved control code
  *        is 422 CONTROL_ACCOUNT_ROLE_RESERVED
- *  12.10 a UAE company cannot store the 15% KSA default VAT rate; a Saudi company can
+ *  12.10 no company can store the 15% KSA default VAT rate (UAE only, STEP2)
  *  9.4   journal grid lines: a foreign-currency line posts base and foreign amounts at the
  *        tenant's own rate (fx.convert); a standard-rated line gets its derived input VAT leg
  *        (system_vat) with no adjustment, and the control gate still refuses a manual 2020 line;
@@ -28,7 +28,6 @@ beforeEach(() => {
   restore = freezeTime("2026-11-18T08:00:00Z");
 });
 afterEach(() => {
-  delete process.env.ZATCA_ENABLED;
   restore?.();
   restore = null;
 });
@@ -140,7 +139,7 @@ describe("WQ3 9.3: the account drawer", () => {
 });
 
 describe("WQ3 12.10: the 15% KSA rate", () => {
-  it("[12.10] a UAE company cannot store 15%; a Saudi company can", async () => {
+  it("[12.10] no company can store 15%", async () => {
     const uae = await tenant("WQ3Uae", { address_country: "AE" });
     const bad = await uae.as.patch(`/api/companies/${uae.company.id}`, { defaultVatRate: 0.15 });
     expect(bad.status, bad.text).toBe(422);
@@ -148,19 +147,24 @@ describe("WQ3 12.10: the 15% KSA rate", () => {
     const ok = await uae.as.patch(`/api/companies/${uae.company.id}`, { defaultVatRate: 0.05 });
     expect(ok.status, ok.text).toBe(200);
 
-    // ZATCA (and with it the Saudi 15% rate) is behind ZATCA_ENABLED, off at launch.
-    const ksa = await h.createTenant({ name: "WQ3Ksa", companyColumns: { address_country: "SA" } });
-    const ksaOff = await ksa.as.patch(`/api/companies/${ksa.company.id}`, { defaultVatRate: 0.15 });
-    expect(ksaOff.status, ksaOff.text).toBe(422);
-    process.env.ZATCA_ENABLED = "true";
-    const ksaOk = await ksa.as.patch(`/api/companies/${ksa.company.id}`, { defaultVatRate: 0.15 });
+    const ksa = await h.createTenant({
+      name: "WQ3Ksa",
+      companyColumns: { address_country: "SA" },
+    });
+    const ksaBad = await ksa.as.patch(`/api/companies/${ksa.company.id}`, {
+      defaultVatRate: 0.15,
+    });
+    expect(ksaBad.status, ksaBad.text).toBe(422);
+    expect(ksaBad.body.code).toBe("VAT_RATE_NOT_FOR_COUNTRY");
+    const ksaOk = await ksa.as.patch(`/api/companies/${ksa.company.id}`, {
+      defaultVatRate: 0.05,
+    });
     expect(ksaOk.status, ksaOk.text).toBe(200);
     const [row] = await h.sql<{ r: string }>(
       `SELECT default_vat_rate::text AS r FROM companies WHERE id = $1`,
       [ksa.company.id]
     );
-    expect(Number(row.r)).toBe(0.15);
-    delete process.env.ZATCA_ENABLED;
+    expect(Number(row.r)).toBe(0.05);
   });
 });
 
@@ -621,7 +625,8 @@ describe("WQ3 9.13: tax rates", () => {
     const t = await tenant("WQ3Rates");
     const r = await t.as.get(`${base(t)}/tax-rates`);
     expect(r.status, r.text).toBe(200);
-    expect(r.body).toMatchObject({ jurisdiction: "AE", standardRate: 0.05, emirate: "dubai" });
+    expect(r.body).toMatchObject({ standardRate: 0.05, emirate: "dubai" });
+    expect(r.body).not.toHaveProperty("jurisdiction");
     const row = (side: string, treatment: string) =>
       r.body.rows.find(
         (x: { side: string; treatment: string }) => x.side === side && x.treatment === treatment

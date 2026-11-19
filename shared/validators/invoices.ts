@@ -9,7 +9,7 @@
  */
 import { z } from "zod";
 import { toFils } from "../money";
-import { normaliseSupportedVatRate } from "../vat-classification";
+import { normaliseUaeVatRate } from "../vat-classification";
 import {
   SUPPLY_TYPES,
   zCurrency,
@@ -53,15 +53,14 @@ export const zLineQuantity = z.union([z.number(), z.string()]).transform((value,
 });
 
 /**
- * VAT rate: 0, 5 / 0.05 (UAE) or 15 / 0.15 (KSA) → decimal. The company's jurisdiction is checked
- * when the lines are priced (resolveSupplyType: a 15% line on a UAE company is a 400).
+ * VAT rate: 0, or 5 / 0.05 (the UAE standard rate) → decimal. Anything else (15%, ...) is a 400.
  */
 export const zInvoiceVatRate = z.union([z.number(), z.string()]).transform((value, ctx) => {
-  const r = normaliseSupportedVatRate(value);
+  const r = normaliseUaeVatRate(value);
   if (r === null) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: "VAT rate must be 0% or 5% (UAE), or 15% for a KSA company",
+      message: "VAT rate must be 0% or 5%",
     });
     return z.NEVER;
   }

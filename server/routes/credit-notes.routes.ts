@@ -23,7 +23,6 @@ import { zDate, zText, zUuid } from "../../shared/validators/primitives";
 import {
   createDraftCreditNote,
   issueDraftCreditNote,
-  loadVatJurisdiction,
   voidCreditNote,
 } from "../services/invoice-posting.service";
 import { toCreditLines } from "./invoices.routes";
@@ -168,9 +167,7 @@ export function registerCreditNoteRoutes(app: Express) {
       const draft = await createDraftCreditNote({
         invoiceId: body.invoiceId,
         companyId,
-        lines: body.lines
-          ? toCreditLines(body.lines, original, await loadVatJurisdiction(companyId))
-          : undefined,
+        lines: body.lines ? toCreditLines(body.lines, original) : undefined,
         restock: body.restock,
         date: body.date,
         reason: body.reason,

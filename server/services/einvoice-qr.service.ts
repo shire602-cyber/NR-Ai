@@ -1,11 +1,10 @@
 import QRCode from "qrcode";
 
-// Invoice PDF QR: a five-tag TLV summary (seller, TRN, timestamp, total, VAT)
-// in the ZATCA *Phase 1* layout. It is a convenience for readers of the PDF,
-// NOT a cryptographic stamp: it carries no invoice hash, signature or public
-// key, and the UAE PINT AE e-invoice is signed by the Accredited Service
-// Provider, not by this QR. The ZATCA Phase 2 QR (tags 1-9, signed) lives in
-// server/services/zatca/qr.ts.
+// Invoice PDF QR: a five-tag TLV summary (seller, TRN, timestamp, total, VAT).
+// It is a convenience for readers of the PDF, NOT a
+// cryptographic stamp: it carries no invoice hash, signature or public key, and
+// the UAE PINT AE e-invoice is signed by the Accredited Service Provider, not
+// by this QR.
 // Each record is: 1-byte tag, 1-byte length, n bytes UTF-8 value (≤255 bytes).
 export const EINVOICE_QR_TAGS = {
   SELLER_NAME: 1,

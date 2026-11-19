@@ -1,6 +1,6 @@
 /**
  * S1 final sweep (unit): invoice-form totals module vs the server engine, e-invoice 422 issue
- * list, ?status= filters, KSA rate per jurisdiction, margin scheme math, quote state machine,
+ * list, ?status= filters, UAE-only VAT rates, margin scheme math, quote state machine,
  * CT estimate labels, RCM goods-type codes / GTIN, company TRN rule, logo helpers, body limits.
  */
 import { describe, expect, it } from "vitest";
@@ -15,10 +15,8 @@ import { computeSalesDocument } from "../../server/services/document-totals.serv
 import {
   classifySupply,
   isValidGtin,
-  normaliseVatRate,
   RCM_GOODS_TYPES,
   resolveSupplyType,
-  vatJurisdictionForCountry,
 } from "../../shared/vat-classification";
 import { RCM_GOODS_TYPE_CODES } from "../../server/services/einvoice/pint-ae-codes";
 import { createInvoiceSchema, salesLineInputSchema } from "../../shared/validators/invoices";
@@ -70,7 +68,7 @@ describe("[W5-E] invoice-form totals module", () => {
     }
   });
 
-  it("rounds VAT once per document and labels the charged rates (KSA 15%)", () => {
+  it("rounds VAT once per document and labels the charged rates", () => {
     // 3 × 0.10 at 5%: per-line VAT 0.005 each would round to 0.03; document rounding gives 0.02.
     const t = computeInvoiceFormTotals([
       { quantity: 1, unitPrice: 0.1 },
@@ -79,8 +77,6 @@ describe("[W5-E] invoice-form totals module", () => {
     ]);
     expect(t.vatFils).toBe(server3());
     expect(t.ratesCharged).toEqual([0.05]);
-    const ksa = computeInvoiceFormTotals([{ quantity: 2, unitPrice: 50 }], 0.15);
-    expect(ksa).toMatchObject({ subtotal: 100, vatAmount: 15, total: 115, ratesCharged: [0.15] });
     expect(
       computeInvoiceFormLine({ quantity: 1, unitPrice: 100, discountPercent: 10 }).lineTotal
     ).toBe(94.5);
@@ -138,27 +134,18 @@ describe("[W3-E][R13-21] invoice ?status= filter from dashboard links", () => {
   });
 });
 
-describe("[W4-C] VAT rate per jurisdiction (KSA 15% on the ZATCA path)", () => {
-  it("resolves 15% only for a Saudi company and classifies stored 15% lines as KSA", () => {
-    expect(vatJurisdictionForCountry("SA")).toBe("SA");
-    expect(vatJurisdictionForCountry("Saudi Arabia")).toBe("SA");
-    expect(vatJurisdictionForCountry(null)).toBe("AE");
-    expect(normaliseVatRate(15, "SA")).toBe(0.15);
-    expect(normaliseVatRate(5, "SA")).toBeNull();
-    expect(resolveSupplyType({ vatRate: 15, jurisdiction: "SA" })).toBe("standard_rated");
+describe("[STEP2] VAT rate: UAE only (5% standard, no 15% KSA rate)", () => {
+  it("refuses 15%, never charges it, and prices a 1,000 AED document at 50 VAT", () => {
     expect(() => resolveSupplyType({ vatRate: 15 })).toThrow(/0% or 5%/);
-    expect(() => resolveSupplyType({ vatRate: 5, jurisdiction: "SA" })).toThrow(/0% or 15%/);
+    expect(resolveSupplyType({ vatRate: 5 })).toBe("standard_rated");
     expect(classifySupply({ supplyType: "standard_rated", vatRate: 0.15 }).chargedVatRate).toBe(
-      0.15
+      0.05
     );
     expect(classifySupply({ supplyType: "standard_rated", vatRate: 0.05 }).chargedVatRate).toBe(
       0.05
     );
-    const t = computeSalesDocument([{ quantity: 1, unitPriceFils: 100_000 }], {
-      resolve: true,
-      jurisdiction: "SA",
-    });
-    expect(t.vatFils).toBe(15_000);
+    const t = computeSalesDocument([{ quantity: 1, unitPriceFils: 100_000 }], { resolve: true });
+    expect(t.vatFils).toBe(5_000);
   });
 });
 
@@ -272,8 +259,8 @@ describe("[W4-E][R14-20] company TRN uses zUaeTrn", () => {
     const ok = updateCompanyBody.safeParse({ trnVatNumber: "100 1234 5670 0003" });
     expect(ok.success && ok.data.trnVatNumber).toBe("100123456700003");
     expect(updateCompanyBody.safeParse({ trnVatNumber: "" }).success).toBe(true);
-    // Shape-valid KSA VAT number: the route checks it against the company's country.
-    expect(updateCompanyBody.safeParse({ trnVatNumber: "300000000000003" }).success).toBe(true);
+    // A KSA-shaped VAT number is refused: Saudi VAT numbers are no longer accepted (STEP2).
+    expect(updateCompanyBody.safeParse({ trnVatNumber: "300000000000003" }).success).toBe(false);
   });
 });
 

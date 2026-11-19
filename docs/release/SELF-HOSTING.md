@@ -52,8 +52,7 @@ RBAC_ENFORCE=enforce
 
 Compose sets `NODE_ENV=production`, `DATABASE_URL` (internal `db` host), `AUTO_MIGRATE_ON_BOOT=false`,
 `TRUST_PROXY_HOPS=1` and `UPLOADS_PERSISTENT=true` for you. Add the other runbook variables (section 3 of
-DEPLOY-RUNBOOK) as needed; feature variables (`EINVOICE_PROVIDER`, `ACUBE_*`, Stripe, email provider,
-`ZATCA_ENV`) stay unset until proven. Losing `TOKEN_ENCRYPTION_KEY` makes stored secrets unreadable.
+DEPLOY-RUNBOOK) as needed; feature variables (`EINVOICE_PROVIDER`, `ACUBE_*`, Stripe, email provider) stay unset until proven. Losing `TOKEN_ENCRYPTION_KEY` makes stored secrets unreadable.
 
 **Storage choice.** Production refuses to boot on local disk unless storage is durable
 (`server/services/fileStorage.ts`). For an on-prem server the right choice is the host directory

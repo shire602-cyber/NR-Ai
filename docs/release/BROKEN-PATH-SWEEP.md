@@ -79,8 +79,7 @@ both languages, each on its own new owner (table at the end).
 "pass": no failure in the final runs. "fixed (rules)": failed the first run, passes now.
 Viewports: desktop 1440 px unless marked (mobile = 390 px, mobile-more = the phone More sheet,
 palette = command palette entry, file = file link checked for a download).
-Out of scope: none. Not run: Saudi ZATCA pages behind `ZATCA_ENABLED` (off at launch; the flag
-off path is checked), live provider calls (e-invoicing transmission, Stripe checkout, bank feeds,
+Out of scope: none. Saudi ZATCA was removed in STEP2 (`/settings/zatca` is the not-found page). Not run: live provider calls (e-invoicing transmission, Stripe checkout, bank feeds,
 e-mail delivery), which stay behind their configured boundaries.
 
 | Route                                                       | Persona(s)                                                  | en   | ar   | Result                                               |
@@ -332,8 +331,6 @@ e-mail delivery), which stay behind their configured boundaries.
 | `/settings/security (mobile)`                               | trial, owner                                                | pass | pass | fixed (english-in-arabic)                            |
 | `/settings/tax-rates`                                       | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
 | `/settings/tax-rates (mobile)`                              | trial, owner                                                | pass | pass | pass                                                 |
-| `/settings/zatca`                                           | trial, owner, accountant, viewer                            | pass | pass | fixed (english-in-arabic)                            |
-| `/settings/zatca (mobile)`                                  | trial, owner                                                | pass | pass | fixed (english-in-arabic)                            |
 | `/smart-assistant`                                          | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
 | `/smart-assistant (mobile)`                                 | trial, owner                                                | pass | pass | pass                                                 |
 | `/subscription`                                             | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
@@ -462,16 +459,18 @@ e-mail delivery), which stay behind their configured boundaries.
 | assistant      | Ask answers a question                                                 | pass | pass |
 | assistant      | Review scan runs                                                       | pass | pass |
 | assistant      | Automations switch toggles and persists                                | pass | pass |
-| no-saudi-rate  | invoice: no 15% option                                                 | pass | pass |
-| no-saudi-rate  | quote: no 15% option                                                   | pass | pass |
-| no-saudi-rate  | credit note: no 15% option                                             | pass | pass |
-| no-saudi-rate  | bill: no 15% option                                                    | pass | pass |
-| no-saudi-rate  | purchase order: no 15% option                                          | pass | pass |
-| no-saudi-rate  | debit note: no 15% option                                              | pass | pass |
-| no-saudi-rate  | recurring invoice: no 15% option                                       | pass | pass |
-| no-saudi-rate  | company settings: no 15% option                                        | pass | pass |
-| no-saudi-rate  | tax rates: no 15% option                                               | pass | pass |
-| no-saudi-rate  | API: features say zatca off                                            | pass | pass |
+| no-ksa-rate    | invoice: no 15% option                                                 | pass | pass |
+| no-ksa-rate    | quote: no 15% option                                                   | pass | pass |
+| no-ksa-rate    | credit note: no 15% option                                             | pass | pass |
+| no-ksa-rate    | bill: no 15% option                                                    | pass | pass |
+| no-ksa-rate    | purchase order: no 15% option                                          | pass | pass |
+| no-ksa-rate    | debit note: no 15% option                                              | pass | pass |
+| no-ksa-rate    | recurring invoice: no 15% option                                       | pass | pass |
+| no-ksa-rate    | company settings: no 15% option                                        | pass | pass |
+| no-ksa-rate    | tax rates: no 15% option                                               | pass | pass |
+| no-ksa-rate    | /settings/zatca is the not-found page, with no ZATCA text              | pass | pass |
+| no-ksa-rate    | /settings/einvoicing has no ZATCA text or link                         | pass | pass |
+| no-ksa-rate    | API: /api/features and the ZATCA routes are 404                        | pass | pass |
 | prices         | API plans: 59 / 119 / 229 monthly, 590 / 1,190 / 2,290 yearly          | pass | pass |
 | prices         | /pricing monthly shows 59 / 119 / 229                                  | pass | pass |
 | prices         | /pricing yearly shows 590 / 1,190 / 2,290                              | pass | pass |

@@ -8,10 +8,9 @@ import { allocate, sumFils } from "../../shared/money";
 import {
   classifySupply,
   resolveSupplyType,
-  STANDARD_VAT_RATES,
   type SupplyClassification,
   type SupplyType,
-  type VatJurisdiction,
+  UAE_STANDARD_VAT_RATE,
 } from "../../shared/vat-classification";
 
 export interface DocumentLineInput {
@@ -177,8 +176,6 @@ export function computeSalesDocument(
     discountValue?: number | string | null;
     reverseCharge?: boolean | null;
     resolve?: boolean;
-    /** Standard-rate jurisdiction (AE 5%, SA 15%); stored rows infer it from their rate. */
-    jurisdiction?: VatJurisdiction;
   } = {}
 ): SalesDocumentTotals {
   const prepared = lines.map((line, i) => {
@@ -188,21 +185,19 @@ export function computeSalesDocument(
       try {
         type = resolveSupplyType({
           supplyType: (line.vatSupplyType as SupplyType | null | undefined) ?? null,
-          vatRate: line.vatRate ?? STANDARD_VAT_RATES[opts.jurisdiction ?? "AE"],
+          vatRate: line.vatRate ?? UAE_STANDARD_VAT_RATE,
           reverseCharge: opts.reverseCharge,
-          jurisdiction: opts.jurisdiction,
         });
       } catch (err) {
         const e = err as { code?: string; message?: string };
         throw new DocumentTotalsError(e.code ?? "INVALID_SUPPLY_TYPE", e.message ?? "", i);
       }
-      classification = classifySupply({ supplyType: type, jurisdiction: opts.jurisdiction });
+      classification = classifySupply({ supplyType: type });
     } else {
       classification = classifySupply({
         supplyType: line.vatSupplyType,
         vatRate: line.vatRate,
         reverseCharge: opts.reverseCharge,
-        jurisdiction: opts.jurisdiction,
       });
     }
     if (line.marginScheme && classification.supplyType !== "standard_rated") {

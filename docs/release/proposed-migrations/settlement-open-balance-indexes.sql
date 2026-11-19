@@ -1,4 +1,4 @@
--- SUPERSEDED by migrations/0133_settlement_open_balance_indexes.sql (owner-approved exception,
+-- SUPERSEDED by migrations/0134_settlement_open_balance_indexes.sql (owner-approved exception,
 -- PR #68). Optional only: an operator may pre-build the same indexes CONCURRENTLY before the deploy,
 -- after which 0133's IF NOT EXISTS is a no-op. Lives in docs/, so the migrator never runs it.
 --

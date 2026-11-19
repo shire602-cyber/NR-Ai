@@ -12,7 +12,7 @@ describe("broken-path sweep text rules", () => {
   });
 
   it("flags raw keys, placeholders, UUIDs and junk values", () => {
-    expect(textProblems("forms.serverErrors.ZATCA_NOT_AVAILABLE")).toContain("raw-key");
+    expect(textProblems("forms.serverErrors.VAT_RATE_NOT_FOR_COUNTRY")).toContain("raw-key");
     expect(textProblems("Due {date}")).toContain("placeholder");
     expect(textProblems("Hello {{name}}")).toContain("placeholder");
     expect(textProblems("Invoice 3f2b8c1e-1a2b-4c3d-8e9f-0a1b2c3d4e5f")).toContain("uuid");

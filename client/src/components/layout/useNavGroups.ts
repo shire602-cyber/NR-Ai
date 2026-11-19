@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { shouldShowNraCenterNav } from "@shared/access";
-import { useZatcaAvailable } from "@/hooks/useZatcaAvailable";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 import {
@@ -29,25 +28,19 @@ export function useNavGroups() {
   // client company. Firm-level tools (the NRA Center) belong at the firm level,
   // so we hide that group while a specific client file is the active workspace.
   // The user re-enters the firm via the "Firm workspace" entry in CompanySwitcher.
-  const { isFirmContext, company } = useActiveCompanySafe();
-  // ZATCA applies to companies registered in Saudi Arabia only (UAE companies never see it),
-  // and only while the server's ZATCA flag is on (hidden at launch, owner decision 2026-11-18).
-  const isSaudi = useZatcaAvailable(company as { addressCountry?: string | null } | undefined);
+  const { isFirmContext } = useActiveCompanySafe();
   // Accounting-firm management is NR-internal: only NR staff and platform admins see the group.
   const showNraCenter = shouldShowNraCenterNav(currentUser, { inClientContext: isFirmContext });
 
   // All collapsible groups for this user (Dashboard is separate — direct link)
   const allGroups = useMemo<NavGroup[]>(
     () => [
-      ...CUSTOMER_GROUPS.map((group) => ({
-        ...group,
-        items: group.items.filter((item) => !item.saudiOnly || isSaudi),
-      })),
+      ...CUSTOMER_GROUPS,
       ...(showNraCenter ? [NRA_GROUP] : []),
       ...(isAdmin ? [ADMIN_GROUP] : []),
       SETTINGS_GROUP,
     ],
-    [showNraCenter, isAdmin, isSaudi]
+    [showNraCenter, isAdmin]
   );
   return { allGroups, currentUser, userType: currentUser?.userType || "customer" };
 }

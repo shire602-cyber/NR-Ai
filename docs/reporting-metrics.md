@@ -563,9 +563,8 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   with `server/assets`; override with `EINVOICE_ARTEFACTS_DIR`; startup logs when missing); test
   fixtures and ASP recordings stay in `tests/fixtures/pint-ae/`. Transmission stops at the ASP
   boundary (`server/services/einvoice-provider-http.ts`, mapping file + recorded contract tests):
-  no contracted ASP means 503 `EINVOICE_PROVIDER_NOT_CONFIGURED`, and ZATCA is 503
-  `ZATCA_NOT_CONFIGURED` without `ZATCA_ENV`. UAE debit notes are type 380 with a BillingReference
-  to the original (PINT AE rejects 383); 383 is used only on the ZATCA path. Run
+  no contracted ASP means 503 `EINVOICE_PROVIDER_NOT_CONFIGURED`. UAE debit notes are type 380 with
+  a BillingReference to the original (PINT AE rejects 383). Run
   `node scripts/validate-ubl.mjs --fixtures` and `npx vitest run tests/unit/einvoice-pint-ae.test.ts`
   after UBL changes.
 - E-invoicing through A-Cube (E1, MoF accreditation 188961; `EINVOICE_PROVIDER=acube`,

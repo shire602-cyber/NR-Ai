@@ -3,7 +3,6 @@
   "einvoicing.downloadPdf": "Download PDF",
   "einvoicing.downloadFailed": "The file could not be downloaded. Try again.",
   "einvoicing.navEInvoicing": "E-invoicing (UAE)",
-  "einvoicing.navZatca": "E-invoicing (KSA ZATCA)",
   "einvoicing.trackDelivery": "Delivery to customer",
   "einvoicing.trackReporting": "FTA reporting",
   "einvoicing.delivery_draft": "Not generated",

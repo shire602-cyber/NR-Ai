@@ -73,7 +73,6 @@ import {
   invoiceSettlement,
   isIssuedStatus,
   issueInvoice,
-  loadVatJurisdiction,
   postInvoiceRevenueJournal,
   resolveCustomerHeader,
   voidInvoice,
@@ -104,7 +103,7 @@ import { removeDraftInvoice } from "../services/invoice-draft-delete.service";
 import { assertRetentionExpired } from "../services/retention.service";
 import { getRate } from "../services/fx";
 import { documentCurrency, loadBaseCurrency } from "../ledger";
-import type { SupplyType, VatJurisdiction } from "../../shared/vat-classification";
+import type { SupplyType } from "../../shared/vat-classification";
 
 const log = createLogger("invoices");
 
@@ -312,7 +311,6 @@ export async function prepareNewDocument(companyId: string, body: CreateInvoiceI
     discountType: body.discountType,
     discountValue: body.discountValue,
     reverseCharge: body.reverseCharge,
-    jurisdiction: await loadVatJurisdiction(companyId),
   });
   await assertPlaceOfSupply(
     companyId,
@@ -1141,9 +1139,7 @@ export function registerInvoiceRoutes(app: Express) {
         return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       const cnDate = body.date ?? new Date().toISOString().slice(0, 10);
       await assertPeriodNotLocked(companyId, toDate(cnDate));
-      const lines = body.lines
-        ? toCreditLines(body.lines, original, await loadVatJurisdiction(companyId))
-        : undefined;
+      const lines = body.lines ? toCreditLines(body.lines, original) : undefined;
       const result = await createAndIssueCreditNote({
         invoiceId,
         companyId,
@@ -1211,7 +1207,6 @@ export function registerInvoiceRoutes(app: Express) {
       await assertPeriodNotLocked(companyId, toDate(dnDate));
       const { rows, totals } = prepareSalesLines(body.lines.map(lineDraft), {
         reverseCharge: original.reverseCharge,
-        jurisdiction: await loadVatJurisdiction(companyId),
       });
       const rate = Number(original.exchangeRate) || 1;
       const dn = await db.transaction(async (tx: typeof db) => {
@@ -1436,12 +1431,10 @@ export function registerInvoiceRoutes(app: Express) {
 /** Validated credit-note lines → posting input (supply types resolved, R07-01). */
 export function toCreditLines(
   lines: SalesLineInput[],
-  original: Pick<Invoice, "reverseCharge">,
-  jurisdiction?: VatJurisdiction
+  original: Pick<Invoice, "reverseCharge">
 ): CreditNoteLineInput[] {
   const { rows } = prepareSalesLines(lines.map(lineDraft), {
     reverseCharge: original.reverseCharge,
-    jurisdiction,
   });
   return rows.map((r) => ({
     description: r.description,

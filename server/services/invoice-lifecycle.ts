@@ -12,11 +12,7 @@
 
 import { DomainError } from "../errors";
 import { fromFils } from "../../shared/money";
-import {
-  STANDARD_VAT_RATES,
-  type SupplyType,
-  type VatJurisdiction,
-} from "../../shared/vat-classification";
+import { UAE_STANDARD_VAT_RATE, type SupplyType } from "../../shared/vat-classification";
 import {
   computeSalesDocument,
   DocumentTotalsError,
@@ -400,8 +396,6 @@ export function prepareSalesLines(
     discountType?: string | null;
     discountValue?: number | null;
     reverseCharge?: boolean | null;
-    /** Standard-rate jurisdiction of the issuing company (AE 5% default, SA 15%). */
-    jurisdiction?: VatJurisdiction;
   } = {}
 ): { rows: PreparedSalesLine[]; totals: SalesDocumentTotals } {
   let totals: SalesDocumentTotals;
@@ -410,7 +404,7 @@ export function prepareSalesLines(
       lines.map((l) => ({
         quantity: l.quantity,
         unitPriceFils: l.unitPrice,
-        vatRate: l.vatRate ?? STANDARD_VAT_RATES[opts.jurisdiction ?? "AE"],
+        vatRate: l.vatRate ?? UAE_STANDARD_VAT_RATE,
         vatSupplyType: l.vatSupplyType ?? null,
         discountType: l.discountType ?? null,
         discountValue: l.discountValue ?? null,

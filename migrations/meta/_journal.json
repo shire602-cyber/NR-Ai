@@ -930,7 +930,14 @@
    "idx": 132,
    "version": "7",
    "when": 1781430480000,
-   "tag": "0133_settlement_open_balance_indexes",
+   "tag": "0133_step2_remove_zatca",
+   "breakpoints": false
+  },
+  {
+   "idx": 133,
+   "version": "7",
+   "when": 1781430490000,
+   "tag": "0134_settlement_open_balance_indexes",
    "breakpoints": false
   }
  ]

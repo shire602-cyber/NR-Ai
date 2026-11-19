@@ -268,7 +268,7 @@ describe("WP-A shell", () => {
       expect(rows.length).toBeGreaterThan(20);
       for (const row of rows) expect(row.textContent?.trim(), locale).toBeTruthy();
       if (locale === "ar") {
-        for (const row of rows) expect(row.textContent, row.textContent!).toMatch(/[؀-ۿ]|ZATCA/);
+        for (const row of rows) expect(row.textContent, row.textContent!).toMatch(/[؀-ۿ]/);
       }
       expect(container.querySelector("details")).toBeNull();
       await act(async () => more.click());

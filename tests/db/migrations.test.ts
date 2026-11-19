@@ -162,4 +162,55 @@ describe("migrations", () => {
     });
     expect(login.status).toBeGreaterThanOrEqual(400);
   });
+
+  it("[STEP2] 0133 drops the ZATCA tables, is idempotent, and refuses to drop a table that holds rows", async () => {
+    const tables = async () =>
+      (
+        await h.sql<{ table_name: string }>(
+          `SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name IN ('zatca_egs_units', 'zatca_documents')`
+        )
+      ).map((r) => r.table_name);
+    // Applied by the harness migrations: both tables are gone, and a second run is a no-op.
+    expect(await tables()).toEqual([]);
+    await h.sql(sqlFile("0133_step2_remove_zatca"));
+    await h.sql(sqlFile("0133_step2_remove_zatca"));
+    expect(await tables()).toEqual([]);
+
+    // A table that holds a row is never dropped silently.
+    await h.sql(`CREATE TABLE zatca_egs_units (id uuid)`);
+    await h.sql(`INSERT INTO zatca_egs_units (id) VALUES (gen_random_uuid())`);
+    await expect(h.sql(sqlFile("0133_step2_remove_zatca"))).rejects.toThrow(
+      /zatca_egs_units holds 1 row/
+    );
+    expect(await tables()).toEqual(["zatca_egs_units"]);
+    await h.sql(`DROP TABLE zatca_egs_units`);
+
+    // An empty table is dropped.
+    await h.sql(`CREATE TABLE zatca_documents (id uuid)`);
+    await h.sql(`CREATE TABLE zatca_egs_units (id uuid)`);
+    await h.sql(sqlFile("0133_step2_remove_zatca"));
+    expect(await tables()).toEqual([]);
+  });
+
+  it("[STEP2] 0133 resets a 15% company default VAT rate to 5% and leaves 0% and 5% alone", async () => {
+    const a = await h.createTenant({ name: "Step2Rate15" });
+    const b = await h.createTenant({ name: "Step2Rate0" });
+    const c = await h.createTenant({ name: "Step2Rate5" });
+    await h.sql(`UPDATE companies SET default_vat_rate = 0.15 WHERE id = $1`, [a.company.id]);
+    await h.sql(`UPDATE companies SET default_vat_rate = 0 WHERE id = $1`, [b.company.id]);
+    await h.sql(sqlFile("0133_step2_remove_zatca"));
+    const rate = async (id: string) =>
+      Number(
+        (
+          await h.sql<{ r: string }>(
+            `SELECT default_vat_rate::text AS r FROM companies WHERE id = $1`,
+            [id]
+          )
+        )[0].r
+      );
+    expect(await rate(a.company.id)).toBe(0.05);
+    expect(await rate(b.company.id)).toBe(0);
+    expect(await rate(c.company.id)).toBe(0.05);
+  });
 });

@@ -8,8 +8,8 @@
  *   - Contact: a customer (customer_contacts) or supplier (vendors) of THIS company; another
  *     tenant's id is 404-equivalent (422 CONTACT_NOT_FOUND), never revealed.
  *   - VAT treatment: "standard" adds the VAT leg itself (income account -> output VAT 2020,
- *     any other account -> input VAT 1050, same side as the line, at the company's standard
- *     rate). The leg is flagged `systemVat`, so the kernel's control-account gate lets exactly
+ *     any other account -> input VAT 1050, same side as the line, at the UAE standard
+ *     rate, 5%). The leg is flagged `systemVat`, so the kernel's control-account gate lets exactly
  *     that leg through and still refuses a VAT line the user picked (B1 / C1).
  *   - CT treatment: must fit the account type (non-deductible on an expense, exempt income on
  *     income); stored on the line for the CT workpaper (server/reporting/ct-line-treatments.ts).
@@ -21,8 +21,7 @@ import { resolve } from "../platform/service-registry";
 import type { FxConvert } from "./fx";
 import { loadBaseCurrency, type JournalLineAttributes, type PostJournalLineInput } from "../ledger";
 import { toFils } from "../../shared/money";
-import { STANDARD_VAT_RATES } from "../../shared/vat-classification";
-import { vatJurisdictionWithFlag } from "./zatca/flag";
+import { UAE_STANDARD_VAT_RATE } from "../../shared/vat-classification";
 import {
   ctTreatmentFitsAccount,
   journalLineVatFils,
@@ -99,14 +98,6 @@ async function assertContactsOwned(companyId: string, lines: JournalLineBody[]):
       );
     }
   }
-}
-
-async function companyVatRate(companyId: string): Promise<number> {
-  const { rows } = await pool.query(`SELECT address_country FROM companies WHERE id = $1`, [
-    companyId,
-  ]);
-  const country = (rows[0] as { address_country?: string | null } | undefined)?.address_country;
-  return STANDARD_VAT_RATES[vatJurisdictionWithFlag(country)];
 }
 
 function ctPct(l: JournalLineBody): string | null {
@@ -238,7 +229,7 @@ export async function buildManualJournalLines(
       if (!account) throw lineError("ACCOUNT_NOT_FOUND", index, "accountId", "Choose an account");
       const baseDebit = debitFils ?? (present(debit) ? toFils(debit as string | number) : 0);
       const baseCredit = creditFils ?? (present(credit) ? toFils(credit as string | number) : 0);
-      rate ??= await companyVatRate(companyId);
+      rate ??= UAE_STANDARD_VAT_RATE;
       const output = account.type === "income";
       const vatAccountId = await vatAccount(
         output ? ACCOUNT_CODES.VAT_OUTPUT : ACCOUNT_CODES.VAT_INPUT
@@ -268,6 +259,3 @@ export async function buildManualJournalLines(
   }
   return out;
 }
-
-/** The standard VAT rate a manual journal line is charged at (UAE 5%, KSA 15%). */
-export { companyVatRate as journalVatRate };

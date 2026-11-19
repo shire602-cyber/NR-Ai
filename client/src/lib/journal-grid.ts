@@ -63,7 +63,7 @@ export interface PreviewContext {
   baseCurrency: string;
   /** Rate for 1 <currency> in base units, or null while unknown. */
   rateFor: (currency: string) => number | null;
-  /** The company's standard VAT rate (0.05 UAE, 0.15 KSA). */
+  /** The company's standard VAT rate (0.05 UAE). */
   vatRate: number;
   /** Account type of an account id ("income", "expense", ...). */
   accountType: (accountId: string) => string | undefined;

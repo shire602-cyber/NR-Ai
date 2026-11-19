@@ -982,7 +982,6 @@
   "serverErrors.issue.input_vat_needs_the_account_the_asset_was_paid_from": "تحتاج ضريبة المدخلات إلى الحساب الذي سُدّد منه ثمن الأصل.",
   "serverErrors.issue.invalid_tax_registration_date": "تاريخ التسجيل الضريبي غير صالح.",
   "serverErrors.issue.journal_entry_must_have_at_least_2_lines": "يحتاج القيد إلى بندين على الأقل.",
-  "serverErrors.issue.ksa_vat_number_must_be_15_digits_starting_and_ending_with_3": "رقم ضريبة القيمة المضافة السعودي مكوّن من 15 رقماً يبدأ وينتهي بالرقم 3.",
   "serverErrors.issue.line_quantity_must_be_greater_than_0_with_at_most_4_decimal_places": "يجب أن تكون الكمية أكبر من صفر وبحد أقصى 4 منازل عشرية.",
   "serverErrors.issue.logo_must_be_1_mb_or_smaller": "يجب ألا يتجاوز حجم الشعار 1 ميغابايت.",
   "serverErrors.issue.logo_must_be_an_https_url_or_a_png_jpeg_gif_webp_data_image_under_1_mb": "يجب أن يكون الشعار رابط https أو صورة PNG أو JPEG أو GIF أو WebP أقل من 1 ميغابايت.",
@@ -1020,7 +1019,8 @@
   "serverErrors.issue.useful_life_must_be_1_100_whole_years": "يجب أن يكون العمر الإنتاجي بين 1 و100 سنة كاملة.",
   "serverErrors.issue.vat_amount_cannot_exceed_the_receipt_amount": "لا يمكن أن تتجاوز الضريبة مبلغ الإيصال.",
   "serverErrors.issue.vat_cannot_exceed_the_amount": "لا يمكن أن تتجاوز الضريبة المبلغ.",
-  "serverErrors.issue.vat_rate_must_be_0_or_5_uae_or_15_for_a_ksa_company": "يجب أن تكون نسبة الضريبة 0% أو 5% (الإمارات)، أو 15% لشركة سعودية.",
+  "serverErrors.issue.vat_rate_must_be_0_or_5": "يجب أن تكون نسبة الضريبة 0% أو 5%.",
+  "serverErrors.issue.vat_rate_must_be_0_or_5_uae": "يجب أن تكون نسبة الضريبة 0% أو 5% (الإمارات).",
   "serverErrors.issue.vattype_is_required_when_isvataccount_is_true": "اختر نوع الضريبة لحساب الضريبة.",
   "serverErrors.issue.vattype_must_be_empty_when_isvataccount_is_false": "نوع الضريبة خاص بحسابات الضريبة فقط.",
   "serverErrors.issue.website_must_be_an_http_s_url": "يجب أن يبدأ عنوان الموقع بـ http:// أو https://."

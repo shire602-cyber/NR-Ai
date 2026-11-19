@@ -30,7 +30,7 @@ function walk(dir: string, out: string[] = []): string[] {
 
 /** Files whose errors never reach a customer's screen: admin/firm consoles, webhooks, providers. */
 const INTERNAL_FILE =
-  /(admin|firm|platform|internal|webhook|cron|scheduler|outbox|public-api|ecommerce|stripe|zatca|ocr|backup|migration-import|socket|telemetry|health|jobs|einvoice-provider|acube|complyance)/i;
+  /(admin|firm|platform|internal|webhook|cron|scheduler|outbox|public-api|ecommerce|stripe|ocr|backup|migration-import|socket|telemetry|health|jobs|einvoice-provider|acube|complyance)/i;
 
 /** Codes in customer files that only machines see (inbound webhooks, provider callbacks, feeds). */
 const MACHINE_ONLY = new Set([

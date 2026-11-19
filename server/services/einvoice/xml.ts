@@ -1,6 +1,6 @@
 /**
  * Minimal, dependency-free XML tree builder for the e-invoice generators
- * (PINT AE and ZATCA). Elements are plain objects; `serializeXml` escapes
+ * (PINT AE). Elements are plain objects; `serializeXml` escapes
  * text and attributes and indents two spaces per level. Children that are
  * null/undefined/false are dropped so optional UBL elements read naturally:
  *
