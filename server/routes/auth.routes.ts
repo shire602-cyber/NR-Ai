@@ -1520,12 +1520,10 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       if (invitation.status !== "pending") {
-        return res
-          .status(400)
-          .json({
-            message: `Invitation has been ${invitation.status}`,
-            code: "INVITATION_NOT_PENDING",
-          });
+        return res.status(400).json({
+          message: `Invitation has been ${invitation.status}`,
+          code: "INVITATION_NOT_PENDING",
+        });
       }
 
       if (new Date() > invitation.expiresAt) {
@@ -1566,12 +1564,10 @@ export function registerAuthRoutes(app: Express): void {
       }
 
       if (invitation.status !== "pending") {
-        return res
-          .status(400)
-          .json({
-            message: `Invitation has been ${invitation.status}`,
-            code: "INVITATION_NOT_PENDING",
-          });
+        return res.status(400).json({
+          message: `Invitation has been ${invitation.status}`,
+          code: "INVITATION_NOT_PENDING",
+        });
       }
 
       if (new Date() > invitation.expiresAt) {
@@ -1583,12 +1579,10 @@ export function registerAuthRoutes(app: Express): void {
       // Check if user already exists
       const existingUser = await storage.getUserByEmail(invitation.email);
       if (existingUser) {
-        return res
-          .status(400)
-          .json({
-            message: "User already exists with this email",
-            code: "EMAIL_ALREADY_REGISTERED",
-          });
+        return res.status(400).json({
+          message: "User already exists with this email",
+          code: "EMAIL_ALREADY_REGISTERED",
+        });
       }
 
       // Create user with appropriate userType from invitation.

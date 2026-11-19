@@ -116,7 +116,9 @@ export interface SignupPlanChoice {
  * Reads signup_plan / signup_cycle / signup_source from a (sanitised) post-OAuth path and returns a
  * validated choice, or null for anything missing, repeated or invalid. Never throws.
  */
-export function parseSignupPlanFromPath(nextPath: string | null | undefined): SignupPlanChoice | null {
+export function parseSignupPlanFromPath(
+  nextPath: string | null | undefined
+): SignupPlanChoice | null {
   if (typeof nextPath !== "string" || nextPath.length > 2048) return null;
   const q = nextPath.indexOf("?");
   if (q < 0) return null;

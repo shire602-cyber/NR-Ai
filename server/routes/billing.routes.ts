@@ -499,12 +499,10 @@ export function registerBillingRoutes(app: Express) {
 
       const subscription = await storage.getSubscription(companyId);
       if (!subscription?.stripeCustomerId) {
-        return res
-          .status(400)
-          .json({
-            message: "No billing account found. Please subscribe first.",
-            code: "NO_BILLING_ACCOUNT",
-          });
+        return res.status(400).json({
+          message: "No billing account found. Please subscribe first.",
+          code: "NO_BILLING_ACCOUNT",
+        });
       }
 
       const origin = req.headers.origin || req.headers.referer || "http://localhost:5000";
