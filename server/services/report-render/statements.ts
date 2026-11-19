@@ -536,7 +536,7 @@ function agingReport(
   return {
     id: kind,
     title: STATEMENT_TITLES[kind],
-    period: periodLabel(null, report.asOf, company.locale),
+    period: periodLabel(null, report.asOf, locale),
     basis: "ledger",
     tables: [
       {
