@@ -127,7 +127,7 @@ export async function recordPlanChoice(
 // ── Emails (outbox only, English first then Arabic below) ────────────────────────────────────
 
 const PLAN_NAMES: Record<PaidPlanId, { en: string; ar: string }> = {
-  starter: { en: "Starter", ar: "الأساسية" },
+  starter: { en: "Starter", ar: "المبتدئ" },
   professional: { en: "Professional", ar: "الاحترافية" },
   enterprise: { en: "Enterprise", ar: "المؤسسات" },
 };

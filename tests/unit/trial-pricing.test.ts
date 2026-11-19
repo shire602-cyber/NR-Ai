@@ -20,7 +20,14 @@ const sub = vi.hoisted(() => ({
   canBilling: true,
   apiRequest: vi.fn(),
 }));
-vi.mock("../../client/src/hooks/useSubscription", () => ({ useSubscription: () => sub.state }));
+vi.mock("../../client/src/hooks/useSubscription", () => ({
+  useSubscription: () => sub.state,
+  // STEP4: the mutations are exercised in step4-signup-plan.test.tsx; here they only exist.
+  usePlanChoiceActions: () => ({
+    choose: { mutate: vi.fn(), isPending: false },
+    activate: { mutate: vi.fn(), isPending: false },
+  }),
+}));
 vi.mock("../../client/src/hooks/useDefaultCompany", () => ({
   useDefaultCompany: () => ({ companyId: "c1" }),
 }));
@@ -290,7 +297,21 @@ describe("/subscription", () => {
     expect(container.querySelector("[data-testid=button-choose-plan]")).not.toBeNull();
   });
 
-  it("replaces checkout with 'Choose <plan>' (mailto) while checkout is not configured", async () => {
+  it("on a paid plan, replaces checkout with 'Choose <plan>' (mailto) while checkout is not configured", async () => {
+    // STEP4: during the trial the buttons record a choice (plan-choose-*); on a paid plan the
+    // other plans still write to us.
+    sub.state = {
+      ...freshState(),
+      planState: "active",
+      entitlement: {
+        state: "active",
+        planId: "professional",
+        storedPlanId: "professional",
+        features: planFeatures("professional"),
+        limits: {},
+      },
+      trial: null,
+    };
     await renderSubscription();
     const link = container.querySelector<HTMLAnchorElement>("a[data-testid=plan-contact-starter]");
     expect(link?.textContent).toBe("Choose Starter");
