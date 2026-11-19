@@ -203,6 +203,7 @@
   "forms.budget.cat.Depreciation": "Depreciation",
   "forms.budget.cat.Technology": "Technology",
   "forms.budget.cat.Miscellaneous": "Miscellaneous",
+  "forms.budget.cat.Payroll": "Payroll",
   "forms.budget.cat.Other": "Other",
   "forms.costCenter.update": "Update cost center",
   "forms.settings.complianceNotePrefix": "Tax registration type, filing frequency and other compliance details are on the",

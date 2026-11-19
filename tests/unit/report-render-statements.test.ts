@@ -236,12 +236,14 @@ import {
   renderStatement,
 } from "../../server/services/report-render/statements";
 import { buildReportPdf } from "../../server/services/report-render/pdf";
+import { pdfToText } from "./pdf-test-helpers";
 import { buildReportWorkbook, guardCell } from "../../server/services/report-render/xlsx";
 import {
   CATALOG_STATEMENT_KIND,
   buildDeliveryPack,
   buildSharePackZip,
   buildStatementFile,
+  withRenderLang,
   deliveryPeriod,
 } from "../../server/services/report-render/pack";
 
@@ -260,6 +262,8 @@ describe("report-render model helpers", () => {
     expect(formatIsoDate("bad")).toBe("bad");
     expect(periodLabel("2026-01-01", "2026-03-31")).toBe("1 Jan 2026 – 31 Mar 2026");
     expect(periodLabel(null, "2026-03-31")).toBe("As of 31 Mar 2026");
+    expect(periodLabel("2026-01-01", "2026-03-31", "ar")).toBe("1 يناير 2026 – 31 مارس 2026");
+    expect(periodLabel(null, "2026-03-31", "ar")).toBe("كما في 31 مارس 2026");
     expect(formatAmount(-1234.567)).toBe("-1,234.57");
     expect(formatAmount(0)).toBe("0.00");
     const t = { en: "Cash", ar: "النقد" };
@@ -460,9 +464,10 @@ describe("PDF, XLSX and packs", { timeout: 60_000 }, () => {
       const wb = new ExcelJS.Workbook();
       await wb.xlsx.load(xlsx);
       const names = wb.worksheets.map((w) => w.name);
-      expect(names).toContain("Coverage");
+      const coverageName = locale === "ar" ? "التغطية" : "Coverage";
+      expect(names).toContain(coverageName);
       expect(new Set(names.map((n) => n.toLowerCase())).size).toBe(names.length);
-      const coverage = wb.getWorksheet("Coverage")!;
+      const coverage = wb.getWorksheet(coverageName)!;
       expect(coverage.getRow(2).getCell(1).value).toBe("'=Bad");
       expect(wb.worksheets[0].views[0]?.rightToLeft ?? false).toBe(locale === "ar");
     }
@@ -502,5 +507,97 @@ describe("PDF, XLSX and packs", { timeout: 60_000 }, () => {
     expect(zip.entries).toContain("financial-pack.pdf");
     const opened = await JSZip.loadAsync(zip.content);
     expect(Object.keys(opened.files)).toContain("xlsx/profit-loss.xlsx");
+  });
+
+  // Step 1 / E3: the reader picks the document language; it defaults to the company's own.
+  describe("E3: statement language choice", () => {
+    const cells = (report: Awaited<ReturnType<typeof renderStatement>>) =>
+      report.tables.flatMap((table) => table.rows.map((row) => row.cells));
+    const accounts = async (lang: "en" | "ar", companyLocale: "en" | "ar") => {
+      state.locale = companyLocale;
+      const company = withRenderLang(await loadRenderCompany("c1"), lang);
+      expect(company.locale).toBe(lang);
+      const report = await renderStatement("trial-balance", company, period);
+      return { report, names: cells(report).map((row) => String(row.account ?? "")) };
+    };
+
+    it("renders the same figures in either language, whatever the company's language", async () => {
+      const en = await accounts("en", "ar");
+      const ar = await accounts("ar", "en");
+      expect(ar.names).toContain("النقد");
+      expect(en.names).toContain("Cash");
+      expect(ar.names).not.toContain("Cash");
+      const figures = (report: typeof en.report) =>
+        cells(report).map((row) => [row.debit, row.credit, row.balance]);
+      expect(figures(ar.report)).toEqual(figures(en.report));
+    });
+
+    it("withRenderLang keeps the company when no language is asked for", async () => {
+      state.locale = "ar";
+      const company = await loadRenderCompany("c1");
+      expect(withRenderLang(company)).toBe(company);
+      expect(withRenderLang(company, "ar")).toBe(company);
+      expect(withRenderLang(company, "en").locale).toBe("en");
+    });
+
+    it("an Arabic PDF of an English company has an Arabic-first title and period", async () => {
+      state.locale = "en";
+      state.realPdf = true;
+      const pdf = await buildStatementFile({
+        companyId: "c1",
+        kind: "profit-loss",
+        period,
+        format: "pdf",
+        lang: "ar",
+      });
+      state.realPdf = false;
+      const text = await pdfToText(pdf.content);
+      expect(text).toContain("المبيعات");
+      // pdftotext reads an RTL line in pieces, so check the Arabic month names and the absence of
+      // the English ones rather than one whole date.
+      expect(text).toContain("يناير");
+      expect(text).toContain("مارس");
+      expect(text).not.toMatch(/\b(Jan|Mar|Revenue)\b/);
+    });
+
+    it("an English PDF of an Arabic company reads in English", async () => {
+      state.locale = "ar";
+      state.realPdf = true;
+      const pdf = await buildStatementFile({
+        companyId: "c1",
+        kind: "profit-loss",
+        period,
+        format: "pdf",
+        lang: "en",
+      });
+      state.realPdf = false;
+      const text = await pdfToText(pdf.content);
+      expect(text).toMatch(/Revenue/);
+      expect(text).toMatch(/1 Jan 2026/);
+    });
+
+    it("the statement XLSX follows the requested language and direction", async () => {
+      state.locale = "en";
+      const ar = await buildStatementFile({
+        companyId: "c1",
+        kind: "trial-balance",
+        period,
+        format: "xlsx",
+        lang: "ar",
+      });
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(ar.content);
+      expect(wb.worksheets[0].views[0]?.rightToLeft).toBe(true);
+      expect(wb.worksheets[0].name).toMatch(/[؀-ۿ]/);
+      const en = await buildStatementFile({
+        companyId: "c1",
+        kind: "trial-balance",
+        period,
+        format: "xlsx",
+      });
+      const wb2 = new ExcelJS.Workbook();
+      await wb2.xlsx.load(en.content);
+      expect(wb2.worksheets[0].views[0]?.rightToLeft ?? false).toBe(false);
+    });
   });
 });

@@ -26,6 +26,7 @@ import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { fiscalYearToDate } from "@/lib/fiscal-year";
 import { useToast } from "@/hooks/use-toast";
 import { exportToExcel, type ExportData } from "@/lib/export";
+import { currentExportLocale } from "@/lib/export-localize";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import {
@@ -217,7 +218,7 @@ function prepareCashFlowExport(data: CashFlowData): ExportData[] {
       rows: detailRows.map((row) => ({
         activity: row.activity,
         accountCode: row.accountCode || "",
-        accountName: row.accountName || "",
+        accountName: (currentExportLocale() === "ar" && row.accountNameAr) || row.accountName || "",
         amount: row.amount.toFixed(2),
       })),
     },

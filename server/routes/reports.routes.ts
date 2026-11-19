@@ -50,7 +50,11 @@ import {
   loadRenderCompany,
   renderStatement,
 } from "../services/report-render/statements";
-import { buildSharePackZip, buildStatementFile } from "../services/report-render/pack";
+import {
+  buildSharePackZip,
+  buildStatementFile,
+  withRenderLang,
+} from "../services/report-render/pack";
 import { buildFaf, renderFafText } from "../services/faf-export.service";
 
 function vatBox1Total(c: VatComputation, suffix: "Amount" | "Vat"): number {
@@ -936,6 +940,13 @@ function readOutputFormat(value: unknown): "pdf" | "xlsx" | "json" {
   );
 }
 
+/** `?lang=ar|en`: the language of a rendered PDF/XLSX; absent means the company's own (E3). */
+function readOutputLang(value: unknown): "ar" | "en" | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (value === "ar" || value === "en") return value;
+  throw new DomainError("INVALID_EXPORT_LANG", 400, undefined, "lang must be ar or en");
+}
+
 function registerReportOutputRoutes(app: Express) {
   // One statement as a branded PDF (default) or XLSX: profit-loss, balance-sheet,
   // trial-balance, cash-flow, general-ledger, ar-aging, ap-aging, changes-in-equity,
@@ -955,12 +966,13 @@ function registerReportOutputRoutes(app: Express) {
         );
       }
       const format = readOutputFormat(req.query.format);
+      const lang = readOutputLang(req.query.lang);
       const period = await outputRange(req, companyId);
       if (format === "json") {
-        const company = await loadRenderCompany(companyId);
+        const company = withRenderLang(await loadRenderCompany(companyId), lang);
         return res.json(await renderStatement(kind, company, period));
       }
-      sendFile(res, await buildStatementFile({ companyId, kind, period, format }));
+      sendFile(res, await buildStatementFile({ companyId, kind, period, format, lang }));
     })
   );
 
@@ -991,7 +1003,11 @@ function registerReportOutputRoutes(app: Express) {
     requirePermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const zip = await buildSharePackZip({ companyId, period: await outputRange(req, companyId) });
+      const zip = await buildSharePackZip({
+        companyId,
+        period: await outputRange(req, companyId),
+        lang: readOutputLang(req.query.lang),
+      });
       sendFile(res, zip);
     })
   );

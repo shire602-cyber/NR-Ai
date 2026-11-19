@@ -203,6 +203,7 @@
   "forms.budget.cat.Depreciation": "الإهلاك",
   "forms.budget.cat.Technology": "التقنية",
   "forms.budget.cat.Miscellaneous": "متفرقات",
+  "forms.budget.cat.Payroll": "الرواتب",
   "forms.budget.cat.Other": "أخرى",
   "forms.costCenter.update": "تحديث مركز التكلفة",
   "forms.settings.complianceNotePrefix": "نوع التسجيل الضريبي وتكرار الإقرار وغيرها من بيانات الامتثال موجودة في صفحة",

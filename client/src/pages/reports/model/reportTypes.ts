@@ -257,7 +257,7 @@ export interface ConsolidatedStatementsReport {
 }
 
 export interface VATSummaryReport {
-  period: string;
+  period: string | { from: string; to: string };
   salesSubtotal: number;
   salesVAT: number;
   purchasesSubtotal: number;
@@ -595,6 +595,8 @@ export interface JournalEntryReportRow {
   entryNumber: string;
   date: string;
   memo?: string | null;
+  memoKey?: string | null;
+  memoParams?: Record<string, string> | null;
   source?: string | null;
   sourceId?: string | null;
   status: string;
@@ -607,6 +609,9 @@ export interface LedgerLineRow {
   entryNumber: string;
   date: string;
   memo: string;
+  /** Stored key of the entry memo (null when the line shows its own, different description). */
+  memoKey: string | null;
+  memoParams: Record<string, string> | null;
   source: string;
   accountId: string;
   accountCode: string;

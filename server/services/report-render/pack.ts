@@ -24,7 +24,7 @@ import {
 } from "./statements";
 import { buildReportPdf } from "./pdf";
 import { buildReportWorkbook, type CoverageRow } from "./xlsx";
-import type { RenderCompany, RenderedReport } from "./model";
+import type { RenderCompany, RenderedReport, RenderLocale } from "./model";
 
 /** Catalog report id → server-rendered statement. */
 export const CATALOG_STATEMENT_KIND: Record<string, StatementKind> = {
@@ -140,13 +140,24 @@ export async function buildDeliveryPack(input: {
   };
 }
 
+/**
+ * The company with its document language replaced by the one the reader asked for (E3). Only the
+ * rendering language changes: titles, labels, account names and the sheet direction. Figures come
+ * from the same server/reporting queries either way.
+ */
+export function withRenderLang(company: RenderCompany, lang?: RenderLocale): RenderCompany {
+  return lang && lang !== company.locale ? { ...company, locale: lang } : company;
+}
+
 export async function buildStatementFile(input: {
   companyId: string;
   kind: StatementKind;
   period: StatementPeriod;
   format: "pdf" | "xlsx";
+  /** Output language; defaults to the company's document language. */
+  lang?: RenderLocale;
 }): Promise<RenderedFile> {
-  const company = await loadRenderCompany(input.companyId);
+  const company = withRenderLang(await loadRenderCompany(input.companyId), input.lang);
   const report = await renderStatement(input.kind, company, input.period, {
     glLineCap: input.format === "pdf" ? GL_PDF_LINE_CAP : undefined,
   });
@@ -173,8 +184,9 @@ export async function buildStatementFile(input: {
 export async function buildSharePackZip(input: {
   companyId: string;
   period: StatementPeriod;
+  lang?: RenderLocale;
 }): Promise<RenderedFile & { entries: string[] }> {
-  const company = await loadRenderCompany(input.companyId);
+  const company = withRenderLang(await loadRenderCompany(input.companyId), input.lang);
   const zip = new JSZip();
   const entries: string[] = [];
   const all: RenderedReport[] = [];

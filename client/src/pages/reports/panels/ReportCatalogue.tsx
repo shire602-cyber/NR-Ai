@@ -11,6 +11,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { apiUrl } from "@/lib/api";
 import { useTranslation } from "@/lib/i18n";
+import {
+  pdfLanguageOptions,
+  statementDownloadPath,
+  statementLang,
+} from "../model/statementDownloads";
 import { reportCatalogDataBasis } from "@/lib/reportCatalog";
 import { DataBasisBadge } from "../StatementParts";
 import { sentenceCase } from "../model/sentenceCase";
@@ -53,7 +58,7 @@ function DownloadMenu({
   range: string;
   label: string;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const base = `/api/companies/${companyId}/reports/statements/${kind}`;
   return (
     <DropdownMenu>
@@ -71,14 +76,23 @@ function DownloadMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        {pdfLanguageOptions(locale).map((option) => (
+          <DropdownMenuItem asChild key={option.lang}>
+            <a
+              href={apiUrl(statementDownloadPath(base, "pdf", option.lang, range))}
+              download
+              data-testid={`link-pdf-${kind}-${option.lang}`}
+            >
+              <FileText className="h-4 w-4" aria-hidden />
+              {t[option.labelKey]}
+            </a>
+          </DropdownMenuItem>
+        ))}
         <DropdownMenuItem asChild>
-          <a href={apiUrl(`${base}?format=pdf${range}`)} download>
-            <FileText className="h-4 w-4" aria-hidden />
-            {t["reportCenter.downloadPdf"]}
-          </a>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <a href={apiUrl(`${base}?format=xlsx${range}`)} download>
+          <a
+            href={apiUrl(statementDownloadPath(base, "xlsx", statementLang(locale), range))}
+            download
+          >
             <FileSpreadsheet className="h-4 w-4" aria-hidden />
             {t["reportCenter.downloadExcel"]}
           </a>
