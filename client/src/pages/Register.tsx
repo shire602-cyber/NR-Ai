@@ -243,7 +243,7 @@ export default function Register() {
   );
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusTarget = useRef<"heading" | "radio" | null>(null);
-  const [announce, setAnnounce] = useState("");
+  const [announced, setAnnounced] = useState(false);
 
   useEffect(() => {
     if (pendingInvite) return;
@@ -278,6 +278,7 @@ export default function Register() {
   useEffect(() => {
     const onPop = () => {
       focusTarget.current = "radio";
+      setAnnounced(true);
       setPlan(readSignupPlan(window.location.search));
     };
     window.addEventListener("popstate", onPop);
@@ -286,6 +287,7 @@ export default function Register() {
 
   const goToStep = useCallback((next: SignupPlanState, target: "heading" | "radio") => {
     focusTarget.current = target;
+    setAnnounced(true);
     // Keep the selection on the step being left, so Back returns to it as it was.
     window.history.replaceState(
       null,
@@ -303,7 +305,7 @@ export default function Register() {
     setPlan(next);
   }, []);
 
-  // Step change: move focus (heading on Continue, the selected radio on Change / Back) and say it.
+  // Step change: move focus (heading on Continue, the selected radio on Change / Back).
   useEffect(() => {
     if (!focusTarget.current) return;
     const target = focusTarget.current;
@@ -316,15 +318,17 @@ export default function Register() {
       if (h1) {
         h1.tabIndex = -1;
         h1.focus();
-        setAnnounce(
-          formatMessage(t["marketing.signupStepAnnounce"], {
-            n: plan.step === "plan" ? 1 : 2,
-            title: h1.textContent ?? "",
-          })
-        );
       }
     }
-  }, [plan.step, t, plan]);
+  }, [plan]);
+
+  // Polite announcement of the new step (after the first change only).
+  const announce = announced
+    ? formatMessage(t["marketing.signupStepAnnounce"], {
+        n: plan.step === "plan" ? 1 : 2,
+        title: t[plan.step === "plan" ? "marketing.signupPlanTitle" : "components.authStartBooks"],
+      })
+    : "";
 
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 

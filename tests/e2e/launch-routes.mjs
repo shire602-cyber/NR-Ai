@@ -41,6 +41,7 @@ export const PUBLIC_ROUTES = [
   "/demo",
   "/login",
   "/register",
+  "/register?plan=professional&cycle=yearly",
   "/forgot-password",
   "/reset-password?token=synthetic-preview-token",
   "/privacy",

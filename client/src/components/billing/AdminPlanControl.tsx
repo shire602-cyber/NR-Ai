@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -46,8 +46,9 @@ interface PlanResult {
 export function AdminPlanControl({ companyId }: { companyId: string }) {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const [plan, setPlan] = useState<Choice>("starter");
-  const [cycle, setCycle] = useState<"monthly" | "yearly">("monthly");
+  // The customer's choice preselects the controls until the admin changes them.
+  const [planPick, setPlan] = useState<Choice | null>(null);
+  const [cyclePick, setCycle] = useState<"monthly" | "yearly" | null>(null);
   const [result, setResult] = useState<PlanResult | null>(null);
   const queryClient = useQueryClient();
 
@@ -58,12 +59,8 @@ export function AdminPlanControl({ companyId }: { companyId: string }) {
     retry: false,
   });
   const chosen = detail.data?.chosenPlan ?? null;
-  useEffect(() => {
-    if (chosen) {
-      setPlan(chosen.planId);
-      setCycle(chosen.billingCycle);
-    }
-  }, [chosen?.planId, chosen?.billingCycle]);
+  const plan: Choice = planPick ?? chosen?.planId ?? "starter";
+  const cycle: "monthly" | "yearly" = cyclePick ?? chosen?.billingCycle ?? "monthly";
 
   const apply = useMutation({
     mutationFn: (body: Record<string, unknown>): Promise<PlanResult> =>

@@ -221,22 +221,22 @@ async function visible(page, id, timeout = 10000) {
 }
 
 /** Runs `fn` once per language; each step records pass / fail / wip. */
-function flow(id, title, fn, { langs = LANGS } = {}) {
-  return { id, title, fn, langs };
+function flow(id, title, fn, { langs = LANGS, viewport } = {}) {
+  return { id, title, fn, langs, viewport };
 }
 
 async function runFlow(def) {
   for (const lang of def.langs) {
     const record = { id: def.id, title: def.title, lang, steps: [], result: "pass" };
     results.push(record);
-    const ctx = await openContext(lang);
+    const ctx = await openContext(lang, { viewport: def.viewport });
     const helpers = {
       lang,
       ar: lang === "ar",
       ...ctx,
       async signIn(owner) {
         await ctx.context.close().catch(() => {});
-        const next = await openContext(lang, { signedInAs: owner });
+        const next = await openContext(lang, { signedInAs: owner, viewport: def.viewport });
         Object.assign(helpers, next);
         await finishOnboarding(next.page);
         return next.page;
@@ -332,54 +332,151 @@ async function invoiceById(owner, id) {
 // Flows
 // ---------------------------------------------------------------------------------------------
 
-const FLOWS = [
-  flow("signup", "Sign up (incl. in-page language switch), email-less trial start", async (h) => {
-    const { page } = h;
-    const other = h.ar ? "en" : "ar";
-    const email = `flow-signup-${h.lang}+${Date.now()}@test.local`;
-    await h.step("register page renders in the chosen language", async () => {
-      await goto(page, "/register");
-      const lang = await page.evaluate(() => document.documentElement.lang);
-      expect(lang.startsWith(h.lang), `html lang ${lang}`);
-    });
-    await h.step(`in-page switch to ${other} and back keeps the form working`, async () => {
-      await page.locator(`button:has(span[lang="${other}"])`).first().click();
-      await settle(page, 600);
-      expect(
-        (await page.evaluate(() => document.documentElement.lang)).startsWith(other),
-        "switch did not apply"
-      );
-      await page.locator(`button:has(span[lang="${h.lang}"])`).first().click();
-      await settle(page, 600);
-      expect(
-        (await page.evaluate(() => document.documentElement.lang)).startsWith(h.lang),
-        "switch back failed"
-      );
-    });
-    await h.step(
-      "register with name/email/password lands in onboarding (no e-mail step)",
-      async () => {
-        await fill(page, "input-name", h.ar ? "سارة أحمد" : "Sara Ahmed");
-        await fill(page, "input-email", email);
-        await fill(page, "input-password", PASSWORD);
-        await click(page, "button-register");
-        await page.waitForURL(/\/(onboarding|dashboard)/, { timeout: 20000 });
-        await settle(page, 800);
-      }
+/** The sign-up journey shared by the desktop and the phone flows. */
+async function signupFlow(h, { phone }) {
+  const { page } = h;
+  const other = h.ar ? "en" : "ar";
+  const email = `flow-signup${phone ? "-phone" : ""}-${h.lang}+${Date.now()}@test.local`;
+  const noSideScroll = async (label) => {
+    const over = await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth
     );
-    await h.step("trial claim / trial banner shows after onboarding", async () => {
-      const express = tid(page, "onboarding-express");
-      if (await visible(page, "onboarding-express", 8000)) {
-        await express.click();
-        await page.waitForTimeout(2500);
-        for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
-          if (await tid(page, id).count()) await click(page, id);
-        }
+    expect(over <= 0, `${label}: horizontal scroll ${over}px`);
+  };
+  await h.step("step 1 shows the three plans with their prices and the trial terms", async () => {
+    await goto(page, "/register");
+    const lang = await page.evaluate(() => document.documentElement.lang);
+    expect(lang.startsWith(h.lang), `html lang ${lang}`);
+    expect(await visible(page, "signup-plan-step"), "no plan step on /register");
+    expect((await page.locator('[data-testid^="radio-plan-"]').count()) === 3, "not 3 plans");
+    const body = (await tid(page, "signup-plan-step").innerText()).replace(/[⁦-⁩]/g, "");
+    for (const n of ["59", "119", "229"]) expect(body.includes(n), `price ${n} missing`);
+    expect(
+      await tid(page, "radio-plan-professional").isChecked(),
+      "Professional is not the default"
+    );
+    expect(await visible(page, "signup-trial-callout"), "no trial callout");
+    if (h.ar) await expectNoEnglish(page, '[data-testid="signup-plan-step"]');
+    if (phone) {
+      await noSideScroll("step 1");
+      const cont = await tid(page, "button-signup-continue").boundingBox();
+      expect(cont && cont.y + cont.height <= 844, "Continue is not in the first screen");
+      for (const id of ["starter", "professional", "enterprise"]) {
+        const box = await tid(page, `signup-plan-${id}`).boundingBox();
+        expect(box && box.height >= 44, `${id} card is ${box?.height}px tall`);
       }
-      await goto(page, "/subscription");
-      expect(await visible(page, "trial-banner"), "no trial banner on /subscription");
-    });
-  }),
+    }
+  });
+  await h.step("yearly shows 590 / 1,190 / 2,290", async () => {
+    await click(page, "signup-cycle-yearly");
+    const body = (await tid(page, "signup-plan-step").innerText()).replace(/[⁦-⁩]/g, "");
+    for (const n of ["590", "1,190", "2,290"]) expect(body.includes(n), `yearly ${n} missing`);
+  });
+  await h.step("pick Starter, Continue opens step 2 with the plan summary", async () => {
+    await tid(page, "signup-plan-starter").click();
+    await click(page, "button-signup-continue");
+    expect(await visible(page, "signup-plan-summary"), "no summary on step 2");
+    const summary = (await tid(page, "signup-plan-summary").innerText()).replace(/[⁦-⁩]/g, "");
+    expect(summary.includes("590"), `summary ${summary}`);
+    if (phone) await noSideScroll("step 2");
+  });
+  await h.step(`in-page switch to ${other} and back keeps the step and the plan`, async () => {
+    await page.locator(`button:has(span[lang="${other}"])`).first().click();
+    await settle(page, 600);
+    expect(
+      (await page.evaluate(() => document.documentElement.lang)).startsWith(other),
+      "switch did not apply"
+    );
+    expect(await visible(page, "signup-plan-summary"), "step lost after the switch");
+    await page.locator(`button:has(span[lang="${h.lang}"])`).first().click();
+    await settle(page, 600);
+    expect(
+      (await page.evaluate(() => document.documentElement.lang)).startsWith(h.lang),
+      "switch back failed"
+    );
+  });
+  await h.step("register lands in onboarding (no e-mail step)", async () => {
+    await fill(page, "input-name", h.ar ? "سارة أحمد" : "Sara Ahmed");
+    await fill(page, "input-email", email);
+    await fill(page, "input-password", PASSWORD);
+    await click(page, "button-register");
+    await page.waitForURL(/\/(onboarding|dashboard)/, { timeout: 20000 });
+    await settle(page, 800);
+  });
+  await h.step("the choice is recorded and the trial is Enterprise for 14 days", async () => {
+    const login = await api("", "POST", "/api/auth/login", { email, password: PASSWORD });
+    const token = login.body.token;
+    const companies = listOf((await api(token, "GET", "/api/companies")).body);
+    const sub = (await api(token, "GET", `/api/companies/${companies[0].id}/billing/subscription`))
+      .body;
+    const ent = sub.entitlement;
+    expect(ent.state === "trial" && ent.planId === "enterprise", `entitlement ${ent.state}`);
+    expect(
+      ent.chosenPlan?.planId === "starter" && ent.chosenPlan?.billingCycle === "yearly",
+      `choice ${JSON.stringify(ent.chosenPlan)}`
+    );
+    const days = (new Date(ent.trialEndsAt).getTime() - Date.now()) / 86400000;
+    expect(days > 13 && days <= 14.01, `trial ends in ${days.toFixed(2)} days`);
+  });
+  await h.step("onboarding and /subscription name the chosen plan", async () => {
+    const express = tid(page, "onboarding-express");
+    if (await visible(page, "onboarding-express", 8000)) {
+      await express.click();
+      await page.waitForTimeout(2500);
+      for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
+        if (await tid(page, id).count()) await click(page, id);
+      }
+    }
+    await goto(page, "/subscription");
+    expect(await visible(page, "trial-banner"), "no trial banner on /subscription");
+    expect(await visible(page, "subscription-chosen-plan"), "no chosen-plan block");
+    if (phone) await noSideScroll("/subscription");
+    if (h.ar) await expectNoEnglish(page, '[data-testid="subscription-chosen-plan"]');
+  });
+}
+
+const FLOWS = [
+  flow(
+    "signup",
+    "Sign up: choose a plan (59/119/229), account, trial starts with the choice recorded",
+    (h) => signupFlow(h, { phone: false })
+  ),
+
+  flow(
+    "signup-deeplink",
+    "Sign up from /pricing: the plan chosen there is kept, Change returns to the plans",
+    async (h) => {
+      const { page } = h;
+      await h.step("/pricing -> yearly -> Professional lands on step 2 with the plan", async () => {
+        await goto(page, "/pricing");
+        await click(page, "billing-cycle-yearly");
+        await click(page, "button-plan-professional");
+        await page.waitForURL(/\/register\?/, { timeout: 15000 });
+        await settle(page, 600);
+        const url = page.url();
+        expect(/plan=professional/.test(url) && /cycle=yearly/.test(url), `url ${url}`);
+        expect(await visible(page, "signup-plan-summary"), "no plan summary on step 2");
+        expect(
+          (await tid(page, "signup-plan-summary").innerText()).includes("1,190"),
+          "summary does not show the yearly Professional price"
+        );
+      });
+      await h.step("Change returns to step 1 with Professional and yearly kept", async () => {
+        await click(page, "button-change-plan");
+        expect(await visible(page, "signup-plan-step"), "step 1 not shown");
+        expect(await tid(page, "radio-plan-professional").isChecked(), "Professional not selected");
+        const price = await tid(page, "plan-price-professional").innerText();
+        expect(price.includes("1,190"), `yearly not kept: ${price}`);
+      });
+    }
+  ),
+
+  flow(
+    "signup-phone",
+    "Sign up on a phone (390 px): no sideways scroll, Continue reachable, touch targets",
+    (h) => signupFlow(h, { phone: true }),
+    { viewport: { width: 390, height: 844 } }
+  ),
 
   flow("onboarding", "Onboarding: industry picker, resume on a second device", async (h) => {
     const email = `flow-onb-${h.lang}+${Date.now()}@test.local`;
@@ -1041,26 +1138,20 @@ const FLOWS = [
         await goto(page, "/subscription");
         expect(await visible(page, "trial-banner"), "no trial banner");
         expect(
-          (await page
-            .locator('[data-testid^="plan-upgrade-"], [data-testid^="plan-contact-"]')
-            .count()) >= 3,
-          "fewer than 3 plans"
+          (await page.locator('[data-testid^="plan-choose-"]').count()) >= 2,
+          "fewer than 2 plan-choose buttons"
+        );
+        expect(
+          (await page.locator('[data-testid^="plan-upgrade-"]').count()) === 0,
+          "checkout shown"
         );
       });
-      await h.step("choose a plan -> contact (checkout not configured)", async () => {
-        const choose = page
-          .locator('[data-testid^="plan-upgrade-"], [data-testid^="plan-contact-"]')
-          .first();
-        const href = await choose.getAttribute("href");
-        if (href) expect(/^mailto:/.test(href), `choose plan href ${href}`);
-        else {
-          await choose.click();
-          await settle(page, 600);
-          expect(
-            await visible(page, "checkout-contact-note", 5000),
-            "no contact note after choosing"
-          );
-        }
+      await h.step("choose a plan records it, then activation is requested", async () => {
+        await click(page, "plan-choose-professional");
+        expect(await visible(page, "plan-chosen-professional", 8000), "choice not shown");
+        expect(await visible(page, "subscription-chosen-plan"), "no chosen-plan block");
+        await click(page, "button-activate-plan");
+        expect(await visible(page, "activation-requested", 8000), "no activation requested state");
       });
       await h.step("admin sets the plan", async () => {
         const { default: pg } = await import("pg");
@@ -1078,13 +1169,10 @@ const FLOWS = [
         ]);
         await db.end();
         const admin = await openContext(h.lang, { signedInAs: { email: adminEmail } });
-        await goto(admin.page, "/admin/users");
-        const edit = admin.page.locator(`[data-testid="button-view-company-${owner.companyId}"]`);
-        for (const tab of await admin.page.locator('[role="tab"]').all()) {
-          if (await edit.isVisible().catch(() => false)) break;
-          await tab.click().catch(() => {});
-          await settle(admin.page, 400);
-        }
+        await goto(admin.page, "/admin");
+        const queued = await visible(admin.page, `admin-trial-${owner.companyId}`, 15000);
+        expect(queued, "the trials card does not list the company with its request");
+        const edit = admin.page.locator(`[data-testid="admin-trial-open-${owner.companyId}"]`);
         await edit.click({ timeout: 10000 }).catch(async (error) => {
           await admin.page.screenshot({
             path: path.join(ARTIFACT_DIR, `flow-plans-admin-${h.lang}.png`),
@@ -1094,15 +1182,22 @@ const FLOWS = [
         });
         await settle(admin.page, 600);
         const control = await visible(admin.page, "admin-plan-control");
-        if (control) {
-          await click(admin.page, "admin-plan-select");
-          await admin.page.locator('[role="option"]').nth(1).click();
-          await click(admin.page, "admin-plan-apply");
-          await settle(admin.page, 800);
-        }
-        await admin.context.close();
         expect(control, "no plan control on the admin client page");
+        expect(
+          await visible(admin.page, "admin-plan-apply-chosen", 8000),
+          "no one-click Apply of the customer's choice"
+        );
+        await click(admin.page, "admin-plan-apply-chosen");
+        await settle(admin.page, 800);
+        await admin.context.close();
         expect(!admin.errors.length, admin.errors.join(" | "));
+        await goto(page, "/subscription");
+        const current = (await tid(page, "text-current-plan").innerText()).trim();
+        expect(
+          !/trial|تجرب/i.test(current) &&
+            (await tid(page, "subscription-chosen-plan").count()) === 0,
+          `owner still sees the trial: ${current}`
+        );
       });
     }
   ),

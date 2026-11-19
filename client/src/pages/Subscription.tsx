@@ -273,7 +273,11 @@ function CompareCell({ cell, unit }: { cell: Cell; unit?: CompareRow["unit"] }) 
 
 export default function Subscription() {
   const { t, locale } = useTranslation();
-  const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>(() => {
+    if (typeof window === "undefined") return "monthly";
+    const c = new URLSearchParams(window.location.search).get("cycle");
+    return isBillingCycle(c) ? c : "monthly";
+  });
   const {
     subscription,
     usage,
@@ -345,8 +349,6 @@ export default function Subscription() {
   useEffect(() => {
     if (isLoading) return;
     if (highlight) {
-      const c = new URLSearchParams(window.location.search).get("cycle");
-      if (isBillingCycle(c)) setBillingCycle(c);
       document.getElementById("subscription-plans")?.scrollIntoView({ block: "center" });
       document
         .querySelector<HTMLElement>(
