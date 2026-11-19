@@ -5,7 +5,7 @@ import {
   activitySentence,
   metadataChanges,
 } from "@/lib/activity-log-labels";
-import { formatDateTime } from "@/lib/format-date";
+import { formatDateTime, formatDateTimePlain } from "@/lib/format-date";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
@@ -90,7 +90,7 @@ export default function ActivityLogs() {
             { header: t["activityLog.export.description"], key: "description", width: 60 },
           ],
           rows: filteredLogs.map((log) => ({
-            date: formatDateTime(log.createdAt, locale),
+            date: formatDateTimePlain(log.createdAt, locale),
             user: users.find((u) => u.id === log.userId)?.email ?? "",
             action: activityActionLabel(t, log.action),
             entity: activityEntityLabel(t, log.entityType ?? ""),
@@ -300,18 +300,20 @@ export default function ActivityLogs() {
                       <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-caption text-muted-foreground">
                         <span translate="no">{getUserName(log.userId)}</span>
                         {company ? (
-                          <>
+                          <span className="inline-flex items-baseline gap-x-2">
                             <span aria-hidden>·</span>
                             <span translate="no">{company}</span>
-                          </>
+                          </span>
                         ) : null}
-                        <span aria-hidden>·</span>
-                        <span>{activityEntityLabel(t, log.entityType)}</span>
+                        <span className="inline-flex items-baseline gap-x-2">
+                          <span aria-hidden>·</span>
+                          <span>{activityEntityLabel(t, log.entityType)}</span>
+                        </span>
                         {changes ? (
-                          <>
+                          <span className="inline-flex min-w-0 items-baseline gap-x-2">
                             <span aria-hidden>·</span>
                             <span className="truncate">{changes}</span>
-                          </>
+                          </span>
                         ) : null}
                       </p>
                     </div>

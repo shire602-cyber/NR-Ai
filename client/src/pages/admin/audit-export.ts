@@ -3,7 +3,7 @@
  * localised rows the table shows. Pure helpers so they are unit-tested.
  */
 import { activityActionLabel, activityEntityLabel, withoutIds } from "@/lib/activity-log-labels";
-import { formatDateTime } from "@/lib/format-date";
+import { formatDateTimePlain } from "@/lib/format-date";
 import { auditDetailEntries } from "@/pages/admin/audit-details";
 
 export interface AuditRow {
@@ -57,7 +57,7 @@ export function auditExportRows(
   locale: string
 ) {
   return logs.map((log) => ({
-    date: formatDateTime(log.createdAt, locale),
+    date: formatDateTimePlain(log.createdAt, locale),
     action: activityActionLabel(t, log.action),
     resource: activityEntityLabel(t, log.resourceType),
     user: auditActor(t, log, users),

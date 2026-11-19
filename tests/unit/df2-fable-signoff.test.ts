@@ -24,7 +24,7 @@ import {
   unmountPage,
 } from "./helpers/form-harness";
 import { loadLocale } from "../../client/src/lib/i18n";
-import { formatDate, formatDateTime } from "../../client/src/lib/format-date";
+import { formatDate, formatDateTime, formatDateTimePlain } from "../../client/src/lib/format-date";
 import { activitySentence } from "../../client/src/lib/activity-log-labels";
 
 vi.mock("../../client/src/lib/queryClient", () => formHarnessQueryClientMock());
@@ -75,7 +75,9 @@ describe("[DF2 P8] display dates", () => {
   it("formats a timestamp on one line", () => {
     const d = new Date(2026, 10, 18, 4, 8);
     expect(formatDateTime(d, "en")).toBe("18 Nov 2026, 04:08");
-    expect(formatDateTime(d, "ar")).toMatch(/^18 \S+ 2026، 04:08$/);
+    // Isolated runs (RLI date PDI, LRI time PDI) keep the day number in place in a flex row.
+    expect(formatDateTime(d, "ar").replace(/[\u2066-\u2069]/g, "")).toMatch(/^18 \S+ 2026، 04:08$/);
+    expect(formatDateTimePlain(d, "ar")).toMatch(/^18 \S+ 2026، 04:08$/);
   });
 });
 
