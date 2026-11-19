@@ -63,9 +63,7 @@ const SALES: Vat201Family[] = [
 ];
 const PURCHASES: PurchaseKind[] = ["standard", "reverse_charge", "import", "not_reportable"];
 
-export function vatBoxMap(company: {
-  emirate?: string | null;
-}): VatBoxMap {
+export function vatBoxMap(company: { emirate?: string | null }): VatBoxMap {
   const standardRate = UAE_STANDARD_VAT_RATE;
   const emirate = normaliseEmirate(company.emirate ?? null);
   // Box 1 is per emirate: probe with the company's own (Dubai when it is not set yet).
