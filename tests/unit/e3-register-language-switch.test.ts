@@ -204,8 +204,10 @@ describe("[E3][J2-r3] public components declare the namespaces they read", () =>
       }
       const showsServerErrors = /\b(serverErrorMessage|localizeApiError)\(/.test(text);
       if (showsServerErrors && !rel.includes("validation-messages")) {
-        if (!/VALIDATION_NAMESPACES/.test(text)) {
-          problems.push(`${rel}: shows server errors without VALIDATION_NAMESPACES`);
+        if (!/(VALIDATION|SERVER_ERROR)_NAMESPACES/.test(text)) {
+          problems.push(
+            `${rel}: shows server errors without VALIDATION_NAMESPACES or SERVER_ERROR_NAMESPACES`
+          );
         }
       }
       for (const m of text.matchAll(/(?:import|from)\s*\(?\s*["']([^"']+)["']/g)) {

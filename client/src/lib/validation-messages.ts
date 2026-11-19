@@ -240,7 +240,9 @@ export function localizeApiError(body: Record<string, unknown> | undefined): str
   const code = typeof body.code === "string" ? body.code : undefined;
   if (locale !== "ar") {
     if (!code) return undefined;
-    if (code === "VALIDATION_ERROR" || (body.fields && typeof body.fields === "object")) {
+    const hasFields = !!body.fields && typeof body.fields === "object";
+    // A specific server sentence ("Invoice must have lines") beats the field list.
+    if (hasFields || (code === "VALIDATION_ERROR" && body.message === "Validation error")) {
       return validationText(body, "en");
     }
     // A DomainError sent without its own sentence only carries "Receipt not found"-style words.

@@ -176,3 +176,17 @@ One model for every migrating company (D1, accounting re-audit 3: N1-N4, N7, N14
   cash flows of any section (IAS 7.45). When go-live falls inside the period their cash is part
   of the opening cash (`openingPosition` on the statement) and their profit-or-loss lines are not
   in the indirect method's net income, so direct and indirect agree.
+
+## Customer-facing error codes (G3)
+
+- Every 4xx a customer can trigger carries a stable `code` (`DomainError`, or `{ message, code }`);
+  no raw `{ message }` response in the customer route modules (`tests/unit/server-error-copy.test.ts`).
+- Each code has a specific sentence in both languages: `serverErrors.<CODE>` in
+  `client/src/locales/{en,ar}/serverErrors.json` (older codes: `forms.serverErrors.<CODE>`).
+  The test scans `server/` and `shared/` and fails when a code has no en and ar copy; only
+  machine-only codes (webhooks, provider callbacks) are listed as exempt, with a reason.
+- `localizeApiError` (`client/src/lib/validation-messages.ts`) resolves it: Arabic always uses the
+  catalog sentence; English uses it when the server only sent the generic words of the code
+  (a `DomainError` without its own message). The status-based Arabic sentence is the last resort.
+- Validation errors name each field by its form label (`serverErrors.field.<id>`), never the raw
+  id; add a label when a new field can fail server validation.
