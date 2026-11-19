@@ -433,6 +433,8 @@
   "adminConsole.planTrialUntil": "trial until {date}",
   "adminConsole.planReadOnly": "no plan, read-only",
   "activityLog.action.billing.plan_set": "Plan set by an administrator",
+  "activityLog.action.billing.plan_chosen": "Plan chosen after the trial",
+  "activityLog.action.billing.activation_requested": "Activation of the chosen plan requested",
   "activityLog.action.numbering.update": "Document numbering changed",
   "activityLog.action.automation.enable": "Automation switched on",
   "activityLog.action.automation.disable": "Automation switched off",

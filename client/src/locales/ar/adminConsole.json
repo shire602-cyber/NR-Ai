@@ -433,6 +433,8 @@
   "adminConsole.planTrialUntil": "تجربة حتى {date}",
   "adminConsole.planReadOnly": "بلا خطة، للقراءة فقط",
   "activityLog.action.billing.plan_set": "عيّن مسؤول المنصة الخطة",
+  "activityLog.action.billing.plan_chosen": "اختار العميل خطة لما بعد الفترة التجريبية",
+  "activityLog.action.billing.activation_requested": "طُلب تفعيل الخطة المختارة",
   "activityLog.action.numbering.update": "تم تغيير ترقيم المستندات",
   "activityLog.action.automation.enable": "تم تشغيل مهمة تلقائية",
   "activityLog.action.automation.disable": "تم إيقاف مهمة تلقائية",

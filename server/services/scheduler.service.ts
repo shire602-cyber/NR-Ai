@@ -29,6 +29,7 @@ import { registerOutboxJob, type OutgoingAttachment } from "../outbox";
 import { registerEventOutboxJob } from "../platform/event-outbox";
 import { registerObjectDeletionJob } from "./object-deletion-queue";
 import { registerNotificationEngine } from "./notification-engine.service";
+import { sendTrialReminders } from "./billing/plan-choice";
 import { purgeExpiredAuthTokens } from "./auth-tokens.service";
 import { scanDueReportDeliveries } from "./report-delivery-scheduler.service";
 import { listJobs, registerJob, startRegisteredJobs } from "../platform/job-registry";
@@ -591,6 +592,17 @@ function registerBuiltInJobs() {
   // F8: durable domain-event dispatcher.
   registerEventOutboxJob();
   registerNotificationEngine();
+  // STEP4: trial-ending / trial-ended reminders to company owners (outbox, idempotent).
+  if (!already.has("billing.trialReminders")) {
+    registerJob({
+      name: "billing.trialReminders",
+      cron: "17 5 * * *", // 09:17 Dubai
+      description: "Daily: email owners 3 days before and the day after a free trial ends",
+      run: async () => {
+        await sendTrialReminders(new Date());
+      },
+    });
+  }
   // S8: report-artifact objects queued for deletion when their rows go away.
   registerObjectDeletionJob();
 }

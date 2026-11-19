@@ -135,6 +135,7 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   // Team, billing, backups
   r("*", "companies/*/team/invitations/**", "team.manage"),
   r("MUT", "companies/*/team/**", "team.manage"),
+  // Also covers STEP4 PUT .../billing/chosen-plan and POST .../billing/activation-request.
   r("MUT", "companies/*/billing/**", "billing.manage"),
   // X6d: any member who can read reports may ask the firm for help (viewers included).
   r("POST", "companies/*/najma-handoff", "reports.read"),

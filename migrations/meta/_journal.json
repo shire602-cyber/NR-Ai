@@ -939,6 +939,13 @@
    "when": 1781430490000,
    "tag": "0134_step3_remove_price_editor",
    "breakpoints": false
+  },
+  {
+   "idx": 134,
+   "version": "7",
+   "when": 1781430500000,
+   "tag": "0135_step4_signup_plan_choice",
+   "breakpoints": false
   }
  ]
 }

@@ -72,6 +72,12 @@ import { ensureFreeSubscription } from "../middleware/featureGate";
 import { strictBody } from "../http/strict-body";
 import { forgotPasswordSchema, resetPasswordSchema } from "../../shared/validators";
 import { zEmail, zText, zUuid } from "../../shared/validators/primitives";
+import {
+  parseSignupPlanFromPath,
+  signupPlanFields,
+  type SignupPlanChoice,
+} from "../../shared/validators/plans";
+import { freezeTrialEnd, recordPlanChoice } from "../services/billing/plan-choice";
 import { getCapability } from "../../shared/capabilities";
 import type { User } from "../../shared/schema";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
@@ -218,7 +224,11 @@ async function refuseBreachedPassword(res: Response, password: string): Promise<
   return true;
 }
 
-async function createOAuthCustomer(req: Request, profile: OAuthIdentityProfile) {
+async function createOAuthCustomer(
+  req: Request,
+  profile: OAuthIdentityProfile,
+  signupPlan: SignupPlanChoice | null = null
+) {
   const passwordHash = await bcrypt.hash(randomBytes(32).toString("hex"), 10);
   const user = await storage.createUser({
     name: profile.name,
@@ -229,13 +239,18 @@ async function createOAuthCustomer(req: Request, profile: OAuthIdentityProfile) 
     emailVerified: true,
     avatarUrl: profile.picture,
   } as unknown as Parameters<typeof storage.createUser>[0]);
-  await provisionCustomerCompany(user.id, `${profile.name}'s Company`);
+  const company = await provisionCustomerCompany(user.id, `${profile.name}'s Company`);
+  await freezeTrialEnd(company.id);
+  if (signupPlan) {
+    await recordPlanChoice(company.id, signupPlan, { userId: user.id, req });
+  }
   return user;
 }
 
 async function resolveOAuthUser(
   req: Request,
-  profile: OAuthIdentityProfile
+  profile: OAuthIdentityProfile,
+  signupPlan: SignupPlanChoice | null = null
 ): Promise<{ user: User; mode: "existing_identity" | "linked_existing" | "created_customer" }> {
   const identity = await getAuthIdentity(profile);
   if (identity) {
@@ -255,7 +270,7 @@ async function resolveOAuthUser(
     };
   }
 
-  const createdUser = await createOAuthCustomer(req, profile);
+  const createdUser = await createOAuthCustomer(req, profile, signupPlan);
   await linkAuthIdentity(createdUser.id, profile);
   await markOAuthLogin(createdUser.id, profile);
   return { user: (await storage.getUser(createdUser.id)) ?? createdUser, mode: "created_customer" };
@@ -352,6 +367,8 @@ const registerBodySchema = z.object({
   phone: zText(40).optional(),
   /** Cloudflare Turnstile token; required only when TURNSTILE_SECRET_KEY is set. */
   captchaToken: z.string().max(4096).optional(),
+  /** STEP4: plan chosen on the sign-up plan step (recorded for after the trial, never a gate). */
+  ...signupPlanFields,
 });
 type RegisterBody = z.output<typeof registerBodySchema>;
 
@@ -533,7 +550,7 @@ export function registerAuthRoutes(app: Express): void {
     "/auth/register",
     strictBody(registerBodySchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const { captchaToken, ...body } = req.body as RegisterBody;
+      const { captchaToken, plan, billingCycle, planSource, ...body } = req.body as RegisterBody;
       const captcha = await verifyCaptcha(captchaToken, clientIp(req));
       if (!captcha.ok) return captchaFailure(res, captcha.reason);
       // Checked before the account lookup so the answer never depends on the email.
@@ -589,10 +606,27 @@ export function registerAuthRoutes(app: Express): void {
         trnVatNumber: body.trn,
       });
 
+      // STEP4: freeze the trial end the sign-up screen showed, and record the chosen plan.
+      await freezeTrialEnd(company.id);
+      if (plan) {
+        await recordPlanChoice(
+          company.id,
+          {
+            planId: plan,
+            billingCycle: billingCycle ?? "monthly",
+            source: planSource ?? "signup_picked",
+          },
+          { userId: user.id, req }
+        );
+      }
+
       const mail = await sendVerificationEmail({ id: user.id, email: user.email, name: user.name });
       await auditSecurityEvent(req, "auth.register", user.id, {
         companyId: company.id,
         verificationEmail: mail.status,
+        chosenPlanId: plan ?? null,
+        chosenBillingCycle: plan ? (billingCycle ?? "monthly") : null,
+        planSource: plan ? (planSource ?? "signup_picked") : null,
       });
 
       // No session: identical to the existing-account answer (R17-14).
@@ -784,7 +818,11 @@ export function registerAuthRoutes(app: Express): void {
           callbackUrlFromRequest(req, provider),
           state
         );
-        const { user, mode } = await resolveOAuthUser(req, profile);
+        const { user, mode } = await resolveOAuthUser(
+          req,
+          profile,
+          parseSignupPlanFromPath(state.nextPath)
+        );
 
         // W5-E: social sign-in does not skip MFA. The pending token travels in a
         // short-lived httpOnly cookie; the login page asks for the code.

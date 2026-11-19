@@ -1,4 +1,4 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0134)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0135)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
@@ -29,7 +29,7 @@ Restore the dump from section 1 (or a Railway snapshot) into a scratch database,
 ```
 export DATABASE_URL=postgres://.../rehearsal   # the restored copy
 \timing on                                     # in psql; or time the command below
-time npm run db:migrate                         # applies 0089-0134; record total and slowest file
+time npm run db:migrate                         # applies 0089-0135; record total and slowest file
 npm run build && PORT=<free port> npm start     # boot check: /health/ready 200, /api/version
 ```
 
@@ -296,7 +296,7 @@ and FTA. The PR description must say so, so "394 fixed" is not read as "certifie
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
 `einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
 safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
-0089-0134, then run it a second time to confirm it is a no-op.
+0089-0135, then run it a second time to confirm it is a no-op.
 
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):
