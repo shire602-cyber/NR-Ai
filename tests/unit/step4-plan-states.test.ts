@@ -7,7 +7,7 @@
  * rule, UTC pin) is pinned here as behaviour.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -23,6 +23,11 @@ import { planCta, planPhase } from "../../client/src/lib/plan-state";
 const sub = vi.hoisted(() => ({
   state: {} as Record<string, unknown>,
   canBilling: true,
+  user: { id: "u1", isAdmin: false, firmRole: null } as {
+    id: string;
+    isAdmin?: boolean;
+    firmRole?: string | null;
+  } | null,
 }));
 vi.mock("../../client/src/hooks/useSubscription", () => ({
   useSubscription: () => sub.state,
@@ -30,6 +35,9 @@ vi.mock("../../client/src/hooks/useSubscription", () => ({
     choose: { isPending: false, mutate: () => {} },
     activate: { isPending: false, mutate: () => {} },
   }),
+}));
+vi.mock("../../client/src/hooks/useCurrentUser", () => ({
+  useCurrentUser: () => ({ data: sub.user }),
 }));
 vi.mock("../../client/src/hooks/useDefaultCompany", () => ({
   useDefaultCompany: () => ({ companyId: "c1" }),
@@ -121,6 +129,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   sub.canBilling = true;
+  sub.user = { id: "u1", isAdmin: false, firmRole: null };
   sub.state = stateFor("running-none");
 });
 
@@ -293,7 +302,10 @@ describe.each(["en", "ar"] as const)("plan-lock banner and plan-limit dialog (%s
   const cases = [
     {
       name: "ended-none" as const,
-      body: L("Choose a plan to add or change records.", "اختر خطة لإضافة السجلات أو تعديلها."),
+      body: L(
+        "Choose a plan and activate it to add or change records.",
+        "اختر خطة وفعّلها لإضافة السجلات أو تعديلها."
+      ),
       cta: L("Choose a plan", "اختر خطة"),
     },
     {
@@ -351,7 +363,9 @@ describe.each(["en", "ar"] as const)("plan-lock banner and plan-limit dialog (%s
       expect(dialog).not.toBeNull();
       const body = text(dialog);
       if (name === "ended-none") {
-        expect(body).toContain(L("Choose a plan to add or change records.", "اختر خطة"));
+        expect(body).toContain(
+          L("Choose a plan and activate it to add or change records.", "اختر خطة وفعّلها")
+        );
       } else {
         expect(body).not.toContain(L("Choose a plan", "اختر خطة"));
         const action = dialog.querySelector<HTMLElement>(
@@ -454,7 +468,9 @@ describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) 
       )
     );
     expect(body).not.toContain(L("It starts after your trial ends", "تبدأ بعد انتهاء"));
-    expect(body).not.toContain(L("Choose a plan to add", "اختر خطة لإضافة"));
+    expect(body).not.toContain(
+      L("Choose a plan and activate it to add", "اختر خطة وفعّلها لإضافة")
+    );
     expect(q("button-activate-plan")).not.toBeNull();
     expect(q("button-choose-plan")).toBeNull();
     expect(q("button-see-plans")).toBeNull();
@@ -683,6 +699,209 @@ describe("read-only forms", () => {
     sub.state = { ...stateFor("running-chosen"), canWrite: () => true };
     await mountForms();
     expect((q("f-save") as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe("read-only forms follow what the server gates", () => {
+  const field = (id: string) => createElement("input", { "data-testid": id });
+  /** A form like the app's dialogs: fields, a Save, and a Cancel with no test id. */
+  const dialogForm = (cancel = "Cancel") =>
+    createElement(
+      "form",
+      { "data-testid": "form" },
+      field("f-input"),
+      createElement("button", { type: "submit", "data-testid": "f-save" }, "Save"),
+      createElement("button", { type: "button", "data-testid": "f-cancel" }, cancel),
+      createElement("button", { type: "button", role: "tab", "data-testid": "f-tab" }, "Preview")
+    );
+  async function mountAt(path: string, form = dialogForm()) {
+    window.history.replaceState(null, "", path);
+    const { ReadOnlyForms } = await import("../../client/src/components/billing/ReadOnlyForms");
+    await render(createElement("div", null, createElement(ReadOnlyForms), form));
+  }
+  const disabled = (id: string) => (q(id) as HTMLInputElement).disabled;
+
+  beforeEach(() => {
+    sub.state = stateFor("ended-chosen");
+  });
+
+  it.each(["/feedback", "/team", "/integrations", "/notification-preferences"])(
+    "%s stays open: the server accepts those writes after the trial",
+    async (route) => {
+      await mountAt(route);
+      expect(disabled("f-input")).toBe(false);
+      expect(disabled("f-save")).toBe(false);
+    }
+  );
+
+  it("an NR admin's customer dialog stays usable although the admin's own trial ended", async () => {
+    sub.user = { id: "a1", isAdmin: true, firmRole: null };
+    for (const route of ["/admin/clients", "/firm/clients", "/invoices"]) {
+      await mountAt(route);
+      expect(disabled("f-input")).toBe(false);
+      expect(disabled("f-save")).toBe(false);
+      expect(disabled("f-cancel")).toBe(false);
+    }
+    // The console routes are open for everyone, Cancel included, even a non-admin on /admin.
+    sub.user = { id: "u1", isAdmin: false, firmRole: null };
+    await mountAt("/admin/clients");
+    expect(disabled("f-input")).toBe(false);
+    expect(disabled("f-cancel")).toBe(false);
+  });
+
+  it("firm staff are never locked", async () => {
+    sub.user = { id: "f1", isAdmin: false, firmRole: "firm_admin" };
+    await mountAt("/invoices/new");
+    expect(disabled("f-input")).toBe(false);
+  });
+
+  it("invoices/new stays locked, but Cancel (no test id, en and ar) and the tabs still work", async () => {
+    await mountAt("/invoices/new");
+    expect(disabled("f-input")).toBe(true);
+    expect(disabled("f-save")).toBe(true);
+    expect(disabled("f-cancel")).toBe(false);
+    expect(disabled("f-tab")).toBe(false);
+    await mountAt("/invoices/new", dialogForm("إلغاء"));
+    expect(disabled("f-input")).toBe(true);
+    expect(disabled("f-cancel")).toBe(false);
+  });
+
+  it("the assistant page is locked like the server's AI refusal", async () => {
+    await mountAt("/assistant");
+    expect(disabled("f-input")).toBe(true);
+    expect(disabled("f-save")).toBe(true);
+  });
+
+  it("a gated feature page is locked on a plan that lacks it, and open when the plan has it", async () => {
+    sub.state = { ...stateFor("running-chosen"), canWrite: () => false };
+    await mountAt("/payroll");
+    expect(disabled("f-input")).toBe(true);
+    sub.state = { ...stateFor("running-chosen"), canWrite: () => true };
+    await mountAt("/payroll");
+    expect(disabled("f-input")).toBe(false);
+  });
+
+  it("every locked page maps to a rule the server enforces (shared gate lists)", async () => {
+    const { CORE_ROUTE_MODULES } = await import("../../shared/plan-gates");
+    const { PLAN_ROUTE_FEATURES } = await import("../../client/src/lib/plan-routes");
+    const { featureForRequest } = await import("../../server/middleware/featureGate");
+    const id = "11111111-1111-4111-8111-111111111111";
+    for (const [prefix, module] of CORE_ROUTE_MODULES) {
+      const viaCompany = featureForRequest("POST", `/api/companies/${id}/${module}`);
+      const viaRow = featureForRequest("PUT", `/api/${module}/${id}`);
+      expect(viaCompany ?? viaRow, `${prefix} -> ${module}`).not.toBeNull();
+    }
+    const samples: Record<string, string> = {
+      payroll: `companies/${id}/payroll/x`,
+      fixedAssets: `companies/${id}/fixed-assets`,
+      budgets: `companies/${id}/budget-plans`,
+      monthEnd: `companies/${id}/month-end/x`,
+      costCenters: `companies/${id}/cost-centers`,
+      purchaseOrders: `companies/${id}/purchase-orders`,
+      expenseClaims: `companies/${id}/expense-claims`,
+      corporateTax: `companies/${id}/corporate-tax/x`,
+      apiAccess: `companies/${id}/api-keys`,
+      recurringInvoices: `companies/${id}/recurring-invoices`,
+      aiAssistant: "ai/chat",
+    };
+    for (const [prefix, feature] of PLAN_ROUTE_FEATURES) {
+      expect(featureForRequest("POST", `/api/${samples[feature]}`), prefix).toBe(feature);
+    }
+  });
+});
+
+describe("ended + no choice says choose AND activate", () => {
+  it("the dashboard banner, the lock alert, the plan card and the plan block (en + ar)", async () => {
+    const both = (en: string, ar: string) => ({ en, ar });
+    const needles = [
+      both("choose a plan and activate it", "تختار خطة وتفعّلها"),
+      both("Choose a plan and activate it to add or change records", "اختر خطة وفعّلها لإضافة"),
+      both(
+        "Choose a plan and activate it to add and change records again",
+        "اختر خطة وفعّلها لتعود"
+      ),
+      both("Choose a plan and activate it to add records again", "اختر خطة وفعّلها لتعود"),
+    ];
+    for (const locale of ["en", "ar"] as const) {
+      await setLocale(locale);
+      sub.state = stateFor("ended-none");
+      const { TrialBanner } = await import("../../client/src/components/TrialBanner");
+      await render(createElement(TrialBanner));
+      expect(text(q("trial-banner")!)).toContain(needles[0][locale]);
+      const { default: Subscription } = await import("../../client/src/pages/Subscription");
+      await render(createElement(Subscription));
+      const page = text();
+      expect(page).toContain(needles[1][locale]); // top alert
+      expect(page).toContain(needles[2][locale]); // plan card
+      expect(text(q("subscription-chosen-plan")!)).toContain(needles[3][locale]); // plan block
+      expect(page).not.toContain(
+        locale === "en"
+          ? "Choose the plan you want after your trial"
+          : "اختر الخطة التي تريدها بعد فترتك"
+      );
+    }
+    await setLocale("en");
+  });
+});
+
+describe("pending activation request", () => {
+  it("offers no 'choose' button for another plan while a request is pending (no silent cancel)", async () => {
+    sub.state = stateFor("running-requested");
+    const { default: Subscription } = await import("../../client/src/pages/Subscription");
+    await render(createElement(Subscription));
+    expect(container.querySelector('[data-testid^="plan-choose-"]')).toBeNull();
+    expect(q("plan-switch-pending-starter")).not.toBeNull();
+    expect(q("plan-switch-pending-enterprise")).not.toBeNull();
+    expect(q("plan-chosen-professional")).not.toBeNull();
+    sub.state = stateFor("running-chosen");
+    await render(createElement(Subscription));
+    expect(q("plan-choose-starter")).not.toBeNull();
+    expect(q("plan-switch-pending-starter")).toBeNull();
+  });
+});
+
+describe("read-only dashboard actions", () => {
+  async function hero() {
+    const { DashboardHero } = await import("../../client/src/pages/dashboard/DashboardHero");
+    const m = {
+      t: {} as Record<string, string>,
+      locale: "en",
+      stats: null,
+      periodChoice: "month",
+      setPeriodChoice: () => {},
+      companyName: "Acme",
+    };
+    await render(createElement(DashboardHero, { m: m as never }));
+  }
+  it("leads to the plan action instead of the locked 'New invoice'", async () => {
+    sub.state = stateFor("ended-chosen");
+    await hero();
+    const link = q("button-quick-invoice")!;
+    expect(link.getAttribute("href")).toBe("/subscription#after-trial");
+    expect(link.textContent).toContain("Activate");
+    sub.state = stateFor("ended-none");
+    await hero();
+    expect(q("button-quick-invoice")!.getAttribute("href")).toBe("/subscription");
+    sub.state = { ...stateFor("running-chosen"), isReadOnly: false };
+    await hero();
+    expect(q("button-quick-invoice")!.getAttribute("href")).toBe("/invoices?new=1");
+  });
+});
+
+describe("Arabic catalogs spell tanween one way", () => {
+  it("no catalog string uses alif + fathatan (write fathatan + alif: شهريًا, not شهرياً)", () => {
+    const dir = path.join(process.cwd(), "client/src/locales");
+    const files = [
+      ...readdirSync(path.join(dir, "ar")).map((f) => path.join(dir, "ar", f)),
+      ...readdirSync(path.join(dir, "ar-catalog")).map((f) => path.join(dir, "ar-catalog", f)),
+    ].filter((f) => f.endsWith(".json"));
+    expect(files.length).toBeGreaterThan(30);
+    const bad: string[] = [];
+    for (const f of files) {
+      const hits = readFileSync(f, "utf8").match(/[ء-هي]اً/g);
+      if (hits) bad.push(`${path.basename(f)}: ${hits.length}`);
+    }
+    expect(bad).toEqual([]);
   });
 });
 

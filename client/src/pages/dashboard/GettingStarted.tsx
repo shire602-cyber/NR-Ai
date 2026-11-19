@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatMessage } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { useReadOnlyPlanCta } from "@/hooks/useReadOnlyPlanCta";
 import { saveOnboardingProgress, useOnboardingProgress } from "../onboarding/first-task";
 import { useEInvoiceReadiness } from "@/components/einvoice/use-einvoice";
 import type { DashboardModel } from "./useCustomerDashboardModel";
@@ -98,13 +99,14 @@ export function GettingStarted({
   // Dismissal is saved on the server too, so it holds on every device.
   const dismissed = dismissedHere || progress.data?.dismissedGettingStarted === true;
 
+  const planCta = useReadOnlyPlanCta();
   const steps = useMemo<Step[]>(() => {
     const list: Step[] = [
       {
         id: "invoice",
         done: (recentInvoices?.length ?? 0) > 0,
-        href: "/invoices?new=1",
-        title: tt["dashboard.gsInvoice"],
+        href: planCta?.href ?? "/invoices?new=1",
+        title: planCta?.label ?? tt["dashboard.gsInvoice"],
         hint: tt["dashboard.gsInvoiceHint"],
         testId: "button-first-invoice",
       },
@@ -152,6 +154,8 @@ export function GettingStarted({
     return [...list.filter((s) => s.id === first), ...list.filter((s) => s.id !== first)];
   }, [
     tt,
+    planCta?.href,
+    planCta?.label,
     progress.data?.firstTask,
     einvoiceApplies,
     einvoiceReady,

@@ -19,6 +19,7 @@ import {
   type PlanFeature,
   type PlanLimits,
 } from "../../shared/plans";
+import { CORE_COMPANY_MODULES, CORE_ROW_MODULES } from "../../shared/plan-gates";
 
 const log = createLogger("feature-gate");
 
@@ -247,7 +248,7 @@ function refuseFeature(res: Response, ent: Entitlement, feature: PlanFeature): v
   if (ent.state === "expired") {
     res.status(402).json({
       message:
-        "Your free trial has ended. Choose a plan to add or change records; your data stays readable.",
+        "Your free trial has ended. Choose a plan and activate it to add or change records; your data stays readable.",
       code: "PLAN_REQUIRED",
       messageKey: "forms.serverErrors.PLAN_REQUIRED",
       feature,
@@ -371,76 +372,6 @@ const mut = (pattern: string, feature: PlanFeature): GateRule => ({
   pattern,
   feature,
 });
-
-/**
- * Core bookkeeping modules every paid plan includes. Listed so that a company whose trial ended
- * without a plan cannot add or change records in them (reads, exports and PDFs stay open).
- * Billing, team, onboarding, automations switches, notification settings, backups and data
- * export are deliberately absent: a planless company can still choose a plan and take its data.
- */
-const CORE_COMPANY_MODULES = [
-  "invoices",
-  "bills",
-  "receipts",
-  "journal",
-  "journal-templates",
-  "accounts",
-  "seed-accounts",
-  "customer-contacts",
-  "vendors",
-  "products",
-  "quotes",
-  "credit-notes",
-  "debit-notes",
-  "customer-deposits",
-  "customer-credits",
-  "vendor-prepayments",
-  "receivables",
-  "reminders",
-  "reminder-settings",
-  "customer-statements",
-  "invoice-templates",
-  "recurring-bills",
-  "bank-accounts",
-  "bank-statements",
-  "bank-transactions",
-  "bank-connections",
-  "bank-reconciliations",
-  "auto-reconcile",
-  "reconciliation-rules",
-  "vat-returns",
-  "vat-workpapers",
-  "tax-returns-archive",
-  "period-lock",
-  "inventory",
-  "warehouses",
-  "stocktakes",
-  "fx-revaluations",
-  "imports",
-  "documents",
-  "document-versions",
-  "einvoicing",
-  "ai-gl",
-] as const;
-
-const CORE_ROW_MODULES = [
-  "invoices",
-  "bills",
-  "receipts",
-  "journal",
-  "journal-templates",
-  "accounts",
-  "products",
-  "quotes",
-  "credit-notes",
-  "vat-returns",
-  "bank-connections",
-  "reconciliation-rules",
-  "exchange-rates",
-  "documents",
-  "tax-returns-archive",
-  "reminder-settings",
-] as const;
 
 /**
  * Feature gates, most specific first (the first matching rule decides). Must agree with the plan
