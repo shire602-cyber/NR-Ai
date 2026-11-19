@@ -111,7 +111,7 @@ function userIdOf(req: Request): string | undefined {
 async function requireCompanyAccess(req: Request, res: Response, companyId: string) {
   const userId = userIdOf(req);
   if (!userId) {
-    res.status(401).json({ message: "Unauthenticated" });
+    res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
     return null;
   }
   if (!uuid.safeParse(companyId).success) {
@@ -120,7 +120,7 @@ async function requireCompanyAccess(req: Request, res: Response, companyId: stri
   }
   const hasAccess = await storage.hasCompanyAccess(userId, companyId);
   if (!hasAccess) {
-    res.status(403).json({ message: "Access denied" });
+    res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
     return null;
   }
   return userId;
@@ -136,7 +136,7 @@ async function requireCompanyWorkpaperAccess(
   if (!userId) return null;
   const detail = await getVatWorkpaperDetail(workpaperId);
   if (detail.workpaper.companyId !== companyId) {
-    res.status(404).json({ message: "VAT workpaper not found" });
+    res.status(404).json({ message: "VAT workpaper not found", code: "VAT_WORKPAPER_NOT_FOUND" });
     return null;
   }
   return { userId, detail };
@@ -146,7 +146,7 @@ async function requireCompanyWorkpaperAccess(
 async function requireReturnAccess(req: Request, res: Response) {
   const userId = userIdOf(req);
   if (!userId) {
-    res.status(401).json({ message: "Unauthenticated" });
+    res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
     return null;
   }
   if (!uuid.safeParse(req.params.id).success) {
@@ -240,7 +240,8 @@ export function registerVATRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = companyScopedWorkpaperParams.safeParse(req.params);
-      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+      if (!parsed.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -260,7 +261,7 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = companyScopedWorkpaperParams.safeParse(req.params);
       if (!parsedParams.success)
-        return res.status(400).json({ message: "Invalid VAT workpaper id" });
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -283,7 +284,7 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = companyScopedWorkpaperParams.safeParse(req.params);
       if (!parsedParams.success)
-        return res.status(400).json({ message: "Invalid VAT workpaper id" });
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -310,7 +311,9 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = companyScopedWorkpaperRowParams.safeParse(req.params);
       if (!parsedParams.success)
-        return res.status(400).json({ message: "Invalid VAT workpaper row id" });
+        return res
+          .status(400)
+          .json({ message: "Invalid VAT workpaper row id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -337,7 +340,9 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = companyScopedWorkpaperRowParams.safeParse(req.params);
       if (!parsedParams.success)
-        return res.status(400).json({ message: "Invalid VAT workpaper row id" });
+        return res
+          .status(400)
+          .json({ message: "Invalid VAT workpaper row id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -361,7 +366,9 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = companyScopedWorkpaperRowParams.safeParse(req.params);
       if (!parsedParams.success)
-        return res.status(400).json({ message: "Invalid VAT workpaper row id" });
+        return res
+          .status(400)
+          .json({ message: "Invalid VAT workpaper row id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -387,7 +394,7 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = companyScopedWorkpaperParams.safeParse(req.params);
       if (!parsedParams.success)
-        return res.status(400).json({ message: "Invalid VAT workpaper id" });
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -415,7 +422,7 @@ export function registerVATRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const parsedParams = companyScopedWorkpaperParams.safeParse(req.params);
       if (!parsedParams.success)
-        return res.status(400).json({ message: "Invalid VAT workpaper id" });
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
       const result = await requireCompanyWorkpaperAccess(
         req,
         res,
@@ -440,7 +447,8 @@ export function registerVATRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = companyScopedWorkpaperParams.safeParse(req.params);
-      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+      if (!parsed.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -460,7 +468,8 @@ export function registerVATRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = companyScopedWorkpaperParams.safeParse(req.params);
-      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+      if (!parsed.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -480,7 +489,8 @@ export function registerVATRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = companyScopedWorkpaperParams.safeParse(req.params);
-      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+      if (!parsed.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,
@@ -506,7 +516,8 @@ export function registerVATRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = companyScopedWorkpaperParams.safeParse(req.params);
-      if (!parsed.success) return res.status(400).json({ message: "Invalid VAT workpaper id" });
+      if (!parsed.success)
+        return res.status(400).json({ message: "Invalid VAT workpaper id", code: "INVALID_ID" });
 
       const result = await requireCompanyWorkpaperAccess(
         req,

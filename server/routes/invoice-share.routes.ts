@@ -87,7 +87,7 @@ export function registerInvoiceShareRoutes(app: Express) {
 
       const invoice = await findInvoiceForUser(userId, id);
       if (!invoice) {
-        return res.status(404).json({ message: "Invoice not found" });
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       }
       // W4-D (R16-04): a draft or cancelled document is never shared with a customer.
       if (invoice.status === "draft" || invoice.status === "cancelled") {
@@ -125,13 +125,13 @@ export function registerInvoiceShareRoutes(app: Express) {
 
       const invoice = await findInvoiceForUser(userId, id);
       if (!invoice) {
-        return res.status(404).json({ message: "Invoice not found" });
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       }
 
       const lines = await storage.getInvoiceLinesByInvoiceId(id);
       const company = await storage.getCompany(invoice.companyId);
       if (!company) {
-        return res.status(404).json({ message: "Company not found" });
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       }
 
       const pdfBuffer = await generateInvoicePDF(
@@ -162,13 +162,17 @@ export function registerInvoiceShareRoutes(app: Express) {
         : undefined;
       if (!invoice || invoice.status === "draft" || invoice.status === "cancelled") {
         notePortalFailure(req);
-        return res.status(404).json({ message: "Invoice not found or link is invalid" });
+        return res
+          .status(404)
+          .json({ message: "Invoice not found or link is invalid", code: "INVOICE_NOT_FOUND" });
       }
 
       // Check expiry
       if (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date()) {
         notePortalFailure(req);
-        return res.status(410).json({ message: "This invoice link has expired" });
+        return res
+          .status(410)
+          .json({ message: "This invoice link has expired", code: "LINK_EXPIRED" });
       }
 
       void logPortalAccess({ req, outcome: "share_ok", companyId: invoice.companyId });
@@ -177,7 +181,7 @@ export function registerInvoiceShareRoutes(app: Express) {
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
       const company = await storage.getCompany(invoice.companyId);
       if (!company) {
-        return res.status(404).json({ message: "Company not found" });
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       }
 
       const pdfOpts = await invoicePdfOptions(invoice);
@@ -267,19 +271,23 @@ export function registerInvoiceShareRoutes(app: Express) {
         : undefined;
       if (!invoice || invoice.status === "draft" || invoice.status === "cancelled") {
         notePortalFailure(req);
-        return res.status(404).json({ message: "Invoice not found or link is invalid" });
+        return res
+          .status(404)
+          .json({ message: "Invoice not found or link is invalid", code: "INVOICE_NOT_FOUND" });
       }
 
       if (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date()) {
         notePortalFailure(req);
-        return res.status(410).json({ message: "This invoice link has expired" });
+        return res
+          .status(410)
+          .json({ message: "This invoice link has expired", code: "LINK_EXPIRED" });
       }
 
       void logPortalAccess({ req, outcome: "share_ok", companyId: invoice.companyId });
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
       const company = await storage.getCompany(invoice.companyId);
       if (!company) {
-        return res.status(404).json({ message: "Company not found" });
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       }
 
       const pdfBuffer = await generateInvoicePDF(
@@ -311,17 +319,17 @@ export function registerInvoiceShareRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const invoice = await storage.getInvoice(invoiceId, companyId);
       if (!invoice) {
-        return res.status(404).json({ message: "Invoice not found" });
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       }
 
       const company = await storage.getCompany(companyId);
       if (!company) {
-        return res.status(404).json({ message: "Company not found" });
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       }
 
       const lines = await storage.getInvoiceLinesByInvoiceId(invoiceId);
@@ -384,12 +392,12 @@ export function registerInvoiceShareRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const invoice = await storage.getInvoice(invoiceId, companyId);
       if (!invoice) {
-        return res.status(404).json({ message: "Invoice not found" });
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       }
 
       // W4-D (R16-03): only issued, unpaid invoices are chased.
@@ -405,7 +413,7 @@ export function registerInvoiceShareRoutes(app: Express) {
 
       const company = await storage.getCompany(companyId);
       if (!company) {
-        return res.status(404).json({ message: "Company not found" });
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       }
 
       const newReminderCount = (invoice.reminderCount || 0) + 1;

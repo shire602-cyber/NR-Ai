@@ -204,6 +204,10 @@ export const journalLines = pgTable(
     systemVat: boolean("system_vat").notNull().default(false),
     ctTreatment: text("ct_treatment"), // deductible | non_deductible | exempt_income | null
     ctDisallowedPct: numeric("ct_disallowed_pct", { precision: 5, scale: 2 }), // non_deductible share
+    // Migration 0132: key + params of a system line description (shared/journal-memo.ts line
+    // templates); NULL on manual lines and rows posted before 0132.
+    lineKey: text("line_key"),
+    lineParams: jsonb("line_params").$type<Record<string, string>>(),
   },
   (table) => ({
     entryIdIdx: index("idx_journal_lines_entry_id").on(table.entryId),

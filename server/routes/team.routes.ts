@@ -161,7 +161,7 @@ export function registerTeamRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const teamMembers = await storage.getCompanyUserWithUser(companyId);
@@ -187,7 +187,8 @@ export function registerTeamRoutes(app: Express) {
       const role = await getCompanyRole(req.user!.id, companyId).catch(() => null);
       if (!role) {
         const hasAccess = await storage.hasCompanyAccess(req.user!.id, companyId);
-        if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+        if (!hasAccess)
+          return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
         // NR firm staff / platform admins act with full rights via their own gates.
         return res.json({
           role: null,
@@ -230,7 +231,8 @@ export function registerTeamRoutes(app: Express) {
       }
 
       const company = await storage.getCompany(companyId);
-      if (!company) return res.status(404).json({ message: "Company not found" });
+      if (!company)
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
 
       const existingUser = await storage.getUserByEmail(email);
       if (existingUser && (await storage.getUserRole(companyId, existingUser.id))) {
@@ -305,7 +307,8 @@ export function registerTeamRoutes(app: Express) {
         });
       }
       const company = await storage.getCompany(companyId);
-      if (!company) return res.status(404).json({ message: "Company not found" });
+      if (!company)
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       const token = newToken();
       const updated = await storage.updateCompanyInvitation(companyId, invitationId, {
         tokenHash: token.hash,

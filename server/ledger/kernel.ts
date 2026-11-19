@@ -214,6 +214,8 @@ function lineRow(entryId: string, l: NormalizedLine) {
     debit: filsToNumber(l.debitFils),
     credit: filsToNumber(l.creditFils),
     description: l.description,
+    lineKey: l.lineKey ?? null,
+    lineParams: l.lineKey ? (l.lineParams ?? null) : null,
     foreignCurrency: l.foreignCurrency,
     foreignDebit: filsToNumber(l.foreignDebitFils),
     foreignCredit: filsToNumber(l.foreignCreditFils),
@@ -418,6 +420,8 @@ export interface LineFils {
   debitFils: number;
   creditFils: number;
   description: string | null;
+  lineKey: string | null;
+  lineParams: Record<string, string> | null;
   foreignCurrency: string | null;
   foreignDebitFils: number;
   foreignCreditFils: number;
@@ -446,7 +450,7 @@ async function loadEntry(
 export async function loadLinesFils(tx: LedgerTx, entryId: string): Promise<LineFils[]> {
   const res = await tx.execute(sql`
     SELECT id, account_id, cost_center_id, debit::text AS debit, credit::text AS credit,
-           description, foreign_currency, COALESCE(foreign_debit, 0)::text AS foreign_debit,
+           description, line_key, line_params, foreign_currency, COALESCE(foreign_debit, 0)::text AS foreign_debit,
            COALESCE(foreign_credit, 0)::text AS foreign_credit, exchange_rate::text AS exchange_rate,
            system_vat, contact_type, contact_id, vat_treatment, ct_treatment,
            ct_disallowed_pct::text AS ct_disallowed_pct
@@ -467,6 +471,8 @@ export async function loadLinesFils(tx: LedgerTx, entryId: string): Promise<Line
     debitFils: toFils(r.debit ?? "0"),
     creditFils: toFils(r.credit ?? "0"),
     description: r.description ?? null,
+    lineKey: r.line_key ?? null,
+    lineParams: (r.line_params as unknown as Record<string, string> | null) ?? null,
     foreignCurrency: r.foreign_currency ?? null,
     foreignDebitFils: toFils(r.foreign_debit ?? "0"),
     foreignCreditFils: toFils(r.foreign_credit ?? "0"),
@@ -672,6 +678,7 @@ async function reverseInTx(
       debitFils: l.creditFils,
       creditFils: l.debitFils,
       description: l.description,
+      ...(l.lineKey ? { lineKey: l.lineKey, lineParams: l.lineParams } : {}),
       costCenterId: l.costCenterId,
       foreignCurrency: l.foreignCurrency,
       foreignDebitFils: l.foreignCreditFils,

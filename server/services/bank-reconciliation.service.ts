@@ -21,7 +21,7 @@
  * lock, validates the target belongs to the company (404 otherwise) and records allocations in
  * bank_transaction_matches with an idempotency key. Journals are written only via server/ledger.
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import { randomUUID } from "node:crypto";
 import type { Request } from "express";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -702,7 +702,7 @@ export async function buildEntryLines(
     lines.push({
       accountId: feeAccountId,
       debitFils: fee,
-      description: `Bank fee: ${desc}`.slice(0, 500),
+      ...journalLine("bankFeeOn", { text: desc }),
     });
   }
   // Outflow: the bank line contains the fee. Inflow: the fee was deducted before crediting us.
@@ -728,8 +728,8 @@ export async function buildEntryLines(
     const amt = Math.abs(fxDiff);
     lines.push(
       isGain
-        ? { accountId: fxAccountId, creditFils: amt, description: "FX difference" }
-        : { accountId: fxAccountId, debitFils: amt, description: "FX difference" }
+        ? { accountId: fxAccountId, creditFils: amt, ...journalLine("fxDifference") }
+        : { accountId: fxAccountId, debitFils: amt, ...journalLine("fxDifference") }
     );
   }
 
@@ -750,13 +750,13 @@ export async function buildEntryLines(
           ? {
               accountId: vatAccountId,
               creditFils: vat,
-              description: `Output VAT 5%: ${desc}`.slice(0, 500),
+              ...journalLine("bankOutputVat", { text: desc }),
               systemVat: true,
             }
           : {
               accountId: vatAccountId,
               debitFils: vat,
-              description: `Input VAT 5%: ${desc}`.slice(0, 500),
+              ...journalLine("bankInputVat", { text: desc }),
               systemVat: true,
             }
       );

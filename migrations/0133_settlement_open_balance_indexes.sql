@@ -1,4 +1,4 @@
--- 0132_settlement_open_balance_indexes (owner exception, W2-B reporting / settlement rule): indexes the two
+-- 0133_settlement_open_balance_indexes (owner exception, W2-B reporting / settlement rule): indexes the two
 -- columns the settlement rule's "credited" subqueries filter on. Idempotent: CREATE INDEX IF NOT EXISTS only.
 --
 -- Owner decision (PR #68, approved by the owner): an explicit exception to the frozen-migration rule

@@ -15,7 +15,7 @@
  * return's ledger movement (no manual adjustment, no reconciliation difference). One settlement
  * per return (idempotency key); reversing it uses the kernel's reverseBySource.
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { DomainError } from "../errors";
 import { pool } from "../db";
@@ -207,7 +207,8 @@ export async function settleVatReturn(input: {
         : undefined
     );
   }
-  const label = `${prior.returnIds.length ? "Amended VAT return" : "VAT return"} ${ret.period_start} to ${ret.period_end}`;
+  const amended = prior.returnIds.length > 0;
+  const lineParams = { from: String(ret.period_start), to: String(ret.period_end) };
   const side = (fils: number) => (fils >= 0 ? { debitFils: fils } : { creditFils: -fils });
   const lines: PostJournalLineInput[] = [];
   if (outputFils !== 0)
@@ -215,21 +216,29 @@ export async function settleVatReturn(input: {
       accountId: output,
       ...side(outputFils),
       systemVat: true,
-      description: `${label}: output VAT`,
+      ...journalLine(amended ? "vatAmendedReturnOutput" : "vatReturnOutput", lineParams),
     });
   if (inputFils !== 0)
     lines.push({
       accountId: inputVat,
       ...side(-inputFils),
       systemVat: true,
-      description: `${label}: input VAT`,
+      ...journalLine(amended ? "vatAmendedReturnInput" : "vatReturnInput", lineParams),
     });
   if (netFils !== 0)
     lines.push({
       accountId: input.paymentAccountId,
       ...side(-netFils),
-      description:
-        netFils > 0 ? `${label}: VAT paid to the FTA` : `${label}: VAT refund from the FTA`,
+      ...journalLine(
+        netFils > 0
+          ? amended
+            ? "vatAmendedReturnPaid"
+            : "vatReturnPaid"
+          : amended
+            ? "vatAmendedReturnRefund"
+            : "vatReturnRefund",
+        lineParams
+      ),
     });
   // B2: one live settlement per return, but a reversed one may be settled again; each attempt
   // gets its own key (the first keeps the original format), so a re-settlement after a reversal

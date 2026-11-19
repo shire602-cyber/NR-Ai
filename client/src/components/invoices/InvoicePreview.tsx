@@ -142,7 +142,9 @@ export function InvoicePreview(props: InvoicePreviewProps) {
     >
       <div className="mb-3 flex items-center justify-between gap-2 px-1">
         <p className="text-caption font-medium text-muted-foreground">
-          {t["forms.preview.heading"]}
+          {status && status !== "draft"
+            ? t["forms.preview.headingDocument"]
+            : t["forms.preview.heading"]}
         </p>
         <span className="rounded-full bg-card px-2 py-0.5 text-caption text-muted-foreground">
           {t[previewStatusKey(status)]}

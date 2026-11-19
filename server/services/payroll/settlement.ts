@@ -15,7 +15,7 @@
  *
  * The employee is marked terminated in the same transaction.
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { DomainError } from "../../errors";
 import { emitDomainEventInTx } from "../../platform/event-outbox";
@@ -159,20 +159,20 @@ export function settlementLines(
       accountId: requireAccount(accounts, "gratuityProvision"),
       controlLeg: "payroll",
       debitFils: provision,
-      description: `Gratuity provision cleared - ${who}`,
+      ...journalLine("settlementProvisionCleared", { party: who }),
     });
   }
   if (r.gratuityExpenseFils > 0) {
     lines.push({
       accountId: requireAccount(accounts, "gratuityExpense"),
       debitFils: r.gratuityExpenseFils,
-      description: `End-of-service gratuity above provision - ${who}`,
+      ...journalLine("settlementGratuityAbove", { party: who }),
     });
   } else if (r.gratuityExpenseFils < 0) {
     lines.push({
       accountId: requireAccount(accounts, "gratuityExpense"),
       creditFils: -r.gratuityExpenseFils,
-      description: `Excess gratuity provision released - ${who}`,
+      ...journalLine("settlementProvisionReleased", { party: who }),
     });
   }
   const wages = r.noticePayFils + r.leaveEncashmentFils + r.otherAdditionsFils;
@@ -180,7 +180,7 @@ export function settlementLines(
     lines.push({
       accountId: requireAccount(accounts, "salariesExpense"),
       debitFils: wages,
-      description: `Notice pay, leave encashment and additions - ${who}`,
+      ...journalLine("settlementNoticeLeave", { party: who }),
     });
   }
   if (r.deductionsFils > 0) {
@@ -188,7 +188,7 @@ export function settlementLines(
       accountId: requireAccount(accounts, "deductionsPayable"),
       controlLeg: "payroll",
       creditFils: r.deductionsFils,
-      description: `Final settlement deductions - ${who}`,
+      ...journalLine("settlementDeductions", { party: who }),
     });
   }
   if (r.netFils > 0) {
@@ -196,7 +196,7 @@ export function settlementLines(
       accountId: creditAccountId,
       creditFils: r.netFils,
       ...(creditAccountId === accounts.salariesPayable ? { controlLeg: "payroll" as const } : {}),
-      description: `Final settlement payable - ${who}`,
+      ...journalLine("settlementPayable", { party: who }),
     });
   }
   return lines;
@@ -392,12 +392,12 @@ export async function paySettlement(
               accountId: requireAccount(accounts, "salariesPayable"),
               controlLeg: "payroll",
               debitFils: netFils,
-              description: `Final settlement paid - ${s.full_name}`,
+              ...journalLine("settlementPaid", { party: s.full_name }),
             },
             {
               accountId: body.paymentAccountId,
               creditFils: netFils,
-              description: `Final settlement payment - ${s.full_name}`,
+              ...journalLine("settlementPayment", { party: s.full_name }),
             },
           ],
         },

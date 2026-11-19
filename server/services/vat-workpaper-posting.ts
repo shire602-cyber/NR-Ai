@@ -1,3 +1,4 @@
+import { journalLine } from "@shared/journal-memo";
 // Pure double-entry generator for posting a manual VAT workpaper row to the
 // general ledger, so a sale (or other supply) entered in the VAT area also shows
 // up in the journal, P&L and balance sheet — the books tie out to the VAT 201.
@@ -17,6 +18,8 @@ export interface PostableLine {
   debit: number;
   credit: number;
   description: string;
+  lineKey?: string;
+  lineParams?: Record<string, string>;
 }
 
 export interface VatRowForPosting {
@@ -101,11 +104,11 @@ export function buildVatRowJournalLines(row: VatRowForPosting, accounts: Posting
       return { ok: false, code: "VAT_INPUT_ACCOUNT_MISSING", message: "Input VAT account is missing from the chart of accounts." };
     }
     const gross = round2(net + vat);
-    lines.push({ accountId: accounts.generalExpenseId, debit: net, credit: 0, description: `${label} — expense` });
+    lines.push({ accountId: accounts.generalExpenseId, debit: net, credit: 0, ...journalLine("vwExpense", { label }) });
     if (vat > 0) {
-      lines.push({ accountId: accounts.vatInputId!, debit: vat, credit: 0, description: `${label} — input VAT` });
+      lines.push({ accountId: accounts.vatInputId!, debit: vat, credit: 0, ...journalLine("vwInputVat", { label }) });
     }
-    lines.push({ accountId: accounts.accountsPayableId, debit: 0, credit: gross, description: `${label} — payable` });
+    lines.push({ accountId: accounts.accountsPayableId, debit: 0, credit: gross, ...journalLine("vwPayable", { label }) });
 
     const drP = round2(lines.reduce((s, l) => s + l.debit, 0));
     const crP = round2(lines.reduce((s, l) => s + l.credit, 0));
@@ -131,13 +134,13 @@ export function buildVatRowJournalLines(row: VatRowForPosting, accounts: Posting
     if (vat > 0 && (!accounts.vatInputId || !accounts.vatOutputId)) {
       return { ok: false, code: "VAT_ACCOUNT_MISSING", message: "Input and Output VAT accounts are required for reverse-charge/import posting." };
     }
-    lines.push({ accountId: accounts.generalExpenseId, debit: net, credit: 0, description: `${label} — expense` });
+    lines.push({ accountId: accounts.generalExpenseId, debit: net, credit: 0, ...journalLine("vwExpense", { label }) });
     if (vat > 0) {
-      lines.push({ accountId: accounts.vatInputId!, debit: vat, credit: 0, description: `${label} — input VAT (recoverable)` });
+      lines.push({ accountId: accounts.vatInputId!, debit: vat, credit: 0, ...journalLine("vwInputVatRecoverable", { label }) });
     }
-    lines.push({ accountId: accounts.accountsPayableId, debit: 0, credit: net, description: `${label} — payable` });
+    lines.push({ accountId: accounts.accountsPayableId, debit: 0, credit: net, ...journalLine("vwPayable", { label }) });
     if (vat > 0) {
-      lines.push({ accountId: accounts.vatOutputId!, debit: 0, credit: vat, description: `${label} — output VAT (self-assessed)` });
+      lines.push({ accountId: accounts.vatOutputId!, debit: 0, credit: vat, ...journalLine("vwOutputVatSelf", { label }) });
     }
 
     const drR = round2(lines.reduce((s, l) => s + l.debit, 0));
@@ -163,25 +166,25 @@ export function buildVatRowJournalLines(row: VatRowForPosting, accounts: Posting
       return { ok: false, code: "VAT_ACCOUNT_MISSING", message: "Output VAT account is missing from the chart of accounts." };
     }
     const gross = round2(net + vat);
-    lines.push({ accountId: ar, debit: gross, credit: 0, description: `${label} — receivable` });
-    lines.push({ accountId: accounts.salesRevenueId, debit: 0, credit: net, description: `${label} — revenue` });
+    lines.push({ accountId: ar, debit: gross, credit: 0, ...journalLine("vwReceivable", { label }) });
+    lines.push({ accountId: accounts.salesRevenueId, debit: 0, credit: net, ...journalLine("vwRevenue", { label }) });
     if (vat > 0) {
-      lines.push({ accountId: accounts.vatOutputId!, debit: 0, credit: vat, description: `${label} — output VAT` });
+      lines.push({ accountId: accounts.vatOutputId!, debit: 0, credit: vat, ...journalLine("vwOutputVat", { label }) });
     }
   } else if (row.rowCategory === "zero_rated_sale") {
     const revenue = accounts.zeroRatedRevenueId ?? accounts.salesRevenueId;
     if (!revenue) {
       return { ok: false, code: "REVENUE_ACCOUNT_MISSING", message: "Zero-rated/Sales Revenue account is missing from the chart of accounts." };
     }
-    lines.push({ accountId: ar, debit: net, credit: 0, description: `${label} — receivable` });
-    lines.push({ accountId: revenue, debit: 0, credit: net, description: `${label} — zero-rated revenue` });
+    lines.push({ accountId: ar, debit: net, credit: 0, ...journalLine("vwReceivable", { label }) });
+    lines.push({ accountId: revenue, debit: 0, credit: net, ...journalLine("vwZeroRatedRevenue", { label }) });
   } else {
     // exempt_sale
     if (!accounts.salesRevenueId) {
       return { ok: false, code: "REVENUE_ACCOUNT_MISSING", message: "Sales Revenue account is missing from the chart of accounts." };
     }
-    lines.push({ accountId: ar, debit: net, credit: 0, description: `${label} — receivable` });
-    lines.push({ accountId: accounts.salesRevenueId, debit: 0, credit: net, description: `${label} — exempt revenue` });
+    lines.push({ accountId: ar, debit: net, credit: 0, ...journalLine("vwReceivable", { label }) });
+    lines.push({ accountId: accounts.salesRevenueId, debit: 0, credit: net, ...journalLine("vwExemptRevenue", { label }) });
   }
 
   const dr = round2(lines.reduce((s, l) => s + l.debit, 0));

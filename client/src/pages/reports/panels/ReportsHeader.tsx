@@ -38,6 +38,7 @@ import { useReportsPageContext } from "../context";
 import ReportsModeTabs from "./ReportsModeTabs";
 import { apiUrl } from "@/lib/api";
 import { format } from "date-fns";
+import { useQuery } from "@tanstack/react-query";
 
 /** Catalog reports the server renders as a PDF (server/services/report-render STATEMENT_KINDS). */
 const SERVER_PDF_REPORTS = new Set([
@@ -51,6 +52,12 @@ const SERVER_PDF_REPORTS = new Set([
 ]);
 
 export default function ReportsHeader() {
+  // R1: Google Sheets export is offered only when the platform connection exists; while the
+  // status is unknown the item stays enabled and the server answers with GOOGLE_SHEETS_NOT_CONNECTED.
+  const { data: integrationStatus } = useQuery<{ googleSheets?: { connected?: boolean } }>({
+    queryKey: ["/api/integrations/status"],
+  });
+  const sheetsConnected = integrationStatus?.googleSheets?.connected !== false;
   const {
     activeReportViewerOption,
     activeReportWorkflowGapFilterLabel,
@@ -136,10 +143,23 @@ export default function ReportsHeader() {
                 <FileSpreadsheet className="w-4 h-4 me-2" />
                 <T k="reportCenter.exportToExcel" />
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleExportGoogleSheets} data-testid="menu-export-sheets">
+              <DropdownMenuItem
+                onClick={handleExportGoogleSheets}
+                disabled={!sheetsConnected}
+                data-testid="menu-export-sheets"
+              >
                 <SiGooglesheets className="w-4 h-4 me-2" aria-hidden />
                 <T k="reportCenter.exportToGoogleSheets" />
               </DropdownMenuItem>
+              {!sheetsConnected && (
+                <DropdownMenuItem asChild data-testid="menu-export-sheets-connect">
+                  <Link href="/integrations-hub">
+                    <span className="text-xs text-muted-foreground">
+                      <T k="reportCenter.sheetsNotConnected" />
+                    </span>
+                  </Link>
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         }

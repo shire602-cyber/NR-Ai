@@ -22,10 +22,12 @@ import {
 import {
   formatAmount,
   formatIsoDate,
+  formatIsoDateAr,
   label,
   type Bilingual,
   type RenderColumn,
   type RenderCompany,
+  type RenderLocale,
   type RenderTable,
   type RenderedReport,
 } from "./model";
@@ -143,13 +145,19 @@ function header(doc: PdfDoc, company: RenderCompany, report: RenderedReport): nu
 }
 
 /** Printed text of one cell (presentation only; numbers through the shared formatter). */
-function cellText(column: RenderColumn, raw: string | number | null | undefined): string {
+function cellText(
+  column: RenderColumn,
+  raw: string | number | null | undefined,
+  locale: RenderLocale = "en"
+): string {
   if (raw === null || raw === undefined || raw === "") return "";
   if (typeof raw === "number" && column.numeric) {
     return INTEGER_KEYS.has(column.key) ? String(Math.round(raw)) : formatAmount(raw);
   }
   const value = String(raw);
-  if (column.key === "date" && ISO_DATE.test(value)) return formatIsoDate(value);
+  if (column.key === "date" && ISO_DATE.test(value)) {
+    return locale === "ar" ? formatIsoDateAr(value) : formatIsoDate(value);
+  }
   return value;
 }
 
@@ -157,7 +165,12 @@ function cellText(column: RenderColumn, raw: string | number | null | undefined)
  * Column widths from the weights, then widened for identifier/date columns so they never wrap
  * (taken from the widest flexible text column).
  */
-function columnWidths(doc: PdfDoc, t: RenderTable, width: number): number[] {
+function columnWidths(
+  doc: PdfDoc,
+  t: RenderTable,
+  width: number,
+  locale: RenderLocale = "en"
+): number[] {
   const weights = t.columns.map((c) => c.weight ?? 1);
   const totalWeight = weights.reduce((a, b) => a + b, 0);
   const widths = weights.map((w) => (w / totalWeight) * width);
@@ -170,7 +183,7 @@ function columnWidths(doc: PdfDoc, t: RenderTable, width: number): number[] {
     if (!COMPACT_KEYS.has(c.key)) return;
     let need = 0;
     for (const row of t.rows) {
-      const v = cellText(c, row.cells[c.key]);
+      const v = cellText(c, row.cells[c.key], locale);
       if (v) need = Math.max(need, measureWidth(doc, v, { size: 8 }));
     }
     const extra = need + 2 * CELL_PAD + 2 - widths[i];
@@ -193,7 +206,7 @@ function table(
   const start = rtl ? "right" : "left";
   const end = rtl ? "left" : "right";
   const width = doc.page.width - PAGE_MARGIN * 2;
-  const widths = columnWidths(doc, t, width);
+  const widths = columnWidths(doc, t, width, company.locale);
   // RTL: first column on the right.
   const xs: number[] = [];
   let acc = 0;
@@ -258,7 +271,7 @@ function table(
   for (const row of t.rows) {
     const bold = row.style === "heading" || row.style === "subtotal" || row.style === "total";
     const cells = t.columns.map((c, i) => {
-      const value = cellText(c, row.cells[c.key]);
+      const value = cellText(c, row.cells[c.key], company.locale);
       const singleLine = !!c.numeric || COMPACT_KEYS.has(c.key);
       const h = value
         ? singleLine

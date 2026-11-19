@@ -47,7 +47,9 @@ export function registerNotificationRoutes(app: Express) {
       const userId = req.user!.id;
       const notification = await storage.markNotificationAsRead(id, userId);
       if (!notification) {
-        return res.status(404).json({ message: "Notification not found" });
+        return res
+          .status(404)
+          .json({ message: "Notification not found", code: "NOTIFICATION_NOT_FOUND" });
       }
       res.json(withNotificationCopy(notification));
     })
@@ -73,7 +75,9 @@ export function registerNotificationRoutes(app: Express) {
       const userId = req.user!.id;
       const notification = await storage.dismissNotification(id, userId);
       if (!notification) {
-        return res.status(404).json({ message: "Notification not found" });
+        return res
+          .status(404)
+          .json({ message: "Notification not found", code: "NOTIFICATION_NOT_FOUND" });
       }
       res.json(withNotificationCopy(notification));
     })
@@ -104,7 +108,9 @@ export function registerNotificationRoutes(app: Express) {
       if (validated.companyId) {
         const hasAccess = await storage.hasCompanyAccess(userId, validated.companyId);
         if (!hasAccess) {
-          return res.status(403).json({ message: "Access denied to this company" });
+          return res
+            .status(403)
+            .json({ message: "Access denied to this company", code: "COMPANY_ACCESS_DENIED" });
         }
       }
 

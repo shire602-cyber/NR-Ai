@@ -22,12 +22,16 @@ import {
   DocumentTotalsError,
   type SalesDocumentTotals,
 } from "./document-totals.service";
+import { journalLine } from "@shared/journal-memo";
 
 export type JournalLine = {
   accountId: string;
   debit: number;
   credit: number;
   description: string;
+  /** System line description key + params (shared/journal-memo.ts), stored on the journal line. */
+  lineKey?: string;
+  lineParams?: Record<string, string>;
 };
 
 export type ReversalAccountRefs = {
@@ -182,7 +186,8 @@ export function buildPaymentJournalLines(args: {
   customerCreditAccountId?: string | null;
   fxGainAccountId?: string | null;
   fxLossAccountId?: string | null;
-  label?: string;
+  /** Invoice number (or id) the payment settles; the line descriptions name it. */
+  ref?: string;
   /** W3-A: AED to clear from A/R when this payment settles the invoice in
    *  full — the exact residual on the ledger, so rate rounding on earlier
    *  credits / part-payments never leaves a fils on A/R (goes to FX). */
@@ -192,7 +197,7 @@ export function buildPaymentJournalLines(args: {
   | { ok: false; code: string; message: string } {
   const invRate = args.invoiceRate > 0 ? args.invoiceRate : 1;
   const payRate = args.paymentRate > 0 ? args.paymentRate : invRate;
-  const label = args.label ?? "Invoice payment";
+  const lineParams = { ref: args.ref ?? "payment" };
   const arCreditAed =
     args.receivableCreditAedOverride != null && args.receivableCreditAedOverride > 0
       ? round2(args.receivableCreditAedOverride)
@@ -228,13 +233,13 @@ export function buildPaymentJournalLines(args: {
       accountId: args.paymentAccountId,
       debit: bankDebitAed,
       credit: 0,
-      description: `${label} — cash received`,
+      ...journalLine("paymentCashReceived", lineParams),
     },
     {
       accountId: args.receivableAccountId,
       debit: 0,
       credit: arCreditAed,
-      description: `${label} — clear A/R`,
+      ...journalLine("paymentClearAr", lineParams),
     },
   ];
   if (custCreditAed > 0 && args.customerCreditAccountId) {
@@ -242,7 +247,7 @@ export function buildPaymentJournalLines(args: {
       accountId: args.customerCreditAccountId,
       debit: 0,
       credit: custCreditAed,
-      description: `${label} — customer credit (overpayment)`,
+      ...journalLine("paymentCustomerCredit", lineParams),
     });
   }
   if (realisedFx > 0 && args.fxGainAccountId) {
@@ -250,14 +255,14 @@ export function buildPaymentJournalLines(args: {
       accountId: args.fxGainAccountId,
       debit: 0,
       credit: realisedFx,
-      description: `${label} — realised FX gain`,
+      ...journalLine("paymentFxGain", lineParams),
     });
   } else if (realisedFx < 0 && args.fxLossAccountId) {
     lines.push({
       accountId: args.fxLossAccountId,
       debit: -realisedFx,
       credit: 0,
-      description: `${label} — realised FX loss`,
+      ...journalLine("paymentFxLoss", lineParams),
     });
   }
 

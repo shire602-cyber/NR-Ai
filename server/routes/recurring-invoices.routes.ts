@@ -106,7 +106,7 @@ export function registerRecurringInvoiceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       if (!(await storage.hasCompanyAccess(userOf(req), companyId))) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       res.json(await storage.getRecurringInvoicesByCompanyId(companyId));
     })
@@ -129,7 +129,7 @@ export function registerRecurringInvoiceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       if (!(await storage.hasCompanyAccess(userOf(req), companyId))) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const body = validated<CreateRecurringInvoiceInput>(req);
       const customerName = await customerNameFor(companyId, body.contactId, body.customerName);

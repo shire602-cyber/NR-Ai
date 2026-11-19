@@ -156,7 +156,7 @@ export function registerQuoteRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       if (!(await storage.hasCompanyAccess(userOf(req), companyId))) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       res.json(await storage.getQuotesByCompanyId(companyId));
     })
@@ -183,7 +183,7 @@ export function registerQuoteRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       if (!(await storage.hasCompanyAccess(userOf(req), companyId))) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const body = validated<CreateQuoteInput>(req);
       const q = await prepareQuote(companyId, body);
@@ -408,7 +408,8 @@ export function registerQuoteRoutes(app: Express) {
       const quote = await quoteForUser(userOf(req), req.params.id);
       const lines = await storage.getQuoteLinesByQuoteId(quote.id);
       const company = await storage.getCompany(quote.companyId);
-      if (!company) return res.status(404).json({ message: "Company not found" });
+      if (!company)
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       const pdfBuffer = await generateQuotePDF(quote, lines, company);
       res.set({
         "Content-Type": "application/pdf",
@@ -442,7 +443,8 @@ export function registerQuoteRoutes(app: Express) {
       }
       const { to, subject, message } = req.body as QuoteSendEmailInput;
       const company = await storage.getCompany(quote.companyId);
-      if (!company) return res.status(404).json({ message: "Company not found" });
+      if (!company)
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       const lines = await storage.getQuoteLinesByQuoteId(quote.id);
       const pdf = await generateQuotePDF(quote, lines, company);
       let portalUrl: string | null = null;

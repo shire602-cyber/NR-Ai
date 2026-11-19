@@ -47,6 +47,13 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   `users.is_admin`. `GET /firm/clients` is a fixed number of grouped queries and returns an allow-listed
   column set (no WPS or IBAN fields); `GET /firm/client-links` is scoped like the client list; a client
   outside the caller's firm is a 404 through `denyClientAccess`.
+- System journal text is a key, not English: an entry memo is `journalMemo(key, params)` and every
+  system LINE description is `journalLine(key, params)` (`shared/journal-memo.ts`, columns
+  `memo_key`/`memo_params` and `line_key`/`line_params`, migrations 0131/0132). Add the template
+  and `journal.memo.line.<key>` in both catalogs; `shared/journal-memo-render.ts` renders it in
+  the UI, the GL PDF and the Excel exports (old rows fall back to the pattern matcher). A stock
+  line names its document with `docKind` + `ref`. `tests/unit/journal-memo-registry.test.ts`
+  fails on a raw English `memo:` or line `description:` in server code.
 - Draft journals are removed with the kernel's `deleteDraft(entryId, ctx)` (conditional on
   `status = 'draft'`, audited); never `DELETE FROM journal_entries` directly.
 - Cash settlement seams are late-bound through `server/platform/service-registry.ts`:
@@ -183,3 +190,17 @@ One model for every migrating company (D1, accounting re-audit 3: N1-N4, N7, N14
   cash flows of any section (IAS 7.45). When go-live falls inside the period their cash is part
   of the opening cash (`openingPosition` on the statement) and their profit-or-loss lines are not
   in the indirect method's net income, so direct and indirect agree.
+
+## Customer-facing error codes (G3)
+
+- Every 4xx a customer can trigger carries a stable `code` (`DomainError`, or `{ message, code }`);
+  no raw `{ message }` response in the customer route modules (`tests/unit/server-error-copy.test.ts`).
+- Each code has a specific sentence in both languages: `serverErrors.<CODE>` in
+  `client/src/locales/{en,ar}/serverErrors.json` (older codes: `forms.serverErrors.<CODE>`).
+  The test scans `server/` and `shared/` and fails when a code has no en and ar copy; only
+  machine-only codes (webhooks, provider callbacks) are listed as exempt, with a reason.
+- `localizeApiError` (`client/src/lib/validation-messages.ts`) resolves it: Arabic always uses the
+  catalog sentence; English uses it when the server only sent the generic words of the code
+  (a `DomainError` without its own message). The status-based Arabic sentence is the last resort.
+- Validation errors name each field by its form label (`serverErrors.field.<id>`), never the raw
+  id; add a label when a new field can fail server validation.

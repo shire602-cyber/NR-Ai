@@ -31,6 +31,9 @@ export interface PostJournalLineInput {
   debitFils?: number;
   creditFils?: number;
   description?: string | null;
+  /** System line description key + params (shared/journal-memo.ts); see `journalLine()`. */
+  lineKey?: string | null;
+  lineParams?: Record<string, string> | null;
   costCenterId?: string | null;
   /** ISO 4217 code of the original document currency (null = base currency). */
   foreignCurrency?: string | null;
@@ -134,6 +137,8 @@ export interface NormalizedLine {
   debitFils: number;
   creditFils: number;
   description: string | null;
+  lineKey?: string | null;
+  lineParams?: Record<string, string> | null;
   costCenterId: string | null;
   foreignCurrency: string | null;
   foreignDebitFils: number;

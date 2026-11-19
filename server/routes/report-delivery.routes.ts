@@ -150,7 +150,8 @@ export function registerReportDeliveryRoutes(app: Express) {
       const { companyId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const query = reportDeliveryQuerySchema.parse(req.query);
       const settings = await readOptionalReportDeliveryStorage(
@@ -175,11 +176,17 @@ export function registerReportDeliveryRoutes(app: Express) {
       const { companyId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const query = reportDeliveryRunsQuerySchema.parse(req.query);
       if (query.subscriptionId && !getReportDeliveryPlan(query.subscriptionId)) {
-        return res.status(404).json({ message: "Report delivery subscription not found" });
+        return res
+          .status(404)
+          .json({
+            message: "Report delivery subscription not found",
+            code: "REPORT_SUBSCRIPTION_NOT_FOUND",
+          });
       }
 
       const runs = await readOptionalReportDeliveryStorage(
@@ -206,7 +213,8 @@ export function registerReportDeliveryRoutes(app: Express) {
       const { companyId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const query = reportDeliverySchedulerHealthQuerySchema.parse(req.query);
       const [latestScan, recentScans] = await Promise.all([
@@ -234,7 +242,8 @@ export function registerReportDeliveryRoutes(app: Express) {
       const { companyId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const preferences = await readOptionalReportDeliveryStorage(
         "automation preferences",
@@ -254,11 +263,15 @@ export function registerReportDeliveryRoutes(app: Express) {
       const { companyId, persona } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       if (!isReportDeliveryPersona(persona)) {
         return res
           .status(400)
-          .json({ message: "persona must be owner, freelancer, or accountant" });
+          .json({
+            message: "persona must be owner, freelancer, or accountant",
+            code: "INVALID_PERSONA",
+          });
       }
 
       const body = reportDeliveryAutomationPreferenceSchema.parse(req.body);
@@ -281,10 +294,16 @@ export function registerReportDeliveryRoutes(app: Express) {
       const { companyId, subscriptionId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       if (!getReportDeliveryPlan(subscriptionId)) {
-        return res.status(404).json({ message: "Report delivery subscription not found" });
+        return res
+          .status(404)
+          .json({
+            message: "Report delivery subscription not found",
+            code: "REPORT_SUBSCRIPTION_NOT_FOUND",
+          });
       }
 
       const body = reportDeliverySettingsSchema.parse(req.body);
@@ -337,7 +356,8 @@ export function registerReportDeliveryRoutes(app: Express) {
       const { companyId, subscriptionId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const body = reportDeliveryQueueSchema.parse(req.body ?? {});
       const settings = await storage.getReportDeliverySubscriptionSettings(companyId);
@@ -349,11 +369,21 @@ export function registerReportDeliveryRoutes(app: Express) {
       });
 
       if (!delivery) {
-        return res.status(404).json({ message: "Report delivery subscription not found" });
+        return res
+          .status(404)
+          .json({
+            message: "Report delivery subscription not found",
+            code: "REPORT_SUBSCRIPTION_NOT_FOUND",
+          });
       }
 
       if (!delivery.plan.enabled) {
-        return res.status(409).json({ message: "Report delivery subscription is paused" });
+        return res
+          .status(409)
+          .json({
+            message: "Report delivery subscription is paused",
+            code: "REPORT_SUBSCRIPTION_PAUSED",
+          });
       }
 
       const latestRuns = await storage.getReportDeliveryRuns(companyId, {
@@ -368,6 +398,7 @@ export function registerReportDeliveryRoutes(app: Express) {
       if (handoffReview && !body.acknowledgeHandoffGaps) {
         return res.status(409).json({
           message: handoffReview.message,
+          code: "HANDOFF_REVIEW_REQUIRED",
           handoffReview,
         });
       }
@@ -404,14 +435,21 @@ export function registerReportDeliveryRoutes(app: Express) {
       const { companyId, runId } = req.params;
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const failedRun = await storage.getReportDeliveryRun(companyId, runId);
-      if (!failedRun) return res.status(404).json({ message: "Report delivery run not found" });
+      if (!failedRun)
+        return res
+          .status(404)
+          .json({ message: "Report delivery run not found", code: "REPORT_RUN_NOT_FOUND" });
       if (failedRun.status !== "failed" && failedRun.status !== "blocked") {
         return res
           .status(409)
-          .json({ message: "Only failed or blocked report delivery runs can be retried" });
+          .json({
+            message: "Only failed or blocked report delivery runs can be retried",
+            code: "REPORT_RUN_NOT_RETRYABLE",
+          });
       }
 
       const settings = await storage.getReportDeliverySubscriptionSettings(companyId);
@@ -424,15 +462,30 @@ export function registerReportDeliveryRoutes(app: Express) {
       });
 
       if (!delivery) {
-        return res.status(404).json({ message: "Report delivery subscription not found" });
+        return res
+          .status(404)
+          .json({
+            message: "Report delivery subscription not found",
+            code: "REPORT_SUBSCRIPTION_NOT_FOUND",
+          });
       }
 
       if (!delivery.plan.enabled) {
-        return res.status(409).json({ message: "Report delivery subscription is paused" });
+        return res
+          .status(409)
+          .json({
+            message: "Report delivery subscription is paused",
+            code: "REPORT_SUBSCRIPTION_PAUSED",
+          });
       }
 
       if (delivery.plan.status !== "ready") {
-        return res.status(409).json({ message: "Report delivery subscription needs setup" });
+        return res
+          .status(409)
+          .json({
+            message: "Report delivery subscription needs setup",
+            code: "REPORT_SUBSCRIPTION_NEEDS_SETUP",
+          });
       }
 
       // A manual retry supersedes the outbox's own retries of the old run (no double send).

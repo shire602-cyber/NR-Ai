@@ -11,7 +11,7 @@
  * postJournal (kind 'revaluation') for the revaluation and undo entries, reverseEntry for the
  * scheduled next-day reversal (linked via reversed_entry_id / reversed_by_entry_id).
  */
-import { journalMemo } from "@shared/journal-memo";
+import { type JournalLineKey, journalLine, journalMemo } from "@shared/journal-memo";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { storage } from "../../storage";
@@ -59,6 +59,7 @@ export interface RevaluationLine {
   debitFils: number;
   creditFils: number;
   description: string;
+  lineKey: JournalLineKey;
 }
 
 interface AccountRef {
@@ -74,14 +75,14 @@ const rowsOf = (r: unknown): Row[] => ((r as { rows?: Row[] }).rows ?? (r as Row
  * A/R and bank: a gain raises the asset → debit. A/P: a gain (cost fell) lowers the
  * liability → debit as well. Losses go to the credit side.
  */
-function line(acct: AccountRef, gainFils: number, description: string): RevaluationLine {
+function line(acct: AccountRef, gainFils: number, key: JournalLineKey): RevaluationLine {
   return {
     accountId: acct.id,
     accountCode: acct.code,
     accountName: acct.nameEn,
     debitFils: gainFils > 0 ? gainFils : 0,
     creditFils: gainFils < 0 ? -gainFils : 0,
-    description,
+    ...journalLine(key),
   };
 }
 
@@ -100,11 +101,11 @@ export function buildRevaluationLines(
   const { receivableFils, payableFils } = exposure.totals;
   if (receivableFils !== 0) {
     if (!accounts.ar) throw new DomainError("AR_ACCOUNT_MISSING", 422);
-    lines.push(line(accounts.ar, receivableFils, "Unrealised FX revaluation — A/R"));
+    lines.push(line(accounts.ar, receivableFils, "fxRevalAr"));
   }
   if (payableFils !== 0) {
     if (!accounts.ap) throw new DomainError("AP_ACCOUNT_MISSING", 422);
-    lines.push(line(accounts.ap, payableFils, "Unrealised FX revaluation — A/P"));
+    lines.push(line(accounts.ap, payableFils, "fxRevalAp"));
   }
   const byBank = new Map<string, number>();
   for (const i of exposure.items.filter((x) => x.kind === "bank" && x.accountId)) {
@@ -114,7 +115,7 @@ export function buildRevaluationLines(
     if (gainFils === 0) continue;
     const acct = accounts.banks.get(accountId);
     if (!acct) throw new DomainError("BANK_ACCOUNT_MISSING", 422, { accountId });
-    lines.push(line(acct, gainFils, "Unrealised FX revaluation — bank"));
+    lines.push(line(acct, gainFils, "fxRevalBank"));
   }
   if (lines.length === 0) return [];
   const net = sumFils(lines.map((l) => l.debitFils - l.creditFils));
@@ -126,7 +127,7 @@ export function buildRevaluationLines(
       accountName: accounts.gain.nameEn,
       debitFils: 0,
       creditFils: net,
-      description: "Unrealised FX gain",
+      ...journalLine("fxUnrealisedGain"),
     });
   } else if (net < 0) {
     if (!accounts.loss) throw new DomainError("FX_LOSS_ACCOUNT_MISSING", 422);
@@ -136,7 +137,7 @@ export function buildRevaluationLines(
       accountName: accounts.loss.nameEn,
       debitFils: -net,
       creditFils: 0,
-      description: "Unrealised FX loss",
+      ...journalLine("fxUnrealisedLoss"),
     });
   }
   const dr = sumFils(lines.map((l) => l.debitFils));
@@ -266,7 +267,18 @@ type JeLine = {
   debitFils: number;
   creditFils: number;
   description: string;
+  lineKey?: string;
+  lineParams?: Record<string, string>;
   controlLeg: "any";
+};
+
+// An undo line reads "Undo — <original>"; each original key has its own key so Arabic reads whole.
+const UNDO_LINE_KEYS: Record<string, JournalLineKey> = {
+  fxRevalAr: "fxUndoRevalAr",
+  fxRevalAp: "fxUndoRevalAp",
+  fxRevalBank: "fxUndoRevalBank",
+  fxUnrealisedGain: "fxUndoUnrealisedGain",
+  fxUnrealisedLoss: "fxUndoUnrealisedLoss",
 };
 
 const toJeLines = (lines: RevaluationLine[], flip = false, prefix = ""): JeLine[] =>
@@ -277,6 +289,7 @@ const toJeLines = (lines: RevaluationLine[], flip = false, prefix = ""): JeLine[
       debitFils: flip ? l.creditFils : l.debitFils,
       creditFils: flip ? l.debitFils : l.creditFils,
       description: `${prefix}${l.description}`.slice(0, 255),
+      lineKey: l.lineKey,
       controlLeg: "any",
     }));
 
@@ -562,11 +575,14 @@ export async function undoRevaluation(companyId: string, revaluationId: string, 
               debit: unknown;
               credit: unknown;
               description: string | null;
+              lineKey?: string | null;
             }) => ({
               accountId: l.accountId,
               debitFils: toFils(String(l.credit ?? 0)),
               creditFils: toFils(String(l.debit ?? 0)),
-              description: `Undo — ${l.description ?? ""}`.slice(0, 255),
+              ...(l.lineKey && UNDO_LINE_KEYS[l.lineKey]
+                ? journalLine(UNDO_LINE_KEYS[l.lineKey], {}, 255)
+                : { description: `Undo — ${l.description ?? ""}`.slice(0, 255) }),
               controlLeg: "any" as const,
             })
           )

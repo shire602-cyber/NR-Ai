@@ -9,7 +9,7 @@
  *     go-live date is refused (INTEGRATE-H, N4 residual): it would have no GL side.
  *   - VAT groups (Art. 14): the representative files one return for all members.
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import { and, eq, sql } from "drizzle-orm";
 import type { Request } from "express";
 import { db, pool } from "../db";
@@ -209,12 +209,12 @@ export async function createBadDebtReliefClaim(input: {
             accountId: output,
             debitFils: vatBase,
             systemVat: true,
-            description: `Output VAT relief - ${inv.number}`,
+            ...journalLine("vatReliefOutput", { ref: inv.number }),
           },
           {
             accountId: expense.id,
             creditFils: vatBase,
-            description: `VAT recovered on bad debt - ${inv.number}`,
+            ...journalLine("vatReliefRecovered", { ref: inv.number }),
           },
         ],
       },

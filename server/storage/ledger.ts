@@ -211,6 +211,8 @@ export class LedgerStorage extends ReportDeliveryStorage {
         debit: journalLines.debit,
         credit: journalLines.credit,
         lineDescription: journalLines.description,
+        lineKey: journalLines.lineKey,
+        lineParams: journalLines.lineParams,
         entryId: journalEntries.id,
         entryNumber: journalEntries.entryNumber,
         date: journalEntries.date,
@@ -280,6 +282,9 @@ export class LedgerStorage extends ReportDeliveryStorage {
         date: line.date,
         entryNumber: line.entryNumber,
         description: line.lineDescription || line.memo || "",
+        // The stored key of the line's own description (null when the row shows the entry memo).
+        lineKey: line.lineDescription ? line.lineKey : null,
+        lineParams: line.lineDescription ? line.lineParams : null,
         debit,
         credit,
         runningBalance,

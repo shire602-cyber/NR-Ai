@@ -221,10 +221,11 @@ export function registerAccountRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       if (!(await storage.hasCompanyAccess(req.user!.id, companyId))) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const company = await storage.getCompany(companyId);
-      if (!company) return res.status(404).json({ message: "Company not found" });
+      if (!company)
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       res.json(vatBoxMap(company));
     })
   );
@@ -245,7 +246,7 @@ export function registerAccountRoutes(app: Express) {
       // Verify company access
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const accounts = await storage.getAccountsByCompanyId(companyId);
@@ -266,7 +267,7 @@ export function registerAccountRoutes(app: Express) {
       // Verify company access
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const body = parsedBody<CreateAccountBody>(req);
@@ -321,7 +322,7 @@ export function registerAccountRoutes(app: Express) {
       // Find which of the user's companies owns this account.
       const account = await findAccountForUser(userId, id);
       if (!account) {
-        return res.status(404).json({ message: "Account not found" });
+        return res.status(404).json({ message: "Account not found", code: "ACCOUNT_NOT_FOUND" });
       }
 
       // System and control accounts are wired into posting logic and the sub-ledger ties: their
@@ -336,6 +337,7 @@ export function registerAccountRoutes(app: Express) {
         if (hasTransactions) {
           return res.status(422).json({
             message: "Cannot change account type — account has existing transactions.",
+            code: "ACCOUNT_TYPE_LOCKED",
           });
         }
       }
@@ -399,7 +401,7 @@ export function registerAccountRoutes(app: Express) {
 
       const account = await findAccountForUser(userId, id);
       if (!account) {
-        return res.status(404).json({ message: "Account not found" });
+        return res.status(404).json({ message: "Account not found", code: "ACCOUNT_NOT_FOUND" });
       }
 
       // System accounts cannot be archived (pre-check for better error message)
@@ -407,6 +409,7 @@ export function registerAccountRoutes(app: Express) {
         return res.status(409).json({
           message:
             "System accounts cannot be archived. These are essential for proper bookkeeping.",
+          code: "SYSTEM_ACCOUNT_LOCKED",
         });
       }
 
@@ -430,6 +433,7 @@ export function registerAccountRoutes(app: Express) {
           return res.status(409).json({
             message:
               "System accounts cannot be archived. These are essential for proper bookkeeping.",
+            code: "SYSTEM_ACCOUNT_LOCKED",
           });
         }
         throw archiveError;
@@ -449,7 +453,7 @@ export function registerAccountRoutes(app: Express) {
 
       const account = await findAccountForUser(userId, id);
       if (!account) {
-        return res.status(404).json({ message: "Account not found" });
+        return res.status(404).json({ message: "Account not found", code: "ACCOUNT_NOT_FOUND" });
       }
 
       const unarchivedAccount = await storage.updateAccount(id, account.companyId, {
@@ -482,13 +486,14 @@ export function registerAccountRoutes(app: Express) {
 
       const account = await findAccountForUser(userId, id);
       if (!account) {
-        return res.status(404).json({ message: "Account not found" });
+        return res.status(404).json({ message: "Account not found", code: "ACCOUNT_NOT_FOUND" });
       }
 
       // System accounts cannot be deleted
       if (account.isSystemAccount) {
         return res.status(400).json({
           message: "System accounts cannot be deleted. You can archive them instead if needed.",
+          code: "SYSTEM_ACCOUNT_LOCKED",
         });
       }
 
@@ -498,6 +503,7 @@ export function registerAccountRoutes(app: Express) {
         return res.status(400).json({
           message:
             "Cannot delete account with existing transactions. Please archive the account instead, or remove all journal entries first.",
+          code: "ACCOUNT_HAS_TRANSACTIONS",
         });
       }
 
@@ -538,7 +544,7 @@ export function registerAccountRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const { dateStart, dateEnd } = req.query;
@@ -568,7 +574,7 @@ export function registerAccountRoutes(app: Express) {
 
       const account = await findAccountForUser(userId, id);
       if (!account) {
-        return res.status(404).json({ message: "Account not found" });
+        return res.status(404).json({ message: "Account not found", code: "ACCOUNT_NOT_FOUND" });
       }
 
       const { dateStart, dateEnd, search, limit, offset } = req.query;

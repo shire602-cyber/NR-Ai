@@ -447,11 +447,19 @@ export function useReportsComparisonsAndClose({
           entryId: entry.id,
           entryNumber: entry.entryNumber,
           date: entry.date,
-          memo: line.memo || entry.memo || "",
-          // The stored key describes the entry memo only; a line with its own description is
-          // localised by pattern instead.
-          memoKey: line.memo && line.memo !== entry.memo ? null : (entry.memoKey ?? null),
-          memoParams: line.memo && line.memo !== entry.memo ? null : (entry.memoParams ?? null),
+          // The line's own description when it has one (system lines carry a stored key), else
+          // the entry memo with the entry's key.
+          memo: line.description || line.memo || entry.memo || "",
+          memoKey:
+            (line.description || line.memo) && (line.description || line.memo) !== entry.memo
+              ? null
+              : (entry.memoKey ?? null),
+          memoParams:
+            (line.description || line.memo) && (line.description || line.memo) !== entry.memo
+              ? null
+              : (entry.memoParams ?? null),
+          lineKey: line.description ? (line.lineKey ?? null) : null,
+          lineParams: line.description ? (line.lineParams ?? null) : null,
           source: journalSourceLabel(entry.source),
           accountId: line.accountId,
           accountCode: line.account?.code || "",

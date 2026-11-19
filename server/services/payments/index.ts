@@ -9,7 +9,7 @@
  * With no live/sandbox provider nothing is offered: paymentsAvailability() reports
  * requires_external and the UI shows no Pay button.
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import crypto from "crypto";
 import { and, desc, eq, gt, inArray } from "drizzle-orm";
 import { db, pool } from "../../db";
@@ -572,11 +572,11 @@ async function applyPaidEvent(
           sourceId: link.id,
           idempotencyKey: `gateway_fee:${link.id}`,
           lines: [
-            { accountId: chargesId, debitFils: feeFils, description: "Gateway processing fee" },
+            { accountId: chargesId, debitFils: feeFils, ...journalLine("gatewayFeeLine") },
             {
               accountId: depositAccountId,
               creditFils: feeFils,
-              description: "Gateway processing fee",
+              ...journalLine("gatewayFeeLine"),
             },
           ],
         },

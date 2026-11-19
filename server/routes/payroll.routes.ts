@@ -1194,16 +1194,19 @@ export function registerPayrollRoutes(app: Express) {
       const { companyId } = req.params;
       const userId = actorOf(req).id;
       if (!(await storage.hasCompanyAccess(userId, companyId))) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const { employeeId, terminationDate } = req.body as GratuityCalculatorBody;
       const employee = await q1<Row>("SELECT * FROM employees WHERE id = $1 AND company_id = $2", [
         employeeId,
         companyId,
       ]);
-      if (!employee) return res.status(404).json({ message: "Employee not found" });
+      if (!employee)
+        return res.status(404).json({ message: "Employee not found", code: "EMPLOYEE_NOT_FOUND" });
       if (!employee.join_date)
-        return res.status(400).json({ message: "Employee join date is not set" });
+        return res
+          .status(400)
+          .json({ message: "Employee join date is not set", code: "JOIN_DATE_REQUIRED" });
 
       const joinDate = new Date(employee.join_date as string);
       const endDate = terminationDate ? new Date(terminationDate) : new Date();

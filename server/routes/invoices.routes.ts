@@ -382,7 +382,8 @@ export function registerInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const invoice = await findInvoiceForUser(userOf(req), req.params.id);
-      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      if (!invoice)
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
       const s = await invoiceSettlement(db, invoice.id);
       const totalFils = toFils(invoice.total, { rounding: "halfUp" });
@@ -570,7 +571,8 @@ export function registerInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const invoice = await findInvoiceForUser(userOf(req), req.params.id);
-      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      if (!invoice)
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       if (!isIssuedStatus(invoice.status)) {
         return res.status(400).json({ message: "No draft entries to post", code: "NOT_ISSUED" });
       }
@@ -589,7 +591,8 @@ export function registerInvoiceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const userId = userOf(req);
       const invoice = await findInvoiceForUser(userId, req.params.id);
-      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      if (!invoice)
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       const body = validated<UpdateInvoiceInput>(req);
 
       if (invoice.status !== "draft") {
@@ -761,7 +764,8 @@ export function registerInvoiceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const userId = userOf(req);
       const invoice = await findInvoiceForUser(userId, req.params.id);
-      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      if (!invoice)
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       if (invoice.status !== "draft") {
         // Issued tax invoices keep the five-year retention rule and are voided, never deleted.
         assertRetentionExpired(
@@ -812,7 +816,8 @@ export function registerInvoiceRoutes(app: Express) {
       const userId = userOf(req);
       const { status, reason } = req.body as z.output<typeof invoiceStatusSchema>;
       const invoice = await findInvoiceForUser(userId, req.params.id);
-      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      if (!invoice)
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       const oldStatus = invoice.status;
 
       if (status === "paid" || status === "partial") {
@@ -921,7 +926,8 @@ export function registerInvoiceRoutes(app: Express) {
       const { companyId, invoiceId } = req.params;
       await assertCompanyAccess(req, companyId);
       const invoice = await storage.getInvoice(invoiceId, companyId);
-      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      if (!invoice)
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       res.json(await storage.getInvoicePaymentsByInvoiceId(invoiceId));
     })
   );
@@ -940,7 +946,8 @@ export function registerInvoiceRoutes(app: Express) {
         ? toDate(body.date)
         : toDate(new Date().toISOString().slice(0, 10));
       const invoice = await storage.getInvoice(invoiceId, companyId);
-      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      if (!invoice)
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       await assertPeriodNotLocked(companyId, paymentDate);
       const amount = Number(fromFils(body.amount));
       const result = await recordInvoicePayment({
@@ -996,7 +1003,8 @@ export function registerInvoiceRoutes(app: Express) {
       await assertCompanyAccess(req, companyId);
       const body = validated<z.output<typeof invoiceWriteOffSchema>>(req);
       const invoice = await storage.getInvoice(invoiceId, companyId);
-      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      if (!invoice)
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       await assertPeriodNotLocked(companyId, toDate(body.date));
       assertNotFutureDate(toDate(body.date));
       const result = await writeOffInvoice({
@@ -1039,7 +1047,8 @@ export function registerInvoiceRoutes(app: Express) {
       await assertCompanyAccess(req, companyId);
       const body = validated<z.output<typeof invoiceWriteOffReinstateSchema>>(req);
       const invoice = await storage.getInvoice(invoiceId, companyId);
-      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      if (!invoice)
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       await assertPeriodNotLocked(companyId, toDate(body.date));
       const result = await reinstateWriteOffs({
         companyId,
@@ -1128,7 +1137,8 @@ export function registerInvoiceRoutes(app: Express) {
       await assertCompanyAccess(req, companyId);
       const body = validated<z.output<typeof creditNoteRequestSchema>>(req);
       const original = await storage.getInvoice(invoiceId, companyId);
-      if (!original) return res.status(404).json({ message: "Invoice not found" });
+      if (!original)
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       const cnDate = body.date ?? new Date().toISOString().slice(0, 10);
       await assertPeriodNotLocked(companyId, toDate(cnDate));
       const lines = body.lines
@@ -1187,7 +1197,8 @@ export function registerInvoiceRoutes(app: Express) {
       await assertCompanyAccess(req, companyId);
       const body = validated<z.output<typeof debitNoteRequestSchema>>(req);
       const original = await storage.getInvoice(invoiceId, companyId);
-      if (!original) return res.status(404).json({ message: "Invoice not found" });
+      if (!original)
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       if (original.invoiceType !== "invoice" || !isIssuedStatus(original.status)) {
         throw new DomainError(
           "INVOICE_NOT_ISSUED",
@@ -1266,11 +1277,12 @@ export function registerInvoiceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const invoice = await findInvoiceForUser(userOf(req), req.params.id);
       if (!invoice || invoice.invoiceType === "credit_note") {
-        return res.status(404).json({ message: "Invoice not found" });
+        return res.status(404).json({ message: "Invoice not found", code: "INVOICE_NOT_FOUND" });
       }
       const lines = await storage.getInvoiceLinesByInvoiceId(invoice.id);
       const company = await storage.getCompany(invoice.companyId);
-      if (!company) return res.status(404).json({ message: "Company not found" });
+      if (!company)
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       const pdf = await generateDeliveryNotePDF(invoice, lines, company);
       res.set({
         "Content-Type": "application/pdf",

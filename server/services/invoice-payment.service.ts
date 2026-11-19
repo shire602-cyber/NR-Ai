@@ -14,7 +14,7 @@
 // A-B1 (kept): the old Stripe helpers marked invoices paid with a plain column
 // write and no journal. Online payment, when built, must call this service.
 
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
@@ -453,15 +453,16 @@ async function lockCredit(
 function fxLine(
   diffBase: number,
   fxAcc: { gain: string; loss: string },
-  label: string
+  kind: "creditApplied" | "refundDeposit" | "refundCredit",
+  params: Record<string, string>
 ): PostJournalLineInput[] {
   if (diffBase > 0)
     return [
-      { accountId: fxAcc.gain, creditFils: diffBase, description: `${label} — realised FX gain` },
+      { accountId: fxAcc.gain, creditFils: diffBase, ...journalLine(`${kind}FxGain`, params) },
     ];
   if (diffBase < 0)
     return [
-      { accountId: fxAcc.loss, debitFils: -diffBase, description: `${label} — realised FX loss` },
+      { accountId: fxAcc.loss, debitFils: -diffBase, ...journalLine(`${kind}FxLoss`, params) },
     ];
   return [];
 }
@@ -529,7 +530,7 @@ export async function applyCustomerCredit(args: {
     const ar = await getArAccount(tx, args.companyId);
     const foreign = credit.currency.toUpperCase() !== baseCurrency;
     const fxAcc = liabBase !== arBase ? await getFxAccounts(tx, args.companyId) : null;
-    const label = `Credit applied to ${invoice.number}`;
+    const labelParams = { invoice: invoice.number };
     // A4 (M1): a customer deposit carried VAT on receipt; applying it to the invoice (which
     // charges VAT in full) reverses that share from 2020 so the supply's VAT is declared once.
     const isDeposit = credit.sourceType === "deposit";
@@ -538,7 +539,7 @@ export async function applyCustomerCredit(args: {
           tx,
           credit,
           args.amountFils,
-          `Deposit applied to ${invoice.number}`,
+          { kind: "depositApplied", params: labelParams },
           args.date
         )
       : null;
@@ -549,7 +550,7 @@ export async function applyCustomerCredit(args: {
             {
               accountId: credit.liabilityAccountId,
               debitFils: liabBase,
-              description: label,
+              ...journalLine("creditApplied", labelParams),
               ...(foreign
                 ? {
                     foreignCurrency: credit.currency,
@@ -563,7 +564,7 @@ export async function applyCustomerCredit(args: {
         accountId: ar,
         creditFils: arBase,
         controlLeg: "receivables",
-        description: label,
+        ...journalLine("creditApplied", labelParams),
         ...(foreign
           ? {
               foreignCurrency: credit.currency,
@@ -573,7 +574,7 @@ export async function applyCustomerCredit(args: {
           : {}),
       },
       // Extinguishing a larger liability than the receivable cleared is a gain.
-      ...(fxAcc ? fxLine(liabBase - arBase, fxAcc, label) : []),
+      ...(fxAcc ? fxLine(liabBase - arBase, fxAcc, "creditApplied", labelParams) : []),
     ];
     const [alloc] = await tx
       .insert(customerCreditAllocations)
@@ -669,12 +670,17 @@ export async function refundCustomerCredit(args: {
     const cashBase = leg.cashBaseFils;
     const fxAcc = liabBase !== cashBase ? await getFxAccounts(tx, args.companyId) : null;
     const isDeposit = credit.sourceType === "deposit";
-    const label = isDeposit
-      ? `Refund of customer deposit (${credit.customerName})`
-      : `Refund of customer credit (${credit.customerName})`;
+    const labelKind = isDeposit ? "refundDeposit" : "refundCredit";
+    const labelParams = { party: credit.customerName };
     // A4 (M1): refunding an advance reverses its share of the VAT declared on receipt.
     const deposit = isDeposit
-      ? await depositConsumptionLines(tx, credit, args.amountFils, label, args.date)
+      ? await depositConsumptionLines(
+          tx,
+          credit,
+          args.amountFils,
+          { kind: "refundDeposit", params: labelParams },
+          args.date
+        )
       : null;
     const lines: PostJournalLineInput[] = [
       ...(deposit
@@ -683,7 +689,7 @@ export async function refundCustomerCredit(args: {
             {
               accountId: credit.liabilityAccountId,
               debitFils: liabBase,
-              description: label,
+              ...journalLine(labelKind, labelParams),
               ...(foreign
                 ? {
                     foreignCurrency: credit.currency,
@@ -696,7 +702,7 @@ export async function refundCustomerCredit(args: {
       {
         accountId: args.paymentAccountId,
         creditFils: cashBase,
-        description: label,
+        ...journalLine(labelKind, labelParams),
         ...(leg.tag
           ? {
               foreignCurrency: leg.tag.foreignCurrency,
@@ -706,7 +712,7 @@ export async function refundCustomerCredit(args: {
           : {}),
       },
       // Paying out more base than the liability carried is a loss, less a gain.
-      ...(fxAcc ? fxLine(liabBase - cashBase, fxAcc, label) : []),
+      ...(fxAcc ? fxLine(liabBase - cashBase, fxAcc, labelKind, labelParams) : []),
     ];
     const [alloc] = await tx
       .insert(customerCreditAllocations)
@@ -868,7 +874,7 @@ export async function writeOffInvoice(input: WriteOffInput) {
     const fromAllowance = allowanceAcct
       ? Math.min(base, Math.max(0, await allowanceFilsInTx(tx, input.companyId, input.date)))
       : 0;
-    const label = `Bad debt written off - ${invoice.number}`;
+    const writeOffParams = { invoice: invoice.number };
     const [row] = await tx
       .insert(invoicePayments)
       .values({
@@ -889,17 +895,21 @@ export async function writeOffInvoice(input: WriteOffInput) {
       lines.push({
         accountId: allowanceAcct!.id,
         debitFils: fromAllowance,
-        description: `${label} (allowance used)`,
+        ...journalLine("badDebtWriteOffAllowanceUsed", writeOffParams),
       });
     }
     if (base - fromAllowance > 0) {
-      lines.push({ accountId: expense.id, debitFils: base - fromAllowance, description: label });
+      lines.push({
+        accountId: expense.id,
+        debitFils: base - fromAllowance,
+        ...journalLine("badDebtWriteOff", writeOffParams),
+      });
     }
     lines.push({
       accountId: ar,
       creditFils: base,
       controlLeg: "receivables",
-      description: label,
+      ...journalLine("badDebtWriteOff", writeOffParams),
       ...(foreign
         ? {
             foreignCurrency: documentCurrency(invoice.currency, baseCurrency),
@@ -1030,10 +1040,7 @@ export async function setDoubtfulDebtAllowance(input: {
         "The allowance already has this balance."
       );
     }
-    const label =
-      delta > 0
-        ? "Increase in allowance for doubtful debts"
-        : "Release of allowance for doubtful debts";
+    const allowanceLine = journalLine(delta > 0 ? "allowanceIncreaseLine" : "allowanceReleaseLine");
     const memoFields = journalMemo(
       delta > 0
         ? input.memo
@@ -1055,12 +1062,12 @@ export async function setDoubtfulDebtAllowance(input: {
         lines:
           delta > 0
             ? [
-                { accountId: expense.id, debitFils: delta, description: label },
-                { accountId: allowance.id, creditFils: delta, description: label },
+                { accountId: expense.id, debitFils: delta, ...allowanceLine },
+                { accountId: allowance.id, creditFils: delta, ...allowanceLine },
               ]
             : [
-                { accountId: allowance.id, debitFils: -delta, description: label },
-                { accountId: expense.id, creditFils: -delta, description: label },
+                { accountId: allowance.id, debitFils: -delta, ...allowanceLine },
+                { accountId: expense.id, creditFils: -delta, ...allowanceLine },
               ],
       },
       { actorId: input.userId, tx }

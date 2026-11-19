@@ -28,7 +28,7 @@
  * and the register's proceeds (and output VAT) go up by the debit note. Voiding the debit note
  * voids that entry and restores the register (onDisposalCreditVoided serves both).
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import { sql } from "drizzle-orm";
 import { fromFils, toFils } from "../../../shared/money";
 import { postJournal, voidEntry, type LedgerTx, type PostJournalLineInput } from "../../ledger";
@@ -122,21 +122,21 @@ export async function onDisposalInvoiceCredited(
     jl.push({
       accountId: await ensureAccountByCode(tx, args.companyId, GAIN),
       debitFils: gainPart,
-      description: `Disposal proceeds reduced by ${ref} - ${asset.asset_name}`,
+      ...journalLine("disposalProceedsReduced", { ref, asset: asset.asset_name }),
     });
   }
   if (lossPart > 0) {
     jl.push({
       accountId: await ensureAccountByCode(tx, args.companyId, LOSS),
       debitFils: lossPart,
-      description: `Loss on disposal increased by ${ref} - ${asset.asset_name}`,
+      ...journalLine("disposalLossIncreased", { ref, asset: asset.asset_name }),
     });
   }
   for (const l of sales) {
     jl.push({
       accountId: l.accountId,
       creditFils: l.fils,
-      description: `${ref} on a disposal invoice moved to the disposal result`,
+      ...journalLine("disposalInvoiceMoved", { ref }),
     });
   }
   const { entry } = await postJournal(
@@ -213,20 +213,20 @@ export async function onDisposalInvoiceDebited(
   const jl: PostJournalLineInput[] = sales.map((l) => ({
     accountId: l.accountId,
     debitFils: l.fils,
-    description: `${ref} on a disposal invoice moved to the disposal result`,
+    ...journalLine("disposalInvoiceMoved", { ref }),
   }));
   if (lossPart > 0) {
     jl.push({
       accountId: await ensureAccountByCode(tx, args.companyId, LOSS),
       creditFils: lossPart,
-      description: `Loss on disposal reduced by ${ref} - ${asset.asset_name}`,
+      ...journalLine("disposalLossReduced", { ref, asset: asset.asset_name }),
     });
   }
   if (gainPart > 0) {
     jl.push({
       accountId: await ensureAccountByCode(tx, args.companyId, GAIN),
       creditFils: gainPart,
-      description: `Disposal proceeds increased by ${ref} - ${asset.asset_name}`,
+      ...journalLine("disposalProceedsIncreased", { ref, asset: asset.asset_name }),
     });
   }
   const { entry } = await postJournal(

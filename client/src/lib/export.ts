@@ -10,7 +10,7 @@ import { currentExportLocale, localizeExportSheets } from "./export-localize";
 import { localizeServerText } from "@shared/server-copy";
 import { budgetCategoryLabel } from "./budget-categories";
 import { activityActionLabel, activityEntityLabel, activitySentence } from "./activity-log-labels";
-import { localizeJournalMemo } from "./journal-memo";
+import { localizeJournalLine } from "./journal-memo";
 
 // Shape of one row in the OCR-format Excel export. Matches the server-side
 // schema in `server/services/excel-export.service.ts` so the request body and
@@ -1287,10 +1287,10 @@ export function prepareLedgerReportsForExport(report: any): ExportData[] {
           accountCode: line.accountCode || "",
           accountName: line.accountName || "",
           accountType: line.accountType || "",
-          memo: localizeJournalMemo(
+          memo: localizeJournalLine(
             catalogs[currentExportLocale()],
-            line.memo,
             currentExportLocale(),
+            { description: line.memo, lineKey: line.lineKey, lineParams: line.lineParams },
             line
           ),
           source: line.source || "Unknown",

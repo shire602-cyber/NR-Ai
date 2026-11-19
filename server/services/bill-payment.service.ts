@@ -11,7 +11,7 @@
  *   "bills.recordPayment"        → recordBillPayment
  *   "bills.createDraftFromInbound" → createDraftFromInbound
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { eq } from "drizzle-orm";
 import { db, pool } from "../db";
@@ -947,7 +947,7 @@ export async function recordBillPayment(
         accountId: ap.id,
         debitFils: apBase,
         controlLeg: "payables",
-        description: `Settle A/P - Bill ${billRef} - ${bill.vendor_name}`.slice(0, 255),
+        ...journalLine("billSettleAp", { ref: billRef, party: bill.vendor_name }, 255),
         ...(foreign
           ? {
               foreignCurrency: currency,
@@ -959,7 +959,7 @@ export async function recordBillPayment(
       {
         accountId: cash.id,
         creditFils: cashBase,
-        description: `Payment to ${bill.vendor_name} - Bill ${billRef}`.slice(0, 255),
+        ...journalLine("billPaymentTo", { party: bill.vendor_name, ref: billRef }, 255),
         ...(leg.tag
           ? {
               foreignCurrency: leg.tag.foreignCurrency,
@@ -973,13 +973,13 @@ export async function recordBillPayment(
       lines.push({
         accountId: fx.loss.id,
         debitFils: fxDiff,
-        description: `Realised FX loss - Bill ${billRef}`,
+        ...journalLine("billFxLoss", { ref: billRef }),
       });
     } else if (fxDiff < 0 && fx) {
       lines.push({
         accountId: fx.gain.id,
         creditFils: -fxDiff,
-        description: `Realised FX gain - Bill ${billRef}`,
+        ...journalLine("billFxGain", { ref: billRef }),
       });
     }
     const { entry } = await postJournal(
@@ -1206,13 +1206,13 @@ export async function createPrepayment(args: {
           {
             accountId: advances.id,
             debitFils: baseFils,
-            description: `Advance - ${vendor.vendorName}`,
+            ...journalLine("vendorAdvance", { party: vendor.vendorName }),
             ...(foreign ? { ...fxPart, foreignDebit: fromFils(input.amount) } : {}),
           },
           {
             accountId: cash.id,
             creditFils: baseFils,
-            description: `Advance paid - ${vendor.vendorName}`,
+            ...journalLine("vendorAdvancePaid", { party: vendor.vendorName }),
             ...(leg.tag
               ? {
                   foreignCurrency: leg.tag.foreignCurrency,
@@ -1299,18 +1299,26 @@ export async function applyPrepayment(args: {
         accountId: ap.id,
         debitFils: apBase,
         controlLeg: "payables",
-        description: `Prepayment applied - ${bill.vendor_name}`,
+        ...journalLine("prepaymentAppliedLine", { party: bill.vendor_name }),
       },
       {
         accountId: advances.id,
         creditFils: advBase,
-        description: `Prepayment applied - ${bill.vendor_name}`,
+        ...journalLine("prepaymentAppliedLine", { party: bill.vendor_name }),
       },
     ];
     if (fxDiff > 0)
-      lines.push({ accountId: fx.loss.id, debitFils: fxDiff, description: "Realised FX loss" });
+      lines.push({
+        accountId: fx.loss.id,
+        debitFils: fxDiff,
+        ...journalLine("realisedFxLoss"),
+      });
     if (fxDiff < 0)
-      lines.push({ accountId: fx.gain.id, creditFils: -fxDiff, description: "Realised FX gain" });
+      lines.push({
+        accountId: fx.gain.id,
+        creditFils: -fxDiff,
+        ...journalLine("realisedFxGain"),
+      });
     await postJournal(
       {
         companyId,
@@ -1474,7 +1482,7 @@ export async function createDebitNote(args: {
     let credits: PostJournalLineInput[] = lineCalcs.map((l, i) => ({
       accountId: l.accountId,
       creditFils: toBase(l.amount + vatPlan.lineCostFils[i], rate, foreign),
-      description: `Debit note ${number} - ${l.description}`.slice(0, 255),
+      ...journalLine("debitNoteLine", { ref: number, text: l.description }, 255),
     }));
     // A2 (M4): returned stock items leave inventory at cost (variance to COGS), not expense.
     const returned = lineCalcs.map((l, index) => ({ l, index })).filter(({ l }) => !!l.product_id);
@@ -1503,7 +1511,7 @@ export async function createDebitNote(args: {
         accountId: inputVat.id,
         creditFils: recoverableBase,
         systemVat: true,
-        description: `Input VAT reversal - ${number}`,
+        ...journalLine("inputVatReversal", { ref: number }),
       });
     }
     // Reverse charge: the self-assessed output VAT falls with the consideration (Box 3).
@@ -1516,7 +1524,7 @@ export async function createDebitNote(args: {
               accountId: outputVat.id,
               debitFils: rcOutputBase,
               systemVat: true,
-              description: `Reverse-charge output VAT reversal - ${number}`,
+              ...journalLine("rcOutputVatReversal", { ref: number }),
             },
           ]
         : [];
@@ -1539,7 +1547,7 @@ export async function createDebitNote(args: {
             accountId: ap.id,
             debitFils: apDebit,
             controlLeg: "payables",
-            description: `A/P - debit note ${number}`,
+            ...journalLine("debitNotePayable", { ref: number }),
             ...(foreign
               ? { foreignCurrency: currency, foreignDebit: fromFils(total), exchangeRate: rate }
               : {}),

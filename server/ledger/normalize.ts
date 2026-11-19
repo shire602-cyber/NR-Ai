@@ -224,6 +224,12 @@ export function normalizeLine(
     debitFils: debit,
     creditFils: credit,
     description: line.description == null ? null : String(line.description),
+    ...(line.lineKey
+      ? {
+          lineKey: String(line.lineKey).slice(0, 80),
+          lineParams: line.lineParams ?? null,
+        }
+      : {}),
     costCenterId,
     foreignCurrency,
     foreignDebitFils: foreignDebit,

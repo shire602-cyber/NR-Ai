@@ -122,7 +122,7 @@ export function registerCreditNoteRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       if (!(await storage.hasCompanyAccess(userOf(req), companyId))) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const invoices = await storage.getInvoicesByCompanyId(companyId);
       const byId = new Map(invoices.map((invoice) => [invoice.id, invoice]));
@@ -160,7 +160,7 @@ export function registerCreditNoteRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
       if (!(await storage.hasCompanyAccess(userOf(req), companyId))) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
       const body = validated<z.output<typeof standaloneCreditNoteSchema>>(req);
       const original = await storage.getInvoice(body.invoiceId, companyId);
@@ -275,7 +275,8 @@ export function registerCreditNoteRoutes(app: Express) {
       await creditNoteForUser(userOf(req), req.params.id);
       const creditNote = (await getCanonicalCreditNoteWithLines(req.params.id))!;
       const company = await storage.getCompany(creditNote.companyId);
-      if (!company) return res.status(404).json({ message: "Company not found" });
+      if (!company)
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       const pdfBuffer = await generateCreditNotePDF(
         creditNote as unknown as Parameters<typeof generateCreditNotePDF>[0],
         creditNote.lines as unknown as Parameters<typeof generateCreditNotePDF>[1],

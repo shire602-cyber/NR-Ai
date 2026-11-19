@@ -33,7 +33,7 @@ const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 export function requireRole(...roles: string[]) {
   return async function (req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!req.user) {
-      res.status(401).json({ message: "Authentication required" });
+      res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
       return;
     }
 
@@ -43,7 +43,7 @@ export function requireRole(...roles: string[]) {
       return;
     }
     if (!companyId) {
-      res.status(400).json({ message: "Company context required" });
+      res.status(400).json({ message: "Company context required", code: "COMPANY_REQUIRED" });
       return;
     }
 
@@ -62,13 +62,16 @@ export function requireRole(...roles: string[]) {
       .limit(1);
 
     if (!membership) {
-      res.status(403).json({ message: "Not a member of this company" });
+      res
+        .status(403)
+        .json({ message: "Not a member of this company", code: "COMPANY_ACCESS_DENIED" });
       return;
     }
 
     if (!roles.includes(membership.role)) {
       res.status(403).json({
         message: `Role '${membership.role}' is not authorized. Required: ${roles.join(", ")}`,
+        code: "PERMISSION_DENIED",
       });
       return;
     }
@@ -89,11 +92,11 @@ export function requireRole(...roles: string[]) {
 export function requireNraAccess() {
   return function (req: Request, res: Response, next: NextFunction): void {
     if (!req.user) {
-      res.status(401).json({ message: "Authentication required" });
+      res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
       return;
     }
     if (!canAccessNraCenter(req.user)) {
-      res.status(403).json({ message: "NRA firm staff access required" });
+      res.status(403).json({ message: "NRA firm staff access required", code: "NR_FIRM_ONLY" });
       return;
     }
     if (
@@ -151,7 +154,7 @@ export function requireFirmAccess(): RequestHandler {
   return function (req: Request, res: Response, next: NextFunction): void {
     const user = req.user;
     if (!user) {
-      res.status(401).json({ message: "Authentication required" });
+      res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
       return;
     }
     if (isFirmRole(user.firmRole)) {
@@ -245,11 +248,11 @@ export function requireFirmAdmin() {
 export function requireFirmOwner() {
   return function (req: Request, res: Response, next: NextFunction): void {
     if (!req.user) {
-      res.status(401).json({ message: "Authentication required" });
+      res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
       return;
     }
     if (!hasFullNraScope(req.user)) {
-      res.status(403).json({ message: "Firm owner access required" });
+      res.status(403).json({ message: "Firm owner access required", code: "FIRM_ACCESS_REQUIRED" });
       return;
     }
     next();

@@ -1,4 +1,4 @@
-import { localizeJournalMemo } from "@/lib/journal-memo";
+import { localizeJournalLine } from "@/lib/journal-memo";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -73,6 +73,11 @@ interface LedgerEntry {
   journalEntryId: string;
   journalLineId: string;
   memo: string | null;
+  memoKey?: string | null;
+  memoParams?: Record<string, string> | null;
+  /** Stored key + params of the line's own system description (migration 0132). */
+  lineKey?: string | null;
+  lineParams?: Record<string, string> | null;
   source: string;
   status: string;
 }
@@ -160,6 +165,18 @@ export default function AccountLedger() {
   const totalPages = Math.ceil((ledger?.totalCount || 0) / entriesPerPage);
 
   const paginatedEntries = ledger?.entries || [];
+  // The line's own description (system lines by their stored key), else the entry memo.
+  const entryText = (entry: LedgerEntry) =>
+    localizeJournalLine(
+      t,
+      locale,
+      {
+        description: entry.description || entry.memo,
+        lineKey: entry.lineKey,
+        lineParams: entry.lineParams,
+      },
+      entry
+    );
 
   // R02-20: server-side Excel export of this account's ledger (numeric cells,
   // opening/closing balances) through the reporting kernel's general ledger.
@@ -167,7 +184,7 @@ export default function AccountLedger() {
     if (!accountId || !selectedCompanyId) return;
     setIsExporting(true);
     try {
-      const params = new URLSearchParams({ accountIds: accountId, format: "xlsx" });
+      const params = new URLSearchParams({ accountIds: accountId, format: "xlsx", lang: locale });
       if (dateRange.from) params.set("from", format(dateRange.from, "yyyy-MM-dd"));
       if (dateRange.to) params.set("to", format(dateRange.to, "yyyy-MM-dd"));
       const response = await fetch(
@@ -205,7 +222,7 @@ export default function AccountLedger() {
     const rows = exportEntries.map((entry) => [
       format(parseCalendarDate(entry.date), "yyyy-MM-dd"),
       entry.entryNumber,
-      entry.description || entry.memo || "",
+      entryText(entry),
       entry.debit.toFixed(2),
       entry.credit.toFixed(2),
       entry.runningBalance.toFixed(2),
@@ -581,9 +598,7 @@ export default function AccountLedger() {
                   </Link>
                 </TableCell>
                 <TableCell data-truncate="" data-cell="title">
-                  <span dir="auto">
-                    {localizeJournalMemo(t, entry.description || entry.memo, locale, entry) || "—"}
-                  </span>
+                  <span dir="auto">{entryText(entry) || "—"}</span>
                 </TableCell>
                 <TableCell data-numeric="">
                   {entry.debit > 0 ? (

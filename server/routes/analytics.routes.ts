@@ -104,13 +104,15 @@ export function registerAnalyticsRoutes(app: Express) {
       const { companyId, period: _period } = req.query;
 
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res.status(400).json({ message: "Company ID required", code: "COMPANY_REQUIRED" });
       }
 
       // Verify user access to company
       const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
       if (!companyUsers.some((cu) => cu.userId === userId)) {
-        return res.status(403).json({ message: "Access denied to this company" });
+        return res
+          .status(403)
+          .json({ message: "Access denied to this company", code: "COMPANY_ACCESS_DENIED" });
       }
 
       // Stored snapshot; rows from the pre-0112 fabricated model are regenerated on read.
@@ -153,7 +155,7 @@ export function registerAnalyticsRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, year, month, budgetId } = req.query;
       if (typeof companyId !== "string" || !companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res.status(400).json({ message: "Company ID required", code: "COMPANY_REQUIRED" });
       }
       await assertReportAccess(req, companyId);
       const fiscalYear = year ? Number(year) : undefined;
@@ -208,12 +210,12 @@ export function registerAnalyticsRoutes(app: Express) {
       const { companyId } = req.query;
 
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res.status(400).json({ message: "Company ID required", code: "COMPANY_REQUIRED" });
       }
 
       const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
       if (!companyUsers.some((cu) => cu.userId === userId)) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       // Get stored KPIs
@@ -230,7 +232,7 @@ export function registerAnalyticsRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.query;
       if (typeof companyId !== "string" || !companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res.status(400).json({ message: "Company ID required", code: "COMPANY_REQUIRED" });
       }
       await assertReportAccess(req, companyId);
       const today = uaeToday();

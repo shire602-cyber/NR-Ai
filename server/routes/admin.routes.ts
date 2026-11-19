@@ -201,6 +201,29 @@ export function registerAdminRoutes(app: Express): void {
     })
   );
 
+  // G4: companies the signed-in admin can store documents for. Uploading goes through the
+  // document vault, which needs company access (membership or NR firm-client access); a platform
+  // admin without it would be refused, so the Documents page offers only these companies.
+  router.get(
+    "/admin/documents/companies",
+    asyncHandler(async (req: Request, res: Response) => {
+      const user = req.user!;
+      const all = await storage.getAllCompanies();
+      const writable: typeof all = [];
+      const BATCH = 25;
+      for (let i = 0; i < all.length; i += BATCH) {
+        const batch = all.slice(i, i + BATCH);
+        const flags = await Promise.all(
+          batch.map((c) => storage.hasCompanyAccess(user.id, c.id, user.firmRole ?? null))
+        );
+        batch.forEach((c, j) => {
+          if (flags[j]) writable.push(c);
+        });
+      }
+      res.json(writable);
+    })
+  );
+
   // Update company (admin)
   router.patch(
     "/admin/companies/:companyId",

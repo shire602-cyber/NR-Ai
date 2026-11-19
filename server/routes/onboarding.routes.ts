@@ -163,12 +163,14 @@ export function registerOnboardingRoutes(app: Express) {
 
       const field = stepMap[step];
       if (!field) {
-        return res.status(400).json({ message: "Invalid step" });
+        return res.status(400).json({ message: "Invalid step", code: "INVALID_STEP" });
       }
 
       const existingOnboarding = await storage.getUserOnboarding(userId);
       if (!existingOnboarding) {
-        return res.status(404).json({ message: "Onboarding not found" });
+        return res
+          .status(404)
+          .json({ message: "Onboarding not found", code: "ONBOARDING_NOT_FOUND" });
       }
 
       const updatedData = {

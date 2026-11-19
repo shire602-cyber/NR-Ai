@@ -43,7 +43,7 @@ export function registerAIGLRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
       }
 
       let query = `
@@ -99,12 +99,12 @@ export function registerAIGLRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
       }
 
       const result = await processUserFeedback(id, "accept", userId, undefined, companyId);
       if (!result.success) {
-        return res.status(400).json({ message: result.message });
+        return res.status(400).json({ code: result.code, message: result.message });
       }
 
       res.json({ message: result.message });
@@ -128,12 +128,12 @@ export function registerAIGLRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
       }
 
       const result = await processUserFeedback(id, "reject", userId, undefined, companyId);
       if (!result.success) {
-        return res.status(400).json({ message: result.message });
+        return res.status(400).json({ code: result.code, message: result.message });
       }
 
       res.json({ message: result.message });
@@ -159,17 +159,19 @@ export function registerAIGLRoutes(app: Express) {
       const { accountId } = parsedBody<{ accountId: string }>(req);
 
       if (!accountId) {
-        return res.status(400).json({ message: "accountId is required" });
+        return res
+          .status(400)
+          .json({ code: "ACCOUNT_ID_REQUIRED", message: "accountId is required" });
       }
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
       }
 
       const result = await processUserFeedback(id, "correct", userId, accountId, companyId);
       if (!result.success) {
-        return res.status(400).json({ message: result.message });
+        return res.status(400).json({ code: result.code, message: result.message });
       }
 
       res.json({ message: result.message });
@@ -195,7 +197,7 @@ export function registerAIGLRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
       }
 
       log.info({ companyId, userId }, "Manual AI GL scan triggered");
@@ -239,7 +241,7 @@ export function registerAIGLRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
       }
 
       const stats = await getAIGLStats(companyId);
@@ -268,7 +270,7 @@ export function registerAIGLRoutes(app: Express) {
 
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
       }
 
       if (
@@ -277,6 +279,7 @@ export function registerAIGLRoutes(app: Express) {
         confidenceThreshold > 1.0
       ) {
         return res.status(400).json({
+          code: "INVALID_CONFIDENCE_THRESHOLD",
           message: "confidenceThreshold must be between 0.5 and 1.0",
         });
       }
