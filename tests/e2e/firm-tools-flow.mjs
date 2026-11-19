@@ -374,7 +374,9 @@ async function openScreen(ctx, url, opts) {
   if (phone)
     check(info.targets.length === 0, `${opts.name}: 44px tap targets`, info.targets.slice(0, 6));
   if (opts.lang === "ar") {
-    const english = classifyLines(info.lines, opts.allow || []).samples;
+    // Company names and e-mail addresses are seeded user data, not UI copy.
+    const copy = info.lines.filter((l) => !/LLC|L\.L\.C|@/.test(l));
+    const english = classifyLines(copy, opts.allow || []).samples;
     check(english.length === 0, `${opts.name}: no English text in Arabic`, english.slice(0, 6));
   }
   if (axeSource) {
