@@ -691,8 +691,6 @@ export const CLONE_SKIPPED_TABLES: Readonly<Record<string, string>> = {
   ecommerce_integrations: "store connections are credentials of the source company",
   einvoice_archive: "immutable legal archive of the source company's transmissions",
   tax_return_archive: "immutable legal archive of the source company's filings",
-  zatca_documents: "ZATCA hash chain belongs to the source company's EGS unit",
-  zatca_egs_units: "ZATCA device identity belongs to the source company",
   einvoice_documents: "transmission state belongs to the source company",
   company_report_delivery_artifacts:
     "delivery files of the source company's delivery log (runs are not cloned; S8)",
