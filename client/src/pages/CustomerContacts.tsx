@@ -659,7 +659,10 @@ export default function CustomerContacts() {
                     </div>
                     {portalSummary[contact.id] ? (
                       <div className="mt-1">
-                        <PortalStatusChip entry={portalSummary[contact.id]} contactId={contact.id} />
+                        <PortalStatusChip
+                          entry={portalSummary[contact.id]}
+                          contactId={contact.id}
+                        />
                       </div>
                     ) : null}
                     <p className="mt-1 truncate text-caption text-muted-foreground">
@@ -726,7 +729,10 @@ export default function CustomerContacts() {
                         <span dir="auto" className="truncate font-medium text-foreground">
                           {locale === "ar" && contact.nameAr ? contact.nameAr : contact.name}
                         </span>
-                        <PortalStatusChip entry={portalSummary[contact.id]} contactId={contact.id} />
+                        <PortalStatusChip
+                          entry={portalSummary[contact.id]}
+                          contactId={contact.id}
+                        />
                         {/* WQ5: one record, customer and/or supplier. */}
                         {contact.isSupplier && (
                           <Badge

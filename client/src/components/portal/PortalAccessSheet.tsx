@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Link2, Loader2, Mail, RotateCw, Send, UserRoundX, XCircle } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Link2,
+  Loader2,
+  Mail,
+  RotateCw,
+  Send,
+  UserRoundX,
+  XCircle,
+} from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -46,7 +56,13 @@ export interface PortalSheetContact {
 
 interface AccessData {
   contact: { id: string; email: string | null };
-  people: Array<{ id: string; name: string; email: string; since: string; lastSeenAt: string | null }>;
+  people: Array<{
+    id: string;
+    name: string;
+    email: string;
+    since: string;
+    lastSeenAt: string | null;
+  }>;
   invitations: Array<{
     id: string;
     email: string;
@@ -224,7 +240,8 @@ export function PortalAccessSheet({
   const preview = useMemo(() => {
     const en = {
       lang: "en",
-      text: formatMessage(t["portal.invite.previewSubjectEn"], { supplier: supplierName }),
+      // The English subject mirrors server/services/portal-invite-email.ts.
+      text: `${supplierName} invited you to view your invoices`, // i18n-ignore: the English email subject
     };
     const ar = {
       lang: "ar",
@@ -280,12 +297,19 @@ export function PortalAccessSheet({
               ) : (
                 <ul className="mt-2 divide-y divide-border rounded-lg border border-border">
                   {data!.people.map((p) => (
-                    <li key={p.id} className="flex items-center justify-between gap-3 p-3" data-testid={`pa-person-${p.id}`}>
+                    <li
+                      key={p.id}
+                      className="flex items-center justify-between gap-3 p-3"
+                      data-testid={`pa-person-${p.id}`}
+                    >
                       <span className="min-w-0">
                         <span className="block truncate text-small font-medium" dir="auto">
                           {p.name}
                         </span>
-                        <span className="block truncate text-caption text-muted-foreground" dir="ltr">
+                        <span
+                          className="block truncate text-caption text-muted-foreground"
+                          dir="ltr"
+                        >
                           {p.email}
                         </span>
                         <span className="block text-caption text-muted-foreground">
@@ -377,7 +401,9 @@ export function PortalAccessSheet({
                                 variant="ghost"
                                 size="sm"
                                 className="min-h-11 text-destructive hover:text-destructive"
-                                onClick={() => setConfirm({ kind: "revoke", id: inv.id, email: inv.email })}
+                                onClick={() =>
+                                  setConfirm({ kind: "revoke", id: inv.id, email: inv.email })
+                                }
                                 {...gate("documents.write")}
                                 data-testid={`pa-revoke-${inv.id}`}
                               >
@@ -415,7 +441,11 @@ export function PortalAccessSheet({
                     aria-label={t["portal.invite.copyLink"]}
                     data-testid="pa-copy-link"
                   >
-                    {copied ? <Check className="h-4 w-4" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />}
+                    {copied ? (
+                      <Check className="h-4 w-4" aria-hidden />
+                    ) : (
+                      <Copy className="h-4 w-4" aria-hidden />
+                    )}
                   </Button>
                 </div>
               </Alert>
@@ -467,8 +497,13 @@ export function PortalAccessSheet({
                   />
                 </div>
                 <fieldset>
-                  <legend className="text-small font-medium">{t["portal.invite.languageLabel"]}</legend>
-                  <div className="mt-1.5 inline-flex w-full rounded-md border border-border p-0.5 sm:w-auto" role="radiogroup">
+                  <legend className="text-small font-medium">
+                    {t["portal.invite.languageLabel"]}
+                  </legend>
+                  <div
+                    className="mt-1.5 inline-flex w-full rounded-md border border-border p-0.5 sm:w-auto"
+                    role="radiogroup"
+                  >
                     {langs.map((l) => (
                       <button
                         key={l.id}
@@ -478,7 +513,9 @@ export function PortalAccessSheet({
                         lang={l.lang}
                         onClick={() => setLanguage(l.id)}
                         className={`min-h-11 flex-1 rounded px-4 text-small font-medium sm:flex-none ${
-                          language === l.id ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                          language === l.id
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground"
                         }`}
                         data-testid={`pa-lang-${l.id}`}
                       >
@@ -519,7 +556,9 @@ export function PortalAccessSheet({
                     </p>
                   ))}
                   <p className="mt-0.5 text-caption text-muted-foreground">
-                    {formatMessage(t["portal.invite.previewExpiry"], { days: PORTAL_INVITE_TTL_DAYS })}
+                    {formatMessage(t["portal.invite.previewExpiry"], {
+                      days: PORTAL_INVITE_TTL_DAYS,
+                    })}
                   </p>
                 </div>
                 <Button
@@ -544,7 +583,9 @@ export function PortalAccessSheet({
               <h3 id="pa-share" className="text-small font-semibold">
                 {t["portal.access.shareLink"]}
               </h3>
-              <p className="mt-1 text-small text-muted-foreground">{t["portal.access.shareLinkHelp"]}</p>
+              <p className="mt-1 text-small text-muted-foreground">
+                {t["portal.access.shareLinkHelp"]}
+              </p>
               <Button
                 variant="outline"
                 className="mt-3 min-h-11"

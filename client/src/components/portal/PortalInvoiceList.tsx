@@ -44,6 +44,10 @@ const STATUS_TONE: Record<string, StatusTone> = {
   credit: "neutral",
 };
 
+interface Job {
+  (): Promise<boolean>;
+}
+
 type Filter = "all" | "unpaid" | "overdue" | "paid" | "credit";
 const FILTERS: Filter[] = ["all", "unpaid", "overdue", "paid", "credit"];
 
@@ -51,7 +55,9 @@ const matches = (inv: PortalInvoice, f: Filter): boolean =>
   f === "all"
     ? true
     : f === "unpaid"
-      ? inv.paymentStatus === "unpaid" || inv.paymentStatus === "partially_paid" || inv.paymentStatus === "overdue"
+      ? inv.paymentStatus === "unpaid" ||
+        inv.paymentStatus === "partially_paid" ||
+        inv.paymentStatus === "overdue"
       : f === "overdue"
         ? inv.paymentStatus === "overdue"
         : f === "paid"
@@ -102,7 +108,7 @@ export function PortalInvoiceList({
     return invoices.filter((i) => matches(i, filter) && (!q || i.number.toLowerCase().includes(q)));
   }, [invoices, filter, search]);
 
-  const run = async (key: string, job: () => Promise<boolean>) => {
+  const run = async (key: string, job: Job) => {
     setBusy(key);
     try {
       if (!(await job())) toast({ title: t["portal.list.downloadFailed"], variant: "destructive" });
@@ -139,7 +145,9 @@ export function PortalInvoiceList({
               aria-selected={filter === f}
               onClick={() => setFilter(f)}
               className={`flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-small font-medium ${
-                filter === f ? "bg-muted text-foreground" : "text-muted-foreground hover:bg-muted/60"
+                filter === f
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:bg-muted/60"
               }`}
               data-testid={`portal-filter-${f}`}
             >
@@ -224,11 +232,20 @@ export function PortalInvoiceList({
                           </span>
                         ) : null}
                       </TableCell>
-                      <TableCell data-nowrap="" data-cell="meta" data-keep="" className="text-muted-foreground">
+                      <TableCell
+                        data-nowrap=""
+                        data-cell="meta"
+                        data-keep=""
+                        className="text-muted-foreground"
+                      >
                         {inv.date ? <DateText value={inv.date} locale={locale} /> : "—"}
                       </TableCell>
                       <TableCell data-nowrap="" className="text-muted-foreground">
-                        {inv.dueDate && !isCredit ? <DateText value={inv.dueDate} locale={locale} /> : "—"}
+                        {inv.dueDate && !isCredit ? (
+                          <DateText value={inv.dueDate} locale={locale} />
+                        ) : (
+                          "—"
+                        )}
                       </TableCell>
                       <TableCell data-numeric="" data-nowrap="">
                         <Money

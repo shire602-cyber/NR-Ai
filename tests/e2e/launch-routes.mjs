@@ -207,10 +207,13 @@ export const ALL_CRAWL_SKIPPED = [
   "/client-portal/documents",
   "/client-portal/statements",
   "/client-portal/messages",
+  "/client-portal/account",
   "/auth/callback",
   "/verify-email",
   "/view/invoice/:token",
   "/portal/:token",
+  // STEP5: needs a live invitation token; the portal-invite e2e flow checks it in Arabic.
+  "/portal/join",
   "/portal/einvoicing-approve/:token",
   "/accounts",
   // Legacy redirect to /journal (the AI-drafts notice stored /journal-entries?status=draft).

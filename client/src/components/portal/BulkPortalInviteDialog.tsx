@@ -58,7 +58,9 @@ export function BulkPortalInviteDialog({
   );
   const skippedNoEmail = contacts.filter((c) => !c.email).length;
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [results, setResults] = useState<Array<{ contactId: string; outcome: Outcome }> | null>(null);
+  const [results, setResults] = useState<Array<{ contactId: string; outcome: Outcome }> | null>(
+    null
+  );
 
   useEffect(() => {
     if (open) {
@@ -109,7 +111,9 @@ export function BulkPortalInviteDialog({
                 <span className="truncate" dir="auto">
                   {nameOf(r.contactId)}
                 </span>
-                <span className="shrink-0 text-muted-foreground">{t[`portal.bulk.outcome.${r.outcome}`]}</span>
+                <span className="shrink-0 text-muted-foreground">
+                  {t[`portal.bulk.outcome.${r.outcome}`]}
+                </span>
               </li>
             ))}
           </ul>
@@ -120,7 +124,12 @@ export function BulkPortalInviteDialog({
         ) : (
           <>
             <div className="flex items-center justify-between gap-3 text-small">
-              <span>{formatMessage(t["portal.bulk.selected"], { count: picked.size, total: eligible.length })}</span>
+              <span>
+                {formatMessage(t["portal.bulk.selected"], {
+                  count: picked.size,
+                  total: eligible.length,
+                })}
+              </span>
               <Button
                 variant="ghost"
                 size="sm"
@@ -145,7 +154,10 @@ export function BulkPortalInviteDialog({
                     onCheckedChange={(v) => toggle(c.id, v === true)}
                     className="h-5 w-5"
                   />
-                  <Label htmlFor={`bulk-${c.id}`} className="min-w-0 flex-1 cursor-pointer font-normal">
+                  <Label
+                    htmlFor={`bulk-${c.id}`}
+                    className="min-w-0 flex-1 cursor-pointer font-normal"
+                  >
                     <span className="block truncate text-small font-medium" dir="auto">
                       {c.name}
                     </span>

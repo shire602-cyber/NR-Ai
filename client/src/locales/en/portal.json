@@ -310,7 +310,6 @@
   "portal.invite.noteLabel": "Personal note (optional)",
   "portal.invite.noEmailHelp": "This customer has no email yet. It will be saved on the contact.",
   "portal.invite.previewTitle": "Email preview",
-  "portal.invite.previewSubjectEn": "{supplier} invited you to view your invoices",
   "portal.invite.previewSubjectAr": "دعتك {supplier} للاطلاع على فواتيرك",
   "portal.invite.previewExpiry": "The link works once and expires in {days} days.",
   "portal.access.forName": "Who can sign in to see {name}'s invoices.",

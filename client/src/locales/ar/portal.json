@@ -310,7 +310,6 @@
   "portal.invite.noteLabel": "ملاحظة شخصية (اختياري)",
   "portal.invite.noEmailHelp": "ليس لهذا العميل بريد إلكتروني بعد. سيُحفظ على جهة الاتصال.",
   "portal.invite.previewTitle": "معاينة الرسالة",
-  "portal.invite.previewSubjectEn": "{supplier} invited you to view your invoices",
   "portal.invite.previewSubjectAr": "دعتك {supplier} للاطلاع على فواتيرك",
   "portal.invite.previewExpiry": "الرابط يعمل مرة واحدة وتنتهي صلاحيته خلال {days} أيام.",
   "portal.access.forName": "من يمكنه تسجيل الدخول لعرض فواتير {name}.",

@@ -27,7 +27,8 @@ export default function PortalInvoices() {
     if (status !== "success" && status !== "cancelled") return;
     window.history.replaceState(null, "", window.location.pathname);
     toast({
-      title: status === "success" ? t["portal.list.paymentSuccess"] : t["portal.list.paymentCancelled"],
+      title:
+        status === "success" ? t["portal.list.paymentSuccess"] : t["portal.list.paymentCancelled"],
     });
     void queryClient.invalidateQueries({ queryKey: ["portal-invoices"] });
     void queryClient.invalidateQueries({ queryKey: ["portal-dashboard"] });

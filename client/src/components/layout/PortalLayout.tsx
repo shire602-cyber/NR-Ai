@@ -302,12 +302,18 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                         {accounts.length > 1 && accounts.find((a) => a.id !== current?.id) ? (
                           <Button
                             className="h-11"
-                            onClick={() => switchSupplier(accounts.find((a) => a.id !== current?.id)!.id)}
+                            onClick={() =>
+                              switchSupplier(accounts.find((a) => a.id !== current?.id)!.id)
+                            }
                           >
                             {t["portal.states.useOther"]}
                           </Button>
                         ) : null}
-                        <Button className="h-11" variant="outline" onClick={() => void handleLogout()}>
+                        <Button
+                          className="h-11"
+                          variant="outline"
+                          onClick={() => void handleLogout()}
+                        >
                           {t["portal.doc.signOut"]}
                         </Button>
                       </>

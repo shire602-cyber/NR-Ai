@@ -28,13 +28,7 @@ export interface BalanceData {
  * What the customer owes: one tile per currency (amounts of different currencies are never
  * added together; the server sums in integer fils), the overdue part, and the next due date.
  */
-export function BalanceSummary({
-  data,
-  loading,
-}: {
-  data?: BalanceData;
-  loading?: boolean;
-}) {
+export function BalanceSummary({ data, loading }: { data?: BalanceData; loading?: boolean }) {
   const { t, locale } = useTranslation();
   if (loading || !data) {
     return (
@@ -47,10 +41,7 @@ export function BalanceSummary({
   const overdueBy = new Map(data.overdueByCurrency.map((o) => [o.currency, o]));
   if (data.outstandingByCurrency.length === 0) {
     return (
-      <Card
-        className="flex items-center gap-4 p-5"
-        data-testid="portal-balance-clear"
-      >
+      <Card className="flex items-center gap-4 p-5" data-testid="portal-balance-clear">
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-success-subtle text-success">
           <CircleCheck className="h-6 w-6" aria-hidden />
         </span>

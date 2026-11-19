@@ -109,7 +109,11 @@ export default function PortalDashboard() {
       )}
 
       {(data?.overdueByCurrency?.length ?? 0) > 0 && (
-        <Alert tone="danger" title={t["portal.dash.overdueTitle"]} data-testid="portal-overdue-banner">
+        <Alert
+          tone="danger"
+          title={t["portal.dash.overdueTitle"]}
+          data-testid="portal-overdue-banner"
+        >
           <span className="inline-flex items-center gap-2">
             <CircleAlert className="h-4 w-4" aria-hidden />
             {formatMessage(t["portal.dash.overdueBody"], { count: inv.overdue ?? 0 })}

@@ -34,7 +34,6 @@ import { PORTAL_WELCOME_KEY } from "@/lib/portal-state";
 const TOKEN_KEY = "muhasib.portalInvite";
 const TOKEN_RE = /^[0-9a-f]{64}$/i;
 
-
 function readToken(): string | null {
   if (typeof window === "undefined") return null;
   const m = /[#&]t=([0-9a-f]{64})/i.exec(window.location.hash);
@@ -202,8 +201,13 @@ export default function PortalJoin() {
 
   // ── states without an invitation ──────────────────────────────────────────
   if (!validToken || query.isError) {
-    const { kind, body } = !validToken ? { kind: "invalid" as StateKind, body: undefined } : classify(query.error);
-    const supplier = (body?.supplier ?? null) as { name?: string; contactEmail?: string | null } | null;
+    const { kind, body } = !validToken
+      ? { kind: "invalid" as StateKind, body: undefined }
+      : classify(query.error);
+    const supplier = (body?.supplier ?? null) as {
+      name?: string;
+      contactEmail?: string | null;
+    } | null;
     const supplierName = supplier?.name ?? t["portal.join.theSupplier"];
     const signIn = (
       <Button className="h-11" onClick={() => goSignIn()} data-testid="join-go-sign-in">
@@ -346,7 +350,7 @@ function JoinPanel({
   info: InviteInfo;
   token: string;
   onSignIn: () => void;
-  onDone: (res: AcceptResult) => Promise<void>;
+  onDone(res: AcceptResult): Promise<void>;
 }) {
   const { t, locale } = useTranslation(["portal", ...VALIDATION_NAMESPACES]);
   const [name, setName] = useState(info.name);
@@ -359,12 +363,15 @@ function JoinPanel({
   const passwordRef = useRef<HTMLInputElement>(null);
   const supplier = info.supplier.name;
   const customer = locale === "ar" && info.customerNameAr ? info.customerNameAr : info.customerName;
-  const expires = new Intl.DateTimeFormat(locale === "ar" ? "ar-AE-u-nu-latn-ca-gregory" : "en-AE", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "Asia/Dubai",
-  }).format(new Date(info.expiresAt));
+  const expires = new Intl.DateTimeFormat(
+    locale === "ar" ? "ar-AE-u-nu-latn-ca-gregory" : "en-AE",
+    {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      timeZone: "Asia/Dubai",
+    }
+  ).format(new Date(info.expiresAt));
   const rulesOk = failedPasswordRules(password).length === 0;
 
   const accept = async (body: Record<string, unknown>) => {
@@ -380,7 +387,8 @@ function JoinPanel({
     } catch (err) {
       const api = err instanceof ApiError ? err : null;
       const code = String(api?.body?.code ?? "");
-      const fields = (api?.body?.details as { fields?: Record<string, string[]> } | undefined)?.fields;
+      const fields = (api?.body?.details as { fields?: Record<string, string[]> } | undefined)
+        ?.fields;
       if (api?.status === 400 && (fields?.password || /password/i.test(api.rawMessage))) {
         setError({ field: "password", message: api.message });
         requestAnimationFrame(() => passwordRef.current?.focus());
@@ -469,7 +477,11 @@ function JoinPanel({
     return (
       <div data-testid="join-signed-in">
         {header}
-        <Alert tone="info" title={formatMessage(t["portal.join.signedInTitle"], { supplier })} className="mb-5">
+        <Alert
+          tone="info"
+          title={formatMessage(t["portal.join.signedInTitle"], { supplier })}
+          className="mb-5"
+        >
           {formatMessage(t["portal.join.signedInBody"], { email: info.email, customer })}
         </Alert>
         {error ? (
@@ -544,7 +556,9 @@ function JoinPanel({
               className="h-11 pe-12 text-base"
               aria-invalid={error?.field === "password"}
               aria-describedby={
-                error?.field === "password" ? "join-password-rules join-password-error" : "join-password-rules"
+                error?.field === "password"
+                  ? "join-password-rules join-password-error"
+                  : "join-password-rules"
               }
               data-testid="join-password"
             />
@@ -556,7 +570,11 @@ function JoinPanel({
               className="absolute inset-y-0 end-0 grid w-11 place-items-center text-muted-foreground hover:text-foreground"
               data-testid="join-toggle-password"
             >
-              {show ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+              {show ? (
+                <EyeOff className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Eye className="h-4 w-4" aria-hidden="true" />
+              )}
             </button>
           </div>
           {error?.field === "password" ? (
@@ -580,12 +598,22 @@ function JoinPanel({
           <Label htmlFor="join-terms" className="text-small font-normal leading-snug">
             {withLinks(t["portal.join.terms"], {
               terms: (
-                <Link href="/terms" className="font-medium text-accent underline" target="_blank" rel="noopener noreferrer">
+                <Link
+                  href="/terms"
+                  className="font-medium text-accent underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   {t["portal.join.termsLink"]}
                 </Link>
               ),
               privacy: (
-                <Link href="/privacy" className="font-medium text-accent underline" target="_blank" rel="noopener noreferrer">
+                <Link
+                  href="/privacy"
+                  className="font-medium text-accent underline"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
                   {t["portal.join.privacyLink"]}
                 </Link>
               ),
