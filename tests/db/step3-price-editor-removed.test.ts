@@ -86,4 +86,24 @@ describe("STEP3 price editor removed", () => {
     const r = await h.anon.get("/api/billing/plans");
     expect(prices(r.body).starter).toEqual([59, 590]);
   });
+
+  it("STEP3 /api/admin/users returns each user's own live company count", async () => {
+    const admin = await h.createTenant({ name: "S3Count", isAdmin: true });
+    const solo = await h.createSecondTenant({ name: "S3Solo" });
+    const multi = await h.createTenant({ name: "S3Multi" });
+    // Give `multi` a second membership in the solo company.
+    await h.sql(
+      `INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'accountant')`,
+      [solo.company.id, multi.user.id]
+    );
+    const r = await admin.as.get(`/api/admin/users`);
+    expect(r.status, r.text).toBe(200);
+    const by = Object.fromEntries(
+      (r.body as { id: string; companyCount: number }[]).map((u) => [u.id, u.companyCount])
+    );
+    expect(by[solo.user.id]).toBe(1);
+    expect(by[multi.user.id]).toBe(2);
+    expect(by[admin.user.id]).toBe(1);
+    expect(r.body[0]).not.toHaveProperty("passwordHash");
+  });
 });

@@ -35,16 +35,11 @@ describe("admin-health.routes [R20-14]", () => {
 });
 
 describe("ai-gl.routes [R20-14]", () => {
-  it("[R20-14] ai-gl: auth, tenant isolation, threshold validation and settings round trip", async () => {
+  it("[R20-14] ai-gl: auth, tenant isolation and queue", async () => {
     const { customer, other } = await actors();
     const base = `/api/companies/${customer.company.id}/ai-gl`;
     expect((await h.anon.get(`${base}/queue`)).status).toBe(401);
     expect([403, 404]).toContain((await other.as.get(`${base}/queue`)).status);
-    expect([403, 404]).toContain(
-      (await other.as.put(`${base}/settings`, { confidenceThreshold: 0.9 })).status
-    );
-    const bad = await customer.as.put(`${base}/settings`, { confidenceThreshold: 2 });
-    expect(bad.status).toBe(400);
     const queue = await customer.as.get(`${base}/queue`);
     expect(queue.status, queue.text).toBe(200);
     const missing = await customer.as.post(
@@ -56,14 +51,15 @@ describe("ai-gl.routes [R20-14]", () => {
   });
 });
 
-describe("ai-gl.routes settings defect [R20-14]", () => {
-  // Fixed in the W5 integration: the upsert now writes the NOT NULL `category` column.
-  it("[R20-14] ai-gl: a valid confidence threshold is saved", async () => {
+describe("ai-gl.routes settings [STEP3]", () => {
+  // The confidence threshold was written to admin_settings but never read by the auto-post
+  // decision, and no screen used it, so the write endpoint was removed.
+  it("[STEP3] ai-gl: the unread confidence-threshold write endpoint is gone", async () => {
     const { customer } = await actors();
-    const ok = await customer.as.put(`/api/companies/${customer.company.id}/ai-gl/settings`, {
+    const res = await customer.as.put(`/api/companies/${customer.company.id}/ai-gl/settings`, {
       confidenceThreshold: 0.85,
     });
-    expect(ok.status, ok.text).toBe(200);
+    expect(res.status).toBe(404);
   });
 });
 

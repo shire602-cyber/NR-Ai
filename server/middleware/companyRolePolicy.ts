@@ -97,7 +97,6 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("MUT", "companies/*/preferences/**", "settings.company"),
   r("POST", "companies/*/seed-accounts", "settings.company"),
   r("DELETE", "companies/*/customer-contacts/clear-all", "settings.company"),
-  r("MUT", "companies/*/ai-gl/settings", "settings.company"),
   r("MUT", "companies/*/reminder-settings/**", "settings.company"),
   r("MUT", "reminder-settings/**", "settings.company"),
   r("MUT", "companies/*/report-delivery/subscriptions/*/settings", "settings.company"),

@@ -11,8 +11,6 @@ const rows = (max: number) => z.array(z.record(z.string(), z.unknown())).max(max
 
 /** POST /api/companies/:companyId/ai-gl/queue/:id/correct */
 export const aiGlCorrectBody = z.object({ accountId: id }).strict();
-/** PUT /api/companies/:companyId/ai-gl/settings (range is re-checked by the route) */
-export const aiGlSettingsBody = z.object({ confidenceThreshold: z.number() }).strict();
 /** POST /api/companies/:companyId/billing/checkout */
 export const billingCheckoutBody = z
   .object({ planId: id, billingCycle: z.enum(["monthly", "yearly"]) })

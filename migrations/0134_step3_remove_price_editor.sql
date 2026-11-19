@@ -17,4 +17,3 @@ END $$;
 DROP TABLE IF EXISTS "user_subscriptions";
 --> statement-breakpoint
 DROP TABLE IF EXISTS "subscription_plans";
---> statement-breakpoint

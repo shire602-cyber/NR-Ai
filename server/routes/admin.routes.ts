@@ -465,8 +465,22 @@ export function registerAdminRoutes(app: Express): void {
     asyncHandler(async (req: Request, res: Response) => {
       const users = await storage.getAllUsers();
 
+      // Per-user company memberships (live companies only), for the Users tab.
+      const counts = await db.execute(
+        sql`SELECT cu.user_id AS user_id, count(*)::int AS n
+            FROM company_users cu
+            JOIN companies c ON c.id = cu.company_id AND c.deleted_at IS NULL
+            GROUP BY cu.user_id`
+      );
+      const companyCount = new Map(
+        (counts.rows as { user_id: string; n: number }[]).map((r) => [r.user_id, Number(r.n)])
+      );
+
       // Return users without password hashes
-      const safeUsers = users.map(({ passwordHash: _passwordHash, ...user }) => user);
+      const safeUsers = users.map(({ passwordHash: _passwordHash, ...user }) => ({
+        ...user,
+        companyCount: companyCount.get(user.id) ?? 0,
+      }));
       res.json(safeUsers);
     })
   );
