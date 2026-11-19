@@ -197,7 +197,7 @@ describe("capability registry", () => {
   it("covers every integration with en+ar copy and an external action", () => {
     const caps = computeCapabilities({});
     expect(caps.map((c) => c.id)).toEqual(CAPABILITY_IDS);
-    expect(CAPABILITY_IDS.length).toBe(21);
+    expect(CAPABILITY_IDS.length).toBe(20);
     for (const c of caps) {
       expect(c.label.en && c.label.ar && c.externalAction.en && c.externalAction.ar).toBeTruthy();
       expect(/[؀-ۿ]/.test(c.label.ar)).toBe(true);
