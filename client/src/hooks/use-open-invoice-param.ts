@@ -29,6 +29,8 @@ export function useOpenInvoiceParam(onOpen: (id: string) => void, path: string, 
     if (!openId) return;
     handler.current(openId);
     window.setTimeout(() => {
+      // The page (and, in tests, the jsdom window) may be gone by the time this fires.
+      if (typeof window === "undefined") return;
       const current = new URLSearchParams(window.location.search);
       if (current.get("open") !== openId) return;
       current.delete("open");
