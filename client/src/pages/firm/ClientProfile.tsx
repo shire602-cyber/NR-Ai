@@ -56,6 +56,7 @@ import {
 } from "@shared/client-services";
 import { LoadErrorState } from "@/components/ui/load-error-state";
 import { classifyLoadError } from "@/lib/loadError";
+import { useFirmPermissions } from "@/hooks/useFirmPermissions";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 
 interface AssignedStaff {
@@ -163,6 +164,9 @@ export default function ClientProfile() {
     });
   const { toast } = useToast();
   const { setActiveClientCompany } = useActiveCompany();
+  // Assigning staff needs firm.staff.manage (the route refuses everyone else).
+  const { can } = useFirmPermissions();
+  const canManageStaff = can("firm.staff.manage");
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<ClientEditData>({});
   const [assignOpen, setAssignOpen] = useState(false);
@@ -666,10 +670,12 @@ export default function ClientProfile() {
               <CardTitle className="text-base">
                 <T k="pages.assignedNraStaff" />
               </CardTitle>
-              <Button size="sm" variant="outline" onClick={() => setAssignOpen(true)}>
-                <UserPlus className="w-4 h-4 me-1.5" />
-                <T k="pages.assignStaff" />
-              </Button>
+              {canManageStaff && (
+                <Button size="sm" variant="outline" onClick={() => setAssignOpen(true)}>
+                  <UserPlus className="w-4 h-4 me-1.5" />
+                  <T k="pages.assignStaff" />
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
               {stats.assignedStaff.length === 0 ? (
@@ -696,18 +702,25 @@ export default function ClientProfile() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline">{statusLabel(t, staff.role)}</Badge>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={() =>
-                            assignMutation.mutate({ staffUserId: staff.id, action: "unassign" })
-                          }
-                          disabled={assignMutation.isPending}
-                        >
-                          <UserMinus className="w-4 h-4" />
-                        </Button>
+                        <Badge variant="outline">
+                          {t[`firm.assignmentRole.${staff.role}`] ?? statusLabel(t, staff.role)}
+                        </Badge>
+                        {canManageStaff && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            aria-label={formatMessage(t["firm.unassignStaff"], {
+                              name: staff.name,
+                            })}
+                            className="text-muted-foreground hover:text-destructive"
+                            onClick={() =>
+                              assignMutation.mutate({ staffUserId: staff.id, action: "unassign" })
+                            }
+                            disabled={assignMutation.isPending}
+                          >
+                            <UserMinus className="w-4 h-4" aria-hidden />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))}

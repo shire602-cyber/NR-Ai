@@ -168,5 +168,10 @@
   "firm.switcherNoMatch": "لا توجد شركة تطابق بحثك",
   "firm.switcherAllClients": "كل العملاء",
   "firm.clientsTableRegion": "جدول العملاء",
-  "firm.selectedCount": "{count} محدد"
+  "firm.selectedCount": "{count} محدد",
+  "firm.unassignStaff": "إلغاء تعيين {name}",
+  "firm.assignmentRole.accountant": "محاسب",
+  "firm.assignmentRole.reviewer": "مراجع",
+  "firm.assignmentRole.manager": "مدير",
+  "firm.assignmentRole.preparer": "معدّ"
 }

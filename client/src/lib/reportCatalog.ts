@@ -2,6 +2,8 @@
 // overlays in client/src/locales/ar-catalog/reportCatalog.json, resolved with useCatalogText()
 // (client/src/lib/reportCatalogText.ts); tests/unit/report-catalog-arabic.test.ts enforces coverage
 // of every field the launcher and dashboard render.
+import { registerDeliverySubscriptions } from "./deliveryTitleRegistry";
+
 export const reportTabs = [
   "pl",
   "bs",
@@ -4601,6 +4603,8 @@ export const reportDeliverySubscriptions: ReportDeliverySubscription[] = [
       "accountant advisory delivery subscription client pack pdf excel email comparison",
   },
 ];
+
+registerDeliverySubscriptions(reportDeliverySubscriptions);
 
 export const reportProductDepthAreas: ReportProductDepthArea[] = [
   {

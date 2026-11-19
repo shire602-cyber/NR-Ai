@@ -11,7 +11,7 @@ import {
   renderDescriptor,
   type NotificationCopyDescriptor,
 } from "@shared/server-copy";
-import { reportDeliverySubscriptions } from "@/lib/reportCatalog";
+import { deliverySubscriptionIdForTitle } from "@/lib/deliveryTitleRegistry";
 import { formatAedText } from "@/lib/format";
 import { formatMoneyText } from "@/lib/format-money";
 import { formatDate, formatEmbeddedDates } from "@/lib/format-date";
@@ -55,8 +55,8 @@ export function localizeDeliverySubscriptionTitle(
   title: string,
   t: Record<string, string | undefined>
 ): string {
-  const sub = reportDeliverySubscriptions.find((s) => s.title === title);
-  return (sub && t[SUBSCRIPTION_TITLE_KEY(sub.id)]) || title;
+  const id = deliverySubscriptionIdForTitle(title);
+  return (id && t[SUBSCRIPTION_TITLE_KEY(id)]) || title;
 }
 
 /** "AED 15000.00" / "15000.00" (server string) -> locale money text, or null when not an amount. */

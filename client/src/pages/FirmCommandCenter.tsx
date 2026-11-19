@@ -421,12 +421,19 @@ export default function FirmCommandCenter() {
   // ─── Render ────────────────────────────────────────────────────────
   if (dashboardQuery.isError) {
     return (
-      <LoadErrorState
-        error={dashboardQuery.error}
-        onRetry={() => void dashboardQuery.refetch()}
-        title={t["pages.failedToLoadFirmDashboard"]}
-        testId="firm-command-center-error"
-      />
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Firm"
+          title={t["firmCommandCenter.firmCommandCenter"]}
+          testId="page-title"
+        />
+        <LoadErrorState
+          error={dashboardQuery.error}
+          onRetry={() => void dashboardQuery.refetch()}
+          title={t["pages.failedToLoadFirmDashboard"]}
+          testId="firm-command-center-error"
+        />
+      </div>
     );
   }
 

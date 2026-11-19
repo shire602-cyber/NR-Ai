@@ -1045,6 +1045,40 @@ export function isPortalAppPath(pathname: string): boolean {
   return PORTAL_APP_PATH.test(normalisePath(pathname));
 }
 
+/**
+ * The firm workspace (`/firm/*`, where NR staff land after sign-in) reads a fixed set of
+ * catalogs. Booting on it loads only those; the first path outside it (a client's books) ends
+ * the restricted scope and loads the rest, exactly like the public scope. Namespaces named
+ * here are the ones the firm pages, the shell chrome and the shared UI read; the command
+ * palette loads the full catalog the first time it opens.
+ */
+const FIRM_APP_PATH = /^\/firm(\/|$)/;
+const FIRM_APP_NAMESPACES = [
+  "common",
+  "components",
+  "shell",
+  "pageLabels",
+  "pages",
+  "toasts",
+  "forms",
+  "firm",
+  "firmOps",
+  "clientsFirm",
+  "marketing",
+  "invoices",
+  "banking",
+  "consolidation",
+  "reportCenter",
+  "einvoicing",
+  "aiAssistant",
+  "launchProof",
+  "screens",
+];
+
+export function isFirmAppPath(pathname: string): boolean {
+  return FIRM_APP_PATH.test(normalisePath(pathname));
+}
+
 /** True for the signed-out marketing, auth, legal and help routes and the no-login links. */
 export function isPublicPath(pathname: string): boolean {
   const path = normalisePath(pathname);
@@ -1058,6 +1092,7 @@ export function namespacesForPath(pathname: string): string[] | null {
   if (PORTAL_LINK_PATH.test(path) || INVOICE_LINK_PATH.test(path))
     return ["components", "portal", "customerLink"];
   if (PORTAL_APP_PATH.test(path)) return PORTAL_APP_NAMESPACES;
+  if (FIRM_APP_PATH.test(path)) return FIRM_APP_NAMESPACES;
   if (AUTH_FORM_PATH.test(path)) return AUTH_FORM_NAMESPACES;
   if (!PUBLIC_PATHS.has(path)) return null;
   return PUBLIC_CORE_ONLY.has(path)
@@ -1069,7 +1104,7 @@ let publicScope = false;
 
 /** Called once by main.tsx: restrict loading to route namespaces while on public paths. */
 export function setPublicBootScope(pathname: string): void {
-  publicScope = isPublicPath(pathname) || isPortalAppPath(pathname);
+  publicScope = isPublicPath(pathname) || isPortalAppPath(pathname) || isFirmAppPath(pathname);
 }
 
 function currentPathname(): string {

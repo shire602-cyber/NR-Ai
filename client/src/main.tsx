@@ -20,6 +20,7 @@ import {
   applyDocumentLocale,
   isCustomerLinkPath,
   isLocaleLoaded,
+  isFirmAppPath,
   isPortalAppPath,
   isPublicPath,
   loadLocale,
@@ -82,13 +83,17 @@ const loadRoot: () => Promise<{ default: ComponentType }> = publicShell
 // (lib/i18n.ts namespacesForPath); app routes load every namespace as before. A failed
 // catalog chunk still renders (keys fall back).
 const lightBoot = publicShell || portalShell;
-setPublicBootScope(lightBoot ? pathname : "/__app");
+// A signed-in user opening the firm workspace (NR staff land there) loads only the catalogs the
+// firm pages read; the rest warm on first touch and load in full when they open a client's books.
+const firmShell = !lightBoot && isFirmAppPath(pathname) && hasAuthHint();
+const scopedBoot = lightBoot || firmShell;
+setPublicBootScope(scopedBoot ? pathname : "/__app");
 // Direction and language are settled before the first render, not in an effect
 // after it: an Arabic visitor sees right-to-left Arabic on first paint, with no layout shift.
 applyDocumentLocale(locale);
 void Promise.all([
   zodReady.then(loadRoot),
-  loadLocaleForPath(locale, lightBoot ? pathname : "/__app").catch(() => undefined),
+  loadLocaleForPath(locale, scopedBoot ? pathname : "/__app").catch(() => undefined),
   publicShell
     ? zodReady.then(() =>
         (PUBLIC_ROUTE_CHUNKS[pathname] ?? customerLinkChunk(pathname))?.().catch(() => undefined)
@@ -111,6 +116,15 @@ if (pathname === "/login" || pathname === "/register") {
     if (pathname === "/login") warmOnFirstInteraction(warm);
     else if ("requestIdleCallback" in window) window.requestIdleCallback(warm, { timeout: 4000 });
     else setTimeout(warm, 2000);
+  });
+}
+
+if (firmShell) {
+  window.addEventListener("load", () => {
+    warmOnFirstInteraction(() => {
+      const current = useI18n.getState().locale;
+      if (!isLocaleLoaded(current)) void loadLocale(current).catch(() => undefined);
+    });
   });
 }
 

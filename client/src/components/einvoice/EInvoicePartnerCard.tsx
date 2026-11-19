@@ -92,7 +92,8 @@ export function EInvoicePartnerCard({
 }) {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { gate, can } = useCompanyPermission();
+  const { gate, can, known } = useCompanyPermission();
+  // `can` answers true while the role is unknown; do not ask the admin-only list until it is.
   const isAdmin = can("settings.company");
   const view = useQuery<PartnerViewData>({
     queryKey: partnerKey(companyId),
@@ -102,7 +103,7 @@ export function EInvoicePartnerCard({
   const links = useQuery<ApproverLinkRow[]>({
     queryKey: linksKey(companyId),
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/einvoicing/approver-links`),
-    enabled: isAdmin,
+    enabled: known && isAdmin,
   });
   const [who, setWho] = useState<"me" | "someone">("me");
   const [approverName, setApproverName] = useState("");

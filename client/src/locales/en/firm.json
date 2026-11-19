@@ -168,5 +168,10 @@
   "firm.switcherNoMatch": "No company matches your search",
   "firm.switcherAllClients": "All clients",
   "firm.clientsTableRegion": "Clients table",
-  "firm.selectedCount": "{count} selected"
+  "firm.selectedCount": "{count} selected",
+  "firm.unassignStaff": "Unassign {name}",
+  "firm.assignmentRole.accountant": "Accountant",
+  "firm.assignmentRole.reviewer": "Reviewer",
+  "firm.assignmentRole.manager": "Manager",
+  "firm.assignmentRole.preparer": "Preparer"
 }

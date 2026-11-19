@@ -56,6 +56,7 @@
     "e2e:sweep": "node tests/e2e/broken-path-sweep.mjs",
     "e2e:customer-links": "node tests/e2e/customer-links-flow.mjs",
     "e2e:auth-portal": "node tests/e2e/auth-portal-flow.mjs",
+    "e2e:firm-tools": "node tests/e2e/firm-tools-flow.mjs",
     "e2e:flows": "node tests/e2e/core-flows.mjs"
   },
   "dependencies": {
