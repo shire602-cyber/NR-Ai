@@ -1,9 +1,8 @@
 /**
- * Namespace-aware DOM helpers for UBL documents (rule list, inbound parser,
- * ZATCA hashing). Paths are "/"-separated qualified names using the UBL
+ * Namespace-aware DOM helpers for UBL documents (rule list, inbound parser). Paths are "/"-separated qualified names using the UBL
  * prefixes cac/cbc/ext regardless of the prefixes the document itself uses.
  */
-// @xmldom/xmldom ships with xml-crypto (DEP-REQUEST: declare it directly).
+// @xmldom/xmldom is declared as a direct dependency.
 import { DOMParser } from "@xmldom/xmldom";
 
 export const UBL_NS: Record<string, string> = {

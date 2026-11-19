@@ -56,17 +56,13 @@ import {
   termsFromDays,
   type PreparedSalesLine,
 } from "../services/invoice-lifecycle";
-import {
-  assertPlaceOfSupply,
-  loadVatJurisdiction,
-  resolveCustomerHeader,
-} from "../services/invoice-posting.service";
+import { assertPlaceOfSupply, resolveCustomerHeader } from "../services/invoice-posting.service";
 import { documentCurrency, loadBaseCurrency } from "../ledger";
 import { transitionQuote, type QuoteStatus } from "../services/quote-state.service";
 import { fromFils, mulRate, toFils } from "../../shared/money";
 import { resolveDocumentRate } from "./invoices.routes";
 import { emitDomainEvent } from "../platform/domain-events";
-import type { SupplyType, VatJurisdiction } from "../../shared/vat-classification";
+import type { SupplyType } from "../../shared/vat-classification";
 
 const logger = createLogger("quotes-routes");
 
@@ -141,7 +137,6 @@ async function prepareQuote(companyId: string, body: CreateQuoteInput) {
   const { rows, totals } = prepareSalesLines(draftsOf(body.lines), {
     discountType: body.discountType,
     discountValue: body.discountValue,
-    jurisdiction: await loadVatJurisdiction(companyId),
   });
   return { header, rows, totals };
 }
@@ -370,13 +365,7 @@ export function registerQuoteRoutes(app: Express) {
       const currency = documentCurrency(quote.currency, await loadBaseCurrency(quote.companyId));
       // Outside the transaction (may read the pool): rate and terms.
       const rate = await resolveDocumentRate(quote.companyId, currency, dateIso, null);
-      const result = await convertQuoteAtomically(
-        quote,
-        body,
-        dateIso,
-        rate,
-        await loadVatJurisdiction(quote.companyId)
-      );
+      const result = await convertQuoteAtomically(quote, body, dateIso, rate);
       logger.info(
         { quoteId: quote.id, invoiceId: result.invoice.id, full: result.fullyBilled },
         "Quote converted to invoice"
@@ -521,8 +510,7 @@ export async function convertQuoteAtomically(
   quote: Quote,
   body: ConvertQuoteInput,
   dateIso: string,
-  rate: number,
-  jurisdiction: VatJurisdiction = "AE"
+  rate: number
 ): Promise<{ invoice: typeof invoicesTable.$inferSelect; fullyBilled: boolean }> {
   return db.transaction(async (tx: typeof db) => {
     const locked = await tx.execute(
@@ -593,7 +581,6 @@ export async function convertQuoteAtomically(
         ...(wholeQuote
           ? { discountType: quote.discountType, discountValue: quote.discountValue }
           : {}),
-        jurisdiction,
       }
     );
     await assertPlaceOfSupply(

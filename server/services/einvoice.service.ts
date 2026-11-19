@@ -172,7 +172,7 @@ export function documentKind(
     return { root: "CreditNote", typeCode: DOCUMENT_TYPE.creditNote, kind: "credit_note" };
   }
   if (invoice.invoiceType === "debit_note") {
-    // UNCL1001 383 is the debit-note code (used for ZATCA), but the PINT AE
+    // UNCL1001 383 is the debit-note code, but the PINT AE
     // 2026.5 schematron (ibr-cl-01) only admits 380/480 on an Invoice. A UAE
     // debit note is therefore a 380 tax invoice that references the original
     // invoice through cac:BillingReference.

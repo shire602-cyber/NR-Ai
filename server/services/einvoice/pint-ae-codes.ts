@@ -86,14 +86,12 @@ export function transactionTypeCode(flags: Partial<Record<TransactionFlag, boole
 
 /**
  * UNCL1001 document types. PINT AE admits 380/480 (Invoice) and 381/81
- * (CreditNote) only (ibr-cl-01); 383 is kept for profiles that accept it
- * (ZATCA) and a UAE debit note is emitted as 380 with a BillingReference.
+ * (CreditNote) only (ibr-cl-01); a UAE debit note is emitted as 380 with a BillingReference.
  */
 export const DOCUMENT_TYPE = {
   invoice: "380",
   outOfScope: "480",
   creditNote: "381",
-  debitNote: "383",
 } as const;
 
 /** UNCL4461 payment means codes offered in settings. */

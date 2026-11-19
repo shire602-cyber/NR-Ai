@@ -52,7 +52,7 @@ export function ctTreatmentFitsAccount(
 
 /**
  * The VAT leg a standard-rated line adds, in fils: `round(net * rate)`, half away from zero.
- * `rate` is a fraction (0.05 UAE, 0.15 KSA).
+ * `rate` is a fraction (0.05 UAE).
  */
 export function journalLineVatFils(netFils: number, rate: number): number {
   return Math.round(Math.abs(netFils) * rate) * Math.sign(netFils);

@@ -16,8 +16,7 @@ import {
   type PurchaseKind,
 } from "./vat-boxes";
 import type { Vat201Family } from "../../shared/vat-classification";
-import { STANDARD_VAT_RATES } from "../../shared/vat-classification";
-import { vatJurisdictionWithFlag } from "../services/zatca/flag";
+import { UAE_STANDARD_VAT_RATE } from "../../shared/vat-classification";
 
 export interface VatBoxRef {
   /** "1b", "4", "9" ... */
@@ -36,7 +35,6 @@ export interface VatTreatmentRow {
 }
 
 export interface VatBoxMap {
-  jurisdiction: "AE" | "SA";
   standardRate: number;
   emirate: Emirate | null;
   rows: VatTreatmentRow[];
@@ -66,11 +64,9 @@ const SALES: Vat201Family[] = [
 const PURCHASES: PurchaseKind[] = ["standard", "reverse_charge", "import", "not_reportable"];
 
 export function vatBoxMap(company: {
-  addressCountry?: string | null;
   emirate?: string | null;
 }): VatBoxMap {
-  const jurisdiction = vatJurisdictionWithFlag(company.addressCountry);
-  const standardRate = STANDARD_VAT_RATES[jurisdiction];
+  const standardRate = UAE_STANDARD_VAT_RATE;
   const emirate = normaliseEmirate(company.emirate ?? null);
   // Box 1 is per emirate: probe with the company's own (Dubai when it is not set yet).
   const probeEmirate: Emirate = emirate ?? ("dubai" as Emirate);
@@ -93,7 +89,7 @@ export function vatBoxMap(company: {
       boxes: boxesOf(delta),
     });
   }
-  return { jurisdiction, standardRate, emirate, rows };
+  return { standardRate, emirate, rows };
 }
 
 /** All Box 1 rows (one per emirate), for the page's note under standard-rated sales. */
