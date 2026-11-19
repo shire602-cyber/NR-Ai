@@ -2,7 +2,7 @@ import { T } from "@/components/layout/T";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { CircleAlert, FileText, FolderOpen, PartyPopper, X } from "lucide-react";
+import { CircleAlert, FileText, PartyPopper, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { BalanceSummary } from "@/components/portal/BalanceSummary";
@@ -200,13 +200,14 @@ export default function PortalDashboard() {
         </CardHeader>
         <CardContent className={documents.length ? "p-0" : undefined}>
           {documents.length === 0 ? (
-            <EmptyState
-              size="sm"
-              icon={FolderOpen}
-              title={t["portal.doc.noDocumentsTitle"]}
-              description={t["portal.doc.documentsHint"]}
-              action={{ label: t["portal.doc.upload"], href: "/client-portal/documents" }}
-            />
+            <div className="space-y-2 py-1" data-testid="portal-no-documents">
+              <p className="text-small text-muted-foreground">{t["portal.dash.noDocuments"]}</p>
+              <Button asChild variant="outline" className="min-h-11">
+                <Link href="/client-portal/documents" data-testid="portal-upload-document">
+                  {t["portal.doc.upload"]}
+                </Link>
+              </Button>
+            </div>
           ) : (
             <ul className="divide-y divide-border">
               {documents.slice(0, 5).map((d) => (

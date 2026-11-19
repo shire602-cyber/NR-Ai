@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, Check, Languages, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
 import { ChangePasswordCard } from "@/pages/security/ChangePasswordCard";
-import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { currentUserQueryKey, useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSessionActions } from "@/hooks/useSessionActions";
-import { apiRequest } from "@/lib/queryClient";
+import { ApiError, apiRequest } from "@/lib/queryClient";
 import { getSelectedPortalAccount, setSelectedPortalAccount } from "@/lib/auth";
 import { useI18n, useTranslation } from "@/lib/i18n";
 
@@ -30,6 +33,31 @@ export default function PortalAccount() {
   const { signOut } = useSessionActions();
   const { data: user } = useCurrentUser();
   const [busy, setBusy] = useState(false);
+  const { toast } = useToast();
+  // The display name is the one profile field a customer may change (email is theirs by invitation).
+  const [name, setName] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  useEffect(() => {
+    if (user?.name) setName(user.name);
+  }, [user?.name]);
+  const saveName = async (e: FormEvent) => {
+    e.preventDefault();
+    const next = name.trim();
+    if (!next || next === user?.name) return;
+    setSavingName(true);
+    try {
+      await apiRequest("PATCH", "/api/client-portal/profile", { name: next });
+      await queryClient.invalidateQueries({ queryKey: currentUserQueryKey });
+      toast({ title: t["portal.account.nameSaved"] });
+    } catch (err) {
+      toast({
+        title: err instanceof ApiError ? err.message : t["portal.account.nameFailed"],
+        variant: "destructive",
+      });
+    } finally {
+      setSavingName(false);
+    }
+  };
   const { data: accounts = [] } = useQuery<PortalAccountRow[]>({
     queryKey: ["portal-accounts"],
     queryFn: () => apiRequest("GET", "/api/client-portal/accounts"),
@@ -58,13 +86,34 @@ export default function PortalAccount() {
           <CardTitle className="text-h3">{t["portal.account.profile"]}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <dl className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <dt className="text-caption text-muted-foreground">{t["portal.join.nameLabel"]}</dt>
-              <dd className="mt-0.5 text-small font-medium" dir="auto">
-                {user?.name ?? "—"}
-              </dd>
+          <form
+            onSubmit={(e) => void saveName(e)}
+            className="flex flex-col gap-2 sm:flex-row sm:items-end"
+            data-testid="portal-name-form"
+          >
+            <div className="min-w-0 flex-1">
+              <Label htmlFor="portal-account-name">{t["portal.join.nameLabel"]}</Label>
+              <Input
+                id="portal-account-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={100}
+                autoComplete="name"
+                dir="auto"
+                className="mt-1.5 h-11 text-base"
+                data-testid="portal-account-name"
+              />
             </div>
+            <Button
+              type="submit"
+              className="min-h-11"
+              disabled={savingName || !name.trim() || name.trim() === user?.name}
+              data-testid="portal-account-name-save"
+            >
+              {t["portal.account.saveName"]}
+            </Button>
+          </form>
+          <dl>
             <div>
               <dt className="text-caption text-muted-foreground">{t["portal.email"]}</dt>
               <dd className="mt-0.5 break-all text-small font-medium" dir="ltr">

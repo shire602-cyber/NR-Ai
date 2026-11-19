@@ -12,6 +12,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
+import { IsolatedMessage } from "@/components/portal/IsolatedMessage";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -102,18 +103,27 @@ function InviteForm({
   companyId,
   supplierName,
   canInvite,
+  pendingEmails,
   onDelivered,
 }: {
   contact: PortalSheetContact;
   companyId: string;
   supplierName: string;
   canInvite: boolean;
+  /** Lower-cased emails that already have a pending invitation (resend those instead). */
+  pendingEmails: string[];
   onDelivered: (res: InviteResponse) => void;
 }) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const { gate } = useCompanyPermission();
-  const [email, setEmail] = useState(contact.email ?? "");
+  // An address that already has a pending invitation is not pre-filled: submitting it would only
+  // fail with "already invited", so the pending invitation above is the thing to act on.
+  const [email, setEmail] = useState(() =>
+    contact.email && !pendingEmails.includes(contact.email.trim().toLowerCase())
+      ? contact.email
+      : ""
+  );
   const [name, setName] = useState(contact.contactPerson ?? "");
   const [language, setLanguage] = useState<PortalInviteLanguage>(
     defaultInviteLanguage(contact.preferredLanguage)
@@ -145,6 +155,7 @@ function InviteForm({
   });
 
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const emailPending = pendingEmails.includes(email.trim().toLowerCase());
   // The subject the customer will see, one line per language (each in its own direction).
   const preview = useMemo(() => {
     const en = {
@@ -170,7 +181,7 @@ function InviteForm({
       className="mt-3 space-y-4"
       onSubmit={(e) => {
         e.preventDefault();
-        if (emailOk && canInvite) invite.mutate();
+        if (emailOk && canInvite && !emailPending) invite.mutate();
       }}
       data-testid="pa-invite-form"
     >
@@ -185,10 +196,21 @@ function InviteForm({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="mt-1.5 h-11 text-base"
-          aria-describedby={!contact.email ? "pa-email-help" : undefined}
+          aria-describedby={
+            emailPending ? "pa-email-pending" : !contact.email ? "pa-email-help" : undefined
+          }
           data-testid="pa-email"
         />
-        {!contact.email && (
+        {emailPending && (
+          <p
+            id="pa-email-pending"
+            className="mt-1 text-caption text-muted-foreground"
+            data-testid="pa-email-pending"
+          >
+            {t["portal.invite.pendingHelp"]}
+          </p>
+        )}
+        {!contact.email && !emailPending && (
           <p id="pa-email-help" className="mt-1 text-caption text-muted-foreground">
             {t["portal.invite.noEmailHelp"]}
           </p>
@@ -268,7 +290,7 @@ function InviteForm({
       <Button
         type="submit"
         className="h-11 w-full"
-        disabled={!emailOk || invite.isPending || !canInvite}
+        disabled={!emailOk || emailPending || invite.isPending || !canInvite}
         {...(canInvite ? {} : gate("documents.write"))}
         data-testid="pa-send"
       >
@@ -401,8 +423,15 @@ export function PortalAccessSheet({
         >
           <SheetHeader className="border-b border-border p-5 pb-4">
             <SheetTitle>{t["customerContacts.portalAccess"]}</SheetTitle>
-            <SheetDescription dir="auto">
-              {contact ? formatMessage(t["portal.access.forName"], { name: contact.name }) : ""}
+            <SheetDescription>
+              {contact ? (
+                <IsolatedMessage
+                  template={t["portal.access.forName"]}
+                  values={{ name: contact.name }}
+                />
+              ) : (
+                ""
+              )}
             </SheetDescription>
           </SheetHeader>
 
@@ -580,9 +609,13 @@ export function PortalAccessSheet({
               <h3 id="pa-invite" className="text-small font-semibold">
                 {t["portal.access.inviteSomeone"]}
               </h3>
-              {contact && (
+              {isLoading && <Skeleton className="mt-3 h-40" />}
+              {contact && !isLoading && (
                 <InviteForm
                   key={contact.id}
+                  pendingEmails={(data?.invitations ?? [])
+                    .filter((i) => i.status === "pending")
+                    .map((i) => i.email.trim().toLowerCase())}
                   contact={contact}
                   companyId={companyId}
                   supplierName={supplierName}
@@ -621,11 +654,19 @@ export function PortalAccessSheet({
               {confirm?.kind === "remove" ? t["portal.access.remove"] : t["portal.access.revoke"]}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {confirm?.kind === "remove"
-                ? formatMessage(t["portal.access.removeConfirm"], { name: confirm.name })
-                : confirm?.kind === "revoke"
-                  ? formatMessage(t["portal.access.revokeConfirm"], { email: confirm.email })
-                  : ""}
+              {confirm?.kind === "remove" ? (
+                <IsolatedMessage
+                  template={t["portal.access.removeConfirm"]}
+                  values={{ name: confirm.name }}
+                />
+              ) : confirm?.kind === "revoke" ? (
+                <IsolatedMessage
+                  template={t["portal.access.revokeConfirm"]}
+                  values={{ email: confirm.email }}
+                />
+              ) : (
+                ""
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

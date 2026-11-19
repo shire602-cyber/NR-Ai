@@ -159,6 +159,8 @@ export function PortalInvoiceList({
           ))}
         </div>
         <div className="relative sm:w-64">
+          {/* No dir="auto" on the input: logical padding (ps-9) follows the input's own direction,
+              so it must inherit the page direction to stay on the icon's side in Arabic. */}
           <Search
             className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden
@@ -170,7 +172,6 @@ export function PortalInvoiceList({
             placeholder={t["portal.list.search"]}
             aria-label={t["portal.list.search"]}
             className="h-11 ps-9 text-base"
-            dir="auto"
             data-testid="portal-invoice-search"
           />
         </div>

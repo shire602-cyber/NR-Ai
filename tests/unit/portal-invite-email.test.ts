@@ -100,4 +100,54 @@ describe("STEP5 portal invitation email", () => {
   it("never replaces the support address", () => {
     expect(render().html).not.toContain("support@");
   });
+
+  it("is fluid: no fixed 600px table, a max-width cap and room at 375px", () => {
+    const m = render({ language: "bilingual" });
+    expect(m.html).not.toMatch(/<table[^>]*\swidth="600"/);
+    expect(m.html).toContain("max-width:600px");
+    expect(m.html).toContain('name="viewport"');
+    // Every table is 100% wide, so nothing can exceed a 375px viewport.
+    for (const t of m.html.match(/<table[^>]*>/g) ?? []) expect(t).toContain('width="100%"');
+    expect(m.html).not.toMatch(/padding:\d+px 40px/);
+  });
+
+  it("Arabic mail: the brand header is right-aligned and RTL", () => {
+    const ar = render({ language: "ar" }).html;
+    const header = ar.slice(ar.indexOf("<h1"), ar.indexOf("</h1>"));
+    expect(header).toContain("text-align:right");
+    expect(ar).toMatch(/<td dir="rtl" style="background:[^"]*text-align:right/);
+    const en = render({ language: "en" }).html;
+    expect(en).toMatch(/<td dir="ltr" style="background:[^"]*text-align:left/);
+  });
+
+  it("greets a person, never the company: no contact person gives a generic greeting", () => {
+    const none = render({ name: null, language: "bilingual" }, false);
+    expect(none.html).toContain("Hello,");
+    expect(none.html).not.toContain("Hi Al Noor");
+    expect(none.html).toContain("مرحبًا بكم،");
+    expect(none.text).toContain("Hello,");
+    expect(none.text).toContain("مرحبًا بكم،");
+    // A contact person on the contact is used when the invitation has no name.
+    const withPerson = renderPortalInviteEmail({
+      company: {
+        name: "Desert Rose",
+        trnVatNumber: null,
+        businessAddress: null,
+        contactEmail: null,
+      },
+      contact: { name: "Al Noor Trading", nameAr: null, contactPerson: "Omar" },
+      invitation: { language: "ar", name: null, message: null, expiresAt } as never,
+      url: URL,
+      onlinePayment: false,
+    });
+    expect(withPerson.html).toContain("مرحبًا <bdi>Omar</bdi>،");
+  });
+
+  it("the plain-text English copy mentions PDFs and the statement of account", () => {
+    const m = render({}, false);
+    expect(m.text).toMatch(/download PDFs and your statement of account/);
+    expect(m.html).toMatch(/download PDFs and your statement of account/);
+    expect(render({ language: "ar" }).text).toContain("PDF");
+    expect(render({ language: "ar" }).text).toContain("كشف حسابك");
+  });
 });

@@ -49,7 +49,7 @@ export default function PortalMessages() {
       setContent("");
       toast({
         title: translateNow("toasts.messageSent"),
-        description: translateNow("toasts.nrAccountingWillRespondShortly"),
+        description: translateNow("portal.doc.messageSentBody"),
       });
     },
     onError: (e: any) =>

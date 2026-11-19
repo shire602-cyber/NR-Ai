@@ -122,24 +122,24 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             const label = t[labelKey];
             const active = location === href || location.startsWith(href + "/");
             return (
-              <Link key={href} href={href}>
-                <a
-                  aria-current={active ? "page" : undefined}
-                  className={[
-                    "flex h-9 items-center gap-3 rounded-md px-3 text-small font-medium transition-colors duration-fast",
-                    active
-                      ? "bg-sidebar-accent text-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                  ].join(" ")}
-                >
-                  <Icon
-                    className={["h-4 w-4", active ? "text-accent" : "text-muted-foreground"].join(
-                      " "
-                    )}
-                    aria-hidden
-                  />
-                  {label}
-                </a>
+              <Link
+                key={href}
+                href={href}
+                aria-current={active ? "page" : undefined}
+                className={[
+                  "flex h-9 items-center gap-3 rounded-md px-3 text-small font-medium transition-colors duration-fast",
+                  active
+                    ? "bg-sidebar-accent text-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                ].join(" ")}
+              >
+                <Icon
+                  className={["h-4 w-4", active ? "text-accent" : "text-muted-foreground"].join(
+                    " "
+                  )}
+                  aria-hidden
+                />
+                {label}
               </Link>
             );
           })}
@@ -166,12 +166,17 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
         <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 md:px-8">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="md:hidden">{companyMark}</div>
-            <h1 className="truncate text-body font-semibold text-foreground">
-              <span className="block truncate md:hidden" dir="auto">
+            {/* Not a heading: each page has exactly one h1 (its PageHeader). On phones the
+                supplier name shows once: here, or in the switcher when there are several. */}
+            <p className="truncate text-body font-semibold text-foreground">
+              <span
+                className={`truncate ${accounts.length > 1 ? "hidden" : "block md:hidden"}`}
+                dir="auto"
+              >
                 {companyName}
               </span>
               <span className="hidden md:inline">{title}</span>
-            </h1>
+            </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
             <span className="hidden max-w-[280px] truncate text-caption text-muted-foreground sm:inline">
@@ -189,7 +194,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="max-w-[160px] gap-1.5"
+                    className="max-w-[200px] gap-1.5 md:max-w-[160px]"
                     aria-label={t["portal.switcher.label"]}
                     data-testid="portal-supplier-switcher"
                   >
@@ -263,17 +268,17 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
           {NAV_ITEMS.map(({ labelKey, href, icon: Icon }) => {
             const active = location === href || location.startsWith(href + "/");
             return (
-              <Link key={href} href={href}>
-                <a
-                  aria-current={active ? "page" : undefined}
-                  className={[
-                    "flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-small font-medium",
-                    active ? "bg-muted text-foreground" : "text-muted-foreground",
-                  ].join(" ")}
-                >
-                  <Icon className="h-4 w-4" aria-hidden />
-                  {t[labelKey]}
-                </a>
+              <Link
+                key={href}
+                href={href}
+                aria-current={active ? "page" : undefined}
+                className={[
+                  "flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-small font-medium",
+                  active ? "bg-muted text-foreground" : "text-muted-foreground",
+                ].join(" ")}
+              >
+                <Icon className="h-4 w-4 shrink-0" aria-hidden />
+                {t[labelKey]}
               </Link>
             );
           })}

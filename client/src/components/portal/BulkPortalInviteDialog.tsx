@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Send } from "lucide-react";
+import { Check, Copy, Download, Loader2, Send } from "lucide-react";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -28,6 +29,19 @@ type Outcome =
   | "not_found"
   | "rate_limited";
 
+interface BulkResult {
+  contactId: string;
+  outcome: Outcome;
+  delivery?: "email" | "queued" | "link";
+  inviteUrl?: string;
+}
+
+/** One CSV cell, quoted, with a leading formula character neutralised (spreadsheet injection). */
+function csvCell(value: string): string {
+  const safe = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
 interface BulkProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,21 +66,25 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
   const [picked, setPicked] = useState<Set<string>>(
     () => new Set(eligible.slice(0, PORTAL_BULK_MAX).map((c) => c.id))
   );
-  const [results, setResults] = useState<Array<{ contactId: string; outcome: Outcome }> | null>(
-    null
-  );
+  const [results, setResults] = useState<BulkResult[] | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const send = useMutation({
     mutationFn: () =>
       apiRequest("POST", `/api/companies/${companyId}/portal-invitations/bulk`, {
         contactIds: [...picked],
         language: "contact",
-      }) as Promise<{ results: Array<{ contactId: string; outcome: Outcome }> }>,
+      }) as Promise<{ results: BulkResult[] }>,
     onSuccess: (res) => {
       setResults(res.results);
       void queryClient.invalidateQueries({ queryKey: portalSummaryKey(companyId) });
       const n = res.results.filter((r) => r.outcome === "invited").length;
-      toast({ title: formatMessage(t["portal.bulk.done"], { count: n }) });
+      const unsent = res.results.some((r) => r.inviteUrl);
+      toast({
+        title: formatMessage(t[unsent ? "portal.bulk.doneLinks" : "portal.bulk.done"], {
+          count: n,
+        }),
+      });
     },
     onError: (err) =>
       toast({
@@ -76,6 +94,35 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
   });
 
   const nameOf = (id: string) => contacts.find((c) => c.id === id)?.name ?? id;
+  const emailOf = (id: string) => contacts.find((c) => c.id === id)?.email ?? "";
+  // With no email provider nothing was sent: the links are for the supplier to share.
+  const links = (results ?? []).filter((r) => r.inviteUrl);
+  const copy = async (text: string, key: string, doneToast: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(key);
+      toast({ title: doneToast });
+    } catch {
+      toast({ title: t["portal.bulk.copyFailed"], variant: "destructive" });
+    }
+  };
+  const exportCsv = () => {
+    const rows = [
+      [t["portal.bulk.csv.customer"], t["portal.bulk.csv.email"], t["portal.bulk.csv.link"]],
+      ...links.map((r) => [nameOf(r.contactId), emailOf(r.contactId), r.inviteUrl ?? ""]),
+    ];
+    const blob = new Blob(["\uFEFF" + rows.map((r) => r.map(csvCell).join(",")).join("\r\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "portal-invitation-links.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
   const toggle = (id: string, on: boolean) =>
     setPicked((p) => {
       const next = new Set(p);
@@ -91,18 +138,79 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
         <DialogDescription>{t["portal.bulk.help"]}</DialogDescription>
       </DialogHeader>
       {results ? (
-        <ul className="max-h-72 space-y-1 overflow-y-auto text-small" data-testid="bulk-results">
-          {results.map((r) => (
-            <li key={r.contactId} className="flex items-center justify-between gap-3 py-1">
-              <span className="truncate" dir="auto">
-                {nameOf(r.contactId)}
-              </span>
-              <span className="shrink-0 text-muted-foreground">
-                {t[`portal.bulk.outcome.${r.outcome}`]}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <div className="space-y-3">
+          {links.length > 0 && (
+            <Alert tone="info" title={t["portal.bulk.linksTitle"]} data-testid="bulk-links-panel">
+              <p className="mb-2 text-small">{t["portal.bulk.linksBody"]}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  className="min-h-11"
+                  onClick={() =>
+                    void copy(
+                      links.map((r) => `${nameOf(r.contactId)}\t${r.inviteUrl}`).join("\n"),
+                      "all",
+                      t["portal.bulk.linksCopied"]
+                    )
+                  }
+                  data-testid="bulk-copy-all"
+                >
+                  {copiedId === "all" ? (
+                    <Check className="me-2 h-4 w-4" aria-hidden />
+                  ) : (
+                    <Copy className="me-2 h-4 w-4" aria-hidden />
+                  )}
+                  {t["portal.bulk.copyAll"]}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="min-h-11"
+                  onClick={exportCsv}
+                  data-testid="bulk-export-links"
+                >
+                  <Download className="me-2 h-4 w-4" aria-hidden />
+                  {t["portal.bulk.exportLinks"]}
+                </Button>
+              </div>
+            </Alert>
+          )}
+          <ul className="max-h-72 space-y-1 overflow-y-auto text-small" data-testid="bulk-results">
+            {results.map((r) => (
+              <li key={r.contactId} className="flex items-center justify-between gap-3 py-1">
+                <span className="truncate" dir="auto">
+                  {nameOf(r.contactId)}
+                </span>
+                {r.inviteUrl ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="min-h-11 shrink-0"
+                    onClick={() =>
+                      void copy(
+                        r.inviteUrl!,
+                        r.contactId,
+                        t["customerContacts.linkCopiedToClipboard"]
+                      )
+                    }
+                    aria-label={`${t["portal.invite.copyLink"]}: ${nameOf(r.contactId)}`}
+                    data-testid={`bulk-copy-${r.contactId}`}
+                  >
+                    {copiedId === r.contactId ? (
+                      <Check className="me-1.5 h-4 w-4" aria-hidden />
+                    ) : (
+                      <Copy className="me-1.5 h-4 w-4" aria-hidden />
+                    )}
+                    {t["portal.invite.copyLink"]}
+                  </Button>
+                ) : (
+                  <span className="shrink-0 text-muted-foreground">
+                    {t[`portal.bulk.outcome.${r.outcome}`]}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : eligible.length === 0 ? (
         <p className="text-small text-muted-foreground" data-testid="bulk-empty">
           {t["portal.bulk.none"]}
@@ -133,22 +241,25 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
           </div>
           <ul className="max-h-72 divide-y divide-border overflow-y-auto rounded-lg border border-border">
             {eligible.map((c) => (
-              <li key={c.id} className="flex items-center gap-3 p-3">
-                <Checkbox
-                  id={`bulk-${c.id}`}
-                  checked={picked.has(c.id)}
-                  onCheckedChange={(v) => toggle(c.id, v === true)}
-                  className="h-5 w-5"
-                />
+              <li key={c.id}>
+                {/* The whole row is the label: a 44px-tall tap target, not just the 20px box. */}
                 <Label
                   htmlFor={`bulk-${c.id}`}
-                  className="min-w-0 flex-1 cursor-pointer font-normal"
+                  className="flex min-h-11 cursor-pointer items-center gap-3 p-3 font-normal"
                 >
-                  <span className="block truncate text-small font-medium" dir="auto">
-                    {c.name}
-                  </span>
-                  <span className="block truncate text-caption text-muted-foreground" dir="ltr">
-                    {c.email}
+                  <Checkbox
+                    id={`bulk-${c.id}`}
+                    checked={picked.has(c.id)}
+                    onCheckedChange={(v) => toggle(c.id, v === true)}
+                    className="h-5 w-5"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-small font-medium" dir="auto">
+                      {c.name}
+                    </span>
+                    <span className="block truncate text-caption text-muted-foreground" dir="ltr">
+                      {c.email}
+                    </span>
                   </span>
                 </Label>
               </li>
