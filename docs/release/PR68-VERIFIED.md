@@ -558,6 +558,25 @@ Customer pages, measured on the same build (static chunk graph, gzip, root plus 
 
 **دون تغيير.** صفحة المعتمِد فيها «تم» فقط (لا رفض)؛ النتائج التي يراها المالك: منجز وملغى ومنتهٍ وغير صالح. الإرسال يحتاج مزوّدًا ولا يمكن ربط أحد دون بيانات اعتماد، وواجهة المستخدم تقول ذلك.
 
+### Combined with #67 before merge (2026-11-19)
+
+- **Base merged:** `claude/eloquent-maxwell-kjxxjc` at `67adb05c` (STEP4 sign-up plan choice on top of STEP2/STEP3), normal merge; every gate and e2e below ran on this base.
+- **Conflicts (7), base as the foundation:** `TrialBanner.tsx` (kept the base's chosen-plan banner and our `endedOnly`), `PlanCard.tsx` and `Subscription.tsx` (base's trial-signup link, and our localized `planContactHref` mailto kept instead of the English-only subject), `locales/{en,ar}/marketing.json` (both sides appended keys: kept both), `migrations/meta/_journal.json` and `scripts/qa/bundle-baseline.json`.
+- **Migration:** the base took `0135_step4_signup_plan_choice`, so ours is now `0136_settlement_open_balance_indexes` (journal idx 135, `when` +10 s). References updated (AGENTS.md, runbook, rehearsal, migration docs, `pr68-verified` ledger check now 136+).
+- **Free-plan text removed (owner decision):** unused `marketing.planFree`, `planFreeSummary`, `prInheritsFree`, `prPlan_free`, `pages.subscriptionFree`, `subscriptionNoRenewal` in en and ar; the support-hours line no longer names free users; the payment-failure e-mail says the books become read-only instead of "moves to the Free plan". Prices and the support address untouched. `tests/unit/no-free-plan-copy.test.ts` fails if a free-plan key or sentence returns (en and ar).
+- **Fake-password guard:** #67's `step4-signup-plan.test.ts` typed a password literal; it now uses `FAKE_PASSWORD`, and `no-real-looking-test-passwords` flags any literal typed into `input-password`.
+- **Gates:** `check`, `lint`, `check:migrations` pass; `npm test` 3094 passed (312 files); `test:db` 1016 passed (149 files, throwaway Postgres 16); `test:integration` 233 passed (19+48+10+43+48+13+52 incl. `pr68-verified` 52/52) on a fresh database. Bundle baseline refreshed for the merged tree (376 chunks, 8.59 MB).
+- **E2E (local production build, fresh database each):** `e2e:einvoice-client` 2107/2107; `e2e:customer-links` 1156/1156 and 581/581 at 360 px; `e2e:auth-portal` 1418/1418; `e2e:books-pages` all checks passed (4921 ok lines); `e2e:firm-tools` 1112/1112; `e2e:arabic-runtime` 25 routes, 0 English lines. Smoke of #67's newest pages (sign-up, pricing, login, subscription, settings, tax rates, e-invoicing settings, evidence center, removed `/zatca`, admin dashboard/users/clients/documents/invitations; EN and AR, 1440 and iPhone 13): 68 loads, 0 console errors, 0 failed calls, 0 overflow; the only Arabic "English" hits are the language-switcher label and seeded company names.
+- **CI on `a9f0e0b7`:** five of six checks green (typecheck/lint/unit/build/bundle, DB harness, browser E2E, boot gate, self-hosting gate). GitGuardian red: it flags only the fake form fixture in historical commits `eba6aedc` and `89147f8c`; the tree has no literal. Remedy: mark incidents 40231730 and 40457455 as test credentials in the GitGuardian dashboard.
+
+### الدمج مع #67 قبل الإتمام (19-11-2026)
+
+- **القاعدة المدموجة:** `claude/eloquent-maxwell-kjxxjc` عند `67adb05c` (اختيار الباقة عند التسجيل، STEP4)، ودمج عادي؛ كل الفحوص أدناه على هذه القاعدة.
+- **التعارضات (7):** `TrialBanner` و`PlanCard` و`Subscription` ومفاتيح `marketing.json` بالعربية والإنجليزية وسجل الهجرات وخط أساس الحزم؛ اعتُمدت القاعدة أساساً مع إبقاء رابط البريد المحلي للغة.
+- **الهجرة:** أخذت القاعدة الرقم 0135، فأصبحت هجرتنا `0136_settlement_open_balance_indexes`.
+- **حذف نصوص الباقة المجانية (قرار المالك):** حُذفت المفاتيح غير المستخدمة بالعربية والإنجليزية وعُدّل نص الدعم ورسالة فشل الدفع؛ لم تتغير الأسعار ولا بريد الدعم؛ اختبار جديد يمنع عودتها.
+- **النتائج:** `npm test` 3094، و`test:db` 1016، وفحوص التكامل 233، وإنجليزي/عربي: e2e للفوترة الإلكترونية 2107، وروابط العملاء 1156 (و581 عند 360)، والدخول والبوابة 1418، وصفحات المحاسبة بلا إخفاقات، وأدوات المكتب 1112، والتشغيل العربي 25 مساراً بلا نص إنجليزي. خمسة من ستة فحوص CI خضراء؛ GitGuardian يشير فقط إلى كلمة مرور تجريبية في التاريخ.
+
 ## GitGuardian on #67: 8 findings, all one fake test fixture (no real credential)
 
 GitGuardian reports "8 secrets uncovered" on #67 (head `a3c0b99`). All eight are occurrences of **one incident (40231730, "Generic Password")**: two lines in one test file, repeated across four commits.
