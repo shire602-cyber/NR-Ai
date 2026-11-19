@@ -605,7 +605,7 @@ export function registerInvoiceRoutes(app: Express) {
               fields: changed,
               hint: "Issue a credit note (or debit note) to correct an issued invoice.",
             },
-            `An issued invoice cannot be changed (${changed.join(", ")}). Issue a credit note instead.`
+            "An issued invoice cannot be changed. Issue a credit note instead."
           );
         }
         const patch: Partial<Invoice> = {};

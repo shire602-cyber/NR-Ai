@@ -24,7 +24,9 @@ const placeholders = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1
 const hasArabic = (s: string) => /[؀-ۿ]/.test(s);
 
 const ALL: Array<[string, string]> = [
-  ...Object.entries(JOURNAL_MEMO_TEMPLATES).map(([k, v]) => [`journal.memo.${k}`, v] as [string, string]),
+  ...Object.entries(JOURNAL_MEMO_TEMPLATES).map(
+    ([k, v]) => [`journal.memo.${k}`, v] as [string, string]
+  ),
   ...Object.entries(JOURNAL_LINE_TEMPLATES).map(
     ([k, v]) => [`journal.memo.line.${k}`, v] as [string, string]
   ),
@@ -38,7 +40,9 @@ describe("journal memo registry", () => {
       expect(hasArabic(ar[catalogKey]), `${catalogKey} is Arabic`).toBe(true);
       const known = new Set(placeholders(template));
       for (const p of placeholders(ar[catalogKey])) {
-        expect(known.has(p), `${catalogKey}: {${p}} is not a parameter of "${template}"`).toBe(true);
+        expect(known.has(p), `${catalogKey}: {${p}} is not a parameter of "${template}"`).toBe(
+          true
+        );
       }
       // Arabic keeps every parameter the audit text carries, except ones it drops on purpose.
       const dropped = placeholders(template).filter((p) => !ar[catalogKey].includes(`{${p}}`));
@@ -74,7 +78,9 @@ describe("journal memo registry", () => {
   });
 
   it("a person's own memo is shown unchanged, key or not", () => {
-    expect(localizeJournalMemo(ar, "Office rent", "ar", { memo: "Office rent" })).toBe("Office rent");
+    expect(localizeJournalMemo(ar, "Office rent", "ar", { memo: "Office rent" })).toBe(
+      "Office rent"
+    );
     // A stale key never overrides text the user typed afterwards.
     expect(
       localizeJournalMemo(ar, "Typed by hand", "ar", {

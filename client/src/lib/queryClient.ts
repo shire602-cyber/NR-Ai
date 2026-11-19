@@ -3,7 +3,11 @@ import { getAuthHeaders, hasAuthHint, refreshSession } from "./auth";
 import { apiUrl } from "./api";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
 import { isOnline, queueForSync } from "./pwa";
-import { localizeApiError, VALIDATION_NAMESPACES } from "./validation-messages";
+import {
+  localizeApiError,
+  localizeApiErrorByStatus,
+  VALIDATION_NAMESPACES,
+} from "./validation-messages";
 import { loadNamespaces, useI18n } from "./i18n";
 import { announcePlanLimit } from "./plan-limit";
 import {
@@ -54,7 +58,14 @@ async function throwIfResNotOk(res: Response) {
     await loadNamespaces(useI18n.getState().locale, VALIDATION_NAMESPACES).catch(() => undefined);
     // WQ7: a plan refusal (402/403 with a plan code) also opens the upgrade prompt.
     announcePlanLimit(body);
-    throw new ApiError(localizeApiError(body) ?? errorMessage, res.status, body, errorMessage);
+    // Arabic never shows the server's English: a known code has catalog copy, anything else a
+    // sentence for its status.
+    throw new ApiError(
+      localizeApiError(body) ?? localizeApiErrorByStatus(res.status, errorMessage) ?? errorMessage,
+      res.status,
+      body,
+      errorMessage
+    );
   }
 }
 

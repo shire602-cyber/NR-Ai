@@ -123,7 +123,9 @@ export type JournalMemoKey = keyof typeof JOURNAL_MEMO_TEMPLATES;
 export const journalMemoCatalogKey = (key: string): string => `journal.memo.${key}`;
 
 export function isJournalMemoKey(key: unknown): key is JournalMemoKey {
-  return typeof key === "string" && Object.prototype.hasOwnProperty.call(JOURNAL_MEMO_TEMPLATES, key);
+  return (
+    typeof key === "string" && Object.prototype.hasOwnProperty.call(JOURNAL_MEMO_TEMPLATES, key)
+  );
 }
 
 export interface JournalMemoFields {
@@ -141,7 +143,10 @@ export function fillJournalMemo(template: string, params: JournalMemoParams): st
  * The English memo plus the key and parameters to store beside it. Spread into the posting input:
  * `postJournal({ ...journalMemo("customerDeposit", { ref, party }), ... })`.
  */
-export function journalMemo(key: JournalMemoKey, params: JournalMemoParams = {}): JournalMemoFields {
+export function journalMemo(
+  key: JournalMemoKey,
+  params: JournalMemoParams = {}
+): JournalMemoFields {
   const memoParams: Record<string, string> = {};
   for (const [k, v] of Object.entries(params)) memoParams[k] = String(v ?? "");
   return {
