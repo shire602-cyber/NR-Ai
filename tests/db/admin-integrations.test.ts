@@ -62,6 +62,21 @@ describe("STEP1 F6 admin integrations", () => {
     expect(r.body.aiCreditsUsed).toBe(1);
   });
 
+  it("[S3-active] 'Active companies' counts populated companies, not deleted or switched-off ones", async () => {
+    const admin = await h.createTenant({ name: "ActiveAdmin", isAdmin: true });
+    const before = (await admin.as.get("/api/admin/stats")).body;
+    const second = await h.createTenant({ name: "ActiveSecond" });
+    const third = await h.createTenant({ name: "ActiveThird" });
+    const after = (await admin.as.get("/api/admin/stats")).body;
+    expect(after.activeCompanies).toBe(before.activeCompanies + 2);
+    expect(after.activeCompanies).toBeGreaterThan(0);
+    await h.sql(`UPDATE companies SET is_active = false WHERE id = $1`, [second.company.id]);
+    await h.sql(`UPDATE companies SET deleted_at = now() WHERE id = $1`, [third.company.id]);
+    const last = (await admin.as.get("/api/admin/stats")).body;
+    expect(last.activeCompanies).toBe(before.activeCompanies);
+    expect(last.totalCompanies).toBe(before.totalCompanies + 1); // switched off, still listed
+  });
+
   it("[F6-sheets-test] without credentials the test answers not_configured (no Google call)", async () => {
     const admin = await h.createTenant({ name: "IntegrationsAdmin2", isAdmin: true });
     const r = await admin.as.post("/api/admin/integrations/google-sheets/test", {});

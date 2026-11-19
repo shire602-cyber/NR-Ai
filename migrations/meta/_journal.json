@@ -911,6 +911,13 @@
    "when": 1781430450000,
    "tag": "0130_cash_sale_numbering",
    "breakpoints": false
+  },
+  {
+   "idx": 130,
+   "version": "7",
+   "when": 1781430460000,
+   "tag": "0131_journal_memo_keys",
+   "breakpoints": false
   }
  ]
 }

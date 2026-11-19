@@ -4,6 +4,7 @@ import { apiUrl } from "./api";
 import { getAuthHeaders } from "./auth";
 import { withCsrfHeader } from "./csrf";
 import { parseCalendarDate } from "./format-date";
+import { failedResponseMessage } from "./validation-messages";
 
 // Shape of one row in the OCR-format Excel export. Matches the server-side
 // schema in `server/services/excel-export.service.ts` so the request body and
@@ -140,13 +141,15 @@ async function postForBlob(
 
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
+    let errorBody: unknown;
     try {
-      const json = await res.json();
+      errorBody = await res.json();
+      const json = errorBody as { message?: string; error?: string };
       message = json.message || json.error || message;
     } catch {
       /* binary body — keep status */
     }
-    throw new Error(message);
+    throw new Error(await failedResponseMessage(res.status, errorBody, message));
   }
 
   const blob = await res.blob();
@@ -1956,13 +1959,15 @@ export async function downloadServerFile(url: string, fallbackFilename: string):
   });
   if (!res.ok) {
     let message = `${res.status} ${res.statusText}`;
+    let errorBody: unknown;
     try {
-      const json = await res.json();
+      errorBody = await res.json();
+      const json = errorBody as { message?: string; error?: string };
       message = json.message || json.error || message;
     } catch {
       /* binary body — keep status */
     }
-    throw new Error(message);
+    throw new Error(await failedResponseMessage(res.status, errorBody, message));
   }
   const blob = await res.blob();
   await triggerBlobDownload(

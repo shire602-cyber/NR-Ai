@@ -2,6 +2,7 @@
 // Domain classes are chained with `extends` and composed into DatabaseStorage in
 // server/storage.ts (R20-09); import `storage` from "./storage", not these classes.
 
+import { journalMemo } from "@shared/journal-memo";
 import {
   accounts,
   creditNoteLines,
@@ -753,7 +754,10 @@ export class SalesStorage extends LedgerStorage {
         {
           companyId: input.companyId,
           date: input.date.toISOString().slice(0, 10),
-          memo: `Payment received for Invoice ${lockedInvoice.number || input.invoiceId} - ${input.method}`,
+          ...journalMemo("paymentReceived", {
+            ref: lockedInvoice.number || input.invoiceId,
+            method: input.method,
+          }),
           status: "posted",
           source: "payment",
           sourceId: input.invoiceId,

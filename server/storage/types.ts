@@ -145,6 +145,8 @@ export interface PostReceiptAtomicArgs {
   paymentAccountId: string;
   entryDate: Date;
   memo: string;
+  memoKey?: string | null;
+  memoParams?: Record<string, string> | null;
   lines: JournalLineInsert[];
 }
 
@@ -159,6 +161,8 @@ export interface ReviseReceiptAtomicArgs {
   reason: string | null;
   entryDate: Date;
   memo: string;
+  memoKey?: string | null;
+  memoParams?: Record<string, string> | null;
   /** Builds the new journal lines from the receipt as it will be after `patch`. */
   buildLines: (updated: Receipt) => JournalLineInsert[];
 }

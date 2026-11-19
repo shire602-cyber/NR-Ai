@@ -38,7 +38,7 @@ export function EInvoiceHeaderStrip({
   const [open, setOpen] = useState(false);
   const status = useEInvoiceStatus(invoiceId);
   const view = status.data;
-  if (!view) return null;
+  if (!view?.tracks) return null;
   const { delivery, reporting } = view.tracks;
   const first = view.issues[0];
   const firstLabelKey = first ? fieldLabelKey(first.field) : null;

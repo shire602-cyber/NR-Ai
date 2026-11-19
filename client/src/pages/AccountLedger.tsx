@@ -582,7 +582,7 @@ export default function AccountLedger() {
                 </TableCell>
                 <TableCell data-truncate="" data-cell="title">
                   <span dir="auto">
-                    {localizeJournalMemo(t, entry.description || entry.memo, locale) || "—"}
+                    {localizeJournalMemo(t, entry.description || entry.memo, locale, entry) || "—"}
                   </span>
                 </TableCell>
                 <TableCell data-numeric="">

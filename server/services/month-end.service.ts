@@ -1,4 +1,5 @@
 import type { QueryResultRow } from "pg";
+import { journalMemo } from "@shared/journal-memo";
 import { pool } from "../db";
 import { DomainError } from "../errors";
 import { postJournal } from "../ledger";
@@ -645,7 +646,7 @@ export async function computeCloseSummary(
     periodStart,
     periodEnd,
     date: periodEnd,
-    memo: `Computed close for ${periodStart} to ${periodEnd}`,
+    ...journalMemo("computedClose", { from: periodStart, to: periodEnd }),
     lines,
     totalDebits: aed(dr),
     totalCredits: aed(cr),
@@ -892,6 +893,8 @@ export interface ClosePostingPort {
     companyId: string;
     date: string;
     memo: string;
+    memoKey?: string | null;
+    memoParams?: Record<string, string> | null;
     source: string;
     userId: string;
     /** The entry this one undoes (reopen), recorded as source_id. */
@@ -908,6 +911,8 @@ export const ledgerClosePostingPort: ClosePostingPort = {
         companyId: input.companyId,
         date: input.date,
         memo: input.memo,
+        memoKey: input.memoKey ?? null,
+        memoParams: input.memoParams ?? null,
         source: input.source,
         sourceId: input.sourceId ?? null,
         idempotencyKey: input.idempotencyKey ?? null,
@@ -1014,7 +1019,7 @@ export async function closeFiscalYear(
     const posted = await closePostingPort.post({
       companyId,
       date: fye,
-      memo: `Year-end close FY ${fys} to ${fye}`,
+      ...journalMemo("yearEndClose", { ref: `${fys} to ${fye}` }),
       source: YEAR_END_CLOSE_SOURCE,
       userId,
       lines: summary.lines.map((l) => ({
@@ -1113,7 +1118,7 @@ export async function reopenFiscalYear(
         await closePostingPort.post({
           companyId,
           date: fye,
-          memo: `Reversal of year-end close FY ${row.fys} to ${fye}`,
+          ...journalMemo("yearEndCloseReversal", { ref: `${row.fys} to ${fye}` }),
           source: YEAR_END_CLOSE_SOURCE,
           sourceId: row.closing_entry_id,
           idempotencyKey: `year_end_close:${row.closing_entry_id}:reopen`,

@@ -15,6 +15,7 @@
  * return's ledger movement (no manual adjustment, no reconciliation difference). One settlement
  * per return (idempotency key); reversing it uses the kernel's reverseBySource.
  */
+import { journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { DomainError } from "../errors";
 import { pool } from "../db";
@@ -243,7 +244,16 @@ export async function settleVatReturn(input: {
     {
       companyId: input.companyId,
       date: input.date,
-      memo: `${label} - ${netFils >= 0 ? "VAT payment" : "VAT refund"}`,
+      ...journalMemo(
+        prior.returnIds.length
+          ? netFils >= 0
+            ? "vatAmendedReturnPayment"
+            : "vatAmendedReturnRefund"
+          : netFils >= 0
+            ? "vatReturnPayment"
+            : "vatReturnRefund",
+        { from: ret.period_start, to: ret.period_end }
+      ),
       status: "posted",
       source: VAT_SETTLEMENT_SOURCE,
       sourceId: ret.id,

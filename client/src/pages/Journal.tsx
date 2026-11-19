@@ -997,7 +997,7 @@ export default function Journal() {
                       </div>
                       {entry.memo && (
                         <div dir="auto" className="truncate text-sm font-medium text-foreground">
-                          {localizeJournalMemo(t, entry.memo, locale)}
+                          {localizeJournalMemo(t, entry.memo, locale, entry)}
                         </div>
                       )}
                       {entry.reversedByEntry && (

@@ -127,6 +127,8 @@ export async function createJournalEntryCompat(
     companyId: insertEntry.companyId,
     date: insertEntry.date as Date | string,
     memo: insertEntry.memo ?? null,
+    memoKey: insertEntry.memoKey ?? null,
+    memoParams: insertEntry.memoParams ?? null,
     source: insertEntry.source ?? "manual",
     sourceId: insertEntry.sourceId ?? null,
     idempotencyKey: (insertEntry as { idempotencyKey?: string | null }).idempotencyKey ?? null,

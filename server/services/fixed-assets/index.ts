@@ -28,6 +28,7 @@
  * B1 (M3): a new asset's cost account follows its category when no class or account is given:
  * vehicles 1250, furniture 1220, computers / electronics 1230, equipment 1210, else 1290.
  */
+import { journalMemo } from "@shared/journal-memo";
 import { sql } from "drizzle-orm";
 import { db, pool } from "../../db";
 import { DomainError } from "../../errors";
@@ -281,6 +282,8 @@ async function post(
   args: {
     date: string;
     memo: string;
+    memoKey?: string;
+    memoParams?: Record<string, string>;
     key: string;
     lines: PostJournalLineInput[];
     actorId: string;
@@ -294,6 +297,8 @@ async function post(
       companyId: a.company_id,
       date: args.date,
       memo: args.memo.slice(0, 500),
+      memoKey: args.memoKey ?? null,
+      memoParams: args.memoParams ?? null,
       status: "posted",
       ...(args.kind ? { kind: args.kind } : {}),
       source: FA_SOURCE,
@@ -389,7 +394,7 @@ export async function capitalizeAsset(
     vatFils > 0 ? await ensureAccountByCode(tx, a.company_id, FA_CODES.VAT_INPUT) : null;
   const entryId = await post(tx, a, {
     date,
-    memo: `Capitalization: ${a.asset_name}`,
+    ...journalMemo("capitalization", { ref: a.asset_name }),
     key: `${FA_SOURCE}:${a.id}:capitalize`,
     ...(args.openingBalance ? { kind: "opening" as const } : {}),
     lines: [
@@ -792,14 +797,28 @@ export async function depreciateInTx(
   const acc = await assetAccounts(tx, a);
   // X4 (J3): date the entry at month end, so it never predates an in-month capitalisation.
   const date = opts.throughDate ?? depreciationPeriodEnd(year, month);
-  const suffix = opts.throughDate
-    ? ` (${month}/${year}, to disposal on ${opts.throughDate})`
+  const depreciationMemo = opts.throughDate
+    ? journalMemo("depreciationToDisposal", {
+        asset: a.asset_name,
+        month,
+        year,
+        date: opts.throughDate,
+      })
     : calc.prorationFactor < 1
-      ? ` (${month}/${year}, prorated ${(calc.prorationFactor * 100).toFixed(1)}%${opts.catchUp ? ", catch-up" : ""})`
-      : ` (${month}/${year}${opts.catchUp ? ", catch-up" : ""})`;
+      ? journalMemo(opts.catchUp ? "depreciationProratedCatchUp" : "depreciationProrated", {
+          asset: a.asset_name,
+          month,
+          year,
+          pct: (calc.prorationFactor * 100).toFixed(1),
+        })
+      : journalMemo(opts.catchUp ? "depreciationCatchUp" : "depreciationMonth", {
+          asset: a.asset_name,
+          month,
+          year,
+        });
   const entryId = await post(tx, a, {
     date,
-    memo: `Depreciation: ${a.asset_name}${suffix}`,
+    ...depreciationMemo,
     // D2 (N6): a month re-charged after its depreciation was reversed gets a new key.
     key: `${FA_SOURCE}:${a.id}:dep:${year}-${month}${opts.keySuffix ?? ""}`,
     lines: [
@@ -948,7 +967,7 @@ export async function revalueAsset(
   );
   const entryId = await post(tx, a, {
     date: args.date,
-    memo: `Revaluation: ${a.asset_name}`,
+    ...journalMemo("revaluation", { asset: a.asset_name }),
     key: `${FA_SOURCE}:${a.id}:revalue:${n[0].n}`,
     lines,
     actorId: args.actorId,
@@ -1015,7 +1034,7 @@ export async function impairAsset(
   );
   const entryId = await post(tx, a, {
     date: args.date,
-    memo: `Impairment: ${a.asset_name}`,
+    ...journalMemo("impairment", { asset: a.asset_name }),
     key: `${FA_SOURCE}:${a.id}:impair:${n[0].n}`,
     lines,
     actorId: args.actorId,
@@ -1466,7 +1485,9 @@ async function disposeInTx(
     const treatment = input.proceedsFils > 0 ? (input.vatTreatment ?? "standard") : null;
     const entryId = await post(tx, a, {
       date: input.disposalDate,
-      memo: `Disposal: ${a.asset_name}${input.buyerName ? ` to ${input.buyerName}` : ""}`,
+      ...(input.buyerName
+        ? journalMemo("disposalTo", { asset: a.asset_name, buyer: input.buyerName })
+        : journalMemo("disposal", { asset: a.asset_name })),
       key: `${FA_SOURCE}:${a.id}:dispose`,
       lines,
       actorId: input.actorId,

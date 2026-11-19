@@ -479,6 +479,8 @@ export async function postInventoryJournal(
     companyId: string;
     date: string;
     memo: string;
+    memoKey?: string;
+    memoParams?: Record<string, string>;
     source: string;
     sourceId: string;
     idempotencyKey: string;
@@ -495,6 +497,8 @@ export async function postInventoryJournal(
       companyId: args.companyId,
       date: args.date,
       memo: args.memo.slice(0, 500),
+      memoKey: args.memoKey ?? null,
+      memoParams: args.memoParams ?? null,
       status: "posted",
       source: args.source,
       sourceId: args.sourceId,

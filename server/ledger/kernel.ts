@@ -25,6 +25,7 @@ import {
   todayIso,
 } from "./normalize";
 import { allocateEntryNumber, lockIdempotencyKey } from "./numbering";
+import { journalMemo } from "@shared/journal-memo";
 import { journalMachine, transitionRow } from "./state-machines";
 import { assertVatPeriodOpen } from "./vat-lock";
 import { assertKernelControlPosting, stampControlAdjustment } from "./control-accounts";
@@ -303,6 +304,8 @@ export async function insertNormalizedEntry(
     entryNumber: "",
     date: n.dateAt,
     memo: n.memo,
+    memoKey: n.memoKey,
+    memoParams: n.memoParams,
     status: n.status,
     source: n.source,
     sourceId: n.sourceId,
@@ -694,14 +697,31 @@ async function reverseInTx(
     credit += l.creditFils;
   }
   const reason = opts.reason ? String(opts.reason).slice(0, 1000) : null;
-  const label = mode === "voided" ? "Void" : "Reversal";
   const n: NormalizedEntry = {
     companyId: original.companyId,
     dateIso: date.toISOString().slice(0, 10),
     dateAt: date,
-    memo: opts.memo
-      ? String(opts.memo).slice(0, 1000)
-      : `${label} of ${original.entryNumber}${reason ? `: ${reason}` : ""}`,
+    ...(opts.memo
+      ? {
+          memo: String(opts.memo).slice(0, 1000),
+          memoKey: opts.memoKey ? String(opts.memoKey).slice(0, 80) : null,
+          memoParams: opts.memoKey && opts.memoParams ? opts.memoParams : null,
+        }
+      : (() => {
+          const m = journalMemo(
+            `${mode === "voided" ? "void" : "reversal"}Of${reason ? "Reason" : ""}` as
+              | "voidOf"
+              | "voidOfReason"
+              | "reversalOf"
+              | "reversalOfReason",
+            { entry: original.entryNumber, reason: reason ?? "" }
+          );
+          return {
+            memo: m.memo.slice(0, 1000),
+            memoKey: m.memoKey as string | null,
+            memoParams: m.memoParams as Record<string, string> | null,
+          };
+        })()),
     reference: original.reference ?? null,
     source: opts.source ? String(opts.source) : "reversal",
     sourceId: opts.sourceId ?? original.id,
@@ -873,6 +893,8 @@ export async function updateDraftEntry(
       .set({
         date: n.dateAt,
         memo: n.memo,
+        memoKey: n.memoKey,
+        memoParams: n.memoParams,
         reference: n.reference,
         autoReverseOn: n.autoReverseOn,
         updatedBy: actorId,

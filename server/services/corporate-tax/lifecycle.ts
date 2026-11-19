@@ -23,6 +23,7 @@
  *   end while that period is open, else on the filing date as a prior-period
  *   under/over-provision (IAS 8.36 change in estimate).
  */
+import { journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { pool } from "../../db";
 import { DomainError } from "../../errors";
@@ -287,7 +288,10 @@ async function postProvisionTrueUp(
     {
       companyId: ctReturn.companyId,
       date,
-      memo: `Corporate tax true-up on filing ${uaeIsoDate(ctReturn.taxPeriodStart)} to ${periodEnd}`,
+      ...journalMemo("corporateTaxTrueUp", {
+        from: uaeIsoDate(ctReturn.taxPeriodStart),
+        to: periodEnd,
+      }),
       source: CT_PROVISION_SOURCE,
       sourceId: ctReturn.id,
       idempotencyKey: `ct-return:${ctReturn.id}:trueup${refile > 0 ? `:refile-${refile}` : ""}`,
@@ -348,7 +352,10 @@ export async function accrueCtReturn(
       {
         companyId: ctReturn.companyId,
         date: periodEnd,
-        memo: `Corporate tax accrual (year end) ${uaeIsoDate(ctReturn.taxPeriodStart)} to ${periodEnd}`,
+        ...journalMemo("corporateTaxAccrual", {
+          from: uaeIsoDate(ctReturn.taxPeriodStart),
+          to: periodEnd,
+        }),
         source: CT_ACCRUAL_SOURCE,
         sourceId: ctReturn.id,
         idempotencyKey: `ct-return:${ctReturn.id}:accrual:${Number(seq.rows[0]?.n ?? 0) + 1}`,
@@ -392,7 +399,10 @@ async function postProvision(
     {
       companyId: ctReturn.companyId,
       date: periodEnd,
-      memo: `Corporate tax provision ${uaeIsoDate(ctReturn.taxPeriodStart)} to ${periodEnd}`,
+      ...journalMemo("corporateTaxProvision", {
+        from: uaeIsoDate(ctReturn.taxPeriodStart),
+        to: periodEnd,
+      }),
       source: CT_PROVISION_SOURCE,
       sourceId: ctReturn.id,
       idempotencyKey: `ct-return:${ctReturn.id}:provision${refile > 0 ? `:refile-${refile}` : ""}`,
