@@ -4,7 +4,6 @@
  * movement + layers + stock level, and returns the change in stock value so the caller's journal
  * can book exactly that amount to the inventory account. Valuation therefore always equals GL.
  */
-import { journalMemo } from "@shared/journal-memo";
 import { sql } from "drizzle-orm";
 import { DomainError } from "../../errors";
 import { emitDomainEventInTx } from "../../platform/event-outbox";
