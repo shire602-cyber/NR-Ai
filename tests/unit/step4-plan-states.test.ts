@@ -421,7 +421,7 @@ describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) 
     expect(text(block)).toContain(
       L(
         "Your books stay read-only until we activate it. Nothing is deleted.",
-        "تبقى دفاترك للقراءة فقط حتى نفعّلها. لم يُحذف شيء."
+        "تبقى دفاترك للقراءة فقط حتى نفعّلها. لا يُحذف شيء."
       )
     );
     expect(text()).not.toContain(L("stay fully open", "مفتوحة بالكامل"));
@@ -638,7 +638,8 @@ describe("read-only forms", () => {
           { "data-testid": "write-form" },
           createElement("input", { "data-testid": "f-input" }),
           createElement("select", { "data-testid": "f-select" }),
-          createElement("button", { type: "submit", "data-testid": "f-save" }, "Save draft")
+          createElement("button", { type: "submit", "data-testid": "f-save" }, "Save draft"),
+          createElement("button", { type: "button", "data-testid": "button-cancel-x" }, "Cancel")
         ),
         createElement(
           "form",
@@ -656,6 +657,8 @@ describe("read-only forms", () => {
     expect((q("f-save") as HTMLButtonElement).disabled).toBe(true);
     expect(q("write-form")!.getAttribute("data-plan-locked")).toBe("true");
     expect((q("s-input") as HTMLInputElement).disabled).toBe(false);
+    // Leaving the form still works.
+    expect((q("button-cancel-x") as HTMLButtonElement).disabled).toBe(false);
     // Plan restored: everything the lock disabled is enabled again.
     sub.state = { ...stateFor("running-chosen"), canWrite: () => true };
     await mountForms();
@@ -737,7 +740,8 @@ describe("catalog copy", () => {
     expect(ar["marketing.prPlanPhrase_enterprise"]).toBe("خطة المؤسسات");
     for (const file of ["marketing", "pages", "components", "onboarding"]) {
       const body = JSON.stringify(read("ar", file));
-      expect(body).not.toMatch(/شهرياً|سنوياً|يوماً/);
+      // One tanween spelling (شهريًا, never شهرياً): letter + fathatan + alif.
+      expect(body).not.toMatch(/[\u0621-\u0647\u064A]\u0627\u064B/);
     }
     // Both per-period labels under a price and the sentences use the same adverbs.
     expect(ar["marketing.pricingPerMonth"]).toBe("شهريًا");

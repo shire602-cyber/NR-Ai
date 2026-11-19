@@ -31,6 +31,10 @@ export function PlanLockBanner() {
   if (PLAN_LOCK_ALWAYS_OPEN.some((p) => location === p || location.startsWith(`${p}/`)))
     return null;
 
+  // The dashboard carries the same state in its own trial banner (one state, one CTA): the
+  // global lock banner would repeat it above it.
+  if (isReadOnly && location === "/dashboard") return null;
+
   if (isReadOnly) {
     // One state rule (lib/plan-state.ts): the trial ended; the customer has no choice, has
     // chosen, or has asked us to activate. Each state has one call to action.

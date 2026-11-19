@@ -6,6 +6,9 @@ import { useSubscription } from "@/hooks/useSubscription";
 const FLAG = "data-plan-locked-disabled";
 /** Forms that stay usable in a read-only workspace: search and filters, and anything opted out. */
 const EXEMPT = '[role="search"], [data-readonly-ok], form[method="get" i]';
+/** Leaving a locked form must keep working: Cancel / Close / Back buttons are not disabled. */
+const KEEP_OPEN = /cancel|close|back/i;
+const testIdOf = (el: HTMLElement) => el.getAttribute("data-testid") ?? "";
 
 /** Disables the controls of one write form (marks what it changed). */
 function lockForm(form: HTMLFormElement) {
@@ -13,7 +16,7 @@ function lockForm(form: HTMLFormElement) {
   form.setAttribute("data-plan-locked", "true");
   // form.elements also holds controls outside the <form> that point at it (form="id").
   for (const control of Array.from(form.elements) as HTMLElement[]) {
-    if (control.closest("[data-readonly-ok]")) continue;
+    if (control.closest("[data-readonly-ok]") || KEEP_OPEN.test(testIdOf(control))) continue;
     if ((control as HTMLInputElement).disabled) continue;
     (control as HTMLInputElement).disabled = true;
     control.setAttribute(FLAG, "true");
