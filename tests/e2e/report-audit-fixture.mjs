@@ -46,6 +46,10 @@ const ARABIC = process.env.REPORT_AUDIT_ARABIC === "true";
 /** English record text -> Arabic text, applied to every request body when ARABIC is on. */
 const AR_TEXT = {
   "Report Audit Owner": "مالك التدقيق التجريبي",
+  "Office 1404, Sheikh Zayed Road, Dubai, UAE": "مكتب 1404، شارع الشيخ زايد، دبي، الإمارات",
+  "Sheikh Zayed Road": "شارع الشيخ زايد",
+  "Business Bay": "الخليج التجاري",
+  Dubai: "دبي",
   "Report Audit Trading LLC": "شركة التدقيق التجارية ذ.م.م",
   "Blue Palm Services LLC": "شركة النخلة الزرقاء للخدمات ذ.م.م",
   "Atlas Free Zone FZCO": "أطلس للمنطقة الحرة",
