@@ -6,6 +6,7 @@ import {
   LogOut,
   MessageSquare,
   MessageSquareText,
+  Store,
   User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useTranslation } from "@/lib/i18n";
 import { useSessionActions } from "@/hooks/useSessionActions";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 /** Support mailbox published on the Help centre (client/src/pages/HelpCenter.tsx). */
 export const SUPPORT_EMAIL = "support@muhasib.ai";
@@ -32,6 +34,9 @@ export function AccountMenu() {
   const { t } = useTranslation();
   const tt = t as Record<string, string>;
   const { signOut, toggleLanguage, locale } = useSessionActions();
+  // STEP5: a login that accepted a supplier's invitation can open that supplier's portal.
+  const { data: me } = useCurrentUser();
+  const hasPortals = Number(me?.portalAccounts) > 0;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -59,6 +64,14 @@ export function AccountMenu() {
             {tt["shell.accountCompanyProfile"]}
           </Link>
         </DropdownMenuItem>
+        {hasPortals && (
+          <DropdownMenuItem asChild>
+            <Link href="/client-portal/dashboard" data-testid="menu-account-portals">
+              <Store aria-hidden />
+              {tt["portal.account.suppliers"]}
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-caption font-medium text-muted-foreground">
           {tt["shell.accountHelpHeading"]}

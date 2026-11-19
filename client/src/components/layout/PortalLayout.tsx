@@ -152,6 +152,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             size="sm"
             className="w-full justify-start text-muted-foreground hover:text-foreground"
             onClick={handleLogout}
+            data-testid="portal-sign-out-side"
           >
             <LogOut className="w-4 h-4 me-2 rtl:-scale-x-100" aria-hidden />
             {t["portal.doc.signOut"]}
@@ -245,7 +246,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                     {locale === "en" ? "العربية" : "English"}
                   </span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={handleLogout}>
+                <DropdownMenuItem onSelect={handleLogout} data-testid="portal-sign-out">
                   <LogOut className="h-4 w-4 me-2 rtl:-scale-x-100" aria-hidden />
                   {t["portal.doc.signOut"]}
                 </DropdownMenuItem>

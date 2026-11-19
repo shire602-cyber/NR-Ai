@@ -445,6 +445,327 @@ async function signupFlow(h, { phone }) {
   });
 }
 
+// ---------------------------------------------------------------------------------------------
+// STEP5: invite a customer to the client portal (desktop, phone, and an existing account)
+// ---------------------------------------------------------------------------------------------
+
+async function dbRows(sqlText, params = []) {
+  const { default: pg } = await import("pg");
+  const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await db.connect();
+  try {
+    return (await db.query(sqlText, params)).rows;
+  } finally {
+    await db.end();
+  }
+}
+
+/** The newest portal-invitation email of a company, read from the durable outbox. */
+async function inviteMail(companyId) {
+  const rows = await dbRows(
+    `SELECT subject, html FROM email_outbox
+      WHERE company_id = $1 AND category = 'portal_invite'
+      ORDER BY created_at DESC LIMIT 1`,
+    [companyId]
+  );
+  expect(rows.length === 1, "no portal invitation in the outbox");
+  const m = /href="([^"]*\/portal\/join#t=[0-9a-f]{64})"/.exec(rows[0].html);
+  expect(!!m, "no invitation link in the email");
+  return { subject: rows[0].subject, hash: new URL(m[1].replace(/&amp;/g, "&")).hash };
+}
+
+/** A customer with an email, an issued invoice, a partial payment and a credit note. */
+async function seedPortalCustomer(owner, lang) {
+  const email = `cust-${Date.now()}${Math.floor(Math.random() * 1000)}@test.local`;
+  const created = await api(
+    owner.token,
+    "POST",
+    `/api/companies/${owner.companyId}/customer-contacts`,
+    {
+      name: lang === "ar" ? "شركة النور للتجارة" : "Al Noor Trading",
+      email,
+      contactPerson: lang === "ar" ? "ليلى" : "Layla",
+    }
+  );
+  expect(created.status < 300, `contact ${created.status}`);
+  const contactId = created.body.id;
+  await dbRows(`UPDATE customer_contacts SET preferred_language = $1 WHERE id = $2`, [
+    lang,
+    contactId,
+  ]);
+  const invoice = await seedInvoice(owner, { contactId, amount: 1000 });
+  const bank = (await accounts(owner)).find((a) => a.code === "1020");
+  const pay = await api(
+    owner.token,
+    "POST",
+    `/api/companies/${owner.companyId}/invoices/${invoice.id}/payments`,
+    { date: today(), method: "bank", paymentAccountId: bank?.id, amount: 300 }
+  );
+  expect(pay.status < 300, `payment ${pay.status} ${JSON.stringify(pay.body).slice(0, 160)}`);
+  const cn = await api(owner.token, "POST", `/api/companies/${owner.companyId}/credit-notes`, {
+    invoiceId: invoice.id,
+    lines: [{ description: "Adjustment", quantity: 1, unitPrice: 100, vatRate: 5 }],
+    reason: "Adjustment",
+  });
+  expect(cn.status === 201, `credit note ${cn.status}`);
+  const issued = await api(owner.token, "POST", `/api/credit-notes/${cn.body.id}/issue`, {});
+  expect(issued.status < 300, `issue credit note ${issued.status}`);
+  return { email, contactId, invoiceId: invoice.id };
+}
+
+async function openInviteSheet(page, contactId, phone) {
+  await goto(page, "/contacts");
+  if (phone) {
+    await page
+      .locator('[data-testid="mobile-contact-list"] button[aria-haspopup="menu"]')
+      .first()
+      .click({ timeout: 10000 });
+    await page.waitForTimeout(250);
+    await tid(page, `button-portal-access-${contactId}`).click({ timeout: 10000 });
+  } else {
+    await rowAction(page, `button-portal-access-${contactId}`);
+  }
+  expect(await visible(page, "pa-email"), "invite sheet did not open");
+}
+
+async function noSideScroll(page, label) {
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - window.innerWidth
+  );
+  expect(overflow <= 1, `${label}: sideways scroll of ${overflow}px`);
+}
+
+async function portalInviteJourney(h, { phone }) {
+  const lang = h.lang;
+  const owner = await newOwner(phone ? "pinvph" : "pinv", lang);
+  const viewport = phone ? { width: 390, height: 844 } : { width: 1440, height: 900 };
+  const password = "Customer9Portal!x";
+  let seed;
+  let hash;
+  let customer;
+  let cpage;
+
+  await h.step(
+    "seed a customer with an email and language, an invoice, a payment, a credit note",
+    async () => {
+      seed = await seedPortalCustomer(owner, lang);
+    }
+  );
+
+  const page = await h.signIn(owner);
+
+  await h.step(
+    "Contacts: Invite to portal opens the sheet prefilled with the email and language",
+    async () => {
+      await openInviteSheet(page, seed.contactId, phone);
+      const value = await tid(page, "pa-email").inputValue();
+      expect(value === seed.email, `email prefill ${value}`);
+      expect(
+        (await tid(page, `pa-lang-${lang}`).getAttribute("aria-checked")) === "true",
+        "language not preselected"
+      );
+      expect(await visible(page, `pa-preview-${lang}`), "no email preview");
+      if (phone) {
+        const box = await tid(page, "portal-access-sheet").boundingBox();
+        expect(box && box.width >= 380, `sheet is not full width on phone (${box?.width})`);
+        await noSideScroll(page, "sheet");
+      }
+    }
+  );
+
+  await h.step(
+    "Send invitation: the honest link panel (no email provider) and the Invited chip",
+    async () => {
+      await tid(page, "pa-send").scrollIntoViewIfNeeded();
+      await click(page, "pa-send");
+      expect(await visible(page, "pa-link-panel"), "no link panel without a provider");
+      await page.keyboard.press("Escape");
+      await settle(page, 500);
+      const chip = tid(page, `portal-chip-${seed.contactId}`);
+      expect(await chip.isVisible(), "no portal chip");
+      expect((await chip.getAttribute("data-state")) === "invited", "chip is not Invited");
+      if (h.ar) await expectNoEnglish(page, "main");
+    }
+  );
+
+  await h.step("the invitation email is in the outbox in the contact's language", async () => {
+    const mail = await inviteMail(owner.companyId);
+    hash = mail.hash;
+    expect(
+      lang === "ar"
+        ? /دعتك/.test(mail.subject)
+        : /invited you to view your invoices/.test(mail.subject),
+      `subject language: ${mail.subject}`
+    );
+  });
+
+  await h.step(
+    "customer opens the link: the token leaves the address bar, the page matches the language",
+    async () => {
+      customer = await openContext(lang, { viewport });
+      cpage = customer.page;
+      await cpage.goto(`${BASE}/portal/join${hash}`, { timeout: 45000 });
+      await settle(cpage);
+      expect(await visible(cpage, "join-form"), "join form not shown");
+      const url = new URL(cpage.url());
+      expect(url.hash === "" && !url.href.includes("#t="), `token still in the URL: ${url.href}`);
+      const dir = await cpage.evaluate(() => document.documentElement.dir);
+      expect(dir === (h.ar ? "rtl" : "ltr"), `html dir ${dir}`);
+      if (h.ar) await expectNoEnglish(cpage, "body");
+      if (phone) {
+        await noSideScroll(cpage, "join");
+        const box = await tid(cpage, "join-submit").boundingBox();
+        expect(box && box.y + box.height <= 844, `Submit is below the fold (${box?.y})`);
+        expect(box.height >= 44, `Submit is ${box.height}px tall`);
+        const eye = await tid(cpage, "join-toggle-password").boundingBox();
+        expect(eye.width >= 44 && eye.height >= 44, `password toggle ${eye.width}x${eye.height}`);
+      }
+    }
+  );
+
+  await h.step(
+    "the checklist reacts and Submit stays disabled until the terms are ticked",
+    async () => {
+      await fill(cpage, "join-password", "abc");
+      const lengthMet = await cpage.locator('[data-rule="length"]').getAttribute("data-met");
+      expect(lengthMet === "false", "length rule met by 'abc'");
+      await fill(cpage, "join-password", password);
+      for (const rule of ["length", "upper", "lower", "digit"]) {
+        expect(
+          (await cpage.locator(`[data-rule="${rule}"]`).getAttribute("data-met")) === "true",
+          `rule ${rule} not met`
+        );
+      }
+      expect(await tid(cpage, "join-submit").isDisabled(), "Submit enabled before the terms");
+      await tid(cpage, "join-terms").click();
+      expect(!(await tid(cpage, "join-submit").isDisabled()), "Submit disabled after the terms");
+    }
+  );
+
+  await h.step("submit: the customer lands on the portal dashboard", async () => {
+    await tid(cpage, "join-submit").click();
+    await cpage.waitForURL(/\/client-portal\/dashboard/, { timeout: 30000 });
+    await settle(cpage);
+    expect(await visible(cpage, "portal-balance"), "no balance on the dashboard");
+    expect(await visible(cpage, "portal-welcome"), "no welcome card");
+    if (h.ar) await expectNoEnglish(cpage, "main");
+    if (phone) await noSideScroll(cpage, "dashboard");
+  });
+
+  await h.step(
+    "invoices: partially paid invoice, credit note, PDF download, no Pay now",
+    async () => {
+      await goto(cpage, "/client-portal/invoices");
+      expect(await visible(cpage, "portal-invoice-table"), "no invoice table");
+      expect(
+        await visible(cpage, `portal-invoice-row-${seed.invoiceId}`),
+        "the issued invoice is not listed"
+      );
+      const creditTab = tid(cpage, "portal-filter-credit");
+      const creditCount = await creditTab.innerText();
+      expect(
+        /1/.test(creditCount.replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d))),
+        `credit notes: ${creditCount}`
+      );
+      expect(
+        (await cpage.locator('[data-testid^="portal-pay-"]').count()) === 0,
+        "Pay now without a gateway"
+      );
+      const [download] = await Promise.all([
+        cpage.waitForEvent("download", { timeout: 20000 }),
+        tid(cpage, `portal-pdf-${seed.invoiceId}`).click(),
+      ]);
+      expect(/\.pdf$/i.test(download.suggestedFilename()), "download is not a PDF");
+      if (h.ar) await expectNoEnglish(cpage, "main");
+      if (phone) {
+        await noSideScroll(cpage, "invoices");
+        const card = await cpage
+          .locator('[data-testid="portal-invoice-table"]')
+          .evaluate((el) => el.classList.contains("row-cards"));
+        expect(card, "invoice list is not in card layout");
+      }
+    }
+  );
+
+  await h.step("statement: page and PDF", async () => {
+    await goto(cpage, "/client-portal/statements");
+    const res = await cpage.evaluate(async () => {
+      const r = await fetch("/api/client-portal/statements?format=pdf", { credentials: "include" });
+      return { status: r.status, type: r.headers.get("content-type") };
+    });
+    expect(
+      res.status === 200 && /pdf/.test(res.type || ""),
+      `statement pdf ${res.status} ${res.type}`
+    );
+    if (h.ar) await expectNoEnglish(cpage, "main");
+  });
+
+  await h.step("account page", async () => {
+    await goto(cpage, "/client-portal/account");
+    expect(await visible(cpage, "portal-account-page"), "no account page");
+    if (h.ar) await expectNoEnglish(cpage, "main");
+    if (phone) await noSideScroll(cpage, "account");
+  });
+
+  await h.step(
+    "company app is out of reach: /dashboard goes to the portal, company APIs refuse",
+    async () => {
+      await goto(cpage, "/dashboard");
+      await cpage.waitForURL(/\/client-portal\/dashboard/, { timeout: 20000 });
+      const status = await cpage.evaluate(async (cid) => {
+        const r = await fetch(`/api/companies/${cid}/invoices`, { credentials: "include" });
+        return r.status;
+      }, owner.companyId);
+      expect(status === 403 || status === 404, `company invoices answered ${status}`);
+      const list = await cpage.evaluate(
+        async () => await (await fetch("/api/companies", { credentials: "include" })).json()
+      );
+      expect(Array.isArray(list) && list.length === 0, "the portal user sees a company");
+    }
+  );
+
+  await h.step("sign out clears the session; signing in again lands on the portal", async () => {
+    await click(cpage, "portal-account-menu");
+    await click(cpage, "portal-sign-out");
+    await cpage.waitForURL(/\/login/, { timeout: 20000 });
+    const me = await cpage.evaluate(
+      async () => (await fetch("/api/auth/me", { credentials: "include" })).status
+    );
+    expect(me === 401, `/api/auth/me after sign-out: ${me}`);
+    await fill(cpage, "input-email", seed.email);
+    await fill(cpage, "input-password", password);
+    await click(cpage, "button-login");
+    await cpage.waitForURL(/\/client-portal\/dashboard/, { timeout: 30000 });
+  });
+
+  await h.step("owner removes access: the customer sees the access-removed state", async () => {
+    await openInviteSheet(page, seed.contactId, phone);
+    const remove = page.locator('[data-testid^="pa-remove-"]').first();
+    await remove.waitFor({ state: "visible", timeout: 10000 });
+    await remove.click();
+    await click(page, "pa-confirm");
+    await settle(page, 800);
+    await cpage.reload();
+    await settle(cpage, 800);
+    expect(await visible(cpage, "portal-access-removed"), "no access-removed state");
+    if (h.ar) await expectNoEnglish(cpage, "main");
+  });
+
+  await h.step("the used invitation link shows the already-used state", async () => {
+    const again = await openContext(lang, { viewport });
+    try {
+      await again.page.goto(`${BASE}/portal/join${hash}`, { timeout: 45000 });
+      await settle(again.page);
+      expect(await visible(again.page, "join-state-accepted"), "no already-used state");
+      if (h.ar) await expectNoEnglish(again.page, "body");
+    } finally {
+      await again.context.close().catch(() => {});
+    }
+  });
+
+  await customer?.context.close().catch(() => {});
+}
+
 const FLOWS = [
   flow(
     "signup",
@@ -1382,6 +1703,85 @@ const FLOWS = [
         expect(z.status === 404, `zatca status ${z.status}`);
       });
     }
+  ),
+
+  flow(
+    "portal-invite",
+    "Customer portal invitation: invite, set a password, see invoices (desktop)",
+    async (h) => {
+      await portalInviteJourney(h, { phone: false });
+    }
+  ),
+
+  flow(
+    "portal-invite-phone",
+    "Customer portal invitation on a phone (390x844)",
+    async (h) => {
+      await portalInviteJourney(h, { phone: true });
+    },
+    { viewport: { width: 390, height: 844 } }
+  ),
+
+  flow(
+    "portal-invite-existing",
+    "Customer portal invitation to an existing account: sign in, add the supplier",
+    async (h) => {
+      const supplier = await newOwner("pexs", "en");
+      const buyer = await newOwner("pexb", "en");
+      const seed = await seedPortalCustomer(supplier, "en");
+      let hash;
+      let customer;
+      await h.step("the supplier invites an email that already has an account", async () => {
+        const res = await api(
+          supplier.token,
+          "POST",
+          `/api/companies/${supplier.companyId}/customer-contacts/${seed.contactId}/portal-invitations`,
+          { email: buyer.email, language: "en" }
+        );
+        expect(res.status === 201, `invite ${res.status}`);
+        hash = new URL(res.body.inviteUrl).hash;
+      });
+      await h.step(
+        "the join page asks to sign in; the login is prefilled and returns to the join page",
+        async () => {
+          customer = await openContext("en", { viewport: { width: 1440, height: 900 } });
+          const p = customer.page;
+          await p.goto(`${BASE}/portal/join${hash}`, { timeout: 45000 });
+          await settle(p);
+          expect(await visible(p, "join-existing"), "no existing-account state");
+          await click(p, "join-sign-in");
+          await p.waitForURL(/\/login/, { timeout: 20000 });
+          const prefilled = await tid(p, "input-email").inputValue();
+          expect(prefilled === buyer.email, `login email ${prefilled}`);
+          await fill(p, "input-password", PASSWORD);
+          await click(p, "button-login");
+          await p.waitForURL(/\/portal\/join/, { timeout: 30000 });
+          await settle(p);
+          expect(await visible(p, "join-signed-in"), "no confirm state after sign-in");
+        }
+      );
+      await h.step(
+        "confirm: the supplier portal opens and Supplier portals shows in the account menu",
+        async () => {
+          const p = customer.page;
+          await click(p, "join-confirm-add");
+          await p.waitForURL(/\/client-portal\/dashboard/, { timeout: 30000 });
+          expect(await visible(p, "portal-balance"), "no balance");
+          await goto(p, "/dashboard");
+          await click(p, "button-profile");
+          expect(await visible(p, "menu-account-portals"), "no Supplier portals entry");
+          // The buyer's own company app still works.
+          const status = await p.evaluate(
+            async (cid) =>
+              (await fetch(`/api/companies/${cid}/invoices`, { credentials: "include" })).status,
+            buyer.companyId
+          );
+          expect(status === 200, `own company answered ${status}`);
+        }
+      );
+      await customer?.context.close().catch(() => {});
+    },
+    { langs: ["en"] }
   ),
 
   flow("prices", "Owner prices on /pricing and /api/billing/plans", async (h) => {
