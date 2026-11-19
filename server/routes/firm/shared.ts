@@ -14,20 +14,26 @@ import {
   vatCohortFromPeriodStart,
   zOptionalClientTrn,
 } from "../../services/firm-clients.service";
-import { and, count, desc, eq, inArray, max, or, sum } from "drizzle-orm";
+import { and, count, desc, eq, inArray, max, sum } from "drizzle-orm";
 import {
   bankTransactions,
-  companyUsers,
   engagements,
+  firmStaffAssignments,
   invoices,
   receipts,
   users,
   vatReturns,
 } from "../../../shared/schema";
-import { canAccessFirmClient, isFirmClient } from "../../services/firm/scope";
+import {
+  canAccessFirmClient,
+  isFirmClient,
+  resolveFirmContext,
+  type FirmContext,
+} from "../../services/firm/scope";
 import { createDefaultAccountsForCompany } from "../../defaultChartOfAccounts";
 import { db } from "../../db";
 import { firmContextOf } from "../../middleware/rbac";
+import { firmReceivablesAed } from "../../services/firm/receivables.service";
 import { storage } from "../../storage";
 import { z } from "zod";
 
@@ -50,7 +56,10 @@ export async function canAccessClient(
  * assigned to is a permission refusal: 403.
  */
 export async function denyClientAccess(res: Response, companyId: string): Promise<Response> {
-  if (await isFirmClient(firmContextOf(res), companyId)) {
+  // Routes behind requireFirmRole() do not attach the firm context; resolve it from the caller.
+  const attached = res.locals.firmContext as FirmContext | undefined;
+  const ctx = attached ?? (res.req?.user ? await resolveFirmContext(res.req.user) : null);
+  if (ctx && (await isFirmClient(ctx, companyId))) {
     return res.status(403).json({ message: "Access denied to this client" });
   }
   return res.status(404).json({ message: "Client not found", code: "CLIENT_NOT_FOUND" });
@@ -63,83 +72,122 @@ export async function seedChartOfAccounts(companyId: string): Promise<void> {
   await storage.createBulkAccounts(defaultAccounts);
 }
 
-export async function getClientStats(companyId: string) {
-  const [invoiceStats, arStats, lastReceipt, lastBankTx, latestVatReturn, staffRows] =
-    await Promise.all([
-      // Total invoices: count + sum
-      db
-        .select({ cnt: count(), total: sum(invoices.total) })
-        .from(invoices)
-        .where(eq(invoices.companyId, companyId))
-        .then((r: { cnt: number; total: string | null }[]) => r[0]),
+export interface ClientStats {
+  invoiceCount: number;
+  invoiceTotal: number;
+  /** Open A/R in AED from the settlement rule (partial payments, credit notes, FX respected). */
+  outstandingAr: number;
+  overdueAr: number;
+  lastReceiptDate: Date | null;
+  lastBankActivityDate: Date | null;
+  vatStatus: { status: string; dueDate: Date; periodEnd: Date } | null;
+  assignedStaff: Array<{ id: string; name: string; email: string; role: string }>;
+}
 
-      // Outstanding AR: sum of totals for sent/partial invoices
-      db
-        .select({ ar: sum(invoices.total) })
-        .from(invoices)
-        .where(
-          and(
-            eq(invoices.companyId, companyId),
-            or(eq(invoices.status, "sent"), eq(invoices.status, "partial"))
-          )
-        )
-        .then((r: { ar: string | null }[]) => r[0]),
+export interface AssignedStaffRow {
+  companyId: string;
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+}
 
-      // Last receipt uploaded
-      db
-        .select({ lastDate: max(receipts.createdAt) })
-        .from(receipts)
-        .where(eq(receipts.companyId, companyId))
-        .then((r: { lastDate: Date | null }[]) => r[0]),
+/**
+ * Staff assigned to each client, from firm_staff_assignments (the table staff.service writes).
+ * One query for all companies.
+ */
+export async function assignedStaffByCompany(
+  companyIds: string[]
+): Promise<Map<string, AssignedStaffRow[]>> {
+  const out = new Map<string, AssignedStaffRow[]>();
+  if (companyIds.length === 0) return out;
+  const rows = (await db
+    .select({
+      companyId: firmStaffAssignments.companyId,
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      role: firmStaffAssignments.role,
+    })
+    .from(firmStaffAssignments)
+    .innerJoin(users, eq(users.id, firmStaffAssignments.userId))
+    .where(inArray(firmStaffAssignments.companyId, companyIds))
+    .orderBy(firmStaffAssignments.assignedAt)) as AssignedStaffRow[];
+  for (const row of rows) {
+    const list = out.get(row.companyId) ?? [];
+    list.push(row);
+    out.set(row.companyId, list);
+  }
+  return out;
+}
 
-      // Last bank transaction (proxy for last reconciliation activity)
-      db
-        .select({ lastDate: max(bankTransactions.transactionDate) })
-        .from(bankTransactions)
-        .where(eq(bankTransactions.companyId, companyId))
-        .then((r: { lastDate: Date | null }[]) => r[0]),
+/** Per-client stats for many clients in a fixed number of grouped queries (no per-client queries). */
+export async function getClientStatsBatch(companyIds: string[]): Promise<Map<string, ClientStats>> {
+  const out = new Map<string, ClientStats>();
+  if (companyIds.length === 0) return out;
+  const [invoiceRows, receiptRows, bankRows, vatRows, staff, receivables] = await Promise.all([
+    db
+      .select({ companyId: invoices.companyId, cnt: count(), total: sum(invoices.total) })
+      .from(invoices)
+      .where(inArray(invoices.companyId, companyIds))
+      .groupBy(invoices.companyId) as Promise<
+      { companyId: string; cnt: number; total: string | null }[]
+    >,
+    db
+      .select({ companyId: receipts.companyId, lastDate: max(receipts.createdAt) })
+      .from(receipts)
+      .where(inArray(receipts.companyId, companyIds))
+      .groupBy(receipts.companyId) as Promise<{ companyId: string; lastDate: Date | null }[]>,
+    db
+      .select({
+        companyId: bankTransactions.companyId,
+        lastDate: max(bankTransactions.transactionDate),
+      })
+      .from(bankTransactions)
+      .where(inArray(bankTransactions.companyId, companyIds))
+      .groupBy(bankTransactions.companyId) as Promise<
+      { companyId: string; lastDate: Date | null }[]
+    >,
+    db
+      .selectDistinctOn([vatReturns.companyId], {
+        companyId: vatReturns.companyId,
+        status: vatReturns.status,
+        dueDate: vatReturns.dueDate,
+        periodEnd: vatReturns.periodEnd,
+      })
+      .from(vatReturns)
+      .where(inArray(vatReturns.companyId, companyIds))
+      .orderBy(vatReturns.companyId, desc(vatReturns.periodEnd)) as Promise<
+      { companyId: string; status: string; dueDate: Date; periodEnd: Date }[]
+    >,
+    assignedStaffByCompany(companyIds),
+    firmReceivablesAed(companyIds),
+  ]);
+  const inv = new Map(invoiceRows.map((r) => [r.companyId, r]));
+  const rec = new Map(receiptRows.map((r) => [r.companyId, r.lastDate]));
+  const bank = new Map(bankRows.map((r) => [r.companyId, r.lastDate]));
+  const vat = new Map(vatRows.map((r) => [r.companyId, r]));
+  for (const id of companyIds) {
+    const i = inv.get(id);
+    const v = vat.get(id);
+    const ar = receivables.get(id);
+    out.set(id, {
+      invoiceCount: Number(i?.cnt ?? 0),
+      invoiceTotal: Number(i?.total ?? 0),
+      outstandingAr: ar?.open ?? 0,
+      overdueAr: ar?.overdue ?? 0,
+      lastReceiptDate: rec.get(id) ?? null,
+      lastBankActivityDate: bank.get(id) ?? null,
+      vatStatus: v ? { status: v.status, dueDate: v.dueDate, periodEnd: v.periodEnd } : null,
+      assignedStaff: (staff.get(id) ?? []).map(({ companyId: _c, ...s }) => s),
+    });
+  }
+  return out;
+}
 
-      // Latest VAT return
-      db
-        .select({
-          status: vatReturns.status,
-          dueDate: vatReturns.dueDate,
-          periodEnd: vatReturns.periodEnd,
-        })
-        .from(vatReturns)
-        .where(eq(vatReturns.companyId, companyId))
-        .orderBy(desc(vatReturns.periodEnd))
-        .limit(1)
-        .then((r: { status: string; dueDate: Date; periodEnd: Date }[]) => r[0] || null),
-
-      // Assigned staff: users linked to this company who are admins
-      db
-        .select({
-          id: users.id,
-          name: users.name,
-          email: users.email,
-          role: companyUsers.role,
-        })
-        .from(companyUsers)
-        .innerJoin(users, eq(users.id, companyUsers.userId))
-        .where(and(eq(companyUsers.companyId, companyId), eq(users.isAdmin, true))),
-    ]);
-
-  return {
-    invoiceCount: Number(invoiceStats?.cnt ?? 0),
-    invoiceTotal: Number(invoiceStats?.total ?? 0),
-    outstandingAr: Number(arStats?.ar ?? 0),
-    lastReceiptDate: lastReceipt?.lastDate ?? null,
-    lastBankActivityDate: lastBankTx?.lastDate ?? null,
-    vatStatus: latestVatReturn
-      ? {
-          status: latestVatReturn.status,
-          dueDate: latestVatReturn.dueDate,
-          periodEnd: latestVatReturn.periodEnd,
-        }
-      : null,
-    assignedStaff: staffRows,
-  };
+export async function getClientStats(companyId: string): Promise<ClientStats> {
+  const stats = await getClientStatsBatch([companyId]);
+  return stats.get(companyId)!;
 }
 
 export type HealthStatus = "healthy" | "attention" | "critical";

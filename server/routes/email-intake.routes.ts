@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
+import { denyClientAccess } from "./firm/shared";
 import { requireFirmRole } from "../middleware/rbac";
 import { asyncHandler } from "../middleware/errorHandler";
 import { validate } from "../middleware/validate";
@@ -189,9 +190,7 @@ export function registerEmailIntakeRoutes(app: Express) {
 
       // Ownership: the company must be one the firm can access.
       const allowed = await storage.hasCompanyAccess(user.id, companyId, user.firmRole);
-      if (!allowed) {
-        return res.status(403).json({ message: "Company not in your firm's client list" });
-      }
+      if (!allowed) return denyClientAccess(res, companyId);
 
       const created = await storage.createClientEmailSource({
         companyId,
@@ -259,8 +258,7 @@ export function registerEmailIntakeRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const user = req.user!;
       const allowed = await storage.hasCompanyAccess(user.id, req.params.companyId, user.firmRole);
-      if (!allowed)
-        return res.status(403).json({ message: "Company not in your firm's client list" });
+      if (!allowed) return denyClientAccess(res, req.params.companyId);
       const messages = await storage.listEmailIntakeMessagesByCompany(req.params.companyId);
       const taskIds = await tasksForMessages(messages.map((m: { id: string }) => m.id));
       res.json({
@@ -317,8 +315,7 @@ export function registerEmailIntakeRoutes(app: Express) {
       const user = req.user!;
       const { companyId } = req.params;
       const allowed = await storage.hasCompanyAccess(user.id, companyId, user.firmRole);
-      if (!allowed)
-        return res.status(403).json({ message: "Company not in your firm's client list" });
+      if (!allowed) return denyClientAccess(res, companyId);
 
       const periodStart = new Date(String(req.query.periodStart ?? ""));
       const periodEnd = new Date(String(req.query.periodEnd ?? ""));
@@ -344,8 +341,7 @@ export function registerEmailIntakeRoutes(app: Express) {
       const user = req.user!;
       const { companyId } = req.params;
       const allowed = await storage.hasCompanyAccess(user.id, companyId, user.firmRole);
-      if (!allowed)
-        return res.status(403).json({ message: "Company not in your firm's client list" });
+      if (!allowed) return denyClientAccess(res, companyId);
 
       const chaseBody = parsedBody<{
         periodStart?: string;

@@ -12,6 +12,7 @@ import { z } from "zod";
 import { and, eq, gte, inArray, isNull, lt, or, sql, sum } from "drizzle-orm";
 
 import { authMiddleware } from "../middleware/auth";
+import { denyClientAccess } from "./firm/shared";
 import {
   firmContextOf,
   requireFirmAdmin,
@@ -231,7 +232,8 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
       const accessible = await resolveAccessibleClientIds(userId, firmRole ?? null);
       if (!accessible.includes(companyId)) {
-        return res.status(403).json({ message: "Access denied to this client" });
+        // 404 outside the firm, 403 only for an own-firm client this member is not assigned to.
+        return denyClientAccess(res, companyId);
       }
 
       const snapshots = await buildClientSnapshots([companyId]);

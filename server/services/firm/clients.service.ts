@@ -24,13 +24,18 @@ import {
   type FirmClientLink,
 } from "../../../shared/schema";
 import { normalizeCompanyRole } from "../../../shared/permissions";
-import { firmPermissionsForRole, firmRoleSeesAllClients } from "../../../shared/access";
+import {
+  firmPermissionsForRole,
+  firmRoleHasPermission,
+  firmRoleSeesAllClients,
+} from "../../../shared/access";
 import { clientNameKey } from "../firm-clients.service";
 import {
   activateClientLink,
   activeLinkForCompany,
   firmClientCondition,
   grantCompanyAccess,
+  listAccessibleClientIds,
   listFirmMembers,
   resolveFirmContext,
   revokeCompanyAccess,
@@ -142,7 +147,20 @@ export async function inviteClient(
   return row;
 }
 
+/**
+ * The firm's client links, scoped like the client list: a member without `firm.clients.all`
+ * sees only links to clients assigned to them, and pending invitations (no company yet) only
+ * with `firm.clients.link`. Names and ids of other clients never reach unassigned staff.
+ */
 export async function listFirmLinks(ctx: FirmContext) {
+  const rows = await selectFirmLinks(ctx);
+  if (ctx.platformAdmin || firmRoleSeesAllClients(ctx.role)) return rows;
+  const accessible = new Set(await listAccessibleClientIds(ctx));
+  const mayInvite = firmRoleHasPermission(ctx.role, "firm.clients.link");
+  return rows.filter((r) => (r.companyId ? accessible.has(r.companyId) : mayInvite));
+}
+
+async function selectFirmLinks(ctx: FirmContext) {
   return db
     .select({
       id: firmClientLinks.id,

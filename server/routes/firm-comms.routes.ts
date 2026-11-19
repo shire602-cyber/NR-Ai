@@ -13,6 +13,7 @@ import {
   vatReturns,
 } from "../../shared/schema";
 import { authMiddleware } from "../middleware/auth";
+import { denyClientAccess } from "./firm/shared";
 import { requireFirmRole, getAccessibleCompanyIds } from "../middleware/rbac";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
@@ -182,7 +183,7 @@ export function registerFirmCommsRoutes(app: Express): void {
         req.user?.isAdmin === true
       );
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
-        return res.status(403).json({ message: "Access denied to this client" });
+        return denyClientAccess(res, companyId);
       }
 
       const rows = await db
