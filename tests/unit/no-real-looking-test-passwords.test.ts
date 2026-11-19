@@ -39,7 +39,11 @@ function* files(dir: string): Generator<string> {
 export function findRealLookingPasswords(source: string): string[] {
   const out: string[] = [];
   for (const m of source.matchAll(PASSWORD_LITERAL)) {
-    if (!FAKE_MARKER.test(m[1])) out.push(m[1]);
+    // A literal typed into the password input is always flagged, marker or not: scanners
+    // (GitGuardian) still read "Fake-" + a strong-looking value as a Generic Password, so form
+    // tests must type FAKE_PASSWORD from the fixture instead.
+    const typedIntoInput = /input-password/i.test(m[0]);
+    if (typedIntoInput || !FAKE_MARKER.test(m[1])) out.push(m[1]);
   }
   return out;
 }
@@ -53,6 +57,9 @@ describe("secret hygiene: fixture passwords declare themselves fake", () => {
       flagged,
     ]);
     expect(findRealLookingPasswords(`{ password: "${other}" }`)).toEqual([other]);
+    // Even a self-declared fake is flagged when typed into the form: use FAKE_PASSWORD.
+    const marked = ["Fake", "Password", "123"].join("-");
+    expect(findRealLookingPasswords(`typeInto("input-password", "${marked}");`)).toEqual([marked]);
     expect(
       findRealLookingPasswords(
         `{ password: "Password123!" }; ACUBE_PASSWORD: "s3cret-sandbox-password"; pwd = "Fake-Password-123"`
