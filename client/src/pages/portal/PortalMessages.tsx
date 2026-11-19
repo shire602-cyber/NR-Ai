@@ -84,6 +84,7 @@ export default function PortalMessages() {
             </div>
           ) : thread.length === 0 ? (
             <EmptyState
+              headingLevel="h2"
               icon={MessageSquare}
               title={t["portal.doc.noMessagesTitle"]}
               description={t["portal.doc.noMessagesBody"]}
@@ -123,6 +124,7 @@ export default function PortalMessages() {
             }}
           >
             <Input
+              className="h-11 md:h-9"
               aria-label={t["portal.doc.messageSubject"]}
               placeholder={t["portal.doc.messageSubject"]}
               value={subject}

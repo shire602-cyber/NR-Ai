@@ -66,3 +66,29 @@ export function tokenizeMerchantText(text: string): string[] {
     .split(/\s+/)
     .filter((w) => w.length >= 2);
 }
+
+/**
+ * Search key for names: lower case, ASCII digits, no marks, alef/yeh/teh-marbuta folded and the
+ * leading definite article "ال" dropped from each word, so "النور", "نور" and "النُّور" match.
+ */
+export function normalizeSearchText(input: string | null | undefined): string {
+  const base = normalizeArabicLetters(stripArabicMarks(toAsciiDigits(String(input ?? ""))))
+    .toLowerCase()
+    .replace(/ة/g, "ه");
+  return base
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => (w.length > 3 && w.startsWith("ال") ? w.slice(2) : w))
+    .join(" ");
+}
+
+/** Does `haystack` contain every word of `query` (after `normalizeSearchText`)? */
+export function matchesSearchText(
+  query: string | null | undefined,
+  ...haystacks: Array<string | null | undefined>
+): boolean {
+  const q = normalizeSearchText(query);
+  if (!q) return true;
+  const hay = haystacks.map(normalizeSearchText).join(" ");
+  return q.split(" ").every((w) => hay.includes(w));
+}

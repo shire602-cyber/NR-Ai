@@ -79,12 +79,14 @@ async function pool(n, concurrency, fn) {
 async function main() {
   const email = `perf_${Date.now().toString(36)}@perf.test`;
   const reg = await api("POST", "/api/auth/register", {
-    body: { name: "Perf", email, password: "PerfBudget123!" },
+    body: { name: "Perf", email, password: "PerfBudget-Test-Password-123!" },
   });
   // W5-E: registration returns no session (R17-14); sign in, then read the company.
   const login =
     reg.status === 200
-      ? await api("POST", "/api/auth/login", { body: { email, password: "PerfBudget123!" } })
+      ? await api("POST", "/api/auth/login", {
+          body: { email, password: "PerfBudget-Test-Password-123!" },
+        })
       : reg;
   if (login.status !== 200 || !login.json?.token) {
     console.error(`perf-budget: registration failed (${login.status}) ${login.text.slice(0, 200)}`);

@@ -62,6 +62,7 @@ export function VirtualList<T>({
       className={cn("overflow-auto", className)}
       style={{ height: typeof height === "number" ? `${height}px` : height, contain: "strict" }}
       data-testid="virtual-list"
+      tabIndex={0}
     >
       <div style={{ height: totalSize, position: "relative", width: "100%" }}>
         {virtualItems.map((virtualRow) => {

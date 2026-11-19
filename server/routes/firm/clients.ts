@@ -3,6 +3,7 @@
 // middleware order) stay in firm.routes.ts.
 import { DEFAULT_CLIENT_SERVICE_CODES } from "@shared/client-services";
 import type { Request, Response } from "express";
+import { matchesSearchText } from "../../../shared/arabic-text";
 import { assignStaff, listFirmStaff } from "../../services/firm/staff.service";
 import {
   clientNameKey,
@@ -29,7 +30,10 @@ import {
   assignStaffSchema,
   canAccessClient,
   createClientSchema,
+  denyClientAccess,
   getClientStats,
+  getClientStatsBatch,
+  type ClientStats,
   type FirmClientsImportBody,
   importPayloadSchema,
   loadActiveServicePlans,
@@ -39,7 +43,57 @@ import {
   upsertClientServicePlan,
 } from "./shared";
 
-/** GET /firm/clients */
+/**
+ * Columns of a client company the portfolio and the firm pickers render. Everything else
+ * (WPS/e-invoice bank details, payee IBANs, API settings) stays out of the list payload.
+ */
+export const FIRM_CLIENT_LIST_COLUMNS = [
+  "id",
+  "name",
+  "legalName",
+  "legalNameAr",
+  "trnVatNumber",
+  "companyType",
+  "baseCurrency",
+  "locale",
+  "emirate",
+  "industry",
+  "contactEmail",
+  "contactPhone",
+  "vatFilingFrequency",
+  "vatPeriodStartMonth",
+  "fiscalYearStartMonth",
+  "corporateTaxId",
+  "isActive",
+  "onboardingCompleted",
+  "createdAt",
+] as const;
+
+type ClientRow = Record<string, unknown> & { id: string; name: string };
+
+function pickClientColumns(company: ClientRow): ClientRow {
+  const out: Record<string, unknown> = {};
+  for (const key of FIRM_CLIENT_LIST_COLUMNS) {
+    if (key in company) out[key] = company[key];
+  }
+  if ("nrVatGroup" in company) out.nrVatGroup = company.nrVatGroup;
+  return out as ClientRow;
+}
+
+const CLIENT_SORTS = ["name", "createdAt", "outstandingAr", "vatDueDate", "invoiceCount"] as const;
+type ClientSort = (typeof CLIENT_SORTS)[number];
+
+function queryString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * GET /firm/clients
+ * Query (all optional): `view=names` (id and name only), `q` (name, Arabic name, TRN, e-mail),
+ * `sort` (name | createdAt | outstandingAr | vatDueDate | invoiceCount), `order` (asc | desc),
+ * `limit` (1-200) and `offset`. A paged answer carries `X-Total-Count`. Without paging the
+ * whole accessible set is returned (the portfolio filters and counts it client-side).
+ */
 export const handleGetFirmClients = async (req: Request, res: Response) => {
   const { id: userId, firmRole } = req.user!;
   const accessibleIds = await getAccessibleCompanyIds(
@@ -57,30 +111,86 @@ export const handleGetFirmClients = async (req: Request, res: Response) => {
     clientCompanies = await db.select().from(companies).where(inArray(companies.id, accessibleIds));
   }
 
-  const servicePlans = await loadActiveServicePlans(clientCompanies.map((company) => company.id));
+  if (queryString(req.query.view) === "names") {
+    const rows = clientCompanies
+      .map((c) => ({ id: c.id, name: c.name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    res.setHeader("X-Total-Count", String(rows.length));
+    return res.json(rows);
+  }
 
-  const clientsWithStats = await Promise.all(
-    clientCompanies.map(async (company) => {
-      const organisedCompany = withNrClientVatGroup(company);
-      const stats = await getClientStats(company.id);
-      const servicePlan = servicePlans.get(company.id) ?? servicePlanFromEngagement(undefined);
-      return {
-        ...organisedCompany,
-        ...stats,
-        serviceScope: servicePlan.servicesIncluded,
-        servicePlan,
-      };
-    })
-  );
+  const q = queryString(req.query.q).trim();
+  let rows = (clientCompanies as unknown as ClientRow[]).map((c) => withNrClientVatGroup(c));
+  if (q) {
+    rows = rows.filter((c) =>
+      matchesSearchText(
+        q,
+        c.name as string,
+        c.legalName as string,
+        c.legalNameAr as string,
+        c.trnVatNumber as string,
+        c.contactEmail as string
+      )
+    );
+  }
 
-  res.json(clientsWithStats);
+  const sortKey = queryString(req.query.sort) as ClientSort;
+  const hasSort = (CLIENT_SORTS as readonly string[]).includes(sortKey);
+  const desc_ = queryString(req.query.order).toLowerCase() === "desc";
+  const limitRaw = Number.parseInt(queryString(req.query.limit), 10);
+  const paged = Number.isFinite(limitRaw) && limitRaw > 0;
+  const limit = paged ? Math.min(limitRaw, 200) : rows.length;
+  const offsetRaw = Number.parseInt(queryString(req.query.offset), 10);
+  const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? offsetRaw : 0;
+
+  // Sort and page before the stats so a page costs one grouped query set for `limit` clients.
+  // Stat-based sorts need the stats of every candidate, so they load them first.
+  const statSort = hasSort && ["outstandingAr", "vatDueDate", "invoiceCount"].includes(sortKey);
+  let statsMap: Map<string, ClientStats> | null = null;
+  if (statSort) statsMap = await getClientStatsBatch(rows.map((c) => c.id));
+
+  if (hasSort) {
+    const dir = desc_ ? -1 : 1;
+    const value = (c: ClientRow): number | string => {
+      if (sortKey === "name") return (c.name as string).toLowerCase();
+      if (sortKey === "createdAt") return new Date(c.createdAt as string).getTime();
+      const st = statsMap?.get(c.id);
+      if (sortKey === "outstandingAr") return st?.outstandingAr ?? 0;
+      if (sortKey === "invoiceCount") return st?.invoiceCount ?? 0;
+      return st?.vatStatus ? new Date(st.vatStatus.dueDate).getTime() : Number.MAX_SAFE_INTEGER;
+    };
+    rows.sort((a, b) => {
+      const av = value(a);
+      const bv = value(b);
+      const cmp = typeof av === "string" ? av.localeCompare(bv as string) : av - (bv as number);
+      return cmp * dir || (a.name as string).localeCompare(b.name as string);
+    });
+  }
+
+  const total = rows.length;
+  const page = paged || offset > 0 ? rows.slice(offset, offset + limit) : rows;
+  if (!statsMap) statsMap = await getClientStatsBatch(page.map((c) => c.id));
+  const servicePlans = await loadActiveServicePlans(page.map((c) => c.id));
+
+  const result = page.map((company) => {
+    const servicePlan = servicePlans.get(company.id) ?? servicePlanFromEngagement(undefined);
+    return {
+      ...pickClientColumns(company),
+      ...statsMap!.get(company.id)!,
+      serviceScope: servicePlan.servicesIncluded,
+      servicePlan,
+    };
+  });
+
+  res.setHeader("X-Total-Count", String(total));
+  res.json(result);
 };
 
 /** GET /firm/clients/:companyId/summary */
 export const handleGetFirmClientsSummary = async (req: Request, res: Response) => {
   const { companyId } = req.params;
   if (!(await canAccessClient(req, res, companyId))) {
-    return res.status(403).json({ message: "Access denied to this client" });
+    return denyClientAccess(res, companyId);
   }
 
   const company = await storage.getCompany(companyId);
@@ -196,7 +306,7 @@ export const handlePutFirmClients = async (req: Request, res: Response) => {
   const { serviceScope, ...companyPatch } = validated;
 
   if (!(await canAccessClient(req, res, companyId))) {
-    return res.status(403).json({ message: "Access denied to this client" });
+    return denyClientAccess(res, companyId);
   }
 
   const company = await storage.getCompany(companyId);
@@ -273,7 +383,7 @@ export const handlePostFirmClientsSwitch = async (req: Request, res: Response) =
   const { id: userId } = req.user!;
 
   if (!(await canAccessClient(req, res, companyId))) {
-    return res.status(403).json({ message: "Access denied to this client" });
+    return denyClientAccess(res, companyId);
   }
 
   const company = await storage.getCompany(companyId);

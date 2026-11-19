@@ -86,6 +86,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { ApiError, apiRequest, queryClient } from "@/lib/queryClient";
 import {
   einvoiceFieldHint,
+  einvoiceIssueTextKey,
   einvoiceIssuesFromError,
   type EInvoiceIssueItem,
 } from "@/lib/einvoice-issues";
@@ -113,6 +114,7 @@ import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import {
   downloadServerFile,
   exportToExcel,
@@ -2267,7 +2269,8 @@ export default function Invoices() {
           <DialogHeader>
             <DialogTitle>
               {formatMessage(t["invoices.einvoiceIssuesTitle"], {
-                number: einvoiceIssues?.number ?? "",
+                // Isolated so "INV-2026-00001" keeps its order inside Arabic text.
+                number: `\u2068${einvoiceIssues?.number ?? ""}\u2069`,
               })}
             </DialogTitle>
             <DialogDescription>
@@ -2279,18 +2282,23 @@ export default function Invoices() {
               // X5 (J1 L3): a readable field name and where to fix it, never a raw data path.
               const hint = einvoiceFieldHint(issue.field);
               const label = hint.labelKey ? t[hint.labelKey] : hint.ruleLabel;
+              const fixKey = einvoiceIssueTextKey(issue.code);
               return (
                 <li key={`${issue.field}-${i}`} className="rounded-md border p-2">
                   {label && (
                     <span className="block text-xs font-medium text-muted-foreground">{label}</span>
                   )}
-                  {issue.message}
+                  {fixKey ? (
+                    <span data-testid={`einvoice-issue-${issue.code}`}>{t[fixKey]}</span>
+                  ) : (
+                    issue.message
+                  )}
                   {hint.whereKey && (
                     <span className="mt-1 block text-xs">
                       {hint.href ? (
                         <Link
                           href={hint.href}
-                          className="text-accent hover:underline"
+                          className="inline-flex min-h-11 items-center text-accent hover:underline sm:min-h-0"
                           data-testid={`link-einvoice-fix-${i}`}
                         >
                           {t[hint.whereKey]}
@@ -2549,6 +2557,14 @@ export default function Invoices() {
 
           {isLoading ? (
             <TableSkeleton rows={8} columns={6} />
+          ) : invoicePages.isError ? (
+            <LoadErrorState
+              error={invoicePages.error}
+              onRetry={() => void invoicePages.refetch()}
+              title={t["firm.invoicesLoadErrorTitle"]}
+              description={t["firm.invoicesLoadErrorBody"]}
+              testId="invoices-load-error"
+            />
           ) : (
             <>
               {/* Mobile row-cards (CTO 3/8): line 1 name + amount, line 2 number · date + status. */}
@@ -2665,8 +2681,19 @@ export default function Invoices() {
                               <T k="invoices.actionAddPayment" />
                             </DropdownMenuItem>
                           )}
+                          {/* The phone card offers the same e-invoice action as the table row. */}
+                          {invoiceRowActions(invoice).canGenerateEinvoice && (
+                            <DropdownMenuItem
+                              onSelect={() => void generateEinvoice(invoice)}
+                              data-testid={`mobile-button-einvoice-${invoice.id}`}
+                            >
+                              <FileCode aria-hidden />
+                              <T k="invoices.actionGenerateEinvoice" />
+                            </DropdownMenuItem>
+                          )}
                         </>
                       }
+                      menuTestId={`mobile-button-invoice-actions-${invoice.id}`}
                     />
                   </div>
                 ))}
@@ -3490,7 +3517,7 @@ function InvoiceStatusTiles({
   onSelect: (status: InvoiceStatusFilter | null) => void;
 }) {
   const { t } = useTranslation();
-  const { data: all = [] } = useQuery<InvoiceListItem[]>({
+  const { data: all = [], isError } = useQuery<InvoiceListItem[]>({
     queryKey: ["/api/companies", companyId, "invoices"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/invoices?all=true`),
     enabled: !!companyId,
@@ -3507,6 +3534,9 @@ function InvoiceStatusTiles({
       label: labels[b.key],
     }));
   }, [all, t]);
+
+  // A failed load must not read as "0 invoices": the list shows the error and the tiles hide.
+  if (isError) return null;
 
   return (
     <div

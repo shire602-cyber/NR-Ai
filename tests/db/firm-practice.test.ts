@@ -432,7 +432,8 @@ describe("W5-D firm practice management", () => {
     expect(
       (await b.as.get("/api/firm/clients")).body.map((c: { id: string }) => c.id)
     ).not.toContain(client.company.id);
-    expect((await b.as.get(`/api/firm/clients/${client.company.id}/summary`)).status).toBe(403);
+    // Once the link ends the company is outside firm B: another tenant, so 404 (not 403).
+    expect((await b.as.get(`/api/firm/clients/${client.company.id}/summary`)).status).toBe(404);
     const grants = await h.sql(
       `SELECT 1 FROM company_users WHERE company_id = $1 AND user_id = $2`,
       [client.company.id, b.user.id]
@@ -457,7 +458,8 @@ describe("W5-D firm practice management", () => {
       {}
     );
     expect(r.status, r.text).toBe(200);
-    expect((await owner.as.get(`/api/firm/clients/${c.id}/summary`)).status).toBe(403);
+    // The revoked client is outside the NR firm's set: another tenant, so 404 (not 403).
+    expect((await owner.as.get(`/api/firm/clients/${c.id}/summary`)).status).toBe(404);
     expect([403, 404]).toContain((await owner.as.get(`/api/companies/${c.id}/accounts`)).status);
   });
 

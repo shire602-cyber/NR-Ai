@@ -133,6 +133,7 @@ export default function PortalDocuments() {
             </div>
           ) : documents.length === 0 ? (
             <EmptyState
+              headingLevel="h2"
               icon={FolderOpen}
               title={t["portal.doc.noDocumentsTitle"]}
               description={t["portal.doc.documentsHint"]}

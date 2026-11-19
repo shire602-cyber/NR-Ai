@@ -492,6 +492,7 @@ export function ReconciliationRulesPanel() {
                     </TableCell>
                     <TableCell>
                       <Switch
+                        touchTarget
                         checked={rule.isActive ?? true}
                         aria-label={t["pages.active"]}
                         onCheckedChange={(checked) =>
@@ -746,7 +747,7 @@ export function ReconciliationRulesPanel() {
                       </p>
                     </div>
                     <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      <Switch touchTarget checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
                   </FormItem>
                 )}
@@ -757,9 +758,9 @@ export function ReconciliationRulesPanel() {
                 name="category"
                 render={({ field }) => (
                   <FormItem className="sm:col-span-2">
-                    <FormLabel>Category (optional)</FormLabel>
+                    <FormLabel>{t["banking.rules.category"]}</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g. Rent, Salary, Utilities" {...field} />
+                      <Input placeholder={t["banking.rules.categoryPlaceholder"]} {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -771,7 +772,7 @@ export function ReconciliationRulesPanel() {
                 name="memo"
                 render={({ field }) => (
                   <FormItem className="sm:col-span-2">
-                    <FormLabel>Memo (optional)</FormLabel>
+                    <FormLabel>{t["banking.rules.memo"]}</FormLabel>
                     <FormControl>
                       <Input placeholder={t["banking.rulesNotePlaceholder"]} {...field} />
                     </FormControl>
@@ -794,7 +795,7 @@ export function ReconciliationRulesPanel() {
                       </p>
                     </div>
                     <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      <Switch touchTarget checked={field.value} onCheckedChange={field.onChange} />
                     </FormControl>
                   </FormItem>
                 )}

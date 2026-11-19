@@ -2,8 +2,9 @@ import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import { Route, Switch, useLocation } from "wouter";
 import { lazyWithReload } from "@/lib/lazyWithReload";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { DeferredInstallPrompt } from "@/components/DeferredInstallPrompt";
 import { RTLProvider } from "@/components/RTLProvider";
-import { isPublicPath, useI18n } from "@/lib/i18n";
+import { isCustomerLinkPath, isPublicPath, useI18n } from "@/lib/i18n";
 
 /**
  * Light root for signed-out visitors (D1b, mobile performance).
@@ -20,27 +21,37 @@ import { isPublicPath, useI18n } from "@/lib/i18n";
  * the session; it owns every public route as well, so nothing is lost.
  */
 
+/**
+ * Form pages build zod schemas when their chunk is evaluated, so the zod configuration (no eval,
+ * see lib/zod-config) must be evaluated first. The landing page, pricing and the no-login
+ * links need no zod and never load it.
+ */
+const afterZod =
+  <T,>(load: () => Promise<T>) =>
+  () =>
+    import("@/lib/zod-config").then(load);
+
 const LandingPage = lazyWithReload(() => import("@/pages/MuhasibLanding"));
 const Pricing = lazyWithReload(() => import("@/pages/Pricing"));
-const Services = lazyWithReload(() => import("@/pages/Services"));
-const DemoWorkspace = lazyWithReload(() => import("@/pages/DemoWorkspace"));
-const HelpCenter = lazyWithReload(() => import("@/pages/HelpCenter"));
-const TrustSecurity = lazyWithReload(() => import("@/pages/TrustSecurity"));
-const MigrationGuides = lazyWithReload(() => import("@/pages/MigrationGuides"));
-const PrivacyPolicy = lazyWithReload(() => import("@/pages/PrivacyPolicy"));
-const TermsOfService = lazyWithReload(() => import("@/pages/TermsOfService"));
-const CookiePolicy = lazyWithReload(() => import("@/pages/CookiePolicy"));
-const Login = lazyWithReload(() => import("@/pages/Login"));
-const Register = lazyWithReload(() => import("@/pages/Register"));
-const ForgotPassword = lazyWithReload(() => import("@/pages/ForgotPassword"));
-const ResetPassword = lazyWithReload(() => import("@/pages/ResetPassword"));
-// STEP5: the customer-portal invitation page (a light public page, no app shell).
-const PortalJoin = lazyWithReload(() => import("@/pages/portal/PortalJoin"));
+const Services = lazyWithReload(afterZod(() => import("@/pages/Services")));
+const DemoWorkspace = lazyWithReload(afterZod(() => import("@/pages/DemoWorkspace")));
+const HelpCenter = lazyWithReload(afterZod(() => import("@/pages/HelpCenter")));
+const TrustSecurity = lazyWithReload(afterZod(() => import("@/pages/TrustSecurity")));
+const MigrationGuides = lazyWithReload(afterZod(() => import("@/pages/MigrationGuides")));
+const PrivacyPolicy = lazyWithReload(afterZod(() => import("@/pages/PrivacyPolicy")));
+const TermsOfService = lazyWithReload(afterZod(() => import("@/pages/TermsOfService")));
+const CookiePolicy = lazyWithReload(afterZod(() => import("@/pages/CookiePolicy")));
+const Login = lazyWithReload(afterZod(() => import("@/pages/Login")));
+const Register = lazyWithReload(afterZod(() => import("@/pages/Register")));
+const ForgotPassword = lazyWithReload(afterZod(() => import("@/pages/ForgotPassword")));
+const ResetPassword = lazyWithReload(afterZod(() => import("@/pages/ResetPassword")));
+const CustomerPortal = lazyWithReload(() => import("@/pages/CustomerPortal"));
+const EInvoicingApprove = lazyWithReload(() => import("@/pages/EInvoicingApprove"));
+const PublicInvoiceView = lazyWithReload(() => import("@/pages/PublicInvoiceView"));
+const LinkProviders = lazy(() => import("@/components/customer-link/LinkProviders"));
+const PortalJoin = lazyWithReload(afterZod(() => import("@/pages/portal/PortalJoin")));
 const PublicProviders = lazy(() => import("@/components/marketing/PublicProviders"));
 const FullApp = lazyWithReload(() => import("./App"));
-const PWAInstallPrompt = lazy(() =>
-  import("@/components/PWAInstallPrompt").then((m) => ({ default: m.PWAInstallPrompt }))
-);
 
 /** Pages that render without React Query / tooltip / toast providers. */
 const PROVIDERLESS = new Set(["/", "/pricing"]);
@@ -73,29 +84,18 @@ function PublicRoutes() {
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
       <Route path="/portal/join" component={PortalJoin} />
+      {/* No-login e-mail links: the approver page first (it also matches /portal/:token). */}
+      <Route path="/portal/einvoicing-approve/:token" component={EInvoicingApprove} />
+      <Route path="/portal/:token" component={CustomerPortal} />
+      <Route path="/view/invoice/:token" component={PublicInvoiceView} />
     </Switch>
-  );
-}
-
-/** Mount the install prompt only after the page has loaded (it is never first-paint UI). */
-function DeferredInstallPrompt() {
-  const [ready, setReady] = useState(() => document.readyState === "complete");
-  useEffect(() => {
-    if (ready) return;
-    const onLoad = () => setReady(true);
-    window.addEventListener("load", onLoad, { once: true });
-    return () => window.removeEventListener("load", onLoad);
-  }, [ready]);
-  if (!ready) return null;
-  return (
-    <Suspense fallback={null}>
-      <PWAInstallPrompt />
-    </Suspense>
   );
 }
 
 function WithProviders({ path, children }: { path: string; children: ReactNode }) {
   if (PROVIDERLESS.has(path)) return <>{children}</>;
+  // The no-login e-mail links need data fetching only (no toasts, no zod/forms).
+  if (isCustomerLinkPath(path)) return <LinkProviders>{children}</LinkProviders>;
   return <PublicProviders>{children}</PublicProviders>;
 }
 
@@ -128,7 +128,8 @@ export default function PublicApp() {
             <PublicRoutes />
           </WithProviders>
         </Suspense>
-        <DeferredInstallPrompt />
+        {/* A customer opening an invoice link is not asked to install the app. */}
+        {!isCustomerLinkPath(path) && <DeferredInstallPrompt />}
       </RTLProvider>
     </ErrorBoundary>
   );

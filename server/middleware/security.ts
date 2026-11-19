@@ -32,6 +32,16 @@ export function isCredentialAuthPath(path: string): boolean {
   return CREDENTIAL_AUTH_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
 }
 
+/**
+ * The OAuth limiter guards the actions that leave the app (start a provider
+ * flow, handle the callback). The providers list is a read-only lookup that
+ * every login/register/forgot-password page load fires, so it must not spend
+ * the budget (it used to 429 after 30 loads and the social buttons vanished).
+ */
+export function isOAuthLimiterExempt(path: string): boolean {
+  return path === "/providers" || path === "/providers/";
+}
+
 const log = createLogger("security");
 
 export type TrustProxySetting = number | false | string;
@@ -223,7 +233,11 @@ export function applySecurityMiddleware(app: Express): void {
   // Order matters: more specific paths must be registered before /api/.
   app.use(
     "/api/auth/oauth/",
-    buildLimiter({ ...limiterProfiles.authOAuth, keyGenerator: clientIp })
+    buildLimiter({
+      ...limiterProfiles.authOAuth,
+      keyGenerator: clientIp,
+      skipIf: (req) => isOAuthLimiterExempt(req.path),
+    })
   );
   // Pre-auth brute-force tier for credential-bearing attempts ONLY, keyed by
   // IP. Session reads and token plumbing (/me, /refresh, /oauth/providers,

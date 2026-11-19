@@ -193,7 +193,9 @@ export const PINT_AE_RULES: readonly Rule[] = [
     id: "PINT-EndpointID",
     flag: "fatal",
     message:
-      "Seller and buyer electronic addresses (IBT-034 / IBT-049) with a scheme are required.",
+      "Seller and buyer electronic addresses (IBT-034 / IBT-049) with a scheme are required: " +
+      "the seller's comes from the company TRN (scheme 0235, 10-digit TIN) or its Peppol ID; " +
+      "the buyer's from the buyer's 15-digit TRN or the customer's recorded Peppol endpoint.",
     check: (c) =>
       [c.seller, c.buyer].flatMap((p, i) =>
         fail(

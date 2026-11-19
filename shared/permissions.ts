@@ -6,9 +6,10 @@
  * the client (role picker, UI gating). Roles are per company membership
  * (company_users.role); NR firm roles (users.firm_role) and platform admins
  * are a separate axis handled by shared/access.ts.
+ *
+ * No zod here: the browser's session code imports this module, and zod must not ride along on
+ * every page (the zod schema for a role is `zCompanyRole` in shared/validators/company-role.ts).
  */
-import { z } from "zod";
-
 export const COMPANY_ROLES = [
   "owner",
   "admin",
@@ -62,10 +63,6 @@ export const ROLE_PERMISSIONS: Record<CompanyRole, readonly Permission[]> = {
   employee: ["reports.read", "documents.write"],
   viewer: ["reports.read"],
 };
-
-export const zCompanyRole = z.enum(COMPANY_ROLES, {
-  error: () => `Role must be one of: ${COMPANY_ROLES.join(", ")}`,
-});
 
 export function isCompanyRole(value: unknown): value is CompanyRole {
   return typeof value === "string" && (COMPANY_ROLES as readonly string[]).includes(value);

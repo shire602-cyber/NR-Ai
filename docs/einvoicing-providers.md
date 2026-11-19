@@ -96,8 +96,9 @@ both providers may stay.
 
 - `server/services/einvoice/providers/registry.ts`: the `ACUBE_PROVIDER_MODULE` import and list entry
 - `server/routes.ts`: `registerEInvoiceAcubeRoutes` import and call
-- `server/index.ts`: the `/api/webhooks/einvoice/acube` raw-body prefix
-- `tests/db/harness.ts`: the same raw-body prefix
+- `scripts/ops/asp-sandbox-dryrun.ts`: the `acube` entry in `ASP_REQUIREMENTS` and its branch in `runProvider`
+- `server/http/body-limits.ts`: the `/api/webhooks/einvoice/acube` entry in `RAW_WEBHOOK_PREFIXES`
+  (shared by `server/index.ts` and `tests/db/harness.ts`)
 - `server/middleware/csrf.ts`: the A-Cube webhook exemption
 - `client/src/components/einvoice/EInvoiceProviderCard.tsx`: the `acube` entry in `PROVIDER_CARDS`
 - `server/services/einvoice/provider-events.ts`: `runAcubePoll` / `ACUBE_POLL_JOB` (the A-Cube job alias)
@@ -152,8 +153,9 @@ Env to unset: `ACUBE_*`.
 
 - `server/services/einvoice/providers/registry.ts`: the `COMPLYANCE_PROVIDER_MODULE` import and list entry
 - `server/routes.ts`: `registerEInvoiceComplyanceRoutes` import and call
-- `server/index.ts`: the `/api/webhooks/einvoice/complyance` raw-body prefix
-- `tests/db/harness.ts`: the same raw-body prefix
+- `scripts/ops/asp-sandbox-dryrun.ts`: the `complyance` entry in `ASP_REQUIREMENTS` and its branch in `runProvider`
+- `server/http/body-limits.ts`: the `/api/webhooks/einvoice/complyance` entry in `RAW_WEBHOOK_PREFIXES`
+  (shared by `server/index.ts` and `tests/db/harness.ts`)
 - `server/middleware/csrf.ts`: the Complyance webhook exemption
 - `client/src/components/einvoice/EInvoiceProviderCard.tsx`: the `complyance` entry in `PROVIDER_CARDS`
 - `server/services/einvoice/tracks.ts`: the `COMPLYANCE_*` codes (`NEW_DOCUMENT_REQUIRED_CODES` may then

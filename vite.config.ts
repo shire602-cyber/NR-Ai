@@ -2,12 +2,27 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { visualizer } from "rollup-plugin-visualizer";
+import type { Plugin } from "vite";
+import { FIRM_FIRST_SCREEN_NAMESPACES } from "./shared/firm-boot";
 
 const ANALYZE = process.env.ANALYZE === "1";
+
+/**
+ * Second build of the same sources, for NR staff opening the firm workspace (`/firm/*`).
+ * `FIRM_BUILD=1 vite build` bundles `client/firm.html` -> `src/firm-main.tsx`, which imports the
+ * signed-in app and the two firm landing screens statically, so everything the first screen needs
+ * sits in one entry chunk plus the vendor chunks instead of ~45 shared chunks (each one a round
+ * trip on a phone over HTTP/1.1; docs/release/PR68-VERIFIED.md, defect 14). It writes next to the
+ * main build (`dist/public/firm.html`, assets under `firm-assets/`) and never touches it, so
+ * public, portal and no-login pages keep their own bundle untouched. The server picks the document
+ * (server/vite.ts); a browser that loads the main bundle behaves exactly as before.
+ */
+const FIRM_BUILD = process.env.FIRM_BUILD === "1";
 
 export default defineConfig({
   plugins: [
     react(),
+    FIRM_BUILD && firmPreloads(),
     ANALYZE &&
       visualizer({
         filename: path.resolve(__dirname, "dist/bundle-stats.html"),
@@ -26,9 +41,13 @@ export default defineConfig({
     dedupe: ["react", "react-dom"],
   },
   root: path.resolve(__dirname, "client"),
+  // The firm build must not re-copy client/public (it is already in the main build's folder).
+  publicDir: FIRM_BUILD ? false : undefined,
   build: {
     outDir: path.resolve(__dirname, "dist/public"),
-    emptyOutDir: true,
+    // The firm build adds to the main build's folder; the main build starts it from scratch.
+    emptyOutDir: !FIRM_BUILD,
+    ...(FIRM_BUILD ? { assetsDir: "firm-assets" } : {}),
     sourcemap: false,
     // Heavy document workflows are split into isolated lazy chunks. Keep Vite's
     // warning budget tight so build logs catch new accidental eager imports.
@@ -49,6 +68,7 @@ export default defineConfig({
         ),
     },
     rollupOptions: {
+      ...(FIRM_BUILD ? { input: path.resolve(__dirname, "client", "firm.html") } : {}),
       output: {
         // D1b: rolldown code-splitting groups. A group also captures the dependencies of
         // the modules it matches, so React used to be pulled into whichever vendor group saw
@@ -63,6 +83,12 @@ export default defineConfig({
               priority: 2,
             },
             { name: vendorChunkName, priority: 1 },
+            { name: firmCatalogChunkName, priority: 1 },
+            // Firm build: everything the entry imports statically (the app, the two landing
+            // screens and what they share with lazy pages) is one chunk, not ~35 shared ones.
+            ...(FIRM_BUILD
+              ? [{ name: "firm-shell", tags: ["$initial" as const], priority: 0 }]
+              : []),
           ],
         },
       },
@@ -98,4 +124,46 @@ function vendorChunkName(id: string): string | null {
   if (id.includes("wouter")) return "vendor-router";
   if (id.includes("react-dom") || id.includes("/react/")) return "vendor-react";
   return null;
+}
+
+/**
+ * The three catalogs only the firm screens read (`firm`, `firmOps`, `clientsFirm`) ship as one
+ * chunk per locale: the firm first screen needs all three, and one request replaces three on a
+ * phone. No other route loads them, so nothing else downloads the combined chunk.
+ */
+function firmCatalogChunkName(id: string): string | null {
+  const m = /client[\\/]src[\\/]locales[\\/](en|ar)[\\/](firm|firmOps|clientsFirm)\.json/.exec(id);
+  return m ? `catalog-firm-${m[1]}` : null;
+}
+
+/**
+ * Firm build only: emits `firm-preloads.json`, the first-screen catalog chunks per language. The
+ * server adds `<link rel="modulepreload">` for the ones of the visitor's language (language
+ * cookie) so they download with the entry chunk instead of after it has run.
+ */
+function firmPreloads(): Plugin {
+  return {
+    name: "firm-preloads",
+    apply: "build",
+    generateBundle(_options, bundle) {
+      const chunks = Object.values(bundle).filter((c) => c.type === "chunk");
+      const facade = (suffix: string) =>
+        chunks.find((c) => c.moduleIds.some((id) => id.replace(/\\/g, "/").endsWith(suffix)))
+          ?.fileName;
+      const catalogs: Record<string, string[]> = {};
+      for (const locale of ["en", "ar"]) {
+        const files = new Set<string>();
+        for (const ns of FIRM_FIRST_SCREEN_NAMESPACES) {
+          const file = facade(`client/src/locales/${locale}/${ns}.json`);
+          if (file) files.add(file);
+        }
+        catalogs[locale] = [...files].sort();
+      }
+      this.emitFile({
+        type: "asset",
+        fileName: "firm-preloads.json",
+        source: JSON.stringify({ catalogs }),
+      });
+    },
+  };
 }

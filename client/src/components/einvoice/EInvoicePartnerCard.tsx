@@ -46,7 +46,7 @@ export interface PartnerViewData {
   liveProvider: string | null;
   verifyAvailable: boolean;
   appointment: {
-    state: "not_started" | "awaiting_approval" | "self_confirmed" | "verified";
+    state: "not_started" | "awaiting_approval" | "approver_done" | "self_confirmed" | "verified";
     confirmedAt: string | null;
     legalEntityStatus: string | null;
   };
@@ -67,6 +67,7 @@ export interface ApproverLinkRow {
 const APPOINTMENT_TONE: Record<PartnerViewData["appointment"]["state"], StatusTone> = {
   not_started: "neutral",
   awaiting_approval: "info",
+  approver_done: "info",
   self_confirmed: "warning",
   verified: "success",
 };
@@ -92,7 +93,8 @@ export function EInvoicePartnerCard({
 }) {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const { gate, can } = useCompanyPermission();
+  const { gate, can, known } = useCompanyPermission();
+  // `can` answers true while the role is unknown; do not ask the admin-only list until it is.
   const isAdmin = can("settings.company");
   const view = useQuery<PartnerViewData>({
     queryKey: partnerKey(companyId),
@@ -102,9 +104,9 @@ export function EInvoicePartnerCard({
   const links = useQuery<ApproverLinkRow[]>({
     queryKey: linksKey(companyId),
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/einvoicing/approver-links`),
-    enabled: isAdmin,
+    enabled: known && isAdmin,
   });
-  const [who, setWho] = useState<"me" | "someone">("me");
+  const [whoChoice, setWho] = useState<"me" | "someone" | null>(null);
   const [approverName, setApproverName] = useState("");
   const [approverEmail, setApproverEmail] = useState("");
   const [created, setCreated] = useState<ApproverLinkRow | null>(null);
@@ -168,6 +170,8 @@ export function EInvoicePartnerCard({
     onError,
   });
 
+  // With requests already sent, show them (and their outcome) without another click.
+  const who: "me" | "someone" = whoChoice ?? (links.data?.length ? "someone" : "me");
   const data = view.data;
   const chosen = data?.partners.find((p) => p.id === data.chosen) ?? null;
   const missing = identity.data?.missing.length ?? 0;
@@ -440,7 +444,7 @@ export function EInvoicePartnerCard({
                   </p>
                 )}
                 {state !== "verified" && (
-                  <label className="flex items-start gap-2 text-small text-foreground">
+                  <label className="flex min-h-11 items-start gap-2 py-1 text-small text-foreground">
                     <Checkbox
                       checked={!!data.appointment.confirmedAt}
                       disabled={!isAdmin || selfConfirm.isPending}

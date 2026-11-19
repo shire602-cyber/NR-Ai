@@ -8,6 +8,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 import { englishWords } from "../e2e/lib/sweep-checks.mjs";
 
 const TOKEN = "ab".repeat(32);
@@ -173,7 +174,7 @@ for (const locale of ["en", "ar"] as const) {
       expect(container.querySelector('[data-rule="length"]')!.getAttribute("data-met")).toBe(
         "false"
       );
-      await typeInto("join-password", "Portal9Strong!x");
+      await typeInto("join-password", FAKE_PASSWORD);
       for (const rule of ["length", "upper", "lower", "digit"]) {
         expect(container.querySelector(`[data-rule="${rule}"]`)!.getAttribute("data-met")).toBe(
           "true"
@@ -194,14 +195,14 @@ for (const locale of ["en", "ar"] as const) {
             })
       );
       await mount();
-      await typeInto("join-password", "Portal9Strong!x");
+      await typeInto("join-password", FAKE_PASSWORD);
       await click(byId("join-terms"));
       await click(byId("join-submit"));
       const post = mocks.apiRequest.mock.calls.find((c) => c[0] === "POST");
       expect(post?.[1]).toBe(`/api/portal-invitations/${TOKEN}/accept`);
       expect(post?.[2]).toMatchObject({
         name: "Layla",
-        password: "Portal9Strong!x",
+        password: FAKE_PASSWORD,
         acceptTerms: true,
       });
       const alert = container.querySelector("#join-password-error");

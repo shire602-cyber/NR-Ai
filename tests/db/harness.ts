@@ -238,18 +238,13 @@ async function buildApp(): Promise<any> {
   applySecurityMiddleware(app);
   app.use(compression());
 
-  const { LARGE_JSON_LIMIT, SMALL_JSON_LIMIT, usesLargeJson } =
+  const { LARGE_JSON_LIMIT, SMALL_JSON_LIMIT, RAW_WEBHOOK_PREFIXES, usesLargeJson } =
     await import("../../server/http/body-limits");
   const largeJson = express.json({ limit: LARGE_JSON_LIMIT });
   const smallJson = express.json({ limit: SMALL_JSON_LIMIT });
   app.use("/api/webhooks/email-intake", express.raw({ type: "*/*", limit: "20mb" }));
-  // Mirrors server/index.ts (W4-D raw-body webhooks).
-  const rawWebhookPrefixes = [
-    "/api/webhooks/invoice-payments",
-    "/api/webhooks/email-events",
-    "/api/webhooks/einvoice/acube",
-    "/api/webhooks/einvoice/complyance",
-  ];
+  // Same list as server/index.ts (server/http/body-limits.ts).
+  const rawWebhookPrefixes = [...RAW_WEBHOOK_PREFIXES];
   app.use(rawWebhookPrefixes, express.raw({ type: "*/*", limit: "1mb" }));
   app.use((req: any, res: any, next: any) => {
     if (req.path === "/api/webhooks/email-intake") return next();

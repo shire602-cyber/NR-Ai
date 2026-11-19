@@ -11,7 +11,7 @@ import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import { getEnv } from "../config/env";
 import { pq } from "./connectors/pq";
-import { DomainError } from "../errors";
+import { DomainError, errorMessage } from "../errors";
 import { enqueueEmail } from "../outbox";
 
 const log = createLogger("stripe");
@@ -228,19 +228,31 @@ export async function createPortalSession(
 }
 
 export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
-  // Idempotency check
-  const existing = await storage.getStripeEvent(event.id);
-  if (existing) {
+  // Idempotency: claim the event id atomically. A failed handler releases the claim and
+  // rethrows (the route answers 5xx), so Stripe's retry is processed instead of being
+  // skipped as a duplicate of a delivery that never took effect.
+  const claimed = await storage.createStripeEvent(event.id, event.type);
+  if (!claimed) {
     log.info({ eventId: event.id }, "Duplicate Stripe event, skipping");
     return;
   }
 
-  // Record event
-  await storage.createStripeEvent(event.id, event.type);
-  void {
-    payload: JSON.stringify(event.data),
-  };
+  try {
+    await dispatchWebhookEvent(event);
+  } catch (err) {
+    await storage
+      .releaseStripeEvent(event.id)
+      .catch((releaseErr: unknown) =>
+        log.error(
+          { eventId: event.id, err: errorMessage(releaseErr) },
+          "Could not release a failed Stripe event"
+        )
+      );
+    throw err;
+  }
+}
 
+async function dispatchWebhookEvent(event: Stripe.Event): Promise<void> {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
@@ -520,7 +532,7 @@ const DUNNING_COPY = [
   },
   {
     subject: "Final notice: your Muhasib.ai plan will be downgraded",
-    body: "We have not been able to collect your subscription payment. If it stays unpaid, your company moves to the Free plan when Stripe ends the subscription.",
+    body: "We have not been able to collect your subscription payment. If it stays unpaid, your company loses access to paid features and its books become read-only when Stripe ends the subscription.",
   },
 ];
 

@@ -221,7 +221,7 @@ export interface PartnerView {
   /** "Verify with partner" runs only when the chosen partner is the live one. */
   verifyAvailable: boolean;
   appointment: {
-    state: "not_started" | "awaiting_approval" | "self_confirmed" | "verified";
+    state: "not_started" | "awaiting_approval" | "approver_done" | "self_confirmed" | "verified";
     confirmedAt: string | null;
     legalEntityStatus: string | null;
   };
@@ -264,7 +264,10 @@ export async function partnerView(company: CompanyRow): Promise<PartnerView> {
   const chosen = company.einvoicePartner ?? null;
   const verifyAvailable = !!chosen && chosen === live;
   const leStatus = verifyAvailable ? await legalEntityStatusFor(company.id, chosen) : null;
-  const openLink = await hasOpenApproverLink(company.id);
+  const links = await listApproverLinks(company.id);
+  const openLink = links.some((l) => approverLinkState(l) === "active");
+  // The approver ticked "Done" in EmaraTax: the client's next step is to verify with the partner.
+  const approverDone = !!chosen && links.some((l) => approverLinkState(l) === "completed");
   const confirmedAt = company.einvoiceAppointmentConfirmedAt
     ? new Date(company.einvoiceAppointmentConfirmedAt).toISOString()
     : null;
@@ -273,9 +276,11 @@ export async function partnerView(company: CompanyRow): Promise<PartnerView> {
       ? "verified"
       : confirmedAt
         ? "self_confirmed"
-        : openLink || leStatus === "reserved" || leStatus === "pending"
-          ? "awaiting_approval"
-          : "not_started";
+        : approverDone
+          ? "approver_done"
+          : openLink || leStatus === "reserved" || leStatus === "pending"
+            ? "awaiting_approval"
+            : "not_started";
   return {
     partners,
     chosen,
@@ -288,6 +293,21 @@ export async function partnerView(company: CompanyRow): Promise<PartnerView> {
 export async function choosePartner(companyId: string, partner: string | null): Promise<void> {
   if (partner && !registeredProviderIds().includes(partner)) {
     throw new DomainError("EINVOICE_PARTNER_UNKNOWN", 422, { partner }, "Unknown partner.");
+  }
+  // A different partner is a different EmaraTax appointment: approvals given (or still open)
+  // for the previous one no longer apply, so they are withdrawn.
+  const [current] = await db
+    .select({ partner: companies.einvoicePartner })
+    .from(companies)
+    .where(eq(companies.id, companyId))
+    .limit(1);
+  if ((current?.partner ?? null) !== partner) {
+    await db
+      .update(einvoiceApproverLinks)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(eq(einvoiceApproverLinks.companyId, companyId), isNull(einvoiceApproverLinks.revokedAt))
+      );
   }
   await db
     .update(companies)
@@ -345,11 +365,6 @@ export function approverLinkView(link: EInvoiceApproverLink) {
     lastViewedAt: link.lastViewedAt ? new Date(link.lastViewedAt).toISOString() : null,
     createdAt: new Date(link.createdAt).toISOString(),
   };
-}
-
-async function hasOpenApproverLink(companyId: string): Promise<boolean> {
-  const rows = await listApproverLinks(companyId);
-  return rows.some((l) => approverLinkState(l) === "active");
 }
 
 export async function listApproverLinks(companyId: string): Promise<EInvoiceApproverLink[]> {
@@ -481,6 +496,7 @@ export async function approverNotifyRecipients(link: EInvoiceApproverLink): Prom
 export type FirmEInvoicingState =
   | "connected"
   | "self_confirmed"
+  | "approver_done"
   | "awaiting_approval"
   | "appoint_partner"
   | "partner_not_chosen"
@@ -521,7 +537,12 @@ export async function firmEInvoicingStates(
     .select()
     .from(einvoiceApproverLinks)
     .where(inArray(einvoiceApproverLinks.companyId, companyIds));
-  for (const l of links) if (approverLinkState(l) === "active") pending.add(l.companyId);
+  const approved = new Set<string>();
+  for (const l of links) {
+    const st = approverLinkState(l);
+    if (st === "active") pending.add(l.companyId);
+    else if (st === "completed") approved.add(l.companyId);
+  }
 
   for (const c of rows) {
     const missing = missingSellerFields(c).length;
@@ -531,13 +552,15 @@ export async function firmEInvoicingStates(
         ? "connected"
         : c.einvoiceAppointmentConfirmedAt && partner
           ? "self_confirmed"
-          : partner && pending.has(c.id)
-            ? "awaiting_approval"
-            : missing > 0
-              ? "identity_missing"
-              : partner
-                ? "appoint_partner"
-                : "partner_not_chosen";
+          : partner && approved.has(c.id)
+            ? "approver_done"
+            : partner && pending.has(c.id)
+              ? "awaiting_approval"
+              : missing > 0
+                ? "identity_missing"
+                : partner
+                  ? "appoint_partner"
+                  : "partner_not_chosen";
     out.set(c.id, { state, missing, partner });
   }
   return out;

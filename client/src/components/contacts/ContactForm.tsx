@@ -104,6 +104,10 @@ export function ContactForm({
     // R03-10: invoices to this contact default their place of supply and due date from here.
     emirate: contact?.emirate || "",
     paymentTerms: contact?.paymentTerms ?? 30,
+    preferredLanguage:
+      contact?.preferredLanguage === "en" || contact?.preferredLanguage === "ar"
+        ? contact.preferredLanguage
+        : "",
     isCustomer: contact?.isCustomer ?? true,
     isSupplier: contact?.isSupplier ?? false,
     partyType: (contact?.partyType as "business" | "individual") || "business",
@@ -508,6 +512,30 @@ export function ContactForm({
               onChange={(e) => set({ paymentTerms: Math.max(0, Number(e.target.value) || 0) })}
               data-testid="input-contact-payment-terms"
             />
+          </Field>
+          <Field
+            id={`${idp}-language`}
+            label={t["forms.contact.preferredLanguage"]}
+            help={t["forms.contact.preferredLanguageHelp"]}
+          >
+            <Select
+              value={f.preferredLanguage || NONE}
+              onValueChange={(v) => set({ preferredLanguage: v === "en" || v === "ar" ? v : "" })}
+            >
+              <SelectTrigger id={`${idp}-language`} data-testid="select-contact-language">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NONE}>{t["forms.contact.languageDefault"]}</SelectItem>
+                <SelectItem value="en">
+                  {/* i18n-ignore: a language is named in its own language */}
+                  <span lang="en">English</span>
+                </SelectItem>
+                <SelectItem value="ar">
+                  <span lang="ar">العربية</span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </Field>
           <Field id={`${idp}-vat-treatment`} label={t["forms.contact.vatTreatment"]}>
             <Select

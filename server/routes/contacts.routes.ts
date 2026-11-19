@@ -55,6 +55,8 @@ const contactFields = {
   emirate: zEmirate.optional().nullable(),
   notes: optText(2000),
   isActive: z.boolean().optional(),
+  // The language this contact's e-mails and portal open in (null = both languages).
+  preferredLanguage: z.enum(["en", "ar"]).optional().nullable(),
   // WQ5: customer and/or supplier role, structured address, typed registrations, defaults,
   // buyer legal identifier (einvoice_buyer_endpoints).
   ...contactIdentityFields,

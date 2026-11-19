@@ -326,7 +326,7 @@ async function seedChartOfAccounts(
   }
 }
 
-/** Company + owner membership + chart of accounts + free plan for a new customer. */
+/** Company + owner membership + chart of accounts + trial state for a new customer. */
 async function provisionCustomerCompany(
   userId: string,
   companyName: string,

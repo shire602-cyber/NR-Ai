@@ -28,3 +28,7 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   Drizzle column must be created by some migration. Storage methods for a new table go in the
   matching `server/storage/<domain>.ts` class, with the signature added to
   `server/storage/types.ts` (`IStorage`).
+- PR #68 originally used migration 0136 for the owner-approved settlement indexes. #67 used the
+  same journal timestamp for portal invitations. The combined branch keeps #67's 0136 and applies
+  both changes idempotently in `0137_combine_portal_invitations_and_settlement_indexes`, including
+  on databases that already ran either 0136.

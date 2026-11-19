@@ -137,6 +137,7 @@ export default function ResetPassword() {
                       {...field}
                       type="password"
                       autoComplete="new-password"
+                      enterKeyHint="next"
                       placeholder="••••••••"
                       className={AUTH_INPUT}
                       disabled={isLoading || !token}
@@ -161,6 +162,7 @@ export default function ResetPassword() {
                       {...field}
                       type="password"
                       autoComplete="new-password"
+                      enterKeyHint="go"
                       placeholder="••••••••"
                       className={AUTH_INPUT}
                       disabled={isLoading || !token}

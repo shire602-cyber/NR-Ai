@@ -44,6 +44,8 @@ export interface EmptyStateProps {
   /** lg only: columns in the default ghost preview (default 4). `0` hides the preview. */
   previewColumns?: number;
   className?: string;
+  /** md: heading level of the title (default h3); use h2 where the page has no h2 above it. */
+  headingLevel?: "h2" | "h3";
   /** @deprecated use `size="sm"` or `size="md"`; kept so existing screens compile. */
   compact?: boolean;
   testId?: string;
@@ -64,9 +66,11 @@ export function EmptyState({
   preview,
   previewColumns = 4,
   className,
+  headingLevel = "h3",
   compact = false,
   testId,
 }: EmptyStateProps) {
+  const Heading = headingLevel;
   const resolved: EmptyStateSize = size ?? "md";
 
   if (resolved === "sm") {
@@ -142,7 +146,7 @@ export function EmptyState({
       )}
     >
       {Icon && <EmptyIconTile icon={Icon} />}
-      <h3 className="text-h3 text-foreground">{title}</h3>
+      <Heading className="text-h3 text-foreground">{title}</Heading>
       {description && (
         <p className="mt-1 max-w-sm text-small text-muted-foreground text-pretty">{description}</p>
       )}
