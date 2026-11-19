@@ -9,6 +9,7 @@
  * With no live/sandbox provider nothing is offered: paymentsAvailability() reports
  * requires_external and the UI shows no Pay button.
  */
+import { journalMemo } from "@shared/journal-memo";
 import crypto from "crypto";
 import { and, desc, eq, gt, inArray } from "drizzle-orm";
 import { db, pool } from "../../db";
@@ -564,7 +565,7 @@ async function applyPaidEvent(
         {
           companyId: link.companyId,
           date: new Date().toISOString().slice(0, 10),
-          memo: `Payment gateway fee (${event.provider}) for link ${link.id}`,
+          ...journalMemo("gatewayFee", { provider: event.provider, link: link.id }),
           status: "posted",
           source: "payment_gateway_fee",
           sourceId: link.id,

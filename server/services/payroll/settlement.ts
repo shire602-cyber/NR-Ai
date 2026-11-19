@@ -15,6 +15,7 @@
  *
  * The employee is marked terminated in the same transaction.
  */
+import { journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { DomainError } from "../../errors";
 import { emitDomainEventInTx } from "../../platform/event-outbox";
@@ -281,7 +282,7 @@ export async function postSettlement(
         {
           companyId,
           date: body.terminationDate,
-          memo: `End-of-service settlement - ${p.employee.full_name}`,
+          ...journalMemo("eosSettlement", { party: p.employee.full_name }),
           source: "payroll_settlement",
           sourceId: settlementRow!.id,
           status: "posted",
@@ -381,7 +382,7 @@ export async function paySettlement(
         {
           companyId,
           date: body.paymentDate,
-          memo: `End-of-service settlement payment - ${s.full_name}`,
+          ...journalMemo("eosSettlementPayment", { party: s.full_name }),
           source: "payroll_settlement_payment",
           sourceId: s.id,
           idempotencyKey: `payroll-settlement:${s.id}:payment`,

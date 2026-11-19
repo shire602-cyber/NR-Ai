@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { journalMemo } from "@shared/journal-memo";
 import { pool } from "../db";
 import { storage } from "../storage";
 import { getEnv } from "../config/env";
@@ -588,9 +589,9 @@ async function createJournalEntryForQueueItem(
       `No actor user found for company ${companyId} — cannot create auto-posted journal entry`
     );
   }
-  const memo = postImmediately
-    ? `AI GL (reviewed): ${item.description}`
-    : `AI Draft (review required): ${item.description}`;
+  const memoFields = journalMemo(postImmediately ? "aiReviewed" : "aiDraft", {
+    party: item.description,
+  });
 
   if (item.bank_transaction_id) {
     const result = await applyMatch({
@@ -600,7 +601,9 @@ async function createJournalEntryForQueueItem(
       target: {
         kind: "entry",
         accountId: item.suggested_account_id,
-        memo: memo.slice(0, 500),
+        memo: memoFields.memo,
+        memoKey: memoFields.memoKey,
+        memoParams: memoFields.memoParams,
         postingMode: postImmediately ? "posted" : "draft",
       },
       idempotencyKey: `ai-gl:${item.id}:${postImmediately ? "post" : "draft"}:${item.suggested_account_id}`,
@@ -638,7 +641,7 @@ async function createJournalEntryForQueueItem(
     {
       companyId,
       date: txnDate,
-      memo: memo.slice(0, 500),
+      ...memoFields,
       source: "ai_gl",
       sourceId: item.id,
       idempotencyKey: `ai-gl:${item.id}:${postImmediately ? "post" : "draft"}:${item.suggested_account_id}`,

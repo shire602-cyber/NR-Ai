@@ -4,6 +4,7 @@
  * movement + layers + stock level, and returns the change in stock value so the caller's journal
  * can book exactly that amount to the inventory account. Valuation therefore always equals GL.
  */
+import { journalMemo } from "@shared/journal-memo";
 import { sql } from "drizzle-orm";
 import { DomainError } from "../../errors";
 import { emitDomainEventInTx } from "../../platform/event-outbox";
@@ -479,6 +480,8 @@ export async function postInventoryJournal(
     companyId: string;
     date: string;
     memo: string;
+    memoKey?: string;
+    memoParams?: Record<string, string>;
     source: string;
     sourceId: string;
     idempotencyKey: string;
@@ -495,6 +498,8 @@ export async function postInventoryJournal(
       companyId: args.companyId,
       date: args.date,
       memo: args.memo.slice(0, 500),
+      memoKey: args.memoKey ?? null,
+      memoParams: args.memoParams ?? null,
       status: "posted",
       source: args.source,
       sourceId: args.sourceId,

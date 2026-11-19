@@ -8,6 +8,7 @@
  * dated on the last day of the period, source "vat_partial_exemption". It runs when the return
  * is made ready or submitted, before the VAT-to-GL gate, so Box 9 / Box 10 tie to 1050.
  */
+import { journalMemo } from "@shared/journal-memo";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
 import { postJournal } from "../ledger";
@@ -72,7 +73,7 @@ export async function postPartialExemptionForPeriod(input: {
     {
       companyId: input.companyId,
       date: input.to,
-      memo: `Irrecoverable input VAT ${input.from} to ${input.to} (partial exemption, Art. 55)`,
+      ...journalMemo("partialExemption", { from: input.from, to: input.to }),
       status: "posted",
       source: PARTIAL_EXEMPTION_SOURCE,
       sourceId: input.vatReturnId,

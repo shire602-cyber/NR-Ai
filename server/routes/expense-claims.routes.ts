@@ -6,6 +6,7 @@
  * bank account. The submitter cannot approve their own claim (maker-checker; single-member
  * companies may, configurable). Claim numbers come from a sequence, never COUNT(*)+1.
  */
+import { journalMemo } from "@shared/journal-memo";
 import type { Express, Request, Response } from "express";
 import Decimal from "decimal.js";
 import { eq } from "drizzle-orm";
@@ -731,7 +732,7 @@ export function registerExpenseClaimRoutes(app: Express) {
           {
             companyId: claim.company_id,
             date: latest,
-            memo: `Expense claim ${claim.claim_number || claim.id} approved`,
+            ...journalMemo("expenseClaimApproved", { ref: claim.claim_number || claim.id }),
             status: "posted",
             source: "expense_claim",
             sourceId: claim.id,
@@ -935,7 +936,7 @@ export function registerExpenseClaimRoutes(app: Express) {
           {
             companyId: claim.company_id,
             date: paymentDate,
-            memo: `Expense claim ${claim.claim_number || claim.id} reimbursed`,
+            ...journalMemo("expenseClaimReimbursed", { ref: claim.claim_number || claim.id }),
             status: "posted",
             source: "expense_claim_payment",
             sourceId: claim.id,

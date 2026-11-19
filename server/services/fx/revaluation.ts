@@ -11,6 +11,7 @@
  * postJournal (kind 'revaluation') for the revaluation and undo entries, reverseEntry for the
  * scheduled next-day reversal (linked via reversed_entry_id / reversed_by_entry_id).
  */
+import { journalMemo } from "@shared/journal-memo";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { storage } from "../../storage";
@@ -284,7 +285,14 @@ async function post(
   companyId: string,
   dateIso: string,
   userId: string,
-  data: { memo: string; source: string; sourceId: string; idempotencyKey: string },
+  data: {
+    memo: string;
+    memoKey?: string;
+    memoParams?: Record<string, string>;
+    source: string;
+    sourceId: string;
+    idempotencyKey: string;
+  },
   lines: JeLine[]
 ): Promise<JournalEntry> {
   const { entry } = await postJournal(
@@ -292,6 +300,8 @@ async function post(
       companyId,
       date: dateIso,
       memo: data.memo,
+      memoKey: data.memoKey ?? null,
+      memoParams: data.memoParams ?? null,
       status: "posted",
       source: data.source,
       sourceId: data.sourceId,
@@ -445,7 +455,7 @@ export async function runRevaluation(
       asOf,
       userId,
       {
-        memo: `Unrealised FX revaluation ${asOf}`,
+        ...journalMemo("fxRevaluation", { date: asOf }),
         source: FX_REVALUATION_SOURCE,
         sourceId: revaluationId,
         idempotencyKey: `fx_revaluation:${revaluationId}`,
@@ -459,7 +469,7 @@ export async function runRevaluation(
         allowFutureDate: true,
         source: FX_REVALUATION_REVERSAL_SOURCE,
         sourceId: revaluationId,
-        memo: `Automatic reversal of unrealised FX revaluation ${asOf}`,
+        ...journalMemo("fxRevaluationReversal", { date: asOf }),
       },
       { actorId: userId, tx, companyId }
     );
@@ -540,7 +550,7 @@ export async function undoRevaluation(companyId: string, revaluationId: string, 
         dateIso,
         userId,
         {
-          memo: `Undo of unrealised FX revaluation ${row.asOf}`,
+          ...journalMemo("fxRevaluationUndo", { date: row.asOf }),
           source: FX_REVALUATION_UNDO_SOURCE,
           sourceId: row.id,
           idempotencyKey: `fx_revaluation:${row.id}:undo:${tag}`,

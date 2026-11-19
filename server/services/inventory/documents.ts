@@ -14,6 +14,7 @@
  *   PO goods received    stock in at the PO price, Dr Inventory / Cr GRNI (own transaction:
  *                        the purchase-order module calls it after its commit).
  */
+import { journalMemo } from "@shared/journal-memo";
 import { sql } from "drizzle-orm";
 import { DomainError } from "../../errors";
 import { createLogger } from "../../config/logger";
@@ -196,7 +197,7 @@ export async function reverseDocumentStock(
   const entryId = await postInventoryJournal(tx, {
     companyId: args.companyId,
     date,
-    memo: `Inventory reversal adjustment - ${args.label}`,
+    ...journalMemo("inventoryReversalAdjustment", { ref: args.label }),
     source: "inventory_adjustment",
     sourceId: args.sourceId,
     idempotencyKey: `inventory:reverse:${firstReversal}`,
@@ -619,7 +620,7 @@ export async function onInvoiceIssued(
   const entryId = await postInventoryJournal(tx, {
     companyId: invoice.companyId,
     date,
-    memo: `Cost of goods sold - Invoice ${invoice.number}`,
+    ...journalMemo("cogs", { ref: invoice.number }),
     source: "invoice_cogs",
     sourceId: invoice.id,
     idempotencyKey: `invoice:${invoice.id}:cogs`,
@@ -752,7 +753,7 @@ export async function onCreditNoteIssued(
   const entryId = await postInventoryJournal(tx, {
     companyId: creditNote.companyId,
     date,
-    memo: `Stock returned - Credit note ${creditNote.number}`,
+    ...journalMemo("stockReturned", { ref: creditNote.number }),
     source: "credit_note_cogs",
     sourceId: creditNote.id,
     idempotencyKey: `credit_note:${creditNote.id}:cogs`,
@@ -900,7 +901,7 @@ export async function onGoodsReceived(
     const entryId = await postInventoryJournal(tx, {
       companyId: event.companyId,
       date,
-      memo: `Goods received - PO ${po.number}`,
+      ...journalMemo("goodsReceived", { ref: po.number }),
       source: "po_receipt",
       sourceId: event.receiptId,
       idempotencyKey: `po_receipt:${event.receiptId}`,

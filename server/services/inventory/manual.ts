@@ -11,6 +11,7 @@
  *   write-down Dr 5007               / Cr Inventory          (value only)
  *   stocktake  variance per product against 5007
  */
+import { journalMemo } from "@shared/journal-memo";
 import { sql } from "drizzle-orm";
 import { DomainError } from "../../errors";
 import { fromFils, mulRate, toFils } from "../../../shared/money";
@@ -167,7 +168,16 @@ export async function recordManualMovement(
   const entryId = await postInventoryJournal(tx, {
     companyId: input.companyId,
     date: input.date,
-    memo: `Inventory ${input.type} - ${r.product.sku ?? r.product.name}`,
+    ...journalMemo(
+      input.type === "purchase"
+        ? "inventoryPurchase"
+        : input.type === "sale"
+          ? "inventorySale"
+          : input.type === "return"
+            ? "inventoryReturn"
+            : "inventoryAdjustment",
+      { ref: r.product.sku ?? r.product.name }
+    ),
     source: "inventory",
     sourceId: r.movementId,
     idempotencyKey: `inventory:movement:${r.movementId}`,
@@ -215,7 +225,7 @@ export async function recordOpeningStock(
   const entryId = await postInventoryJournal(tx, {
     companyId: args.companyId,
     date: args.date,
-    memo: `Opening stock - ${r.product.sku ?? r.product.name}`,
+    ...journalMemo("openingStock", { ref: r.product.sku ?? r.product.name }),
     source: "inventory",
     sourceId: r.movementId,
     idempotencyKey: `inventory:opening:${args.productId}`,
@@ -337,7 +347,7 @@ export async function applyOpeningBackfill(
     const entryId = await postInventoryJournal(tx, {
       companyId: args.companyId,
       date: args.date,
-      memo: `Opening stock valuation - ${r.product.sku ?? r.product.name}`,
+      ...journalMemo("openingStockValuation", { ref: r.product.sku ?? r.product.name }),
       source: "inventory",
       sourceId: r.movementId,
       idempotencyKey: `inventory:opening_backfill:${item.productId}`,
@@ -386,7 +396,10 @@ export async function writeDownStock(
   const entryId = await postInventoryJournal(tx, {
     companyId: args.companyId,
     date: args.date,
-    memo: `Inventory write-down - ${r.product.sku ?? r.product.name}: ${args.reason}`,
+    ...journalMemo("inventoryWriteDown", {
+      ref: r.product.sku ?? r.product.name,
+      reason: args.reason,
+    }),
     source: "inventory",
     sourceId: r.movementId,
     idempotencyKey: `inventory:movement:${r.movementId}`,
@@ -507,7 +520,10 @@ export async function reverseWriteDown(
   const entryId = await postInventoryJournal(tx, {
     companyId: args.companyId,
     date: args.date,
-    memo: `Inventory write-down reversal - ${r.product.sku ?? r.product.name}: ${args.reason}`,
+    ...journalMemo("inventoryWriteDownReversal", {
+      ref: r.product.sku ?? r.product.name,
+      reason: args.reason,
+    }),
     source: "inventory",
     sourceId: r.movementId,
     idempotencyKey: `inventory:movement:${r.movementId}`,
@@ -646,7 +662,7 @@ export async function postStocktake(
   const entryId = await postInventoryJournal(tx, {
     companyId: args.companyId,
     date: st.count_date,
-    memo: "Stocktake variance",
+    ...journalMemo("stocktakeVariance"),
     source: "stocktake",
     sourceId: st.id,
     idempotencyKey: `stocktake:${st.id}:post`,

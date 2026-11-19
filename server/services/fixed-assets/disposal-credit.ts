@@ -28,6 +28,7 @@
  * and the register's proceeds (and output VAT) go up by the debit note. Voiding the debit note
  * voids that entry and restores the register (onDisposalCreditVoided serves both).
  */
+import { journalMemo } from "@shared/journal-memo";
 import { sql } from "drizzle-orm";
 import { fromFils, toFils } from "../../../shared/money";
 import { postJournal, voidEntry, type LedgerTx, type PostJournalLineInput } from "../../ledger";
@@ -142,7 +143,7 @@ export async function onDisposalInvoiceCredited(
     {
       companyId: args.companyId,
       date: args.date,
-      memo: `Disposal proceeds adjusted: ${asset.asset_name} (${ref})`.slice(0, 500),
+      ...journalMemo("disposalProceedsAdjusted", { asset: asset.asset_name, ref }),
       status: "posted",
       source: SOURCE,
       sourceId: asset.id,
@@ -232,7 +233,7 @@ export async function onDisposalInvoiceDebited(
     {
       companyId: args.companyId,
       date: args.date,
-      memo: `Disposal proceeds adjusted: ${asset.asset_name} (${ref})`.slice(0, 500),
+      ...journalMemo("disposalProceedsAdjusted", { asset: asset.asset_name, ref }),
       status: "posted",
       source: SOURCE,
       sourceId: asset.id,

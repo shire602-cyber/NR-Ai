@@ -15,6 +15,7 @@
  * we still record the best internal result so the receipt is never lost.
  */
 
+import { journalMemo } from "@shared/journal-memo";
 import OpenAI from "openai";
 import { createMeteredOpenAI } from "./ai/usage-meter";
 import { rememberVendorAccount } from "./vendor-memory.service";
@@ -665,7 +666,11 @@ async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
     accountId: expenseAccountId,
     paymentAccountId,
     entryDate: txnDate,
-    memo: `Receipt Autopilot: ${merchantLabel} (${classification.method}, ${(classification.confidence * 100).toFixed(0)}% conf)`,
+    ...journalMemo("receiptAutopilot", {
+      party: merchantLabel,
+      method: classification.method,
+      pct: (classification.confidence * 100).toFixed(0),
+    }),
     lines,
   });
   return entry.id;

@@ -13,6 +13,7 @@
  * payments already posted). Reversing a payment reverses its journal. Contributions are paid
  * through the fund's own portal (GPSSA / ADPF): Muhasib only records the payment.
  */
+import { journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { DomainError } from "../../errors";
 import { recordAudit } from "../audit.service";
@@ -154,7 +155,7 @@ export async function payPension(
       {
         companyId,
         date: body.paymentDate,
-        memo: `Pension contribution payment - ${label}`,
+        ...journalMemo("pensionPayment", { label }),
         source: PENSION_PAYMENT_SOURCE,
         sourceId: row!.id,
         idempotencyKey: `payroll-pension:${row!.id}:payment`,

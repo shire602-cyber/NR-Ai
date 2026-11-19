@@ -5,6 +5,7 @@
  * UPDATE inside the same ledger transaction as the server/ledger kernel post (postJournal) and
  * reversal (reverseBySource).
  */
+import { journalMemo } from "@shared/journal-memo";
 import { storage } from "../storage";
 import type { Account, InsertJournalLine, Receipt } from "../../shared/schema";
 import { DomainError } from "../errors";
@@ -37,6 +38,8 @@ interface Component {
 export interface ReceiptJournalPlan {
   entryDate: Date;
   memo: string;
+  memoKey?: string;
+  memoParams?: Record<string, string>;
   lines: JournalLineInsert[];
   expenseAccountId: string | null;
   /** W4-E: recoverable / blocked input-VAT split, persisted for the VAT engine. */
@@ -366,7 +369,7 @@ export async function planReceiptJournal(
   const types = new Set(treatmentLines.map((t) => t.supplyType));
   return {
     entryDate: receiptEntryDate(receipt),
-    memo: `Receipt: ${label}`,
+    ...journalMemo("receipt", { party: label }),
     lines,
     expenseAccountId: splitLines.length > 0 ? null : components[0].accountId,
     vatTreatment: {
@@ -413,6 +416,8 @@ export async function postReceipt(
     paymentAccountId: input.paymentAccountId,
     entryDate: plan.entryDate,
     memo: plan.memo,
+    memoKey: plan.memoKey,
+    memoParams: plan.memoParams,
     lines: plan.lines,
   });
   await saveReceiptVatTreatment({
@@ -454,6 +459,8 @@ export async function reviseReceipt(
     reason,
     entryDate: plan.entryDate,
     memo: plan.memo,
+    memoKey: plan.memoKey,
+    memoParams: plan.memoParams,
     buildLines: () => plan.lines,
   });
   await saveReceiptVatTreatment({

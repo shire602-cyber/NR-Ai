@@ -22,6 +22,7 @@
  * - The approver must differ from the preparer (whoever last calculated),
  *   unless the company has a single member and allows single-owner approval.
  */
+import { journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { DomainError } from "../../errors";
 import { assertDifferentActor } from "../../middleware/companyRolePolicy";
@@ -946,7 +947,7 @@ export async function approveRun(
       {
         companyId,
         date: accrualDate,
-        memo: `Payroll ${label} - ${items.length} employee(s)`,
+        ...journalMemo("payrollRun", { label, n: items.length }),
         source: "payroll",
         sourceId: runId,
         status: "posted",
@@ -1049,7 +1050,7 @@ export async function payRun(
         {
           companyId,
           date: body.paymentDate,
-          memo: `Salary payment - payroll ${label}`,
+          ...journalMemo("salaryPayment", { label }),
           source: "payroll_payment",
           sourceId: runId,
           status: "posted",

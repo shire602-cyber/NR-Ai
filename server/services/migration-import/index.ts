@@ -29,6 +29,7 @@
  * Column layouts of Xero, QuickBooks Online, Zoho Books and Wafeq exports are
  * mapped in ./mappers.ts. All money is integer fils.
  */
+import { journalMemo } from "@shared/journal-memo";
 import { db } from "../../db";
 import {
   accounts,
@@ -1318,7 +1319,9 @@ async function commitTrialBalance(
       {
         companyId,
         date: String(job.cut_over_date).slice(0, 10),
-        memo: `Opening balances (${job.source_system} trial balance${job.file_name ? `: ${job.file_name}` : ""})`,
+        ...(job.file_name
+          ? journalMemo("openingBalancesFile", { system: job.source_system, file: job.file_name })
+          : journalMemo("openingBalances", { system: job.source_system })),
         source: "opening_balance",
         sourceId: job.id,
         idempotencyKey: `import:opening-balance:${companyId}`,
@@ -1500,7 +1503,7 @@ async function commitOpenInvoices(
         {
           companyId,
           date: cutOver,
-          memo: `Opening A/R: invoice ${r.number} (${r.contactName})`,
+          ...journalMemo("openingReceivable", { ref: r.number, party: r.contactName }),
           source: "invoice",
           sourceId: inv.id,
           idempotencyKey: `import:opening-invoice:${inv.id}`,
@@ -1610,7 +1613,7 @@ async function commitOpenBills(
         {
           companyId,
           date: cutOver,
-          memo: `Opening A/P: bill ${r.number} (${r.contactName})`,
+          ...journalMemo("openingPayable", { ref: r.number, party: r.contactName }),
           source: "bill",
           sourceId: bill.id,
           idempotencyKey: `import:opening-bill:${bill.id}`,
