@@ -370,7 +370,9 @@ describe("first-invoice experience", () => {
 
   it("R18-12: the empty dashboard has a guided first-invoice entry that opens the New Invoice dialog", () => {
     expect(dashboard).toContain('data-testid="card-first-invoice-guide"');
-    expect(dashboard).toContain('href="/invoices?new=1"');
+    // The href is a literal fallback: a read-only workspace gets the plan action instead
+    // (useReadOnlyPlanCta, behaviour-tested in step4-plan-states.test.ts).
+    expect(dashboard).toContain('"/invoices?new=1"');
     expect(invoices).toContain('.get("new") === "1"');
   });
 });

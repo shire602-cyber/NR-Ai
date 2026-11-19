@@ -12,6 +12,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
 
+// The dashboard header asks the subscription for a read-only plan action; this guard renders
+// it without the company providers, in a workspace that can write.
+vi.mock("../../client/src/hooks/useReadOnlyPlanCta", () => ({ useReadOnlyPlanCta: () => null }));
+
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 let container: HTMLDivElement;
