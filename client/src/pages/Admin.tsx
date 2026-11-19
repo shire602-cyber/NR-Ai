@@ -2,20 +2,18 @@ import { AdminPlanControl } from "@/components/billing/AdminPlanControl";
 import { T } from "@/components/layout/T";
 import { StatCard } from "@/components/ui/stat-card";
 import { activityActionLabel, activityEntityLabel } from "@/lib/activity-log-labels";
-import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
+import { useTranslation, formatMessage } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
-import { Fragment, useState, useEffect } from "react";
+import { Fragment, useState } from "react";
 import { formatDate, formatDateTime } from "@/lib/format-date";
 import { auditDetailEntries } from "@/pages/admin/audit-details";
 import { IntegrationsTab } from "@/pages/admin/IntegrationsTab";
 import { auditExportRows, filterAuditLogs } from "@/pages/admin/audit-export";
 import { useQuery, useMutation, useIsFetching } from "@tanstack/react-query";
 import {
-  Settings,
   Users,
   Shield,
   Plug,
-  Save,
   Edit2,
   RefreshCw,
   Search,
@@ -54,81 +52,23 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { exportToExcel } from "@/lib/export";
-import type { AdminSetting, User, Company, AuditLog } from "@shared/schema";
+import type { User, Company, AuditLog } from "@shared/schema";
+
+/** `/api/admin/users` row: the user plus the number of live companies they belong to. */
+type AdminUserRow = User & { companyCount: number };
 
 export default function Admin() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
   const [searchTerm, setSearchTerm] = useState("");
-  const [_editSettingDialog, setEditSettingDialog] = useState<AdminSetting | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
 
-  // System settings state
-  const [systemSettings, setSystemSettings] = useState({
-    aiCategorization: true,
-    ocrScanning: true,
-    smartAssistant: true,
-    referralProgram: true,
-    supportEmail: "",
-    fromEmail: "",
-    sendWelcomeEmail: true,
-    paymentReminders: true,
-  });
-
-  // Fetch admin data
-  const { data: settings = [], isLoading: settingsLoading } = useQuery<AdminSetting[]>({
-    queryKey: ["/api/admin/settings"],
-  });
-
-  useEffect(() => {
-    if (settings.length === 0) return;
-    const settingsMap = settings.reduce(
-      (acc: Record<string, string>, setting: AdminSetting) => {
-        acc[setting.key] = setting.value;
-        return acc;
-      },
-      {} as Record<string, string>
-    );
-
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates local form state from fetched data
-    setSystemSettings((prev) => ({
-      ...prev,
-      aiCategorization:
-        "feature.aiCategorization" in settingsMap
-          ? settingsMap["feature.aiCategorization"] === "true"
-          : prev.aiCategorization,
-      ocrScanning:
-        "feature.ocrScanning" in settingsMap
-          ? settingsMap["feature.ocrScanning"] === "true"
-          : prev.ocrScanning,
-      smartAssistant:
-        "feature.smartAssistant" in settingsMap
-          ? settingsMap["feature.smartAssistant"] === "true"
-          : prev.smartAssistant,
-      referralProgram:
-        "feature.referralProgram" in settingsMap
-          ? settingsMap["feature.referralProgram"] === "true"
-          : prev.referralProgram,
-      supportEmail: settingsMap["notification.supportEmail"] || prev.supportEmail,
-      fromEmail: settingsMap["notification.fromEmail"] || prev.fromEmail,
-      sendWelcomeEmail:
-        "notification.sendWelcomeEmail" in settingsMap
-          ? settingsMap["notification.sendWelcomeEmail"] === "true"
-          : prev.sendWelcomeEmail,
-      paymentReminders:
-        "notification.paymentReminders" in settingsMap
-          ? settingsMap["notification.paymentReminders"] === "true"
-          : prev.paymentReminders,
-    }));
-  }, [settings]);
-
-  const { data: users = [], isLoading: usersLoading } = useQuery<User[]>({
+  const { data: users = [], isLoading: usersLoading } = useQuery<AdminUserRow[]>({
     queryKey: ["/api/admin/users"],
   });
 
@@ -154,52 +94,6 @@ export default function Admin() {
   });
 
   // Mutations
-  const _updateSettingMutation = useMutation({
-    mutationFn: async (setting: { key: string; value: string }) => {
-      return apiRequest("PUT", "/api/admin/settings", setting);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
-      toast({ title: t["admin.settingUpdatedSuccessfully"] });
-      setEditSettingDialog(null);
-    },
-    onError: () => {
-      toast({ variant: "destructive", title: t["admin.failedToUpdateSetting"] });
-    },
-  });
-
-  // Save all system settings
-  const saveSystemSettingsMutation = useMutation({
-    mutationFn: async (settingsToSave: typeof systemSettings) => {
-      const settings = [
-        { key: "feature.aiCategorization", value: settingsToSave.aiCategorization.toString() },
-        { key: "feature.ocrScanning", value: settingsToSave.ocrScanning.toString() },
-        { key: "feature.smartAssistant", value: settingsToSave.smartAssistant.toString() },
-        { key: "feature.referralProgram", value: settingsToSave.referralProgram.toString() },
-        { key: "notification.supportEmail", value: settingsToSave.supportEmail },
-        { key: "notification.fromEmail", value: settingsToSave.fromEmail },
-        { key: "notification.sendWelcomeEmail", value: settingsToSave.sendWelcomeEmail.toString() },
-        { key: "notification.paymentReminders", value: settingsToSave.paymentReminders.toString() },
-      ];
-
-      // Save all settings in parallel
-      await Promise.all(
-        settings.map((setting) => apiRequest("PUT", "/api/admin/settings", setting))
-      );
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
-      toast({ title: t["admin.systemSettingsSavedSuccessfully"] });
-    },
-    onError: (error: any) => {
-      toast({
-        variant: "destructive",
-        title: translateNow("toasts.failedToSaveSettings"),
-        description: error?.message || translateNow("toasts.pleaseTryAgain2"),
-      });
-    },
-  });
-
   const updateUserMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<User> }) => {
       return apiRequest("PATCH", `/api/admin/users/${id}`, data);
@@ -315,18 +209,6 @@ export default function Admin() {
     company.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Group settings by category
-  const _settingsByCategory = settings.reduce(
-    (acc, setting) => {
-      if (!acc[setting.category]) {
-        acc[setting.category] = [];
-      }
-      acc[setting.category].push(setting);
-      return acc;
-    },
-    {} as Record<string, AdminSetting[]>
-  );
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -350,7 +232,6 @@ export default function Admin() {
               size="sm"
               onClick={() => {
                 for (const key of [
-                  "/api/admin/settings",
                   "/api/admin/users",
                   "/api/admin/companies",
                   "/api/admin/audit-logs",
@@ -379,10 +260,6 @@ export default function Admin() {
           <TabsTrigger value="users" data-testid="tab-users">
             <Users className="w-4 h-4 me-2" />
             <T k="pages.users" />
-          </TabsTrigger>
-          <TabsTrigger value="settings" data-testid="tab-settings">
-            <Settings className="w-4 h-4 me-2" />
-            <T k="pages.settings" />
           </TabsTrigger>
           <TabsTrigger value="integrations" data-testid="tab-integrations">
             <Plug className="w-4 h-4 me-2" />
@@ -469,22 +346,6 @@ export default function Admin() {
                 data-testid="input-search-users"
               />
             </div>
-            <Select defaultValue="all">
-              <SelectTrigger className="w-40" data-testid="select-user-filter">
-                <SelectValue placeholder={t["admin.filterByStatus"]} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">
-                  <T k="pageLabels.allUsers" />
-                </SelectItem>
-                <SelectItem value="active">
-                  <T k="firm.linkActive" />
-                </SelectItem>
-                <SelectItem value="inactive">
-                  <T k="pages.inactive" />
-                </SelectItem>
-              </SelectContent>
-            </Select>
           </div>
 
           <Card>
@@ -500,9 +361,6 @@ export default function Admin() {
                       <T k="pages.companies" />
                     </TableHead>
                     <TableHead>
-                      <T k="banking.common.status" />
-                    </TableHead>
-                    <TableHead>
                       <T k="pageLabels.joined" />
                     </TableHead>
                     <TableHead data-numeric>
@@ -513,13 +371,13 @@ export default function Admin() {
                 <TableBody>
                   {usersLoading ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8">
+                      <TableCell colSpan={5} className="text-center py-8">
                         <Loader2 className="w-6 h-6 animate-spin mx-auto" />
                       </TableCell>
                     </TableRow>
                   ) : filteredUsers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                         <T k="pageLabels.noUsersFound" />
                       </TableCell>
                     </TableRow>
@@ -531,13 +389,8 @@ export default function Admin() {
                         <TableCell>
                           <Badge variant="outline">
                             {formatMessage(t["adminConsole.companiesCount"], {
-                              count: companies.filter((c) => c.id).length,
+                              count: user.companyCount,
                             })}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="bg-success-subtle text-success">
-                            <T k="firm.linkActive" />
                           </Badge>
                         </TableCell>
                         <TableCell>{formatDate(user.createdAt, locale)}</TableCell>
@@ -784,193 +637,6 @@ export default function Admin() {
               {editingCompany && <AdminPlanControl companyId={editingCompany.id} />}
             </DialogContent>
           </Dialog>
-        </TabsContent>
-
-        {/* Settings Tab */}
-        <TabsContent value="settings" className="space-y-6">
-          {settingsLoading ? (
-            <div className="flex justify-center py-8">
-              <Loader2 className="w-6 h-6 animate-spin" />
-            </div>
-          ) : (
-            <>
-              {/* Feature Toggles */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">
-                    <T k="pageLabels.featureToggles" />
-                  </CardTitle>
-                  <CardDescription>
-                    <T k="pageLabels.enableOrDisablePlatformFeatures" />
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">
-                        <T k="pageLabels.aITransactionCategorization" />
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        <T k="pageLabels.useAIToAutomaticallyCategorizeTransactions" />
-                      </p>
-                    </div>
-                    <Switch
-                      checked={systemSettings.aiCategorization}
-                      onCheckedChange={(checked) =>
-                        setSystemSettings((prev) => ({ ...prev, aiCategorization: checked }))
-                      }
-                      data-testid="switch-ai-categorization"
-                    />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">
-                        <T k="pageLabels.oCRReceiptScanning" />
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        <T k="pageLabels.extractDataFromReceiptImages" />
-                      </p>
-                    </div>
-                    <Switch
-                      checked={systemSettings.ocrScanning}
-                      onCheckedChange={(checked) =>
-                        setSystemSettings((prev) => ({ ...prev, ocrScanning: checked }))
-                      }
-                      data-testid="switch-ocr-scanning"
-                    />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">
-                        <T k="pageLabels.smartAssistant" />
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        <T k="pageLabels.naturalLanguageFinancialQueries" />
-                      </p>
-                    </div>
-                    <Switch
-                      checked={systemSettings.smartAssistant}
-                      onCheckedChange={(checked) =>
-                        setSystemSettings((prev) => ({ ...prev, smartAssistant: checked }))
-                      }
-                      data-testid="switch-smart-assistant"
-                    />
-                  </div>
-                  <Separator />
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">
-                        <T k="pageLabels.referralProgram" />
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        <T k="pageLabels.enableUserReferralRewards" />
-                      </p>
-                    </div>
-                    <Switch
-                      checked={systemSettings.referralProgram}
-                      onCheckedChange={(checked) =>
-                        setSystemSettings((prev) => ({ ...prev, referralProgram: checked }))
-                      }
-                      data-testid="switch-referral-program"
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Email/Notification Settings */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">
-                    <T k="pageLabels.notificationSettings" />
-                  </CardTitle>
-                  <CardDescription>
-                    <T k="pageLabels.configureEmailAndNotificationPreferences" />
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>
-                      <T k="pageLabels.supportEmail" />
-                    </Label>
-                    <Input
-                      type="email"
-                      placeholder="support@muhasib.ai"
-                      value={systemSettings.supportEmail}
-                      onChange={(e) =>
-                        setSystemSettings((prev) => ({ ...prev, supportEmail: e.target.value }))
-                      }
-                      data-testid="input-support-email"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t["adminConsole.fromEmail"]}</Label>
-                    <Input
-                      type="email"
-                      placeholder="noreply@muhasib.ai"
-                      value={systemSettings.fromEmail}
-                      onChange={(e) =>
-                        setSystemSettings((prev) => ({ ...prev, fromEmail: e.target.value }))
-                      }
-                      data-testid="input-from-email"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">
-                        <T k="pageLabels.sendWelcomeEmail" />
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        <T k="pageLabels.emailNewUsersUponRegistration" />
-                      </p>
-                    </div>
-                    <Switch
-                      checked={systemSettings.sendWelcomeEmail}
-                      onCheckedChange={(checked) =>
-                        setSystemSettings((prev) => ({ ...prev, sendWelcomeEmail: checked }))
-                      }
-                      data-testid="switch-welcome-email"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">
-                        <T k="pageLabels.paymentReminderEmails" />
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        <T k="pageLabels.sendLatePaymentReminders" />
-                      </p>
-                    </div>
-                    <Switch
-                      checked={systemSettings.paymentReminders}
-                      onCheckedChange={(checked) =>
-                        setSystemSettings((prev) => ({ ...prev, paymentReminders: checked }))
-                      }
-                      data-testid="switch-payment-reminders"
-                    />
-                  </div>
-                  <Button
-                    className="mt-4"
-                    onClick={() => saveSystemSettingsMutation.mutate(systemSettings)}
-                    disabled={saveSystemSettingsMutation.isPending}
-                  >
-                    {saveSystemSettingsMutation.isPending ? (
-                      <>
-                        <Loader2 className="w-4 h-4 me-2 animate-spin" />
-                        <T k="pageLabels.saving" />
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4 me-2" />
-                        <T k="pageLabels.saveNotificationSettings" />
-                      </>
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
-            </>
-          )}
         </TabsContent>
 
         {/* Integrations Tab (STEP1 F6: status from the server; no do-nothing buttons) */}

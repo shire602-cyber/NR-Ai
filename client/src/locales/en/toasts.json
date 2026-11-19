@@ -127,8 +127,6 @@
   "toasts.backupComplete": "Backup complete",
   "toasts.databaseBackupIsInProgress": "Database backup is in progress...",
   "toasts.backupStarted": "Backup started",
-  "toasts.pleaseTryAgain2": "Please try again",
-  "toasts.failedToSaveSettings": "Failed to save settings",
   "toasts.pleaseSelectAClientFirst": "Please select a client first",
   "toasts.selectClient": "Select client",
   "toasts.pleaseEnterDocumentName": "Please enter document name",

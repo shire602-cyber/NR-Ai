@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { parsedBody } from "../http/parsed-body";
 import { strictBody } from "../http/strict-body";
-import { aiGlCorrectBody, aiGlSettingsBody } from "../../shared/validators/route-bodies";
+import { aiGlCorrectBody } from "../../shared/validators/route-bodies";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
@@ -247,58 +247,6 @@ export function registerAIGLRoutes(app: Express) {
 
       const stats = await getAIGLStats(companyId);
       res.json(stats);
-    })
-  );
-
-  // =====================================
-  // AI GL Settings — Update confidence threshold
-  // =====================================
-
-  /**
-   * PUT /api/companies/:companyId/ai-gl/settings
-   * Body: { confidenceThreshold: number }
-   * Stores in admin_settings table.
-   */
-  app.put(
-    "/api/companies/:companyId/ai-gl/settings",
-    authMiddleware,
-    requireCustomer,
-    strictBody(aiGlSettingsBody),
-    asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
-      const userId = req.user!.id;
-      const { confidenceThreshold } = parsedBody<{ confidenceThreshold: number }>(req);
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
-      }
-
-      if (
-        confidenceThreshold === undefined ||
-        confidenceThreshold < 0.5 ||
-        confidenceThreshold > 1.0
-      ) {
-        return res.status(400).json({
-          code: "INVALID_CONFIDENCE_THRESHOLD",
-          message: "confidenceThreshold must be between 0.5 and 1.0",
-        });
-      }
-
-      // Upsert into admin_settings
-      await pool.query(
-        `INSERT INTO admin_settings (key, value, category, description, updated_by, updated_at)
-         VALUES ($1, $2, 'features', 'AI GL auto-post confidence threshold', $3, now())
-         ON CONFLICT (key) DO UPDATE
-           SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-        [`ai_gl_confidence_threshold_${companyId}`, String(confidenceThreshold), userId]
-      );
-
-      log.info({ companyId, confidenceThreshold }, "AI GL confidence threshold updated");
-      res.json({
-        message: "Settings updated",
-        confidenceThreshold,
-      });
     })
   );
 }

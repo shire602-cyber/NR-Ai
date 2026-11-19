@@ -19,6 +19,7 @@ const ROOT = path.resolve(__dirname, "../..");
 let container: HTMLDivElement;
 let root: Root;
 let calls: Array<{ method: string; url: string }> = [];
+let usersPayload: unknown[] = [];
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -37,6 +38,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   calls = [];
+  usersPayload = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -44,7 +46,7 @@ beforeEach(() => {
       calls.push({ method: (init?.method ?? "GET").toUpperCase(), url });
       if (url.includes("/api/csrf-token")) return json({ csrfToken: "x" });
       if (url.includes("/api/admin/companies")) return json([COMPANY]);
-      if (url.includes("/api/admin/users")) return json([]);
+      if (url.includes("/api/admin/users")) return json(usersPayload);
       if (url.includes("/api/admin/stats")) return json({});
       if (url.includes("/api/admin/integrations/status"))
         return json({
@@ -120,45 +122,77 @@ describe.each(["en", "ar"] as const)("STEP3: Admin console (%s)", (locale) => {
     await flush();
   }
 
-  it("has exactly the five tabs and no Pricing tab", async () => {
+  it("has exactly the four tabs and no Pricing or Settings tab", async () => {
     await mountAdmin();
     const tabs = [...container.querySelectorAll('[role="tab"]')].map((el) =>
       el.getAttribute("data-testid")
     );
-    expect(tabs).toEqual([
-      "tab-overview",
-      "tab-users",
-      "tab-settings",
-      "tab-integrations",
-      "tab-audit",
-    ]);
+    expect(tabs).toEqual(["tab-overview", "tab-users", "tab-integrations", "tab-audit"]);
     expect(byId("tab-pricing")).toBeNull();
+    expect(byId("tab-settings")).toBeNull();
   });
 
   it("shows no price-editor or no-op settings text on any tab, and requests no /api/admin/plans", async () => {
     await mountAdmin();
-    for (const tab of ["overview", "users", "settings", "integrations", "audit"]) {
+    for (const tab of ["overview", "users", "integrations", "audit"]) {
       await openTab(`tab-${tab}`);
       const text = container.textContent ?? "";
       for (const gone of GONE[locale]) expect(text, `${tab}: ${gone}`).not.toContain(gone);
     }
-    await openTab("tab-settings");
+    // The no-op Settings cards (feature toggles, notification settings) are gone with their tab.
     for (const id of [
       "input-trial-period",
       "input-free-ai-credits",
       "input-vat-rate",
       "select-default-currency",
       "button-save-system-settings",
+      "switch-ai-categorization",
+      "input-support-email",
+      "input-from-email",
+      "select-user-filter",
     ]) {
       expect(byId(id), id).toBeNull();
     }
-    // The settings the server does read or the page keeps stay.
-    expect(byId("switch-ai-categorization")).not.toBeNull();
-    expect(byId("input-support-email")).not.toBeNull();
     await act(async () => byId("button-refresh")!.click());
     await flush();
     expect(calls.filter((c) => c.url.includes("/api/admin/plans"))).toEqual([]);
-    expect(calls.some((c) => c.url.includes("/api/admin/settings"))).toBe(true);
+    // The page no longer reads or writes admin_settings (the server keeps the route for
+    // WhatsApp rules and AI-GL).
+    expect(calls.filter((c) => c.url.includes("/api/admin/settings"))).toEqual([]);
+  });
+
+  it("the Users tab shows each user's own company count and no fake Status column", async () => {
+    usersPayload = [
+      {
+        id: "u1",
+        name: "Solo",
+        email: "solo@x.test",
+        createdAt: "2026-01-01T00:00:00Z",
+        companyCount: 1,
+      },
+      {
+        id: "u2",
+        name: "Many",
+        email: "many@x.test",
+        createdAt: "2026-01-01T00:00:00Z",
+        companyCount: 3,
+      },
+    ];
+    await mountAdmin();
+    await openTab("tab-users");
+    const rows = [...container.querySelectorAll("tbody tr")].filter((r) =>
+      /solo@x\.test|many@x\.test/.test(r.textContent ?? "")
+    );
+    expect(rows).toHaveLength(2);
+    const { translateNow, formatMessage } = await import("../../client/src/lib/i18n");
+    const label = (n: number) =>
+      formatMessage(translateNow("adminConsole.companiesCount"), { count: n });
+    expect(rows[0].textContent).toContain(label(1));
+    expect(rows[0].textContent).not.toContain(label(3));
+    expect(rows[1].textContent).toContain(label(3));
+    const heads = [...container.querySelectorAll("th")].map((e) => e.textContent);
+    expect(heads).not.toContain(translateNow("banking.common.status"));
+    expect(byId("select-user-filter")).toBeNull();
   });
 
   it("the company dialog still hosts the plan control with the three paid plans", async () => {
@@ -179,7 +213,8 @@ describe.each(["en", "ar"] as const)("STEP3: Admin console (%s)", (locale) => {
 
 describe("STEP3: catalogs", () => {
   const REMOVED: Record<string, string[]> = {
-    pages: ["pages.pricing"],
+    pages: ["pages.pricing", "pages.settings"],
+    toasts: ["toasts.failedToSaveSettings", "toasts.pleaseTryAgain2"],
     pageLabels: [
       "subscriptionPlans",
       "addPlan",
@@ -198,6 +233,25 @@ describe("STEP3: catalogs", () => {
       "configurePlatformWideSettings",
       "defaultCurrency",
       "aICreditsPerFreeUser",
+      "aITransactionCategorization",
+      "allUsers",
+      "configureEmailAndNotificationPreferences",
+      "emailNewUsersUponRegistration",
+      "enableOrDisablePlatformFeatures",
+      "enableUserReferralRewards",
+      "extractDataFromReceiptImages",
+      "featureToggles",
+      "naturalLanguageFinancialQueries",
+      "notificationSettings",
+      "oCRReceiptScanning",
+      "paymentReminderEmails",
+      "referralProgram",
+      "saveNotificationSettings",
+      "sendLatePaymentReminders",
+      "sendWelcomeEmail",
+      "smartAssistant",
+      "supportEmail",
+      "useAIToAutomaticallyCategorizeTransactions",
     ].map((k) => `pageLabels.${k}`),
     adminConsole: [
       "admin.noSubscriptionPlansConfiguredAdd",
@@ -216,6 +270,11 @@ describe("STEP3: catalogs", () => {
       "adminConsole.curUSD",
       "adminConsole.curEUR",
       "adminConsole.curGBP",
+      "admin.failedToUpdateSetting",
+      "admin.filterByStatus",
+      "admin.settingUpdatedSuccessfully",
+      "admin.systemSettingsSavedSuccessfully",
+      "adminConsole.fromEmail",
     ],
   };
   const load = (lang: string, ns: string) =>

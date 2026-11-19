@@ -127,8 +127,6 @@
   "toasts.backupComplete": "اكتمل النسخ الاحتياطي",
   "toasts.databaseBackupIsInProgress": "النسخ الاحتياطي لقاعدة البيانات قيد التنفيذ...",
   "toasts.backupStarted": "بدأ النسخ الاحتياطي",
-  "toasts.pleaseTryAgain2": "يرجى المحاولة مرة أخرى",
-  "toasts.failedToSaveSettings": "فشل حفظ الإعدادات",
   "toasts.pleaseSelectAClientFirst": "يرجى اختيار عميل أولاً",
   "toasts.selectClient": "اختر العميل",
   "toasts.pleaseEnterDocumentName": "يرجى إدخال اسم المستند",
