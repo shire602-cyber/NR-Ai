@@ -25,3 +25,37 @@ export function warmOnFirstInteraction(warm: () => void, fallbackMs = 8000): () 
   const timer = setTimeout(go, fallbackMs);
   return cancel;
 }
+
+/**
+ * Run `task` once the first screen has settled: `settleMs` after the last largest-contentful-paint
+ * candidate (each new candidate restarts the wait), or after `maxWaitMs` when the browser reports
+ * none. Used for downloads the first screen does not need (the rest of a route group's catalogs),
+ * so they never compete with the requests that paint it. Returns a function that cancels it.
+ */
+export function afterFirstScreen(task: () => void, settleMs = 2000, maxWaitMs = 8000): () => void {
+  let done = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let observer: PerformanceObserver | undefined;
+  const cancel = () => {
+    done = true;
+    clearTimeout(timer);
+    observer?.disconnect();
+  };
+  const run = () => {
+    if (done) return;
+    cancel();
+    if ("requestIdleCallback" in window) window.requestIdleCallback(task, { timeout: 2000 });
+    else task();
+  };
+  timer = setTimeout(run, maxWaitMs);
+  try {
+    observer = new PerformanceObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(run, settleMs);
+    });
+    observer.observe({ type: "largest-contentful-paint", buffered: true });
+  } catch {
+    /* no LCP support: the max wait applies */
+  }
+  return cancel;
+}

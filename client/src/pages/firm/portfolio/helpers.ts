@@ -1,7 +1,6 @@
 // ClientPortfolio module (W5-D split of ClientPortfolio.tsx; no behaviour change).
 import { formatAedText } from "@/lib/format";
 import { Calendar, Calculator, CheckCircle2, TrendingUp } from "lucide-react";
-import { format } from "date-fns";
 import {
   DEFAULT_CLIENT_SERVICE_CODES,
   clientHasService,
@@ -20,9 +19,28 @@ export function formatAed(amount: number) {
   return formatAedText(amount);
 }
 
+const MONTHS_SHORT = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/** "Nov 5": the English short month and day of a business date (kept free of date-fns, which
+ * would otherwise ship with the firm first screen for this one format). */
 export function formatDateShort(date: string | null | undefined) {
   if (!date) return "—";
-  return format(parseCalendarDate(date), "MMM d");
+  const d = parseCalendarDate(date);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`;
 }
 
 export function formatPeriod(start: string | null | undefined, end: string | null | undefined) {
@@ -44,7 +62,7 @@ export function inputDate(date: string | null | undefined) {
 
 /** Today as a yyyy-MM-dd string for pre-filling date inputs (local time). */
 export function todayInput() {
-  return format(new Date(), "yyyy-MM-dd");
+  return calendarDayKey(new Date());
 }
 
 export function copyText(value: unknown) {

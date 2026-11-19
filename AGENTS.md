@@ -25,6 +25,10 @@ the week's token budget for the work that needs it.
   Report catalog Arabic is the keyed overlay `client/src/locales/ar-catalog/reportCatalog.json`
   (`useCatalogText()`); `npm run e2e:arabic-runtime` must find 0 English text nodes on the 22
   launch routes in Arabic mode. The i18n ratchet also scans `client/src/lib` and `client/src/hooks`.
+- Two client bundles: `npm run build` runs `vite build` and `FIRM_BUILD=1 vite build` (`client/firm.html`;
+  the signed-in app and the two firm landing screens as one entry chunk). `server/vite.ts` serves it for
+  `/firm/*`; `shared/firm-boot.ts` is the shared route/catalog/API table. See
+  [docs/testing-runtime.md](docs/testing-runtime.md) ("Firm first load").
 - `server/` Express API: `routes/`, `services/`, `middleware/`, `ledger/`, `reporting/`, `tax/`,
   `tenancy/`, `platform/` (service registry, domain events, job registry), `outbox/`, `http/`.
   `server/routes/ai.routes.ts` and `firm.routes.ts` keep every registration (path, middleware

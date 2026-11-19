@@ -1,6 +1,7 @@
 // Internationalization utilities for English/Arabic support
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { FIRM_FIRST_SCREEN_NAMESPACES, LOCALE_COOKIE, firmFirstScreen } from "@shared/firm-boot";
 
 export type Locale = "en" | "ar";
 
@@ -1079,6 +1080,25 @@ export function isFirmAppPath(pathname: string): boolean {
   return FIRM_APP_PATH.test(normalisePath(pathname));
 }
 
+/**
+ * Signed-in app users only: the chosen language rides along as a functional cookie so the server
+ * can preload the right catalogs in the document (server/vite.ts); the stored preference stays
+ * the source of truth.
+ */
+export function rememberLocaleCookie(value: Locale = useI18n.getState().locale): void {
+  try {
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${LOCALE_COOKIE}=${value}; path=/; max-age=31536000; SameSite=Lax${secure}`;
+  } catch {
+    /* cookies blocked: the document simply preloads no catalogs */
+  }
+}
+
+/** Load (once) the whole firm catalog set for `locale`; used after the first screen has painted. */
+export function loadFirmNamespaces(locale: Locale): Promise<void> {
+  return loadNamespaces(locale, FIRM_APP_NAMESPACES);
+}
+
 /** True for the signed-out marketing, auth, legal and help routes and the no-login links. */
 export function isPublicPath(pathname: string): boolean {
   const path = normalisePath(pathname);
@@ -1092,6 +1112,10 @@ export function namespacesForPath(pathname: string): string[] | null {
   if (PORTAL_LINK_PATH.test(path) || INVOICE_LINK_PATH.test(path))
     return ["components", "portal", "customerLink"];
   if (PORTAL_APP_PATH.test(path)) return PORTAL_APP_NAMESPACES;
+  // The firm landing screens read only these catalogs (shared/firm-boot.ts), so booting on them
+  // downloads six instead of nineteen; the rest warm after the first screen has painted
+  // (`loadFirmNamespaces`), before staff can open another firm screen.
+  if (firmFirstScreen(path)) return [...FIRM_FIRST_SCREEN_NAMESPACES];
   if (FIRM_APP_PATH.test(path)) return FIRM_APP_NAMESPACES;
   if (AUTH_FORM_PATH.test(path)) return AUTH_FORM_NAMESPACES;
   if (!PUBLIC_PATHS.has(path)) return null;

@@ -15,7 +15,10 @@ import "@fontsource/geist-mono/600.css";
 import "./index.css";
 import { registerServiceWorker } from "@/lib/pwa";
 import { hasAuthHint } from "@/lib/authHint";
-import { warmOnFirstInteraction } from "@/lib/warmOnInteraction";
+import { startBootFetch } from "@/lib/bootFetch";
+import { getStaticRoot } from "@/lib/staticRoot";
+import { SHELL_BOOT_API, firmFirstScreen } from "@shared/firm-boot";
+import { afterFirstScreen, warmOnFirstInteraction } from "@/lib/warmOnInteraction";
 import {
   applyDocumentLocale,
   isCustomerLinkPath,
@@ -24,7 +27,9 @@ import {
   isPortalAppPath,
   isPublicPath,
   loadLocale,
+  loadFirmNamespaces,
   loadLocaleForPath,
+  rememberLocaleCookie,
   setPublicBootScope,
   useI18n,
 } from "@/lib/i18n";
@@ -72,11 +77,15 @@ const zodFree =
   (publicShell && (pathname === "/" || pathname === "/pricing" || isCustomerLinkPath(pathname)));
 const zodReady: Promise<unknown> = zodFree ? Promise.resolve() : import("@/lib/zod-config");
 
+// The firm build registers the app root statically (lib/staticRoot.ts); the main build never does.
+const staticRoot = getStaticRoot();
 const loadRoot: () => Promise<{ default: ComponentType }> = publicShell
   ? () => import("./PublicApp")
   : portalShell
     ? () => import("./PortalApp")
-    : () => import("./App");
+    : staticRoot
+      ? () => Promise.resolve({ default: staticRoot })
+      : () => import("./App");
 
 // S5: locale catalogs are code-split; load what the first route needs before the first render
 // so translated copy never flashes keys. D1b: public pages load only their own namespaces
@@ -87,7 +96,29 @@ const lightBoot = publicShell || portalShell;
 // firm pages read; the rest warm on first touch and load in full when they open a client's books.
 const firmShell = !lightBoot && isFirmAppPath(pathname) && hasAuthHint();
 const scopedBoot = lightBoot || firmShell;
+
+if (!lightBoot && hasAuthHint()) {
+  rememberLocaleCookie(locale);
+  useI18n.subscribe((state) => rememberLocaleCookie(state.locale));
+}
+
 setPublicBootScope(scopedBoot ? pathname : "/__app");
+
+// A signed-in user opening the app shell: the session and company-list reads every screen waits
+// for start now, in parallel with the app chunks (which are the slow part on a phone), instead of
+// after they have all arrived.
+if (!lightBoot && hasAuthHint()) {
+  // The firm landing screens also start the reads they paint from (the document starts the same
+  // reads before any script runs, see server/vite.ts; startBootFetch skips ones already running).
+  startBootFetch([...SHELL_BOOT_API, ...(firmShell ? (firmFirstScreen(pathname)?.api ?? []) : [])]);
+}
+
+// The page chunk a firm route paints is fetched with the app root (after zod is configured, like
+// every page), not after the session answers, so it is ready when the shell first renders it.
+const FIRM_ROUTE_CHUNKS: Record<string, () => Promise<unknown>> = {
+  "/firm/clients": () => import("@/pages/firm/ClientPortfolio"),
+  "/firm/command-center": () => import("@/pages/FirmCommandCenter"),
+};
 // Direction and language are settled before the first render, not in an effect
 // after it: an Arabic visitor sees right-to-left Arabic on first paint, with no layout shift.
 applyDocumentLocale(locale);
@@ -97,6 +128,11 @@ void Promise.all([
   publicShell
     ? zodReady.then(() =>
         (PUBLIC_ROUTE_CHUNKS[pathname] ?? customerLinkChunk(pathname))?.().catch(() => undefined)
+      )
+    : undefined,
+  firmShell
+    ? zodReady.then(() =>
+        FIRM_ROUTE_CHUNKS[pathname.replace(/\/+$/, "")]?.().catch(() => undefined)
       )
     : undefined,
 ]).then(([{ default: Root }]) => {
@@ -120,6 +156,13 @@ if (pathname === "/login" || pathname === "/register") {
 }
 
 if (firmShell) {
+  // The first screen booted on a narrow catalog set; once it has painted, the rest of the firm
+  // catalogs follow when the browser is idle so the next firm screen opens fully translated.
+  window.addEventListener("load", () => {
+    afterFirstScreen(
+      () => void loadFirmNamespaces(useI18n.getState().locale).catch(() => undefined)
+    );
+  });
   window.addEventListener("load", () => {
     warmOnFirstInteraction(() => {
       const current = useI18n.getState().locale;

@@ -173,5 +173,13 @@
   "firm.assignmentRole.accountant": "محاسب",
   "firm.assignmentRole.reviewer": "مراجع",
   "firm.assignmentRole.manager": "مدير",
-  "firm.assignmentRole.preparer": "معدّ"
+  "firm.assignmentRole.preparer": "معدّ",
+  "firm.einvoicingState.column": "الفوترة الإلكترونية",
+  "firm.einvoicingState.connected": "مربوط",
+  "firm.einvoicingState.self_confirmed": "أكّده العميل",
+  "firm.einvoicingState.awaiting_approval": "بانتظار الموافقة",
+  "firm.einvoicingState.appoint_partner": "تعيين الشريك",
+  "firm.einvoicingState.partner_not_chosen": "لا شريك",
+  "firm.einvoicingState.identity_missing": "{count, plural, one {ينقص بند} other {تنقص # بنود}}",
+  "firm.anomalySeverityInfo": "معلومة"
 }

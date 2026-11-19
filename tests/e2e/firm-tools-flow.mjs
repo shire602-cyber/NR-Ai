@@ -27,7 +27,13 @@
  *     Retry, never "No clients yet", zeroed tiles or the raw server message;
  *   - an unassigned preparer sees an "assigned to you" empty state, no Add/Import controls and
  *     no client names from /api/firm/client-links;
- *   - firm A/R in the overview equals the settlement figure (partial payment respected).
+ *   - firm A/R in the overview equals the settlement figure (partial payment respected);
+ *   - first-load budget (defect 14), iPhone 13 profile with 4x CPU and Slow 4G (562 ms RTT,
+ *     1.44 Mbps), cold cache, both landing screens in en and ar: the document is the firm build,
+ *     no motion/pdf/report chunks, at most 50 requests and 25 scripts up to the largest
+ *     contentful paint (about 30 and 16 measured; 131-148 requests before), and a largest contentful paint under 9 s (4.6-4.9 s measured,
+ *     11.9-15.3 s before). The numbers leave about 2x margin so a slow runner does not flake, and
+ *     still fail on a return to the shared-chunk layout.
  *
  * Environment: BASE_URL (default http://localhost:5000), DATABASE_URL (required), SHOT_DIR,
  * E2E_VIEWPORTS (android,13,desktop), E2E_LANGS (en,ar), CHROMIUM_PATH (falls back to
@@ -119,6 +125,8 @@ const DATA_ALLOW = [
   "FZ-LLC",
   "Omar Haddad",
   "Al Noor Trading",
+  // The long seeded client name (LONG_CLIENT) is data, shown in full where the list has room.
+  "Al Noor International Trading and Contracting Company Limited Liability",
   "Palm Crest Real Estate",
   "Blue Lagoon Marine Services",
   "LLC",
@@ -718,6 +726,97 @@ async function apiChecks(data) {
   check(other.status === 404, "api: another tenant's id is a 404 on the comms log", other.status);
 }
 
+// ─── First-load budget (defect 14) ───────────────────────────────────────────
+
+const BUDGET = { requests: 50, scripts: 25, lcpMs: 9000 };
+// The realtime client (vendor-socketio) is loaded after the first paint on purpose, so it is not listed.
+const NOT_ON_FIRST_LOAD = /vendor-(motion|pdf|pdfjs|tesseract)|reportCatalog|adminConsole/;
+
+async function firstLoadBudget(browser, lang, data) {
+  currentLabel = `13 ${lang} first load`;
+  const signedIn = await signedInContext(browser, "13", lang, data.owner);
+  const state = await signedIn.storageState();
+  await signedIn.close();
+  for (const route of ["/firm/clients", "/firm/command-center"]) {
+    const ctx = await browser.newContext({
+      ...DEVICE[13],
+      storageState: state,
+      locale: lang === "ar" ? "ar-AE" : "en-US",
+      timezoneId: "Asia/Dubai",
+    });
+    await ctx.addInitScript(
+      ([l]) => {
+        try {
+          localStorage.setItem(
+            "i18n-storage",
+            JSON.stringify({ state: { locale: l }, version: 0 })
+          );
+          localStorage.setItem("cookie-consent", "accepted");
+          localStorage.removeItem("muhasib_active_company_id");
+        } catch {
+          /* storage blocked */
+        }
+        window.__lcp = 0;
+        new PerformanceObserver((list) => {
+          for (const e of list.getEntries()) window.__lcp = e.startTime;
+        }).observe({ type: "largest-contentful-paint", buffered: true });
+      },
+      [lang]
+    );
+    const page = await ctx.newPage();
+    const cdp = await ctx.newCDPSession(page);
+    await cdp.send("Network.enable");
+    await cdp.send("Network.emulateNetworkConditions", {
+      offline: false,
+      latency: 562.5,
+      downloadThroughput: 180000,
+      uploadThroughput: 84375,
+    });
+    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 4 });
+    // Requests are counted up to the largest contentful paint: what the first screen costs. Later
+    // ones (the idle download of the other firm catalogs, notifications) depend on timing and are
+    // not part of the first load.
+    const started = [];
+    cdp.on("Network.requestWillBeSent", (e) =>
+      started.push({ type: e.type, url: e.request.url, at: e.timestamp })
+    );
+    await page.goto(BASE + route, { waitUntil: "networkidle", timeout: 120000 });
+    await page.waitForTimeout(500);
+    const lcp = await page.evaluate(() => window.__lcp);
+    const entry = await page.evaluate(
+      () => document.querySelector("script[type=module]")?.getAttribute("src") ?? ""
+    );
+    const first = started.find((r) => r.type === "Document")?.at ?? started[0]?.at ?? 0;
+    const early = started.filter((r) => (r.at - first) * 1000 <= lcp);
+    const finished = early.length;
+    const urls = early.map((r) => r.url.replace(BASE, ""));
+    const scripts = early.filter((r) => r.type === "Script").length;
+    const label = `${route} (${lang})`;
+    check(entry.startsWith("/firm-assets/"), `${label}: served from the firm build`, entry);
+    check(
+      urls.filter((u) => NOT_ON_FIRST_LOAD.test(u)).length === 0,
+      `${label}: no motion, pdf or report chunks`,
+      urls.filter((u) => NOT_ON_FIRST_LOAD.test(u))
+    );
+    check(
+      finished <= BUDGET.requests,
+      `${label}: ${finished} requests before LCP (budget ${BUDGET.requests})`,
+      finished
+    );
+    check(
+      scripts <= BUDGET.scripts,
+      `${label}: ${scripts} scripts before LCP (budget ${BUDGET.scripts})`,
+      scripts
+    );
+    check(
+      lcp > 0 && lcp < BUDGET.lcpMs,
+      `${label}: LCP ${Math.round(lcp)} ms on Slow 4G, 4x CPU (budget ${BUDGET.lcpMs} ms)`,
+      lcp
+    );
+    await ctx.close();
+  }
+}
+
 // ─── Run ─────────────────────────────────────────────────────────────────────
 
 const executablePath =
@@ -733,6 +832,7 @@ try {
       await ownerScreens(browser, viewport, lang, data);
       await staffScreens(browser, viewport, lang, data);
     }
+  for (const lang of LANGS) await firstLoadBudget(browser, lang, data);
 } finally {
   await browser.close();
   await db.end();

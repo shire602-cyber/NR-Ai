@@ -173,5 +173,13 @@
   "firm.assignmentRole.accountant": "Accountant",
   "firm.assignmentRole.reviewer": "Reviewer",
   "firm.assignmentRole.manager": "Manager",
-  "firm.assignmentRole.preparer": "Preparer"
+  "firm.assignmentRole.preparer": "Preparer",
+  "firm.einvoicingState.column": "E-invoicing",
+  "firm.einvoicingState.connected": "Connected",
+  "firm.einvoicingState.self_confirmed": "Client confirmed",
+  "firm.einvoicingState.awaiting_approval": "Awaiting approval",
+  "firm.einvoicingState.appoint_partner": "Appoint partner",
+  "firm.einvoicingState.partner_not_chosen": "No partner",
+  "firm.einvoicingState.identity_missing": "{count, plural, one {# detail missing} other {# details missing}}",
+  "firm.anomalySeverityInfo": "Info"
 }

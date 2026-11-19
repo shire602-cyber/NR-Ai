@@ -375,13 +375,6 @@
   "einvoicing.partnerChoice.selfConfirm": "I appointed {partner} in EmaraTax",
   "einvoicing.partnerChoice.selfConfirmedOn": "Confirmed by you on {date}, not yet verified",
   "einvoicing.partnerChoice.transmissionOff": "E-invoices are not sent from this workspace until the partner is connected and verified.",
-  "einvoicing.firmState.column": "E-invoicing",
-  "einvoicing.firmState.connected": "Connected",
-  "einvoicing.firmState.self_confirmed": "Client confirmed",
-  "einvoicing.firmState.awaiting_approval": "Awaiting approval",
-  "einvoicing.firmState.appoint_partner": "Appoint partner",
-  "einvoicing.firmState.partner_not_chosen": "No partner",
-  "einvoicing.firmState.identity_missing": "{count, plural, one {# detail missing} other {# details missing}}",
   "einvoicing.taxId.passportCountry": "Passport issuing country",
   "einvoicing.taxId.passportCountryHelp": "2-letter country code, for example AE, IN or GB.",
   "einvoicing.taxId.idPassportCountry": "Enter the 2-letter code of the country that issued the passport."

@@ -95,7 +95,12 @@ BASE_URL=http://localhost:<port> CORS_ORIGIN=http://localhost:<port> node dist/i
   client profile, the invoice list and e-invoicing settings in a client's books, the staff views and
   failing-API variants, and checks console, requests, overflow, raw catalog keys, 44 px targets in the
   content area, English in Arabic, axe serious/critical and that the firm workspace downloads no
-  report-catalog or admin chunk. `SHOT_DIR` saves screenshots.
+  report-catalog or admin chunk. It ends with a first-load budget (iPhone 13, 4x CPU, Slow 4G, cold
+  cache, both landing screens, en and ar): served from the firm build, at most 50 requests and 25
+  scripts, largest contentful paint under 9 s (about 4.7-5.1 s measured; the margin is for slow
+  runners, it is a tripwire for a return to the shared-chunk layout, not the target). Run it on a
+  fresh database: the "Unassigned" count assumes the seeded clients are the only ones.
+  `SHOT_DIR` saves screenshots.
 - Core release flows: same target, `npm run e2e:flows` (`tests/e2e/core-flows.mjs`; `FLOWS=id,..`
   and `FLOWS_LANGS` narrow it). Steps in areas still being built are tagged `wip` and reported as
   "in progress" (`FLOWS_STRICT_WIP=true` makes them fail). Report:
@@ -172,3 +177,27 @@ BASE_URL=http://localhost:<port> CORS_ORIGIN=http://localhost:<port> node dist/i
   write on `journal_entries`/`journal_lines` outside `server/ledger/`; baseline 0), and
   `check-i18n-ratchet.mjs` (hard-coded JSX strings). Baselines in `scripts/guard-baselines/` may
   only move down (`--update` after real progress).
+
+## Firm first load (defect 14)
+
+`npm run build` makes two client bundles of the same sources: `vite build` (public, portal, no-login
+links and the whole app) and `FIRM_BUILD=1 vite build` (`client/firm.html` -> `src/firm-main.tsx`,
+written to `dist/public/firm.html` and `dist/public/firm-assets/`, never touching the first). In the
+firm build the signed-in app and the two landing screens (`/firm/clients`, `/firm/command-center`) are
+static imports, so the first load is one entry chunk plus about nine vendor chunks (the main bundle
+needed about 45 shared chunks, each a round trip on a phone over HTTP/1.1). `server/vite.ts` serves
+`firm.html` for `/firm` and `/firm/*`; on the two landing screens it also preloads the first-screen
+catalogs of the language cookie (`muhasib_locale`, set when signed in) and, when a session cookie is
+present, starts the first-screen reads from an inline nonce script before any JavaScript arrives
+(`client/src/lib/bootFetch.ts` adopts them). `shared/firm-boot.ts` is the one table behind all of it.
+`scripts/precompress-assets.mjs` writes brotli (quality 11) twins of every JS/CSS asset and the server
+sends them to browsers that accept brotli (about 15% smaller than the on-the-fly stream).
+
+- Unit: `tests/unit/firm-boot.test.ts` (route table, catalog scope, document, brotli middleware),
+  `tests/unit/firm-first-screen-keys.test.ts` (no first-screen key outside the first-screen
+  catalogs), `tests/unit/first-load-chunks.test.ts` (build output: chunk count and weight of the
+  firm entry, no firm chunk reachable from public/portal roots, no framer-motion in the shell).
+- When a firm landing screen starts reading a catalog key from another namespace, move or copy the
+  key into `firm.json` (as was done for the e-invoicing state labels) or add the namespace to
+  `FIRM_FIRST_SCREEN_NAMESPACES`; the key test fails otherwise.
+- Measure with the Playwright profile in `tests/e2e/firm-tools-flow.mjs` (`firstLoadBudget`).

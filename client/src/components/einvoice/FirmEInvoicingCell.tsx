@@ -34,8 +34,8 @@ export function FirmEInvoicingCell({ value }: { value: FirmEInvoicingValue | nul
   if (!value) return <span className="text-muted-foreground">—</span>;
   const label =
     value.state === "identity_missing"
-      ? formatMessage(t["einvoicing.firmState.identity_missing"], { count: value.missing })
-      : t[`einvoicing.firmState.${value.state}`];
+      ? formatMessage(t["firm.einvoicingState.identity_missing"], { count: value.missing })
+      : t[`firm.einvoicingState.${value.state}`];
   return (
     <StatusBadge tone={TONE[value.state]} data-testid={`firm-einvoicing-${value.state}`}>
       {label}

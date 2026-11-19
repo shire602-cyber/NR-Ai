@@ -375,13 +375,6 @@
   "einvoicing.partnerChoice.selfConfirm": "عيّنت {partner} في إمارات تاكس",
   "einvoicing.partnerChoice.selfConfirmedOn": "أكّدته أنت في {date}، ولم يُتحقّق منه بعد",
   "einvoicing.partnerChoice.transmissionOff": "لا تُرسل الفواتير الإلكترونية من هذه المساحة قبل ربط الشريك والتحقق منه.",
-  "einvoicing.firmState.column": "الفوترة الإلكترونية",
-  "einvoicing.firmState.connected": "مربوط",
-  "einvoicing.firmState.self_confirmed": "أكّده العميل",
-  "einvoicing.firmState.awaiting_approval": "بانتظار الموافقة",
-  "einvoicing.firmState.appoint_partner": "تعيين الشريك",
-  "einvoicing.firmState.partner_not_chosen": "لا شريك",
-  "einvoicing.firmState.identity_missing": "{count, plural, one {ينقص بند} other {تنقص # بنود}}",
   "einvoicing.taxId.passportCountry": "بلد إصدار جواز السفر",
   "einvoicing.taxId.passportCountryHelp": "رمز البلد من حرفين، مثل AE أو IN أو GB.",
   "einvoicing.taxId.idPassportCountry": "أدخل رمز البلد المكوّن من حرفين للبلد الذي أصدر جواز السفر."

@@ -23,7 +23,6 @@ import { useFirmAccess } from "@/components/FirmRouteAccess";
 import { Button } from "@/components/ui/button";
 import { Building2, ArrowLeft, Search } from "lucide-react";
 import { AccountMenu } from "@/components/layout/AccountMenu";
-import { motion, AnimatePresence } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { PageSkeleton } from "@/components/PageSkeleton";
 
@@ -197,7 +196,7 @@ function loginRedirectForCurrentPath(): string {
   return `/login?next=${encodeURIComponent(next)}`;
 }
 
-import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
+import { DeferredInstallPrompt } from "@/components/DeferredInstallPrompt";
 import { MobileNav } from "@/components/MobileNav";
 import { NotificationBell } from "@/components/NotificationBell";
 import { OfflineIndicator } from "@/components/OfflineIndicator";
@@ -377,19 +376,11 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
             <div className="page-container">
               <RouteGuard>
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={location}
-                    // Spec 2.5: content fades in + 4 px once per route change (CSS, reduced-motion safe).
-                    className="page-enter"
-                    initial={false}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={{ duration: 0.16, ease: "easeOut" }}
-                  >
-                    <SectionBoundary name={routeName(location)}>{children}</SectionBoundary>
-                  </motion.div>
-                </AnimatePresence>
+                {/* Content fades in + 4 px once per route change: CSS only (`page-enter`, which
+                    reduced-motion neutralises), so the shell does not ship framer-motion. */}
+                <div key={location} className="page-enter">
+                  <SectionBoundary name={routeName(location)}>{children}</SectionBoundary>
+                </div>
               </RouteGuard>
             </div>
           </main>
@@ -523,19 +514,11 @@ function Router() {
   // a stalled or throttled animation must never leave the root at opacity:0.
   if (pathname === "/" && !user) {
     return (
-      <AnimatePresence mode="wait">
-        <motion.div
-          key="landing"
-          initial={false}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          <Suspense fallback={<MinimalPageLoader />}>
-            <LandingPage />
-          </Suspense>
-        </motion.div>
-      </AnimatePresence>
+      <div key="landing">
+        <Suspense fallback={<MinimalPageLoader />}>
+          <LandingPage />
+        </Suspense>
+      </div>
     );
   }
 
@@ -591,39 +574,31 @@ function Router() {
     pathname.startsWith("/portal/")
   ) {
     return (
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={location}
-          initial={false}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          transition={{ duration: 0.3 }}
-        >
-          <Suspense fallback={<MinimalPageLoader />}>
-            <Switch>
-              <Route path="/login" component={Login} />
-              <Route path="/register" component={Register} />
-              <Route path="/auth/callback" component={AuthCallback} />
-              <Route path="/forgot-password" component={ForgotPassword} />
-              <Route path="/reset-password" component={ResetPassword} />
-              <Route path="/verify-email" component={Login} />
-              <Route path="/services" component={Services} />
-              <Route path="/view/invoice/:token" component={PublicInvoiceView} />
-              {/* WQ5: no-login e-invoicing approver page (before /portal/:token). */}
-              <Route path="/portal/einvoicing-approve/:token" component={EInvoicingApprove} />
-              <Route path="/portal/:token" component={CustomerPortal} />
-              <Route path="/pricing" component={Pricing} />
-              <Route path="/trust" component={TrustSecurity} />
-              <Route path="/help" component={HelpCenter} />
-              <Route path="/migration-guides" component={MigrationGuides} />
-              <Route path="/demo" component={DemoWorkspace} />
-              <Route path="/privacy" component={PrivacyPolicy} />
-              <Route path="/terms" component={TermsOfService} />
-              <Route path="/cookies" component={CookiePolicy} />
-            </Switch>
-          </Suspense>
-        </motion.div>
-      </AnimatePresence>
+      <div key={location}>
+        <Suspense fallback={<MinimalPageLoader />}>
+          <Switch>
+            <Route path="/login" component={Login} />
+            <Route path="/register" component={Register} />
+            <Route path="/auth/callback" component={AuthCallback} />
+            <Route path="/forgot-password" component={ForgotPassword} />
+            <Route path="/reset-password" component={ResetPassword} />
+            <Route path="/verify-email" component={Login} />
+            <Route path="/services" component={Services} />
+            <Route path="/view/invoice/:token" component={PublicInvoiceView} />
+            {/* WQ5: no-login e-invoicing approver page (before /portal/:token). */}
+            <Route path="/portal/einvoicing-approve/:token" component={EInvoicingApprove} />
+            <Route path="/portal/:token" component={CustomerPortal} />
+            <Route path="/pricing" component={Pricing} />
+            <Route path="/trust" component={TrustSecurity} />
+            <Route path="/help" component={HelpCenter} />
+            <Route path="/migration-guides" component={MigrationGuides} />
+            <Route path="/demo" component={DemoWorkspace} />
+            <Route path="/privacy" component={PrivacyPolicy} />
+            <Route path="/terms" component={TermsOfService} />
+            <Route path="/cookies" component={CookiePolicy} />
+          </Switch>
+        </Suspense>
+      </div>
     );
   }
 
@@ -921,7 +896,7 @@ export default function App() {
           <RTLProvider>
             <TooltipProvider>
               <Router />
-              <PWAInstallPrompt />
+              <DeferredInstallPrompt />
               <Toaster />
               <PeriodLockReasonDialog />
             </TooltipProvider>

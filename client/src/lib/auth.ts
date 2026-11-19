@@ -1,4 +1,6 @@
 import { apiUrl } from "./api";
+import { takeBootFetch } from "./bootFetch";
+import { rememberLocaleCookie } from "./i18n";
 import { clearAuthHint, hasAuthHint, setAuthHint } from "./authHint";
 import { clearCsrfToken, withCsrfHeader } from "./csrf";
 import { clearAllCaches, clearPwaSessionMarker, rotatePwaSessionMarker } from "./pwa";
@@ -53,6 +55,7 @@ export function getToken(): string | null {
 
 export function setToken(token: string): void {
   void token;
+  rememberLocaleCookie();
   rotatePwaSessionMarker();
   window.dispatchEvent(new Event("auth:login"));
 }
@@ -130,15 +133,19 @@ export async function probeCurrentUser(): Promise<any | null> {
 
 async function loadCurrentUser(): Promise<any | null> {
   const user = await requestCurrentUser();
-  if (user) setAuthHint();
-  else clearAuthHint();
+  if (user) {
+    setAuthHint();
+    rememberLocaleCookie();
+  } else clearAuthHint();
   return user;
 }
 
 async function requestCurrentUser(): Promise<any | null> {
-  const res = await fetch(apiUrl("/api/auth/me"), {
-    credentials: "include",
-  });
+  const res =
+    (await takeBootFetch(apiUrl("/api/auth/me"))) ??
+    (await fetch(apiUrl("/api/auth/me"), {
+      credentials: "include",
+    }));
   if (res.status === 401) {
     const refreshed = await refreshSession();
     if (!refreshed) return null;

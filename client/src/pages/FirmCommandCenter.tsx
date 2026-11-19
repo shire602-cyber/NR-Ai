@@ -643,7 +643,7 @@ export default function FirmCommandCenter() {
                       <T k="pages.overdueAr" />
                     </TableHead>
                     <TableHead>VAT</TableHead>
-                    <TableHead>{t["einvoicing.firmState.column"]}</TableHead>
+                    <TableHead>{t["firm.einvoicingState.column"]}</TableHead>
                     <TableHead>
                       <T k="pages.lastActivity" />
                     </TableHead>
@@ -802,7 +802,7 @@ export default function FirmCommandCenter() {
                     <SelectItem value="warning">
                       <T k="pages.warning" />
                     </SelectItem>
-                    <SelectItem value="info">{t["anomalyDetection.info"]}</SelectItem>
+                    <SelectItem value="info">{t["firm.anomalySeverityInfo"]}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -963,15 +963,15 @@ export default function FirmCommandCenter() {
             <CardContent>
               <div className="grid grid-cols-3 gap-4 mb-6">
                 <DeltaCard
-                  label={t["consolidation.revenue"]}
+                  label={t["pages.revenue"]}
                   value={comparisonQuery.data?.deltas.revenuePct ?? 0}
                 />
                 <DeltaCard
-                  label={t["marketing.previewNavReceipts"]}
+                  label={t["shell.nav.receipts"]}
                   value={comparisonQuery.data?.deltas.receiptsPct ?? 0}
                 />
                 <DeltaCard
-                  label={t["marketing.previewNavInvoices"]}
+                  label={t["shell.nav.invoices"]}
                   value={comparisonQuery.data?.deltas.invoicesPct ?? 0}
                 />
               </div>
