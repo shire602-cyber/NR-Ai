@@ -1022,5 +1022,19 @@
   "serverErrors.issue.vat_rate_must_be_0_or_5_uae": "The VAT rate must be 0% or 5% (UAE).",
   "serverErrors.issue.vattype_is_required_when_isvataccount_is_true": "Choose the VAT type for a VAT account.",
   "serverErrors.issue.vattype_must_be_empty_when_isvataccount_is_false": "Only a VAT account has a VAT type.",
-  "serverErrors.issue.website_must_be_an_http_s_url": "The website must start with http:// or https://."
+  "serverErrors.issue.website_must_be_an_http_s_url": "The website must start with http:// or https://.",
+  "serverErrors.PORTAL_INVITE_INVALID": "This invitation link is not valid.",
+  "serverErrors.PORTAL_INVITE_EXPIRED": "This invitation has expired. Ask your supplier to send a new one.",
+  "serverErrors.PORTAL_INVITE_REVOKED": "This invitation was cancelled by your supplier.",
+  "serverErrors.PORTAL_INVITE_ACCEPTED": "This invitation was already used. Sign in instead.",
+  "serverErrors.PORTAL_ALREADY_ACTIVE": "This person already has access to the portal.",
+  "serverErrors.CONTACT_EMAIL_REQUIRED": "Add an email address for this customer to invite them.",
+  "serverErrors.RESEND_TOO_SOON": "Please wait a moment before sending this invitation again.",
+  "serverErrors.PORTAL_INVITE_RATE_LIMITED": "Too many invitations were sent. Try again later.",
+  "serverErrors.PORTAL_ACCESS_REVOKED": "Your access to this customer portal was removed.",
+  "serverErrors.PORTAL_USER_APP_DENIED": "Customer portal accounts cannot use the company app.",
+  "serverErrors.INVITATION_NOT_RESENDABLE": "This invitation can no longer be resent.",
+  "serverErrors.INVITATION_NOT_REVOCABLE": "Only pending invitations can be cancelled.",
+  "serverErrors.CONTACT_NOT_FOUND": "That customer could not be found.",
+  "serverErrors.INVOICE_NOT_FOUND": "That invoice could not be found."
 }

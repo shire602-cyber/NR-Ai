@@ -319,5 +319,6 @@
   "rejected": "Rejected",
   "paidStatus": "Paid",
   "installApp": "Install App",
-  "offlineMessage": "You are currently offline"
+  "offlineMessage": "You are currently offline",
+  "shell.reconnecting": "Reconnecting…"
 }

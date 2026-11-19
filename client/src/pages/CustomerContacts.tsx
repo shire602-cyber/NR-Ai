@@ -21,6 +21,8 @@ import {
   Copy,
   ExternalLink,
   MoreHorizontal,
+  UserPlus,
+  Users,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -74,6 +76,13 @@ import { getAuthHeaders } from "@/lib/auth";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import type { CustomerContact } from "@shared/schema";
 import { ContactForm } from "@/components/contacts/ContactForm";
+import {
+  PortalAccessSheet,
+  portalSummaryKey,
+  type PortalSheetContact,
+} from "@/components/portal/PortalAccessSheet";
+import { PortalStatusChip, type PortalSummaryEntry } from "@/components/portal/PortalStatusChip";
+import { BulkPortalInviteDialog } from "@/components/portal/BulkPortalInviteDialog";
 
 interface ImportResult {
   message: string;
@@ -139,7 +148,7 @@ interface PortalLinkRow {
 export default function CustomerContacts() {
   const { toast } = useToast();
   const { t, locale } = useTranslation();
-  const { companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
+  const { company, companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
 
   // R3 (CTO 17): command-palette customer results link to /contacts?q=<name>.
   const [searchTerm, setSearchTerm] = useState(() =>
@@ -195,6 +204,22 @@ export default function CustomerContacts() {
     }),
   });
   const activePortalLinks = (portalAccess?.links ?? []).filter((l) => l.state === "active");
+  // STEP5: the invitation sheet and the bulk invite dialog (the customer portal with a login).
+  const [inviteContact, setInviteContact] = useState<PortalSheetContact | null>(null);
+  const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
+  const { data: portalSummary = {} } = useQuery<Record<string, PortalSummaryEntry>>({
+    queryKey: portalSummaryKey(companyId ?? ""),
+    enabled: !!companyId,
+    staleTime: 30_000,
+  });
+  const openInvite = (c: CustomerContact) =>
+    setInviteContact({
+      id: c.id,
+      name: c.name,
+      email: c.email ?? null,
+      contactPerson: c.contactPerson ?? null,
+      preferredLanguage: c.preferredLanguage ?? null,
+    });
   const [contactToDelete, setContactToDelete] = useState<CustomerContact | null>(null);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
   const [clearAllConfirmation, setClearAllConfirmation] = useState("");
@@ -499,6 +524,14 @@ export default function CustomerContacts() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-48">
                 <DropdownMenuItem
+                  onSelect={() => setBulkInviteOpen(true)}
+                  data-testid="button-bulk-portal-invite"
+                  disabled={!canDo("documents.write")}
+                >
+                  <Users aria-hidden />
+                  {t["portal.bulk.title"]}
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   onSelect={downloadTemplate}
                   data-testid="button-download-template"
                 >
@@ -624,6 +657,11 @@ export default function CustomerContacts() {
                         </span>
                       ) : null}
                     </div>
+                    {portalSummary[contact.id] ? (
+                      <div className="mt-1">
+                        <PortalStatusChip entry={portalSummary[contact.id]} contactId={contact.id} />
+                      </div>
+                    ) : null}
                     <p className="mt-1 truncate text-caption text-muted-foreground">
                       <span dir="ltr" className="[unicode-bidi:isolate]">
                         {contact.email || contact.phone}
@@ -651,18 +689,11 @@ export default function CustomerContacts() {
                           {t["screens.portalLink"]}
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                          onSelect={() =>
-                            setPortalLinkDialog({
-                              ...closedPortalDialog,
-                              open: true,
-                              contactId: contact.id,
-                              contactName: contact.name,
-                            })
-                          }
+                          onSelect={() => openInvite(contact)}
                           data-testid={`button-portal-access-${contact.id}`}
                         >
-                          <Link2 aria-hidden />
-                          {t["customerContacts.portalAccess"]}
+                          <UserPlus aria-hidden />
+                          {t["portal.invite.action"]}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
@@ -695,6 +726,7 @@ export default function CustomerContacts() {
                         <span dir="auto" className="truncate font-medium text-foreground">
                           {locale === "ar" && contact.nameAr ? contact.nameAr : contact.name}
                         </span>
+                        <PortalStatusChip entry={portalSummary[contact.id]} contactId={contact.id} />
                         {/* WQ5: one record, customer and/or supplier. */}
                         {contact.isSupplier && (
                           <Badge
@@ -802,16 +834,9 @@ export default function CustomerContacts() {
                           data-testid={`button-portal-link-${contact.id}`}
                         />
                         <RowActionButton
-                          label={t["customerContacts.portalAccess"]}
-                          icon={Link2}
-                          onClick={() =>
-                            setPortalLinkDialog({
-                              ...closedPortalDialog,
-                              open: true,
-                              contactId: contact.id,
-                              contactName: contact.name,
-                            })
-                          }
+                          label={t["portal.invite.action"]}
+                          icon={UserPlus}
+                          onClick={() => openInvite(contact)}
                           data-testid={`button-portal-access-${contact.id}`}
                         />
                       </RowActions>
@@ -1054,6 +1079,39 @@ export default function CustomerContacts() {
         </DialogContent>
       </Dialog>
 
+      <PortalAccessSheet
+        open={!!inviteContact}
+        onOpenChange={(o) => !o && setInviteContact(null)}
+        companyId={companyId ?? ""}
+        supplierName={company?.name ?? ""}
+        contact={inviteContact}
+        onManageLinks={() => {
+          if (!inviteContact) return;
+          setPortalLinkDialog({
+            ...closedPortalDialog,
+            open: true,
+            contactId: inviteContact.id,
+            contactName: inviteContact.name,
+          });
+          setInviteContact(null);
+        }}
+      />
+      <BulkPortalInviteDialog
+        open={bulkInviteOpen}
+        onOpenChange={setBulkInviteOpen}
+        companyId={companyId ?? ""}
+        contacts={contacts
+          .filter((c) => c.isCustomer !== false)
+          .map((c) => ({
+            id: c.id,
+            name: c.name,
+            email: c.email ?? null,
+            contactPerson: c.contactPerson ?? null,
+            preferredLanguage: c.preferredLanguage ?? null,
+          }))}
+        summary={portalSummary}
+      />
+
       {/* Portal Link Dialog */}
       <Dialog
         open={portalLinkDialog.open}
@@ -1067,7 +1125,9 @@ export default function CustomerContacts() {
             </DialogTitle>
             <DialogDescription>
               {portalLinkDialog.url
-                ? `Share this link with ${portalLinkDialog.contactName} to give them access to view their invoices and download PDFs.`
+                ? formatMessage(t["portal.access.shareLinkDialog"], {
+                    name: portalLinkDialog.contactName,
+                  })
                 : formatMessage(t["customerContacts.portalAccessFor"], {
                     name: portalLinkDialog.contactName,
                   })}

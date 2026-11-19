@@ -81,7 +81,33 @@ export function isAuthenticated(): boolean {
   return false;
 }
 
+const PORTAL_ACCOUNT_KEY = "muhasib.portalAccount";
+
+/** The supplier portal the signed-in customer chose (one of their own bindings), if any. */
+export function getSelectedPortalAccount(): string | null {
+  try {
+    return window.localStorage.getItem(PORTAL_ACCOUNT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setSelectedPortalAccount(id: string | null): void {
+  try {
+    if (id) window.localStorage.setItem(PORTAL_ACCOUNT_KEY, id);
+    else window.localStorage.removeItem(PORTAL_ACCOUNT_KEY);
+  } catch {
+    /* storage blocked: the newest supplier is used */
+  }
+}
+
 export function getAuthHeaders(): Record<string, string> {
+  // Auth is cookie-based. Customer-portal calls also say WHICH supplier they act for; the server
+  // checks it against the user's own bindings and ignores anything else.
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/client-portal")) {
+    const id = getSelectedPortalAccount();
+    if (id) return { "X-Portal-Account": id };
+  }
   return {};
 }
 

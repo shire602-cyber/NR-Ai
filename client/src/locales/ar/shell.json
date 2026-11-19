@@ -319,5 +319,6 @@
   "rejected": "مرفوض",
   "paidStatus": "مدفوع",
   "installApp": "تثبيت التطبيق",
-  "offlineMessage": "أنت غير متصل بالإنترنت حالياً"
+  "offlineMessage": "أنت غير متصل بالإنترنت حالياً",
+  "shell.reconnecting": "جارٍ إعادة الاتصال…"
 }

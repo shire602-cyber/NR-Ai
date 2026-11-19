@@ -1,5 +1,5 @@
 import { useLocation, Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -11,6 +11,9 @@ import {
   Building2,
   Languages,
   UserRound,
+  Check,
+  ChevronsUpDown,
+  ShieldOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,9 +24,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { apiRequest } from "@/lib/queryClient";
-import { removeToken } from "@/lib/auth";
-import { useI18n, useTranslation } from "@/lib/i18n";
+import { ApiError, apiRequest } from "@/lib/queryClient";
+import { getSelectedPortalAccount, setSelectedPortalAccount } from "@/lib/auth";
+import { useSessionActions } from "@/hooks/useSessionActions";
+import { PortalStatePage } from "@/components/portal/PortalStatePage";
+import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 
 const NAV_ITEMS = [
   { labelKey: "shell.portalDashboard", href: "/client-portal/dashboard", icon: LayoutDashboard },
@@ -31,23 +36,53 @@ const NAV_ITEMS = [
   { labelKey: "shell.portalDocuments", href: "/client-portal/documents", icon: FolderOpen },
   { labelKey: "shell.portalStatements", href: "/client-portal/statements", icon: BarChart2 },
   { labelKey: "shell.portalMessages", href: "/client-portal/messages", icon: MessageSquare },
+  { labelKey: "portal.account.nav", href: "/client-portal/account", icon: UserRound },
 ];
+
+interface PortalAccountRow {
+  id: string;
+  company: { id: string; name: string; logoUrl: string | null };
+  customer: { id: string; name: string; nameAr: string | null };
+}
 
 export function PortalLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
+  const queryClient = useQueryClient();
+  const { signOut } = useSessionActions();
 
-  const { data: company } = useQuery({
+  const { data: company, error: companyError } = useQuery({
     queryKey: ["portal-company"],
     queryFn: () => apiRequest("GET", "/api/client-portal/company"),
     staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  const { data: accounts = [] } = useQuery<PortalAccountRow[]>({
+    queryKey: ["portal-accounts"],
+    queryFn: () => apiRequest("GET", "/api/client-portal/accounts"),
+    staleTime: 5 * 60 * 1000,
   });
 
-  function handleLogout() {
-    removeToken();
+  async function handleLogout() {
+    // Clears the httpOnly session cookies on the server, not just local state (G4).
+    await signOut();
     navigate("/login");
   }
+
+  function switchSupplier(id: string) {
+    setSelectedPortalAccount(id);
+    queryClient.removeQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("portal-") });
+    void queryClient.invalidateQueries();
+    navigate("/client-portal/dashboard");
+  }
+
+  const selectedId = getSelectedPortalAccount();
+  const current = accounts.find((a) => a.id === selectedId) ?? accounts[0];
+  const removed =
+    companyError instanceof ApiError &&
+    (companyError.body?.code === "PORTAL_ACCESS_REVOKED" ||
+      companyError.body?.code === "PORTAL_CONTACT_NOT_LINKED");
 
   const title =
     t[NAV_ITEMS.find((n) => location.startsWith(n.href))?.labelKey ?? "shell.portalFallbackTitle"];
@@ -147,6 +182,36 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                 t["portal.doc.clientPortal"]
               )}
             </span>
+            {accounts.length > 1 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="max-w-[160px] gap-1.5"
+                    aria-label={t["portal.switcher.label"]}
+                    data-testid="portal-supplier-switcher"
+                  >
+                    <span className="truncate" dir="auto">
+                      {current?.company.name}
+                    </span>
+                    <ChevronsUpDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-[220px]">
+                  <DropdownMenuLabel>{t["portal.switcher.title"]}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {accounts.map((a) => (
+                    <DropdownMenuItem key={a.id} onSelect={() => switchSupplier(a.id)}>
+                      <span className="flex-1 truncate" dir="auto">
+                        {a.company.name}
+                      </span>
+                      {a.id === current?.id && <Check className="ms-2 h-4 w-4" aria-hidden />}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -170,6 +235,10 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                     <DropdownMenuSeparator />
                   </>
                 )}
+                <DropdownMenuItem onSelect={() => navigate("/client-portal/account")}>
+                  <UserRound className="h-4 w-4 me-2" aria-hidden />
+                  {t["portal.account.nav"]}
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setLocale(locale === "en" ? "ar" : "en")}>
                   <Languages className="h-4 w-4 me-2" aria-hidden />
                   <span lang={locale === "en" ? "ar" : "en"}>
@@ -219,7 +288,35 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
             >
-              {children}
+              {removed ? (
+                <div className="mx-auto max-w-md py-16" data-testid="portal-access-removed">
+                  <PortalStatePage
+                    icon={ShieldOff}
+                    tone="danger"
+                    title={t["portal.states.removedTitle"]}
+                    body={formatMessage(t["portal.states.removedBody"], {
+                      supplier: current?.company.name ?? t["portal.join.theSupplier"],
+                    })}
+                    actions={
+                      <>
+                        {accounts.length > 1 && accounts.find((a) => a.id !== current?.id) ? (
+                          <Button
+                            className="h-11"
+                            onClick={() => switchSupplier(accounts.find((a) => a.id !== current?.id)!.id)}
+                          >
+                            {t["portal.states.useOther"]}
+                          </Button>
+                        ) : null}
+                        <Button className="h-11" variant="outline" onClick={() => void handleLogout()}>
+                          {t["portal.doc.signOut"]}
+                        </Button>
+                      </>
+                    }
+                  />
+                </div>
+              ) : (
+                children
+              )}
             </motion.div>
           </AnimatePresence>
         </main>

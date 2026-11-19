@@ -986,6 +986,8 @@ const PUBLIC_PATHS = new Set([
   "/reset-password",
   "/verify-email",
   "/auth/callback",
+  // STEP5: the customer-portal invitation page (shell, auth copy and the portal catalog).
+  "/portal/join",
   "/privacy",
   "/terms",
   "/cookies",

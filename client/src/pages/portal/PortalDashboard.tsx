@@ -1,13 +1,17 @@
 import { T } from "@/components/layout/T";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { FileText, FolderOpen } from "lucide-react";
+import { CircleAlert, FileText, FolderOpen, PartyPopper, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Alert } from "@/components/ui/alert";
+import { BalanceSummary } from "@/components/portal/BalanceSummary";
+import { PORTAL_WELCOME_KEY } from "@/lib/portal-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatCard } from "@/components/ui/stat-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
-import { Money, MoneyCell } from "@/components/ui/money";
+import { MoneyCell } from "@/components/ui/money";
 import {
   Table,
   TableBody,
@@ -35,7 +39,7 @@ interface PortalDocumentRow {
 }
 
 /**
- * Client portal overview (WP-F, spec 3.18): four StatCards, recent invoices as a table and the
+ * Client portal overview (WP-F, spec 3.18): the balance per currency, recent invoices as a table and the
  * documents shared with the accountant. Content width 960, centred.
  */
 export default function PortalDashboard() {
@@ -49,51 +53,71 @@ export default function PortalDashboard() {
     queryFn: () => apiRequest("GET", "/api/client-portal/documents"),
   });
 
+  const { data: company } = useQuery<{ name?: string }>({
+    queryKey: ["portal-company"],
+    queryFn: () => apiRequest("GET", "/api/client-portal/company"),
+    staleTime: 5 * 60 * 1000,
+  });
+  const [welcome, setWelcome] = useState(() => {
+    try {
+      return window.localStorage.getItem(PORTAL_WELCOME_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const dismissWelcome = () => {
+    setWelcome(false);
+    try {
+      window.localStorage.removeItem(PORTAL_WELCOME_KEY);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const inv = data?.invoices ?? {};
   const recentInvoices: any[] = data?.recentInvoices ?? [];
   const hasInvoices = (inv.total ?? recentInvoices.length) > 0;
-  const countHint = (n: number) =>
-    n === 1
-      ? t["portal.invoiceCountOne"]
-      : formatMessage(t["portal.invoiceCountMany"], { count: n });
 
   return (
     <div className="mx-auto max-w-[960px] space-y-6">
       <PageHeader title={t["portal.doc.overview"]} description={t["portal.doc.overviewHint"]} />
 
-      {(isLoading || hasInvoices) && (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <StatCard
-            label={<T k="portal.doc.outstanding" />}
-            value={<Money amount={inv.outstandingTotal ?? 0} currency="AED" />}
-            hint={countHint(inv.outstanding ?? 0)}
-            loading={isLoading}
-            testId="portal-kpi-outstanding"
-          />
-          <StatCard
-            label={<T k="portal.doc.overdue" />}
-            value={<span className="tabular-nums">{inv.overdue ?? 0}</span>}
-            hint={countHint(inv.overdue ?? 0)}
-            loading={isLoading}
-            testId="portal-kpi-overdue"
-          />
-          <StatCard
-            label={<T k="portal.doc.paid" />}
-            value={<Money amount={inv.paidTotal ?? 0} currency="AED" />}
-            hint={countHint(inv.paid ?? 0)}
-            loading={isLoading}
-            testId="portal-kpi-paid"
-          />
-          <StatCard
-            label={<T k="portal.doc.documentsShared" />}
-            value={<span className="tabular-nums">{data?.documents?.total ?? 0}</span>}
-            hint={t["portal.uploadedFiles"]}
-            href="/client-portal/documents"
-            loading={isLoading}
-            testId="portal-kpi-documents"
-          />
-        </div>
+      {welcome && (
+        <Card
+          className="flex items-start gap-3 border-accent/40 bg-accent/5 p-4"
+          data-testid="portal-welcome"
+        >
+          <PartyPopper className="mt-0.5 h-5 w-5 shrink-0 text-accent" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <p className="text-body font-semibold">{t["portal.dash.welcomeTitle"]}</p>
+            <p className="text-small text-muted-foreground">
+              {formatMessage(t["portal.dash.welcomeBody"], {
+                supplier: company?.name ?? t["portal.join.theSupplier"],
+              })}
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-11 w-11 shrink-0"
+            aria-label={t["portal.dash.dismiss"]}
+            onClick={dismissWelcome}
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </Button>
+        </Card>
       )}
+
+      {(data?.overdueByCurrency?.length ?? 0) > 0 && (
+        <Alert tone="danger" title={t["portal.dash.overdueTitle"]} data-testid="portal-overdue-banner">
+          <span className="inline-flex items-center gap-2">
+            <CircleAlert className="h-4 w-4" aria-hidden />
+            {formatMessage(t["portal.dash.overdueBody"], { count: inv.overdue ?? 0 })}
+          </span>
+        </Alert>
+      )}
+
+      {(isLoading || hasInvoices) && <BalanceSummary data={data} loading={isLoading} />}
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">

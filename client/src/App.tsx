@@ -63,6 +63,9 @@ const PortalInvoices = lazyWithReload(() => import("@/pages/portal/PortalInvoice
 const PortalDocuments = lazyWithReload(() => import("@/pages/portal/PortalDocuments"));
 const PortalStatements = lazyWithReload(() => import("@/pages/portal/PortalStatements"));
 const PortalMessages = lazyWithReload(() => import("@/pages/portal/PortalMessages"));
+const PortalAccount = lazyWithReload(() => import("@/pages/portal/PortalAccount"));
+// STEP5: public invitation page (the customer sets a password).
+const PortalJoin = lazyWithReload(() => import("@/pages/portal/PortalJoin"));
 
 // Firm (NRA Management Center) — lazy loaded
 const ClientPortfolio = lazyWithReload(() => import("@/pages/firm/ClientPortfolio"));
@@ -455,7 +458,8 @@ function PortalRoute({ children }: { children: React.ReactNode }) {
         actionLabel={t["shell.signIn"]}
       />
     );
-  if (user.userType !== "client_portal" && !user.isAdmin) {
+  // A portal login, or any account that accepted a supplier's invitation (STEP5, G8).
+  if (user.userType !== "client_portal" && !(Number(user.portalAccounts) > 0)) {
     return (
       <AccessRedirect
         title={t["shell.portalAccessTitle"]}
@@ -551,6 +555,7 @@ function Router() {
               <Route path="/client-portal/documents" component={PortalDocuments} />
               <Route path="/client-portal/statements" component={PortalStatements} />
               <Route path="/client-portal/messages" component={PortalMessages} />
+              <Route path="/client-portal/account" component={PortalAccount} />
               <Route component={NotFound} />
             </Switch>
           </Suspense>
@@ -611,6 +616,8 @@ function Router() {
               <Route path="/view/invoice/:token" component={PublicInvoiceView} />
               {/* WQ5: no-login e-invoicing approver page (before /portal/:token). */}
               <Route path="/portal/einvoicing-approve/:token" component={EInvoicingApprove} />
+              {/* STEP5: customer invitation (token in the URL fragment), before /portal/:token. */}
+              <Route path="/portal/join" component={PortalJoin} />
               <Route path="/portal/:token" component={CustomerPortal} />
               <Route path="/pricing" component={Pricing} />
               <Route path="/trust" component={TrustSecurity} />

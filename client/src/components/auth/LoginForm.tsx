@@ -41,6 +41,12 @@ function currentEpochMs(): number {
   return new Date().getTime();
 }
 
+function initialEmail(): string {
+  if (typeof window === "undefined") return "";
+  const value = new URLSearchParams(window.location.search).get("email") ?? "";
+  return value.length <= 254 && /^[^\s@]+@[^\s@]+$/.test(value) ? value : "";
+}
+
 export function LoginForm({ onSuccess, notice }: LoginFormProps) {
   const { t } = useTranslation(VALIDATION_NAMESPACES);
   const { toast } = useToast();
@@ -52,7 +58,8 @@ export function LoginForm({ onSuccess, notice }: LoginFormProps) {
   const form = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "",
+      // A portal invitation sends an existing account here with its address filled in.
+      email: initialEmail(),
       password: "",
     },
   });

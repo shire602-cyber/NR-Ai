@@ -1022,5 +1022,19 @@
   "serverErrors.issue.vat_rate_must_be_0_or_5_uae": "يجب أن تكون نسبة الضريبة 0% أو 5% (الإمارات).",
   "serverErrors.issue.vattype_is_required_when_isvataccount_is_true": "اختر نوع الضريبة لحساب الضريبة.",
   "serverErrors.issue.vattype_must_be_empty_when_isvataccount_is_false": "نوع الضريبة خاص بحسابات الضريبة فقط.",
-  "serverErrors.issue.website_must_be_an_http_s_url": "يجب أن يبدأ عنوان الموقع بـ http:// أو https://."
+  "serverErrors.issue.website_must_be_an_http_s_url": "يجب أن يبدأ عنوان الموقع بـ http:// أو https://.",
+  "serverErrors.PORTAL_INVITE_INVALID": "رابط الدعوة هذا غير صالح.",
+  "serverErrors.PORTAL_INVITE_EXPIRED": "انتهت صلاحية هذه الدعوة. اطلب من المورّد إرسال دعوة جديدة.",
+  "serverErrors.PORTAL_INVITE_REVOKED": "ألغى المورّد هذه الدعوة.",
+  "serverErrors.PORTAL_INVITE_ACCEPTED": "استُخدمت هذه الدعوة من قبل. سجّل الدخول بدلًا من ذلك.",
+  "serverErrors.PORTAL_ALREADY_ACTIVE": "لدى هذا الشخص وصول إلى البوابة بالفعل.",
+  "serverErrors.CONTACT_EMAIL_REQUIRED": "أضف بريدًا إلكترونيًا لهذا العميل لتتمكن من دعوته.",
+  "serverErrors.RESEND_TOO_SOON": "انتظر قليلًا قبل إعادة إرسال هذه الدعوة.",
+  "serverErrors.PORTAL_INVITE_RATE_LIMITED": "أُرسلت دعوات كثيرة. حاول مرة أخرى لاحقًا.",
+  "serverErrors.PORTAL_ACCESS_REVOKED": "أُزيل وصولك إلى بوابة العملاء هذه.",
+  "serverErrors.PORTAL_USER_APP_DENIED": "لا يمكن لحسابات بوابة العملاء استخدام تطبيق الشركة.",
+  "serverErrors.INVITATION_NOT_RESENDABLE": "لا يمكن إعادة إرسال هذه الدعوة بعد الآن.",
+  "serverErrors.INVITATION_NOT_REVOCABLE": "يمكن إلغاء الدعوات المعلّقة فقط.",
+  "serverErrors.CONTACT_NOT_FOUND": "تعذّر العثور على هذا العميل.",
+  "serverErrors.INVOICE_NOT_FOUND": "تعذّر العثور على هذه الفاتورة."
 }
