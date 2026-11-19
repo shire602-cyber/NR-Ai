@@ -79,7 +79,8 @@ both languages, each on its own new owner (table at the end).
 "pass": no failure in the final runs. "fixed (rules)": failed the first run, passes now.
 Viewports: desktop 1440 px unless marked (mobile = 390 px, mobile-more = the phone More sheet,
 palette = command palette entry, file = file link checked for a download).
-Out of scope: none. Saudi ZATCA was removed in STEP2 (`/settings/zatca` is the not-found page). Not run: live provider calls (e-invoicing transmission, Stripe checkout, bank feeds,
+Out of scope: none. Saudi ZATCA was removed in STEP2 (`/settings/zatca` is the not-found page).
+Not run: live provider calls (e-invoicing transmission, Stripe checkout, bank feeds,
 e-mail delivery), which stay behind their configured boundaries.
 
 | Route                                                       | Persona(s)                                                  | en   | ar   | Result                                               |
@@ -403,7 +404,10 @@ e-mail delivery), which stay behind their configured boundaries.
 | `/journal-entries?status=draft`                             | –                                                           | –    | –    | fixed (not-found-page; no longer linked)             |
 | `/evidence-center?sourceType=inventory&sourceId=:id`        | –                                                           | –    | –    | fixed (english-in-arabic; no longer linked)          |
 
-317 routes/states checked in the final run(s): 273 pass, 47 fixed, 0 failing; 3652 clicks.
+318 routes/states checked in the final run(s): 273 pass, 45 fixed, 0 failing; 3652 clicks.
+
+STEP2 delta (2026-11-19, 246a8dd): the `/settings/zatca` rows were removed; the `no-ksa-rate` and
+`invoices` flows were re-run in en and ar and pass.
 
 ### Core flows (UI, final build)
 
@@ -420,7 +424,8 @@ e-mail delivery), which stay behind their configured boundaries.
 | coa            | Add account drawer creates the account                                 | pass | pass |
 | coa            | edit the account name                                                  | pass | pass |
 | invoices       | editor: create a draft and issue it from the nudge                     | pass | pass |
-| invoices       | invoice editor Checks tab lists the checks                             | pass | pass |
+| invoices       | draft invoice editor Checks tab lists the checks                       | pass | pass |
+| invoices       | issued invoice opens as the locked read-only document                  | pass | pass |
 | invoices       | PDF downloads                                                          | pass | pass |
 | invoices       | share link opens for a signed-out customer                             | pass | pass |
 | invoices       | sent and viewed log records the customer's view                        | pass | pass |

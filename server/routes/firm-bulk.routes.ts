@@ -27,6 +27,7 @@ import { eq, and, gte, lte, inArray, count, sum, max, not, desc } from "drizzle-
 import { companies, invoices, receipts, bankTransactions, vatReturns } from "../../shared/schema";
 import { storage } from "../storage";
 import { UAE_VAT_RATE, DEFAULT_CURRENCY } from "../constants";
+import { isUaeVatRateFraction } from "../../shared/vat-classification";
 import { createLogger } from "../config/logger";
 import {
   createOcrClients,
@@ -375,7 +376,10 @@ const bulkInvoicesSchema = z.object({
   period: zBulkPeriod.optional(),
   serviceDescription: z.string().min(1).max(500),
   amount: z.number().positive(),
-  vatRate: z.number().min(0).max(1).default(UAE_VAT_RATE),
+  vatRate: z
+    .number()
+    .refine(isUaeVatRateFraction, "VAT rate must be 0% or 5%")
+    .default(UAE_VAT_RATE),
 });
 
 router.post(
