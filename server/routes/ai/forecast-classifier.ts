@@ -136,9 +136,12 @@ export const handlePostAiClassificationFeedback = async (req: Request, res: Resp
     const userId = req.user!.id;
     const parsed = classificationFeedbackSchema.safeParse(req.body);
     if (!parsed.success) {
-      return res
-        .status(400)
-        .json({ message: "Invalid request body", errors: parsed.error.flatten() });
+      return res.status(400).json({
+        code: "VALIDATION_ERROR",
+        message: "Invalid request body",
+        fields: parsed.error.flatten().fieldErrors,
+        errors: parsed.error.flatten(),
+      });
     }
     const { classificationId, wasAccepted, userSelectedAccountId } = parsed.data;
 
@@ -148,11 +151,13 @@ export const handlePostAiClassificationFeedback = async (req: Request, res: Resp
     // submitting that row's id.
     const existing = await storage.getTransactionClassification(classificationId);
     if (!existing) {
-      return res.status(404).json({ message: "Classification not found" });
+      return res
+        .status(404)
+        .json({ code: "CLASSIFICATION_NOT_FOUND", message: "Classification not found" });
     }
     const hasAccess = await storage.hasCompanyAccess(userId, existing.companyId);
     if (!hasAccess) {
-      return res.status(403).json({ message: "Access denied" });
+      return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
     }
 
     // Cross-tenant guard: a feedback submission for our own classification id
@@ -165,9 +170,10 @@ export const handlePostAiClassificationFeedback = async (req: Request, res: Resp
     if (typeof userSelectedAccountId === "string") {
       const account = await storage.getAccount(userSelectedAccountId, existing.companyId);
       if (!account) {
-        return res
-          .status(403)
-          .json({ message: "userSelectedAccountId does not belong to this company" });
+        return res.status(403).json({
+          code: "ACCOUNT_NOT_IN_COMPANY",
+          message: "userSelectedAccountId does not belong to this company",
+        });
       }
     }
 
@@ -195,13 +201,17 @@ export const handlePostAiAutopilotProcess = async (req: Request, res: Response) 
   const userId = req.user!.id;
   const parsed = autopilotProcessSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res
-      .status(400)
-      .json({ message: "Invalid request body", errors: parsed.error.flatten() });
+    return res.status(400).json({
+      code: "VALIDATION_ERROR",
+      message: "Invalid request body",
+      fields: parsed.error.flatten().fieldErrors,
+      errors: parsed.error.flatten(),
+    });
   }
   const { companyId, ocr } = parsed.data;
   const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-  if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+  if (!hasAccess)
+    return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
 
   // Persist any submitted image bytes through the sanitizing helper so the
   // DB only ever sees a server-generated relative path under uploads/receipts.
@@ -249,11 +259,14 @@ export const handleGetAiClassifierStats = async (req: Request, res: Response) =>
   const userId = req.user!.id;
   const parsed = companyIdQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res.status(400).json({ message: "companyId is required (uuid)" });
+    return res
+      .status(400)
+      .json({ code: "COMPANY_ID_REQUIRED", message: "companyId is required (uuid)" });
   }
   const { companyId } = parsed.data;
   const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-  if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+  if (!hasAccess)
+    return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
   const stats = await getModelStats(companyId);
   res.json(stats);
 };
@@ -263,11 +276,14 @@ export const handleGetAiClassifierConfig = async (req: Request, res: Response) =
   const userId = req.user!.id;
   const parsed = companyIdQuerySchema.safeParse(req.query);
   if (!parsed.success) {
-    return res.status(400).json({ message: "companyId is required (uuid)" });
+    return res
+      .status(400)
+      .json({ code: "COMPANY_ID_REQUIRED", message: "companyId is required (uuid)" });
   }
   const { companyId } = parsed.data;
   const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-  if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+  if (!hasAccess)
+    return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
   const config = await getClassifierConfig(companyId);
   res.json(config);
 };
@@ -277,13 +293,17 @@ export const handlePatchAiClassifierConfig = async (req: Request, res: Response)
   const userId = req.user!.id;
   const parsed = classifierConfigPatchSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res
-      .status(400)
-      .json({ message: "Invalid request body", errors: parsed.error.flatten() });
+    return res.status(400).json({
+      code: "VALIDATION_ERROR",
+      message: "Invalid request body",
+      fields: parsed.error.flatten().fieldErrors,
+      errors: parsed.error.flatten(),
+    });
   }
   const { companyId, mode, accuracyThreshold, autopilotEnabled, autopostThreshold } = parsed.data;
   const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-  if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+  if (!hasAccess)
+    return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
   const patch: Partial<{
     mode: "hybrid" | "openai_only";
     accuracyThreshold: number;

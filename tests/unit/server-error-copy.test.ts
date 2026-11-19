@@ -30,7 +30,7 @@ function walk(dir: string, out: string[] = []): string[] {
 
 /** Files whose errors never reach a customer's screen: admin/firm consoles, webhooks, providers. */
 const INTERNAL_FILE =
-  /(admin|firm|platform|internal|webhook|cron|scheduler|outbox|public-api|ecommerce|stripe|zatca|integrations|ocr|ai\/|ai\.|backup|migration-import|socket|telemetry|health|jobs|einvoice-provider|acube|complyance)/i;
+  /(admin|firm|platform|internal|webhook|cron|scheduler|outbox|public-api|ecommerce|stripe|zatca|ocr|backup|migration-import|socket|telemetry|health|jobs|einvoice-provider|acube|complyance)/i;
 
 /** Codes in customer files that only machines see (inbound webhooks, provider callbacks, feeds). */
 const MACHINE_ONLY = new Set([
@@ -156,7 +156,14 @@ describe("[G3] common customer 4xx responses carry a code", () => {
     "referrals",
     "notifications",
     "billing",
+    "integrations",
+    "ai-gl",
   ].map((n) => path.join(ROOT, `server/routes/${n}.routes.ts`));
+  // R2: the Assistant routes (assistant, categorisation, autocomplete, forecast, anomalies, bank).
+  const AI_ROUTES = fs
+    .readdirSync(path.join(ROOT, "server/routes/ai"))
+    .filter((n) => n.endsWith(".ts"))
+    .map((n) => path.join(ROOT, "server/routes/ai", n));
 
   /** `.status(4xx).json({ ... })` bodies without a `code:` key. */
   function uncoded(file: string): string[] {
@@ -173,7 +180,7 @@ describe("[G3] common customer 4xx responses carry a code", () => {
         i++;
       }
       const body = src.slice(re.lastIndex, i - 1);
-      if (/\bcode\s*:/.test(body)) continue;
+      if (/\bcode\s*:|\baiErrorBody\(/.test(body)) continue; // aiErrorBody always adds a code
       const line = src.slice(0, m.index).split("\n").length;
       out.push(`${path.basename(file)}:${line} ${body.replace(/\s+/g, " ").slice(0, 80)}`);
     }
@@ -181,7 +188,9 @@ describe("[G3] common customer 4xx responses carry a code", () => {
   }
 
   it("no raw uncoded 4xx response in the customer routes", () => {
-    const found = CUSTOMER_ROUTES.filter((f) => fs.existsSync(f)).flatMap(uncoded);
+    const found = [...CUSTOMER_ROUTES.filter((f) => fs.existsSync(f)), ...AI_ROUTES].flatMap(
+      uncoded
+    );
     expect(found).toEqual([]);
   });
 });

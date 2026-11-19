@@ -1,7 +1,8 @@
 // Excel / Google Sheets export handlers and workspace panel layout helpers.
 // Stage of the Reports page state; useReportsPage composes the stages in order (R20-09).
 import { ReportWorkspaceTab, reportsWorkspaceHref } from "../shared";
-import { translateNow, formatMessage } from "@/lib/i18n";
+import { translateNow, formatMessage, useI18n } from "@/lib/i18n";
+import { formatDateRange } from "@/lib/format-date";
 import {
   exportToExcel,
   exportToGoogleSheets,
@@ -130,7 +131,7 @@ export function useReportsExports({
     setIsExporting(true);
     const dateRangeTitle =
       dateRange.from && dateRange.to
-        ? ` (${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")})`
+        ? ` (${formatDateRange(dateRange.from, dateRange.to, useI18n.getState().locale)})`
         : "";
 
     const result = await exportToGoogleSheets(
@@ -286,7 +287,7 @@ export function useReportsExports({
     setIsExporting(true);
     const dateRangeStr =
       dateRange.from && dateRange.to
-        ? ` (${format(dateRange.from, "MMM dd, yyyy")} - ${format(dateRange.to, "MMM dd, yyyy")})`
+        ? ` (${formatDateRange(dateRange.from, dateRange.to, useI18n.getState().locale)})`
         : "";
 
     let result;

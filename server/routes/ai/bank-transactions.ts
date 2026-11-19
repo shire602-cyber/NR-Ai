@@ -21,13 +21,15 @@ export function handlePostAiReconcile({ getAI }: Pick<AiHandlerContext, "getAI">
       const userId = req.user!.id;
 
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res
+          .status(400)
+          .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID required" });
       }
 
       // Verify company access
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
       }
 
       const bankTransactions = await storage.getUnreconciledBankTransactions(companyId);
@@ -144,7 +146,7 @@ export const handleGetCompaniesBankTransactions = async (req: Request, res: Resp
     // Verify company access
     const hasAccess = await storage.hasCompanyAccess(userId, companyId);
     if (!hasAccess) {
-      return res.status(403).json({ message: "Access denied" });
+      return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
     }
 
     const transactions = await storage.getBankTransactionsByCompanyId(companyId);

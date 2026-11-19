@@ -30,7 +30,12 @@ export function registerIntegrationRoutes(app: Express) {
       // Check if email already exists
       const existing = await storage.getWaitlistByEmail(validated.email);
       if (existing) {
-        return res.status(400).json({ message: "Email already registered for waitlist" });
+        return res
+          .status(400)
+          .json({
+            code: "WAITLIST_EMAIL_EXISTS",
+            message: "Email already registered for waitlist",
+          });
       }
 
       const entry = await storage.createWaitlistEntry(validated);
@@ -87,7 +92,9 @@ export function registerIntegrationRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, integrationType } = req.query;
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res
+          .status(400)
+          .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID required" });
       }
 
       let syncs;
@@ -111,7 +118,9 @@ export function registerIntegrationRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       const spreadsheets = await googleSheets.listSpreadsheets();
@@ -133,12 +142,16 @@ export function registerIntegrationRoutes(app: Express) {
         spreadsheetId?: string;
       }>(req);
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res
+          .status(400)
+          .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID required" });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Fetch invoices
@@ -181,12 +194,16 @@ export function registerIntegrationRoutes(app: Express) {
         spreadsheetId?: string;
       }>(req);
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res
+          .status(400)
+          .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID required" });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Fetch receipts/expenses
@@ -229,12 +246,16 @@ export function registerIntegrationRoutes(app: Express) {
         spreadsheetId?: string;
       }>(req);
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res
+          .status(400)
+          .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID required" });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Fetch journal entries with lines — single batched join instead of one
@@ -300,12 +321,16 @@ export function registerIntegrationRoutes(app: Express) {
         spreadsheetId?: string;
       }>(req);
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res
+          .status(400)
+          .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID required" });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Fetch accounts
@@ -343,18 +368,24 @@ export function registerIntegrationRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, sheetUrl } = parsedBody<{ companyId: string; sheetUrl: string }>(req);
       if (!companyId || !sheetUrl) {
-        return res.status(400).json({ message: "Company ID and sheet URL required" });
+        return res
+          .status(400)
+          .json({ code: "SHEET_URL_REQUIRED", message: "Company ID and sheet URL required" });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Extract spreadsheet ID from URL
       const match = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
       if (!match) {
-        return res.status(400).json({ message: "Invalid Google Sheets URL" });
+        return res
+          .status(400)
+          .json({ code: "INVALID_SHEETS_URL", message: "Invalid Google Sheets URL" });
       }
 
       const spreadsheetId = match[1];
@@ -413,18 +444,25 @@ export function registerIntegrationRoutes(app: Express) {
       if (!companyId || !sheetUrl || !userId) {
         return res
           .status(400)
-          .json({ message: "Company ID, sheet URL, and user authentication required" });
+          .json({
+            code: "SHEET_URL_REQUIRED",
+            message: "Company ID, sheet URL, and user authentication required",
+          });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Extract spreadsheet ID from URL
       const match = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
       if (!match) {
-        return res.status(400).json({ message: "Invalid Google Sheets URL" });
+        return res
+          .status(400)
+          .json({ code: "INVALID_SHEETS_URL", message: "Invalid Google Sheets URL" });
       }
 
       const spreadsheetId = match[1];
@@ -487,12 +525,19 @@ export function registerIntegrationRoutes(app: Express) {
         sheets: Array<{ name: string; headers: string[]; rows: (string | number | null)[][] }>;
       }>(req);
       if (!companyId || !title || !sheets) {
-        return res.status(400).json({ message: "Company ID, title, and sheets data required" });
+        return res
+          .status(400)
+          .json({
+            code: "SHEETS_EXPORT_INPUT_REQUIRED",
+            message: "Company ID, title, and sheets data required",
+          });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Export custom data to sheet

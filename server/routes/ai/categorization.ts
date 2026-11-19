@@ -30,7 +30,7 @@ export function handlePostAiCategorize({ getAI }: Pick<AiHandlerContext, "getAI"
       // Verify company access
       const hasAccess = await storage.hasCompanyAccess(userId, validated.companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
       }
 
       // Phase 2: Try internal classifier first. Only fall through to OpenAI when
@@ -130,6 +130,7 @@ Amount: ${validated.amount} ${validated.currency}`,
           "AI suggested account not found in company COA"
         );
         return res.status(422).json({
+          code: "AI_ACCOUNT_NOT_IN_COA",
           message: "AI suggested an account that does not exist in your Chart of Accounts",
         });
       }
@@ -158,7 +159,9 @@ export function handlePostAiParseBankStatement({ getAI }: Pick<AiHandlerContext,
       const { text } = req.body;
 
       if (!text || text.trim().length < 10) {
-        return res.status(400).json({ message: "Bank statement text is required" });
+        return res
+          .status(400)
+          .json({ code: "STATEMENT_TEXT_REQUIRED", message: "Bank statement text is required" });
       }
 
       // Use OpenAI to parse bank statement transactions
@@ -256,7 +259,9 @@ export function handlePostAiCfoAdvice({ getAI }: Pick<AiHandlerContext, "getAI">
       const { companyId, question } = req.body;
 
       if (!companyId || !question || typeof question !== "string") {
-        return res.status(400).json({ message: "Company ID and question are required" });
+        return res
+          .status(400)
+          .json({ code: "AI_QUESTION_REQUIRED", message: "Company ID and question are required" });
       }
 
       // Throws 503 AI_NOT_CONFIGURED / 429 AI_QUOTA_EXCEEDED before any work is done.
@@ -349,13 +354,16 @@ export function handlePostAiBatchCategorize({ getAI }: Pick<AiHandlerContext, "g
       const userId = req.user!.id;
 
       if (!companyId || !transactions || !Array.isArray(transactions)) {
-        return res.status(400).json({ message: "Company ID and transactions array required" });
+        return res.status(400).json({
+          code: "TRANSACTIONS_REQUIRED",
+          message: "Company ID and transactions array required",
+        });
       }
 
       // Verify company access
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
       }
 
       const accounts = await storage.getAccountsByCompanyId(companyId);
