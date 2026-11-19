@@ -214,8 +214,10 @@ for (const locale of ["en", "ar"] as const) {
       const alert = container.querySelector("#join-password-error");
       expect(alert?.textContent).toBe("Too common");
       expect(alert?.getAttribute("role")).toBe("alert");
-      await flush(30);
-      expect(document.activeElement?.id).toBe("join-password");
+      // Focus moves on the next animation frame; wait for it rather than a fixed delay.
+      await vi.waitFor(() => expect(document.activeElement?.id).toBe("join-password"), {
+        timeout: 2000,
+      });
     });
 
     it("renders each invitation state with its own screen", async () => {

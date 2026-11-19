@@ -37,13 +37,16 @@ export function formatInviteDate(date: Date, lang: "en" | "ar"): string {
  * note cannot carry a phishing link in a message that arrives from the platform.
  */
 export function neutraliseInviteNote(note: string): string {
-  return note
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u200b-\u200f\u2060\ufeff]/g, "")
-    .replace(/[A-Za-z][A-Za-z0-9+.-]*:\/\/\S*/g, "[link removed]")
-    .replace(/\b(?:mailto|tel|javascript|data):\S*/gi, "[link removed]")
-    .replace(/[^\s@]+@[^\s@]+\.[A-Za-z]{2,}/g, "[link removed]")
-    .replace(/\bwww\.\S*/gi, "[link removed]")
-    .replace(/(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?:\/\S*)?/g, "[link removed]");
+  return (
+    note
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u200b-\u200f\u2060\ufeff]/g, "")
+      .replace(/[A-Za-z][A-Za-z0-9+.-]*:\/\/\S*/g, "[link removed]")
+      .replace(/\b(?:mailto|tel|javascript|data):\S*/gi, "[link removed]")
+      .replace(/[^\s@]+@[^\s@]+\.[A-Za-z]{2,}/g, "[link removed]")
+      .replace(/\bwww\.\S*/gi, "[link removed]")
+      .replace(/(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?:\/\S*)?/g, "[link removed]")
+  );
 }
 
 export function normaliseInviteLanguage(value: string | null | undefined): EmailLanguage {
