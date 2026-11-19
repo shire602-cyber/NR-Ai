@@ -523,7 +523,12 @@ async function openInviteSheet(page, contactId, phone) {
     await page.waitForTimeout(250);
     await tid(page, `button-portal-access-${contactId}`).click({ timeout: 10000 });
   } else {
-    await rowAction(page, `button-portal-access-${contactId}`);
+    await page
+      .locator(`[data-testid="row-contact-${contactId}"] button[aria-haspopup="menu"]`)
+      .first()
+      .click({ timeout: 10000 });
+    await page.waitForTimeout(250);
+    await tid(page, `button-portal-access-${contactId}`).click({ timeout: 10000 });
   }
   expect(await visible(page, "pa-email"), "invite sheet did not open");
 }

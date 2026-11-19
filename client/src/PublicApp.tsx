@@ -34,6 +34,8 @@ const Login = lazyWithReload(() => import("@/pages/Login"));
 const Register = lazyWithReload(() => import("@/pages/Register"));
 const ForgotPassword = lazyWithReload(() => import("@/pages/ForgotPassword"));
 const ResetPassword = lazyWithReload(() => import("@/pages/ResetPassword"));
+// STEP5: the customer-portal invitation page (a light public page, no app shell).
+const PortalJoin = lazyWithReload(() => import("@/pages/portal/PortalJoin"));
 const PublicProviders = lazy(() => import("@/components/marketing/PublicProviders"));
 const FullApp = lazyWithReload(() => import("./App"));
 const PWAInstallPrompt = lazy(() =>
@@ -70,6 +72,7 @@ function PublicRoutes() {
       <Route path="/register" component={Register} />
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
+      <Route path="/portal/join" component={PortalJoin} />
     </Switch>
   );
 }
