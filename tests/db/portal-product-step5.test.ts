@@ -1,0 +1,221 @@
+/**
+ * STEP5 product fixes on the customer portal: overdue by the settlement rule and the Asia/Dubai
+ * calendar date, "next due" never in the past, fallback to another active supplier, bulk invites
+ * that return their links without an email provider, the invitation note and the display name.
+ */
+import { randomBytes } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { useHarness, type Tenant } from "./harness";
+
+const h = useHarness();
+const DAY = 86_400_000;
+const uniq = () => randomBytes(4).toString("hex");
+const TOKEN_RE = /#t=([0-9a-f]{64})/;
+const dubaiDate = (offsetDays = 0) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Dubai" }).format(
+    new Date(Date.now() + offsetDays * DAY)
+  );
+
+beforeEach(async () => {
+  const { resetPortalThrottle } = await import("../../server/services/portal-access.service");
+  resetPortalThrottle();
+});
+
+afterEach(() => {
+  delete process.env.RESEND_API_KEY;
+});
+
+async function contact(t: Tenant, name: string, extra: Record<string, unknown> = {}) {
+  const r = await t.as.post(`/api/companies/${t.company.id}/customer-contacts`, {
+    name,
+    email: `cust-${uniq()}@example.test`,
+    ...extra,
+  });
+  expect(r.status, r.text).toBeLessThan(300);
+  return r.body.id as string;
+}
+
+async function invoice(t: Tenant, contactId: string, dueDate: string | null, unitPrice = 1000) {
+  const c = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
+    contactId,
+    date: dubaiDate(-30),
+    ...(dueDate ? { dueDate } : {}),
+    lines: [{ description: "Service", quantity: 1, unitPrice, vatRate: 5 }],
+  });
+  expect(c.status, c.text).toBe(200);
+  const s = await t.as.patch(`/api/invoices/${c.body.id}/status`, { status: "sent" });
+  expect(s.status, s.text).toBe(200);
+  return c.body as { id: string; number: string };
+}
+
+async function pay(t: Tenant, invoiceId: string, amount: number) {
+  const bank = await h.sql(`SELECT id FROM accounts WHERE company_id = $1 AND code = '1020'`, [
+    t.company.id,
+  ]);
+  const r = await t.as.post(`/api/companies/${t.company.id}/invoices/${invoiceId}/payments`, {
+    date: dubaiDate(0),
+    method: "bank",
+    paymentAccountId: bank[0].id,
+    amount,
+  });
+  expect(r.status, r.text).toBeLessThan(300);
+}
+
+/** Bind an existing (SaaS) user to a contact through the invitation link. */
+async function bind(supplier: Tenant, cid: string, user: Tenant) {
+  const r = await supplier.as.post(
+    `/api/companies/${supplier.company.id}/customer-contacts/${cid}/portal-invitations`,
+    { email: user.email, language: "en" }
+  );
+  expect(r.status, r.text).toBe(201);
+  const token = TOKEN_RE.exec(r.body.inviteUrl)![1];
+  const res = await fetch(`${h.baseUrl}/api/portal-invitations/${token}/accept`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${user.token}` },
+    body: JSON.stringify({ acceptTerms: true }),
+  });
+  const text = await res.text();
+  expect(res.status, text).toBe(200);
+  return (JSON.parse(text) as { portalAccountId: string }).portalAccountId;
+}
+
+describe("STEP5 portal product fixes", () => {
+  it("[S5-P2] a partly paid invoice past its due date is overdue; due today is not; next due is never in the past", async () => {
+    const supplier = await h.createTenant({ name: "Overdue Supplier" });
+    const customer = await h.createTenant({ name: "Overdue Customer" });
+    const cid = await contact(supplier, "Overdue Buyer");
+    const partlyPaidPast = await invoice(supplier, cid, dubaiDate(-10));
+    await pay(supplier, partlyPaidPast.id, 300);
+    const unpaidPast = await invoice(supplier, cid, dubaiDate(-2), 500);
+    const dueToday = await invoice(supplier, cid, dubaiDate(0), 700);
+    const dueLater = await invoice(supplier, cid, dubaiDate(6), 900);
+    await bind(supplier, cid, customer);
+
+    const list = await customer.as.get("/api/client-portal/invoices");
+    expect(list.status, list.text).toBe(200);
+    const status = Object.fromEntries(list.body.map((i: any) => [i.id, i.paymentStatus]));
+    expect(status[partlyPaidPast.id]).toBe("overdue");
+    expect(status[unpaidPast.id]).toBe("overdue");
+    expect(status[dueToday.id]).toBe("unpaid");
+    expect(status[dueLater.id]).toBe("unpaid");
+    const partly = list.body.find((i: any) => i.id === partlyPaidPast.id);
+    expect(partly.amountPaid).toBe(300);
+    expect(partly.amountDue).toBe(750);
+
+    const dash = await customer.as.get("/api/client-portal/dashboard");
+    expect(dash.body.invoices.overdue).toBe(2);
+    const overdueAed = dash.body.overdueByCurrency.find((o: any) => o.currency === "AED");
+    expect(overdueAed.count).toBe(2);
+    // 1,050 - 300 on the partly paid one, 525 on the other: summed in fils.
+    expect(overdueAed.fils).toBe(75000 + 52500);
+    expect(dash.body.nextDue.id).toBe(dueToday.id);
+
+    // The share-link list uses the same rule.
+    const link = await supplier.as.post("/api/portal/generate-access", { contactId: cid });
+    const shared = await h.anon.get(`/api/portal/${link.body.token}/invoices`);
+    const sharedStatus = Object.fromEntries(shared.body.map((i: any) => [i.id, i.paymentStatus]));
+    expect(sharedStatus[partlyPaidPast.id]).toBe("overdue");
+    expect(sharedStatus[dueToday.id]).toBe("unpaid");
+  });
+
+  it("[S5-P7] a deactivated supplier falls back to another active one; none left is a clear 403", async () => {
+    const s1 = await h.createTenant({ name: "Fallback One" });
+    const s2 = await h.createTenant({ name: "Fallback Two" });
+    const customer = await h.createTenant({ name: "Fallback Customer" });
+    const c1 = await contact(s1, "Buyer One");
+    const c2 = await contact(s2, "Buyer Two");
+    const inv1 = await invoice(s1, c1, dubaiDate(5));
+    const inv2 = await invoice(s2, c2, dubaiDate(5), 2000);
+    const acc1 = await bind(s1, c1, customer);
+    const acc2 = await bind(s2, c2, customer);
+
+    await h.sql(`UPDATE customer_contacts SET is_active = false WHERE id = $1`, [c2]);
+    // The selected supplier (two) is inactive: the request is answered for supplier one.
+    const viaSelected = await customer.as.get("/api/client-portal/invoices", {
+      headers: { "x-portal-account": acc2 },
+    });
+    expect(viaSelected.status, viaSelected.text).toBe(200);
+    expect(viaSelected.body.map((i: any) => i.id)).toEqual([inv1.id]);
+    expect(viaSelected.headers.get("x-portal-account-used")).toBe(acc1);
+    const accounts = await customer.as.get("/api/client-portal/accounts");
+    expect(accounts.body.map((a: any) => a.id)).toEqual([acc1]);
+
+    await h.sql(`UPDATE customer_contacts SET is_active = true WHERE id = $1`, [c2]);
+    await h.sql(`UPDATE customer_contacts SET is_active = false WHERE id = $1`, [c1]);
+    const viaOther = await customer.as.get("/api/client-portal/invoices");
+    expect(viaOther.body.map((i: any) => i.id)).toEqual([inv2.id]);
+
+    await h.sql(`UPDATE customer_contacts SET is_active = false WHERE id = $1`, [c2]);
+    const none = await customer.as.get("/api/client-portal/invoices");
+    expect(none.status).toBe(403);
+    expect(none.body.code).toBe("PORTAL_ACCESS_REVOKED");
+  });
+
+  it("[S5-P4] bulk invite without an email provider returns each link to share", async () => {
+    const t = await h.createTenant();
+    const a = await contact(t, "Bulk Link A");
+    const b = await contact(t, "Bulk Link B");
+    const res = await t.as.post(`/api/companies/${t.company.id}/portal-invitations/bulk`, {
+      contactIds: [a, b],
+      language: "contact",
+    });
+    expect(res.status, res.text).toBe(200);
+    for (const r of res.body.results) {
+      expect(r.outcome).toBe("invited");
+      expect(r.delivery).toBe("link");
+      expect(r.inviteUrl).toMatch(/\/portal\/join#t=[0-9a-f]{64}$/);
+    }
+    expect(new Set(res.body.results.map((r: any) => r.inviteUrl)).size).toBe(2);
+  });
+
+  it("[S5-P12] the join page data carries the personal note as plain text", async () => {
+    const t = await h.createTenant();
+    const cid = await contact(t, "Note Buyer");
+    const r = await t.as.post(
+      `/api/companies/${t.company.id}/customer-contacts/${cid}/portal-invitations`,
+      { language: "en", message: "Welcome aboard\nSee you soon" }
+    );
+    expect(r.status, r.text).toBe(201);
+    const token = TOKEN_RE.exec(r.body.inviteUrl)![1];
+    const view = await h.anon.get(`/api/portal-invitations/${token}`);
+    expect(view.status, view.text).toBe(200);
+    expect(view.body.note).toBe("Welcome aboard\nSee you soon");
+    const otherCid = await contact(t, "No note");
+    const none = await t.as.post(
+      `/api/companies/${t.company.id}/customer-contacts/${otherCid}/portal-invitations`,
+      { language: "en" }
+    );
+    const view2 = await h.anon.get(
+      `/api/portal-invitations/${TOKEN_RE.exec(none.body.inviteUrl)![1]}`
+    );
+    expect(view2.body.note).toBeNull();
+  });
+
+  it("[S5-P11] a portal customer can rename themselves, and only that", async () => {
+    const supplier = await h.createTenant({ name: "Rename Supplier" });
+    const customer = await h.createTenant({ name: "Rename Customer" });
+    const stranger = await h.createTenant({ name: "Not A Customer" });
+    const cid = await contact(supplier, "Rename Buyer");
+    await bind(supplier, cid, customer);
+    const ok = await customer.as.patch("/api/client-portal/profile", { name: "  Layla Haddad " });
+    expect(ok.status, ok.text).toBe(200);
+    expect(ok.body.name).toBe("Layla Haddad");
+    expect((await customer.as.get("/api/auth/me")).body.name).toBe("Layla Haddad");
+    for (const bad of [
+      { name: "" },
+      { name: "x", email: "evil@example.test" },
+      { name: "x", userType: "admin" },
+      {},
+    ]) {
+      expect((await customer.as.patch("/api/client-portal/profile", bad)).status).toBe(400);
+    }
+    // A user with no portal binding cannot use it.
+    expect((await stranger.as.patch("/api/client-portal/profile", { name: "Nope" })).status).toBe(
+      403
+    );
+    // Anonymous is refused.
+    expect([401, 403]).toContain(
+      (await h.anon.patch("/api/client-portal/profile", { name: "Nope" })).status
+    );
+  });
+});

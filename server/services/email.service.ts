@@ -189,18 +189,21 @@ export function renderBilingualEmail(c: BilingualEmailContent, language: EmailLa
   if (language === "bilingual")
     parts.push('<hr style="border:none;border-top:1px solid #E5E7EB;margin:24px 0;">');
   if (language !== "en") parts.push(section("rtl", "ar", c));
+  // Arabic-only mail reads right to left from the first pixel: the brand header follows suit.
+  const rtl = language === "ar";
+  const headAlign = rtl ? "right" : "left";
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#F3F4F6;font-family:Arial,'Noto Naskh Arabic',Tahoma,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:32px 0;">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;">
-        <tr><td style="background:${c.accent ?? DOCUMENT_ACCENT_DEFAULT};padding:24px 40px;">
-          <h1 style="margin:0;color:#ffffff;font-size:20px;font-weight:bold;">${escapeHtml(c.brandName)}</h1>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;padding:16px 0;">
+    <tr><td align="center" style="padding:0 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:8px;overflow:hidden;">
+        <tr><td dir="${rtl ? "rtl" : "ltr"}" style="background:${c.accent ?? DOCUMENT_ACCENT_DEFAULT};padding:20px 24px;text-align:${headAlign};">
+          <h1 dir="auto" style="margin:0;color:#ffffff;font-size:20px;font-weight:bold;text-align:${headAlign};word-break:break-word;">${escapeHtml(c.brandName)}</h1>
         </td></tr>
-        <tr><td style="padding:28px 40px;">${parts.join("\n")}</td></tr>
-        <tr><td style="background:#F9FAFB;padding:16px 40px;border-top:1px solid #E5E7EB;">
-          <p style="color:#9CA3AF;font-size:11px;margin:0;text-align:center;">${escapeHtml(
+        <tr><td style="padding:24px;">${parts.join("\n")}</td></tr>
+        <tr><td style="background:#F9FAFB;padding:16px 24px;border-top:1px solid #E5E7EB;">
+          <p dir="auto" style="color:#6B7280;font-size:11px;margin:0;text-align:center;">${escapeHtml(
             c.footer ?? c.brandName
           )}</p>
         </td></tr>

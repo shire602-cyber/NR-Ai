@@ -29,8 +29,8 @@ import {
   type CustomerContact,
 } from "../../shared/schema";
 import {
-  portalAccountForUser,
   portalAccountsForUser,
+  type PortalBinding,
   touchPortalAccount,
 } from "../services/portal-access.service";
 import { buildCustomerStatement, renderStatementPdf } from "../services/customer-statement.service";
@@ -41,8 +41,10 @@ import {
 } from "../services/document-vault.service";
 import {
   portalMessageBody,
+  portalProfileBody,
   statementQuery,
   type PortalMessageBody,
+  type PortalProfileBody,
 } from "../../shared/validators/portal";
 import { contactInvoices, ISSUED_STATUSES } from "./portal.public.routes";
 import { checkoutForInvoice, paymentsAvailability, publicBaseUrl } from "../services/payments";
@@ -71,14 +73,34 @@ async function requirePortalUser(req: Request, res: Response, next: NextFunction
     return;
   }
   const header = req.headers["x-portal-account"];
-  const preferred = typeof header === "string" && UUID_RE.test(header) ? header : null;
-  const binding = await portalAccountForUser(user.id, preferred);
-  if (!binding) {
-    const [removed] = await db
-      .select({ id: customerPortalAccounts.id })
-      .from(customerPortalAccounts)
-      .where(eq(customerPortalAccounts.userId, user.id))
-      .limit(1);
+  const preferred =
+    typeof header === "string" && UUID_RE.test(header) ? header.toLowerCase() : null;
+  const bindings = await portalAccountsForUser(user.id);
+  // The selected binding first, then the others newest first. A binding whose contact was
+  // deactivated (or whose company is gone) is skipped so the customer lands on another supplier
+  // that is still active instead of a dead end; only when none is usable is access "removed".
+  const ordered = preferred
+    ? [...bindings.filter((x) => x.id === preferred), ...bindings.filter((x) => x.id !== preferred)]
+    : bindings;
+  let usable: { binding: PortalBinding; company: Company; contact: CustomerContact } | null = null;
+  for (const candidate of ordered) {
+    const [company, contact] = await Promise.all([
+      storage.getCompany(candidate.companyId),
+      storage.getCustomerContact(candidate.contactId),
+    ]);
+    if (company && contact && contact.companyId === company.id && contact.isActive) {
+      usable = { binding: candidate, company, contact };
+      break;
+    }
+  }
+  if (!usable) {
+    const [removed] = bindings.length
+      ? [{ id: bindings[0].id }]
+      : await db
+          .select({ id: customerPortalAccounts.id })
+          .from(customerPortalAccounts)
+          .where(eq(customerPortalAccounts.userId, user.id))
+          .limit(1);
     res.status(403).json(
       removed
         ? {
@@ -93,17 +115,9 @@ async function requirePortalUser(req: Request, res: Response, next: NextFunction
     );
     return;
   }
-  const [company, contact] = await Promise.all([
-    storage.getCompany(binding.companyId),
-    storage.getCustomerContact(binding.contactId),
-  ]);
-  if (!company || !contact || contact.companyId !== company.id || !contact.isActive) {
-    res.status(403).json({
-      code: "PORTAL_ACCESS_REVOKED",
-      message: "Your access to this customer portal was removed.",
-    });
-    return;
-  }
+  const { binding, company, contact } = usable;
+  // Tell the client which supplier answered, so its switcher can follow a server-side fallback.
+  res.setHeader("X-Portal-Account-Used", binding.id);
   void touchPortalAccount(binding.id);
   (req as Request & { portal: PortalScope }).portal = {
     companyId: company.id,
@@ -212,6 +226,20 @@ export function registerClientPortalRoutes(app: Express): void {
     })
   );
 
+  // The customer edits their own display name. Only `name` is accepted; email, user type and the
+  // supplier binding can never be changed here, and the row updated is the signed-in user's own.
+  app.patch(
+    "/api/client-portal/profile",
+    ...chain,
+    strictBody(portalProfileBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { userId } = scopeOf(req);
+      const { name } = parsedBody<PortalProfileBody>(req);
+      const user = await storage.updateUser(userId, { name });
+      res.json({ id: user.id, name: user.name, email: user.email });
+    })
+  );
+
   app.get(
     "/api/client-portal/dashboard",
     ...chain,
@@ -222,9 +250,11 @@ export function registerClientPortalRoutes(app: Express): void {
       const outstanding = rows.filter((r) => r.amountDue > 0);
       const overdue = rows.filter((r) => r.paymentStatus === "overdue");
       const paid = rows.filter((r) => r.paymentStatus === "paid");
+      // "Next payment due" is the earliest open invoice that is not yet overdue (due today or later);
+      // an overdue invoice is reported by the overdue totals, never as an upcoming due date.
       const nextDue =
         outstanding
-          .filter((r) => r.dueDate)
+          .filter((r) => r.dueDate && r.paymentStatus !== "overdue")
           .sort((a, b) => String(a.dueDate).localeCompare(String(b.dueDate)))[0] ?? null;
       const docs = await listVaultDocuments(companyId, { contactId: contact.id });
       res.json({

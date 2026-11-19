@@ -123,7 +123,12 @@ export function registerPortalInvitationRoutes(app: Express): void {
       const companyId = await companyParam(req);
       const body = parsedBody<PortalBulkInviteBody>(req);
       const ids = [...new Set(body.contactIds)];
-      const results: Array<{ contactId: string; outcome: string }> = [];
+      const results: Array<{
+        contactId: string;
+        outcome: string;
+        delivery?: string;
+        inviteUrl?: string;
+      }> = [];
       let limited = false;
       for (const contactId of ids) {
         if (limited) {
@@ -136,7 +141,7 @@ export function registerPortalInvitationRoutes(app: Express): void {
             results.push({ contactId, outcome: "not_found" });
             continue;
           }
-          await createInvitation({
+          const created = await createInvitation({
             companyId,
             contactId,
             body: {
@@ -148,7 +153,14 @@ export function registerPortalInvitationRoutes(app: Express): void {
             invitedBy: userId(req),
             req,
           });
-          results.push({ contactId, outcome: "invited" });
+          // With no email provider nothing is sent: the inviter gets each link to share, exactly as
+          // a single invite does (the staff user already owns the invitation they just created).
+          results.push({
+            contactId,
+            outcome: "invited",
+            delivery: created.delivery,
+            ...(created.inviteUrl ? { inviteUrl: created.inviteUrl } : {}),
+          });
         } catch (err) {
           const code = (err as { code?: string }).code;
           const outcome =
@@ -270,6 +282,8 @@ export function registerPortalInvitationRoutes(app: Express): void {
         email: r.invitation.email,
         name: r.invitation.name ?? r.contact.contactPerson ?? "",
         language: r.invitation.language,
+        // The supplier's personal note, plain text (the page renders it as text, never as markup).
+        note: r.invitation.message?.trim() || null,
         expiresAt: r.invitation.expiresAt.toISOString(),
         account,
         signedInAs: signedIn && account === "signed_in_other" ? signedIn.email : null,

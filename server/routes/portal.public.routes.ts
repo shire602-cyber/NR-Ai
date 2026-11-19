@@ -65,7 +65,7 @@ import {
 } from "../services/document-vault.service";
 import { checkoutForInvoice, paymentsAvailability, publicBaseUrl } from "../services/payments";
 import { escapeHtml, renderBilingualEmail, sendEmail } from "../services/email.service";
-import { receivableSettledSql } from "../reporting/settlement";
+import { localDateSql, receivableSettledSql } from "../reporting/settlement";
 import { actorFromRequest, assertCompanyPermission } from "../services/approval-rules.service";
 import type { Permission } from "../../shared/permissions";
 
@@ -190,14 +190,15 @@ export async function contactInvoices(
   const { rows } = await pool.query(
     `SELECT i.id, i.number, i.invoice_type, i.date, i.due_date, i.currency, i.subtotal, i.vat_amount,
             i.total, i.status, i.einvoice_status, i.einvoice_uuid, (i.einvoice_xml IS NOT NULL) AS has_xml,
-            ${receivableSettledSql("i")}::text AS settled
+            ${receivableSettledSql("i")}::text AS settled,
+            (i.due_date IS NOT NULL
+              AND ${localDateSql("i.due_date")} < ${localDateSql("now()")}) AS past_due
        FROM invoices i
       WHERE i.company_id = $1 AND i.contact_id = $2
         AND i.status IN ('sent', 'posted', 'partial', 'paid') ${extra}
       ORDER BY i.date DESC, i.number DESC`,
     params
   );
-  const now = Date.now();
   return rows.map((r: Record<string, unknown>) => {
     const total = Number(r.total);
     const isCredit = r.invoice_type === "credit_note";
@@ -221,10 +222,12 @@ export async function contactInvoices(
         ? "credit"
         : r.status === "paid" || due === 0
           ? "paid"
-          : settled > 0
-            ? "partially_paid"
-            : dueDate && dueDate.getTime() < now
-              ? "overdue"
+          : // Overdue is a calendar-date rule (Asia/Dubai): due before today, with anything still
+            // open, whether or not part of it was paid. Due today is not overdue.
+            r.past_due === true
+            ? "overdue"
+            : settled > 0
+              ? "partially_paid"
               : "unpaid",
       einvoice: r.einvoice_status
         ? {
