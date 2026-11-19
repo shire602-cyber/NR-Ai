@@ -58,5 +58,8 @@ SELECT check_name, n
     UNION ALL
     SELECT 12, 'audit_logs with a zatca.* action',
            (SELECT count(*) FROM audit_logs WHERE action LIKE 'zatca.%')
+    UNION ALL
+    SELECT 13, 'products.vat_rate = 0.15 (informational: the API now refuses any rate but 0 and 0.05)',
+           (SELECT count(*) FROM products WHERE vat_rate = 0.15)
   ) c
  ORDER BY ord;
