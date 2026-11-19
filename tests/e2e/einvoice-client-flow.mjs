@@ -780,6 +780,11 @@ async function approvalFlow(browser, ctx, viewport, lang, co, who, companyName) 
   const state = (await s.page.getByTestId("einvoice-appointment-state").innerText()).trim();
   check(state.length > 0, `${tag}approval: state badge after the request`, state);
   await shot(s.page, `${who}-approval-requested`);
+  await s.page
+    .locator("[data-testid=approver-link-list] li")
+    .first()
+    .waitFor({ timeout: 8000 })
+    .catch(() => undefined);
   const listed = await s.page.locator("[data-testid=approver-link-list] li").count();
   check(listed >= 1, `${tag}approval: the request is listed with its state`, listed);
   await s.page.close();
@@ -1059,6 +1064,7 @@ try {
         name: "firm clients",
         skipH1: true,
         skipAxe: true,
+        noDupes: false, // a sign-in navigation, not a screen of this flow
         act: async (page) => {
           const btn = phone
             ? page.locator(`[data-testid=button-open-books-${data.client.id}]:visible`).first()
