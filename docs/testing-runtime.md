@@ -86,6 +86,15 @@ BASE_URL=http://localhost:<port> CORS_ORIGIN=http://localhost:<port> node dist/i
   under 12 px, English in Arabic, axe serious/critical, autocomplete attributes, the localized Enterprise
   mailto subject, the light portal root (no signed-in app, motion or socket) and the PDF download and
   its failure message. Restart the app between runs (sign-in throttling); about 15 minutes.
+- Accounting pages: same target, `npm run e2e:books-pages` (`tests/e2e/books-pages-flow.mjs`; writes
+  the admin flag through `DATABASE_URL`). Seeds a company through the app's APIs (69 journals incl.
+  reversed and draft, invoices, a bill, a 45-line bank import with matches and rules), an empty
+  company and a platform admin, then opens Journal, entry detail, account ledger, bank
+  reconciliation (all tabs), Reports plus 26 report screens and Admin documents at 1440, iPhone 13
+  and 360 px in en and ar, with empty, failing-API (route interception) and unknown-id states, and
+  checks console, requests, overflow, 44 px targets, raw keys, English in Arabic and axe. About
+  20-30 minutes in one process (`E2E_VIEWPORTS`, `E2E_LANGS`, `E2E_ONLY` narrow it). The 360 px
+  customer links run is `E2E_VIEWPORTS=android npm run e2e:customer-links` on a restarted app.
 - Firm and accountant tools: same target, `npm run e2e:firm-tools` (`tests/e2e/firm-tools-flow.mjs`;
   writes firm roles through `DATABASE_URL`; `CHROMIUM_PATH` falls back to
   `/opt/pw-browsers/chromium-1243/chrome-linux64/chrome`). Seeds an NR firm owner whose own company is not
