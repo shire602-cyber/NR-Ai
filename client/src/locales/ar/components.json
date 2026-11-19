@@ -969,5 +969,6 @@
   "components.planLockActivate": "فعّل {plan}",
   "components.planLockBodyChosen": "يمكنك فتح كل شيء والبحث فيه وتصديره. فعّل {plan} لتعود إلى إضافة السجلات أو تعديلها.",
   "components.planLimitBodyChosen": "فعّل {plan} لإضافة السجلات أو تعديلها. حتى ذلك الحين يبقى كل شيء متاحًا للقراءة ويمكنك تصديره.",
-  "components.planUntilThenReadable": "حتى ذلك الحين يبقى كل شيء متاحًا للقراءة ويمكنك تصديره."
+  "components.planUntilThenReadable": "حتى ذلك الحين يبقى كل شيء متاحًا للقراءة ويمكنك تصديره.",
+  "components.planLockBodyRequestedPage": "يمكنك فتح كل شيء والبحث فيه وتصديره. تعود إضافة السجلات وتعديلها بعد أن نفعّل خطتك."
 }

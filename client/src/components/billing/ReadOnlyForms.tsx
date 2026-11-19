@@ -4,22 +4,29 @@ import { PLAN_LOCK_ALWAYS_OPEN, featureForRoute } from "@/lib/plan-routes";
 import { useSubscription } from "@/hooks/useSubscription";
 
 const FLAG = "data-plan-locked-disabled";
-const CONTROLS = "input, select, textarea, button";
 /** Forms that stay usable in a read-only workspace: search and filters, and anything opted out. */
 const EXEMPT = '[role="search"], [data-readonly-ok], form[method="get" i]';
 
-/** Disables the controls of every write form under `root` (marks what it changed). */
-function lockForms(root: ParentNode) {
-  for (const form of Array.from(root.querySelectorAll<HTMLFormElement>("form"))) {
-    if (form.matches(EXEMPT) || form.closest(EXEMPT)) continue;
-    form.setAttribute("data-plan-locked", "true");
-    for (const control of Array.from(form.querySelectorAll<HTMLElement>(CONTROLS))) {
-      if (control.closest("[data-readonly-ok]")) continue;
-      if ((control as HTMLInputElement).disabled) continue;
-      (control as HTMLInputElement).disabled = true;
-      control.setAttribute(FLAG, "true");
-    }
+/** Disables the controls of one write form (marks what it changed). */
+function lockForm(form: HTMLFormElement) {
+  if (form.matches(EXEMPT) || form.closest(EXEMPT)) return;
+  form.setAttribute("data-plan-locked", "true");
+  // form.elements also holds controls outside the <form> that point at it (form="id").
+  for (const control of Array.from(form.elements) as HTMLElement[]) {
+    if (control.closest("[data-readonly-ok]")) continue;
+    if ((control as HTMLInputElement).disabled) continue;
+    (control as HTMLInputElement).disabled = true;
+    control.setAttribute(FLAG, "true");
   }
+}
+
+/** Locks every write form in `node`'s subtree and the form `node` itself sits in. */
+function lockNode(node: Element | Document) {
+  if (node instanceof Element) {
+    const own = node.closest("form");
+    if (own) lockForm(own);
+  }
+  for (const form of Array.from(node.querySelectorAll<HTMLFormElement>("form"))) lockForm(form);
 }
 
 function unlockForms() {
@@ -55,11 +62,11 @@ export function ReadOnlyForms() {
 
   useEffect(() => {
     if (!locked) return;
-    lockForms(document);
+    lockNode(document);
     const observer = new MutationObserver((records) => {
       for (const record of records) {
         record.addedNodes.forEach((node) => {
-          if (node instanceof HTMLElement) lockForms(node.parentElement ?? document);
+          if (node instanceof HTMLElement) lockNode(node);
         });
       }
     });

@@ -189,9 +189,9 @@ function AfterTrialBlock({
           <p className="font-medium">
             {formatMessage(t["pages.subscriptionChosenTitle"], { plan: planName })}{" "}
             <span className="font-normal text-muted-foreground">
-              {trialEnded
+              {phase.key === "ended-chosen"
                 ? formatMessage(t["pages.subscriptionChosenEnded"], { date, plan: planName })
-                : phase.choice === "chosen"
+                : phase.key === "running-chosen"
                   ? formatMessage(t["pages.subscriptionChosenRunning"], { date })
                   : null}
             </span>
@@ -441,11 +441,7 @@ export default function Subscription() {
             }
           >
             {phase.choice === "requested"
-              ? `${formatMessage(t["marketing.trialActivationRequested"], {
-                  date: activationRequestedAt
-                    ? formatDisplayDate(activationRequestedAt, locale)
-                    : "",
-                })} ${t["components.planUntilThenReadable"]}`
+              ? t["components.planLockBodyRequestedPage"]
               : phase.choice === "chosen"
                 ? formatMessage(t["components.planLockBodyChosen"], { plan: chosenPhrase })
                 : t["components.planLockTrialEndedBody"]}

@@ -425,6 +425,11 @@ describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) 
       )
     );
     expect(text()).not.toContain(L("stay fully open", "مفتوحة بالكامل"));
+    // Once requested, nothing on the page tells the customer to activate (or choose) again.
+    expect(text()).not.toContain(L("Activate Professional", "فعّل الخطة الاحترافية"));
+    // (The plan grid's own "Choose a plan" heading stays: no button asks for it.)
+    const buttons = [...container.querySelectorAll("button, a")].map((b) => b.textContent ?? "");
+    expect(buttons.some((b) => b.trim() === L("Choose a plan", "اختر خطة"))).toBe(false);
     expect(q("button-activate-plan")).toBeNull();
     expect(q("button-choose-plan")).toBeNull();
     expect(q("button-see-plans")).toBeNull();

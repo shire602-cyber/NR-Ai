@@ -96,7 +96,13 @@ export function PlanLimitDialog() {
           <Button variant="outline" onClick={() => setDetail(null)}>
             {t["components.planLimitNotNow"]}
           </Button>
-          {detail.code === "PLAN_REQUIRED" && cta !== "choose" ? (
+          {detail.code === "PLAN_REQUIRED" && cta === "choose" ? (
+            <Button asChild onClick={() => setDetail(null)}>
+              <Link href="/subscription" data-testid="plan-limit-see-plans">
+                {t["components.planLockChoosePlan"]}
+              </Link>
+            </Button>
+          ) : detail.code === "PLAN_REQUIRED" ? (
             <Button asChild onClick={() => setDetail(null)}>
               <Link
                 href="/subscription#after-trial"

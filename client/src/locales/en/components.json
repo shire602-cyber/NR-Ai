@@ -969,5 +969,6 @@
   "components.planLockActivate": "Activate {plan}",
   "components.planLockBodyChosen": "You can still open, search and export everything. Activate {plan} to add or change records again.",
   "components.planLimitBodyChosen": "Activate {plan} to add or change records. Until then everything stays readable and you can export it.",
-  "components.planUntilThenReadable": "Until then everything stays readable and you can export it."
+  "components.planUntilThenReadable": "Until then everything stays readable and you can export it.",
+  "components.planLockBodyRequestedPage": "You can still open, search and export everything. Adding and changing records resumes once we activate your plan."
 }
