@@ -56,6 +56,8 @@ const PARAM_TABLES: Record<string, string> = {
   invitationId: "invitations",
   attachmentId: "vat_workpaper_attachments",
   accountId: "bank_accounts",
+  portalInvitationId: "customer_portal_invitations",
+  portalAccountId: "customer_portal_accounts",
 };
 
 const SEGMENT_TABLES: Record<string, string> = {

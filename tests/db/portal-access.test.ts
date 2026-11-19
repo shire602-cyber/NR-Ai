@@ -150,19 +150,38 @@ describe("W4-D portal identity and visibility", () => {
     const theirs = await contact(t, "Other Customer");
     const myInv = await invoice(t, mine);
     await invoice(t, theirs);
+    // STEP5: the binding comes from an invitation (no company membership, no staff bind route).
     const pu = await h.createSecondTenant({ userType: "client_portal" });
-    await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')`, [
-      t.company.id,
-      pu.user.id,
-    ]);
     // Not linked yet → no data at all.
     const unlinked = await pu.as.get("/api/client-portal/invoices");
     expect(unlinked.status).toBe(403);
     expect(unlinked.body.code).toBe("PORTAL_CONTACT_NOT_LINKED");
-    const bind = await t.as.post(`/api/portal/contacts/${mine}/portal-users`, {
-      userId: pu.user.id,
+    const inv = await t.as.post(
+      `/api/companies/${t.company.id}/customer-contacts/${mine}/portal-invitations`,
+      { email: pu.email, language: "en" }
+    );
+    expect(inv.status, inv.text).toBe(201);
+    const csrf = await fetch(`${h.baseUrl}/api/csrf-token`);
+    const cookie = (csrf.headers.getSetCookie?.() ?? []).map((c) => c.split(";")[0]).join("; ");
+    const csrfToken = ((await csrf.json()) as { csrfToken: string }).csrfToken;
+    const inviteToken = /#t=([0-9a-f]{64})/.exec(inv.body.inviteUrl)![1];
+    const bind = await fetch(`${h.baseUrl}/api/portal-invitations/${inviteToken}/accept`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${pu.token}`,
+        cookie,
+        "x-csrf-token": csrfToken,
+      },
+      body: JSON.stringify({ acceptTerms: true }),
     });
-    expect(bind.status, bind.text).toBe(201);
+    expect(bind.status, await bind.text()).toBe(200);
+    expect(
+      await h.sql(`SELECT 1 FROM company_users WHERE user_id = $1 AND company_id = $2`, [
+        pu.user.id,
+        t.company.id,
+      ])
+    ).toHaveLength(0);
     const list = await pu.as.get("/api/client-portal/invoices");
     expect(list.status).toBe(200);
     expect(list.body.map((i: { id: string }) => i.id)).toEqual([myInv.id]);
