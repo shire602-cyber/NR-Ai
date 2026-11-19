@@ -33,3 +33,12 @@ export function featureForRoute(path: string): PlanFeature | null {
 export function planFeatureLabelKey(feature: PlanFeature): string {
   return `components.planFeature_${feature}`;
 }
+
+/** Pages a read-only workspace still uses fully (choosing a plan, settings, help). */
+export const PLAN_LOCK_ALWAYS_OPEN = [
+  "/subscription",
+  "/settings",
+  "/onboarding",
+  "/help",
+  "/profile",
+];

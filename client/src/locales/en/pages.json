@@ -1018,7 +1018,7 @@
   "pages.subscriptionContactNote": "Online payment is not available yet. Choosing a plan sends us an email; we then set up your plan and send a tax invoice.",
   "pages.subscriptionCompareHelp": "What each plan includes. Modules outside your plan stay readable.",
   "pages.subscriptionChosenTitle": "You chose {plan}.",
-  "pages.subscriptionChosenPrice": "{price} · {billed}",
+  "pages.subscriptionChosenPrice": "Price: {price}, {billed}",
   "pages.subscriptionNothingCharged": "Nothing is charged until you activate it.",
   "pages.subscriptionActivatePlan": "Activate {plan}",
   "pages.subscriptionChangePlan": "Change plan",

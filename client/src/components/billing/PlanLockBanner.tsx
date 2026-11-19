@@ -5,17 +5,8 @@ import { Button } from "@/components/ui/button";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { planCta, planPhase, planPhraseKey } from "@/lib/plan-state";
-import { featureForRoute, planFeatureLabelKey } from "@/lib/plan-routes";
+import { PLAN_LOCK_ALWAYS_OPEN, featureForRoute, planFeatureLabelKey } from "@/lib/plan-routes";
 import { useSubscription } from "@/hooks/useSubscription";
-
-/** Pages a read-only workspace still uses fully (choosing a plan, settings, help). */
-export const PLAN_LOCK_ALWAYS_OPEN = [
-  "/subscription",
-  "/settings",
-  "/onboarding",
-  "/help",
-  "/profile",
-];
 
 /**
  * The locked state of a module (WQ7): shown above the page, never instead of it, so the data

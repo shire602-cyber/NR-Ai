@@ -1,8 +1,7 @@
 import { useEffect } from "react";
 import { useLocation } from "wouter";
-import { featureForRoute } from "@/lib/plan-routes";
+import { PLAN_LOCK_ALWAYS_OPEN, featureForRoute } from "@/lib/plan-routes";
 import { useSubscription } from "@/hooks/useSubscription";
-import { PLAN_LOCK_ALWAYS_OPEN } from "./PlanLockBanner";
 
 const FLAG = "data-plan-locked-disabled";
 const CONTROLS = "input, select, textarea, button";

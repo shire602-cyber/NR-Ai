@@ -357,6 +357,16 @@ async function signupFlow(h, { phone }) {
     );
     expect(await visible(page, "signup-trial-callout"), "no trial callout");
     if (h.ar) await expectNoEnglish(page, '[data-testid="signup-plan-step"]');
+    // The Continue button is in view on first paint (1440x900 laptop and 390x844 phone), with the
+    // default plan expanded and without scrolling.
+    {
+      const box = await tid(page, "button-signup-continue").boundingBox();
+      const inner = await page.evaluate(() => window.innerHeight);
+      expect(
+        box && box.y >= 0 && box.y + box.height <= inner,
+        `Continue is below the fold: ${box?.y} + ${box?.height} > ${inner}`
+      );
+    }
     if (phone) {
       await noSideScroll("step 1");
       const cont = await tid(page, "button-signup-continue").boundingBox();

@@ -1018,7 +1018,7 @@
   "pages.subscriptionContactNote": "الدفع عبر الإنترنت غير متاح بعد. اختيار خطة يرسل إلينا بريدًا إلكترونيًا، ثم نفعّل خطتك ونرسل فاتورة ضريبية.",
   "pages.subscriptionCompareHelp": "ما تشمله كل خطة. تبقى الوحدات خارج خطتك متاحة للقراءة.",
   "pages.subscriptionChosenTitle": "اخترت {plan}.",
-  "pages.subscriptionChosenPrice": "{price} · {billed}",
+  "pages.subscriptionChosenPrice": "السعر: {price}، {billed}",
   "pages.subscriptionNothingCharged": "لا يُحصَّل أي مبلغ حتى تفعّلها.",
   "pages.subscriptionActivatePlan": "فعّل {plan}",
   "pages.subscriptionChangePlan": "تغيير الخطة",

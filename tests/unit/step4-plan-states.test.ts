@@ -387,7 +387,7 @@ describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) 
       )
     );
     // The billing cycle reads as a sentence ("billed monthly"), never the capitalised label.
-    expect(body).toContain(L("AED 119 · billed monthly", "تُدفع شهريًا"));
+    expect(body).toContain(L("AED 119, billed monthly", "تُدفع شهريًا"));
     expect(body).not.toContain("billed Monthly");
     expect(body).not.toContain("فوترة شهري");
     // "Every feature" plus a line with the trial caps, from the shared constants.
