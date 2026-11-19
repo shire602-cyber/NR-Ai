@@ -31,7 +31,7 @@ import {
 } from "@/lib/payment-accounts";
 import { computeInvoiceFormTotals, lineVatRate } from "@/lib/invoice-totals";
 import { isVatRegisteredCompany } from "@/lib/invoice-defaults";
-import { STANDARD_VAT_RATES, vatJurisdictionForCountry } from "@shared/vat-classification";
+import { UAE_STANDARD_VAT_RATE } from "@shared/vat-classification";
 
 const SUPPLY_TYPES = ["standard_rated", "zero_rated", "exempt", "out_of_scope"] as const;
 type SupplyType = (typeof SUPPLY_TYPES)[number];
@@ -66,7 +66,7 @@ export default function CashSale() {
   const { company, companyId } = useDefaultCompany();
   const { can } = useCompanyPermission();
   const vatRegistered = isVatRegisteredCompany(company);
-  const standardRate = STANDARD_VAT_RATES[vatJurisdictionForCountry(company?.addressCountry)];
+  const standardRate = UAE_STANDARD_VAT_RATE;
   const blank = (): CashLine => ({
     description: "",
     quantity: "1",

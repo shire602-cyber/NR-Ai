@@ -951,7 +951,6 @@
   "serverErrors.issue.input_vat_needs_the_account_the_asset_was_paid_from": "Input VAT needs the account the asset was paid from.",
   "serverErrors.issue.invalid_tax_registration_date": "The tax registration date is not valid.",
   "serverErrors.issue.journal_entry_must_have_at_least_2_lines": "A journal entry needs at least 2 lines.",
-  "serverErrors.issue.ksa_vat_number_must_be_15_digits_starting_and_ending_with_3": "A KSA VAT number is 15 digits starting and ending with 3.",
   "serverErrors.issue.line_quantity_must_be_greater_than_0_with_at_most_4_decimal_places": "The quantity must be above zero, with at most 4 decimal places.",
   "serverErrors.issue.logo_must_be_1_mb_or_smaller": "The logo must be 1 MB or smaller.",
   "serverErrors.issue.logo_must_be_an_https_url_or_a_png_jpeg_gif_webp_data_image_under_1_mb": "The logo must be an https link or a PNG, JPEG, GIF or WebP image under 1 MB.",
@@ -989,7 +988,8 @@
   "serverErrors.issue.useful_life_must_be_1_100_whole_years": "The useful life must be between 1 and 100 whole years.",
   "serverErrors.issue.vat_amount_cannot_exceed_the_receipt_amount": "The VAT cannot be more than the receipt amount.",
   "serverErrors.issue.vat_cannot_exceed_the_amount": "The VAT cannot be more than the amount.",
-  "serverErrors.issue.vat_rate_must_be_0_or_5_uae_or_15_for_a_ksa_company": "The VAT rate must be 0% or 5% (UAE), or 15% for a KSA company.",
+  "serverErrors.issue.vat_rate_must_be_0_or_5": "The VAT rate must be 0% or 5%.",
+  "serverErrors.issue.vat_rate_must_be_0_or_5_uae": "The VAT rate must be 0% or 5% (UAE).",
   "serverErrors.issue.vattype_is_required_when_isvataccount_is_true": "Choose the VAT type for a VAT account.",
   "serverErrors.issue.vattype_must_be_empty_when_isvataccount_is_false": "Only a VAT account has a VAT type.",
   "serverErrors.issue.website_must_be_an_http_s_url": "The website must start with http:// or https://."

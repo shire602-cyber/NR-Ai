@@ -103,8 +103,7 @@ import {
   type ContactOption,
   type CostCenterOption,
 } from "@/components/journal/JournalLineDetails";
-import { STANDARD_VAT_RATES } from "@shared/vat-classification";
-import { useZatcaAvailable } from "@/hooks/useZatcaAvailable";
+import { UAE_STANDARD_VAT_RATE } from "@shared/vat-classification";
 import { ChevronDown as DetailsChevron } from "lucide-react";
 import { accountDisplayName } from "@/lib/account-name";
 import { parseCalendarDate } from "@/lib/format-date";
@@ -152,9 +151,7 @@ export default function Journal() {
   const { company, companyId: selectedCompanyId } = useDefaultCompany();
   const baseCurrency: string =
     (company as { baseCurrency?: string } | undefined)?.baseCurrency || "AED";
-  // 15% KSA only for a Saudi company while ZATCA is enabled (hidden at launch).
-  const zatcaAvailable = useZatcaAvailable(company as { addressCountry?: string } | undefined);
-  const vatRate = STANDARD_VAT_RATES[zatcaAvailable ? "SA" : "AE"];
+  const vatRate = UAE_STANDARD_VAT_RATE;
   const [openDetails, setOpenDetails] = useState<Set<number>>(new Set());
   const { gate } = useCompanyPermission();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -1256,7 +1253,11 @@ function JournalLinesTable({
     lineParams?: Record<string, string> | null;
     account?: { code?: string; nameEn?: string; nameAr?: string | null } | null;
   }>;
-  entry?: { memo?: string | null; memoKey?: string | null; memoParams?: Record<string, string> | null };
+  entry?: {
+    memo?: string | null;
+    memoKey?: string | null;
+    memoParams?: Record<string, string> | null;
+  };
 }) {
   const { t, locale } = useTranslation();
   const debit = lines.reduce((sum, l) => sum + Number(l.debit || 0), 0);

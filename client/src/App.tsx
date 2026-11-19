@@ -93,7 +93,6 @@ const SecuritySettings = lazyWithReload(() => import("@/pages/SecuritySettings")
 const ApprovalsSettings = lazyWithReload(() => import("@/pages/settings/Approvals"));
 const NumberingSettings = lazyWithReload(() => import("@/pages/settings/Numbering"));
 const EInvoicingSettings = lazyWithReload(() => import("@/pages/EInvoicingSettings"));
-const ZatcaSettings = lazyWithReload(() => import("@/pages/ZatcaSettings"));
 const TaxRates = lazyWithReload(() => import("@/pages/settings/TaxRates"));
 
 // Lazy-loaded pages (large or infrequently visited)
@@ -216,21 +215,10 @@ import { CommandPaletteProvider } from "@/components/CommandPalette";
 import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
 import { SkipLink } from "@/components/SkipLink";
 import { RedirectTo } from "@/components/layout/RedirectTo";
-import { useZatcaAvailable } from "@/hooks/useZatcaAvailable";
 import { openCommandPalette } from "@/lib/commandPalette";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { BrandMark } from "@/components/BrandMark";
 import { CompanySwitcher } from "@/components/CompanySwitcher";
-
-/**
- * Saudi ZATCA is hidden at launch (owner decision 2026-11-18): the page opens only with the
- * server's ZATCA flag on for a Saudi company; otherwise it goes to the e-invoicing settings.
- */
-function ZatcaSettingsRoute() {
-  const { company } = useActiveCompany();
-  const available = useZatcaAvailable(company as { addressCountry?: string | null } | undefined);
-  return available ? <ZatcaSettings /> : <RedirectTo to="/settings/einvoicing" />;
-}
 
 function FirmContextBanner() {
   const { company, isFirmContext, clearActiveClientCompany } = useActiveCompany();
@@ -664,7 +652,6 @@ function Router() {
             <Route path="/settings/approvals" component={ApprovalsSettings} />
             <Route path="/settings/numbering" component={NumberingSettings} />
             <Route path="/settings/einvoicing" component={EInvoicingSettings} />
-            <Route path="/settings/zatca" component={ZatcaSettingsRoute} />
             <Route path="/settings/tax-rates" component={TaxRates} />
             {/* Consolidated routes (R18-09, R20-08, R15-09): legacy URLs redirect */}
             <Route path="/accounts">

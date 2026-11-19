@@ -61,8 +61,6 @@ export interface NavSubItem {
   testId?: string;
   /** Other routes that highlight this item (pages that became tabs of it). */
   matches?: string[];
-  /** Shown only for companies registered in Saudi Arabia (ZATCA). */
-  saudiOnly?: boolean;
   /** 20 px icon for the mobile More sheet rows. */
   icon?: LucideIcon;
 }
@@ -239,13 +237,6 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
         url: "/settings/einvoicing",
         icon: FileCode2,
         testId: "einvoicing-settings",
-      },
-      {
-        titleKey: "shell.nav.zatca",
-        url: "/settings/zatca",
-        icon: FileCode2,
-        testId: "zatca-settings",
-        saudiOnly: true,
       },
       {
         titleKey: "shell.nav.calendar",

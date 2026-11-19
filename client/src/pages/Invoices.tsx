@@ -151,7 +151,7 @@ import {
   computeInvoiceFormTotals,
   lineVatRate,
 } from "@/lib/invoice-totals";
-import { STANDARD_VAT_RATES, vatJurisdictionForCountry } from "@shared/vat-classification";
+import { UAE_STANDARD_VAT_RATE } from "@shared/vat-classification";
 import {
   blankInvoiceLine,
   defaultLineIncomeAccountId,
@@ -377,8 +377,8 @@ export default function Invoices() {
   const canChangeStatus = canDo("ledger.post");
   const baseCurrency: string =
     (company as { baseCurrency?: string } | undefined)?.baseCurrency || "AED";
-  // Standard VAT rate of the issuing company's jurisdiction (UAE 5%, KSA 15%).
-  const standardRate = STANDARD_VAT_RATES[vatJurisdictionForCountry(company?.addressCountry)];
+  // Standard VAT rate: UAE 5%.
+  const standardRate = UAE_STANDARD_VAT_RATE;
   // X6a: a company without a TRN is not VAT registered; its new lines start at 0% out of scope.
   const vatRegistered = isVatRegisteredCompany(company);
   // E3 (J1-r3): a services company's new lines start on Service Revenue, not Product Sales.

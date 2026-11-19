@@ -4,7 +4,6 @@
  * functions (server/tax/vat-box-map.ts). Nothing here is a second copy of the box rules.
  */
 import { useQuery } from "@tanstack/react-query";
-import { Info } from "lucide-react";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
@@ -35,7 +34,6 @@ export interface VatTreatmentRow {
 }
 
 export interface VatBoxMapResponse {
-  jurisdiction: "AE" | "SA";
   standardRate: number;
   emirate: string | null;
   rows: VatTreatmentRow[];
@@ -94,12 +92,6 @@ export function TaxRatesView({ data }: { data: VatBoxMapResponse }) {
     : null;
   return (
     <div className="space-y-6">
-      {data.jurisdiction === "SA" && (
-        <p className="flex items-start gap-2 rounded-lg bg-info-subtle p-3 text-small" role="note">
-          <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          {t["settingsPages.taxRates.ksaNote"]}
-        </p>
-      )}
       {(["sales", "purchases"] as const).map((side) => (
         <SectionCard
           key={side}
