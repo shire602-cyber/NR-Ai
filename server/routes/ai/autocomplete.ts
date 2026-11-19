@@ -17,13 +17,15 @@ export const handleGetAutocompleteAccounts = async (req: Request, res: Response)
     const userId = req.user!.id;
 
     if (!companyId) {
-      return res.status(400).json({ message: "Company ID is required" });
+      return res
+        .status(400)
+        .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID is required" });
     }
 
     // Verify company access
     const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
     if (!companyUsers.some((cu) => cu.userId === userId)) {
-      return res.status(403).json({ message: "Access denied" });
+      return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
     }
 
     let accounts = await storage.getAccountsByCompanyId(companyId as string);
@@ -73,13 +75,15 @@ export const handleGetAutocompleteCustomers = async (req: Request, res: Response
     const userId = req.user!.id;
 
     if (!companyId) {
-      return res.status(400).json({ message: "Company ID is required" });
+      return res
+        .status(400)
+        .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID is required" });
     }
 
     // Verify company access
     const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
     if (!companyUsers.some((cu) => cu.userId === userId)) {
-      return res.status(403).json({ message: "Access denied" });
+      return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
     }
 
     // Get unique customers from invoices
@@ -134,13 +138,15 @@ export const handleGetAutocompleteMerchants = async (req: Request, res: Response
     const userId = req.user!.id;
 
     if (!companyId) {
-      return res.status(400).json({ message: "Company ID is required" });
+      return res
+        .status(400)
+        .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID is required" });
     }
 
     // Verify company access
     const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
     if (!companyUsers.some((cu) => cu.userId === userId)) {
-      return res.status(403).json({ message: "Access denied" });
+      return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
     }
 
     // Get unique merchants from receipts
@@ -201,13 +207,15 @@ export const handleGetAutocompleteDescriptions = async (req: Request, res: Respo
     const userId = req.user!.id;
 
     if (!companyId) {
-      return res.status(400).json({ message: "Company ID is required" });
+      return res
+        .status(400)
+        .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID is required" });
     }
 
     // Verify company access
     const companyUsers = await storage.getCompanyUsersByCompanyId(companyId as string);
     if (!companyUsers.some((cu) => cu.userId === userId)) {
-      return res.status(403).json({ message: "Access denied" });
+      return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
     }
 
     const descriptions = new Map<string, number>();
@@ -267,13 +275,16 @@ export function handlePostAiSmartSuggest({ getAI }: Pick<AiHandlerContext, "getA
       const userId = req.user!.id;
 
       if (!companyId || !context || !fieldType) {
-        return res.status(400).json({ message: "Company ID, context, and fieldType are required" });
+        return res.status(400).json({
+          code: "AUTOCOMPLETE_INPUT_REQUIRED",
+          message: "Company ID, context, and fieldType are required",
+        });
       }
 
       // Verify company access
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
       }
 
       const accounts = await storage.getAccountsByCompanyId(companyId);

@@ -974,5 +974,6 @@
   "reportCenter.text.ctRate": "{rate}% returned rate",
   "reportCenter.text.creditLinePrefix": "[Credit]",
   "reportCenter.downloadPdfArabic": "PDF (العربية)",
-  "reportCenter.downloadPdfEnglish": "PDF (English)"
+  "reportCenter.downloadPdfEnglish": "PDF (English)",
+  "reportCenter.sheetsNotConnected": "Google Sheets is not connected. Connect it in Integrations."
 }

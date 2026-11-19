@@ -727,7 +727,7 @@ export async function processUserFeedback(
   userId: string,
   userAccountId: string | undefined,
   companyId: string
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean; message: string; code?: string }> {
   // Get the queue item. Scoped to the caller's company: loading by id alone let a user of
   // company B accept/reject/correct company A's queue items (W1A-02).
   const _itemResult = await pool.query(
@@ -737,12 +737,13 @@ export async function processUserFeedback(
   const [item]: AIGLQueueItem[] = _itemResult.rows;
 
   if (!item) {
-    return { success: false, message: "Queue item not found" };
+    return { success: false, code: "QUEUE_ITEM_NOT_FOUND", message: "Queue item not found" };
   }
 
   if (item.status !== "pending_review" && item.status !== "auto_posted") {
     return {
       success: false,
+      code: "QUEUE_ITEM_NOT_PENDING",
       message: `Cannot process feedback for item with status: ${item.status}`,
     };
   }
@@ -752,7 +753,11 @@ export async function processUserFeedback(
     let journalEntryId = item.journal_entry_id;
     if (!journalEntryId) {
       if (!item.suggested_account_id) {
-        return { success: false, message: "Cannot accept — no suggested account" };
+        return {
+          success: false,
+          code: "QUEUE_ITEM_NO_SUGGESTED_ACCOUNT",
+          message: "Cannot accept — no suggested account",
+        };
       }
       // human accepted -> post to GL now (bank-linked: through the bank match service, which
       // writes the allocation row and reconciles the line in the same transaction)
@@ -825,7 +830,11 @@ export async function processUserFeedback(
 
   if (action === "correct") {
     if (!userAccountId) {
-      return { success: false, message: "userAccountId is required for correction" };
+      return {
+        success: false,
+        code: "ACCOUNT_ID_REQUIRED",
+        message: "userAccountId is required for correction",
+      };
     }
     // The chosen account must belong to the same company as the queue item (W1A-02).
     const { rows: ownedAccount } = await pool.query(
@@ -833,7 +842,11 @@ export async function processUserFeedback(
       [userAccountId, companyId]
     );
     if (ownedAccount.length === 0) {
-      return { success: false, message: "Account not found for this company" };
+      return {
+        success: false,
+        code: "ACCOUNT_NOT_IN_COMPANY",
+        message: "Account not found for this company",
+      };
     }
 
     // Replace any autopilot draft, then post with the user's chosen account.
@@ -882,7 +895,7 @@ export async function processUserFeedback(
     return { success: true, message: "Transaction corrected and posted to GL" };
   }
 
-  return { success: false, message: "Invalid action" };
+  return { success: false, code: "INVALID_ACTION", message: "Invalid action" };
 }
 
 /**

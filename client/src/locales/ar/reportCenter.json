@@ -974,5 +974,6 @@
   "reportCenter.text.ctRate": "نسبة الضريبة المحتسبة {rate}%",
   "reportCenter.text.creditLinePrefix": "[إشعار دائن]",
   "reportCenter.downloadPdfArabic": "PDF (العربية)",
-  "reportCenter.downloadPdfEnglish": "PDF (الإنجليزية)"
+  "reportCenter.downloadPdfEnglish": "PDF (الإنجليزية)",
+  "reportCenter.sheetsNotConnected": "خدمة Google Sheets غير متصلة. اربطها من صفحة التكاملات."
 }

@@ -37,17 +37,20 @@ export function handlePostAiNlGateway({ getAI }: Pick<AiHandlerContext, "getAI">
       const userId = req.user!.id;
 
       if (!companyId || !message) {
-        return res.status(400).json({ message: "Company ID and message are required" });
+        return res.status(400).json({
+          code: "ASSISTANT_MESSAGE_REQUIRED",
+          message: "Company ID and message are required",
+        });
       }
 
       // Verify company access
       const company = await storage.getCompany(companyId);
       if (!company) {
-        return res.status(404).json({ message: "Company not found" });
+        return res.status(404).json({ code: "COMPANY_NOT_FOUND", message: "Company not found" });
       }
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
       }
 
       // Throws 503 AI_NOT_CONFIGURED / 429 AI_QUOTA_EXCEEDED before any query runs.
@@ -249,7 +252,7 @@ export function handlePostAsk({ getAI, openai }: Pick<AiHandlerContext, "getAI" 
       if (validated.companyId) {
         const hasAccess = await storage.hasCompanyAccess(userId, validated.companyId);
         if (!hasAccess) {
-          return res.status(403).json({ message: "Access denied" });
+          return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
         }
       }
 
@@ -460,7 +463,11 @@ ${DATA_BLOCK_INSTRUCTION}`;
       // Handle Zod validation errors
       if (error instanceof z.ZodError) {
         return res.status(400).json({
+          code: "VALIDATION_ERROR",
           message: "Validation error",
+          fields: Object.fromEntries(
+            error.issues.map((e) => [e.path.join(".") || "_root", [e.message]])
+          ),
           errors: error.issues.map((e) => ({ path: e.path.join("."), message: e.message })),
         });
       }
@@ -503,7 +510,7 @@ export const handleGetAskHistory = async (req: Request, res: Response) => {
       // Verify access
       const hasAccess = await storage.hasCompanyAccess(userId, companyId);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ code: "COMPANY_ACCESS_DENIED", message: "Access denied" });
       }
       conversations = await storage.getAiConversationsByCompanyId(companyId, limit);
     } else {
