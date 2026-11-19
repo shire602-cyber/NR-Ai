@@ -339,7 +339,11 @@ describe("welcome tour and onboarding redirect (source)", () => {
     const app = read("client/src/App.tsx");
     expect(app).not.toContain("onboarding_redirect_seen");
     expect(app).not.toContain("sessionStorage.getItem(REDIRECT_FLAG)");
-    expect(app).toContain('navigate("/onboarding")');
+    // The decision is the pure onboardingRedirectTarget (behaviour-tested in app-landing.test.ts,
+    // including "Open books" and in-flight refetches); the shell only navigates to its answer.
+    expect(app).toContain("onboardingRedirectTarget(");
+    expect(app).toContain("if (target) navigate(target)");
+    expect(read("client/src/lib/app-landing.ts")).toContain('"/onboarding"');
     // waits for in-flight company refetches so a just-finished wizard is not bounced back
     expect(app).toContain('useIsFetching({ queryKey: ["/api/companies"] })');
   });

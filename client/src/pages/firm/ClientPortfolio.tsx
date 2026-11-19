@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { Money } from "@/components/ui/money";
 import { LoadErrorState } from "@/components/ui/load-error-state";
 import { useFirmPermissions } from "@/hooks/useFirmPermissions";
+import { FIRM_UI_PERMISSIONS } from "@shared/access";
 import { matchesSearchText } from "@shared/arabic-text";
 import { RowActions } from "@/components/ui/row-actions";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -181,7 +182,7 @@ export default function ClientPortfolio() {
     queryKey: ["/api/firm/clients"],
   });
   const { can, seesAllClients } = useFirmPermissions();
-  const canCreateClient = can("firm.clients.create");
+  const canCreateClient = can(FIRM_UI_PERMISSIONS.createClient);
   const [sortKey, setSortKey] = useState<PortfolioSort>("default");
 
   const { data: overview } = useQuery<FirmOverview>({

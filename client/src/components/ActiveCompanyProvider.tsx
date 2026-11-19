@@ -28,8 +28,8 @@ interface ActiveCompanyContextValue {
   isFirmContext: boolean;
   /** True from the moment a client switch is committed until the company list has caught up. */
   isSwitchingClient: boolean;
-  /** Switch into a firm-managed client's company workspace. Resolves when the cache is reset. */
-  setActiveClientCompany: (companyId: string) => Promise<void>;
+  /** Switch into a firm-managed client's company workspace. Resolves once the query cache is reset. */
+  setActiveClientCompany(companyId: string): Promise<void>;
   /** Drop firm-client override and return to the user's own company. */
   clearActiveClientCompany: () => void;
 }
@@ -70,7 +70,7 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
 
   const [switchingClient, setSwitchingClient] = useState(false);
   const setActiveClientCompany = useCallback(async (id: string) => {
-    // Commit the id synchronously so the shell never renders "Open books" against the staffer's
+    // Commit the id synchronously so the shell never renders the open-books click against the staffer's
     // own company (and bounces them to their own onboarding wizard) before the switch lands.
     setSwitchingClient(true);
     setActiveId(id);

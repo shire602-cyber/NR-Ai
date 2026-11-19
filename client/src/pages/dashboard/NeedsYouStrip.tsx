@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { uaeToday } from "@shared/uae-date";
 import { useQuery } from "@tanstack/react-query";
-import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { canPerform, companyAccessQueryKey, type CompanyAccess } from "@/lib/auth";
 import { useEdgeFade } from "@/components/ui/use-scroll-fade";
 import { Link } from "wouter";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
@@ -49,8 +49,15 @@ export function NeedsYouStrip({
   });
   // The payroll list answers 403 to roles without payroll access (companyRolePolicy
   // PAYROLL_READ): ask only once the role is known to hold one of those permissions.
-  const { can, known } = useCompanyPermission();
-  const canReadPayroll = known && (can("payroll.manage") || can("payroll.approve"));
+  const access = useQuery<CompanyAccess>({
+    queryKey: companyAccessQueryKey(companyId),
+    enabled: !!companyId,
+    staleTime: 60_000,
+  });
+  const known = !!access.data && Array.isArray(access.data.permissions);
+  const canReadPayroll =
+    known &&
+    (canPerform(access.data, "payroll.manage") || canPerform(access.data, "payroll.approve"));
   const payroll = useQuery<PayrollRunLike[]>({
     queryKey: ["/api/companies", companyId, "payroll-runs"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/payroll-runs`),

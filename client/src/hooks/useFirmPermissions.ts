@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { firmRoleHasPermission, type FirmPermission } from "@shared/access";
+import { FIRM_UI_PERMISSIONS, firmRoleHasPermission, type FirmPermission } from "@shared/access";
 
 interface FirmContextPayload {
   membership: {
@@ -26,6 +26,6 @@ export function useFirmPermissions() {
     membership,
     can,
     /** firm_owner-style scope: every client of the firm, not only assigned ones. */
-    seesAllClients: can("firm.clients.all"),
+    seesAllClients: can(FIRM_UI_PERMISSIONS.seesAllClients),
   };
 }

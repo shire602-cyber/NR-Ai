@@ -57,6 +57,7 @@ import {
 import { LoadErrorState } from "@/components/ui/load-error-state";
 import { classifyLoadError } from "@/lib/loadError";
 import { useFirmPermissions } from "@/hooks/useFirmPermissions";
+import { FIRM_UI_PERMISSIONS } from "@shared/access";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 
 interface AssignedStaff {
@@ -166,7 +167,7 @@ export default function ClientProfile() {
   const { setActiveClientCompany } = useActiveCompany();
   // Assigning staff needs firm.staff.manage (the route refuses everyone else).
   const { can } = useFirmPermissions();
-  const canManageStaff = can("firm.staff.manage");
+  const canManageStaff = can(FIRM_UI_PERMISSIONS.manageStaff);
   const [editing, setEditing] = useState(false);
   const [editData, setEditData] = useState<ClientEditData>({});
   const [assignOpen, setAssignOpen] = useState(false);

@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useFirmPermissions } from "@/hooks/useFirmPermissions";
+import { FIRM_UI_PERMISSIONS } from "@shared/access";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
@@ -726,7 +727,7 @@ export default function PracticeWorkspace() {
   const membership = context?.membership ?? null;
   const { can } = useFirmPermissions();
   const canWrite = (membership?.permissions ?? []).some((p) => !p.endsWith(".read"));
-  const canLink = can("firm.clients.link");
+  const canLink = can(FIRM_UI_PERMISSIONS.linkClient);
   return (
     <div className="space-y-6">
       <PageHeader
