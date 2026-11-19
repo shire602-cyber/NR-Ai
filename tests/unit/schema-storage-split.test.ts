@@ -87,8 +87,9 @@ describe("R20-09 server/storage.ts split", () => {
     expect(duplicates).toEqual([]);
     expect(chain[0]).toBe("DatabaseStorage");
     expect(chain.length).toBeGreaterThan(10);
-    // WP7 removed 8 dead bypass methods (419 -> 411); they must stay gone.
-    expect(seen.size).toBeGreaterThanOrEqual(411);
+    // WP7 removed 8 dead bypass methods (419 -> 411); STEP3 removed the 8 subscription-plan and
+    // user-subscription methods with the price editor (411 -> 403); they must stay gone.
+    expect(seen.size).toBeGreaterThanOrEqual(403);
     for (const removed of [
       "updateJournalEntry",
       "updateJournalEntryWithLines",
@@ -98,6 +99,14 @@ describe("R20-09 server/storage.ts split", () => {
       "getJournalLinesByCompanyId",
       "createInvoicePayment",
       "updateBankTransaction",
+      "getSubscriptionPlans",
+      "getSubscriptionPlan",
+      "createSubscriptionPlan",
+      "updateSubscriptionPlan",
+      "deleteSubscriptionPlan",
+      "getUserSubscription",
+      "createUserSubscription",
+      "updateUserSubscription",
     ]) {
       expect(seen.has(removed), removed).toBe(false);
     }
