@@ -759,6 +759,20 @@ export default function CustomerContacts() {
                     ),
                   },
                   {
+                    key: "portal",
+                    header: t["portal.chip.column"],
+                    width: "minmax(0, 0.9fr)",
+                    cell: (contact) =>
+                      portalSummary[contact.id] ? (
+                        <PortalStatusChip
+                          entry={portalSummary[contact.id]}
+                          contactId={contact.id}
+                        />
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      ),
+                  },
+                  {
                     key: "phone",
                     header: t["pages.contactsColPhone"],
                     cell: (contact) =>

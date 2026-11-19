@@ -396,6 +396,7 @@ export function PortalAccessSheet({
         <SheetContent
           side={locale === "ar" ? "left" : "right"}
           className="flex w-full max-w-none flex-col gap-0 overflow-y-auto p-0 sm:max-w-[500px]"
+          data-size="sheet"
           data-testid="portal-access-sheet"
         >
           <SheetHeader className="border-b border-border p-5 pb-4">

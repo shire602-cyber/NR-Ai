@@ -641,5 +641,12 @@
   "adminConsole.trialsColRequest": "طلب التفعيل",
   "adminConsole.trialsOpen": "فتح",
   "adminConsole.trialsEnded": "(انتهت)",
-  "adminConsole.trialsChoiceValue": "{plan}، {cycle}"
+  "adminConsole.trialsChoiceValue": "{plan}، {cycle}",
+  "activityLog.action.portal.invite": "إرسال دعوة إلى بوابة العملاء",
+  "activityLog.action.portal.invite_resend": "إعادة إرسال دعوة بوابة العملاء",
+  "activityLog.action.portal.invite_revoke": "إلغاء دعوة بوابة العملاء",
+  "activityLog.action.portal.invite_accept": "قبول دعوة بوابة العملاء",
+  "activityLog.action.portal.account_revoke": "إزالة الوصول إلى بوابة العملاء",
+  "activityLog.entity.customer_portal_invitation": "دعوة بوابة العملاء",
+  "activityLog.entity.customer_portal_account": "وصول بوابة العملاء"
 }

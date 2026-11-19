@@ -8,6 +8,7 @@ import {
 } from "../../shared/validators/portal-invitations";
 import { PASSWORD_RULES, failedPasswordRules } from "../../shared/validators/password-rules";
 import { passwordPolicySchema } from "../../server/auth";
+import { routeWritesAreGated } from "../../client/src/lib/plan-routes";
 
 const UUID = "11111111-1111-4111-8111-111111111111";
 
@@ -38,6 +39,18 @@ describe("STEP5 portal invitation validators", () => {
     expect(portalAcceptBody.safeParse({ acceptTerms: true }).success).toBe(true);
     expect(portalAcceptBody.safeParse({ acceptTerms: false }).success).toBe(false);
     expect(portalAcceptBody.safeParse({}).success).toBe(false);
+  });
+
+  it("customer-portal pages never show company plan-lock UI", () => {
+    for (const path of [
+      "/client-portal/dashboard",
+      "/client-portal/invoices",
+      "/client-portal/documents",
+      "/client-portal/account",
+      "/portal/join",
+    ]) {
+      expect(routeWritesAreGated(path), path).toBe(false);
+    }
   });
 
   it("the client checklist agrees with the server password policy", () => {

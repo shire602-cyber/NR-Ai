@@ -571,6 +571,7 @@ async function portalInviteJourney(h, { phone }) {
       );
       expect(await visible(page, `pa-preview-${lang}`), "no email preview");
       if (phone) {
+        await page.waitForTimeout(700); // the slide-in animation
         const box = await tid(page, "portal-access-sheet").boundingBox();
         expect(box && box.width >= 380, `sheet is not full width on phone (${box?.width})`);
         await noSideScroll(page, "sheet");
@@ -584,8 +585,12 @@ async function portalInviteJourney(h, { phone }) {
       await tid(page, "pa-send").scrollIntoViewIfNeeded();
       await click(page, "pa-send");
       expect(await visible(page, "pa-link-panel"), "no link panel without a provider");
-      await page.keyboard.press("Escape");
-      await settle(page, 500);
+      await tid(page, "portal-access-sheet")
+        .locator("button")
+        .filter({ has: page.locator(".sr-only") })
+        .last()
+        .click();
+      await settle(page, 700);
       const chip = tid(page, `portal-chip-${seed.contactId}`);
       expect(await chip.isVisible(), "no portal chip");
       expect((await chip.getAttribute("data-state")) === "invited", "chip is not Invited");

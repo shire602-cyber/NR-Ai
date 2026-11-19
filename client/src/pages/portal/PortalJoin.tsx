@@ -327,6 +327,9 @@ export default function PortalJoin() {
           if (res.user) {
             await establishAuthenticatedSession(res.user).catch(() => undefined);
           } else {
+            // Signed in already: refresh the session user (it now has a portal account).
+            const me = await apiRequest("GET", "/api/auth/me").catch(() => null);
+            if (me) await establishAuthenticatedSession(me).catch(() => undefined);
             await queryClient.invalidateQueries({ queryKey: currentUserQueryKey });
           }
           setLocation(res.redirectTo || "/client-portal/dashboard");

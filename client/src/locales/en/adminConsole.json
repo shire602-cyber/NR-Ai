@@ -641,5 +641,12 @@
   "adminConsole.trialsColRequest": "Activation requested",
   "adminConsole.trialsOpen": "Open",
   "adminConsole.trialsEnded": "(ended)",
-  "adminConsole.trialsChoiceValue": "{plan}, {cycle}"
+  "adminConsole.trialsChoiceValue": "{plan}, {cycle}",
+  "activityLog.action.portal.invite": "Customer portal invitation sent",
+  "activityLog.action.portal.invite_resend": "Customer portal invitation resent",
+  "activityLog.action.portal.invite_revoke": "Customer portal invitation cancelled",
+  "activityLog.action.portal.invite_accept": "Customer portal invitation accepted",
+  "activityLog.action.portal.account_revoke": "Customer portal access removed",
+  "activityLog.entity.customer_portal_invitation": "Customer portal invitation",
+  "activityLog.entity.customer_portal_account": "Customer portal access"
 }

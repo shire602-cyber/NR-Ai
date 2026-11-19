@@ -400,5 +400,6 @@
   "portal.account.open": "فتح",
   "portal.account.devices": "الأجهزة",
   "portal.account.devicesHint": "سجّل الخروج من كل هاتف وحاسوب سجّلت الدخول منه.",
-  "portal.account.signOutAll": "تسجيل الخروج من كل مكان"
+  "portal.account.signOutAll": "تسجيل الخروج من كل مكان",
+  "portal.chip.column": "البوابة"
 }

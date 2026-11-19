@@ -54,6 +54,10 @@ export const PLAN_LOCK_ALWAYS_OPEN = [
   "/team",
   "/admin",
   "/firm",
+  // STEP5: customer-portal pages belong to a customer, not a company workspace; they never carry
+  // a plan lock (a portal login has no subscription of its own).
+  "/client-portal",
+  "/portal",
 ];
 
 /**

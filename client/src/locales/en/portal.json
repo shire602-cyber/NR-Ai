@@ -400,5 +400,6 @@
   "portal.account.open": "Open",
   "portal.account.devices": "Devices",
   "portal.account.devicesHint": "Sign out of every phone and computer where you are signed in.",
-  "portal.account.signOutAll": "Sign out everywhere"
+  "portal.account.signOutAll": "Sign out everywhere",
+  "portal.chip.column": "Portal"
 }
