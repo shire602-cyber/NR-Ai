@@ -113,6 +113,9 @@ const ROUTES_FOR = {
     "/dashboard",
     "/view/invoice/:shareToken",
     "/portal/:portalToken",
+    // STEP5: the customer invitation page: a valid pending invitation and a well-formed unknown one.
+    "/portal/join#t=:portalInviteToken",
+    `/portal/join#t=${"0".repeat(64)}`,
     "/portal/einvoicing-approve/:approverToken",
   ],
   trial: [...ALL_AUTH_ROUTES],
@@ -145,6 +148,7 @@ const ROUTES_FOR = {
     "/client-portal/documents",
     "/client-portal/statements",
     "/client-portal/messages",
+    "/client-portal/account",
   ],
 };
 

@@ -302,9 +302,10 @@ export async function setupPersonas(base, { log = console.log } = {}) {
     personas[role] = { email, token, companyId: ownerCompany.id };
   }
 
-  // Client-portal user: invited as a viewer, made a portal user, bound to one contact.
+  // Client-portal user: built through the real invitation flow (STEP5): the owner invites the
+  // persona's email for one customer contact, the invitation link is accepted over the API, and a
+  // second invitation stays pending for the visitor sweep (/portal/join).
   const portalEmail = mail("portal");
-  await invite(api, ownerToken, ownerCompany.id, portalEmail, "viewer", "بوابة التجربة");
 
   const staffEmail = mail("firmstaff");
   const adminEmail = mail("admin");
@@ -314,8 +315,33 @@ export async function setupPersonas(base, { log = console.log } = {}) {
   void adminToken;
 
   const links = await seedLinks(api, ownerToken, ownerCompany.id);
+  if (links.contactId) {
+    const contactBase = `/api/companies/${ownerCompany.id}/customer-contacts/${links.contactId}`;
+    const send = async (email, name) => {
+      const res = await api(ownerToken, "POST", `${contactBase}/portal-invitations`, {
+        email,
+        name,
+        language: "ar",
+      });
+      if (res.status !== 201 || !res.body?.inviteUrl) {
+        throw new Error(`portal invite ${email}: ${res.status} ${JSON.stringify(res.body)}`);
+      }
+      return /#t=([0-9a-f]{64})/.exec(res.body.inviteUrl)[1];
+    };
+    const inviteToken = await send(portalEmail, "بوابة التجربة");
+    // A fresh cookie jar, like the customer's own browser.
+    const accept = await apiClient(BASE_OF.get(api))(
+      "",
+      "POST",
+      `/api/portal-invitations/${inviteToken}/accept`,
+      { name: "بوابة التجربة", password: PASSWORD, acceptTerms: true }
+    );
+    if (accept.status >= 300) {
+      throw new Error(`portal accept: ${accept.status} ${JSON.stringify(accept.body)}`);
+    }
+    links.portalInviteToken = await send(mail("portal-pending"), "عميل مدعو");
+  }
   await withDb(async (db) => {
-    await db.query(`UPDATE users SET user_type = 'client_portal' WHERE email = $1`, [portalEmail]);
     await db.query(
       `UPDATE users SET firm_role = 'preparer', user_type = 'admin', email_verified = true WHERE email = $1`,
       [staffEmail]
@@ -334,20 +360,6 @@ export async function setupPersonas(base, { log = console.log } = {}) {
       .catch((error) => log(`personas: staff assignment skipped (${error.message})`));
   });
   const portalToken = await login(api, portalEmail);
-  if (links.contactId) {
-    const me = await api(portalToken, "GET", "/api/auth/me");
-    const userId = me.body?.user?.id ?? me.body?.id;
-    const bind = await api(
-      ownerToken,
-      "POST",
-      `/api/portal/contacts/${links.contactId}/portal-users`,
-      {
-        userId,
-      }
-    );
-    if (bind.status !== 201)
-      log(`personas: portal bind ${bind.status} ${JSON.stringify(bind.body)}`);
-  }
   personas.portal = { email: portalEmail, token: portalToken, companyId: ownerCompany.id };
   personas.firmStaff = {
     email: staffEmail,
