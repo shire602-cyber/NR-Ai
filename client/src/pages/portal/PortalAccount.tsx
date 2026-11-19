@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Building2, Check, Languages, LogOut } from "lucide-react";
@@ -35,11 +35,10 @@ export default function PortalAccount() {
   const [busy, setBusy] = useState(false);
   const { toast } = useToast();
   // The display name is the one profile field a customer may change (email is theirs by invitation).
-  const [name, setName] = useState("");
+  const [draft, setDraft] = useState<string | null>(null);
+  const name = draft ?? user?.name ?? "";
+  const setName = setDraft;
   const [savingName, setSavingName] = useState(false);
-  useEffect(() => {
-    if (user?.name) setName(user.name);
-  }, [user?.name]);
   const saveName = async (e: FormEvent) => {
     e.preventDefault();
     const next = name.trim();
@@ -48,6 +47,7 @@ export default function PortalAccount() {
     try {
       await apiRequest("PATCH", "/api/client-portal/profile", { name: next });
       await queryClient.invalidateQueries({ queryKey: currentUserQueryKey });
+      setDraft(null);
       toast({ title: t["portal.account.nameSaved"] });
     } catch (err) {
       toast({
