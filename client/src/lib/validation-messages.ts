@@ -139,7 +139,18 @@ export function zodErrorMap(iss: RawIssue): string | undefined {
  * Translate one server (English, zod 3 style) field message. Only used in Arabic; unknown
  * messages fall back to the generic "invalid value" text, never to raw English.
  */
+/** Catalog key of a server field message ("TRN must start with 100" -> serverErrors.issue.trn_must_start_with_100). */
+export function issueSlug(message: string): string {
+  return message
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 70);
+}
+
 export function localizeServerIssue(message: string): string {
+  const issue = dict("ar")[`serverErrors.issue.${issueSlug(message)}`];
+  if (issue) return issue;
   const shared = SHARED_MESSAGE_KEYS[message];
   if (shared) return tr(shared);
   if (message === "Required") return v("required");
@@ -337,7 +348,9 @@ export function localizeLedgerGuard(body: Record<string, unknown> | undefined): 
   if (code === "SUBLEDGER_ENTRY") {
     const doc = typeof details.document === "string" ? details.document : "";
     const key = `forms.serverErrors.SUBLEDGER_ENTRY.${doc}`;
-    return dict("en")[key] ? tr(key) : tr("forms.serverErrors.SUBLEDGER_ENTRY");
+    return dict(useI18n.getState().locale)[key]
+      ? tr(key)
+      : tr("forms.serverErrors.SUBLEDGER_ENTRY");
   }
   if (code === "INVOICE_BILLS_ASSET_DISPOSAL" || code === "VAT_AMENDMENT_NOTHING_TO_SETTLE") {
     return tr(`forms.serverErrors.${code}`);

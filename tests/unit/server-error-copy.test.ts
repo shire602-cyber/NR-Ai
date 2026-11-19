@@ -10,7 +10,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { loadLocale, useI18n } from "../../client/src/lib/i18n";
+import { loadLocale, t, useI18n } from "../../client/src/lib/i18n";
 import {
   fieldLabel,
   localizeApiError,
@@ -210,6 +210,24 @@ describe("[G3] the lookup", () => {
     expect(serverErrorCopy("ar", "ALREADY_MEMBER")).toBe(member);
   });
 
+  it("picks the document-specific sub-ledger sentence in Arabic without the English catalog", () => {
+    const key = "forms.serverErrors.SUBLEDGER_ENTRY.inventory";
+    const saved = (t.en as Record<string, string>)[key];
+    delete (t.en as Record<string, string>)[key]; // an Arabic session never loads the English catalog
+    try {
+      useI18n.setState({ locale: "ar" });
+      const text = localizeApiError({
+        code: "SUBLEDGER_ENTRY",
+        message: "x",
+        details: { document: "inventory" },
+      })!;
+      expect(text).toContain("حركة مخزون");
+    } finally {
+      (t.en as Record<string, string>)[key] = saved;
+      useI18n.setState({ locale: "en" });
+    }
+  });
+
   it("uses the catalog sentence in English only when the server sent the generic words of the code", () => {
     useI18n.setState({ locale: "en" });
     expect(
@@ -243,6 +261,15 @@ describe("[G3] the lookup", () => {
     expect(ar).toContain("سعر الوحدة");
     expect(ar).not.toMatch(/zzzUnknownField|unitPrice|trn:/);
     expect(fieldLabel("zzzUnknownField")).toBe("حقل");
+    // A company-settings TRN failure (server field id + server reason) reads in Arabic.
+    const trn = localizeApiError({
+      code: "VALIDATION_ERROR",
+      message: "Validation error",
+      fields: { trnVatNumber: ["TRN must start with 100"] },
+    })!;
+    expect(trn).toContain("الرقم الضريبي / رقم ضريبة القيمة المضافة");
+    expect(trn).toContain("الإماراتي بـ 100");
+    expect(trn).not.toMatch(/[A-Za-z]/);
     useI18n.setState({ locale: "en" });
   });
 });
