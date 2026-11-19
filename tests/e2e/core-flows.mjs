@@ -591,7 +591,9 @@ async function portalInviteJourney(h, { phone }) {
         .last()
         .click();
       await settle(page, 700);
-      const chip = tid(page, `portal-chip-${seed.contactId}`);
+      // The desktop table and the phone list both carry the chip; take the one on screen.
+      const chip = page.locator(`[data-testid="portal-chip-${seed.contactId}"]:visible`).first();
+      await chip.waitFor({ state: "visible", timeout: 10000 }).catch(() => {});
       expect(await chip.isVisible(), "no portal chip");
       expect((await chip.getAttribute("data-state")) === "invited", "chip is not Invited");
       if (h.ar) await expectNoEnglish(page, "main");
@@ -1777,7 +1779,7 @@ const FLOWS = [
           await click(p, "join-confirm-add");
           await p.waitForURL(/\/client-portal\/dashboard/, { timeout: 30000 });
           expect(await visible(p, "portal-balance"), "no balance");
-          await goto(p, "/dashboard");
+          await finishOnboarding(p);
           await click(p, "button-profile");
           expect(await visible(p, "menu-account-portals"), "no Supplier portals entry");
           // The buyer's own company app still works.

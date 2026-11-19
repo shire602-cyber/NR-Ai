@@ -726,10 +726,6 @@ export default function CustomerContacts() {
                         <span dir="auto" className="truncate font-medium text-foreground">
                           {locale === "ar" && contact.nameAr ? contact.nameAr : contact.name}
                         </span>
-                        <PortalStatusChip
-                          entry={portalSummary[contact.id]}
-                          contactId={contact.id}
-                        />
                         {/* WQ5: one record, customer and/or supplier. */}
                         {contact.isSupplier && (
                           <Badge
