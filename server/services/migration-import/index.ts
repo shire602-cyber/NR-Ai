@@ -29,7 +29,7 @@
  * Column layouts of Xero, QuickBooks Online, Zoho Books and Wafeq exports are
  * mapped in ./mappers.ts. All money is integer fils.
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import { db } from "../../db";
 import {
   accounts,
@@ -1261,8 +1261,8 @@ async function commitTrialBalance(
     const leg = ledger === "vat" ? { controlLeg: ledger } : {};
     lines.push(
       fils > 0
-        ? { accountId: acct.id, debitFils: fils, description: "Opening balance", ...leg }
-        : { accountId: acct.id, creditFils: -fils, description: "Opening balance", ...leg }
+        ? { accountId: acct.id, debitFils: fils, ...journalLine("openingBalanceLine"), ...leg }
+        : { accountId: acct.id, creditFils: -fils, ...journalLine("openingBalanceLine"), ...leg }
     );
   }
   if (deferred !== 0) {
@@ -1272,12 +1272,12 @@ async function commitTrialBalance(
         ? {
             accountId: obe.id,
             debitFils: deferred,
-            description: "A/R and A/P carried by open documents",
+            ...journalLine("openingCarriedByDocuments"),
           }
         : {
             accountId: obe.id,
             creditFils: -deferred,
-            description: "A/R and A/P carried by open documents",
+            ...journalLine("openingCarriedByDocuments"),
           }
     );
   }
@@ -1288,12 +1288,12 @@ async function commitTrialBalance(
         ? {
             accountId: obe.id,
             debitFils: deferredInventory,
-            description: "Inventory carried by opening stock",
+            ...journalLine("openingCarriedByStock"),
           }
         : {
             accountId: obe.id,
             creditFils: -deferredInventory,
-            description: "Inventory carried by opening stock",
+            ...journalLine("openingCarriedByStock"),
           }
     );
   }
@@ -1514,10 +1514,14 @@ async function commitOpenInvoices(
               accountId: control.id,
               debitFils: dueBase,
               controlLeg: "receivables",
-              description: `Opening A/R ${r.number}`,
+              ...journalLine("openingAr", { ref: r.number }),
               ...fx.debitLine(due),
             },
-            { accountId: obe.id, creditFils: dueBase, description: `Opening A/R ${r.number}` },
+            {
+              accountId: obe.id,
+              creditFils: dueBase,
+              ...journalLine("openingAr", { ref: r.number }),
+            },
           ],
         },
         { actorId: userId, tx }
@@ -1620,12 +1624,16 @@ async function commitOpenBills(
           status: "posted",
           kind: "opening",
           lines: [
-            { accountId: obe.id, debitFils: dueBase, description: `Opening A/P ${r.number}` },
+            {
+              accountId: obe.id,
+              debitFils: dueBase,
+              ...journalLine("openingAp", { ref: r.number }),
+            },
             {
               accountId: control.id,
               creditFils: dueBase,
               controlLeg: "payables",
-              description: `Opening A/P ${r.number}`,
+              ...journalLine("openingAp", { ref: r.number }),
               ...fx.creditLine(due),
             },
           ],

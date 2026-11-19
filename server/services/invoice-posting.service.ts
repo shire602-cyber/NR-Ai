@@ -21,7 +21,7 @@
 // Status is server-owned and moves only through `invoiceMachine`
 // (invoice-state-machine.ts) with conditional transitionRow updates.
 
-import { journalMemo } from "@shared/journal-memo";
+import { type JournalLineKey, journalLine, journalMemo } from "@shared/journal-memo";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
@@ -528,7 +528,7 @@ export function buildRevenueLines(args: {
       accountId: b.accountId ?? acc.revenue[b.role],
       creditFils: base,
       costCenterId: b.costCenterId,
-      description: `${roleLabel(b.role)} - ${invoice.number}`,
+      ...journalLine(roleLineKey(b.role), { ref: invoice.number }),
       ...fx(b.netFils, "credit"),
     });
   }
@@ -540,7 +540,7 @@ export function buildRevenueLines(args: {
       accountId: acc.vatOutput,
       creditFils: base,
       systemVat: true,
-      description: `VAT output - ${invoice.number}`,
+      ...journalLine("vatOutput", { ref: invoice.number }),
       ...fx(totals.vatFils, "credit"),
     });
   }
@@ -548,22 +548,30 @@ export function buildRevenueLines(args: {
     accountId: acc.ar,
     debitFils: creditBase,
     controlLeg: "receivables",
-    description: `Invoice ${invoice.number} - ${invoice.customerName}${foreign ? ` (${cur} ${fromFils(totals.totalFils)} @ ${rate})` : ""}`,
+    ...(foreign
+      ? journalLine("invoiceReceivableFx", {
+          ref: invoice.number,
+          party: invoice.customerName,
+          currency: cur,
+          amount: fromFils(totals.totalFils),
+          rate,
+        })
+      : journalLine("invoiceReceivable", { ref: invoice.number, party: invoice.customerName })),
     ...fx(totals.totalFils, "debit"),
   });
   return out;
 }
 
-function roleLabel(role: RevenueAccountRole): string {
+function roleLineKey(role: RevenueAccountRole): JournalLineKey {
   switch (role) {
     case "zero_rated_sales":
-      return "Zero-rated sales";
+      return "zeroRatedSales";
     case "exempt_sales":
-      return "Exempt sales";
+      return "exemptSales";
     case "out_of_scope_revenue":
-      return "Out-of-scope revenue";
+      return "outOfScopeRevenue";
     default:
-      return "Sales revenue";
+      return "salesRevenue";
   }
 }
 
@@ -1058,10 +1066,9 @@ async function postCreditNoteInTx(args: {
     debitFils: d.base,
     costCenterId: d.leg.costCenterId,
     ...(d.leg.kind === "vat" ? { systemVat: true } : {}),
-    description:
-      d.leg.kind === "vat"
-        ? `Reverse VAT - ${creditNote.number}`
-        : `Reverse revenue - ${creditNote.number}`,
+    ...journalLine(d.leg.kind === "vat" ? "reverseVat" : "reverseRevenue", {
+      ref: creditNote.number,
+    }),
     ...(foreign && d.foreign > 0 ? fx(d.foreign, "debit") : {}),
   }));
   if (arBase > 0) {
@@ -1069,7 +1076,7 @@ async function postCreditNoteInTx(args: {
       accountId: arId,
       creditFils: arBase,
       controlLeg: "receivables",
-      description: `Reduce A/R - ${creditNote.number}`,
+      ...journalLine("reduceReceivable", { ref: creditNote.number }),
       ...(foreign && arDocFils > 0 ? fx(arDocFils, "credit") : {}),
     });
   }
@@ -1080,7 +1087,7 @@ async function postCreditNoteInTx(args: {
     jl.push({
       accountId: liabilityId,
       creditFils: excessBase,
-      description: `Customer credit - ${creditNote.number}`,
+      ...journalLine("customerCreditLine", { ref: creditNote.number }),
       ...(foreign && excessDocFils > 0 ? fx(excessDocFils, "credit") : {}),
     });
   }

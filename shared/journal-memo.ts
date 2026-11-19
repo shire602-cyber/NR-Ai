@@ -134,9 +134,53 @@ export interface JournalMemoFields {
   memoParams: Record<string, string>;
 }
 
-/** Fill `{name}` placeholders; a missing parameter reads as empty. */
-export function fillJournalMemo(template: string, params: JournalMemoParams): string {
+/**
+ * The document a stock line belongs to ("Bill BILL-1", "PO PO-7 receipt"). A line template that
+ * carries `{doc}` names it with `docKind` + `ref` parameters, so Arabic renders the document word
+ * too (catalog `journal.memo.doc.<kind>`) instead of keeping an English label.
+ */
+export const JOURNAL_DOC_TEMPLATES = {
+  bill: "Bill {ref}",
+  invoice: "Invoice {ref}",
+  creditNote: "Credit note {ref}",
+  debitNote: "Debit note {ref}",
+  poReceipt: "PO {ref} receipt",
+  reversalBill: "Reversal Bill {ref}",
+  reversalInvoice: "Reversal Invoice {ref}",
+  reversalCreditNote: "Reversal Credit note {ref}",
+  stocktake: "Stocktake",
+  stockPurchase: "Stock purchase",
+  stockSale: "Stock sale",
+  stockAdjustment: "Stock adjustment",
+  stockReturn: "Stock return",
+  text: "{ref}",
+} as const;
+
+export type JournalDocKind = keyof typeof JOURNAL_DOC_TEMPLATES;
+
+export const journalDocCatalogKey = (kind: string): string => `journal.memo.doc.${kind}`;
+
+/** `{doc}` value of a parameter set that has a `docKind` (English unless `docTemplates` is given). */
+function docText(params: JournalMemoParams, docTemplates?: Record<string, string>): string {
+  const kind = String(params.docKind ?? "");
+  const template =
+    docTemplates?.[journalDocCatalogKey(kind)] ??
+    (JOURNAL_DOC_TEMPLATES as Record<string, string>)[kind] ??
+    "{ref}";
   return template.replace(/\{(\w+)\}/g, (_m, name: string) => String(params[name] ?? ""));
+}
+
+/** Fill `{name}` placeholders; a missing parameter reads as empty. */
+export function fillJournalMemo(
+  template: string,
+  params: JournalMemoParams,
+  docTemplates?: Record<string, string>
+): string {
+  const values: JournalMemoParams =
+    template.includes("{doc}") && params.docKind
+      ? { ...params, doc: docText(params, docTemplates) }
+      : params;
+  return template.replace(/\{(\w+)\}/g, (_m, name: string) => String(values[name] ?? ""));
 }
 
 /**
@@ -166,3 +210,38 @@ export const JOURNAL_LINE_TEMPLATES = {
   depositVatOnReceipt: "Customer deposit {ref} - {party} (VAT on receipt)",
   depositAppliedLine: "Deposit applied to {invoice}",
 } as const;
+
+export type JournalLineKey = keyof typeof JOURNAL_LINE_TEMPLATES;
+
+export const journalLineCatalogKey = (key: string): string => `journal.memo.line.${key}`;
+
+export function isJournalLineKey(key: unknown): key is JournalLineKey {
+  return (
+    typeof key === "string" && Object.prototype.hasOwnProperty.call(JOURNAL_LINE_TEMPLATES, key)
+  );
+}
+
+/**
+ * A system line description: the English text for the audit trail plus the key and parameters to
+ * store on the journal line (`line_key`, `line_params`, migration 0132). Spread into a posting
+ * line: `{ accountId, debitFils, ...journalLine("vatOutput", { ref }) }`.
+ */
+export interface JournalLineFields {
+  description: string;
+  lineKey: JournalLineKey;
+  lineParams: Record<string, string>;
+}
+
+export function journalLine(
+  key: JournalLineKey,
+  params: JournalMemoParams = {},
+  maxLength = 500
+): JournalLineFields {
+  const lineParams: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) lineParams[k] = String(v ?? "");
+  return {
+    description: fillJournalMemo(JOURNAL_LINE_TEMPLATES[key], lineParams).slice(0, maxLength),
+    lineKey: key,
+    lineParams,
+  };
+}

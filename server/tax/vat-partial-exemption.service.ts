@@ -8,7 +8,7 @@
  * dated on the last day of the period, source "vat_partial_exemption". It runs when the return
  * is made ready or submitted, before the VAT-to-GL gate, so Box 9 / Box 10 tie to 1050.
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
 import { postJournal } from "../ledger";
@@ -84,13 +84,13 @@ export async function postPartialExemptionForPeriod(input: {
               {
                 accountId: costAccountId,
                 debitFils: amount,
-                description: "Irrecoverable input VAT",
+                ...journalLine("irrecoverableInputVat"),
               },
               {
                 accountId: inputVat.id,
                 creditFils: amount,
                 systemVat: true,
-                description: "Input VAT apportioned",
+                ...journalLine("inputVatApportioned"),
               },
             ]
           : [
@@ -98,12 +98,12 @@ export async function postPartialExemptionForPeriod(input: {
                 accountId: inputVat.id,
                 debitFils: amount,
                 systemVat: true,
-                description: "Input VAT apportioned",
+                ...journalLine("inputVatApportioned"),
               },
               {
                 accountId: costAccountId,
                 creditFils: amount,
-                description: "Irrecoverable input VAT",
+                ...journalLine("irrecoverableInputVat"),
               },
             ],
     },

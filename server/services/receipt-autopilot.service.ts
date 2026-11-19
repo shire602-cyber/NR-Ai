@@ -15,7 +15,7 @@
  * we still record the best internal result so the receipt is never lost.
  */
 
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import OpenAI from "openai";
 import { createMeteredOpenAI } from "./ai/usage-meter";
 import { rememberVendorAccount } from "./vendor-memory.service";
@@ -625,15 +625,21 @@ async function autoPostJournalEntry(input: AutoPostInput): Promise<string> {
   );
 
   const merchantLabel = typeof ocr.merchant === "string" ? ocr.merchant : "";
-  const lines: Array<{ accountId: string; debit: number; credit: number; description: string }> =
-    [];
+  const lines: Array<{
+    accountId: string;
+    debit: number;
+    credit: number;
+    description: string;
+    lineKey?: string;
+    lineParams?: Record<string, string>;
+  }> = [];
   if (vatInputAccount && vat > 0) {
     lines.push({ accountId: expenseAccountId, debit: net, credit: 0, description: merchantLabel });
     lines.push({
       accountId: vatInputAccount.id,
       debit: vat,
       credit: 0,
-      description: `Input VAT — ${merchantLabel}`,
+      ...journalLine("autopilotInputVat", { merchant: merchantLabel }),
     });
     lines.push({
       accountId: paymentAccountId,

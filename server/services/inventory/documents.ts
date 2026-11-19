@@ -14,7 +14,7 @@
  *   PO goods received    stock in at the PO price, Dr Inventory / Cr GRNI (own transaction:
  *                        the purchase-order module calls it after its commit).
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import { sql } from "drizzle-orm";
 import { DomainError } from "../../errors";
 import { createLogger } from "../../config/logger";
@@ -35,6 +35,8 @@ import {
   stockOut,
   toKernelLines,
   trueUpLines,
+  docLabel,
+  type DocRef,
   type DraftLine,
   type MoveContext,
 } from "./engine";
@@ -91,9 +93,25 @@ async function productOrNull(
  * journal; any difference between that mirror and the real change in stock value (a FIFO layer
  * that was partly sold, a weighted-average pool that moved) is posted as an adjustment.
  */
+const reversalDoc = (d: DocRef): DocRef => ({
+  docKind:
+    d.docKind === "bill"
+      ? "reversalBill"
+      : d.docKind === "invoice"
+        ? "reversalInvoice"
+        : "reversalCreditNote",
+  ref: d.ref,
+});
+
 export async function reverseDocumentStock(
   tx: LedgerTx,
-  args: { companyId: string; sourceType: string; sourceId: string; actorId: string; label: string }
+  args: {
+    companyId: string;
+    sourceType: string;
+    sourceId: string;
+    actorId: string;
+    doc: DocRef & { docKind: "bill" | "invoice" | "creditNote" };
+  }
 ): Promise<{ reversed: number; adjustmentEntryId: string | null }> {
   const movements = await documentMovements(tx, args.companyId, args.sourceType, args.sourceId);
   if (!movements.length) return { reversed: 0, adjustmentEntryId: null };
@@ -154,12 +172,12 @@ export async function reverseDocumentStock(
       sourceType: args.sourceType,
       sourceId: args.sourceId,
       sourceLineId: m.source_line_id,
-      reference: `Reversal - ${args.label}`,
+      reference: `Reversal - ${docLabel(args.doc)}`,
     };
     const r = await reverseMovement(tx, m, ctx);
     firstReversal ??= r.movementId;
     const mirrored = -filsOfNumeric(m.total_cost);
-    lines.push(...trueUpLines(r, mirrored, null, `Reversal ${args.label}`));
+    lines.push(...trueUpLines(r, mirrored, null, reversalDoc(args.doc)));
     if (receivedSinceBill > 0) {
       const movedQty = Math.abs(Number(m.quantity));
       const valueFils = prorate(filsOfNumeric(m.total_cost), receivedSinceBill, movedQty || 1);
@@ -169,7 +187,7 @@ export async function reverseDocumentStock(
         sourceType: "po_grni_restore",
         sourceId: String(meta.poLineId),
         sourceLineId: m.source_line_id,
-        reference: `Goods received, ${args.label} voided`,
+        reference: `Goods received, ${docLabel(args.doc)} voided`,
         idempotencyKey: `grni_restore:${m.id}`,
         meta: { poLineId: meta.poLineId, restoredFromMovementId: m.id },
       });
@@ -183,21 +201,21 @@ export async function reverseDocumentStock(
         accountId: restored.accounts.inventory,
         controlLeg: "inventory",
         fils: Math.max(0, valueFils),
-        description: `${args.label} voided - received goods kept in stock`,
+        ...journalLine("docVoidedKept", args.doc),
       });
       lines.push({
         accountId: grni,
         controlLeg: "grni",
         fils: -Math.max(0, valueFils),
-        description: `${args.label} voided - goods received not invoiced`,
+        ...journalLine("docVoidedGrni", args.doc),
       });
-      lines.push(...trueUpLines(restored, Math.max(0, valueFils), null, args.label));
+      lines.push(...trueUpLines(restored, Math.max(0, valueFils), null, args.doc));
     }
   }
   const entryId = await postInventoryJournal(tx, {
     companyId: args.companyId,
     date,
-    ...journalMemo("inventoryReversalAdjustment", { ref: args.label }),
+    ...journalMemo("inventoryReversalAdjustment", { ref: docLabel(args.doc) }),
     source: "inventory_adjustment",
     sourceId: args.sourceId,
     idempotencyKey: `inventory:reverse:${firstReversal}`,
@@ -273,7 +291,8 @@ export async function planBillStock(
   const replay =
     rows.some((r) => r.product_id) &&
     (await movementExists(tx, companyId, `${revKey}:${rows.find((r) => r.product_id)!.id}`));
-  const label = `Bill ${bill.bill_number || bill.id.slice(0, 8)}`;
+  const doc: DocRef = { docKind: "bill", ref: bill.bill_number || bill.id.slice(0, 8) };
+  const label = docLabel(doc);
   const out: PostJournalLineInput[] = [];
   const movementIds: string[] = [];
   for (let i = 0; i < input.lines.length; i++) {
@@ -322,7 +341,7 @@ export async function planBillStock(
           accountId: grni,
           controlLeg: "grni",
           fils: clearFils,
-          description: `${label} - clear goods received not invoiced`,
+          ...journalLine("docClearGrni", doc),
         });
         // A2 (H2, IAS 2.10-11): the invoiced price is the cost of purchase. The difference to
         // the receipt value is capitalised for the received units still on hand and expensed
@@ -358,7 +377,7 @@ export async function planBillStock(
               accountId: r.accounts.inventory,
               controlLeg: "inventory",
               fils: capitalised,
-              description: `${label} - purchase price variance on stock on hand`,
+              ...journalLine("docPpvOnHand", doc),
             });
           }
         }
@@ -366,7 +385,7 @@ export async function planBillStock(
           accountId: cogs,
           fils: variance - capitalised,
           costCenterId: cc,
-          description: `${label} - purchase price variance on stock sold`,
+          ...journalLine("docPpvSold", doc),
         });
         await tx.execute(
           sql`UPDATE inventory_grni SET cleared_qty = cleared_qty + ${k}, cleared_value = cleared_value + ${fromFils(clearFils)}
@@ -422,9 +441,9 @@ export async function planBillStock(
         accountId: r.accounts.inventory,
         controlLeg: "inventory",
         fils: stockValue,
-        description: `${label} - stock ${product.sku ?? product.name}`,
+        ...journalLine("docStockItem", { ...doc, item: product.sku ?? product.name }),
       });
-      draft.push(...trueUpLines(r, stockValue, cc, label));
+      draft.push(...trueUpLines(r, stockValue, cc, doc));
     }
     out.push(...toKernelLines(draft));
   }
@@ -449,7 +468,7 @@ export async function reverseBillStock(
     sourceType: "bill",
     sourceId: bill.id,
     actorId,
-    label: `Bill ${bill.bill_number || bill.id.slice(0, 8)}`,
+    doc: { docKind: "bill", ref: bill.bill_number || bill.id.slice(0, 8) },
   });
 }
 
@@ -483,7 +502,8 @@ export async function planPurchaseReturnStock(
     actorId: string;
   }
 ): Promise<{ lines: PostJournalLineInput[]; movementIds: string[]; handled: number[] }> {
-  const label = `Debit note ${args.number}`;
+  const doc: DocRef = { docKind: "debitNote", ref: args.number };
+  const label = docLabel(doc);
   const draft: DraftLine[] = [];
   const movementIds: string[] = [];
   const handled: number[] = [];
@@ -514,12 +534,12 @@ export async function planPurchaseReturnStock(
       accountId: r.accounts.inventory,
       controlLeg: "inventory",
       fils: r.stockDeltaFils,
-      description: `${label} - returned ${product.sku ?? product.name}`,
+      ...journalLine("docReturned", { ...doc, item: product.sku ?? product.name }),
     });
     draft.push({
       accountId: r.accounts.cogs,
       fils: -(l.creditFils + r.stockDeltaFils),
-      description: `${label} - purchase return price difference`,
+      ...journalLine("docPurchaseReturnDiff", doc),
     });
   }
   return { lines: toKernelLines(draft), movementIds, handled };
@@ -607,13 +627,16 @@ export async function onInvoiceIssued(
         accountId: r.accounts.cogs,
         fils: r.costFils,
         costCenterId: line.costCenterId ?? null,
-        description: `COGS - Invoice ${invoice.number} - ${r.product.sku ?? r.product.name}`,
+        ...journalLine("invoiceCogsLine", {
+          ref: invoice.number,
+          item: r.product.sku ?? r.product.name,
+        }),
       });
       draft.push({
         accountId: r.accounts.inventory,
         controlLeg: "inventory",
         fils: -r.costFils,
-        description: `Stock out - Invoice ${invoice.number}`,
+        ...journalLine("invoiceStockOutLine", { ref: invoice.number }),
       });
     }
   }
@@ -654,7 +677,7 @@ export async function onInvoiceVoided(
     sourceType: "invoice",
     sourceId: args.invoiceId,
     actorId: args.userId,
-    label: `Invoice ${args.number ?? args.invoiceId.slice(0, 8)}`,
+    doc: { docKind: "invoice", ref: args.number ?? args.invoiceId.slice(0, 8) },
   });
 }
 
@@ -739,15 +762,15 @@ export async function onCreditNoteIssued(
         accountId: r.accounts.inventory,
         controlLeg: "inventory",
         fils: value,
-        description: `Restock - ${creditNote.number}`,
+        ...journalLine("creditNoteRestock", { ref: creditNote.number }),
       });
       draft.push({
         accountId: r.accounts.cogs,
         fils: -value,
         costCenterId: line.costCenterId ?? null,
-        description: `Reverse COGS - ${creditNote.number}`,
+        ...journalLine("creditNoteReverseCogs", { ref: creditNote.number }),
       });
-      draft.push(...trueUpLines(r, value, line.costCenterId, `Credit note ${creditNote.number}`));
+      draft.push(...trueUpLines(r, value, line.costCenterId, { docKind: "creditNote", ref: creditNote.number }));
     }
   }
   const entryId = await postInventoryJournal(tx, {
@@ -780,7 +803,7 @@ export async function onCreditNoteVoided(
     sourceType: "credit_note",
     sourceId: args.creditNoteId,
     actorId: args.userId,
-    label: `Credit note ${args.number ?? args.creditNoteId.slice(0, 8)}`,
+    doc: { docKind: "creditNote", ref: args.number ?? args.creditNoteId.slice(0, 8) },
   });
 }
 
@@ -823,7 +846,8 @@ export async function onGoodsReceived(
     const draft: DraftLine[] = [];
     const movementIds: string[] = [];
     const date = isoDate(event.receivedDate);
-    const label = `PO ${po.number} receipt`;
+    const doc: DocRef = { docKind: "poReceipt", ref: po.number };
+    const label = docLabel(doc);
     for (const l of event.lines) {
       if (!l.productId) continue;
       const key = `po_receipt:${event.receiptId}:${l.lineId}`;
@@ -888,15 +912,15 @@ export async function onGoodsReceived(
         accountId: r.accounts.inventory,
         controlLeg: "inventory",
         fils: valueFils,
-        description: `${label} - stock in`,
+        ...journalLine("docStockIn", doc),
       });
       draft.push({
         accountId: grni,
         controlLeg: "grni",
         fils: -valueFils,
-        description: `${label} - goods received not invoiced`,
+        ...journalLine("docGrni", doc),
       });
-      draft.push(...trueUpLines(r, valueFils, null, label));
+      draft.push(...trueUpLines(r, valueFils, null, doc));
     }
     const entryId = await postInventoryJournal(tx, {
       companyId: event.companyId,

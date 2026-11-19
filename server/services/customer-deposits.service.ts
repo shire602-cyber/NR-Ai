@@ -25,7 +25,7 @@
 // the one settlement rule (server/reporting/settlement.ts) sees the application. Deposits are in
 // the company's functional currency; journals post only through server/ledger.
 
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
@@ -245,17 +245,25 @@ export async function createCustomerDeposit(input: CreateDepositInput) {
         createdBy: input.userId,
       })
       .returning();
-    const label = `Customer deposit ${number} - ${customerName}`;
+    const lineParams = { ref: number, party: customerName };
     const lines: PostJournalLineInput[] = [
-      { accountId: input.paymentAccountId, debitFils: input.amountFils, description: label },
-      { accountId: liability, creditFils: netFils, description: `${label} (contract liability)` },
+      {
+        accountId: input.paymentAccountId,
+        debitFils: input.amountFils,
+        ...journalLine("depositReceived", lineParams),
+      },
+      {
+        accountId: liability,
+        creditFils: netFils,
+        ...journalLine("depositContractLiability", lineParams),
+      },
     ];
     if (output && vatFils > 0) {
       lines.push({
         accountId: output,
         creditFils: vatFils,
         systemVat: true,
-        description: `${label} (VAT on receipt)`,
+        ...journalLine("depositVatOnReceipt", lineParams),
       });
     }
     const { entry } = await postJournal(
@@ -319,7 +327,7 @@ export async function depositConsumptionLines(
   tx: LedgerTx,
   credit: CustomerCredit,
   amountFils: number,
-  label: string,
+  label: { kind: "depositApplied" | "refundDeposit"; params: Record<string, string> },
   /** Posting date (ISO): the VAT engine reports the consumption on it. */
   dateIso: string
 ): Promise<{ lines: PostJournalLineInput[]; vatFils: number; deposit: CustomerDeposit }> {
@@ -354,7 +362,7 @@ export async function depositConsumptionLines(
     {
       accountId: credit.liabilityAccountId,
       debitFils: amountFils - vatFils,
-      description: `${label} (contract liability)`,
+      ...journalLine(`${label.kind}Contract`, label.params),
     },
   ];
   if (vatFils > 0) {
@@ -363,7 +371,7 @@ export async function depositConsumptionLines(
       accountId: output,
       debitFils: vatFils,
       systemVat: true,
-      description: `${label} (advance VAT reversed: charged on the invoice)`,
+      ...journalLine(`${label.kind}VatReversed`, label.params),
     });
   }
   return { lines, vatFils, deposit };

@@ -33,6 +33,7 @@ import {
   type MovementRow,
   type ProductRow,
 } from "./store";
+import { type JournalDocKind, fillJournalMemo, journalLine } from "@shared/journal-memo";
 
 export interface MoveContext {
   companyId: string;
@@ -417,6 +418,9 @@ export interface DraftLine {
   fils: number;
   costCenterId?: string | null;
   description: string;
+  /** System line description key + params (shared/journal-memo.ts), stored on the journal line. */
+  lineKey?: string;
+  lineParams?: Record<string, string>;
   /** C1: the movement's own inventory / GRNI leg (derived by the engine, never a user's account). */
   controlLeg?: "inventory" | "grni";
 }
@@ -438,11 +442,18 @@ export function toKernelLines(lines: DraftLine[]): PostJournalLineInput[] {
       ...(l.fils > 0 ? { debitFils: l.fils } : { creditFils: -l.fils }),
       costCenterId: l.costCenterId ?? null,
       description: l.description.slice(0, 255),
+      ...(l.lineKey ? { lineKey: l.lineKey, lineParams: l.lineParams } : {}),
       ...(l.controlLeg ? { controlLeg: l.controlLeg } : {}),
     });
   }
   return out;
 }
+
+/** The document a stock journal line names (shared/journal-memo.ts JOURNAL_DOC_TEMPLATES). */
+export type DocRef = { docKind: JournalDocKind; ref?: string };
+
+/** English text of a document reference ("Bill BILL-1"). */
+export const docLabel = (d: DocRef): string => fillJournalMemo("{doc}", { ...d, ref: d.ref ?? "" });
 
 /**
  * Lines that make the journal book exactly `stockDeltaFils` to inventory when the document side
@@ -452,7 +463,7 @@ export function trueUpLines(
   r: Pick<MoveResult, "accounts" | "stockDeltaFils" | "product">,
   bookedFils: number,
   costCenterId: string | null | undefined,
-  label: string
+  doc: DocRef
 ): DraftLine[] {
   const diff = r.stockDeltaFils - bookedFils;
   if (diff === 0) return [];
@@ -462,13 +473,13 @@ export function trueUpLines(
       controlLeg: "inventory",
       fils: diff,
       costCenterId: null,
-      description: `${label} - stock true-up`,
+      ...journalLine("invStockTrueUp", doc),
     },
     {
       accountId: r.accounts.cogs,
       fils: -diff,
       costCenterId,
-      description: `${label} - cost true-up`,
+      ...journalLine("invCostTrueUp", doc),
     },
   ];
 }
