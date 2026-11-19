@@ -292,6 +292,9 @@ export async function requestActivation(
   return { activationRequestedAt: at.toISOString() };
 }
 
+/** The product name stays a proper noun in both languages (never translated to "محاسب"). */
+const BRAND_NAME = "Muhasib.ai";
+
 /**
  * "Your plan is active": queued (outbox) to every company owner when an NR admin applies a paid
  * plan, and clears the open activation request (the request is answered). The idempotency key is
@@ -322,13 +325,13 @@ export async function onPlanActivated(
   for (const r of rows) {
     const text = [
       `Your ${plan.en} plan (${price.en}) is now active for ${r.company_name}.`,
-      "You can add and change records as usual. Thank you for choosing Muhasib.ai.",
+      `You can add and change records as usual. Thank you for choosing ${BRAND_NAME}.`,
       `Manage your plan: ${appUrl("/subscription")}`,
       "",
       "---",
       "",
       `تم تفعيل ${plan.ar} (${price.ar}) لشركة ${r.company_name}.`,
-      "يمكنك إضافة السجلات وتعديلها كالمعتاد. شكرًا لاختيارك محاسب.",
+      `يمكنك إضافة السجلات وتعديلها كالمعتاد. شكرًا لاختيارك ${BRAND_NAME}.`,
       `إدارة خطتك: ${appUrl("/subscription")}`,
     ].join("\n");
     const res = await sendEmail(

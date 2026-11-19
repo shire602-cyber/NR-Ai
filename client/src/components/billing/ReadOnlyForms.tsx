@@ -1,14 +1,28 @@
 import { useEffect } from "react";
 import { useLocation } from "wouter";
-import { PLAN_LOCK_ALWAYS_OPEN, featureForRoute } from "@/lib/plan-routes";
+import { featureForRoute, routeWritesAreGated } from "@/lib/plan-routes";
 import { useSubscription } from "@/hooks/useSubscription";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 const FLAG = "data-plan-locked-disabled";
 /** Forms that stay usable in a read-only workspace: search and filters, and anything opted out. */
 const EXEMPT = '[role="search"], [data-readonly-ok], form[method="get" i]';
 /** Leaving a locked form must keep working: Cancel / Close / Back buttons are not disabled. */
-const KEEP_OPEN = /cancel|close|back/i;
-const testIdOf = (el: HTMLElement) => el.getAttribute("data-testid") ?? "";
+const KEEP_OPEN = /cancel|close|back|dismiss|إلغاء|إغلاق|اغلاق|رجوع|عودة|تراجع/i;
+
+/** Controls that only navigate or leave the form: tabs, and type="button" Cancel/Close/Back. */
+function keepsOpen(control: HTMLElement): boolean {
+  if (control.getAttribute("role") === "tab" || control.closest('[role="tablist"]')) return true;
+  if (control.hasAttribute("data-radix-dialog-close") || control.closest("[data-dialog-close]"))
+    return true;
+  if (!(control instanceof HTMLButtonElement) || control.type !== "button") return false;
+  const label = [
+    control.getAttribute("data-testid"),
+    control.getAttribute("aria-label"),
+    control.textContent,
+  ].join(" ");
+  return KEEP_OPEN.test(label);
+}
 
 /** Disables the controls of one write form (marks what it changed). */
 function lockForm(form: HTMLFormElement) {
@@ -16,7 +30,7 @@ function lockForm(form: HTMLFormElement) {
   form.setAttribute("data-plan-locked", "true");
   // form.elements also holds controls outside the <form> that point at it (form="id").
   for (const control of Array.from(form.elements) as HTMLElement[]) {
-    if (control.closest("[data-readonly-ok]") || KEEP_OPEN.test(testIdOf(control))) continue;
+    if (control.closest("[data-readonly-ok]") || keepsOpen(control)) continue;
     if ((control as HTMLInputElement).disabled) continue;
     (control as HTMLInputElement).disabled = true;
     control.setAttribute(FLAG, "true");
@@ -53,14 +67,16 @@ function unlockForms() {
 export function ReadOnlyForms() {
   const [location] = useLocation();
   const { enforcement, entitlement, isReadOnly, canWrite } = useSubscription();
+  const { data: user } = useCurrentUser();
   const feature = featureForRoute(location);
-  const alwaysOpen = PLAN_LOCK_ALWAYS_OPEN.some(
-    (p) => location === p || location.startsWith(`${p}/`)
-  );
+  // The server never gates platform admins and NR firm staff (featureGate isExemptCaller), and
+  // only gates the modules in shared/plan-gates.ts and PLAN_ROUTE_FEATURES: lock exactly those.
+  const exemptCaller = user?.isAdmin === true || !!user?.firmRole;
   const locked =
     enforcement &&
     !!entitlement &&
-    !alwaysOpen &&
+    !exemptCaller &&
+    routeWritesAreGated(location) &&
     (isReadOnly || (feature !== null && feature !== undefined && !canWrite(feature)));
 
   useEffect(() => {

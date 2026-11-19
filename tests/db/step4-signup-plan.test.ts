@@ -662,6 +662,9 @@ describe("STEP4 finisher: the plan emails, the admin queue and the day key", () 
     expect(mails[0].text_body).toContain("Your Professional plan (AED 1,190 a year) is now active");
     expect(mails[0].text_body).toContain("تم تفعيل الخطة الاحترافية");
     expect(mails[0].subject).toContain("Your Professional plan is active");
+    // The brand stays a proper noun in the Arabic half too, not the word "accountant".
+    expect(mails[0].text_body).toContain("شكرًا لاختيارك Muhasib.ai");
+    expect(mails[0].text_body).not.toContain("لاختيارك محاسب");
 
     // Re-applying the same plan never sends a second email.
     const again = await admin.as.put(one, { planId: "professional", billingCycle: "yearly" });

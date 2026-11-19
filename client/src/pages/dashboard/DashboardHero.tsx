@@ -9,6 +9,7 @@ import { BarChart3, BookOpen, FileText, MoreHorizontal, Receipt, Sparkles } from
 import { Link } from "wouter";
 import { formatDateRange } from "@/lib/format-date";
 import { currencyLabel } from "@/lib/format-money";
+import { useReadOnlyPlanCta } from "@/hooks/useReadOnlyPlanCta";
 import { PeriodSelector } from "./PeriodSelector";
 import { NeedsYouStrip } from "./NeedsYouStrip";
 import type { DashboardModel } from "./useCustomerDashboardModel";
@@ -23,6 +24,7 @@ export function DashboardHero({ m, empty = false }: { m: DashboardModel; empty?:
   const { t, locale, stats, periodChoice, setPeriodChoice } = m;
   const companyName = m.companyName;
   const tt = t as Record<string, string>;
+  const planCta = useReadOnlyPlanCta();
   const currency = currencyLabel("AED", locale);
   const range = stats ? formatDateRange(stats.period.from, stats.period.to, locale) : "";
 
@@ -67,9 +69,9 @@ export function DashboardHero({ m, empty = false }: { m: DashboardModel; empty?:
             </Link>
           </Button>
           <Button asChild className="flex-1 sm:flex-none" data-testid="button-quick-invoice">
-            <Link href="/invoices?new=1">
+            <Link href={planCta?.href ?? "/invoices?new=1"}>
               <FileText aria-hidden />
-              {(t as any).newInvoice ?? t["dashboardHero.newInvoice"]}
+              {planCta?.label ?? (t as any).newInvoice ?? t["dashboardHero.newInvoice"]}
             </Link>
           </Button>
           <DropdownMenu>

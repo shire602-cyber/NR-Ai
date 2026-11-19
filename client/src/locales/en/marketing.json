@@ -708,7 +708,7 @@
   "marketing.prEveryEinvoiceBody": "Built for the UAE format. Sending needs an accredited service provider.",
   "marketing.prEveryAiTitle": "AI categorisation",
   "marketing.prEveryAiBody": "Bank lines and receipts get suggested accounts for you to review.",
-  "marketing.trialEndedReadOnly": "Your trial has ended. Your books are read-only until you choose a plan.",
+  "marketing.trialEndedReadOnly": "Your trial has ended. Your books are read-only until you choose a plan and activate it.",
   "marketing.trialSeePlans": "See plans",
   "marketing.migrationOpeningBalancesCta": "Import opening balances",
   "marketing.signupStep": "Step {n} of 2",

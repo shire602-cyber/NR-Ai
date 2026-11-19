@@ -236,12 +236,12 @@
   "shell.toastRegistrationFailed": "فشل التسجيل",
   "shell.toastAccountCreated": "تم إنشاء الحساب!",
   "shell.toastYouHaveSuccessfullyLoggedIn": "تم تسجيل الدخول بنجاح.",
-  "shell.toastWelcomeBack": "مرحباً بعودتك!",
+  "shell.toastWelcomeBack": "مرحبًا بعودتك!",
   "shell.toastWeCouldNotCompleteSocialLoginPlease": "تعذّر إكمال تسجيل الدخول عبر الحساب الاجتماعي. يرجى المحاولة مرة أخرى.",
   "shell.toastLoginFailed": "فشل تسجيل الدخول",
   "shell.toastYouCanNowSignInWithYour": "يمكنك الآن تسجيل الدخول بكلمة المرور الجديدة.",
   "shell.toastPasswordReset": "تمت إعادة تعيين كلمة المرور",
-  "shell.toastThisLinkIsMissingItsTokenRequest": "هذا الرابط لا يحتوي على الرمز المطلوب. اطلب رابطاً جديداً.",
+  "shell.toastThisLinkIsMissingItsTokenRequest": "هذا الرابط لا يحتوي على الرمز المطلوب. اطلب رابطًا جديدًا.",
   "shell.toastInvalidResetLink": "رابط إعادة التعيين غير صالح",
   "payrollRuns": "دورات الرواتب",
   "gratuityCalculator": "حاسبة مكافأة نهاية الخدمة",
@@ -319,5 +319,5 @@
   "rejected": "مرفوض",
   "paidStatus": "مدفوع",
   "installApp": "تثبيت التطبيق",
-  "offlineMessage": "أنت غير متصل بالإنترنت حالياً"
+  "offlineMessage": "أنت غير متصل بالإنترنت حاليًا"
 }

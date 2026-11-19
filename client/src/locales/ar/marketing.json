@@ -708,7 +708,7 @@
   "marketing.prEveryEinvoiceBody": "مبنية على الصيغة الإماراتية. الإرسال يحتاج إلى مزود خدمة معتمد.",
   "marketing.prEveryAiTitle": "التصنيف بالذكاء الاصطناعي",
   "marketing.prEveryAiBody": "تحصل حركات البنك والإيصالات على حسابات مقترحة لتراجعها.",
-  "marketing.trialEndedReadOnly": "انتهت تجربتك. دفاترك للقراءة فقط حتى تختار خطة.",
+  "marketing.trialEndedReadOnly": "انتهت تجربتك. دفاترك للقراءة فقط حتى تختار خطة وتفعّلها.",
   "marketing.trialSeePlans": "عرض الخطط",
   "marketing.migrationOpeningBalancesCta": "استيراد الأرصدة الافتتاحية",
   "marketing.signupStep": "الخطوة {n} من 2",

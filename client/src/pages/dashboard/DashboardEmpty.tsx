@@ -1,5 +1,6 @@
 import { FileText, Landmark, LayoutDashboard } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useReadOnlyPlanCta } from "@/hooks/useReadOnlyPlanCta";
 import { GettingStarted } from "./GettingStarted";
 import type { DashboardModel } from "./useCustomerDashboardModel";
 
@@ -9,6 +10,7 @@ import type { DashboardModel } from "./useCustomerDashboardModel";
  */
 export function DashboardEmpty({ m }: { m: DashboardModel }) {
   const tt = m.t as Record<string, string>;
+  const planCta = useReadOnlyPlanCta();
   return (
     <div className="space-y-8" data-testid="dashboard-empty-company">
       <EmptyState
@@ -16,7 +18,11 @@ export function DashboardEmpty({ m }: { m: DashboardModel }) {
         icon={LayoutDashboard}
         title={tt["dashboard.emptyCompanyTitle"]}
         description={tt["dashboard.emptyCompanyBody"]}
-        action={{ label: tt["dashboard.gsInvoice"], href: "/invoices?new=1", icon: FileText }}
+        action={{
+          label: planCta?.label ?? tt["dashboard.gsInvoice"],
+          href: planCta?.href ?? "/invoices?new=1",
+          icon: FileText,
+        }}
         secondaryAction={{
           label: tt["dashboard.emptyCompanyImport"],
           href: "/bank-accounts",

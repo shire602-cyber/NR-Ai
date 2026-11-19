@@ -46,7 +46,7 @@
   "common.preparerCannotApprove": "أنت من أعدّ هذا البند، لذلك يجب أن يعتمده عضو آخر.",
   "common.errorHeading.fields": "راجع الحقول المحددة",
   "common.errorHeading.permission": "دورك لا يسمح بهذا الإجراء",
-  "common.errorHeading.notFound": "هذا البند لم يعد موجوداً",
+  "common.errorHeading.notFound": "هذا البند لم يعد موجودًا",
   "common.errorHeading.conflict": "غير ممكن في الحالة الحالية لهذا البند",
   "common.errorHeading.rule": "لا يمكن الحفظ بهذه الصورة",
   "common.errorHeading.offline": "أنت غير متصل بالإنترنت",

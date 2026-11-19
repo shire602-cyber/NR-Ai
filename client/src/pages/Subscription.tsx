@@ -243,7 +243,7 @@ function AfterTrialBlock({
         </>
       ) : (
         <>
-          <p>{t["pages.subscriptionNoChoice"]}</p>
+          <p>{t[trialEnded ? "pages.subscriptionNoChoiceEnded" : "pages.subscriptionNoChoice"]}</p>
           <Button
             size="sm"
             variant="outline"
@@ -696,6 +696,19 @@ export default function Subscription() {
                 >
                   <Check className="me-1.5 h-4 w-4" aria-hidden />
                   {t["pages.subscriptionYourChoice"]}
+                </Button>
+              ) : inTrialFlow && activationRequestedAt ? (
+                // A pending activation request names one plan: switching silently would cancel it
+                // without telling support, so the other plans only offer to ask us.
+                <Button
+                  className="h-auto min-h-10 w-full whitespace-normal"
+                  variant="outline"
+                  asChild
+                  data-testid={`plan-switch-pending-${plan.id}`}
+                >
+                  <a href={contactHref(planName)}>
+                    {formatMessage(t["pages.subscriptionSwitchWhilePending"], { plan: planName })}
+                  </a>
                 </Button>
               ) : inTrialFlow ? (
                 <Button
