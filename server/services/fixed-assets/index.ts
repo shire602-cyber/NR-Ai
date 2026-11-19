@@ -28,7 +28,7 @@
  * B1 (M3): a new asset's cost account follows its category when no class or account is given:
  * vehicles 1250, furniture 1220, computers / electronics 1230, equipment 1210, else 1290.
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import { sql } from "drizzle-orm";
 import { db, pool } from "../../db";
 import { DomainError } from "../../errors";
@@ -398,14 +398,14 @@ export async function capitalizeAsset(
     key: `${FA_SOURCE}:${a.id}:capitalize`,
     ...(args.openingBalance ? { kind: "opening" as const } : {}),
     lines: [
-      { accountId: acc.cost, debitFils: costFils, description: `Capitalize ${a.asset_name}` },
+      { accountId: acc.cost, debitFils: costFils, ...journalLine("assetCapitalize", { asset: a.asset_name }) },
       ...(vatAccount
         ? [
             {
               accountId: vatAccount,
               debitFils: vatFils,
               systemVat: true,
-              description: `Input VAT - ${a.asset_name}`,
+              ...journalLine("assetInputVat", { asset: a.asset_name }),
             },
           ]
         : []),
@@ -414,16 +414,16 @@ export async function capitalizeAsset(
             {
               accountId: acc.accumulated,
               creditFils: opening,
-              description: `Opening accumulated depreciation - ${a.asset_name}`,
+              ...journalLine("assetOpeningAccumulated", { asset: a.asset_name }),
             },
           ]
         : []),
       {
         accountId: credit,
         creditFils: costFils - opening + vatFils,
-        description: args.openingBalance
-          ? `Opening balance - ${a.asset_name}`
-          : `Payment for ${a.asset_name}`,
+        ...(args.openingBalance
+          ? journalLine("assetOpeningBalance", { asset: a.asset_name })
+          : journalLine("assetPayment", { asset: a.asset_name })),
       },
     ],
     actorId: args.actorId,
@@ -826,12 +826,12 @@ export async function depreciateInTx(
         accountId: acc.expense,
         debitFils: calc.amountFils,
         costCenterId: a.cost_center_id ?? null,
-        description: `Depreciation - ${a.asset_name}`,
+        ...journalLine("assetDepreciation", { asset: a.asset_name }),
       },
       {
         accountId: acc.accumulated,
         creditFils: calc.amountFils,
-        description: `Accumulated depreciation - ${a.asset_name}`,
+        ...journalLine("assetAccumulatedDepreciation", { asset: a.asset_name }),
       },
     ],
     actorId,
@@ -920,7 +920,7 @@ export async function revalueAsset(
     lines.push({
       accountId: acc.accumulated,
       debitFils: eliminated,
-      description: `Eliminate accumulated depreciation on revaluation - ${a.asset_name}`,
+      ...journalLine("assetEliminateAccumulated", { asset: a.asset_name }),
     });
   }
   let costNet = -eliminated;
@@ -929,7 +929,7 @@ export async function revalueAsset(
     lines.push({
       accountId: surplusAcct,
       creditFils: delta,
-      description: `Revaluation surplus - ${a.asset_name}`,
+      ...journalLine("assetRevaluationSurplus", { asset: a.asset_name }),
     });
     surplus += delta;
   } else {
@@ -940,7 +940,7 @@ export async function revalueAsset(
       lines.push({
         accountId: surplusAcct,
         debitFils: fromSurplus,
-        description: `Reverse surplus - ${a.asset_name}`,
+        ...journalLine("assetReverseSurplus", { asset: a.asset_name }),
       });
     if (toExpense > 0) {
       const imp = await ensureAccountByCode(tx, a.company_id, FA_CODES.IMPAIRMENT);
@@ -948,7 +948,7 @@ export async function revalueAsset(
         accountId: imp,
         debitFils: toExpense,
         costCenterId: a.cost_center_id,
-        description: `Revaluation loss - ${a.asset_name}`,
+        ...journalLine("assetRevaluationLoss", { asset: a.asset_name }),
       });
     }
     costNet -= down;
@@ -958,7 +958,7 @@ export async function revalueAsset(
     lines.push({
       accountId: acc.cost,
       ...(costNet > 0 ? { debitFils: costNet } : { creditFils: -costNet }),
-      description: `Revaluation - ${a.asset_name}`,
+      ...journalLine("assetRevaluation", { asset: a.asset_name }),
     });
   }
   const n = await q<{ n: number }>(
@@ -1012,7 +1012,7 @@ export async function impairAsset(
     lines.push({
       accountId: await ensureAccountByCode(tx, a.company_id, FA_CODES.REVALUATION),
       debitFils: fromSurplus,
-      description: `Impairment charged to revaluation surplus - ${a.asset_name}`,
+      ...journalLine("assetImpairmentSurplus", { asset: a.asset_name }),
     });
   }
   if (toProfitOrLoss > 0) {
@@ -1020,13 +1020,13 @@ export async function impairAsset(
       accountId: await ensureAccountByCode(tx, a.company_id, FA_CODES.IMPAIRMENT),
       debitFils: toProfitOrLoss,
       costCenterId: a.cost_center_id,
-      description: `Impairment - ${a.asset_name}`,
+      ...journalLine("assetImpairment", { asset: a.asset_name }),
     });
   }
   lines.push({
     accountId: acc.accumulated,
     creditFils: args.amountFils,
-    description: `Accumulated impairment - ${a.asset_name}`,
+    ...journalLine("assetAccumulatedImpairment", { asset: a.asset_name }),
   });
   const n = await q<{ n: number }>(
     tx,
@@ -1406,7 +1406,7 @@ async function disposeInTx(
         lines.push({
           accountId: l.accountId,
           debitFils: l.fils,
-          description: `Invoiced proceeds moved to disposal of ${a.asset_name}`,
+          ...journalLine("assetInvoicedProceeds", { asset: a.asset_name }),
         });
       }
     } else if (grossFils > 0) {
@@ -1423,7 +1423,7 @@ async function disposeInTx(
       lines.push({
         accountId: proceedsAccount,
         debitFils: grossFils,
-        description: `Proceeds from disposal of ${a.asset_name}`,
+        ...journalLine("assetDisposalProceeds", { asset: a.asset_name }),
       });
     }
     const accumulated = c.accumulatedFils + (c.impairmentFils ?? 0);
@@ -1431,7 +1431,7 @@ async function disposeInTx(
       lines.push({
         accountId: acc.accumulated,
         debitFils: accumulated,
-        description: `Reverse accumulated depreciation on ${a.asset_name}`,
+        ...journalLine("assetReverseAccumulated", { asset: a.asset_name }),
       });
     }
     if (split.gainLossFils < 0) {
@@ -1439,14 +1439,14 @@ async function disposeInTx(
       lines.push({
         accountId: loss,
         debitFils: -split.gainLossFils,
-        description: `Loss on disposal of ${a.asset_name}`,
+        ...journalLine("assetDisposalLoss", { asset: a.asset_name }),
       });
     }
     const grossCost = c.costFils + (c.revaluationFils ?? 0);
     lines.push({
       accountId: acc.cost,
       creditFils: grossCost,
-      description: `Remove cost of ${a.asset_name}`,
+      ...journalLine("assetRemoveCost", { asset: a.asset_name }),
     });
     if (split.vatFils > 0 && !invoice) {
       const vat = await ensureAccountByCode(tx, a.company_id, FA_CODES.VAT_OUTPUT);
@@ -1454,7 +1454,7 @@ async function disposeInTx(
         accountId: vat,
         creditFils: split.vatFils,
         systemVat: true,
-        description: `Output VAT 5% - disposal of ${a.asset_name}`,
+        ...journalLine("assetDisposalOutputVat", { asset: a.asset_name }),
       });
     }
     if (split.gainLossFils > 0) {
@@ -1462,7 +1462,7 @@ async function disposeInTx(
       lines.push({
         accountId: gain,
         creditFils: split.gainLossFils,
-        description: `Gain on disposal of ${a.asset_name}`,
+        ...journalLine("assetDisposalGain", { asset: a.asset_name }),
       });
     }
     // Realised revaluation surplus moves to retained earnings (IAS 16.41): what the asset still
@@ -1474,12 +1474,12 @@ async function disposeInTx(
       lines.push({
         accountId: surplus,
         debitFils: heldSurplus,
-        description: `Realise revaluation surplus - ${a.asset_name}`,
+        ...journalLine("assetRealiseSurplus", { asset: a.asset_name }),
       });
       lines.push({
         accountId: re,
         creditFils: heldSurplus,
-        description: `Realised revaluation surplus - ${a.asset_name}`,
+        ...journalLine("assetRealisedSurplus", { asset: a.asset_name }),
       });
     }
     const treatment = input.proceedsFils > 0 ? (input.vatTreatment ?? "standard") : null;

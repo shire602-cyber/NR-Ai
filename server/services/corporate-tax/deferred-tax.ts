@@ -20,7 +20,7 @@
  * return filed before go-live are entered here and feed the next return's brought-forward pool
  * (repository.getPriorCtFacts).
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { pool } from "../../db";
 import { DomainError } from "../../errors";
@@ -281,37 +281,37 @@ export async function postDeferredTax(
     lines.push({
       accountId: p.accounts.dta,
       debitFils: da,
-      description: "Deferred tax asset increase",
+      ...journalLine("dtaIncrease"),
     });
   if (da < 0)
     lines.push({
       accountId: p.accounts.dta,
       creditFils: -da,
-      description: "Deferred tax asset decrease",
+      ...journalLine("dtaDecrease"),
     });
   if (dl > 0)
     lines.push({
       accountId: p.accounts.dtl,
       creditFils: dl,
-      description: "Deferred tax liability increase",
+      ...journalLine("dtlIncrease"),
     });
   if (dl < 0)
     lines.push({
       accountId: p.accounts.dtl,
       debitFils: -dl,
-      description: "Deferred tax liability decrease",
+      ...journalLine("dtlDecrease"),
     });
   if (expenseFils > 0)
     lines.push({
       accountId: p.accounts.expense,
       debitFils: expenseFils,
-      description: "Deferred tax expense",
+      ...journalLine("deferredTaxExpense"),
     });
   if (expenseFils < 0)
     lines.push({
       accountId: p.accounts.expense,
       creditFils: -expenseFils,
-      description: "Deferred tax income",
+      ...journalLine("deferredTaxIncome"),
     });
   try {
     const posted = await postJournal(

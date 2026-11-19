@@ -586,6 +586,10 @@ export interface JournalLineReportRow {
   debit: number;
   credit: number;
   memo?: string | null;
+  /** The line's own description and, for a system line, its stored key + params (0132). */
+  description?: string | null;
+  lineKey?: string | null;
+  lineParams?: Record<string, string> | null;
   foreignCurrency?: string | null;
   account?: JournalAccount | null;
 }
@@ -612,6 +616,9 @@ export interface LedgerLineRow {
   /** Stored key of the entry memo (null when the line shows its own, different description). */
   memoKey: string | null;
   memoParams: Record<string, string> | null;
+  /** Stored key + params of the line's own description (null when the row shows the memo). */
+  lineKey: string | null;
+  lineParams: Record<string, string> | null;
   source: string;
   accountId: string;
   accountCode: string;

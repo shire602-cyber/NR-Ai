@@ -711,7 +711,7 @@ export class SalesStorage extends LedgerStorage {
         customerCreditAccountId,
         fxGainAccountId,
         fxLossAccountId,
-        label: `Invoice ${lockedInvoice.number || input.invoiceId}`,
+        ref: lockedInvoice.number || input.invoiceId,
       });
       if (!built.ok) {
         const e: Error & { code?: string; details?: unknown } = new Error(built.message);
@@ -772,6 +772,8 @@ export class SalesStorage extends LedgerStorage {
               debit: l.debit > 0 ? l.debit.toFixed(2) : undefined,
               credit: l.credit > 0 ? l.credit.toFixed(2) : undefined,
               description: l.description,
+              lineKey: l.lineKey,
+              lineParams: l.lineParams,
               ...(foreignCur && isAr
                 ? {
                     foreignCurrency: foreignCur,

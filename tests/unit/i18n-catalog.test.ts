@@ -67,7 +67,14 @@ describe("i18n catalogs", () => {
   });
 
   it("R18-02: Arabic values contain Arabic script (not an English copy)", () => {
-    const allowedLatin = new Set(["shell.brandName"]);
+    // The journal line registry has entries that are only a parameter (a stock document's own
+    // reference, a merchant name): nothing to translate.
+    const allowedLatin = new Set([
+      "shell.brandName",
+      "journal.memo.line.docOnly",
+      "journal.memo.doc.text",
+      "journal.memo.line.receiptLabel",
+    ]);
     for (const [namespace, catalog] of Object.entries(ar)) {
       for (const [key, value] of Object.entries(catalog)) {
         if (allowedLatin.has(key)) continue;

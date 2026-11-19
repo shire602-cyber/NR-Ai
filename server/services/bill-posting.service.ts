@@ -18,7 +18,7 @@
 // Uncategorised lines post to 5000 General Expenses (created on demand), never 5130 (which the
 // seeded chart uses for Loss on Asset Disposal, R11-04).
 
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import { sql, type SQL } from "drizzle-orm";
 import { storage } from "../storage";
 import { ACCOUNT_CODES } from "../constants";
@@ -573,7 +573,7 @@ export async function planBillJournal(
     lines.push({
       accountId,
       debitFils,
-      description: `Bill ${billRef} - ${lineItems[i].description}`.slice(0, 255),
+      ...journalLine("billLine", { ref: billRef, text: lineItems[i].description }, 255),
     });
   }
 
@@ -595,7 +595,7 @@ export async function planBillJournal(
       accountId: inputVat.id,
       debitFils: recoverableBase,
       systemVat: true,
-      description: `Input VAT - Bill ${billRef}`,
+      ...journalLine("billInputVat", { ref: billRef }),
     });
   }
 
@@ -621,7 +621,7 @@ export async function planBillJournal(
       accountId: outputVat.id,
       creditFils: rcVatBase,
       systemVat: true,
-      description: `Reverse-charge output VAT - Bill ${billRef}`,
+      ...journalLine("billReverseChargeVat", { ref: billRef }),
     });
   }
   const whtBase = toBase(whtDoc, rate, foreign);
@@ -630,7 +630,7 @@ export async function planBillJournal(
     lines.push({
       accountId: wht.id,
       creditFils: whtBase,
-      description: `Withholding - Bill ${billRef}`,
+      ...journalLine("billWithholding", { ref: billRef }),
     });
   }
   const apCreditFils = totalDebit - rcVatBase - whtBase;
@@ -647,7 +647,7 @@ export async function planBillJournal(
     accountId: ap.id,
     creditFils: apCreditFils,
     controlLeg: "payables",
-    description: `A/P - ${bill.vendor_name} - Bill ${billRef}`.slice(0, 255),
+    ...journalLine("billPayable", { party: bill.vendor_name, ref: billRef }, 255),
     ...(foreign
       ? {
           foreignCurrency: currency,

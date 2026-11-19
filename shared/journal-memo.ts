@@ -101,7 +101,9 @@ export const JOURNAL_MEMO_TEMPLATES = {
   partialExemption: "Irrecoverable input VAT {from} to {to} (partial exemption, Art. 55)",
   // Period end and FX
   yearEndClose: "Year-end close FY {ref}",
+  yearEndCloseRange: "Year-end close FY {from} to {to}",
   yearEndCloseReversal: "Reversal of year-end close FY {ref}",
+  yearEndCloseReversalRange: "Reversal of year-end close FY {from} to {to}",
   computedClose: "Computed close for {from} to {to}",
   fxRevaluation: "Unrealised FX revaluation {date}",
   fxRevaluationReversal: "Automatic reversal of unrealised FX revaluation {date}",
@@ -134,9 +136,53 @@ export interface JournalMemoFields {
   memoParams: Record<string, string>;
 }
 
-/** Fill `{name}` placeholders; a missing parameter reads as empty. */
-export function fillJournalMemo(template: string, params: JournalMemoParams): string {
+/**
+ * The document a stock line belongs to ("Bill BILL-1", "PO PO-7 receipt"). A line template that
+ * carries `{doc}` names it with `docKind` + `ref` parameters, so Arabic renders the document word
+ * too (catalog `journal.memo.doc.<kind>`) instead of keeping an English label.
+ */
+export const JOURNAL_DOC_TEMPLATES = {
+  bill: "Bill {ref}",
+  invoice: "Invoice {ref}",
+  creditNote: "Credit note {ref}",
+  debitNote: "Debit note {ref}",
+  poReceipt: "PO {ref} receipt",
+  reversalBill: "Reversal Bill {ref}",
+  reversalInvoice: "Reversal Invoice {ref}",
+  reversalCreditNote: "Reversal Credit note {ref}",
+  stocktake: "Stocktake",
+  stockPurchase: "Stock purchase",
+  stockSale: "Stock sale",
+  stockAdjustment: "Stock adjustment",
+  stockReturn: "Stock return",
+  text: "{ref}",
+} as const;
+
+export type JournalDocKind = keyof typeof JOURNAL_DOC_TEMPLATES;
+
+export const journalDocCatalogKey = (kind: string): string => `journal.memo.doc.${kind}`;
+
+/** `{doc}` value of a parameter set that has a `docKind` (English unless `docTemplates` is given). */
+function docText(params: JournalMemoParams, docTemplates?: Record<string, string>): string {
+  const kind = String(params.docKind ?? "");
+  const template =
+    docTemplates?.[journalDocCatalogKey(kind)] ??
+    (JOURNAL_DOC_TEMPLATES as Record<string, string>)[kind] ??
+    "{ref}";
   return template.replace(/\{(\w+)\}/g, (_m, name: string) => String(params[name] ?? ""));
+}
+
+/** Fill `{name}` placeholders; a missing parameter reads as empty. */
+export function fillJournalMemo(
+  template: string,
+  params: JournalMemoParams,
+  docTemplates?: Record<string, string>
+): string {
+  const values: JournalMemoParams =
+    template.includes("{doc}") && params.docKind
+      ? { ...params, doc: docText(params, docTemplates) }
+      : params;
+  return template.replace(/\{(\w+)\}/g, (_m, name: string) => String(values[name] ?? ""));
 }
 
 /**
@@ -165,4 +211,249 @@ export const JOURNAL_LINE_TEMPLATES = {
   depositContractLiability: "Customer deposit {ref} - {party} (contract liability)",
   depositVatOnReceipt: "Customer deposit {ref} - {party} (VAT on receipt)",
   depositAppliedLine: "Deposit applied to {invoice}",
+  salesRevenue: "Sales revenue - {ref}",
+  zeroRatedSales: "Zero-rated sales - {ref}",
+  exemptSales: "Exempt sales - {ref}",
+  outOfScopeRevenue: "Out-of-scope revenue - {ref}",
+  vatOutput: "VAT output - {ref}",
+  invoiceReceivable: "Invoice {ref} - {party}",
+  invoiceReceivableFx: "Invoice {ref} - {party} ({currency} {amount} @ {rate})",
+  reverseVat: "Reverse VAT - {ref}",
+  reverseRevenue: "Reverse revenue - {ref}",
+  reduceReceivable: "Reduce A/R - {ref}",
+  customerCreditLine: "Customer credit - {ref}",
+  billLine: "Bill {ref} - {text}",
+  billInputVat: "Input VAT - Bill {ref}",
+  billReverseChargeVat: "Reverse-charge output VAT - Bill {ref}",
+  billWithholding: "Withholding - Bill {ref}",
+  billPayable: "A/P - {party} - Bill {ref}",
+  billSettleAp: "Settle A/P - Bill {ref} - {party}",
+  billPaymentTo: "Payment to {party} - Bill {ref}",
+  billFxLoss: "Realised FX loss - Bill {ref}",
+  billFxGain: "Realised FX gain - Bill {ref}",
+  vendorAdvance: "Advance - {party}",
+  vendorAdvancePaid: "Advance paid - {party}",
+  prepaymentAppliedLine: "Prepayment applied - {party}",
+  realisedFxLoss: "Realised FX loss",
+  realisedFxGain: "Realised FX gain",
+  debitNoteLine: "Debit note {ref} - {text}",
+  inputVatReversal: "Input VAT reversal - {ref}",
+  rcOutputVatReversal: "Reverse-charge output VAT reversal - {ref}",
+  debitNotePayable: "A/P - debit note {ref}",
+  depositReceived: "Customer deposit {ref} - {party}",
+  depositAppliedContract: "Deposit applied to {invoice} (contract liability)",
+  depositAppliedVatReversed: "Deposit applied to {invoice} (advance VAT reversed: charged on the invoice)",
+  refundDepositContract: "Refund of customer deposit ({party}) (contract liability)",
+  refundDepositVatReversed: "Refund of customer deposit ({party}) (advance VAT reversed: charged on the invoice)",
+  creditApplied: "Credit applied to {invoice}",
+  refundDeposit: "Refund of customer deposit ({party})",
+  refundCredit: "Refund of customer credit ({party})",
+  creditAppliedFxGain: "Credit applied to {invoice} — realised FX gain",
+  creditAppliedFxLoss: "Credit applied to {invoice} — realised FX loss",
+  refundDepositFxGain: "Refund of customer deposit ({party}) — realised FX gain",
+  refundDepositFxLoss: "Refund of customer deposit ({party}) — realised FX loss",
+  refundCreditFxGain: "Refund of customer credit ({party}) — realised FX gain",
+  refundCreditFxLoss: "Refund of customer credit ({party}) — realised FX loss",
+  badDebtWriteOff: "Bad debt written off - {invoice}",
+  badDebtWriteOffAllowanceUsed: "Bad debt written off - {invoice} (allowance used)",
+  allowanceIncreaseLine: "Increase in allowance for doubtful debts",
+  allowanceReleaseLine: "Release of allowance for doubtful debts",
+  paymentCashReceived: "Invoice {ref} — cash received",
+  paymentClearAr: "Invoice {ref} — clear A/R",
+  paymentCustomerCredit: "Invoice {ref} — customer credit (overpayment)",
+  paymentFxGain: "Invoice {ref} — realised FX gain",
+  paymentFxLoss: "Invoice {ref} — realised FX loss",
+  bankFeeLine: "Bank fee on customer receipt",
+  payrollSalaries: "Salaries & wages - payroll {label}{rest}",
+  payrollEmployerPension: "Employer pension contribution (GPSSA / ADPF) - payroll {label}{rest}",
+  payrollGratuityAccrual: "End-of-service gratuity accrual - payroll {label}{rest}",
+  payrollNetPayable: "Net salaries payable - payroll {label}",
+  payrollPensionPayable: "Pension payable (GPSSA / ADPF, employee + employer) - payroll {label}",
+  payrollDeductionsPayable: "Payroll deductions payable - payroll {label}",
+  payrollGratuityProvision: "End-of-service gratuity provision - payroll {label}",
+  payrollNetPaid: "Net salaries paid - payroll {label}",
+  payrollReimbursements: "Expense claim reimbursements - payroll {label}",
+  salaryPaymentLine: "Salary payment - payroll {label}",
+  settlementProvisionCleared: "Gratuity provision cleared - {party}",
+  settlementGratuityAbove: "End-of-service gratuity above provision - {party}",
+  settlementProvisionReleased: "Excess gratuity provision released - {party}",
+  settlementNoticeLeave: "Notice pay, leave encashment and additions - {party}",
+  settlementDeductions: "Final settlement deductions - {party}",
+  settlementPayable: "Final settlement payable - {party}",
+  settlementPaid: "Final settlement paid - {party}",
+  settlementPayment: "Final settlement payment - {party}",
+  openingGratuityEquity: "Opening balance: gratuity provision brought forward",
+  openingGratuityProvision: "Opening gratuity provision (employees' service before go-live)",
+  pensionPayableCleared: "Pension payable cleared - {fund} contributions{period}",
+  pensionPaidTo: "Paid to {fund} contributions{period}",
+  gatewayFeeLine: "Gateway processing fee",
+  fxRevalAr: "Unrealised FX revaluation — A/R",
+  fxRevalAp: "Unrealised FX revaluation — A/P",
+  fxRevalBank: "Unrealised FX revaluation — bank",
+  fxUnrealisedGain: "Unrealised FX gain",
+  fxUnrealisedLoss: "Unrealised FX loss",
+  fxUndoRevalAr: "Undo — Unrealised FX revaluation — A/R",
+  fxUndoRevalAp: "Undo — Unrealised FX revaluation — A/P",
+  fxUndoRevalBank: "Undo — Unrealised FX revaluation — bank",
+  fxUndoUnrealisedGain: "Undo — Unrealised FX gain",
+  fxUndoUnrealisedLoss: "Undo — Unrealised FX loss",
+  assetCapitalize: "Capitalize {asset}",
+  assetInputVat: "Input VAT - {asset}",
+  assetOpeningAccumulated: "Opening accumulated depreciation - {asset}",
+  assetOpeningBalance: "Opening balance - {asset}",
+  assetPayment: "Payment for {asset}",
+  assetDepreciation: "Depreciation - {asset}",
+  assetAccumulatedDepreciation: "Accumulated depreciation - {asset}",
+  assetEliminateAccumulated: "Eliminate accumulated depreciation on revaluation - {asset}",
+  assetRevaluationSurplus: "Revaluation surplus - {asset}",
+  assetReverseSurplus: "Reverse surplus - {asset}",
+  assetRevaluationLoss: "Revaluation loss - {asset}",
+  assetRevaluation: "Revaluation - {asset}",
+  assetImpairmentSurplus: "Impairment charged to revaluation surplus - {asset}",
+  assetImpairment: "Impairment - {asset}",
+  assetAccumulatedImpairment: "Accumulated impairment - {asset}",
+  assetInvoicedProceeds: "Invoiced proceeds moved to disposal of {asset}",
+  assetDisposalProceeds: "Proceeds from disposal of {asset}",
+  assetReverseAccumulated: "Reverse accumulated depreciation on {asset}",
+  assetDisposalLoss: "Loss on disposal of {asset}",
+  assetRemoveCost: "Remove cost of {asset}",
+  assetDisposalOutputVat: "Output VAT 5% - disposal of {asset}",
+  assetDisposalGain: "Gain on disposal of {asset}",
+  assetRealiseSurplus: "Realise revaluation surplus - {asset}",
+  assetRealisedSurplus: "Realised revaluation surplus - {asset}",
+  disposalProceedsReduced: "Disposal proceeds reduced by {ref} - {asset}",
+  disposalLossIncreased: "Loss on disposal increased by {ref} - {asset}",
+  disposalInvoiceMoved: "{ref} on a disposal invoice moved to the disposal result",
+  disposalLossReduced: "Loss on disposal reduced by {ref} - {asset}",
+  disposalProceedsIncreased: "Disposal proceeds increased by {ref} - {asset}",
+  invStockTrueUp: "{doc} - stock true-up",
+  invCostTrueUp: "{doc} - cost true-up",
+  docVoidedKept: "{doc} voided - received goods kept in stock",
+  docVoidedGrni: "{doc} voided - goods received not invoiced",
+  docClearGrni: "{doc} - clear goods received not invoiced",
+  docPpvOnHand: "{doc} - purchase price variance on stock on hand",
+  docPpvSold: "{doc} - purchase price variance on stock sold",
+  docStockItem: "{doc} - stock {item}",
+  docReturned: "{doc} - returned {item}",
+  docPurchaseReturnDiff: "{doc} - purchase return price difference",
+  invoiceCogsLine: "COGS - Invoice {ref} - {item}",
+  invoiceStockOutLine: "Stock out - Invoice {ref}",
+  creditNoteRestock: "Restock - {ref}",
+  creditNoteReverseCogs: "Reverse COGS - {ref}",
+  docStockIn: "{doc} - stock in",
+  docStockOut: "{doc} - stock out",
+  docGrni: "{doc} - goods received not invoiced",
+  docOnly: "{doc}",
+  openingStockLine: "Opening stock",
+  openingStockBackfillLine: "Opening stock valuation backfill",
+  openingStockValuationLine: "Opening stock valuation",
+  writeDownExpense: "Write-down - {reason}",
+  writeDownInventory: "Write-down",
+  writeDownReversalInventory: "Write-down reversal",
+  writeDownReversalExpense: "Write-down reversal - {reason}",
+  stocktakeSurplus: "Stocktake surplus",
+  stocktakeShortage: "Stocktake shortage",
+  receiptLabel: "{merchant} - {category}",
+  receiptLabelNoCategory: "{merchant} - General",
+  receiptLabelNoMerchant: "Expense - {category}",
+  receiptLabelBare: "Expense - General",
+  receiptInputVat: "Input VAT - {merchant}",
+  receiptInputVatNoMerchant: "Input VAT - expense",
+  receiptInputVatRc: "Input VAT (reverse-charge) - {merchant}",
+  receiptInputVatRcNoMerchant: "Input VAT (reverse-charge) - expense",
+  receiptOutputVatRc: "Output VAT (reverse-charge) - {merchant}",
+  receiptOutputVatRcNoMerchant: "Output VAT (reverse-charge) - expense",
+  receiptPayment: "Payment for {merchant}",
+  receiptPaymentNoMerchant: "Payment for expense",
+  bankFeeOn: "Bank fee: {text}",
+  fxDifference: "FX difference",
+  bankOutputVat: "Output VAT 5%: {text}",
+  bankInputVat: "Input VAT 5%: {text}",
+  yearEndCloseLine: "Year-end close - {account}",
+  yearEndCloseReversalLine: "Reversal - Year-end close - {account}",
+  vatReturnOutput: "VAT return {from} to {to}: output VAT",
+  vatReturnInput: "VAT return {from} to {to}: input VAT",
+  vatReturnPaid: "VAT return {from} to {to}: VAT paid to the FTA",
+  vatReturnRefund: "VAT return {from} to {to}: VAT refund from the FTA",
+  vatAmendedReturnOutput: "Amended VAT return {from} to {to}: output VAT",
+  vatAmendedReturnInput: "Amended VAT return {from} to {to}: input VAT",
+  vatAmendedReturnPaid: "Amended VAT return {from} to {to}: VAT paid to the FTA",
+  vatAmendedReturnRefund: "Amended VAT return {from} to {to}: VAT refund from the FTA",
+  vatReliefOutput: "Output VAT relief - {ref}",
+  vatReliefRecovered: "VAT recovered on bad debt - {ref}",
+  irrecoverableInputVat: "Irrecoverable input VAT",
+  inputVatApportioned: "Input VAT apportioned",
+  ctExpense: "Corporate tax expense",
+  ctPayable: "Corporate tax payable",
+  ctExpenseUnderProvision: "Corporate tax expense - under-provision on filing",
+  ctPayableUnderProvision: "Corporate tax payable - under-provision on filing",
+  ctExpenseOverProvision: "Corporate tax expense - over-provision on filing",
+  ctPayableOverProvision: "Corporate tax payable - over-provision on filing",
+  ctExpenseAccrual: "Corporate tax expense - year-end accrual",
+  ctPayableAccrual: "Corporate tax payable - year-end accrual",
+  dtaIncrease: "Deferred tax asset increase",
+  dtaDecrease: "Deferred tax asset decrease",
+  dtlIncrease: "Deferred tax liability increase",
+  dtlDecrease: "Deferred tax liability decrease",
+  deferredTaxExpense: "Deferred tax expense",
+  deferredTaxIncome: "Deferred tax income",
+  openingBalanceLine: "Opening balance",
+  openingCarriedByDocuments: "A/R and A/P carried by open documents",
+  openingCarriedByStock: "Inventory carried by opening stock",
+  openingAr: "Opening A/R {ref}",
+  openingAp: "Opening A/P {ref}",
+  claimExpense: "Expense claim — {code}",
+  claimInputVat: "Expense claim — recoverable input VAT",
+  claimOwed: "Expense claim — owed to employee",
+  reimbursementClear: "Reimbursement {ref} — clear employee payable",
+  reimbursementPaid: "Reimbursement {ref} — paid to employee",
+  reimbursementPaidFx: "Reimbursement {ref} — paid to employee ({currency})",
+  reimbursementFxLoss: "Realised FX loss — reimbursement {ref}",
+  reimbursementFxGain: "Realised FX gain — reimbursement {ref}",
+  vwExpense: "{label} — expense",
+  vwInputVat: "{label} — input VAT",
+  vwPayable: "{label} — payable",
+  vwInputVatRecoverable: "{label} — input VAT (recoverable)",
+  vwOutputVatSelf: "{label} — output VAT (self-assessed)",
+  vwReceivable: "{label} — receivable",
+  vwRevenue: "{label} — revenue",
+  vwOutputVat: "{label} — output VAT",
+  vwZeroRatedRevenue: "{label} — zero-rated revenue",
+  vwExemptRevenue: "{label} — exempt revenue",
+  autopilotInputVat: "Input VAT — {merchant}",
 } as const;
+
+export type JournalLineKey = keyof typeof JOURNAL_LINE_TEMPLATES;
+
+export const journalLineCatalogKey = (key: string): string => `journal.memo.line.${key}`;
+
+export function isJournalLineKey(key: unknown): key is JournalLineKey {
+  return (
+    typeof key === "string" && Object.prototype.hasOwnProperty.call(JOURNAL_LINE_TEMPLATES, key)
+  );
+}
+
+/**
+ * A system line description: the English text for the audit trail plus the key and parameters to
+ * store on the journal line (`line_key`, `line_params`, migration 0132). Spread into a posting
+ * line: `{ accountId, debitFils, ...journalLine("vatOutput", { ref }) }`.
+ */
+export interface JournalLineFields {
+  description: string;
+  lineKey: JournalLineKey;
+  lineParams: Record<string, string>;
+}
+
+export function journalLine(
+  key: JournalLineKey,
+  params: JournalMemoParams = {},
+  maxLength = 500
+): JournalLineFields {
+  const lineParams: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) lineParams[k] = String(v ?? "");
+  return {
+    description: fillJournalMemo(JOURNAL_LINE_TEMPLATES[key], lineParams).slice(0, maxLength),
+    lineKey: key,
+    lineParams,
+  };
+}

@@ -1,5 +1,5 @@
 import type { QueryResultRow } from "pg";
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import { pool } from "../db";
 import { DomainError } from "../errors";
 import { postJournal } from "../ledger";
@@ -900,7 +900,14 @@ export interface ClosePostingPort {
     /** The entry this one undoes (reopen), recorded as source_id. */
     sourceId?: string | null;
     idempotencyKey?: string | null;
-    lines: Array<{ accountId: string; debit: number; credit: number; description: string }>;
+    lines: Array<{
+      accountId: string;
+      debit: number;
+      credit: number;
+      description: string;
+      lineKey?: string | null;
+      lineParams?: Record<string, string> | null;
+    }>;
   }): Promise<{ id: string; entryNumber: string }>;
 }
 
@@ -926,6 +933,7 @@ export const ledgerClosePostingPort: ClosePostingPort = {
             debitFils: Math.round(l.debit * 100),
             creditFils: Math.round(l.credit * 100),
             description: l.description,
+            ...(l.lineKey ? { lineKey: l.lineKey, lineParams: l.lineParams ?? null } : {}),
           })),
       },
       { actorId: input.userId, audit: true }
@@ -1019,14 +1027,14 @@ export async function closeFiscalYear(
     const posted = await closePostingPort.post({
       companyId,
       date: fye,
-      ...journalMemo("yearEndClose", { ref: `${fys} to ${fye}` }),
+      ...journalMemo("yearEndCloseRange", { from: fys, to: fye }),
       source: YEAR_END_CLOSE_SOURCE,
       userId,
       lines: summary.lines.map((l) => ({
         accountId: l.accountId,
         debit: l.debit,
         credit: l.credit,
-        description: `Year-end close - ${l.accountName}`,
+        ...journalLine("yearEndCloseLine", { account: l.accountName }),
       })),
     });
     closingEntryId = posted.id;
@@ -1108,7 +1116,8 @@ export async function reopenFiscalYear(
   try {
     if (row.closing_entry_id) {
       const lines = await pool.query(
-        `SELECT account_id, ROUND(debit * 100)::bigint AS d, ROUND(credit * 100)::bigint AS c, description
+        `SELECT account_id, ROUND(debit * 100)::bigint AS d, ROUND(credit * 100)::bigint AS c, description,
+                line_key, line_params
            FROM journal_lines WHERE entry_id = $1`,
         [row.closing_entry_id]
       );
@@ -1118,7 +1127,7 @@ export async function reopenFiscalYear(
         await closePostingPort.post({
           companyId,
           date: fye,
-          ...journalMemo("yearEndCloseReversal", { ref: `${row.fys} to ${fye}` }),
+          ...journalMemo("yearEndCloseReversalRange", { from: row.fys, to: fye }),
           source: YEAR_END_CLOSE_SOURCE,
           sourceId: row.closing_entry_id,
           idempotencyKey: `year_end_close:${row.closing_entry_id}:reopen`,
@@ -1127,7 +1136,9 @@ export async function reopenFiscalYear(
             accountId: l.account_id,
             debit: aed(Number(l.c)),
             credit: aed(Number(l.d)),
-            description: `Reversal - ${l.description ?? ""}`.trim(),
+            ...(l.line_key === "yearEndCloseLine"
+              ? journalLine("yearEndCloseReversalLine", l.line_params ?? {})
+              : { description: `Reversal - ${l.description ?? ""}`.trim() }),
           })),
         });
       }

@@ -1127,6 +1127,9 @@ export interface GeneralLedgerAccount {
     memoKey?: string | null;
     memoParams?: Record<string, string> | null;
     description: string | null;
+    /** Stored key + params of the line's own description (migration 0132). */
+    lineKey?: string | null;
+    lineParams?: Record<string, string> | null;
     source: string;
     debit: number;
     credit: number;
@@ -1222,6 +1225,8 @@ export async function generalLedger(
         memoKey: l.memoKey,
         memoParams: l.memoParams,
         description: l.description,
+        lineKey: l.lineKey,
+        lineParams: l.lineParams,
         source: l.source,
         debit: aed(l.debit),
         credit: aed(l.credit),

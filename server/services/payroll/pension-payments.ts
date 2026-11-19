@@ -13,7 +13,7 @@
  * payments already posted). Reversing a payment reverses its journal. Contributions are paid
  * through the fund's own portal (GPSSA / ADPF): Muhasib only records the payment.
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { DomainError } from "../../errors";
 import { recordAudit } from "../audit.service";
@@ -166,12 +166,12 @@ export async function payPension(
             accountId: requireAccount(accounts, "pensionPayable"),
             controlLeg: "payroll",
             debitFils: amountFils,
-            description: `Pension payable cleared - ${label}`,
+            ...journalLine("pensionPayableCleared", { fund: FUND_LABEL[body.fund], period }),
           },
           {
             accountId: body.paymentAccountId,
             creditFils: amountFils,
-            description: `Paid to ${label}`,
+            ...journalLine("pensionPaidTo", { fund: FUND_LABEL[body.fund], period }),
           },
         ],
       },

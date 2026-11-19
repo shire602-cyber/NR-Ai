@@ -40,6 +40,13 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   use `journalLifecycle` for the lifecycle. Year-end close posts through the kernel
   (`ledgerClosePostingPort`, kind `year_end_close`); FX revaluation posts kind `revaluation` with a
   linked next-day reversal; receipt post/revise use `postJournal` + `reverseBySource`.
+- System journal text is a key, not English: an entry memo is `journalMemo(key, params)` and every
+  system LINE description is `journalLine(key, params)` (`shared/journal-memo.ts`, columns
+  `memo_key`/`memo_params` and `line_key`/`line_params`, migrations 0131/0132). Add the template
+  and `journal.memo.line.<key>` in both catalogs; `shared/journal-memo-render.ts` renders it in
+  the UI, the GL PDF and the Excel exports (old rows fall back to the pattern matcher). A stock
+  line names its document with `docKind` + `ref`. `tests/unit/journal-memo-registry.test.ts`
+  fails on a raw English `memo:` or line `description:` in server code.
 - Draft journals are removed with the kernel's `deleteDraft(entryId, ctx)` (conditional on
   `status = 'draft'`, audited); never `DELETE FROM journal_entries` directly.
 - Cash settlement seams are late-bound through `server/platform/service-registry.ts`:

@@ -10,7 +10,7 @@
 //     kernel: Dr 5110 Bank charges / Cr the bank account, so the bank receives amount - fee;
 //   * a cash sale creates, issues (revenue entry) and pays the invoice in one transaction
 //     (7.7); the customer is optional and the paid-through cash/bank account is required.
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import { type Express, type Request, type Response } from "express";
 import { and, eq, inArray } from "drizzle-orm";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
@@ -281,12 +281,12 @@ export function registerSalesReceiptRoutes(app: Express) {
                 {
                   accountId: feeAccountId,
                   debitFils: feeFils,
-                  description: "Bank fee on customer receipt",
+                  ...journalLine("bankFeeLine"),
                 },
                 {
                   accountId: body.paymentAccountId,
                   creditFils: feeFils,
-                  description: "Bank fee on customer receipt",
+                  ...journalLine("bankFeeLine"),
                 },
               ],
             },

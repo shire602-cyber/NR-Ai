@@ -11,7 +11,7 @@
  *   write-down Dr 5007               / Cr Inventory          (value only)
  *   stocktake  variance per product against 5007
  */
-import { journalMemo } from "@shared/journal-memo";
+import { type JournalDocKind, journalLine, journalMemo } from "@shared/journal-memo";
 import { sql } from "drizzle-orm";
 import { DomainError } from "../../errors";
 import { fromFils, mulRate, toFils } from "../../../shared/money";
@@ -25,6 +25,7 @@ import {
   stockIn,
   stockOut,
   trueUpLines,
+  type DocRef,
   type DraftLine,
   type MoveContext,
   type MoveResult,
@@ -68,6 +69,13 @@ export interface ManualMovementResult {
   warning?: "NEGATIVE_STOCK";
 }
 
+const MANUAL_DOC_KIND: Record<string, JournalDocKind> = {
+  purchase: "stockPurchase",
+  sale: "stockSale",
+  adjustment: "stockAdjustment",
+  return: "stockReturn",
+};
+
 export async function recordManualMovement(
   tx: LedgerTx,
   input: ManualMovementInput
@@ -85,7 +93,9 @@ export async function recordManualMovement(
     serialNumber: input.serialNumber ?? null,
     afterCommit: input.afterCommit,
   };
-  const label = input.reference || `Stock ${input.type}`;
+  const doc: DocRef = input.reference
+    ? { docKind: "text", ref: input.reference }
+    : { docKind: MANUAL_DOC_KIND[input.type] };
   const inbound =
     input.type === "purchase" ||
     input.type === "return" ||
@@ -140,10 +150,10 @@ export async function recordManualMovement(
       accountId: r.accounts.inventory,
       controlLeg: "inventory",
       fils: valueFils,
-      description: `${label} - stock in`,
+      ...journalLine("docStockIn", doc),
     });
-    lines.push({ accountId: counter, fils: -valueFils, description: label });
-    lines.push(...trueUpLines(r, valueFils, null, label));
+    lines.push({ accountId: counter, fils: -valueFils, ...journalLine("docOnly", doc) });
+    lines.push(...trueUpLines(r, valueFils, null, doc));
   } else {
     const type = input.type === "adjustment" ? "adjustment" : "sale";
     r = await stockOut(tx, input.productId, qty, ctx, type);
@@ -152,12 +162,12 @@ export async function recordManualMovement(
       input.type === "adjustment"
         ? await ensureAccountByCode(tx, input.companyId, INVENTORY_CODES.ADJUSTMENTS)
         : r.accounts.cogs;
-    lines.push({ accountId: expense, fils: r.costFils, description: label });
+    lines.push({ accountId: expense, fils: r.costFils, ...journalLine("docOnly", doc) });
     lines.push({
       accountId: r.accounts.inventory,
       controlLeg: "inventory",
       fils: -r.costFils,
-      description: `${label} - stock out`,
+      ...journalLine("docStockOut", doc),
     });
   }
   if (input.type === "adjustment" && input.quantity < 0) {
@@ -235,9 +245,9 @@ export async function recordOpeningStock(
         accountId: r.accounts.inventory,
         controlLeg: "inventory",
         fils: valueFils,
-        description: "Opening stock",
+        ...journalLine("openingStockLine"),
       },
-      { accountId: equity, fils: -valueFils, description: "Opening stock" },
+      { accountId: equity, fils: -valueFils, ...journalLine("openingStockLine") },
     ],
     actorId: args.actorId,
   });
@@ -357,9 +367,13 @@ export async function applyOpeningBackfill(
           accountId: r.accounts.inventory,
           controlLeg: "inventory",
           fils: r.stockDeltaFils,
-          description: "Opening stock valuation backfill",
+          ...journalLine("openingStockBackfillLine"),
         },
-        { accountId: equity, fils: -r.stockDeltaFils, description: "Opening stock valuation" },
+        {
+          accountId: equity,
+          fils: -r.stockDeltaFils,
+          ...journalLine("openingStockValuationLine"),
+        },
       ],
       actorId: args.actorId,
     });
@@ -404,12 +418,16 @@ export async function writeDownStock(
     sourceId: r.movementId,
     idempotencyKey: `inventory:movement:${r.movementId}`,
     lines: [
-      { accountId: expense, fils: args.amountFils, description: `Write-down - ${args.reason}` },
+      {
+        accountId: expense,
+        fils: args.amountFils,
+        ...journalLine("writeDownExpense", { reason: args.reason }),
+      },
       {
         accountId: r.accounts.inventory,
         controlLeg: "inventory",
         fils: -args.amountFils,
-        description: "Write-down",
+        ...journalLine("writeDownInventory"),
       },
     ],
     actorId: args.actorId,
@@ -532,12 +550,12 @@ export async function reverseWriteDown(
         accountId: r.accounts.inventory,
         controlLeg: "inventory",
         fils: args.amountFils,
-        description: "Write-down reversal",
+        ...journalLine("writeDownReversalInventory"),
       },
       {
         accountId: expense,
         fils: -args.amountFils,
-        description: `Write-down reversal - ${args.reason}`,
+        ...journalLine("writeDownReversalExpense", { reason: args.reason }),
       },
     ],
     actorId: args.actorId,
@@ -634,10 +652,10 @@ export async function postStocktake(
           accountId: r.accounts.inventory,
           controlLeg: "inventory",
           fils: valueFils,
-          description: "Stocktake surplus",
+          ...journalLine("stocktakeSurplus"),
         });
-        draft.push({ accountId: adj, fils: -valueFils, description: "Stocktake surplus" });
-        draft.push(...trueUpLines(r, valueFils, null, "Stocktake"));
+        draft.push({ accountId: adj, fils: -valueFils, ...journalLine("stocktakeSurplus") });
+        draft.push(...trueUpLines(r, valueFils, null, { docKind: "stocktake" }));
       } else {
         const r = await stockOut(tx, l.product_id, -variance, { ...ctx }, "stocktake");
         await tx.execute(
@@ -645,12 +663,12 @@ export async function postStocktake(
         );
         movementIds.push(r.movementId);
         valueFils = -r.costFils;
-        draft.push({ accountId: adj, fils: r.costFils, description: "Stocktake shortage" });
+        draft.push({ accountId: adj, fils: r.costFils, ...journalLine("stocktakeShortage") });
         draft.push({
           accountId: r.accounts.inventory,
           controlLeg: "inventory",
           fils: -r.costFils,
-          description: "Stocktake shortage",
+          ...journalLine("stocktakeShortage"),
         });
       }
     }

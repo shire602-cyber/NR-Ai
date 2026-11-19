@@ -22,7 +22,7 @@
  * - The approver must differ from the preparer (whoever last calculated),
  *   unless the company has a single member and allows single-owner approval.
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { DomainError } from "../../errors";
 import { assertDifferentActor } from "../../middleware/companyRolePolicy";
@@ -817,7 +817,7 @@ export function buildAccrualLines(
         accountId: requireAccount(accounts, "salariesExpense"),
         debitFils: g.grossFils,
         costCenterId: g.costCenterId,
-        description: `Salaries & wages - payroll ${label}${dept}`,
+        ...journalLine("payrollSalaries", { label, rest: dept }),
       });
     }
     if (g.pensionEmployerFils > 0) {
@@ -825,7 +825,7 @@ export function buildAccrualLines(
         accountId: requireAccount(accounts, "pensionExpense"),
         debitFils: g.pensionEmployerFils,
         costCenterId: g.costCenterId,
-        description: `Employer pension contribution (GPSSA / ADPF) - payroll ${label}${dept}`,
+        ...journalLine("payrollEmployerPension", { label, rest: dept }),
       });
     }
     if (g.gratuityFils > 0) {
@@ -833,7 +833,7 @@ export function buildAccrualLines(
         accountId: requireAccount(accounts, "gratuityExpense"),
         debitFils: g.gratuityFils,
         costCenterId: g.costCenterId,
-        description: `End-of-service gratuity accrual - payroll ${label}${dept}`,
+        ...journalLine("payrollGratuityAccrual", { label, rest: dept }),
       });
     }
   }
@@ -842,7 +842,7 @@ export function buildAccrualLines(
       accountId: requireAccount(accounts, "salariesPayable"),
       controlLeg: "payroll",
       creditFils: net,
-      description: `Net salaries payable - payroll ${label}`,
+      ...journalLine("payrollNetPayable", { label }),
     });
   }
   if (pensionEe + pensionEr > 0) {
@@ -850,7 +850,7 @@ export function buildAccrualLines(
       accountId: requireAccount(accounts, "pensionPayable"),
       controlLeg: "payroll",
       creditFils: pensionEe + pensionEr,
-      description: `Pension payable (GPSSA / ADPF, employee + employer) - payroll ${label}`,
+      ...journalLine("payrollPensionPayable", { label }),
     });
   }
   if (deductions > 0) {
@@ -858,7 +858,7 @@ export function buildAccrualLines(
       accountId: requireAccount(accounts, "deductionsPayable"),
       controlLeg: "payroll",
       creditFils: deductions,
-      description: `Payroll deductions payable - payroll ${label}`,
+      ...journalLine("payrollDeductionsPayable", { label }),
     });
   }
   if (gratuity > 0) {
@@ -866,7 +866,7 @@ export function buildAccrualLines(
       accountId: requireAccount(accounts, "gratuityProvision"),
       controlLeg: "payroll",
       creditFils: gratuity,
-      description: `End-of-service gratuity provision - payroll ${label}`,
+      ...journalLine("payrollGratuityProvision", { label }),
     });
   }
   return lines;
@@ -1031,20 +1031,20 @@ export async function payRun(
           accountId: requireAccount(accounts, "salariesPayable"),
           controlLeg: "payroll",
           debitFils: netFils,
-          description: `Net salaries paid - payroll ${label}`,
+          ...journalLine("payrollNetPaid", { label }),
         });
       }
       if (reimbursementFils > 0) {
         lines.push({
           accountId: await reimbursementPayableAccount(tx, companyId),
           debitFils: reimbursementFils,
-          description: `Expense claim reimbursements - payroll ${label}`,
+          ...journalLine("payrollReimbursements", { label }),
         });
       }
       lines.push({
         accountId: body.paymentAccountId,
         creditFils: netFils + reimbursementFils,
-        description: `Salary payment - payroll ${label}`,
+        ...journalLine("salaryPaymentLine", { label }),
       });
       const posted = await postJournal(
         {

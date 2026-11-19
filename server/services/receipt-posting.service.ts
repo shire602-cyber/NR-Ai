@@ -5,7 +5,7 @@
  * UPDATE inside the same ledger transaction as the server/ledger kernel post (postJournal) and
  * reversal (reverseBySource).
  */
-import { journalMemo } from "@shared/journal-memo";
+import { type JournalLineKey, journalLine, journalMemo } from "@shared/journal-memo";
 import { storage } from "../storage";
 import type { Account, InsertJournalLine, Receipt } from "../../shared/schema";
 import { DomainError } from "../errors";
@@ -196,6 +196,20 @@ export async function planReceiptJournal(
   const toBase = (fils: number) => (isForeign ? mulRate(fils, fxRate) : fils);
   const merchant = receipt.merchant || "expense";
   const label = `${receipt.merchant || "Expense"} - ${receipt.category || "General"}`;
+  // Line descriptions of the posting as keys (the shapes with no merchant name read "expense").
+  const hasMerchant = !!receipt.merchant;
+  const labelLine = journalLine(
+    hasMerchant
+      ? receipt.category
+        ? "receiptLabel"
+        : "receiptLabelNoCategory"
+      : receipt.category
+        ? "receiptLabelNoMerchant"
+        : "receiptLabelBare",
+    { merchant: receipt.merchant ?? "", category: receipt.category ?? "" }
+  );
+  const merchantLine = (key: "receiptInputVat" | "receiptInputVatRc" | "receiptOutputVatRc" | "receiptPayment") =>
+    journalLine(hasMerchant ? key : (`${key}NoMerchant` as JournalLineKey), { merchant });
 
   // E3 (J2-r3): a company that is not VAT registered recovers no input VAT (it stays in the
   // expense) and does not self-account reverse-charge VAT (there is none to record).
@@ -294,7 +308,7 @@ export async function planReceiptJournal(
           costCenterId: c.costCenterId,
           debit: filsToNumber(lineBase),
           credit: 0,
-          description: c.description || label,
+          ...(c.description ? { description: c.description } : labelLine),
         },
         lineForeign,
         0
@@ -317,7 +331,7 @@ export async function planReceiptJournal(
             accountId: inputVat!.id,
             debit: filsToNumber(recoverableTotal),
             credit: 0,
-            description: `Input VAT${isReverseCharge ? " (reverse-charge)" : ""} - ${merchant}`,
+            ...merchantLine(isReverseCharge ? "receiptInputVatRc" : "receiptInputVat"),
             systemVat: true,
           },
           recoverableForeign,
@@ -334,7 +348,7 @@ export async function planReceiptJournal(
             accountId: outputVat.id,
             debit: 0,
             credit: filsToNumber(vatBaseTotal),
-            description: `Output VAT (reverse-charge) - ${merchant}`,
+            ...merchantLine("receiptOutputVatRc"),
             systemVat: true,
           },
           0,
@@ -358,7 +372,7 @@ export async function planReceiptJournal(
         accountId: payment.id,
         debit: 0,
         credit: filsToNumber(creditBase),
-        description: `Payment for ${merchant}`,
+        ...merchantLine("receiptPayment"),
       },
       0,
       foreignCreditTotal

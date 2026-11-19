@@ -1,5 +1,5 @@
 import { DatePicker } from "@/components/ui/date-picker";
-import { localizeJournalMemo } from "@/lib/journal-memo";
+import { localizeJournalLine, localizeJournalMemo } from "@/lib/journal-memo";
 import { T } from "@/components/layout/T";
 import {
   FormErrorSummary,
@@ -1212,7 +1212,7 @@ export default function Journal() {
                       )}
                     </div>
                   </div>
-                  <JournalLinesTable lines={entry.lines ?? []} />
+                  <JournalLinesTable lines={entry.lines ?? []} entry={entry} />
                 </CardContent>
               </Card>
             );
@@ -1246,12 +1246,17 @@ export default function Journal() {
  */
 function JournalLinesTable({
   lines,
+  entry,
 }: {
   lines: Array<{
     debit: number | string;
     credit: number | string;
+    description?: string | null;
+    lineKey?: string | null;
+    lineParams?: Record<string, string> | null;
     account?: { code?: string; nameEn?: string; nameAr?: string | null } | null;
   }>;
+  entry?: { memo?: string | null; memoKey?: string | null; memoParams?: Record<string, string> | null };
 }) {
   const { t, locale } = useTranslation();
   const debit = lines.reduce((sum, l) => sum + Number(l.debit || 0), 0);
@@ -1284,6 +1289,14 @@ function JournalLinesTable({
                 <span dir="auto" className="[unicode-bidi:isolate]">
                   {accountDisplayName(line.account, locale)}
                 </span>
+                {line.description ? (
+                  <span
+                    dir="auto"
+                    className="block truncate text-caption text-muted-foreground [unicode-bidi:isolate]"
+                  >
+                    {localizeJournalLine(t, locale, line, entry)}
+                  </span>
+                ) : null}
               </TableCell>
               <TableCell data-numeric="">
                 {Number(line.debit) > 0 ? (

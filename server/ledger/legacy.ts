@@ -70,6 +70,12 @@ export function legacyLinesToInput(lines: LegacyLine[]): PostJournalLineInput[] 
       debitFils: net > 0 ? net : 0,
       creditFils: net < 0 ? -net : 0,
       description: l.description ?? null,
+      ...((l as { lineKey?: string | null }).lineKey
+        ? {
+            lineKey: (l as { lineKey?: string | null }).lineKey,
+            lineParams: (l as { lineParams?: Record<string, string> | null }).lineParams ?? null,
+          }
+        : {}),
       costCenterId: l.costCenterId ?? null,
       foreignCurrency: l.foreignCurrency ?? null,
       foreignDebit: fNet > 0 ? fromFils(fNet) : null,

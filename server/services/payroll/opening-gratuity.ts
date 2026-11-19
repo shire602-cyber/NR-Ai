@@ -17,7 +17,7 @@
  * it to this seam (migration-import), and saving an opening provision on the employee form
  * books it at once (`syncOpeningGratuity`), so no path can book it twice or leave it unbooked.
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import { DomainError } from "../../errors";
 import { fromFils, toFils } from "../../../shared/money";
 import { postJournal, withLedgerTx, type LedgerTx } from "../../ledger";
@@ -172,7 +172,7 @@ export async function syncOpeningGratuity(
             {
               accountId: equityAccount,
               ...(up ? { debitFils: amount } : { creditFils: amount }),
-              description: "Opening balance: gratuity provision brought forward",
+              ...journalLine("openingGratuityEquity"),
             },
             {
               // C1: the provision account is derived here from the payroll chart mapping, so it is
@@ -180,7 +180,7 @@ export async function syncOpeningGratuity(
               accountId: provisionAccount,
               controlLeg: "payroll" as const,
               ...(up ? { creditFils: amount } : { debitFils: amount }),
-              description: "Opening gratuity provision (employees' service before go-live)",
+              ...journalLine("openingGratuityProvision"),
             },
           ],
         },

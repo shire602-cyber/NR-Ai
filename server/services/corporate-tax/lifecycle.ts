@@ -23,7 +23,7 @@
  *   end while that period is open, else on the filing date as a prior-period
  *   under/over-provision (IAS 8.36 change in estimate).
  */
-import { journalMemo } from "@shared/journal-memo";
+import { journalLine, journalMemo } from "@shared/journal-memo";
 import type { Request } from "express";
 import { pool } from "../../db";
 import { DomainError } from "../../errors";
@@ -250,15 +250,24 @@ async function ctProvisionAccounts(companyId: string) {
 }
 
 /** Dr/Cr lines moving `fils` (signed: + more tax) between tax expense and CT payable. */
-function provisionLines(expenseId: string, payableId: string, fils: number, what: string) {
+type ProvisionKind = "UnderProvision" | "OverProvision" | "Accrual";
+
+function provisionLines(
+  expenseId: string,
+  payableId: string,
+  fils: number,
+  kind: ProvisionKind
+) {
+  const expense = journalLine(`ctExpense${kind}`);
+  const payable = journalLine(`ctPayable${kind}`);
   return fils >= 0
     ? [
-        { accountId: expenseId, debitFils: fils, description: `Corporate tax expense${what}` },
-        { accountId: payableId, creditFils: fils, description: `Corporate tax payable${what}` },
+        { accountId: expenseId, debitFils: fils, ...expense },
+        { accountId: payableId, creditFils: fils, ...payable },
       ]
     : [
-        { accountId: payableId, debitFils: -fils, description: `Corporate tax payable${what}` },
-        { accountId: expenseId, creditFils: -fils, description: `Corporate tax expense${what}` },
+        { accountId: payableId, debitFils: -fils, ...payable },
+        { accountId: expenseId, creditFils: -fils, ...expense },
       ];
 }
 
@@ -283,7 +292,7 @@ async function postProvisionTrueUp(
     [ctReturn.companyId, ctReturn.id]
   );
   const refile = Number(unfiled.rows[0]?.n ?? 0);
-  const what = delta > 0 ? " - under-provision on filing" : " - over-provision on filing";
+  const what: ProvisionKind = delta > 0 ? "UnderProvision" : "OverProvision";
   const result = await postJournal(
     {
       companyId: ctReturn.companyId,
@@ -360,7 +369,7 @@ export async function accrueCtReturn(
         sourceId: ctReturn.id,
         idempotencyKey: `ct-return:${ctReturn.id}:accrual:${Number(seq.rows[0]?.n ?? 0) + 1}`,
         status: "posted",
-        lines: provisionLines(expense.id, payable.id, taxFils, " - year-end accrual"),
+        lines: provisionLines(expense.id, payable.id, taxFils, "Accrual"),
       },
       { actorId: userId, req, audit: true }
     );
@@ -408,8 +417,8 @@ async function postProvision(
       idempotencyKey: `ct-return:${ctReturn.id}:provision${refile > 0 ? `:refile-${refile}` : ""}`,
       status: "posted",
       lines: [
-        { accountId: expense.id, debitFils: fils, description: "Corporate tax expense" },
-        { accountId: payable.id, creditFils: fils, description: "Corporate tax payable" },
+        { accountId: expense.id, debitFils: fils, ...journalLine("ctExpense") },
+        { accountId: payable.id, creditFils: fils, ...journalLine("ctPayable") },
       ],
     },
     { actorId: userId, req, audit: true }
