@@ -9,10 +9,10 @@
  * Imported first by server/index.ts (a side-effect import, after dotenv). Setting process.env.TZ
  * at runtime makes Node re-read the zone, so it also holds when the host sets another TZ.
  */
-export const SERVER_TIME_ZONE = "UTC";
+const SERVER_TIME_ZONE = "UTC";
 
 /** Pins the process zone; returns the zone the host had asked for (null when it set none). */
-export function pinServerTimeZone(): string | null {
+function pinServerTimeZone(): string | null {
   const requested = process.env.TZ ?? null;
   process.env.TZ = SERVER_TIME_ZONE;
   return requested;
