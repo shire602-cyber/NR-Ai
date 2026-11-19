@@ -1,4 +1,4 @@
--- 0134_step3_remove_price_editor (STEP3): the unused admin price editor is removed (owner, 2026-11-19).
+-- 0134_step3_remove_price_editor (STEP3 S3): the unused admin price editor is removed (owner, 2026-11-19).
 -- Plan prices live only in shared/plans.ts. Idempotent: guarded DROP TABLE IF EXISTS only. A table
 -- that still holds rows is never dropped silently: the migration stops so the owner can export it.
 DO $$
