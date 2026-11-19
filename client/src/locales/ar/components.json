@@ -966,5 +966,8 @@
   "components.srv.notification.aiDraftsReview.message": "صنّف الذكاء الاصطناعي {count} من المعاملات البنكية بثقة عالية. راجع كل قيد مسودة واعتمده قبل ترحيله إلى الدفتر.",
   "components.srv.notification.bankStatementImportedSkipped.message": "{count, plural, zero {لم تُستورد أي معاملة} one {تم استيراد معاملة واحدة} two {تم استيراد معاملتين} few {تم استيراد # معاملات} many {تم استيراد # معاملة} other {تم استيراد # معاملة}} من {bank} (صيغة {format})؛ تم تخطي {skipped, plural, one {معاملة واحدة مستوردة مسبقًا} two {معاملتان مستوردتان مسبقًا} few {# معاملات مستوردة مسبقًا} many {# معاملة مستوردة مسبقًا} other {# معاملة مستوردة مسبقًا}}",
   "components.srv.notification.bankStatementNothingNew.message": "لا توجد معاملات جديدة من {bank} (صيغة {format})؛ {skipped, plural, one {معاملة واحدة مستوردة مسبقًا} two {معاملتان مستوردتان مسبقًا} few {# معاملات مستوردة مسبقًا} many {# معاملة مستوردة مسبقًا} other {# معاملة مستوردة مسبقًا}}",
-  "components.planLockActivate": "فعّل {plan}"
+  "components.planLockActivate": "فعّل {plan}",
+  "components.planLockBodyChosen": "يمكنك فتح كل شيء والبحث فيه وتصديره. فعّل {plan} لتعود إلى إضافة السجلات أو تعديلها.",
+  "components.planLimitBodyChosen": "فعّل {plan} لإضافة السجلات أو تعديلها. حتى ذلك الحين يبقى كل شيء متاحًا للقراءة ويمكنك تصديره.",
+  "components.planUntilThenReadable": "حتى ذلك الحين يبقى كل شيء متاحًا للقراءة ويمكنك تصديره."
 }

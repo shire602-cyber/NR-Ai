@@ -2,10 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { RegisterForm } from "@/components/auth/RegisterForm";
 import { SignupPlanStep } from "@/components/auth/SignupPlanStep";
-import { readSignupPlan, signupPlanUrl, type SignupPlanState } from "@/components/auth/signup-plan";
+import {
+  applySignupChange,
+  readSignupPlan,
+  signupPlanUrl,
+  type SignupPlanState,
+} from "@/components/auth/signup-plan";
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { fetchCurrentUser } from "@/lib/auth";
+import { hasAuthHint } from "@/lib/authHint";
 import { establishAuthenticatedSession } from "@/lib/authSession";
 import { setActiveCompanyIdRaw } from "@/lib/activeCompany";
 import { apiRequest } from "@/lib/queryClient";
@@ -22,6 +28,7 @@ import { MailX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { PaidPlanId } from "@shared/plans";
 import { COMPANY_ROLE_LABELS, type CompanyRole } from "@shared/permissions";
 
 type Bilingual = { en: string; ar: string };
@@ -244,12 +251,15 @@ export default function Register() {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusTarget = useRef<"heading" | "radio" | null>(null);
   const [announced, setAnnounced] = useState(false);
+  // A browser that has signed in before may be signed in now: hold the step back until the
+  // session answers, so a signed-in visitor is redirected without a flash of step 2.
+  const [checking, setChecking] = useState(() => !pendingInvite && hasAuthHint());
 
   useEffect(() => {
     if (pendingInvite) return;
     fetchCurrentUser()
       .then((user) => {
-        if (!user) return;
+        if (!user) return setChecking(false);
         if (user.userType === "client_portal") return setLocation("/client-portal/dashboard");
         // A signed-in visitor who followed a plan link goes to Settings > Billing with it chosen.
         const initial = readSignupPlan(window.location.search);
@@ -259,7 +269,7 @@ export default function Register() {
         }
         setLocation("/dashboard");
       })
-      .catch(() => {});
+      .catch(() => setChecking(false));
   }, [setLocation, pendingInvite]);
 
   // A deep link from /pricing lands on step 2: record the step in the URL without a new entry.
@@ -277,9 +287,11 @@ export default function Register() {
 
   useEffect(() => {
     const onPop = () => {
-      focusTarget.current = "radio";
+      const next = readSignupPlan(window.location.search);
+      // Forward into step 2 has no radio: focus its heading. Back into step 1 focuses the radio.
+      focusTarget.current = next.step === "account" ? "heading" : "radio";
       setAnnounced(true);
-      setPlan(readSignupPlan(window.location.search));
+      setPlan(next);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -352,13 +364,17 @@ export default function Register() {
       </p>
       {pendingInvite ? (
         <InviteAccept token={pendingInvite} kind={teamInvite ? "team" : "admin"} />
+      ) : checking ? (
+        <div className="min-h-[40vh]" aria-busy="true" data-testid="register-session-check" />
       ) : plan.step === "plan" ? (
         <SignupPlanStep
           ref={headingRef}
           planId={plan.planId}
           cycle={plan.cycle}
-          onPlanChange={(planId) => setPlan({ ...plan, planId, source: "signup_picked" })}
-          onCycleChange={(cycle) => setPlan({ ...plan, cycle, source: "signup_picked" })}
+          onPlanChange={(planId) =>
+            setPlan(applySignupChange(plan, { planId: planId as PaidPlanId }))
+          }
+          onCycleChange={(cycle) => setPlan(applySignupChange(plan, { cycle }))}
           onContinue={() => goToStep({ ...plan, step: "account" }, "heading")}
         />
       ) : (

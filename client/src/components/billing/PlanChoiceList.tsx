@@ -81,6 +81,8 @@ export function PlanChoiceList({
         const selected = value === plan.id;
         const priceId = `${uid}-price-${plan.id}`;
         const audienceId = `${uid}-aud-${plan.id}`;
+        const nameId = `${uid}-name-${plan.id}`;
+        const popularId = `${uid}-pop-${plan.id}`;
         const includesId = `${uid}-inc-${plan.id}`;
         return (
           <label
@@ -101,7 +103,8 @@ export function PlanChoiceList({
               value={plan.id}
               checked={selected}
               onChange={() => onChange(plan.id)}
-              aria-describedby={`${priceId} ${audienceId}`}
+              aria-labelledby={nameId}
+              aria-describedby={`${priceId}${plan.featured ? ` ${popularId}` : ""} ${audienceId}`}
               aria-controls={selected ? includesId : undefined}
               aria-posinset={index + 1}
               aria-setsize={PLANS.length}
@@ -122,11 +125,17 @@ export function PlanChoiceList({
               </span>
               <span className="min-w-0 flex-1">
                 {plan.featured ? (
-                  <span className="mb-0.5 block text-caption font-semibold uppercase tracking-[0.08em] text-brand-700 rtl:normal-case rtl:tracking-normal dark:text-brand-300">
+                  <span
+                    id={popularId}
+                    className="mb-0.5 block text-caption font-semibold uppercase tracking-[0.08em] text-brand-700 rtl:normal-case rtl:tracking-normal dark:text-brand-300"
+                  >
                     {t["marketing.pricingMostPopular"]}
                   </span>
                 ) : null}
-                <span className="block text-[0.9375rem] font-semibold leading-[1.375rem] text-foreground">
+                <span
+                  id={nameId}
+                  className="block text-[0.9375rem] font-semibold leading-[1.375rem] text-foreground"
+                >
                   {t[planNameKey(plan.id)]}
                 </span>
                 <span

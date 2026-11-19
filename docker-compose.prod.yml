@@ -34,6 +34,7 @@ services:
     environment:
       DATABASE_URL: postgres://muhasib:${DB_PASSWORD}@db:5432/muhasib
       NODE_ENV: production
+      TZ: UTC
     depends_on:
       db:
         condition: service_healthy
@@ -45,6 +46,8 @@ services:
     env_file: [.env.prod]
     environment:
       NODE_ENV: production
+      # Always UTC: timestamp columns carry no zone (server/config/pin-timezone.ts).
+      TZ: UTC
       PORT: "5000"
       DATABASE_URL: postgres://muhasib:${DB_PASSWORD}@db:5432/muhasib
       AUTO_MIGRATE_ON_BOOT: "false"

@@ -1,5 +1,7 @@
 // ─── Load environment variables first ────────────────────────
 import "dotenv/config";
+// The process runs in UTC: timestamp columns carry no zone (server/config/pin-timezone.ts).
+import "./config/pin-timezone";
 // zod 3-compatible validation messages, before any schema parses (R17-27).
 import "../shared/zod-config";
 

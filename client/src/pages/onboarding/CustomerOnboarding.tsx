@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { TRIAL_DAYS } from "@shared/trial";
+import { planPhraseKey } from "@/lib/plan-state";
 import { EInvoiceReadinessCard } from "@/components/einvoice/EInvoiceReadinessCard";
 import { Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -359,7 +361,9 @@ function Wizard({
             data-testid="onboarding-trial-note"
           >
             {formatMessage(t["onboarding.trialStartedNote"], {
-              plan: t[`marketing.prPlan_${chosenPlan.planId}`],
+              days: TRIAL_DAYS,
+              plan: t[planPhraseKey(chosenPlan.planId)],
+              billing: t["components.ui.settingsNav.billing"],
             })}
           </p>
         ) : null}

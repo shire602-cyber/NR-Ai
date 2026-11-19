@@ -11,6 +11,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
+import { planCta, planPhase, planPhraseKey } from "@/lib/plan-state";
 import { PLAN_LIMIT_EVENT, type PlanLimitDetail } from "@/lib/plan-limit";
 import { planFeatureLabelKey } from "@/lib/plan-routes";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -24,8 +26,8 @@ import type { PlanFeature } from "@shared/plans";
  * (lib/plan-limit.ts), so every locked action explains itself the same way, in both languages.
  */
 export function PlanLimitDialog() {
-  const { t } = useTranslation();
-  const { checkoutAvailable, chosenPlan } = useSubscription();
+  const { t, locale } = useTranslation();
+  const { checkoutAvailable, chosenPlan, activationRequestedAt } = useSubscription();
   const [detail, setDetail] = useState<PlanLimitDetail | null>(null);
 
   useEffect(() => {
@@ -35,7 +37,7 @@ export function PlanLimitDialog() {
   }, []);
 
   if (!detail) return null;
-  const plan = detail.requiredPlan ? t[`marketing.prPlan_${detail.requiredPlan}`] : undefined;
+  const plan = detail.requiredPlan ? t[planPhraseKey(detail.requiredPlan)] : undefined;
   const module = detail.feature ? t[planFeatureLabelKey(detail.feature as PlanFeature)] : undefined;
 
   const title =
@@ -47,9 +49,23 @@ export function PlanLimitDialog() {
           })
         : t["components.planLimitReachedTitle"];
 
+  // PLAN_REQUIRED only happens once the trial ended: the same state rule as the lock banner
+  // (lib/plan-state.ts), so the dialog never asks someone who chose to "choose a plan".
+  const phase = planPhase({ trialEnded: true, chosen: !!chosenPlan, activationRequestedAt });
+  const cta = planCta(phase);
+  const chosenPhrase = chosenPlan ? t[planPhraseKey(chosenPlan.planId)] : "";
+  const trialEndedBody =
+    phase.choice === "requested"
+      ? `${formatMessage(t["marketing.trialActivationRequested"], {
+          date: activationRequestedAt ? formatDate(activationRequestedAt, locale) : "",
+        })} ${t["components.planUntilThenReadable"]}`
+      : phase.choice === "chosen"
+        ? formatMessage(t["components.planLimitBodyChosen"], { plan: chosenPhrase })
+        : t["components.planLimitTrialEndedBody"];
+
   const body =
     detail.code === "PLAN_REQUIRED"
-      ? t["components.planLimitTrialEndedBody"]
+      ? trialEndedBody
       : detail.code === "TIER_LOCKED"
         ? formatMessage(t["components.planLimitLockedBody"], { plan: plan ?? "" })
         : detail.code === "STORAGE_LIMIT_REACHED"
@@ -80,12 +96,15 @@ export function PlanLimitDialog() {
           <Button variant="outline" onClick={() => setDetail(null)}>
             {t["components.planLimitNotNow"]}
           </Button>
-          {detail.code === "PLAN_REQUIRED" && chosenPlan ? (
+          {detail.code === "PLAN_REQUIRED" && cta !== "choose" ? (
             <Button asChild onClick={() => setDetail(null)}>
-              <Link href="/subscription#after-trial" data-testid="plan-limit-activate">
-                {formatMessage(t["components.planLockActivate"], {
-                  plan: t[`marketing.prPlan_${chosenPlan.planId}`],
-                })}
+              <Link
+                href="/subscription#after-trial"
+                data-testid={cta === "activate" ? "plan-limit-activate" : "plan-limit-see-plan"}
+              >
+                {cta === "activate"
+                  ? formatMessage(t["components.planLockActivate"], { plan: chosenPhrase })
+                  : t["marketing.trialSeePlan"]}
               </Link>
             </Button>
           ) : checkoutAvailable ? (

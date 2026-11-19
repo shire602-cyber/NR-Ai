@@ -14,7 +14,7 @@
  * The stored `subscriptions.plan_id` for a company without a paid plan is the legacy value
  * "free" (NO_PLAN_ID): it means "trial, then no plan", never a Free plan with its own limits.
  */
-import { TRIAL_DAYS } from "./trial";
+import { TRIAL_DAYS, trialEndDate } from "./trial";
 
 export const PAID_PLAN_IDS = ["starter", "professional", "enterprise"] as const;
 export type PaidPlanId = (typeof PAID_PLAN_IDS)[number];
@@ -250,8 +250,6 @@ export interface Entitlement {
 /** Subscription statuses that keep a paid plan's entitlement (past_due keeps a grace period). */
 const ENTITLED_STATUSES = new Set(["active", "trialing", "past_due"]);
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 export interface EntitlementInput {
   planId: string | null | undefined;
   status?: string | null;
@@ -262,14 +260,8 @@ export interface EntitlementInput {
 }
 
 export function trialEnd(input: EntitlementInput): Date | null {
-  if (input.trialEndsAt) {
-    const d = new Date(input.trialEndsAt);
-    if (!Number.isNaN(d.getTime())) return d;
-  }
-  if (!input.trialStartedAt) return null;
-  const start = new Date(input.trialStartedAt);
-  if (Number.isNaN(start.getTime())) return null;
-  return new Date(start.getTime() + TRIAL_DAYS * DAY_MS);
+  // The one trial-end rule (shared/trial.ts): the gate and the banners cannot disagree.
+  return trialEndDate(input.trialStartedAt, input.trialEndsAt);
 }
 
 /** Pure entitlement rule (the server gates and the subscription API both call it). */

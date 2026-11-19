@@ -3,11 +3,19 @@ import { Lock } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
+import { planCta, planPhase, planPhraseKey } from "@/lib/plan-state";
 import { featureForRoute, planFeatureLabelKey } from "@/lib/plan-routes";
 import { useSubscription } from "@/hooks/useSubscription";
 
 /** Pages a read-only workspace still uses fully (choosing a plan, settings, help). */
-const ALWAYS_OPEN = ["/subscription", "/settings", "/onboarding", "/help", "/profile"];
+export const PLAN_LOCK_ALWAYS_OPEN = [
+  "/subscription",
+  "/settings",
+  "/onboarding",
+  "/help",
+  "/profile",
+];
 
 /**
  * The locked state of a module (WQ7): shown above the page, never instead of it, so the data
@@ -17,40 +25,64 @@ const ALWAYS_OPEN = ["/subscription", "/settings", "/onboarding", "/help", "/pro
  * The server refuses the writes either way (server/middleware/featureGate.ts).
  */
 export function PlanLockBanner() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [location] = useLocation();
-  const { enforcement, entitlement, isReadOnly, getRequiredTier, canWrite, chosenPlan } =
-    useSubscription();
+  const {
+    enforcement,
+    entitlement,
+    isReadOnly,
+    getRequiredTier,
+    canWrite,
+    chosenPlan,
+    activationRequestedAt,
+  } = useSubscription();
   if (!enforcement || !entitlement) return null;
-  if (ALWAYS_OPEN.some((p) => location === p || location.startsWith(`${p}/`))) return null;
-
-  const action = (
-    <Button asChild size="sm" variant="outline">
-      <Link
-        href={isReadOnly && chosenPlan ? "/subscription#after-trial" : "/subscription"}
-        data-testid="plan-lock-upgrade"
-      >
-        {isReadOnly && chosenPlan
-          ? formatMessage(t["components.planLockActivate"], {
-              plan: t[`marketing.prPlan_${chosenPlan.planId}`],
-            })
-          : t[isReadOnly ? "components.planLockChoosePlan" : "components.planLockUpgrade"]}
-      </Link>
-    </Button>
-  );
+  if (PLAN_LOCK_ALWAYS_OPEN.some((p) => location === p || location.startsWith(`${p}/`)))
+    return null;
 
   if (isReadOnly) {
+    // One state rule (lib/plan-state.ts): the trial ended; the customer has no choice, has
+    // chosen, or has asked us to activate. Each state has one call to action.
+    const phase = planPhase({
+      trialEnded: true,
+      chosen: !!chosenPlan,
+      activationRequestedAt,
+    });
+    const cta = planCta(phase);
+    const plan = chosenPlan ? t[planPhraseKey(chosenPlan.planId)] : "";
+    const body =
+      phase.choice === "requested"
+        ? `${formatMessage(t["marketing.trialActivationRequested"], {
+            date: activationRequestedAt ? formatDate(activationRequestedAt, locale) : "",
+          })} ${t["components.planUntilThenReadable"]}`
+        : phase.choice === "chosen"
+          ? formatMessage(t["components.planLockBodyChosen"], { plan })
+          : t["components.planLockTrialEndedBody"];
     return (
       <div className="px-3 pt-3 md:px-6">
         <Alert
           tone="warning"
           icon={Lock}
           title={t["components.planLockTrialEndedTitle"]}
-          action={action}
+          action={
+            <Button asChild size="sm" variant="outline">
+              <Link
+                href={cta === "choose" ? "/subscription" : "/subscription#after-trial"}
+                data-testid="plan-lock-upgrade"
+              >
+                {cta === "activate"
+                  ? formatMessage(t["components.planLockActivate"], { plan })
+                  : cta === "see-plan"
+                    ? t["marketing.trialSeePlan"]
+                    : t["components.planLockChoosePlan"]}
+              </Link>
+            </Button>
+          }
           data-testid="plan-lock-banner"
           data-lock="expired"
+          data-plan-phase={phase.key}
         >
-          {t["components.planLockTrialEndedBody"]}
+          {body}
         </Alert>
       </div>
     );
@@ -58,7 +90,7 @@ export function PlanLockBanner() {
 
   const feature = featureForRoute(location);
   if (!feature || canWrite(feature)) return null;
-  const plan = t[`marketing.prPlan_${getRequiredTier(feature)}`];
+  const plan = t[planPhraseKey(getRequiredTier(feature))];
   return (
     <div className="px-3 pt-3 md:px-6">
       <Alert
@@ -67,7 +99,13 @@ export function PlanLockBanner() {
         title={formatMessage(t["components.planLockModuleTitle"], {
           module: t[planFeatureLabelKey(feature)],
         })}
-        action={action}
+        action={
+          <Button asChild size="sm" variant="outline">
+            <Link href="/subscription" data-testid="plan-lock-upgrade">
+              {t["components.planLockUpgrade"]}
+            </Link>
+          </Button>
+        }
         data-testid="plan-lock-banner"
         data-lock={feature}
       >

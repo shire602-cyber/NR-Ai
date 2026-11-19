@@ -462,7 +462,9 @@ describe.each(["en", "ar"] as const)("trial banner (%s)", (locale) => {
     expect(banner.textContent).toContain(
       locale === "en" ? "12 days left in your free trial" : "12"
     );
-    expect(banner.textContent).toContain(locale === "en" ? "then Professional" : "الاحترافية");
+    expect(banner.textContent).toContain(
+      locale === "en" ? "You chose Professional. Activate it before" : "اخترت الخطة الاحترافية"
+    );
     expect(q("trial-activate")).toBeNull();
     await renderBanner({ trial: trial(2), chosen });
     expect(q("trial-activate")).not.toBeNull();
@@ -474,7 +476,9 @@ describe.each(["en", "ar"] as const)("trial banner (%s)", (locale) => {
   it("without a choice it asks to choose; ended with a choice offers activation", async () => {
     await renderBanner({ trial: trial(10), chosen: null });
     expect(q("trial-banner")!.textContent).toContain(
-      locale === "en" ? "Choose your plan for after the trial" : "اختر خطتك"
+      locale === "en"
+        ? "Choose the plan for after your trial"
+        : "اختر الخطة التي تريدها بعد الفترة التجريبية"
     );
     await renderBanner({ trial: trial(0, true), chosen });
     expect(q("trial-banner")!.getAttribute("data-trial-state")).toBe("ended");

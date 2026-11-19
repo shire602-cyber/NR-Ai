@@ -26,11 +26,13 @@ import { formatMoneyText, formatAmountDigits } from "@/lib/format-money";
 import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { planPhase, planPhraseKey } from "@/lib/plan-state";
 import { useToast } from "@/hooks/use-toast";
 import { ApiError } from "@/lib/queryClient";
 import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
 import {
   TOP_PLAN_ID,
+  TRIAL_LIMITS,
   isBillingCycle,
   isPaidPlanId,
   planRank,
@@ -143,12 +145,20 @@ function UsageMeter({
   );
 }
 
-/** STEP4: "You chose Professional" and what happens next, honest about activation. */
+/**
+ * STEP4: where the customer stands after the trial, one of four states of lib/plan-state.ts (the
+ * banners read the same rule). Each has one call to action and dates that are true for it:
+ *   running + no choice   "Choose the plan you want after your trial."        -> See plans
+ *   running + chosen      "You chose X. Choosing it doesn't keep you working..." -> Activate X (+ Change)
+ *   ended   + chosen      "Your trial ended on D. Activate X to add records."  -> Activate X (+ Change)
+ *   *       + requested   "Activation requested on D. We'll confirm by email." -> nothing to press
+ */
 function AfterTrialBlock({
   planName,
   chosenPlan,
   activationRequestedAt,
   endsAt,
+  trialEnded,
   canManage,
   pending,
   onActivate,
@@ -158,6 +168,7 @@ function AfterTrialBlock({
   chosenPlan: ChosenPlan | null;
   activationRequestedAt: string | null;
   endsAt: string | null;
+  trialEnded: boolean;
   canManage: boolean;
   pending: boolean;
   onActivate: () => void;
@@ -165,35 +176,43 @@ function AfterTrialBlock({
 }) {
   const { t, locale } = useTranslation();
   const date = endsAt ? formatDisplayDate(endsAt, locale) : "";
+  const phase = planPhase({ trialEnded, chosen: !!chosenPlan, activationRequestedAt });
   return (
     <div
       id="after-trial"
       className="scroll-mt-4 space-y-3 rounded-lg border border-border p-4"
       data-testid="subscription-chosen-plan"
+      data-plan-phase={phase.key}
     >
       {chosenPlan && planName ? (
         <>
           <p className="font-medium">
             {formatMessage(t["pages.subscriptionChosenTitle"], { plan: planName })}{" "}
             <span className="font-normal text-muted-foreground">
-              {formatMessage(t["pages.subscriptionChosenStarts"], { date })}
+              {trialEnded
+                ? formatMessage(t["pages.subscriptionChosenEnded"], { date, plan: planName })
+                : phase.choice === "chosen"
+                  ? formatMessage(t["pages.subscriptionChosenRunning"], { date })
+                  : null}
             </span>
           </p>
           <p className="text-muted-foreground">
             {formatMessage(t["pages.subscriptionChosenPrice"], {
               price: formatMoneyText(chosenPlan.price, "AED", locale, { fractionDigits: 0 }),
-              cycle: t[`pages.subscriptionCycle_${chosenPlan.billingCycle}`],
+              billed: t[`pages.subscriptionBilled_${chosenPlan.billingCycle}`],
             })}
           </p>
           {activationRequestedAt ? (
             <div data-testid="activation-requested">
-              <Badge dot variant="info">
-                {formatMessage(t["pages.subscriptionActivationRequested"], {
+              <Badge dot variant="info" className="h-auto whitespace-normal py-1">
+                {formatMessage(t["marketing.trialActivationRequested"], {
                   date: formatDisplayDate(activationRequestedAt, locale),
                 })}
               </Badge>
               <p className="mt-2 text-muted-foreground">
-                {formatMessage(t["pages.subscriptionActivationNext"], { date })}
+                {trialEnded
+                  ? t["marketing.trialRequestedReadOnly"]
+                  : formatMessage(t["pages.subscriptionActivationNext"], { date })}
               </p>
             </div>
           ) : (
@@ -378,6 +397,13 @@ export default function Subscription() {
     checkoutAvailable,
   };
 
+  const phase = planPhase({
+    trialEnded: planState === "expired",
+    chosen: !!chosenPlan,
+    activationRequestedAt,
+  });
+  const chosenPhrase = chosenPlan ? t[planPhraseKey(chosenPlan.planId)] : "";
+
   const statusTitle =
     planState === "trial"
       ? formatMessage(t["pages.subscriptionTrialOf"], { plan: t[planNameKey(TOP_PLAN_ID)] })
@@ -403,13 +429,26 @@ export default function Subscription() {
             title={t["components.planLockTrialEndedTitle"]}
             data-testid="trial-banner"
             data-trial-state="ended"
+            data-plan-phase={phase.key}
             action={
-              <Button size="sm" onClick={scrollToPlans} data-testid="button-choose-plan">
-                {t["components.planLockChoosePlan"]}
-              </Button>
+              // One CTA per state: with the plan block below (checkout not configured) the
+              // alert only informs; with checkout it is the only "Choose a plan" button.
+              !inTrialFlow ? (
+                <Button size="sm" onClick={scrollToPlans} data-testid="button-choose-plan">
+                  {t["components.planLockChoosePlan"]}
+                </Button>
+              ) : undefined
             }
           >
-            {t["components.planLockTrialEndedBody"]}
+            {phase.choice === "requested"
+              ? `${formatMessage(t["marketing.trialActivationRequested"], {
+                  date: activationRequestedAt
+                    ? formatDisplayDate(activationRequestedAt, locale)
+                    : "",
+                })} ${t["components.planUntilThenReadable"]}`
+              : phase.choice === "chosen"
+                ? formatMessage(t["components.planLockBodyChosen"], { plan: chosenPhrase })
+                : t["components.planLockTrialEndedBody"]}
           </Alert>
         ) : null}
 
@@ -460,11 +499,36 @@ export default function Subscription() {
                     </span>
                     <span className="font-medium">{formatDisplayDate(trial.endsAt, locale)}</span>
                   </div>
-                  <p className="text-muted-foreground">{t["pages.subscriptionTrialExplain"]}</p>
+                  <p className="text-muted-foreground">
+                    {
+                      t[
+                        phase.choice === "none"
+                          ? "pages.subscriptionTrialExplain"
+                          : "pages.subscriptionTrialOpen"
+                      ]
+                    }
+                  </p>
+                  <p className="text-muted-foreground" data-testid="trial-caps">
+                    {formatMessage(t["marketing.signupTrialCaps"], {
+                      companies: TRIAL_LIMITS.maxCompanies,
+                      credits: formatAmountDigits(TRIAL_LIMITS.aiCreditsPerMonth, 0),
+                      storage: formatMessage(t["marketing.prValGb"], {
+                        n: formatAmountDigits(TRIAL_LIMITS.maxStorageMb / 1024, 0),
+                      }),
+                    })}
+                  </p>
                 </>
               ) : null}
               {planState === "expired" ? (
-                <p className="text-muted-foreground">{t["pages.subscriptionExpiredExplain"]}</p>
+                <p className="text-muted-foreground">
+                  {
+                    t[
+                      phase.choice === "none"
+                        ? "pages.subscriptionExpiredExplain"
+                        : "pages.subscriptionExpiredSafe"
+                    ]
+                  }
+                </p>
               ) : null}
               {paidPlan && subscription?.billingCycle ? (
                 <div className="flex items-center justify-between">
@@ -489,10 +553,11 @@ export default function Subscription() {
               ) : null}
               {inTrialFlow ? (
                 <AfterTrialBlock
-                  planName={chosenPlan ? t[planNameKey(chosenPlan.planId)] : null}
+                  planName={chosenPlan ? chosenPhrase : null}
                   chosenPlan={chosenPlan}
                   activationRequestedAt={activationRequestedAt ?? null}
                   endsAt={trial?.endsAt ?? entitlement?.trialEndsAt ?? null}
+                  trialEnded={planState === "expired"}
                   canManage={canManageBilling}
                   pending={activate.isPending}
                   onActivate={() =>
@@ -518,10 +583,10 @@ export default function Subscription() {
                   )}
                   {t["pages.subscriptionManageBilling"]}
                 </Button>
-              ) : planState !== "active" ? (
+              ) : planState === "trial" && !inTrialFlow ? (
                 <Button
                   className="mt-2 w-full"
-                  variant={planState === "expired" ? "default" : "outline"}
+                  variant="outline"
                   onClick={scrollToPlans}
                   data-testid="button-see-plans"
                 >
@@ -620,21 +685,11 @@ export default function Subscription() {
             {/* Spec 3.15: the plan grid reuses the site's PlanCard; only the action differs. */}
             {PLANS.map((plan) => {
               const isCurrent = plan.id === paidPlan;
-              const planName = t[planNameKey(plan.id)];
+              const planName = t[planPhraseKey(plan.id)];
               const isChosen = inTrialFlow && chosenPlan?.planId === plan.id;
               const action = isCurrent ? (
                 <Button variant="outline" className="h-10 w-full" disabled>
                   <T k="pageLabels.currentPlan" />
-                </Button>
-              ) : isChosen && planState === "expired" ? (
-                <Button
-                  className="h-10 w-full"
-                  onClick={() => activate.mutate(undefined)}
-                  disabled={activate.isPending || !canManageBilling || !!activationRequestedAt}
-                  title={!canManageBilling ? t["common.noPermission"] : undefined}
-                  data-testid={`plan-activate-${plan.id}`}
-                >
-                  {formatMessage(t["pages.subscriptionActivatePlan"], { plan: planName })}
                 </Button>
               ) : isChosen ? (
                 <Button

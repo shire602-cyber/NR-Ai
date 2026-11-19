@@ -93,3 +93,19 @@ export function oauthNextForPlan(state: {
   });
   return `/dashboard?${params.toString()}`;
 }
+
+/**
+ * The state after the customer changes something on step 1. Only a different PLAN counts as
+ * "picked" (the funnel metric); switching the billing cycle alone keeps the source, so keeping
+ * the default plan and choosing yearly is still "signup_default".
+ */
+export function applySignupChange(
+  state: SignupPlanState,
+  change: { planId: PaidPlanId } | { cycle: BillingCycle }
+): SignupPlanState {
+  if ("planId" in change) {
+    if (change.planId === state.planId) return state;
+    return { ...state, planId: change.planId, source: "signup_picked" };
+  }
+  return { ...state, cycle: change.cycle };
+}

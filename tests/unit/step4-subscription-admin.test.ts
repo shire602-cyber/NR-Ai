@@ -147,8 +147,14 @@ describe.each(["en", "ar"] as const)("Settings > Billing, chosen plan (%s)", (lo
     const block = q("subscription-chosen-plan")!;
     expect(block).not.toBeNull();
     const body = block.textContent!.replace(/[⁦-⁩]/g, "");
-    expect(body).toContain(locale === "en" ? "You chose Professional." : "اخترت الاحترافية.");
-    expect(body).toContain(locale === "en" ? "when you activate it" : "عند تفعيلها");
+    expect(body).toContain(
+      locale === "en" ? "You chose Professional." : "اخترت الخطة الاحترافية."
+    );
+    expect(body).toContain(
+      locale === "en"
+        ? "Choosing it doesn't keep you working on its own. Activate it before your trial ends on"
+        : "الاختيار وحده لا يُبقي عملك مستمرًا"
+    );
     expect(body).toContain("119");
     expect(body).toContain(
       locale === "en" ? "Nothing is charged until you activate it." : "لا يُحصَّل أي مبلغ"
@@ -238,10 +244,13 @@ describe.each(["en", "ar"] as const)("Settings > Billing, chosen plan (%s)", (lo
       trial: trialState(new Date(Date.now() - 30 * 86400_000)),
     });
     await renderSubscription();
-    expect(q("plan-activate-professional")).not.toBeNull();
-    expect(q("plan-activate-professional")!.textContent).toContain(
-      locale === "en" ? "Activate Professional" : "فعّل"
+    // One CTA: the plan block's Activate; the grid card only marks the choice.
+    expect(q("plan-activate-professional")).toBeNull();
+    expect(q("button-activate-plan")!.textContent).toContain(
+      locale === "en" ? "Activate Professional" : "فعّل الخطة الاحترافية"
     );
+    expect(q("button-choose-plan")).toBeNull();
+    expect(q("button-see-plans")).toBeNull();
     expect(q("trial-banner")!.getAttribute("data-trial-state")).toBe("ended");
   });
 });

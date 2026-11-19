@@ -713,7 +713,7 @@
   "marketing.migrationOpeningBalancesCta": "Import opening balances",
   "marketing.signupStep": "Step {n} of 2",
   "marketing.signupPlanTitle": "Choose your plan",
-  "marketing.signupPlanLead": "Every plan starts with {days} days of everything, free. No card needed.",
+  "marketing.signupPlanLead": "Every plan starts with {days} days of every feature, free. No card needed.",
   "marketing.signupTrialUntil": "Your free trial runs until {date}",
   "marketing.signupDueToday": "Due today: {amount}",
   "marketing.signupCycleLabel": "Billing",
@@ -730,9 +730,16 @@
   "marketing.signupBackToPlans": "Back to plans",
   "marketing.signupStepAnnounce": "Step {n} of 2: {title}",
   "marketing.pricingOrStartTrial": "or start the free trial",
-  "marketing.trialThenPlan": "{count, plural, one {# day left in your free trial} other {# days left in your free trial}} · then {plan}",
   "marketing.trialEndsActivate": "Your trial ends on {date}. Activate {plan} to keep adding records.",
-  "marketing.trialChooseForAfter": "Choose your plan for after the trial",
+  "marketing.trialChooseForAfter": "Choose the plan for after your trial, then activate it to keep working.",
   "marketing.trialSeePlan": "See plan",
-  "marketing.trialChoosePlan": "Choose a plan"
+  "marketing.trialChoosePlan": "Choose a plan",
+  "marketing.trialChosenLine": "You chose {plan}. Activate it before {date} to keep working.",
+  "marketing.trialEndedChosen": "Your trial ended on {date}. Your books are read-only until {plan} is activated. Nothing is deleted.",
+  "marketing.trialActivationRequested": "Activation requested on {date}. We'll confirm by email.",
+  "marketing.trialRequestedReadOnly": "Your books stay read-only until we activate it. Nothing is deleted.",
+  "marketing.signupTrialCaps": "During the trial: up to {companies, plural, one {# company} other {# companies}}, {credits} AI credits and {storage} of storage.",
+  "marketing.prPlanPhrase_starter": "Starter",
+  "marketing.prPlanPhrase_professional": "Professional",
+  "marketing.prPlanPhrase_enterprise": "Enterprise"
 }

@@ -221,6 +221,12 @@ historic unbalanced entries and duplicate reversals need accountant review per t
 | `AUTO_MIGRATE_ON_BOOT`                         | Leave `false`; migrate in the release phase (`npm run db:migrate`).                                                                                                                                                                                                                                                                                                                                       |
 | Commit SHA on `/api/version`                   | See below.                                                                                                                                                                                                                                                                                                                                                                                                |
 
+**Time zone.** The server process always runs in `TZ=UTC` (the Dockerfile and both compose files set
+it, and `server/config/pin-timezone.ts` pins it at startup even when the host says otherwise).
+Timestamp columns carry no zone and node-pg reads them in the process zone, so any other zone shifts
+every trial end by hours. Dates people read are formatted in `Asia/Dubai` explicitly. Do not set
+`TZ` to anything else on Railway.
+
 **Commit SHA.** `/api/version` returns `commit: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.COMMIT_SHA || null`
 (`server/index.ts`). Railway injects `RAILWAY_GIT_COMMIT_SHA` for GitHub-triggered deploys, and the
 Dockerfile re-exports it as a build ARG. It is `null` on a local build and on a CLI deploy (`railway up`)

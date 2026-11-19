@@ -12,8 +12,9 @@ import {
   type PlanId,
 } from "@/components/marketing/plans";
 import { formatDate } from "@/lib/format-date";
-import { formatMoneyText } from "@/lib/format-money";
+import { formatAmountDigits, formatMoneyText } from "@/lib/format-money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
+import { TRIAL_LIMITS } from "@shared/plans";
 import { TRIAL_DAYS } from "@shared/trial";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -74,6 +75,15 @@ export const SignupPlanStep = forwardRef<HTMLHeadingElement, SignupPlanStepProps
             <span className="block text-muted-foreground" data-testid="signup-due-today">
               {formatMessage(t["marketing.signupDueToday"], { amount: dueToday })}
             </span>
+            <span className="block text-muted-foreground" data-testid="signup-trial-caps">
+              {formatMessage(t["marketing.signupTrialCaps"], {
+                companies: TRIAL_LIMITS.maxCompanies,
+                credits: formatAmountDigits(TRIAL_LIMITS.aiCreditsPerMonth, 0),
+                storage: formatMessage(t["marketing.prValGb"], {
+                  n: formatAmountDigits(TRIAL_LIMITS.maxStorageMb / 1024, 0),
+                }),
+              })}
+            </span>
           </p>
         </div>
 
@@ -113,7 +123,7 @@ export const SignupPlanStep = forwardRef<HTMLHeadingElement, SignupPlanStepProps
         </p>
 
         <div
-          className="max-sm:sticky max-sm:bottom-0 max-sm:z-10 max-sm:-mx-[var(--gutter)] max-sm:border-t max-sm:border-border max-sm:bg-background max-sm:px-[var(--gutter)] max-sm:pt-3 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))] mt-5"
+          className="sticky bottom-0 z-10 mt-5 border-t border-border bg-background pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] max-sm:-mx-[var(--gutter)] max-sm:px-[var(--gutter)]"
           data-testid="signup-continue-bar"
         >
           <Button

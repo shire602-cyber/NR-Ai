@@ -966,5 +966,8 @@
   "components.srv.notification.aiDraftsReview.message": "The AI categorised {count} bank transaction(s) with high confidence. Review and approve each draft journal entry before it posts to the ledger.",
   "components.srv.notification.bankStatementImportedSkipped.message": "{count} transaction(s) imported from {bank} ({format} format); {skipped} already imported",
   "components.srv.notification.bankStatementNothingNew.message": "No new transactions from {bank} ({format} format); {skipped} already imported",
-  "components.planLockActivate": "Activate {plan}"
+  "components.planLockActivate": "Activate {plan}",
+  "components.planLockBodyChosen": "You can still open, search and export everything. Activate {plan} to add or change records again.",
+  "components.planLimitBodyChosen": "Activate {plan} to add or change records. Until then everything stays readable and you can export it.",
+  "components.planUntilThenReadable": "Until then everything stays readable and you can export it."
 }

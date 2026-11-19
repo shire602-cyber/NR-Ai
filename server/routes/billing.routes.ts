@@ -30,7 +30,7 @@ import { z } from "zod";
 import { createLogger } from "../config/logger";
 import { errorMessage } from "../errors";
 import { TRIAL_DAYS, TRIAL_END_BEHAVIOUR, trialState, type TrialState } from "../../shared/trial";
-import { NO_PLAN_ID, PAID_PLAN_IDS } from "../../shared/plans";
+import { NO_PLAN_ID, PAID_PLAN_IDS, type PaidPlanId } from "../../shared/plans";
 import {
   activationRequestBody,
   adminSetPlanBody,
@@ -41,6 +41,7 @@ import {
 } from "../../shared/validators/plans";
 import {
   listTrialsForAdmin,
+  onPlanActivated,
   recordPlanChoice,
   requestActivation,
 } from "../services/billing/plan-choice";
@@ -50,15 +51,13 @@ import { companyStorageBytes } from "../services/storage-usage";
 
 const log = createLogger("billing");
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** The trial banner's state for a company without a paid plan (null once on a paid plan). */
+/**
+ * The trial banner's state for a company without a paid plan (null once on a paid plan). The end
+ * is the gate's own end (shared/trial.ts trialEndDate), never a rounded length.
+ */
 function trialFromEntitlement(ent: CompanyEntitlement): TrialState | null {
   if (ent.state === "active" || !ent.trialStartedAt) return null;
-  const start = new Date(ent.trialStartedAt).getTime();
-  const end = ent.trialEndsAt ? new Date(ent.trialEndsAt).getTime() : start + TRIAL_DAYS * DAY_MS;
-  const days = Math.max(1, Math.round((end - start) / DAY_MS));
-  return trialState(ent.trialStartedAt, new Date(), days);
+  return trialState(ent.trialStartedAt, new Date(), TRIAL_DAYS, ent.trialEndsAt);
 }
 
 export function registerBillingRoutes(app: Express) {
@@ -208,6 +207,11 @@ export function registerBillingRoutes(app: Express) {
           paid,
         ]
       );
+      // A paid plan answers the customer's activation request: clear it and queue the
+      // "your plan is active" email (outbox, once per company + plan).
+      if (paid) {
+        await onPlanActivated(companyId, body.planId as PaidPlanId, body.billingCycle ?? null);
+      }
       const after = await companyEntitlement(companyId);
       await recordAudit({
         userId: req.user!.id,
@@ -271,8 +275,8 @@ export function registerBillingRoutes(app: Express) {
     "/api/admin/billing/trials",
     authMiddleware,
     adminMiddleware,
-    asyncHandler(async (_req: Request, res: Response) => {
-      res.json({ trials: await listTrialsForAdmin() });
+    asyncHandler(async (req: Request, res: Response) => {
+      res.json({ trials: await listTrialsForAdmin(new Date(), 200, req.user!.id) });
     })
   );
 

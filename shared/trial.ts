@@ -26,19 +26,41 @@ export interface TrialState {
   ended: boolean;
 }
 
-/** Trial state from the subscription row's creation time. */
-export function trialState(
+/**
+ * The ONE trial-end rule. The plan gate (shared/plans.ts resolveEntitlement), the subscription
+ * API and every banner read the end from here: the stored end (an NR admin may extend it), else
+ * start + `days`. The length is never rounded to whole days, so a non-whole-day end shows
+ * exactly the end the gate enforces.
+ */
+export function trialEndDate(
   startedAt: string | Date | null | undefined,
-  now: Date = new Date(),
+  endsAt?: string | Date | null,
   days: number = TRIAL_DAYS
-): TrialState | null {
+): Date | null {
+  if (endsAt) {
+    const given = new Date(endsAt);
+    if (!Number.isNaN(given.getTime())) return given;
+  }
   if (!startedAt) return null;
   const start = new Date(startedAt);
   if (Number.isNaN(start.getTime())) return null;
-  const end = new Date(start.getTime() + days * DAY_MS);
+  return new Date(start.getTime() + days * DAY_MS);
+}
+
+/** Trial state (days left, ended) from the same end the gate uses. */
+export function trialState(
+  startedAt: string | Date | null | undefined,
+  now: Date = new Date(),
+  days: number = TRIAL_DAYS,
+  endsAt?: string | Date | null
+): TrialState | null {
+  if (!startedAt) return null;
+  const start = new Date(startedAt);
+  const end = trialEndDate(startedAt, endsAt, days);
+  if (!end || Number.isNaN(start.getTime())) return null;
   const msLeft = end.getTime() - now.getTime();
   return {
-    days,
+    days: Math.max(1, Math.round((end.getTime() - start.getTime()) / DAY_MS)),
     startedAt: start.toISOString(),
     endsAt: end.toISOString(),
     daysLeft: msLeft > 0 ? Math.ceil(msLeft / DAY_MS) : 0,

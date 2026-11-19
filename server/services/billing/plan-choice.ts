@@ -126,11 +126,29 @@ export async function recordPlanChoice(
 
 // ── Emails (outbox only, English first then Arabic below) ────────────────────────────────────
 
-const PLAN_NAMES: Record<PaidPlanId, { en: string; ar: string }> = {
-  starter: { en: "Starter", ar: "المبتدئ" },
-  professional: { en: "Professional", ar: "الاحترافية" },
-  enterprise: { en: "Enterprise", ar: "المؤسسات" },
+/**
+ * Plan names as they read inside a sentence. Arabic uses the phrase form ("خطة المبتدئ", "الخطة
+ * الاحترافية", "خطة المؤسسات"), so the noun agrees ("طلب تفعيل الخطة الاحترافية"); the client
+ * catalog carries the same forms (marketing.prPlanPhrase_*).
+ */
+export const PLAN_NAMES: Record<PaidPlanId, { en: string; ar: string }> = {
+  starter: { en: "Starter", ar: "خطة المبتدئ" },
+  professional: { en: "Professional", ar: "الخطة الاحترافية" },
+  enterprise: { en: "Enterprise", ar: "خطة المؤسسات" },
 };
+
+/**
+ * The calendar day (Asia/Dubai, YYYY-MM-DD) that email dedupe keys roll over on, so "once a day"
+ * means the customer's day, not 04:00 Dubai time.
+ */
+export function dubaiDay(d: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Dubai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
 
 function dateEn(d: Date): string {
   return d.toLocaleDateString("en-GB", {
@@ -183,7 +201,8 @@ export async function requestActivation(
   companyId: string,
   user: { id: string; name: string; email: string },
   note?: string,
-  req?: Request
+  req?: Request,
+  now: Date = new Date()
 ): Promise<ActivationResult> {
   const choice = await readChoice(companyId);
   if (!choice) throw new Error("NO_PLAN_CHOSEN");
@@ -196,7 +215,9 @@ export async function requestActivation(
   const co = await pq<{ name: string }>(`SELECT name FROM companies WHERE id = $1`, [companyId]);
   const companyName = co.rows[0]?.name ?? companyId;
   const end = await trialEndOf(companyId);
-  const day = new Date().toISOString().slice(0, 10);
+  const day = dubaiDay(now);
+  // The "books stay open" promise only holds while the trial runs; after it the books are read-only.
+  const ended = end !== null && end.getTime() <= now.getTime();
   const plan = PLAN_NAMES[choice.planId];
   const price = priceLine(choice.planId, choice.billingCycle);
 
@@ -229,19 +250,27 @@ export async function requestActivation(
   const customerBody = [
     `We've got your request to activate ${plan.en} (${price.en}).`,
     "We'll email you to confirm. Nothing is charged until we confirm with you.",
-    end ? `Your books stay fully open until ${dateEn(end)}.` : "",
+    ended
+      ? "Your books are read-only until we activate it. Nothing is deleted."
+      : end
+        ? `Your books stay fully open until ${dateEn(end)}.`
+        : "",
     "",
     "---",
     "",
-    `استلمنا طلب تفعيل الخطة ${plan.ar} (${price.ar}).`,
+    `استلمنا طلب تفعيل ${plan.ar} (${price.ar}).`,
     "سنراسلك بالبريد للتأكيد. لا يُحصَّل أي مبلغ حتى نؤكد معك.",
-    end ? `تبقى دفاترك مفتوحة بالكامل حتى ${dateAr(end)}.` : "",
+    ended
+      ? "دفاترك للقراءة فقط حتى نفعّلها. لم يُحذف شيء."
+      : end
+        ? `تبقى دفاترك مفتوحة بالكامل حتى ${dateAr(end)}.`
+        : "",
   ]
     .filter((l, i, a) => !(l === "" && i === a.length - 1))
     .join("\n");
   await sendEmail(
     user.email,
-    `We've got your request to activate ${plan.en} / استلمنا طلب تفعيل الخطة ${plan.ar}`,
+    `We've got your request to activate ${plan.en} / استلمنا طلب تفعيل ${plan.ar}`,
     customerBody,
     {
       category: "billing",
@@ -263,6 +292,62 @@ export async function requestActivation(
   return { activationRequestedAt: at.toISOString() };
 }
 
+/**
+ * "Your plan is active": queued (outbox) to every company owner when an NR admin applies a paid
+ * plan, and clears the open activation request (the request is answered). The idempotency key is
+ * per company + plan + recipient, so re-applying the same plan never sends a second email.
+ */
+export async function onPlanActivated(
+  companyId: string,
+  planId: PaidPlanId,
+  billingCycle: BillingCycle | null
+): Promise<{ queued: number }> {
+  await pq(
+    `UPDATE subscriptions SET plan_activation_requested_at = NULL, updated_at = now()
+      WHERE id = ${LATEST} AND plan_activation_requested_at IS NOT NULL`,
+    [companyId]
+  );
+  const { rows } = await pq<{ company_name: string; email: string }>(
+    `SELECT c.name AS company_name, u.email
+       FROM companies c
+       JOIN company_users cu ON cu.company_id = c.id AND cu.role = 'owner'
+       JOIN users u ON u.id = cu.user_id
+      WHERE c.id = $1`,
+    [companyId]
+  );
+  const plan = PLAN_NAMES[planId];
+  const cycle = billingCycle ?? "monthly";
+  const price = priceLine(planId, cycle);
+  let queued = 0;
+  for (const r of rows) {
+    const text = [
+      `Your ${plan.en} plan (${price.en}) is now active for ${r.company_name}.`,
+      "You can add and change records as usual. Thank you for choosing Muhasib.ai.",
+      `Manage your plan: ${appUrl("/subscription")}`,
+      "",
+      "---",
+      "",
+      `تم تفعيل ${plan.ar} (${price.ar}) لشركة ${r.company_name}.`,
+      "يمكنك إضافة السجلات وتعديلها كالمعتاد. شكرًا لاختيارك محاسب.",
+      `إدارة خطتك: ${appUrl("/subscription")}`,
+    ].join("\n");
+    const res = await sendEmail(
+      r.email,
+      `Your ${plan.en} plan is active / تم تفعيل ${plan.ar}`,
+      text,
+      {
+        category: "billing",
+        companyId,
+        relatedEntityType: "subscription",
+        relatedEntityId: companyId,
+        idempotencyKey: `plan-active:${companyId}:${planId}:${r.email}`,
+      }
+    );
+    if (res.queued) queued++;
+  }
+  return { queued };
+}
+
 // ── Admin queue ──────────────────────────────────────────────────────────────────────────────
 
 export interface AdminTrialRow {
@@ -282,7 +367,8 @@ export interface AdminTrialRow {
  */
 export async function listTrialsForAdmin(
   now: Date = new Date(),
-  limit = 200
+  limit = 200,
+  adminUserId: string | null = null
 ): Promise<AdminTrialRow[]> {
   const { rows } = await pq<{
     company_id: string;
@@ -309,14 +395,24 @@ export async function listTrialsForAdmin(
           WHERE cu.company_id = c.id AND cu.role = 'owner' ORDER BY cu.created_at LIMIT 1
        ) o ON true
       WHERE s.plan_id = 'free'
-        AND COALESCE(c.company_type, 'customer') <> 'client'
+        AND COALESCE(c.company_type, 'customer') NOT IN ('client', 'firm')
         AND COALESCE(s.trial_ends_at, s.created_at + ($2::int * interval '1 day'))
               > $3::timestamptz - interval '30 days'
+        -- Customers only: firm workspaces (owned by a firm member) and platform admins' own
+        -- companies are not sales leads.
+        AND NOT EXISTS (
+          SELECT 1 FROM company_users cu2 JOIN users u2 ON u2.id = cu2.user_id
+           WHERE cu2.company_id = c.id
+             AND ((cu2.role = 'owner'
+                   AND (u2.is_admin = true
+                        OR EXISTS (SELECT 1 FROM firm_members fm WHERE fm.user_id = u2.id)))
+                  OR ($4::uuid IS NOT NULL AND u2.id = $4::uuid))
+        )
       ORDER BY (s.plan_activation_requested_at IS NOT NULL) DESC,
                s.plan_activation_requested_at DESC NULLS LAST,
                COALESCE(s.trial_ends_at, s.created_at + ($2::int * interval '1 day')) ASC
       LIMIT $1`,
-    [limit, TRIAL_DAYS, now.toISOString()]
+    [limit, TRIAL_DAYS, now.toISOString(), adminUserId]
   );
   return rows.map((r) => ({
     companyId: r.company_id,
@@ -364,7 +460,7 @@ export async function sendTrialReminders(now: Date = new Date()): Promise<Remind
        JOIN company_users cu ON cu.company_id = c.id AND cu.role = 'owner'
        JOIN users u ON u.id = cu.user_id
       WHERE s.plan_id = 'free'
-        AND COALESCE(c.company_type, 'customer') <> 'client'
+        AND COALESCE(c.company_type, 'customer') NOT IN ('client', 'firm')
         AND COALESCE(s.trial_ends_at, s.created_at + ($1::int * interval '1 day'))
               BETWEEN $2::timestamptz - interval '1 day' AND $2::timestamptz + interval '3 days'`,
     [TRIAL_DAYS, now.toISOString()]
@@ -373,7 +469,7 @@ export async function sendTrialReminders(now: Date = new Date()): Promise<Remind
   for (const r of rows) {
     const end = new Date(r.trial_end);
     const ended = end.getTime() <= now.getTime();
-    const endDay = end.toISOString().slice(0, 10);
+    const endDay = dubaiDay(end);
     const choice = afterTrialPlan({
       chosenPlanId: r.chosen_plan_id,
       chosenBillingCycle: r.chosen_billing_cycle,

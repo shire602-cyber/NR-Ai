@@ -52,6 +52,9 @@ RUN npm ci --omit=dev --ignore-scripts
 FROM node:20.19-bookworm-slim
 ARG RAILWAY_GIT_COMMIT_SHA
 ENV NODE_ENV=production
+# Timestamp columns carry no zone and node-pg reads them in the process zone: always UTC
+# (the server also pins it at startup, server/config/pin-timezone.ts).
+ENV TZ=UTC
 ENV RAILWAY_GIT_COMMIT_SHA=${RAILWAY_GIT_COMMIT_SHA}
 WORKDIR /app
 

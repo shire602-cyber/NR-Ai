@@ -584,3 +584,119 @@ describe("STEP4 migration 0135", () => {
     for (const stmt of sqlText.split("--> statement-breakpoint")) await h.sql(stmt);
   });
 });
+
+describe("STEP4 finisher: the plan emails, the admin queue and the day key", () => {
+  const mailText = (companyId: string, like: string) =>
+    h.sql<{ to_address: string; subject: string; text_body: string; idempotency_key: string }>(
+      `SELECT to_address, subject, text_body, idempotency_key FROM email_outbox
+        WHERE company_id = $1 AND idempotency_key LIKE $2 ORDER BY to_address`,
+      [companyId, like]
+    );
+
+  it("[STEP4-fix-email-ended] after the trial the customer email says read-only, never 'stays open until <past date>' (en + ar)", async () => {
+    const { tenant: t } = await signUp("S4fixend", {
+      plan: "professional",
+      billingCycle: "monthly",
+    });
+    await endTrial(t!);
+    const res = await t!.as.post(activateUrl(t!), {});
+    expect(res.status, res.text).toBe(202);
+    const customer = (await mailText(t!.company.id, "plan-activation:%:customer"))[0];
+    expect(customer.text_body).toContain("Your books are read-only until we activate it.");
+    expect(customer.text_body).not.toContain("stay fully open until");
+    expect(customer.text_body).toContain("دفاترك للقراءة فقط حتى نفعّلها");
+    expect(customer.text_body).not.toContain("تبقى دفاترك مفتوحة بالكامل");
+    // The Arabic plan phrase agrees with the noun (the email said "الخطة المبتدئ" before).
+    expect(customer.text_body).toContain("استلمنا طلب تفعيل الخطة الاحترافية");
+    expect(customer.subject).toContain("استلمنا طلب تفعيل الخطة الاحترافية");
+  });
+
+  it("[STEP4-fix-email-running] during the trial the email keeps the true 'stays open until' promise; Starter reads 'خطة المبتدئ'", async () => {
+    const { tenant: t } = await signUp("S4fixrun", { plan: "starter", billingCycle: "yearly" });
+    expect((await t!.as.post(activateUrl(t!), {})).status).toBe(202);
+    const customer = (await mailText(t!.company.id, "plan-activation:%:customer"))[0];
+    expect(customer.text_body).toContain("Your books stay fully open until");
+    expect(customer.text_body).toContain("تبقى دفاترك مفتوحة بالكامل حتى");
+    expect(customer.text_body).toContain("استلمنا طلب تفعيل خطة المبتدئ");
+    expect(customer.text_body).not.toContain("الخطة المبتدئ");
+  });
+
+  it("[STEP4-fix-day-key] the once-a-day key rolls over on the Asia/Dubai date, not the UTC date", async () => {
+    const { dubaiDay, requestActivation } =
+      await import("../../server/services/billing/plan-choice");
+    // 21:00 UTC on 19 Nov is 01:00 on 20 Nov in Dubai.
+    expect(dubaiDay(new Date("2026-11-19T21:00:00Z"))).toBe("2026-11-20");
+    expect(dubaiDay(new Date("2026-11-19T19:59:00Z"))).toBe("2026-11-19");
+    const { tenant: t } = await signUp("S4fixday", { plan: "starter" });
+    await requestActivation(
+      t!.company.id,
+      { id: t!.user.id, name: "N", email: t!.email },
+      undefined,
+      undefined,
+      new Date("2026-11-19T21:00:00Z")
+    );
+    const keys = (await mailText(t!.company.id, "plan-activation:%")).map((r) => r.idempotency_key);
+    expect(keys).toContain(`plan-activation:${t!.company.id}:2026-11-20:customer`);
+    expect(keys).toContain(`plan-activation:${t!.company.id}:2026-11-20:support`);
+  });
+
+  it("[STEP4-fix-admin-apply] applying a plan clears the request and queues one 'plan active' email (en + ar), once", async () => {
+    const { tenant: t } = await signUp("S4fixapply", {
+      plan: "professional",
+      billingCycle: "yearly",
+    });
+    expect((await t!.as.post(activateUrl(t!), {})).status).toBe(202);
+    const admin = await h.createTenant({ name: "S4fixapply2", isAdmin: true });
+    const one = `/api/admin/companies/${t!.company.id}/plan`;
+    expect((await admin.as.get(one)).body.activationRequestedAt).toBeTruthy();
+
+    const applied = await admin.as.put(one, { planId: "professional", billingCycle: "yearly" });
+    expect(applied.status, applied.text).toBe(200);
+    const detail = await admin.as.get(one);
+    expect(detail.body.activationRequestedAt).toBeNull();
+    expect(detail.body.state).toBe("active");
+
+    const mails = await mailText(t!.company.id, "plan-active:%");
+    expect(mails).toHaveLength(1);
+    expect(mails[0].to_address).toBe(t!.email.toLowerCase());
+    expect(mails[0].text_body).toContain("Your Professional plan (AED 1,190 a year) is now active");
+    expect(mails[0].text_body).toContain("تم تفعيل الخطة الاحترافية");
+    expect(mails[0].subject).toContain("Your Professional plan is active");
+
+    // Re-applying the same plan never sends a second email.
+    const again = await admin.as.put(one, { planId: "professional", billingCycle: "yearly" });
+    expect(again.status).toBe(200);
+    expect(await mailText(t!.company.id, "plan-active:%")).toHaveLength(1);
+    // "No plan" queues nothing.
+    const other = (await signUp("S4fixnone")).tenant!;
+    await admin.as.put(`/api/admin/companies/${other.company.id}/plan`, { planId: "none" });
+    expect(await mailText(other.company.id, "plan-active:%")).toHaveLength(0);
+  });
+
+  it("[STEP4-fix-admin-trials] the trials list leaves out firm companies, firm members' workspaces and the admin's own companies", async () => {
+    const admin = await h.createTenant({ name: "S4fixlist", isAdmin: true });
+    const { tenant: customer } = await signUp("S4fixcust", { plan: "starter" });
+    const firmCo = await h.createTenant({
+      name: "S4fixfirmco",
+      companyColumns: { company_type: "firm" },
+    });
+    const { tenant: member } = await signUp("S4fixmember");
+    await h.sql(`INSERT INTO firms (name, slug, status) VALUES ('S4 firm', $1, 'active')`, [
+      `s4-${randomBytes(3).toString("hex")}`,
+    ]);
+    const [firm] = await h.sql<{ id: string }>(
+      `SELECT id FROM firms ORDER BY created_at DESC LIMIT 1`
+    );
+    await h.sql(`INSERT INTO firm_members (firm_id, user_id, role) VALUES ($1, $2, 'firm_owner')`, [
+      firm.id,
+      member!.user.id,
+    ]);
+    const res = await admin.as.get(`/api/admin/billing/trials`);
+    expect(res.status, res.text).toBe(200);
+    const ids = res.body.trials.map((x: { companyId: string }) => x.companyId);
+    expect(ids).toContain(customer!.company.id);
+    expect(ids).not.toContain(firmCo.company.id);
+    expect(ids).not.toContain(member!.company.id);
+    expect(ids).not.toContain(admin.company.id);
+  });
+});

@@ -211,6 +211,7 @@ import "@/styles/mobile.css";
 import { canRunCompanyOnboarding } from "@/lib/companyRole";
 import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
 import { PlanLockBanner } from "@/components/billing/PlanLockBanner";
+import { ReadOnlyForms } from "@/components/billing/ReadOnlyForms";
 import { CommandPaletteProvider } from "@/components/CommandPalette";
 import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
 import { SkipLink } from "@/components/SkipLink";
@@ -372,6 +373,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
           </header>
           <FirmContextBanner />
           <PlanLockBanner />
+          <ReadOnlyForms />
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
             <div className="page-container">
               <RouteGuard>

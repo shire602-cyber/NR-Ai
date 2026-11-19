@@ -294,7 +294,10 @@ describe("/subscription", () => {
     await renderSubscription();
     expect(container.querySelector("[data-testid=text-current-plan]")?.textContent).toBe("No plan");
     expect(text()).toContain("Your trial has ended: your books are read-only");
-    expect(container.querySelector("[data-testid=button-choose-plan]")).not.toBeNull();
+    // One state, one CTA: without checkout the plan block holds the only "choose" button.
+    expect(container.querySelector("[data-testid=button-see-plans-choice]")).not.toBeNull();
+    expect(container.querySelector("[data-testid=button-choose-plan]")).toBeNull();
+    expect(container.querySelector("[data-testid=button-see-plans]")).toBeNull();
   });
 
   it("on a paid plan, replaces checkout with 'Choose <plan>' (mailto) while checkout is not configured", async () => {

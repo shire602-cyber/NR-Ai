@@ -49,7 +49,6 @@ export function AdminPlanControl({ companyId }: { companyId: string }) {
   // The customer's choice preselects the controls until the admin changes them.
   const [planPick, setPlan] = useState<Choice | null>(null);
   const [cyclePick, setCycle] = useState<"monthly" | "yearly" | null>(null);
-  const [result, setResult] = useState<PlanResult | null>(null);
   const queryClient = useQueryClient();
 
   // STEP4: what the customer chose (and asked for), so the admin applies it in one click.
@@ -65,8 +64,8 @@ export function AdminPlanControl({ companyId }: { companyId: string }) {
   const apply = useMutation({
     mutationFn: (body: Record<string, unknown>): Promise<PlanResult> =>
       apiRequest("PUT", `/api/admin/companies/${companyId}/plan`, body),
-    onSuccess: (r) => {
-      setResult(r);
+    onSuccess: () => {
+      // The "Now:" line above re-reads the plan, so the result is shown once.
       void queryClient.invalidateQueries({ queryKey: ["/api/admin/companies", companyId, "plan"] });
       toast({ title: translateNow("adminConsole.planSaved") });
     },
@@ -212,11 +211,6 @@ export function AdminPlanControl({ companyId }: { companyId: string }) {
           {formatMessage(t["adminConsole.planExtendTrial"], { days: TRIAL_DAYS })}
         </Button>
       </div>
-      {result ? (
-        <p className="text-small" role="status" data-testid="admin-plan-result">
-          {formatMessage(t["adminConsole.planNow"], { state: stateText(result) })}
-        </p>
-      ) : null}
     </section>
   );
 }
