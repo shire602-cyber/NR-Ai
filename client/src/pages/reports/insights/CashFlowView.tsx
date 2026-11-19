@@ -168,12 +168,12 @@ export default function CashFlowView({ companyId }: { companyId: string }) {
               {
                 label: t["analytics.exportPdf"],
                 format: "pdf",
-                href: `/api/companies/${companyId}/reports/statements/cash-flow?format=pdf&${exportRange}`,
+                href: `/api/companies/${companyId}/reports/statements/cash-flow?format=pdf&lang=${locale}&${exportRange}`,
               },
               {
                 label: t["analytics.exportExcel"],
                 format: "xlsx",
-                href: `/api/companies/${companyId}/reports/statements/cash-flow?format=xlsx&${exportRange}`,
+                href: `/api/companies/${companyId}/reports/statements/cash-flow?format=xlsx&lang=${locale}&${exportRange}`,
               },
             ]}
           />

@@ -219,7 +219,7 @@ export async function renderProfitAndLoss(
   return {
     id: "profit-loss",
     title: STATEMENT_TITLES["profit-loss"],
-    period: periodLabel(p.from, p.to),
+    period: periodLabel(p.from, p.to, company.locale),
     basis: "ledger",
     tables: [{ columns: amountColumns(), rows }],
     notes: [],
@@ -271,7 +271,7 @@ export async function renderBalanceSheet(
   return {
     id: "balance-sheet",
     title: STATEMENT_TITLES["balance-sheet"],
-    period: periodLabel(null, asOf),
+    period: periodLabel(null, asOf, company.locale),
     basis: "ledger",
     tables: [{ columns: amountColumns(), rows: balanceSheetRows(bs, company.locale) }],
     notes: [balanceNote(bs.isBalanced, bs.difference)],
@@ -303,7 +303,7 @@ export async function renderTrialBalance(
   return {
     id: "trial-balance",
     title: STATEMENT_TITLES["trial-balance"],
-    period: periodLabel(p.from, p.to),
+    period: periodLabel(p.from, p.to, company.locale),
     basis: "ledger",
     tables: [
       {
@@ -363,7 +363,7 @@ export async function renderCashFlow(
   return {
     id: "cash-flow",
     title: STATEMENT_TITLES["cash-flow"],
-    period: periodLabel(p.from, p.to),
+    period: periodLabel(p.from, p.to, company.locale),
     basis: "ledger",
     tables: [{ columns: amountColumns(), rows }],
     notes: [
@@ -455,7 +455,7 @@ export async function renderGeneralLedger(
   return {
     id: "general-ledger",
     title: STATEMENT_TITLES["general-ledger"],
-    period: periodLabel(p.from, p.to),
+    period: periodLabel(p.from, p.to, company.locale),
     basis: "ledger",
     tables: [
       {
@@ -536,7 +536,7 @@ function agingReport(
   return {
     id: kind,
     title: STATEMENT_TITLES[kind],
-    period: periodLabel(null, report.asOf),
+    period: periodLabel(null, report.asOf, company.locale),
     basis: "ledger",
     tables: [
       {
@@ -706,7 +706,7 @@ export async function renderChangesInEquity(
   return {
     id: "changes-in-equity",
     title: STATEMENT_TITLES["changes-in-equity"],
-    period: periodLabel(p.from, p.to),
+    period: periodLabel(p.from, p.to, company.locale),
     basis: "ledger",
     tables: [
       {
@@ -825,7 +825,7 @@ export async function renderVatSummary(
   return {
     id: "vat-summary",
     title: STATEMENT_TITLES["vat-summary"],
-    period: periodLabel(p.from, p.to),
+    period: periodLabel(p.from, p.to, company.locale),
     basis: "ledger",
     tables: [
       {
@@ -1011,7 +1011,7 @@ export async function renderExecutiveSummary(
   return {
     id: "executive-summary",
     title: STATEMENT_TITLES["executive-summary"],
-    period: periodLabel(p.from, p.to),
+    period: periodLabel(p.from, p.to, company.locale),
     basis: "ledger",
     tables: [
       {

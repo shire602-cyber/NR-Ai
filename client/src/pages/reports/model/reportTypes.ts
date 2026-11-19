@@ -257,7 +257,7 @@ export interface ConsolidatedStatementsReport {
 }
 
 export interface VATSummaryReport {
-  period: string;
+  period: string | { from: string; to: string };
   salesSubtotal: number;
   salesVAT: number;
   purchasesSubtotal: number;

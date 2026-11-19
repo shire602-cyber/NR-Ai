@@ -117,7 +117,12 @@ export function bilingualMoney(amount: number): Bilingual {
   return { en: formatMoneyAmount(amount), ar: `${formatMoneyAmount(amount, "")} درهم` };
 }
 
-export function periodLabel(from: string | null, to: string): string {
+export function periodLabel(from: string | null, to: string, locale: RenderLocale = "en"): string {
+  if (locale === "ar") {
+    return from
+      ? `${formatIsoDateAr(from)} – ${formatIsoDateAr(to)}`
+      : `كما في ${formatIsoDateAr(to)}`;
+  }
   return from ? `${formatIsoDate(from)} – ${formatIsoDate(to)}` : `As of ${formatIsoDate(to)}`;
 }
 
