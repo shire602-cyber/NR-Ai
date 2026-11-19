@@ -228,44 +228,6 @@ describe("[G7] e-invoice validate agrees with generate", () => {
 // ─── G11 R17-20: admin / email-intake write routes validate with strictBody ─────
 
 describe("[R17-20] admin and email-intake writes reject raw bodies", () => {
-  it("[R17-20] POST/PUT /api/admin/plans validate fields and reject unknown / server keys", async () => {
-    const admin = await h.createTenant({ name: "PlanAdmin", isAdmin: true });
-    const bad = await admin.as.post(`/api/admin/plans`, {
-      name: "Pro",
-      priceMonthly: 99,
-      id: "00000000-0000-0000-0000-000000000001",
-    });
-    expect(bad.status, bad.text).toBe(400);
-    expect(bad.body.fields).toHaveProperty("id");
-    const neg = await admin.as.post(`/api/admin/plans`, { name: "Pro", priceMonthly: -1 });
-    expect(neg.status, neg.text).toBe(400);
-
-    const ok = await admin.as.post(`/api/admin/plans`, {
-      name: "Pro",
-      priceMonthly: "99.50",
-      currency: "aed",
-      maxUsers: 5,
-      isActive: true,
-    });
-    expect(ok.status, ok.text).toBe(201);
-    expect(ok.body).toMatchObject({ name: "Pro", priceMonthly: 99.5, currency: "AED" });
-
-    const smuggle = await admin.as.put(`/api/admin/plans/${ok.body.id}`, {
-      name: "Pro+",
-      createdAt: "2000-01-01T00:00:00Z",
-    });
-    expect(smuggle.status, smuggle.text).toBe(400);
-    const empty = await admin.as.put(`/api/admin/plans/${ok.body.id}`, {});
-    expect(empty.status, empty.text).toBe(400);
-    const upd = await admin.as.put(`/api/admin/plans/${ok.body.id}`, { priceYearly: 999 });
-    expect(upd.status, upd.text).toBe(200);
-    const row = await h.sql(
-      "SELECT name, price_yearly::text AS y FROM subscription_plans WHERE id = $1",
-      [ok.body.id]
-    );
-    expect(row[0]).toEqual({ name: "Pro", y: "999.00" });
-  });
-
   it("[R17-20] PATCH /api/admin/companies/:id and /api/admin/clients/:id only write declared company fields", async () => {
     const admin = await h.createTenant({ name: "CoAdmin", isAdmin: true });
     const t = await h.createTenant();

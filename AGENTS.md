@@ -27,7 +27,7 @@ Scope: this file applies to the whole repository. It is a concise index; detail 
   exceeds 1,500 lines.
 - `migrations/` Drizzle migrations (`migrations/meta/` is generated; never edit by hand).
 - `tests/` Vitest unit tests (`tests/unit`), DB-backed tests (`tests/db`) and smoke/E2E scripts.
-- `docs/release/DEPLOY-RUNBOOK.md` deploy runbook: backup, migration 0089-0122 rehearsal, env,
+- `docs/release/DEPLOY-RUNBOOK.md` deploy runbook: backup, migration 0089-0134 rehearsal, env,
   smoke, rollback.
 - `docs/` engineering notes. Do not edit `dist/` or `node_modules/`; `.claude/` and `.claire/`
   worktrees are excluded from Vitest/ESLint and are not a source of truth.
@@ -85,6 +85,7 @@ reversePayment` (service registry) and `bank-reconciliation.service.ts` (`applyM
   Nothing is transmitted to the FTA/EmaraTax/ASP without an explicit configured boundary.
 - WhatsApp and document chasing are NR firm-management-only (`/firm/document-chasing`); they must
   not appear in public or customer SaaS UI.
+- Plan prices live only in `shared/plans.ts`; there is no DB-editable price table (STEP3).
 - Cookie/session state-changing requests need `X-CSRF-Token` from `/api/csrf-token`; Bearer is
   exempt. `TRUST_PROXY_HOPS` sets Express trust proxy (`true` is refused).
 

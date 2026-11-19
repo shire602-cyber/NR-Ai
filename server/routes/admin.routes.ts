@@ -27,9 +27,7 @@ import {
   adminUpdateCompanyBody,
   adminUpdateUserBody,
   createClientNoteBody,
-  createSubscriptionPlanBody,
   updateClientNoteBody,
-  updateSubscriptionPlanBody,
   upsertAdminSettingBody,
   type AdminCreateClientBody,
   type AdminCreateClientDocumentBody,
@@ -39,9 +37,7 @@ import {
   type AdminUpdateCompanyBody,
   type AdminUpdateUserBody,
   type CreateClientNoteBody,
-  type CreateSubscriptionPlanBody,
   type UpdateClientNoteBody,
-  type UpdateSubscriptionPlanBody,
   type UpsertAdminSettingBody,
 } from "../../shared/validators/admin";
 
@@ -135,56 +131,6 @@ export function registerAdminRoutes(app: Express): void {
         });
         res.json(setting);
       }
-    })
-  );
-
-  // =====================================
-  // SUBSCRIPTION PLANS
-  // =====================================
-
-  // Get subscription plans
-  router.get(
-    "/admin/plans",
-    asyncHandler(async (req: Request, res: Response) => {
-      const plans = await storage.getSubscriptionPlans();
-      res.json(plans);
-    })
-  );
-
-  // Create subscription plan
-  router.post(
-    "/admin/plans",
-    strictBody(createSubscriptionPlanBody),
-    asyncHandler(async (req: Request, res: Response) => {
-      const plan = await storage.createSubscriptionPlan(
-        parsedBody<CreateSubscriptionPlanBody>(req)
-      );
-      res.status(201).json(plan);
-    })
-  );
-
-  // Update subscription plan
-  router.put(
-    "/admin/plans/:id",
-    strictBody(updateSubscriptionPlanBody),
-    asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const plan = await storage.updateSubscriptionPlan(
-        id,
-        parsedBody<UpdateSubscriptionPlanBody>(req)
-      );
-      if (!plan) return res.status(404).json({ message: "Plan not found" });
-      res.json(plan);
-    })
-  );
-
-  // Delete subscription plan
-  router.delete(
-    "/admin/plans/:id",
-    asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      await storage.deleteSubscriptionPlan(id);
-      res.status(204).send();
     })
   );
 

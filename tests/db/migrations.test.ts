@@ -193,6 +193,42 @@ describe("migrations", () => {
     expect(await tables()).toEqual([]);
   });
 
+  it("[STEP3] 0134 drops the price-editor tables, is idempotent, and refuses to drop a table that holds rows", async () => {
+    const tables = async () =>
+      (
+        await h.sql<{ table_name: string }>(
+          `SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name IN ('subscription_plans', 'user_subscriptions')
+            ORDER BY table_name`
+        )
+      ).map((r) => r.table_name);
+    // Applied by the harness migrations: both tables are gone, and a second run is a no-op.
+    expect(await tables()).toEqual([]);
+    await h.sql(sqlFile("0134_step3_remove_price_editor"));
+    await h.sql(sqlFile("0134_step3_remove_price_editor"));
+    expect(await tables()).toEqual([]);
+
+    // A table that holds a row is never dropped silently.
+    for (const name of ["subscription_plans", "user_subscriptions"]) {
+      await h.sql(`CREATE TABLE ${name} (id uuid)`);
+      await h.sql(`INSERT INTO ${name} (id) VALUES (gen_random_uuid())`);
+      await expect(h.sql(sqlFile("0134_step3_remove_price_editor"))).rejects.toThrow(
+        new RegExp(`${name} holds 1 row`)
+      );
+      expect(await tables()).toEqual([name]);
+      await h.sql(`DROP TABLE ${name}`);
+    }
+
+    // Empty tables (with the old foreign key) are dropped.
+    await h.sql(`CREATE TABLE subscription_plans (id uuid PRIMARY KEY)`);
+    await h.sql(
+      `CREATE TABLE user_subscriptions (plan_id uuid REFERENCES subscription_plans (id))`
+    );
+    await h.sql(sqlFile("0134_step3_remove_price_editor"));
+    expect(await tables()).toEqual([]);
+  });
+
   it("[STEP2] 0133 resets a 15% company default VAT rate to 5% and leaves 0% and 5% alone", async () => {
     const a = await h.createTenant({ name: "Step2Rate15" });
     const b = await h.createTenant({ name: "Step2Rate0" });

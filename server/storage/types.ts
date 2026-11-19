@@ -87,13 +87,11 @@ import type {
   InsertServiceInvoice,
   InsertServiceInvoiceLine,
   InsertSubscription,
-  InsertSubscriptionPlan,
   InsertTaxReturnArchive,
   InsertTransactionClassification,
   InsertUser,
   InsertUserFeedback,
   InsertUserOnboarding,
-  InsertUserSubscription,
   InsertVatReturn,
   InsertWaitlist,
   InsertWhatsappConfig,
@@ -121,13 +119,11 @@ import type {
   ServiceInvoice,
   ServiceInvoiceLine,
   Subscription,
-  SubscriptionPlan,
   TaxReturnArchive,
   TransactionClassification,
   User,
   UserFeedback,
   UserOnboarding,
-  UserSubscription,
   VatReturn,
   Waitlist,
   WhatsappConfig,
@@ -626,24 +622,6 @@ export interface IStorage {
   getAdminSettingByKey(key: string): Promise<AdminSetting | undefined>;
   createAdminSetting(setting: InsertAdminSetting): Promise<AdminSetting>;
   updateAdminSetting(key: string, value: string): Promise<AdminSetting>;
-
-  // Subscription Plans
-  getSubscriptionPlans(): Promise<SubscriptionPlan[]>;
-  getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undefined>;
-  createSubscriptionPlan(plan: InsertSubscriptionPlan): Promise<SubscriptionPlan>;
-  updateSubscriptionPlan(
-    id: string,
-    data: Partial<InsertSubscriptionPlan>
-  ): Promise<SubscriptionPlan>;
-  deleteSubscriptionPlan(id: string): Promise<void>;
-
-  // User Subscriptions
-  getUserSubscription(userId: string): Promise<UserSubscription | undefined>;
-  createUserSubscription(subscription: InsertUserSubscription): Promise<UserSubscription>;
-  updateUserSubscription(
-    id: string,
-    data: Partial<InsertUserSubscription>
-  ): Promise<UserSubscription>;
 
   // Audit Logs
   getAuditLogs(limit?: number): Promise<AuditLog[]>;

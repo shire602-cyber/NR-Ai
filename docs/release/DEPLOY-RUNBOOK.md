@@ -1,4 +1,4 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0133)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0134)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
@@ -29,7 +29,7 @@ Restore the dump from section 1 (or a Railway snapshot) into a scratch database,
 ```
 export DATABASE_URL=postgres://.../rehearsal   # the restored copy
 \timing on                                     # in psql; or time the command below
-time npm run db:migrate                         # applies 0089-0133; record total and slowest file
+time npm run db:migrate                         # applies 0089-0134; record total and slowest file
 npm run build && PORT=<free port> npm start     # boot check: /health/ready 200, /api/version
 ```
 
@@ -142,6 +142,18 @@ totals and the ledger stay as posted, but re-rendering a stored 15% line (PDF, e
 recompute it at 5%. Draft 15% documents, 15% company defaults (reset to 5% by 0133) and
 Saudi-address companies are informational.
 
+Pre-deploy SQL check for the STEP3 removal of the unused admin price editor (migration 0134;
+read-only, run on production or the snapshot BEFORE the deploy):
+
+```
+psql "$DATABASE_URL" -f scripts/qa/find-price-editor-data.sql
+```
+
+Both counts 0 means clear. Stop rule: a non-zero `subscription_plans` / `user_subscriptions` count
+blocks migration 0134 (it refuses to drop a table that holds rows). Export it
+(`\copy subscription_plans TO 'subscription_plans.csv' CSV HEADER`), get owner sign-off, `TRUNCATE`,
+then deploy. Those rows never affected any price: plan prices live only in `shared/plans.ts`.
+
 ### 2d. Post-migrate checks
 
 After migrating, confirm migration 0133 removed both Saudi ZATCA tables (expect zero rows):
@@ -149,6 +161,13 @@ After migrating, confirm migration 0133 removed both Saudi ZATCA tables (expect 
 ```sql
 SELECT table_name FROM information_schema.tables
  WHERE table_schema = 'public' AND table_name LIKE 'zatca\_%';
+```
+
+After migrating, confirm migration 0134 removed both price-editor tables (expect zero rows):
+
+```sql
+SELECT table_name FROM information_schema.tables
+ WHERE table_schema = 'public' AND table_name IN ('subscription_plans', 'user_subscriptions');
 ```
 
 #### Skipped `uq_employees_*` unique indexes (0118)
@@ -277,7 +296,7 @@ and FTA. The PR description must say so, so "394 fixed" is not read as "certifie
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
 `einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
 safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
-0089-0133, then run it a second time to confirm it is a no-op.
+0089-0134, then run it a second time to confirm it is a no-op.
 
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):

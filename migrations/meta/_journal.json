@@ -932,6 +932,13 @@
    "when": 1781430480000,
    "tag": "0133_step2_remove_zatca",
    "breakpoints": false
+  },
+  {
+   "idx": 133,
+   "version": "7",
+   "when": 1781516880000,
+   "tag": "0134_step3_remove_price_editor",
+   "breakpoints": false
   }
  ]
 }
