@@ -45,6 +45,11 @@ const CSRF_BEARER_EXEMPT = [
   /^\/api\/client-errors$/,
 ];
 
+/** True when a state-changing request to `path` skips the CSRF check (public or signed endpoints). */
+export function isCsrfExemptPath(path: string): boolean {
+  return CSRF_BEARER_EXEMPT.some((rx) => rx.test(path));
+}
+
 function hasBearerAuth(req: Request): boolean {
   const auth = req.headers.authorization;
   return typeof auth === "string" && auth.toLowerCase().startsWith("bearer ");
@@ -123,7 +128,7 @@ const { generateCsrfToken, doubleCsrfProtection, invalidCsrfTokenError } = doubl
     (req.headers["x-xsrf-token"] as string | undefined),
   skipCsrfProtection: (req) => {
     if (hasBearerAuth(req)) return true;
-    return CSRF_BEARER_EXEMPT.some((rx) => rx.test(req.path));
+    return isCsrfExemptPath(req.path);
   },
 });
 

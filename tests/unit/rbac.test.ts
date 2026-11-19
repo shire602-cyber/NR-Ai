@@ -181,6 +181,33 @@ describe("R01-14 permission matrix", () => {
   });
 });
 
+describe("STEP5 portal invitation policy", () => {
+  const C = "/companies/11111111-1111-4111-8111-111111111111";
+
+  it("inviting, resending, revoking and removing access need documents.write; the status is readable", () => {
+    expect(resolvePermission("POST", `${C}/customer-contacts/x/portal-invitations`)).toEqual([
+      "documents.write",
+    ]);
+    expect(resolvePermission("POST", `${C}/portal-invitations/bulk`)).toEqual(["documents.write"]);
+    expect(resolvePermission("POST", `${C}/portal-invitations/x/resend`)).toEqual([
+      "documents.write",
+    ]);
+    expect(resolvePermission("POST", `${C}/portal-invitations/x/revoke`)).toEqual([
+      "documents.write",
+    ]);
+    expect(resolvePermission("DELETE", `${C}/portal-accounts/x`)).toEqual(["documents.write"]);
+    expect(resolvePermission("GET", `${C}/portal-access/summary`)).toEqual(["reports.read"]);
+    expect(resolvePermission("GET", `${C}/customer-contacts/x/portal-access`)).toEqual([
+      "reports.read",
+    ]);
+  });
+
+  it("the public join routes sit outside the company policy", () => {
+    expect(resolvePermission("GET", "/portal-invitations/abc")).toBeNull();
+    expect(resolvePermission("POST", "/portal-invitations/abc/accept")).toBeNull();
+  });
+});
+
 describe("R01-02 policy resolution", () => {
   const C = "/companies/11111111-1111-4111-8111-111111111111";
 
