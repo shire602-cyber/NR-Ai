@@ -86,6 +86,16 @@ BASE_URL=http://localhost:<port> CORS_ORIGIN=http://localhost:<port> node dist/i
   under 12 px, English in Arabic, axe serious/critical, autocomplete attributes, the localized Enterprise
   mailto subject, the light portal root (no signed-in app, motion or socket) and the PDF download and
   its failure message. Restart the app between runs (sign-in throttling); about 15 minutes.
+- Firm and accountant tools: same target, `npm run e2e:firm-tools` (`tests/e2e/firm-tools-flow.mjs`;
+  writes firm roles through `DATABASE_URL`; `CHROMIUM_PATH` falls back to
+  `/opt/pw-browsers/chromium-1243/chrome-linux64/chrome`). Seeds an NR firm owner whose own company is not
+  onboarded, an assigned and an unassigned preparer, 28 clients, assignments, a part-paid invoice and an
+  e-invoice state. For an iPhone 13, a 360 px Android and 1440x900 in English and Arabic it opens the
+  firm dashboard, client list, "Open books" (must land on the client's `/dashboard`, never `/onboarding`),
+  client profile, the invoice list and e-invoicing settings in a client's books, the staff views and
+  failing-API variants, and checks console, requests, overflow, raw catalog keys, 44 px targets in the
+  content area, English in Arabic, axe serious/critical and that the firm workspace downloads no
+  report-catalog or admin chunk. `SHOT_DIR` saves screenshots.
 - Core release flows: same target, `npm run e2e:flows` (`tests/e2e/core-flows.mjs`; `FLOWS=id,..`
   and `FLOWS_LANGS` narrow it). Steps in areas still being built are tagged `wip` and reported as
   "in progress" (`FLOWS_STRICT_WIP=true` makes them fail). Report:

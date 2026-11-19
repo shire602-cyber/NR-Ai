@@ -86,6 +86,9 @@ Detail for each rule: [docs/platform-rules.md](docs/platform-rules.md).
 reversePayment` (service registry) and `bank-reconciliation.service.ts` (`applyMatch`,
   `unmatchTransaction`). Do not write `invoice_payments`/`bill_payments` or reconciliation state
   elsewhere. Inventory/COGS changes go through `inventory.on*` registry calls.
+- Firm screens: A/R comes from `server/reporting/firm-receivables.ts` (settlement rule, AED via
+  `fx.convert`), assigned staff from `firm_staff_assignments`, UI gating from `FIRM_UI_PERMISSIONS`
+  (`shared/access.ts`); `npm run e2e:firm-tools` covers the firm flows.
 - Tenancy: load tenant-owned rows with `server/tenancy` (`scopedGet`/`scopedUpdate`/`scopedDelete`/
   `requireOwned`); another tenant's row is a 404, never a 403.
 - RBAC: enforced centrally by `server/middleware/companyRolePolicy.ts` (`POLICY_RULES`,

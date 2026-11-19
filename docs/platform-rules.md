@@ -40,6 +40,13 @@ Moved verbatim from AGENTS.md (indexed there). Lines are normative engineering n
   use `journalLifecycle` for the lifecycle. Year-end close posts through the kernel
   (`ledgerClosePostingPort`, kind `year_end_close`); FX revaluation posts kind `revaluation` with a
   linked next-day reversal; receipt post/revise use `postJournal` + `reverseBySource`.
+- Firm A/R (portfolio, `/firm/overview`, command centre, bookkeeper dashboard) comes only from
+  `server/reporting/firm-receivables.ts` (settlement fragments, grouped by company, base currency) and
+  `server/services/firm/receivables.service.ts` (AED through `fx.convert` with the company id). Never
+  sum `invoices.total` for a firm figure. Assigned staff come from `firm_staff_assignments`, never from
+  `users.is_admin`. `GET /firm/clients` is a fixed number of grouped queries and returns an allow-listed
+  column set (no WPS or IBAN fields); `GET /firm/client-links` is scoped like the client list; a client
+  outside the caller's firm is a 404 through `denyClientAccess`.
 - Draft journals are removed with the kernel's `deleteDraft(entryId, ctx)` (conditional on
   `status = 'draft'`, audited); never `DELETE FROM journal_entries` directly.
 - Cash settlement seams are late-bound through `server/platform/service-registry.ts`:
