@@ -184,7 +184,7 @@ export default function AccountLedger() {
     if (!accountId || !selectedCompanyId) return;
     setIsExporting(true);
     try {
-      const params = new URLSearchParams({ accountIds: accountId, format: "xlsx" });
+      const params = new URLSearchParams({ accountIds: accountId, format: "xlsx", lang: locale });
       if (dateRange.from) params.set("from", format(dateRange.from, "yyyy-MM-dd"));
       if (dateRange.to) params.set("to", format(dateRange.to, "yyyy-MM-dd"));
       const response = await fetch(
@@ -598,9 +598,7 @@ export default function AccountLedger() {
                   </Link>
                 </TableCell>
                 <TableCell data-truncate="" data-cell="title">
-                  <span dir="auto">
-                    {entryText(entry) || "—"}
-                  </span>
+                  <span dir="auto">{entryText(entry) || "—"}</span>
                 </TableCell>
                 <TableCell data-numeric="">
                   {entry.debit > 0 ? (

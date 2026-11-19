@@ -50,6 +50,8 @@ import {
   loadRenderCompany,
   renderStatement,
 } from "../services/report-render/statements";
+import { journalLineText } from "../services/report-render/journal-text";
+import { formatIsoDateAr } from "../services/report-render/model";
 import {
   buildSharePackZip,
   buildStatementFile,
@@ -75,12 +77,10 @@ export function registerReportRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const persona = req.query.persona;
       if (persona !== undefined && !isReportCatalogPersona(persona)) {
-        return res
-          .status(400)
-          .json({
-            message: "persona must be owner, freelancer, or accountant",
-            code: "INVALID_PERSONA",
-          });
+        return res.status(400).json({
+          message: "persona must be owner, freelancer, or accountant",
+          code: "INVALID_PERSONA",
+        });
       }
 
       // S4: the catalog is derived from static code (changes only on deploy),
@@ -483,12 +483,10 @@ export function registerReportRoutes(app: Express) {
       const fromQ = q.from ?? q.startDate ?? q.periodStart;
       const toQ = q.to ?? q.endDate ?? q.periodEnd;
       if (!fromQ || !toQ) {
-        return res
-          .status(400)
-          .json({
-            message: "from and to date params are required (YYYY-MM-DD)",
-            code: "REPORT_RANGE_REQUIRED",
-          });
+        return res.status(400).json({
+          message: "from and to date params are required (YYYY-MM-DD)",
+          code: "REPORT_RANGE_REQUIRED",
+        });
       }
       const range = readRange({ from: fromQ, to: toQ });
       await assertReportAccess(req, companyId);
@@ -855,27 +853,37 @@ export function registerReportRoutes(app: Express) {
       includeClosing: req.query.includeClosing === "true",
     });
     if (format === "json") return res.json(gl);
+    // `lang=ar|en`; absent means the language of the company (the same default as the PDF/XLSX
+    // statements). Arabic renders system lines from their stored keys, with Arabic dates/headings.
+    const lang = readOutputLang(req.query.lang) ?? (await loadRenderCompany(companyId)).locale;
+    const ar = lang === "ar";
     const rows: Record<string, unknown>[] = [];
     for (const a of gl.accounts) {
+      const accountName = ar && a.accountNameAr ? a.accountNameAr : a.accountName;
+      const account = `${a.accountCode} ${accountName}`.trim();
       rows.push({
-        account: `${a.accountCode} ${a.accountName}`.trim(),
-        description: "Opening balance",
+        account,
+        description: ar ? "الرصيد الافتتاحي" : "Opening balance",
         balance: a.openingBalance,
       });
       for (const l of a.lines) {
         rows.push({
-          date: l.date,
-          account: `${a.accountCode} ${a.accountName}`.trim(),
+          date: ar ? formatIsoDateAr(l.date) : l.date,
+          account,
           entryNumber: l.entryNumber,
-          description: l.description || l.memo || "",
+          description: journalLineText(
+            lang,
+            { description: l.description || null, lineKey: l.lineKey, lineParams: l.lineParams },
+            l
+          ),
           debit: l.debit,
           credit: l.credit,
           balance: l.balance,
         });
       }
       rows.push({
-        account: `${a.accountCode} ${a.accountName}`.trim(),
-        description: "Closing balance",
+        account,
+        description: ar ? "الرصيد الختامي" : "Closing balance",
         debit: a.debitTotal,
         credit: a.creditTotal,
         balance: a.closingBalance,
@@ -883,15 +891,15 @@ export function registerReportRoutes(app: Express) {
     }
     await sendTabular(res, format, `general-ledger-${range.from ?? "inception"}-${range.to}`, [
       {
-        sheetName: "General Ledger",
+        sheetName: ar ? "دفتر الأستاذ العام" : "General Ledger",
         columns: [
-          { header: "Date", key: "date", width: 12 },
-          { header: "Account", key: "account", width: 32 },
-          { header: "Entry", key: "entryNumber", width: 18 },
-          { header: "Description", key: "description", width: 36 },
-          { header: "Debit", key: "debit" },
-          { header: "Credit", key: "credit" },
-          { header: "Balance", key: "balance" },
+          { header: ar ? "التاريخ" : "Date", key: "date", width: 12 },
+          { header: ar ? "الحساب" : "Account", key: "account", width: 32 },
+          { header: ar ? "القيد" : "Entry", key: "entryNumber", width: 18 },
+          { header: ar ? "البيان" : "Description", key: "description", width: 36 },
+          { header: ar ? "مدين" : "Debit", key: "debit" },
+          { header: ar ? "دائن" : "Credit", key: "credit" },
+          { header: ar ? "الرصيد" : "Balance", key: "balance" },
         ],
         rows,
       },
