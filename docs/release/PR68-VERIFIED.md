@@ -50,7 +50,9 @@ Recommendations only; the owner closes PRs himself. "On #67" means the fix alrea
 | #65 cross-tenant writes                   | Its regression tests, rewritten against #67's tenancy helpers; firm-client routes return 404 (not 403) for companies outside the firm | Both holes were already closed (scoped membership writes; firm client scope)                                                                                        | Its `tests/integration/tenant-boundaries.test.mjs` is replaced by DB-harness tests and by `tests/integration/pr68-verified.test.mjs`. Its "NRA clients only" edit rule is replaced by the owner's decision to keep invited-customer edits, scoped to the inviting firm.                                                       | `tests/db/pr65-tenant-boundaries.test.ts` (9 tests); `tests/db/identity-rbac.test.ts` R01-01                                                                                | **Yes**                                                                    |
 | #66 phase 8 (complete product)            | Month-end checklist and quarterly VAT. The base's E3 then fixed it too; E3's version is kept, with the PR-66 regression test.         | 20 of 36: double reversal, void dating, emirate split, FX realised and revaluation, disposal reversal, payroll gratuity and dates                                   | **Large:** leave-pay provision, employee loans, "filed outside Muhasib" VAT periods, final-settlement approval, FX bank reconciliation, vendor-credit UI, employee read scope (a product decision). **Small:** TZ pin, credit card as a liability bank account, credit balances on the ageing screens.                        | `tests/db/superseded-ports.test.ts` (PR-66 block); SUPERSEDED-PRS #66 table                                                                                                 | **Yes**, once the backlog has the not-ported rows                          |
 
-## 2. Migration rehearsal (0089-0132)
+## 2. Migration rehearsal (0089-0133)
+
+**Renumber (2026-11-19, round 3):** the base took `0132_journal_line_keys` (G1), so our settlement-index migration is now `0133_settlement_open_balance_indexes` (journal idx 132, `when` 1781430480000). All references follow. A fresh database migrated twice: 133 ledger rows, both indexes valid. The text below that says 0132 describes the earlier renumber.
 
 **Renumber (2026-11-19):** the base took `0131_journal_memo_keys` (S2), so our settlement-index migration is now `0132_settlement_open_balance_indexes` (journal idx 131; the references in the runbook, the rehearsal notes, `docs/database-migrations.md` and `tests/integration/pr68-verified.test.mjs` follow). The numbers below that say 0131 describe the earlier renumber. The audit database that had applied our old 0131 skipped the base's file (same journal `when`), so it needed `0131_journal_memo_keys.sql` applied by hand; a fresh database applies both.
 The record is in `docs/release/MIGRATION-REHEARSAL.md`; the driver is in `docs/release/rehearsal/`.
@@ -147,7 +149,7 @@ There is no default ASP, each adapter is selectable on its own, and ZATCA stays 
 
 ## Verified working (end to end on the latest #67)
 
-### End-to-end checks in both languages (current head `7363ed24`)
+### End-to-end checks in both languages (code head `523f150a`; later commits on this branch are documentation only)
 
 Every row below was run on this head (the merge of #67 `066eeb88`, merge commit `1e4da558`) with a local production build and a throwaway Postgres, in English and Arabic, at phone (iPhone SE 375x667, Android 360x740, iPhone 13) and desktop (1440x900) sizes unless noted. Shots and logs: `/var/tmp/polish/shots-v9/`, `/var/tmp/polish/e2e-v9-*.log`.
 
@@ -452,6 +454,26 @@ All 43 files re-ran by hand, the two migrators give the same schema, both indexe
 - **فحوص المتصفح على بناء إنتاج محلي:** `e2e:auth-portal` 1418 من 1418، `e2e:customer-links` 962 من 962، `e2e:arabic-runtime` 25 مساراً و0 سطر إنجليزي (عربي وإنجليزي، هاتف وسطح مكتب، بلا أخطاء وحدة التحكم أو طلبات فاشلة أو تجاوز أفقي).
 
 ---
+
+### Merge of #67 round 3 (2026-11-19)
+
+- **Base merged:** `claude/eloquent-maxwell-kjxxjc` at `46bc0dea` (journal memo and line keys, server error copy catalog, Sheets export and AI error codes), normal merge, code head `523f150a`.
+- **Conflicts (3), base as the foundation:** `migrations/meta/_journal.json` (both sides took 0132: the base's `0132_journal_line_keys` kept, ours is now `0133_settlement_open_balance_indexes`, idx 132, `when` +10 s; the file, header, AGENTS.md, runbook, rehearsal notes, `docs/database-migrations.md` and the ledger count in `tests/integration/pr68-verified.test.mjs` follow); `docs/platform-rules.md` (kept the firm A/R rule and the journal memo rule); `scripts/qa/bundle-baseline.json` (took the base file, then refreshed).
+- **One fix on our side:** `PORTAL_SCOPE` (our client-portal API scope error) had no entry in the new `serverErrors` catalog, so `tests/unit/server-error-copy.test.ts` failed; added English and Arabic copy. No new pages or routes came from the base, so nothing new needed registering in the firm build.
+- **Bundle:** 377 chunks, 8,588,964 B. Against the base baseline (old chunk names) `ClientPortfolio.js` (+21%), `CustomerPortal.js` (+35%), `PublicInvoiceView.js` (+20%) and `index.js` (+13%) grew, and `reportCatalogApi.js` grew from a stub to 30.6 KB: the firm build, bilingual and light-root work of this PR plus the lazy report catalog split. Baseline refreshed.
+- **Gates:** `check`, `lint`, `check:migrations`, bundle budget pass; `npm test` 3026 passed (306 files); `test:db` 984 passed (147 files).
+- **E2E on a local production build (fresh database):** `e2e:firm-tools` 1112/1112 (firm pages on throttled iPhone 13: LCP 4.7 to 5.0 s, 32 to 38 requests), `e2e:customer-links` 962/962, `e2e:auth-portal` 1418/1418, `e2e:arabic-runtime` 25 routes, 0 English lines.
+- **CI:** all six checks green on `523f150a` (the documentation-only commit after it changes no code).
+
+### دمج الجولة الثالثة من #67 (19-11-2026)
+
+- **الأساس المدموج:** `claude/eloquent-maxwell-kjxxjc` عند `46bc0dea` (مفاتيح مذكرات القيود وبنودها، كتالوج نصوص أخطاء الخادم، تصدير Sheets ورموز أخطاء الذكاء الاصطناعي)، دمج عادي، رأس الشيفرة `523f150a`.
+- **التعارضات (3) والأساس هو المرجع:** `migrations/meta/_journal.json` (أخذ الطرفان الرقم 0132: أبقينا `0132_journal_line_keys` من الأساس وصار ترحيلنا `0133_settlement_open_balance_indexes` بالفهرس 132 وقيمة `when` أكبر بعشر ثوانٍ؛ وتبعه الملف والترويسة وAGENTS.md ودليل النشر وملاحظات البروفة و`docs/database-migrations.md` وعدّاد السجل في اختبار `pr68-verified`)؛ `docs/platform-rules.md` (أبقينا قاعدة ذمم المكتب وقاعدة مذكرات القيود)؛ `scripts/qa/bundle-baseline.json` (أخذنا ملف الأساس ثم حدّثناه).
+- **إصلاح واحد من جهتنا:** رمز `PORTAL_SCOPE` (خطأ نطاق واجهة بوابة العميل) لم يكن في كتالوج `serverErrors` الجديد فسقط اختبار `server-error-copy`؛ أضفنا النص بالعربية والإنجليزية. لم يضف الأساس صفحات أو مسارات جديدة فلا شيء يُسجَّل في بناء المكتب.
+- **الحزم:** 377 ملفاً و8,588,964 بايت. نمت `ClientPortfolio.js` و`CustomerPortal.js` و`PublicInvoiceView.js` و`index.js` فوق 10% مقابل خط الأساس القديم، ونما `reportCatalogApi.js` إلى 30.6 ك.ب: بناء المكتب وكود اللغتين والجذر الخفيف وفصل كتالوج التقارير. حُدّث خط الأساس.
+- **البوابات:** `check` و`lint` و`check:migrations` وميزانية الحزم ناجحة؛ `npm test` 3026 ناجحاً (306 ملفاً)؛ `test:db` 984 ناجحاً (147 ملفاً).
+- **فحوص المتصفح على بناء إنتاج محلي (قاعدة جديدة):** `e2e:firm-tools` 1112 من 1112 (صفحات المكتب على iPhone 13 مع تقييد: LCP بين 4.7 و5.0 ث و32 إلى 38 طلباً)، `e2e:customer-links` 962 من 962، `e2e:auth-portal` 1418 من 1418، `e2e:arabic-runtime` 25 مساراً و0 سطر إنجليزي.
+- **CI:** الفحوص الستة ناجحة على `523f150a` (التزام التوثيق اللاحق للتوثيق فقط).
 
 ### Firm and accountant tools audit and fixes (2026-11-19)
 
