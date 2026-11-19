@@ -1,7 +1,7 @@
 // zod 3-compatible validation messages for forms (R17-27). Installed by the app root
 // (and by the public pages' providers) rather than main.tsx, so the landing page does
 // not download zod before its first paint (D1b).
-import { landingPathFor, skipsOnboardingRedirect } from "@/lib/app-landing";
+import { landingPathFor, onboardingRedirectTarget } from "@/lib/app-landing";
 import "@shared/zod-config";
 import { useCallback, useEffect, Suspense } from "react";
 import { lazyWithReload, clearChunkReloadGuards } from "@/lib/lazyWithReload";
@@ -273,39 +273,28 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { t } = useTranslation();
   const { company, hasNoCompanies, isLoading: companyLoading } = useDefaultCompany();
-  const { isFirmContext } = useActiveCompany();
+  const { isFirmContext, isSwitchingClient } = useActiveCompany();
   const companiesFetching = useIsFetching({ queryKey: ["/api/companies"] });
   const pathname = pathnameOnly(location);
 
   useEffect(() => {
-    // The wizard itself and the NR console (/admin, /firm: staff work with its own role checks)
-    // never bounce to onboarding (broken-path sweep).
-    if (companyLoading || skipsOnboardingRedirect(pathname)) return;
-
-    // Skip the customer-onboarding redirect when a firm staffer is operating
-    // inside a client workspace — the client's onboarding state is the firm's
-    // problem to manage, not a hard redirect for the staff member.
-    if (isFirmContext) return;
-
-    // R18-08: the redirect is deterministic per-user state, not a per-session
-    // flag. While the company has not finished onboarding the user is always
-    // sent to /onboarding; every exit from the wizard (express setup, "Save &
-    // continue later", finishing) marks the company complete server-side, so
-    // there is no loop. Wait for in-flight company refetches first so a
-    // just-completed wizard does not bounce back on stale data.
-    if (companiesFetching > 0) return;
-
-    // No company yet — send the user to onboarding so they can create one.
-    if (hasNoCompanies) {
-      navigate("/onboarding");
-      return;
-    }
-
-    // Only the owner runs the setup wizard; invited members use the app (read-only
-    // where their role says so) while the owner finishes (J4).
-    if (company && !company.onboardingCompleted && canRunCompanyOnboarding(company)) {
-      navigate("/onboarding");
-    }
+    // R18-08: the redirect is deterministic per-user state, not a per-session flag. While the
+    // company has not finished onboarding the user is sent to /onboarding; every exit from the
+    // wizard marks the company complete server-side, so there is no loop. The wizard, the NR
+    // console, a client workspace a firm staffer is operating in (or is just switching into:
+    // "Open books") and in-flight company refetches never redirect. Only the owner runs the
+    // wizard; invited members use the app while the owner finishes (J4).
+    const target = onboardingRedirectTarget({
+      pathname,
+      companyLoading,
+      isFirmContext,
+      switchingClient: isSwitchingClient,
+      companiesFetching: companiesFetching > 0,
+      hasNoCompanies,
+      company,
+      canRunOnboarding: canRunCompanyOnboarding(company),
+    });
+    if (target) navigate(target);
   }, [
     company,
     hasNoCompanies,
@@ -314,6 +303,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
     pathname,
     navigate,
     isFirmContext,
+    isSwitchingClient,
   ]);
 
   const style = {

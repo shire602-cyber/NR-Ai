@@ -26,8 +26,10 @@ interface ActiveCompanyContextValue {
   hasNoCompanies: boolean;
   /** True when the user has explicitly switched into a firm-managed client. */
   isFirmContext: boolean;
-  /** Switch into a firm-managed client's company workspace. */
-  setActiveClientCompany: (companyId: string) => void;
+  /** True from the moment a client switch is committed until the company list has caught up. */
+  isSwitchingClient: boolean;
+  /** Switch into a firm-managed client's company workspace. Resolves when the cache is reset. */
+  setActiveClientCompany: (companyId: string) => Promise<void>;
   /** Drop firm-client override and return to the user's own company. */
   clearActiveClientCompany: () => void;
 }
@@ -66,8 +68,18 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
     queryKey: ["/api/companies"],
   });
 
-  const setActiveClientCompany = useCallback((id: string) => {
-    void switchActiveCompany(id).then(() => setActiveId(id));
+  const [switchingClient, setSwitchingClient] = useState(false);
+  const setActiveClientCompany = useCallback(async (id: string) => {
+    // Commit the id synchronously so the shell never renders "Open books" against the staffer's
+    // own company (and bounces them to their own onboarding wizard) before the switch lands.
+    setSwitchingClient(true);
+    setActiveId(id);
+    try {
+      await switchActiveCompany(id);
+      setActiveId(id);
+    } finally {
+      setSwitchingClient(false);
+    }
   }, []);
 
   const clearActiveClientCompany = useCallback(() => {
@@ -99,10 +111,19 @@ export function ActiveCompanyProvider({ children }: { children: ReactNode }) {
       error,
       hasNoCompanies: !isLoading && !error && list.length === 0,
       isFirmContext: !!activeMatch && activeMatch.companyType === "client",
+      isSwitchingClient: switchingClient,
       setActiveClientCompany,
       clearActiveClientCompany,
     };
-  }, [companies, activeId, isLoading, error, setActiveClientCompany, clearActiveClientCompany]);
+  }, [
+    companies,
+    activeId,
+    isLoading,
+    error,
+    switchingClient,
+    setActiveClientCompany,
+    clearActiveClientCompany,
+  ]);
 
   return <ActiveCompanyContext.Provider value={value}>{children}</ActiveCompanyContext.Provider>;
 }

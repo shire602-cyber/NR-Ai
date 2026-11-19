@@ -114,6 +114,7 @@ import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import {
   downloadServerFile,
   exportToExcel,
@@ -2555,6 +2556,14 @@ export default function Invoices() {
 
           {isLoading ? (
             <TableSkeleton rows={8} columns={6} />
+          ) : invoicePages.isError ? (
+            <LoadErrorState
+              error={invoicePages.error}
+              onRetry={() => void invoicePages.refetch()}
+              title={t["firm.invoicesLoadErrorTitle"]}
+              description={t["firm.invoicesLoadErrorBody"]}
+              testId="invoices-load-error"
+            />
           ) : (
             <>
               {/* Mobile row-cards (CTO 3/8): line 1 name + amount, line 2 number · date + status. */}
@@ -3496,7 +3505,7 @@ function InvoiceStatusTiles({
   onSelect: (status: InvoiceStatusFilter | null) => void;
 }) {
   const { t } = useTranslation();
-  const { data: all = [] } = useQuery<InvoiceListItem[]>({
+  const { data: all = [], isError } = useQuery<InvoiceListItem[]>({
     queryKey: ["/api/companies", companyId, "invoices"],
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/invoices?all=true`),
     enabled: !!companyId,
@@ -3513,6 +3522,9 @@ function InvoiceStatusTiles({
       label: labels[b.key],
     }));
   }, [all, t]);
+
+  // A failed load must not read as "0 invoices": the list shows the error and the tiles hide.
+  if (isError) return null;
 
   return (
     <div

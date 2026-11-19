@@ -60,8 +60,8 @@ export function PracticePlanTab() {
 
   const switchMutation = useMutation({
     mutationFn: (companyId: string) => apiRequest("POST", `/api/firm/clients/${companyId}/switch`),
-    onSuccess: (_, companyId) => {
-      setActiveClientCompany(companyId);
+    onSuccess: async (_, companyId) => {
+      await setActiveClientCompany(companyId);
       // Force a refetch of /api/companies so the active company is in cache.
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       navigate("/dashboard");

@@ -6,6 +6,9 @@ import type * as React from "react";
  * alerts feed, staff workload visualization, period comparison, and batch ops.
  */
 import { PracticeNav } from "@/components/firm/PracticeNav";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { loadErrorMessage } from "@/lib/loadError";
+import { matchesSearchText } from "@shared/arabic-text";
 import { PracticePlanTab } from "@/pages/firm/PracticePlanTab";
 import { StatCard } from "@/components/ui/stat-card";
 import { chartTheme, ChartTooltipContent, formatAxisCompact } from "@/components/ui/chart-theme";
@@ -212,6 +215,8 @@ function MetricCard({
 
 // ─── Main page ──────────────────────────────────────────────────────────
 
+const CLIENTS_PAGE_SIZE = 25;
+
 export default function FirmCommandCenter() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -269,7 +274,7 @@ export default function FirmCommandCenter() {
     onError: (e: Error) =>
       toast({
         title: translateNow("toasts.refreshFailed"),
-        description: e.message,
+        description: loadErrorMessage(e, t),
         variant: "destructive",
       }),
   });
@@ -301,7 +306,7 @@ export default function FirmCommandCenter() {
     onError: (e: Error) =>
       toast({
         title: translateNow("toasts.batchVatFailed"),
-        description: e.message,
+        description: loadErrorMessage(e, t),
         variant: "destructive",
       }),
   });
@@ -321,7 +326,7 @@ export default function FirmCommandCenter() {
     onError: (e: Error) =>
       toast({
         title: translateNow("toasts.chaseFailed"),
-        description: e.message,
+        description: loadErrorMessage(e, t),
         variant: "destructive",
       }),
   });
@@ -342,7 +347,7 @@ export default function FirmCommandCenter() {
     onError: (e: Error) =>
       toast({
         title: translateNow("toasts.chaseFailed"),
-        description: e.message,
+        description: loadErrorMessage(e, t),
         variant: "destructive",
       }),
   });
@@ -351,11 +356,19 @@ export default function FirmCommandCenter() {
   const summary = dashboardQuery.data?.summary;
   const allClients = useMemo(() => healthQuery.data ?? [], [healthQuery.data]);
   const filteredClients = useMemo(
-    () =>
-      allClients.filter((c) =>
-        search ? c.companyName.toLowerCase().includes(search.toLowerCase()) : true
-      ),
+    () => allClients.filter((c) => matchesSearchText(search, c.companyName)),
     [allClients, search]
+  );
+  // Page resets to 1 whenever the search or ranking changes (derived, no effect).
+  const resetKey = `${search}|${rankBy}`;
+  const [pageState, setPageState] = useState({ page: 1, key: resetKey });
+  const page = pageState.key === resetKey ? pageState.page : 1;
+  const setPage = (next: number) => setPageState({ page: next, key: resetKey });
+  const pageCount = Math.max(1, Math.ceil(filteredClients.length / CLIENTS_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pagedClients = filteredClients.slice(
+    (currentPage - 1) * CLIENTS_PAGE_SIZE,
+    currentPage * CLIENTS_PAGE_SIZE
   );
 
   const allSelected =
@@ -408,28 +421,12 @@ export default function FirmCommandCenter() {
   // ─── Render ────────────────────────────────────────────────────────
   if (dashboardQuery.isError) {
     return (
-      <div
-        role="alert"
-        className="rounded-md border border-destructive/30 bg-danger-subtle p-6 text-sm"
-        data-testid="firm-command-center-error"
-      >
-        <div className="font-medium mb-1">
-          <T k="pages.failedToLoadFirmDashboard" />
-        </div>
-        <div className="text-muted-foreground">
-          {dashboardQuery.error instanceof Error
-            ? dashboardQuery.error.message
-            : "An unexpected error occurred."}
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-3"
-          onClick={() => dashboardQuery.refetch()}
-        >
-          <T k="pages.retry" />
-        </Button>
-      </div>
+      <LoadErrorState
+        error={dashboardQuery.error}
+        onRetry={() => void dashboardQuery.refetch()}
+        title={t["pages.failedToLoadFirmDashboard"]}
+        testId="firm-command-center-error"
+      />
     );
   }
 
@@ -578,7 +575,9 @@ export default function FirmCommandCenter() {
             <CardContent>
               {selectedCount > 0 && (
                 <div className="flex items-center gap-2 mb-3 p-3 rounded-md bg-muted">
-                  <span className="text-sm font-medium">{selectedCount} selected</span>
+                  <span className="text-sm font-medium">
+                    {formatMessage(t["firm.selectedCount"], { count: selectedCount })}
+                  </span>
                   <div className="ms-auto flex gap-2">
                     <BatchActionButton
                       label={t["firmCommandCenter.runVatCalc"]}
@@ -613,8 +612,9 @@ export default function FirmCommandCenter() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-10">
+                    <TableHead className="w-12">
                       <Checkbox
+                        touchTarget
                         checked={allSelected}
                         onCheckedChange={toggleAll}
                         aria-label={t["firmCommandCenter.selectAll"]}
@@ -648,10 +648,11 @@ export default function FirmCommandCenter() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredClients.map((c) => (
+                  {pagedClients.map((c) => (
                     <TableRow key={c.companyId} data-testid={`row-client-${c.companyId}`}>
                       <TableCell>
                         <Checkbox
+                          touchTarget
                           checked={selectedClients.has(c.companyId)}
                           onCheckedChange={() => toggleClient(c.companyId)}
                           aria-label={formatMessage(t["firmOps.selectClient"], {
@@ -708,17 +709,59 @@ export default function FirmCommandCenter() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {filteredClients.length === 0 && !healthQuery.isLoading && (
+                  {healthQuery.isError && (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-                        {search
-                          ? t["firmCommandCenter.noClientsMatchYourSearch"]
-                          : t["pages.noClientsYet"]}
+                      <TableCell colSpan={10}>
+                        <LoadErrorState
+                          compact
+                          error={healthQuery.error}
+                          onRetry={() => void healthQuery.refetch()}
+                          testId="clients-health-error"
+                        />
                       </TableCell>
                     </TableRow>
                   )}
+                  {filteredClients.length === 0 &&
+                    !healthQuery.isLoading &&
+                    !healthQuery.isError && (
+                      <TableRow>
+                        <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
+                          {search
+                            ? t["firmCommandCenter.noClientsMatchYourSearch"]
+                            : t["pages.noClientsYet"]}
+                        </TableCell>
+                      </TableRow>
+                    )}
                 </TableBody>
               </Table>
+              {pageCount > 1 && (
+                <nav
+                  className="mt-3 flex items-center justify-between gap-3"
+                  aria-label={t["firm.pageOf"]}
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage <= 1}
+                    onClick={() => setPage(currentPage - 1)}
+                    data-testid="cc-clients-prev"
+                  >
+                    {t["firm.previousPage"]}
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    {formatMessage(t["firm.pageOf"], { page: currentPage, pages: pageCount })}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage >= pageCount}
+                    onClick={() => setPage(currentPage + 1)}
+                    data-testid="cc-clients-next"
+                  >
+                    {t["firm.nextPage"]}
+                  </Button>
+                </nav>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -797,11 +840,21 @@ export default function FirmCommandCenter() {
                     </div>
                   </div>
                 ))}
-                {(alertsQuery.data ?? []).length === 0 && !alertsQuery.isLoading && (
-                  <div className="text-center text-muted-foreground py-8">
-                    {t["firmCommandCenter.noActiveAlertsClickRefresh"]}
-                  </div>
+                {alertsQuery.isError && (
+                  <LoadErrorState
+                    compact
+                    error={alertsQuery.error}
+                    onRetry={() => void alertsQuery.refetch()}
+                    testId="alerts-error"
+                  />
                 )}
+                {(alertsQuery.data ?? []).length === 0 &&
+                  !alertsQuery.isLoading &&
+                  !alertsQuery.isError && (
+                    <div className="text-center text-muted-foreground py-8">
+                      {t["firmCommandCenter.noActiveAlertsClickRefresh"]}
+                    </div>
+                  )}
               </div>
             </CardContent>
           </Card>

@@ -31,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useFirmPermissions } from "@/hooks/useFirmPermissions";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
@@ -635,6 +636,7 @@ function FilingTab({
 }
 
 function LinksTab({ t, canWrite }: { t: Dict; canWrite: boolean }) {
+  // `canWrite` is the firm.clients.link permission here (the routes require it, not "any write").
   const notify = useNotify(t);
   const [email, setEmail] = useState("");
   const { data } = useQuery<{ links: LinkRow[] }>({ queryKey: ["/api/firm/client-links"] });
@@ -663,8 +665,13 @@ function LinksTab({ t, canWrite }: { t: Dict; canWrite: boolean }) {
         {canWrite && (
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
-              <Label>{t["firm.inviteeEmail"]}</Label>
-              <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              <Label htmlFor="firm-invitee-email">{t["firm.inviteeEmail"]}</Label>
+              <Input
+                id="firm-invitee-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
             <Button onClick={() => invite.mutate()} disabled={!email || invite.isPending}>
               {t["firm.sendInvite"]}
@@ -712,9 +719,14 @@ export default function PracticeWorkspace() {
   const { t, locale } = useTranslation();
   const dict = t as Dict;
   const { data: context } = useQuery<FirmContextPayload>({ queryKey: ["/api/firm/context"] });
-  const { data: clients = [] } = useQuery<FirmClient[]>({ queryKey: ["/api/firm/clients"] });
+  // Names only: the other tabs pick a client, they do not need the portfolio payload.
+  const { data: clients = [] } = useQuery<FirmClient[]>({
+    queryKey: ["/api/firm/clients?view=names"],
+  });
   const membership = context?.membership ?? null;
+  const { can } = useFirmPermissions();
   const canWrite = (membership?.permissions ?? []).some((p) => !p.endsWith(".read"));
+  const canLink = can("firm.clients.link");
   return (
     <div className="space-y-6">
       <PageHeader
@@ -754,7 +766,7 @@ export default function PracticeWorkspace() {
           <FilingTab t={dict} clients={clients} canWrite={canWrite} locale={locale} />
         </TabsContent>
         <TabsContent value="links">
-          <LinksTab t={dict} canWrite={canWrite} />
+          <LinksTab t={dict} canWrite={canLink} />
         </TabsContent>
       </Tabs>
     </div>

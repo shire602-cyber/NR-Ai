@@ -5,6 +5,9 @@ import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { vatCloseGroups } from "@/lib/month-labels";
 import { useMemo, useState } from "react";
 import { Money } from "@/components/ui/money";
+import { LoadErrorState } from "@/components/ui/load-error-state";
+import { useFirmPermissions } from "@/hooks/useFirmPermissions";
+import { matchesSearchText } from "@shared/arabic-text";
 import { RowActions } from "@/components/ui/row-actions";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { StatCard } from "@/components/ui/stat-card";
@@ -17,6 +20,8 @@ import {
   Calendar,
   BookOpen,
   Upload,
+  ChevronLeft,
+  ChevronRight,
   AlertTriangle,
   FolderOpen,
   TrendingUp,
@@ -106,6 +111,10 @@ const emptyForm: AddClientFormData = {
   serviceScope: [...DEFAULT_CLIENT_SERVICE_CODES],
 };
 
+type PortfolioSort = "default" | "name" | "deadline" | "health";
+const PAGE_SIZE = 25;
+const PRIORITY_RANK: Record<string, number> = { critical: 3, attention: 2, on_track: 1 };
+
 type QuickFilter =
   | "all"
   | "critical"
@@ -162,9 +171,18 @@ export default function ClientPortfolio() {
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [form, setForm] = useState<AddClientFormData>(emptyForm);
 
-  const { data: clients = [], isLoading } = useQuery<ClientWithStats[]>({
+  const {
+    data: clients = [],
+    isLoading,
+    isError: clientsFailed,
+    error: clientsError,
+    refetch: refetchClients,
+  } = useQuery<ClientWithStats[]>({
     queryKey: ["/api/firm/clients"],
   });
+  const { can, seesAllClients } = useFirmPermissions();
+  const canCreateClient = can("firm.clients.create");
+  const [sortKey, setSortKey] = useState<PortfolioSort>("default");
 
   const { data: overview } = useQuery<FirmOverview>({
     queryKey: ["/api/firm/overview"],
@@ -202,8 +220,9 @@ export default function ClientPortfolio() {
 
   const switchMutation = useMutation({
     mutationFn: (companyId: string) => apiRequest("POST", `/api/firm/clients/${companyId}/switch`),
-    onSuccess: (_, companyId) => {
-      setActiveClientCompany(companyId);
+    onSuccess: async (_, companyId) => {
+      // Commit the switch (cache reset) before navigating: the shell must see the client first.
+      await setActiveClientCompany(companyId);
       // Force a refetch of /api/companies so the active company is in cache.
       queryClient.invalidateQueries({ queryKey: ["/api/companies"] });
       navigate("/dashboard");
@@ -260,10 +279,15 @@ export default function ClientPortfolio() {
   const filtered = useMemo(() => {
     return clients.filter((c) => {
       const ops = bookkeeperByClientId.get(c.id);
-      const matchesSearch =
-        !search ||
-        c.name.toLowerCase().includes(search.toLowerCase()) ||
-        (c.trnVatNumber || "").toLowerCase().includes(search.toLowerCase());
+      // Arabic-aware: alef/hamza/yeh/teh-marbuta variants and the "ال" prefix fold together.
+      const matchesSearch = matchesSearchText(
+        search,
+        c.name,
+        c.legalName,
+        c.legalNameAr,
+        c.trnVatNumber,
+        c.contactEmail
+      );
       if (!matchesSearch) return false;
 
       switch (quickFilter) {
@@ -304,6 +328,31 @@ export default function ClientPortfolio() {
     });
   }, [bookkeeperByClientId, clients, search, quickFilter]);
 
+  const sorted = useMemo(() => {
+    if (sortKey === "default") return filtered;
+    const rows = [...filtered];
+    const deadline = (c: ClientWithStats) =>
+      bookkeeperByClientId.get(c.id)?.vat.daysTilDue ?? 99999;
+    const health = (c: ClientWithStats) =>
+      PRIORITY_RANK[bookkeeperByClientId.get(c.id)?.priority ?? "on_track"];
+    rows.sort((a, b) => {
+      if (sortKey === "name") return a.name.localeCompare(b.name);
+      if (sortKey === "deadline") return deadline(a) - deadline(b) || a.name.localeCompare(b.name);
+      return health(b) - health(a) || a.name.localeCompare(b.name);
+    });
+    return rows;
+  }, [filtered, sortKey, bookkeeperByClientId]);
+
+  // Page resets to 1 whenever the search, filter or sort changes (derived, no effect).
+  const resetKey = `${search}|${quickFilter}|${sortKey}`;
+  const [pageState, setPageState] = useState({ page: 1, key: resetKey });
+  const page = pageState.key === resetKey ? pageState.page : 1;
+  const setPage = (next: number) => setPageState({ page: next, key: resetKey });
+  const pageCount = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const paged = sorted.slice(pageStart, pageStart + PAGE_SIZE);
+
   const handleOpenBooks = (id: string) => {
     switchMutation.mutate(id);
   };
@@ -322,6 +371,22 @@ export default function ClientPortfolio() {
     );
   }
 
+  // A failed load is not an empty firm: never fall through to "No clients yet".
+  if (clientsFailed) {
+    return (
+      <div className="space-y-6">
+        <PageHeader eyebrow="Firm" title={<T k="pages.clientPortfolio" />} />
+        <LoadErrorState
+          error={clientsError}
+          onRetry={() => void refetchClients()}
+          title={t["firm.portfolioLoadErrorTitle"]}
+          description={t["firm.portfolioLoadErrorBody"]}
+          testId="portfolio-load-error"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -332,23 +397,25 @@ export default function ClientPortfolio() {
           { count: clients.length }
         )}
         actions={
-          <>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setImportResult(null);
-                setImportFile(null);
-                setImportOpen(true);
-              }}
-            >
-              <Upload className="w-4 h-4 me-2" aria-hidden />
-              <T k="pages.importClients" />
-            </Button>
-            <Button onClick={() => setAddOpen(true)} data-testid="button-add-client">
-              <Plus className="w-4 h-4 me-2" aria-hidden />
-              <T k="pages.addClient" />
-            </Button>
-          </>
+          canCreateClient ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setImportResult(null);
+                  setImportFile(null);
+                  setImportOpen(true);
+                }}
+              >
+                <Upload className="w-4 h-4 me-2" aria-hidden />
+                <T k="pages.importClients" />
+              </Button>
+              <Button onClick={() => setAddOpen(true)} data-testid="button-add-client">
+                <Plus className="w-4 h-4 me-2" aria-hidden />
+                <T k="pages.addClient" />
+              </Button>
+            </>
+          ) : undefined
         }
       />
 
@@ -487,20 +554,26 @@ export default function ClientPortfolio() {
       </div>
 
       {/* Empty state */}
-      {filtered.length === 0 && (
+      {sorted.length === 0 && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <Building2 className="w-12 h-12 text-muted-foreground mb-4" />
           <h3 className="font-semibold text-lg">
-            {clients.length === 0
-              ? b("No clients yet", "لا يوجد عملاء بعد")
-              : b("No clients match your filters", "لا يوجد عملاء يطابقون عوامل التصفية")}
+            {clients.length > 0
+              ? b("No clients match your filters", "لا يوجد عملاء يطابقون عوامل التصفية")
+              : !seesAllClients && !canCreateClient
+                ? t["firm.noClientsAssigned"]
+                : b("No clients yet", "لا يوجد عملاء بعد")}
           </h3>
           <p className="text-muted-foreground mt-1 mb-4">
-            {clients.length === 0
-              ? b("Add your first client company to get started.", "أضف أول شركة عميل للبدء.")
-              : "Try adjusting your search or quick filter."}
+            {clients.length > 0
+              ? t["firm.tryAdjustingFilters"]
+              : !seesAllClients && !canCreateClient
+                ? t["firm.noClientsAssignedHint"]
+                : canCreateClient
+                  ? b("Add your first client company to get started.", "أضف أول شركة عميل للبدء.")
+                  : ""}
           </p>
-          {clients.length === 0 && (
+          {clients.length === 0 && canCreateClient && (
             <Button onClick={() => setAddOpen(true)}>
               <Plus className="w-4 h-4 me-2" />
               <T k="pages.addFirstClient" />
@@ -509,10 +582,106 @@ export default function ClientPortfolio() {
         </div>
       )}
 
-      {/* Clients table */}
-      {filtered.length > 0 && (
-        <div className="border rounded-lg overflow-hidden overflow-x-auto">
-          <Table data-testid="clients-table">
+      {sorted.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-muted-foreground" data-testid="clients-range">
+            {formatMessage(t["firm.showingRange"], {
+              from: pageStart + 1,
+              to: pageStart + paged.length,
+              total: sorted.length,
+            })}
+          </p>
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">{t["firm.sortBy"]}</span>
+            <Select value={sortKey} onValueChange={(v) => setSortKey(v as PortfolioSort)}>
+              <SelectTrigger className="w-44 max-md:min-h-11" data-testid="select-client-sort">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">{b("Newest first", "الأحدث أولًا")}</SelectItem>
+                <SelectItem value="name">{t["firm.sortName"]}</SelectItem>
+                <SelectItem value="deadline">{t["firm.sortDeadline"]}</SelectItem>
+                <SelectItem value="health">{t["firm.sortHealth"]}</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
+      )}
+
+      {/* Clients: cards on phones (primary action always visible), table from md up */}
+      {sorted.length > 0 && (
+        <ul
+          className="space-y-3 md:hidden"
+          data-testid="clients-cards"
+          aria-label={t["firm.clientsTableRegion"]}
+        >
+          {paged.map((client) => {
+            const ops = bookkeeperByClientId.get(client.id);
+            const vatScoped = ops && hasClientService(ops, "vat");
+            return (
+              <li
+                key={client.id}
+                className="rounded-lg border bg-card p-3 space-y-3"
+                data-testid={`client-card-${client.id}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => handleViewProfile(client.id)}
+                      className="font-medium text-start hover:underline line-clamp-2 min-h-11 -my-2 py-2"
+                      title={client.name}
+                      dir="auto"
+                      translate="no"
+                    >
+                      {client.name}
+                    </button>
+                    <p className="text-xs text-muted-foreground" dir="auto">
+                      {client.trnVatNumber || b("No TRN", "بلا رقم تسجيل ضريبي")}
+                    </p>
+                  </div>
+                  {ops ? (
+                    <PriorityBadge priority={ops.priority} />
+                  ) : (
+                    <StatusBadge active={client.invoiceCount > 0 || !!client.lastReceiptDate} />
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <ServiceScopeBadges services={ops?.serviceScope ?? client.serviceScope} compact />
+                  {vatScoped && (
+                    <span>
+                      {fdShort(ops.vat.dueDate)} · {fx(formatDays(ops.vat.daysTilDue))}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground truncate">
+                    <T k="pages.owner" />:{" "}
+                    {ops
+                      ? fx(ownerPreview(ops.assignedStaff.map((staff) => staff.name)))
+                      : client.assignedStaff.length}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="min-h-11 shrink-0"
+                    onClick={() => handleOpenBooks(client.id)}
+                    disabled={switchMutation.isPending}
+                    data-testid={`button-open-books-${client.id}`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5 me-1" aria-hidden />
+                    {t["firmOps.openBooks"]}
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {sorted.length > 0 && (
+        <div className="hidden md:block border rounded-lg overflow-hidden overflow-x-auto">
+          <Table data-testid="clients-table" aria-label={t["firm.clientsTableRegion"]}>
             <TableHeader>
               <TableRow>
                 <TableHead>
@@ -533,7 +702,7 @@ export default function ClientPortfolio() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((client) => {
+              {paged.map((client) => {
                 const ops = bookkeeperByClientId.get(client.id);
                 const vatScoped = ops && hasClientService(ops, "vat");
                 return (
@@ -542,7 +711,9 @@ export default function ClientPortfolio() {
                       <button
                         type="button"
                         onClick={() => handleViewProfile(client.id)}
-                        className="font-medium text-start hover:underline"
+                        className="font-medium text-start hover:underline line-clamp-2"
+                        title={client.name}
+                        dir="auto"
                         translate="no"
                       >
                         {client.name}
@@ -611,6 +782,36 @@ export default function ClientPortfolio() {
             </TableBody>
           </Table>
         </div>
+      )}
+
+      {pageCount > 1 && (
+        <nav className="flex items-center justify-between gap-3" aria-label={t["firm.pageOf"]}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="max-md:min-h-11"
+            disabled={currentPage <= 1}
+            onClick={() => setPage(currentPage - 1)}
+            data-testid="clients-prev"
+          >
+            <ChevronLeft className="w-4 h-4 me-1 rtl:rotate-180" aria-hidden />
+            {t["firm.previousPage"]}
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            {formatMessage(t["firm.pageOf"], { page: currentPage, pages: pageCount })}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="max-md:min-h-11"
+            disabled={currentPage >= pageCount}
+            onClick={() => setPage(currentPage + 1)}
+            data-testid="clients-next"
+          >
+            {t["firm.nextPage"]}
+            <ChevronRight className="w-4 h-4 ms-1 rtl:rotate-180" aria-hidden />
+          </Button>
+        </nav>
       )}
 
       {/* Add Client Dialog */}
