@@ -3,7 +3,7 @@
  * Items (RESIDUALS.md): W4-D quote state machine / quotes.respond, W5-C quote base currency,
  * W4-E company TRN via zUaeTrn (R14-20; FTA lookup EXTERNAL), R14-13 logo upload + PDFs,
  * W4-B credit-note restock vs write-off, W4-C product GTIN + RCM goods type (AE e-invoice),
- * R07-15 margin scheme Box 1, W4-C KSA 15%, W5-C VAT filed in AED for a USD company,
+ * R07-15 margin scheme Box 1, W5-C VAT filed in AED for a USD company,
  * R12-12 CT estimate label.
  */
 import crypto from "node:crypto";
@@ -149,7 +149,7 @@ describe("S1 quotes: state machine and base currency", () => {
 });
 
 describe("S1 companies: TRN uses the shared zUaeTrn rule", () => {
-  it("[W4-E][R14-20] 15 digits that do not start with 100 are refused; KSA numbers only for a Saudi company", async () => {
+  it("[W4-E][R14-20] 15 digits that do not start with 100 are refused; KSA numbers are refused for every company", async () => {
     const t = await h.createTenant();
     const id = t.company.id;
     const bad = await t.as.patch(`/api/companies/${id}`, { trnVatNumber: "123456789012345" });
@@ -162,14 +162,14 @@ describe("S1 companies: TRN uses the shared zUaeTrn rule", () => {
       format: "checked",
       ftaLookup: "external_not_integrated",
     });
+    // A KSA VAT number is refused for every company, including one with a Saudi address (STEP2).
     const ksaOnUae = await t.as.patch(`/api/companies/${id}`, { trnVatNumber: "300000000000003" });
     expect(ksaOnUae.status).toBe(400);
-    expect(ksaOnUae.body.code).toBe("TRN_INVALID");
     const ksa = await t.as.patch(`/api/companies/${id}`, {
       addressCountry: "SA",
       trnVatNumber: "300000000000003",
     });
-    expect(ksa.status, ksa.text).toBe(200);
+    expect(ksa.status, ksa.text).toBe(400);
     const create = await t.as.post("/api/companies", {
       name: "Bad Trn Co",
       trnVatNumber: "999999999999999",
@@ -415,39 +415,26 @@ describe("S1 VAT engine residuals", () => {
     expect(missing.status).toBe(400);
   });
 
-  it("[W4-C] a KSA company invoices at 15% (ZATCA path); a UAE company cannot", async () => {
-    const ksa = await h.createTenant({ companyColumns: { address_country: "SA" } });
-    const inv = await ksa.as.post(`/api/companies/${ksa.company.id}/invoices`, {
+  it("[STEP2] a company with a Saudi address invoices at the UAE 5%; 15% is refused for everyone", async () => {
+    const sa = await h.createTenant({ companyColumns: { address_country: "SA" } });
+    const no15 = await sa.as.post(`/api/companies/${sa.company.id}/invoices`, {
       customerName: "Riyadh Co",
       date: today(),
       lines: [{ description: "Work", quantity: 1, unitPrice: 1000, vatRate: 15 }],
     });
-    expect(inv.status, inv.text).toBe(200);
-    expect(inv.body.vatAmount).toBe(150);
-    expect(inv.body.total).toBe(1150);
-    const [line] = await h.sql(`SELECT vat_rate FROM invoice_lines WHERE invoice_id = $1`, [
-      inv.body.id,
-    ]);
-    expect(Number(line.vat_rate)).toBe(0.15);
-    // Default rate for a KSA company is 15% too.
-    const dflt = await ksa.as.post(`/api/companies/${ksa.company.id}/invoices`, {
+    expect(no15.status, no15.text).toBe(400);
+    const inv = await sa.as.post(`/api/companies/${sa.company.id}/invoices`, {
       customerName: "Riyadh Co",
       date: today(),
       lines: [{ description: "Work", quantity: 1, unitPrice: 1000 }],
     });
-    expect(dflt.status, dflt.text).toBe(200);
-    expect(dflt.body.vatAmount).toBe(150);
-    const storage = (await import("../../server/storage")).storage;
-    const { zatcaInputFromInvoice } = await import("../../server/services/zatca/service");
-    const z = zatcaInputFromInvoice({
-      invoice: (await storage.getInvoice(inv.body.id, ksa.company.id))!,
-      lines: await storage.getInvoiceLinesByInvoiceId(inv.body.id),
-      egs: { vat_number: "300000000000003", seller_profile: {} as never },
-      icv: 1,
-      previousHash: "x",
-      uuid: crypto.randomUUID(),
-    });
-    expect(z.lines[0]).toMatchObject({ category: "S", vatRate: 0.15 });
+    expect(inv.status, inv.text).toBe(200);
+    expect(inv.body.vatAmount).toBe(50);
+    expect(inv.body.total).toBe(1050);
+    const [line] = await h.sql(`SELECT vat_rate FROM invoice_lines WHERE invoice_id = $1`, [
+      inv.body.id,
+    ]);
+    expect(Number(line.vat_rate)).toBe(0.05);
 
     const uae = await h.createTenant();
     const no = await uae.as.post(`/api/companies/${uae.company.id}/invoices`, {

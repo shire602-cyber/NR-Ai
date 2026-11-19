@@ -20,7 +20,6 @@ import {
   rollUpTotals,
   suggestAccountCode,
 } from "../../client/src/lib/account-hierarchy";
-import { vatRateOptionsFor } from "../../client/src/lib/company-country";
 import { vatBoxMap, describeBoxKey } from "../../server/tax/vat-box-map";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -151,15 +150,6 @@ describe("WQ3 9.1 / 9.3: chart helpers", () => {
   });
 });
 
-describe("WQ3 12.10: the 15% KSA rate", () => {
-  const opts = [{ value: "0" }, { value: "0.05" }, { value: "0.15" }];
-  it("is never offered to a UAE company, and to a Saudi one only with ZATCA on", () => {
-    expect(vatRateOptionsFor("AE", opts, true).map((o) => o.value)).toEqual(["0", "0.05"]);
-    expect(vatRateOptionsFor("SA", opts, false).map((o) => o.value)).toEqual(["0", "0.05"]);
-    expect(vatRateOptionsFor("SA", opts, true).map((o) => o.value)).toEqual(["0", "0.15"]);
-  });
-});
-
 describe("WQ3 9.13: tax rates page", () => {
   it("reads box keys from the engine and renders them", async () => {
     expect(describeBoxKey("box1bDubaiVat")).toEqual({
@@ -167,7 +157,7 @@ describe("WQ3 9.13: tax rates page", () => {
       part: "vat",
       key: "box1bDubaiVat",
     });
-    const map = vatBoxMap({ addressCountry: "AE", emirate: "sharjah" });
+    const map = vatBoxMap({ emirate: "sharjah" });
     const std = map.rows.find((r) => r.side === "sales" && r.treatment === "standard")!;
     expect(std.boxes.map((b) => b.key)).toEqual(["box1cSharjahAmount", "box1cSharjahVat"]);
     const rc = map.rows.find((r) => r.side === "purchases" && r.treatment === "reverse_charge")!;
@@ -176,9 +166,7 @@ describe("WQ3 9.13: tax rates page", () => {
     const { TaxRatesView } = await import("../../client/src/pages/settings/TaxRates");
     const qc = new QueryClient();
     await act(async () => {
-      root.render(
-        h(QueryClientProvider, { client: qc }, h(TaxRatesView, { data: map as never }))
-      );
+      root.render(h(QueryClientProvider, { client: qc }, h(TaxRatesView, { data: map as never })));
     });
     const row = container.querySelector('[data-testid="tax-rate-sales-standard"]')!;
     expect(row.textContent).toContain("5%");

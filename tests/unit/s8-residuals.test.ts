@@ -44,7 +44,7 @@ describe("[S8][R07-15] invoice-form margin-scheme totals", () => {
       return seed / 2147483647;
     };
     const types = ["standard_rated", "zero_rated", "exempt"] as const;
-    for (const rate of [0.05, 0.15]) {
+    for (const rate of [0.05]) {
       for (let round = 0; round < 200; round++) {
         const lines = Array.from({ length: 1 + Math.floor(rnd() * 5) }, () => {
           const vatSupplyType = types[Math.floor(rnd() * types.length)];
@@ -73,7 +73,7 @@ describe("[S8][R07-15] invoice-form margin-scheme totals", () => {
               ? { marginScheme: true, marginCostFils: Math.round(l.marginPurchaseCost * 100) }
               : {}),
           })),
-          { resolve: true, jurisdiction: rate === 0.15 ? "SA" : "AE" }
+          { resolve: true }
         );
         const msg = JSON.stringify({ rate, lines });
         expect(client.subtotalFils, msg).toBe(server.subtotalFils);

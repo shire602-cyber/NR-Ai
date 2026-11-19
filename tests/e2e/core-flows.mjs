@@ -11,7 +11,7 @@
  * purchases (bill with upload + supplier picker, approve, pay, debit note, PO -> bill, expense
  * claim with receipt), bank reconciliation (import, suggestions, rules, match / unmatch), the VAT
  * return lifecycle, reports, plans/trial, e-invoicing settings and the approver page, and the
- * Assistant. Static truths are checked too: no Saudi 15% rate for a UAE company while ZATCA is off,
+ * Assistant. Static truths are checked too: no Saudi ZATCA and no 15% KSA rate anywhere (even for a company with a Saudi address),
  * and the owner prices (AED 59 / 119 / 229 a month, 590 / 1,190 / 2,290 a year) on /pricing and
  * GET /api/billing/plans in both languages.
  *
@@ -1196,10 +1196,17 @@ const FLOWS = [
   }),
 
   flow(
-    "no-saudi-rate",
-    "Saudi 15% VAT is not offered to a UAE company while ZATCA is off",
+    "no-ksa-rate",
+    "Saudi ZATCA and the 15% rate are gone (even for a company with a Saudi address)",
     async (h) => {
       const owner = await newOwner("ksa", h.lang);
+      // The strongest case: a company whose address country is Saudi Arabia.
+      await h.step("API: set the company address country to SA", async () => {
+        const r = await api(owner.token, "PATCH", `/api/companies/${owner.companyId}`, {
+          addressCountry: "SA",
+        });
+        expect(r.status < 300, `PATCH addressCountry ${r.status}`);
+      });
       const page = await h.signIn(owner);
       const pickers = [
         ["/invoices/new", "invoice"],
@@ -1237,9 +1244,24 @@ const FLOWS = [
           expect(!/\b15\s?%|١٥\s?٪/.test(text), `15% shown on ${route}`);
         });
       }
-      await h.step("API: features say zatca off", async () => {
+      await h.step("/settings/zatca is the not-found page, with no ZATCA text", async () => {
+        await goto(page, "/settings/zatca");
+        await page.locator('[data-testid="page-not-found"]').waitFor({ timeout: 10000 });
+        const text = await page.locator("body").innerText();
+        expect(!/zatca|fatoora|زاتكا|هيئة الزكاة/i.test(text), "ZATCA text on /settings/zatca");
+      });
+      await h.step("/settings/einvoicing has no ZATCA text or link", async () => {
+        await goto(page, "/settings/einvoicing");
+        await page.locator("main").waitFor({ timeout: 10000 });
+        const text = await page.locator("main").innerText();
+        expect(!/zatca|fatoora|زاتكا|هيئة الزكاة/i.test(text), "ZATCA text on e-invoicing");
+        expect((await page.locator('a[href="/settings/zatca"]').count()) === 0, "zatca link");
+      });
+      await h.step("API: /api/features and the ZATCA routes are 404", async () => {
         const f = await api(owner.token, "GET", "/api/features");
-        expect(f.body?.zatca === false, `features ${JSON.stringify(f.body).slice(0, 120)}`);
+        expect(f.status === 404, `features ${f.status}`);
+        const z = await api(owner.token, "GET", `/api/companies/${owner.companyId}/zatca/status`);
+        expect(z.status === 404, `zatca status ${z.status}`);
       });
     }
   ),
