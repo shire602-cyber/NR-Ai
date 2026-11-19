@@ -115,7 +115,8 @@ export interface PlanDefinition {
 /**
  * THE PRICES (AED per month, VAT included): the one line to change when the owner approves new
  * prices. Every surface reads it: /pricing, the landing strip, Settings › Billing, GET
- * /api/billing/plans and the Stripe amounts (tests/unit/wq7-plan-module.test.ts). Yearly is
+ * /api/billing/plans and the Stripe amounts (tests/unit/wq7-stripe-plan-map.test.ts, tests/unit/trial-pricing.test.ts and
+ * tests/db/step3-price-editor-removed.test.ts). Yearly is
  * always 10 × monthly. Owner-approved 2026-11-18: 59 / 119 / 229 monthly, 590 / 1,190 / 2,290
  * yearly.
  */

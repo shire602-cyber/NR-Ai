@@ -13,10 +13,8 @@ import {
   regulatoryNews,
   reminderLogs,
   reminderSettings,
-  subscriptionPlans,
   userFeedback,
   userOnboarding,
-  userSubscriptions,
   type AdminSetting,
   type AnalyticsEvent,
   type FeatureUsageMetric,
@@ -31,20 +29,16 @@ import {
   type InsertRegulatoryNews,
   type InsertReminderLog,
   type InsertReminderSetting,
-  type InsertSubscriptionPlan,
   type InsertUserFeedback,
   type InsertUserOnboarding,
-  type InsertUserSubscription,
   type Notification,
   type Referral,
   type ReferralCode,
   type RegulatoryNews,
   type ReminderLog,
   type ReminderSetting,
-  type SubscriptionPlan,
   type UserFeedback,
   type UserOnboarding,
-  type UserSubscription,
 } from "@shared/schema";
 import { db } from "../db";
 import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
@@ -396,67 +390,5 @@ export class EngagementStorage extends InsightStorage {
       .where(eq(adminSettings.key, key))
       .returning();
     return setting;
-  }
-
-  // Subscription Plans
-  async getSubscriptionPlans(): Promise<SubscriptionPlan[]> {
-    return await db.select().from(subscriptionPlans).orderBy(subscriptionPlans.sortOrder);
-  }
-
-  async getSubscriptionPlan(id: string): Promise<SubscriptionPlan | undefined> {
-    const [plan] = await db.select().from(subscriptionPlans).where(eq(subscriptionPlans.id, id));
-    return plan || undefined;
-  }
-
-  async createSubscriptionPlan(insertPlan: InsertSubscriptionPlan): Promise<SubscriptionPlan> {
-    const [plan] = await db.insert(subscriptionPlans).values(insertPlan).returning();
-    return plan;
-  }
-
-  async updateSubscriptionPlan(
-    id: string,
-    data: Partial<InsertSubscriptionPlan>
-  ): Promise<SubscriptionPlan> {
-    const [plan] = await db
-      .update(subscriptionPlans)
-      .set(data)
-      .where(eq(subscriptionPlans.id, id))
-      .returning();
-    return plan;
-  }
-
-  async deleteSubscriptionPlan(id: string): Promise<void> {
-    await db.delete(subscriptionPlans).where(eq(subscriptionPlans.id, id));
-  }
-
-  // User Subscriptions
-  async getUserSubscription(userId: string): Promise<UserSubscription | undefined> {
-    const [subscription] = await db
-      .select()
-      .from(userSubscriptions)
-      .where(eq(userSubscriptions.userId, userId));
-    return subscription || undefined;
-  }
-
-  async createUserSubscription(
-    insertSubscription: InsertUserSubscription
-  ): Promise<UserSubscription> {
-    const [subscription] = await db
-      .insert(userSubscriptions)
-      .values(insertSubscription)
-      .returning();
-    return subscription;
-  }
-
-  async updateUserSubscription(
-    id: string,
-    data: Partial<InsertUserSubscription>
-  ): Promise<UserSubscription> {
-    const [subscription] = await db
-      .update(userSubscriptions)
-      .set(data)
-      .where(eq(userSubscriptions.id, id))
-      .returning();
-    return subscription;
   }
 }

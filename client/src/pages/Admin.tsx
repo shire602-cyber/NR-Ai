@@ -13,12 +13,9 @@ import { useQuery, useMutation, useIsFetching } from "@tanstack/react-query";
 import {
   Settings,
   Users,
-  DollarSign,
   Shield,
   Plug,
   Save,
-  Plus,
-  Trash2,
   Edit2,
   RefreshCw,
   Search,
@@ -26,21 +23,13 @@ import {
   BarChart3,
   Loader2,
 } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  CardFooter,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -55,7 +44,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Table,
@@ -70,25 +58,19 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { exportToExcel } from "@/lib/export";
-import type { AdminSetting, SubscriptionPlan, User, Company, AuditLog } from "@shared/schema";
+import type { AdminSetting, User, Company, AuditLog } from "@shared/schema";
 
 export default function Admin() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("overview");
   const [searchTerm, setSearchTerm] = useState("");
-  const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
-  const [newPlanDialogOpen, setNewPlanDialogOpen] = useState(false);
   const [_editSettingDialog, setEditSettingDialog] = useState<AdminSetting | null>(null);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
 
   // System settings state
   const [systemSettings, setSystemSettings] = useState({
-    defaultCurrency: "AED",
-    defaultVatRate: "5",
-    freeAiCredits: "50",
-    trialPeriod: "14",
     aiCategorization: true,
     ocrScanning: true,
     smartAssistant: true,
@@ -117,10 +99,6 @@ export default function Admin() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates local form state from fetched data
     setSystemSettings((prev) => ({
       ...prev,
-      defaultCurrency: settingsMap["system.defaultCurrency"] || prev.defaultCurrency,
-      defaultVatRate: settingsMap["system.defaultVatRate"] || prev.defaultVatRate,
-      freeAiCredits: settingsMap["system.freeAiCredits"] || prev.freeAiCredits,
-      trialPeriod: settingsMap["system.trialPeriod"] || prev.trialPeriod,
       aiCategorization:
         "feature.aiCategorization" in settingsMap
           ? settingsMap["feature.aiCategorization"] === "true"
@@ -149,10 +127,6 @@ export default function Admin() {
           : prev.paymentReminders,
     }));
   }, [settings]);
-
-  const { data: plans = [], isLoading: plansLoading } = useQuery<SubscriptionPlan[]>({
-    queryKey: ["/api/admin/plans"],
-  });
 
   const { data: users = [], isLoading: usersLoading } = useQuery<User[]>({
     queryKey: ["/api/admin/users"],
@@ -198,10 +172,6 @@ export default function Admin() {
   const saveSystemSettingsMutation = useMutation({
     mutationFn: async (settingsToSave: typeof systemSettings) => {
       const settings = [
-        { key: "system.defaultCurrency", value: settingsToSave.defaultCurrency },
-        { key: "system.defaultVatRate", value: settingsToSave.defaultVatRate },
-        { key: "system.freeAiCredits", value: settingsToSave.freeAiCredits },
-        { key: "system.trialPeriod", value: settingsToSave.trialPeriod },
         { key: "feature.aiCategorization", value: settingsToSave.aiCategorization.toString() },
         { key: "feature.ocrScanning", value: settingsToSave.ocrScanning.toString() },
         { key: "feature.smartAssistant", value: settingsToSave.smartAssistant.toString() },
@@ -227,49 +197,6 @@ export default function Admin() {
         title: translateNow("toasts.failedToSaveSettings"),
         description: error?.message || translateNow("toasts.pleaseTryAgain2"),
       });
-    },
-  });
-
-  const createPlanMutation = useMutation({
-    mutationFn: async (plan: Partial<SubscriptionPlan>) => {
-      return apiRequest("POST", "/api/admin/plans", plan);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
-      toast({ title: t["admin.planCreatedSuccessfully"] });
-      setNewPlanDialogOpen(false);
-    },
-    onError: () => {
-      toast({ variant: "destructive", title: t["admin.failedToCreatePlan"] });
-    },
-  });
-
-  const updatePlanMutation = useMutation({
-    mutationFn: async (plan: Partial<SubscriptionPlan> & { id: string }) => {
-      // The server contract is strict (R17-20): send plan fields only, never id / createdAt.
-      const { id, createdAt: _createdAt, ...fields } = plan;
-      return apiRequest("PUT", `/api/admin/plans/${id}`, fields);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
-      toast({ title: t["admin.planUpdatedSuccessfully"] });
-      setEditingPlan(null);
-    },
-    onError: () => {
-      toast({ variant: "destructive", title: t["admin.failedToUpdatePlan"] });
-    },
-  });
-
-  const deletePlanMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return apiRequest("DELETE", `/api/admin/plans/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
-      toast({ title: t["admin.planDeletedSuccessfully"] });
-    },
-    onError: () => {
-      toast({ variant: "destructive", title: t["admin.failedToDeletePlan"] });
     },
   });
 
@@ -424,7 +351,6 @@ export default function Admin() {
               onClick={() => {
                 for (const key of [
                   "/api/admin/settings",
-                  "/api/admin/plans",
                   "/api/admin/users",
                   "/api/admin/companies",
                   "/api/admin/audit-logs",
@@ -449,10 +375,6 @@ export default function Admin() {
           <TabsTrigger value="overview" data-testid="tab-overview">
             <BarChart3 className="w-4 h-4 me-2" />
             <T k="pages.overview" />
-          </TabsTrigger>
-          <TabsTrigger value="pricing" data-testid="tab-pricing">
-            <DollarSign className="w-4 h-4 me-2" />
-            <T k="pages.pricing" />
           </TabsTrigger>
           <TabsTrigger value="users" data-testid="tab-users">
             <Users className="w-4 h-4 me-2" />
@@ -532,132 +454,6 @@ export default function Admin() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-
-        {/* Pricing Tab */}
-        <TabsContent value="pricing" className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold">
-              <T k="pageLabels.subscriptionPlans" />
-            </h2>
-            <Dialog open={newPlanDialogOpen} onOpenChange={setNewPlanDialogOpen}>
-              <DialogTrigger asChild>
-                <Button data-testid="button-add-plan">
-                  <Plus className="w-4 h-4 me-2" />
-                  <T k="pageLabels.addPlan" />
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>
-                    <T k="pageLabels.createNewPlan" />
-                  </DialogTitle>
-                  <DialogDescription>
-                    <T k="pageLabels.addANewSubscriptionPlanForYourCustomers" />
-                  </DialogDescription>
-                </DialogHeader>
-                <PlanForm
-                  onSubmit={(data) => createPlanMutation.mutate(data)}
-                  isPending={createPlanMutation.isPending}
-                />
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {plansLoading ? (
-              <div className="col-span-full flex justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin" />
-              </div>
-            ) : plans.length === 0 ? (
-              <Card className="col-span-full">
-                <CardContent className="py-8 text-center text-muted-foreground">
-                  {t["admin.noSubscriptionPlansConfiguredAdd"]}
-                </CardContent>
-              </Card>
-            ) : (
-              plans.map((plan) => (
-                <Card key={plan.id} className={!plan.isActive ? "opacity-60" : ""}>
-                  <CardHeader>
-                    <div className="flex items-center justify-between gap-2">
-                      <CardTitle className="text-lg">{plan.name}</CardTitle>
-                      <Badge variant={plan.isActive ? "default" : "secondary"}>
-                        {plan.isActive ? "Active" : "Inactive"}
-                      </Badge>
-                    </div>
-                    <CardDescription>{plan.description}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-3xl font-bold mb-4">
-                      {plan.currency} {plan.priceMonthly}
-                      <span className="text-sm font-normal text-muted-foreground">/month</span>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          <T k="pageLabels.maxCompanies" />
-                        </span>
-                        <span>{plan.maxCompanies || "Unlimited"}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          <T k="pageLabels.maxUsers" />
-                        </span>
-                        <span>{plan.maxUsers || t["adminConsole.unlimited"]}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          {t["adminConsole.aiCreditsPerMonth"]}
-                        </span>
-                        <span>{plan.aiCreditsPerMonth}</span>
-                      </div>
-                    </div>
-                  </CardContent>
-                  <CardFooter className="gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-1"
-                      onClick={() => setEditingPlan(plan)}
-                      data-testid={`button-edit-plan-${plan.id}`}
-                    >
-                      <Edit2 className="w-4 h-4 me-2" />
-                      {t["firmOps.edit"]}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => deletePlanMutation.mutate(plan.id)}
-                      data-testid={`button-delete-plan-${plan.id}`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </CardFooter>
-                </Card>
-              ))
-            )}
-          </div>
-
-          {/* Edit Plan Dialog */}
-          <Dialog open={!!editingPlan} onOpenChange={(open) => !open && setEditingPlan(null)}>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>
-                  <T k="pageLabels.editPlan" />
-                </DialogTitle>
-                <DialogDescription>
-                  <T k="pageLabels.modifySubscriptionPlanDetails" />
-                </DialogDescription>
-              </DialogHeader>
-              {editingPlan && (
-                <PlanForm
-                  initialData={editingPlan}
-                  onSubmit={(data) => updatePlanMutation.mutate({ ...data, id: editingPlan.id })}
-                  isPending={updatePlanMutation.isPending}
-                />
-              )}
-            </DialogContent>
-          </Dialog>
         </TabsContent>
 
         {/* Users Tab */}
@@ -827,7 +623,9 @@ export default function Admin() {
                       <T k="pages.cancel" />
                     </Button>
                     <Button type="submit" disabled={updateUserMutation.isPending}>
-                      {updateUserMutation.isPending ? "Saving..." : t["pages.saveChanges"]}
+                      {updateUserMutation.isPending
+                        ? t["pageLabels.saving"]
+                        : t["pages.saveChanges"]}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -976,7 +774,9 @@ export default function Admin() {
                       <T k="pages.cancel" />
                     </Button>
                     <Button type="submit" disabled={updateCompanyMutation.isPending}>
-                      {updateCompanyMutation.isPending ? "Saving..." : t["pages.saveChanges"]}
+                      {updateCompanyMutation.isPending
+                        ? t["pageLabels.saving"]
+                        : t["pages.saveChanges"]}
                     </Button>
                   </DialogFooter>
                 </form>
@@ -1076,97 +876,6 @@ export default function Admin() {
                       data-testid="switch-referral-program"
                     />
                   </div>
-                </CardContent>
-              </Card>
-
-              {/* System Settings */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">
-                    <T k="pageLabels.systemSettings" />
-                  </CardTitle>
-                  <CardDescription>
-                    <T k="pageLabels.configurePlatformWideSettings" />
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>
-                        <T k="pageLabels.defaultCurrency" />
-                      </Label>
-                      <Select
-                        value={systemSettings.defaultCurrency}
-                        onValueChange={(value) =>
-                          setSystemSettings((prev) => ({ ...prev, defaultCurrency: value }))
-                        }
-                      >
-                        <SelectTrigger data-testid="select-default-currency">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="AED">{t["adminConsole.curAED"]}</SelectItem>
-                          <SelectItem value="USD">{t["adminConsole.curUSD"]}</SelectItem>
-                          <SelectItem value="EUR">{t["adminConsole.curEUR"]}</SelectItem>
-                          <SelectItem value="GBP">{t["adminConsole.curGBP"]}</SelectItem>
-                          <SelectItem value="SAR">{t["adminConsole.curSAR"]}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>{t["adminConsole.defaultVatRate"]}</Label>
-                      <Input
-                        type="number"
-                        value={systemSettings.defaultVatRate}
-                        onChange={(e) =>
-                          setSystemSettings((prev) => ({ ...prev, defaultVatRate: e.target.value }))
-                        }
-                        data-testid="input-vat-rate"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>
-                        <T k="pageLabels.aICreditsPerFreeUser" />
-                      </Label>
-                      <Input
-                        type="number"
-                        value={systemSettings.freeAiCredits}
-                        onChange={(e) =>
-                          setSystemSettings((prev) => ({ ...prev, freeAiCredits: e.target.value }))
-                        }
-                        data-testid="input-free-ai-credits"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>{t["adminConsole.trialPeriodDays"]}</Label>
-                      <Input
-                        type="number"
-                        value={systemSettings.trialPeriod}
-                        onChange={(e) =>
-                          setSystemSettings((prev) => ({ ...prev, trialPeriod: e.target.value }))
-                        }
-                        data-testid="input-trial-period"
-                      />
-                    </div>
-                  </div>
-                  <Button
-                    className="mt-4"
-                    data-testid="button-save-system-settings"
-                    onClick={() => saveSystemSettingsMutation.mutate(systemSettings)}
-                    disabled={saveSystemSettingsMutation.isPending}
-                  >
-                    {saveSystemSettingsMutation.isPending ? (
-                      <>
-                        <Loader2 className="w-4 h-4 me-2 animate-spin" />
-                        <T k="pageLabels.saving" />
-                      </>
-                    ) : (
-                      <>
-                        <Save className="w-4 h-4 me-2" />
-                        <T k="pageLabels.saveSettings" />
-                      </>
-                    )}
-                  </Button>
                 </CardContent>
               </Card>
 
@@ -1425,199 +1134,5 @@ export default function Admin() {
         </TabsContent>
       </Tabs>
     </div>
-  );
-}
-
-// Plan Form Component
-function PlanForm({
-  initialData,
-  onSubmit,
-  isPending,
-}: {
-  initialData?: SubscriptionPlan;
-  onSubmit: (data: Partial<SubscriptionPlan>) => void;
-  isPending: boolean;
-}) {
-  const { t } = useTranslation();
-  const [formData, setFormData] = useState<Partial<SubscriptionPlan>>(
-    initialData || {
-      name: "",
-      description: "",
-      priceMonthly: 0,
-      priceYearly: 0,
-      currency: "AED",
-      maxCompanies: 1,
-      maxUsers: 1,
-      aiCreditsPerMonth: 100,
-      hasWhatsappIntegration: false,
-      hasAdvancedReports: false,
-      hasApiAccess: false,
-      isActive: true,
-    }
-  );
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSubmit(formData);
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="name">
-            <T k="pageLabels.planName" />
-          </Label>
-          <Input
-            id="name"
-            value={formData.name || ""}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            required
-            data-testid="input-plan-name"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="currency">
-            <T k="banking.accounts.currency" />
-          </Label>
-          <Select
-            value={formData.currency}
-            onValueChange={(value) => setFormData({ ...formData, currency: value })}
-          >
-            <SelectTrigger data-testid="select-plan-currency">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="AED">AED</SelectItem>
-              <SelectItem value="USD">USD</SelectItem>
-              <SelectItem value="EUR">EUR</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="description">
-          <T k="banking.common.description" />
-        </Label>
-        <Textarea
-          id="description"
-          value={formData.description || ""}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          data-testid="input-plan-description"
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="priceMonthly">
-            <T k="pageLabels.monthlyPrice" />
-          </Label>
-          <Input
-            id="priceMonthly"
-            type="number"
-            value={formData.priceMonthly || 0}
-            onChange={(e) => setFormData({ ...formData, priceMonthly: parseFloat(e.target.value) })}
-            required
-            data-testid="input-price-monthly"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="priceYearly">
-            <T k="pageLabels.yearlyPrice" />
-          </Label>
-          <Input
-            id="priceYearly"
-            type="number"
-            value={formData.priceYearly || 0}
-            onChange={(e) => setFormData({ ...formData, priceYearly: parseFloat(e.target.value) })}
-            data-testid="input-price-yearly"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="maxCompanies">
-            <T k="pageLabels.maxCompanies" />
-          </Label>
-          <Input
-            id="maxCompanies"
-            type="number"
-            value={formData.maxCompanies || 1}
-            onChange={(e) => setFormData({ ...formData, maxCompanies: parseInt(e.target.value) })}
-            data-testid="input-max-companies"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="maxUsers">
-            <T k="pageLabels.maxUsers" />
-          </Label>
-          <Input
-            id="maxUsers"
-            type="number"
-            value={formData.maxUsers || 1}
-            onChange={(e) => setFormData({ ...formData, maxUsers: parseInt(e.target.value) })}
-            data-testid="input-max-users"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="aiCredits">{t["adminConsole.aiCreditsPerMonth"]}</Label>
-          <Input
-            id="aiCredits"
-            type="number"
-            value={formData.aiCreditsPerMonth || 100}
-            onChange={(e) =>
-              setFormData({ ...formData, aiCreditsPerMonth: parseInt(e.target.value) })
-            }
-            data-testid="input-ai-credits"
-          />
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <Label>
-            <T k="pageLabels.advancedReports" />
-          </Label>
-          <Switch
-            checked={formData.hasAdvancedReports || false}
-            onCheckedChange={(checked) => setFormData({ ...formData, hasAdvancedReports: checked })}
-            data-testid="switch-plan-reports"
-          />
-        </div>
-        <div className="flex items-center justify-between">
-          <Label>
-            <T k="pageLabels.aPIAccess" />
-          </Label>
-          <Switch
-            checked={formData.hasApiAccess || false}
-            onCheckedChange={(checked) => setFormData({ ...formData, hasApiAccess: checked })}
-            data-testid="switch-plan-api"
-          />
-        </div>
-        <div className="flex items-center justify-between">
-          <Label>
-            <T k="firm.linkActive" />
-          </Label>
-          <Switch
-            checked={formData.isActive !== false}
-            onCheckedChange={(checked) => setFormData({ ...formData, isActive: checked })}
-            data-testid="switch-plan-active"
-          />
-        </div>
-      </div>
-
-      <DialogFooter>
-        <Button type="submit" disabled={isPending} data-testid="button-save-plan">
-          {isPending ? (
-            <Loader2 className="w-4 h-4 me-2 animate-spin" />
-          ) : (
-            <Save className="w-4 h-4 me-2" />
-          )}
-          {t["adminConsole.savePlan"]}
-        </Button>
-      </DialogFooter>
-    </form>
   );
 }

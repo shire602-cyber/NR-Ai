@@ -1,4 +1,4 @@
-// Onboarding, help tips, referrals, feedback, analytics, admin settings, plans.
+// Onboarding, help tips, referrals, feedback, analytics, admin settings.
 // Part of the shared/schema.ts barrel (R20-09); import from "@shared/schema".
 
 import {
@@ -303,7 +303,7 @@ export const adminSettings = pgTable("admin_settings", {
     .default(sql`gen_random_uuid()`),
   key: text("key").notNull().unique(),
   value: text("value").notNull(),
-  category: text("category").notNull(), // pricing | features | system | integrations | notifications
+  category: text("category").notNull(), // system | features | integrations | notifications
   description: text("description"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   updatedBy: uuid("updated_by").references(() => users.id),
@@ -316,68 +316,3 @@ export const insertAdminSettingSchema = createInsertSchema(adminSettings).omit({
 
 export type InsertAdminSetting = z.infer<typeof insertAdminSettingSchema>;
 export type AdminSetting = typeof adminSettings.$inferSelect;
-
-// ===========================
-// Subscription Plans
-// ===========================
-export const subscriptionPlans = pgTable("subscription_plans", {
-  id: uuid("id")
-    .primaryKey()
-    .default(sql`gen_random_uuid()`),
-  name: text("name").notNull(),
-  nameAr: text("name_ar"),
-  description: text("description"),
-  descriptionAr: text("description_ar"),
-  priceMonthly: money("price_monthly").notNull(),
-  priceYearly: money("price_yearly"),
-  currency: text("currency").notNull().default("AED"),
-  features: text("features"), // JSON array of features
-  maxCompanies: integer("max_companies").default(1),
-  maxUsers: integer("max_users").default(1),
-  maxInvoicesPerMonth: integer("max_invoices_per_month"),
-  maxReceiptsPerMonth: integer("max_receipts_per_month"),
-  aiCreditsPerMonth: integer("ai_credits_per_month").default(100),
-  hasWhatsappIntegration: boolean("has_whatsapp_integration").default(false),
-  hasAdvancedReports: boolean("has_advanced_reports").default(false),
-  hasApiAccess: boolean("has_api_access").default(false),
-  isActive: boolean("is_active").notNull().default(true),
-  sortOrder: integer("sort_order").default(0),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({
-  id: true,
-  createdAt: true,
-});
-
-export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
-export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
-
-// ===========================
-// User Subscriptions
-// ===========================
-export const userSubscriptions = pgTable("user_subscriptions", {
-  id: uuid("id")
-    .primaryKey()
-    .default(sql`gen_random_uuid()`),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  planId: uuid("plan_id")
-    .notNull()
-    .references(() => subscriptionPlans.id),
-  status: text("status").notNull().default("active"), // active | cancelled | expired | trial
-  currentPeriodStart: timestamp("current_period_start").notNull(),
-  currentPeriodEnd: timestamp("current_period_end").notNull(),
-  cancelledAt: timestamp("cancelled_at"),
-  trialEndsAt: timestamp("trial_ends_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const insertUserSubscriptionSchema = createInsertSchema(userSubscriptions).omit({
-  id: true,
-  createdAt: true,
-});
-
-export type InsertUserSubscription = z.infer<typeof insertUserSubscriptionSchema>;
-export type UserSubscription = typeof userSubscriptions.$inferSelect;
