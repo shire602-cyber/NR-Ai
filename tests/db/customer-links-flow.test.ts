@@ -1,8 +1,8 @@
 /**
  * Customer links through the real routes (the route-level twin of tests/e2e/customer-links-flow.mjs):
  * the contact's preferred language is saved and then drives every message and the invoice page;
- * an Arabic company writes to customers without a preference in Arabic; a card payment sends the
- * receipt in the customer's language; the EmaraTax approver mail follows the company language and
+ * an Arabic company writes to customers without a preference in both languages (explicit ar/en still win); a card payment sends the
+ * receipt in the customer's language; the EmaraTax approver mail is bilingual and
  * shows no TRN; invalid and expired invoice links answer 404 / 410.
  */
 import { afterEach, describe, expect, it } from "vitest";
@@ -100,7 +100,7 @@ describe("contact language drives messages and the invoice page", () => {
     expect(view.body.companyLocale).toBe("en");
   });
 
-  it("Arabic company: customers without a preference get Arabic invoice, reminder, quote, statement and approver mail", async () => {
+  it("Arabic company: customers without a preference get bilingual invoice, reminder, quote, statement and approver mail", async () => {
     const t = await h.createTenant({ companyColumns: { locale: "ar" } });
     const c = await contact(t);
     const inv = await issued(t, c.id);
@@ -122,7 +122,12 @@ describe("contact language drives messages and the invoice page", () => {
       ["statement", "st@c.test"],
     ]) {
       const m = await mail(cat, to);
-      expect(isArabic(m), cat).toBe(true);
+      expect(isBoth(m), cat).toBe(true);
+      expect(isArabic(m), cat).toBe(false);
+      // Subject and plain text are bilingual too, consistent with the HTML.
+      expect(m.subject, cat).toMatch(/[\u0600-\u06FF]/);
+      expect(m.subject, cat).toMatch(/[A-Za-z]/);
+      expect(m.text_body, cat).toMatch(/[\u0600-\u06FF]/);
       expect(m.html + m.text_body, cat).not.toContain(TRN);
     }
     const view = await h.anon.get(
@@ -131,7 +136,7 @@ describe("contact language drives messages and the invoice page", () => {
     expect(view.body.companyLocale).toBe("ar");
     expect(view.body.preferredLanguage).toBeNull();
 
-    // EmaraTax approval request: Arabic for an Arabic company, company name only, no TRN.
+    // EmaraTax approval request: bilingual for an Arabic company, company name only, no TRN.
     await t.as.put(`${base(t)}/einvoicing/partner`, { partner: "acube" });
     const ap = await t.as.post(`${base(t)}/einvoicing/approver-links`, {
       approverName: "Khalid",
@@ -139,7 +144,7 @@ describe("contact language drives messages and the invoice page", () => {
     });
     expect(ap.status, ap.text).toBeLessThan(300);
     const am = await mail("einvoice_approver_link", "approver@c.test");
-    expect(isArabic(am)).toBe(true);
+    expect(isBoth(am)).toBe(true);
     expect(am.html + am.text_body).not.toContain(TRN);
     const token = (ap.body.url as string).split("/").pop()!;
     const approve = await h.anon.get(`/api/portal/einvoicing-approve/${token}`);
@@ -147,6 +152,23 @@ describe("contact language drives messages and the invoice page", () => {
     expect(approve.text).not.toContain(TRN);
     const done = await h.anon.post(`/api/portal/einvoicing-approve/${token}/done`, {});
     expect(done.status, done.text).toBe(200);
+  });
+
+  it("Arabic company: an explicit ar contact gets Arabic, an en contact gets English", async () => {
+    const t = await h.createTenant({ companyColumns: { locale: "ar" } });
+    const ar = await contact(t, { name: "Ar Pref", email: "arp@x.example", preferredLanguage: "ar" });
+    const en = await contact(t, { name: "En Pref", email: "enp@x.example", preferredLanguage: "en" });
+    const i1 = await issued(t, ar.id);
+    const i2 = await issued(t, en.id);
+    await t.as.post(`${base(t)}/invoices/${i1.id}/send-email`, { to: "arp@c.test" });
+    await t.as.post(`${base(t)}/invoices/${i2.id}/send-email`, { to: "enp@c.test" });
+    const a = await mail("invoice", "arp@c.test");
+    expect(isArabic(a)).toBe(true);
+    expect(a.html).not.toContain('lang="en"');
+    const e = await mail("invoice", "enp@c.test");
+    expect(e.html).toContain('lang="en"');
+    expect(e.html).not.toContain('lang="ar"');
+    expect(e.subject).not.toMatch(/[\u0600-\u06FF]/);
   });
 
   it("a card payment sends the receipt in the customer's language", async () => {

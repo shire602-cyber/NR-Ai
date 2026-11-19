@@ -106,6 +106,9 @@ describe("layout and formatters", () => {
     expect(resolveEmailLanguage(null, "ar")).toBe("ar");
     expect(resolveEmailLanguage(undefined, "fr")).toBe("bilingual");
     expect(resolveEmailLanguage()).toBe("bilingual");
+    // The company's language no longer changes the rule (an Arabic company is still bilingual).
+    expect(resolveEmailLanguage(null, null)).toBe("bilingual");
+    expect(resolveEmailLanguage(null, "en")).toBe("en");
   });
 
   it("subjects and plain text carry no bidi control characters", () => {

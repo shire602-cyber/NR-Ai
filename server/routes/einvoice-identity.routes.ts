@@ -223,7 +223,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
             companyName: company.name,
             approverName: link.approverName,
             url,
-            language: resolveEmailLanguage(null, null, company.locale),
+            language: resolveEmailLanguage(null, null),
           });
           await enqueueEmail({
             to: link.approverEmail,
@@ -328,7 +328,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
               companyName: view.companyName,
               who: done.approverName || done.approverEmail || null,
               settingsUrl: `${appBaseUrl()}/settings/einvoicing`,
-              language: resolveEmailLanguage(null, null, doneCompany?.locale),
+              language: resolveEmailLanguage(null, null),
             });
             await enqueueEmail({
               to,

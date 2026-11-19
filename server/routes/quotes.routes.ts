@@ -468,7 +468,7 @@ export function registerQuoteRoutes(app: Express) {
         expiryDate: quote.expiryDate ?? null,
         message,
         portalUrl,
-        language: resolveEmailLanguage(null, customer?.preferredLanguage, company.locale),
+        language: resolveEmailLanguage(null, customer?.preferredLanguage),
       });
       const result = await sendEmail(to, subject?.trim() || built.subject, built.text, {
         html: built.html,

@@ -631,7 +631,7 @@ async function emailReceipt(link: PaymentLink, amountFils: number) {
     // No provider reference (payment intent / event ids are internal); invoice number and
     // date identify the payment for the customer.
     paidAt: new Date(),
-    language: resolveEmailLanguage(null, contact.preferredLanguage, company?.locale),
+    language: resolveEmailLanguage(null, contact.preferredLanguage),
   });
   await sendEmail(contact.email, built.subject, built.text, {
     html: built.html,

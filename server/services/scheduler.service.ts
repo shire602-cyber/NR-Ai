@@ -402,7 +402,7 @@ async function dunOne(args: {
     }
     const lang =
       setting.language === "bilingual"
-        ? resolveEmailLanguage(null, contact.preferredLanguage, company.locale)
+        ? resolveEmailLanguage(null, contact.preferredLanguage)
         : (setting.language as EmailLanguage);
     const { subject, html, text } = buildReminderEmail({
       invoice,

@@ -452,7 +452,9 @@ async function runScenario(browser, scenario, viewport) {
   check(inv.status === 200, "create invoice", inv.text.slice(0, 120));
   const sent = await api("PATCH", `/api/invoices/${inv.json.id}/status`, tok, { status: "sent" });
   check(sent.status === 200, "mark invoice sent", sent.status);
-  const expectMail = ar ? "ar" : "both";
+  // Owner rule: only an explicit contact language narrows a mail; an Arabic company with no
+  // preference still sends both languages.
+  const expectMail = scenario.contactLang === "ar" ? "ar" : "both";
 
   // Invoice e-mail -> link -> page.
   const to = `inv+${RUN}${scenario.id}${viewport}@customer.example`;
@@ -629,7 +631,7 @@ async function runScenario(browser, scenario, viewport) {
     scenario,
     allow,
     {
-      expect: scenario.companyLocale === "ar" ? "ar" : "both",
+      expect: "both",
     }
   );
   const approverLink = alinks.find((l) => /einvoicing-approve\//.test(l));
@@ -666,7 +668,7 @@ async function runScenario(browser, scenario, viewport) {
     [cid]
   );
   await checkEmail(done.rows[0] ?? null, "approval done", scenario, allow, {
-    expect: scenario.companyLocale === "ar" ? "ar" : "both",
+    expect: "both",
   }).catch(() => undefined);
 
   // Invalid and expired links, in the browser's language.
