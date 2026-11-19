@@ -15,7 +15,11 @@
  *      deliberate gates), the 404 page, an error boundary, a blank main area, a console error,
  *      a page error or unhandled rejection, a failed same-origin request, horizontal scroll,
  *      a visible native date/select/file input, a raw i18n key / {placeholder} / UUID /
- *      "undefined" in visible text, and (Arabic) English UI text or a non-RTL document;
+ *      "undefined" in visible text, and (Arabic) English UI text or a non-RTL document. English
+ *      is excused only where a whole user-data string (a customer, a vendor, an item) appears in
+ *      the line; a word that occurs somewhere in the data excuses nothing. The ownerAr persona
+ *      has Arabic data only, so nothing at all is excused there. Every individual report the
+ *      catalog opens (tests/e2e/lib/report-urls.mjs) is visited by owner and ownerAr;
  *   3. clicks every enabled button, tab, switch and menu item on the page (destructive actions
  *      skipped) and fails a click that throws, makes a failed request or does nothing observable
  *      (no navigation, dialog, DOM change, request, download, print or clipboard write). A dialog
@@ -29,7 +33,7 @@
  * Environment:
  *   BASE_URL, DATABASE_URL  local target and its scratch database (required)
  *   SWEEP_REUSE=true        reuse the personas of the previous run (delta runs)
- *   SWEEP_PERSONAS=a,b      subset (trial,owner,accountant,viewer,firmStaff,admin,portal,visitor)
+ *   SWEEP_PERSONAS=a,b      subset (trial,owner,ownerAr,accountant,viewer,firmStaff,admin,portal,visitor)
  *   SWEEP_LANGS=en,ar       languages (default both)
  *   SWEEP_CLICKS=false      skip the click pass; SWEEP_CLICK_LANGS (default en,ar for owner,
  *                           en for the other personas) and SWEEP_MAX_CLICKS (per route, 40)
@@ -45,8 +49,11 @@ import path from "node:path";
 import { chromium } from "playwright-core";
 import { ADMIN_ROUTES, ALL_AUTH_ROUTES, FIRM_ROUTES, PUBLIC_ROUTES } from "./launch-routes.mjs";
 import { ARTIFACT_DIR, apiClient, setupPersonas } from "./lib/sweep-personas.mjs";
+import { REPORT_URLS } from "./lib/report-urls.mjs";
 import {
   GATE_STATUSES,
+  collectUserStrings,
+  englishOutsideUserData,
   englishWords,
   instrumentScript,
   pageSnapshot,
@@ -76,6 +83,7 @@ const PERSONAS = list(process.env.SWEEP_PERSONAS, [
   "firmStaff",
   "admin",
   "portal",
+  "ownerAr",
 ]);
 const LANGS = list(process.env.SWEEP_LANGS, ["en", "ar"]);
 const CLICKS = process.env.SWEEP_CLICKS !== "false";
@@ -93,7 +101,8 @@ const clickLangsFor = (persona) =>
 const DESTRUCTIVE =
   /\b(delete|remove|void|reverse|reversal|archive|revoke|disconnect|deactivate|sign ?out|log ?out|erase|purge|restore backup|reset|unlink|discard|cancel (the )?(subscription|plan)|close (the )?period|lock period|file return|mark (as )?filed|transfer ownership|leave)\b|حذف|إزالة|إلغاء الاشتراك|تسجيل الخروج|عكس|إبطال|أرشفة|إعادة تعيين|فصل|تجاهل/i;
 const AI_CLICKS = process.env.SWEEP_AI === "true";
-const AI_TESTID = /(^|-)ai(-|$)|run-scan|scan-now|assistant-send|ask-ai|categori[sz]e|anomal|forecast-run|cfo/i;
+const AI_TESTID =
+  /(^|-)ai(-|$)|run-scan|scan-now|assistant-send|ask-ai|categori[sz]e|anomal|forecast-run|cfo/i;
 const DESTRUCTIVE_TESTID =
   /delete|remove|logout|log-out|sign-out|void|reverse|archive|revoke|disconnect|deactivate|reset|discard|language-toggle|lang-toggle|locale|unlink|purge|restore/i;
 
@@ -116,7 +125,9 @@ const ROUTES_FOR = {
     "/purchase-orders/:purchaseOrderId/edit",
     "/bill-pay/:billId/edit",
     "/recurring-invoices/:recurringId/edit",
+    ...REPORT_URLS,
   ],
+  ownerAr: [...REPORT_URLS, ...ALL_AUTH_ROUTES],
   accountant: [...ALL_AUTH_ROUTES, "/accounts/:accountId/ledger", "/journal/:journalId"],
   viewer: [...ALL_AUTH_ROUTES, "/accounts/:accountId/ledger", "/journal/:journalId"],
   firmStaff: [...FIRM_ROUTES, "/firm/clients/:companyId"],
@@ -293,7 +304,7 @@ function linkKey(href) {
 const FILE_LINK = /\.(pdf|csv|xlsx|xls|zip|xml|json|txt|png|jpe?g|svg)$/i;
 const SKIP_LINK = /^\/(api\/|uploads\/|auth\/logout|logout)/;
 
-function checkSnapshot(snap, ctx, lang, userWords) {
+function checkSnapshot(snap, ctx, lang, userStrings) {
   const problems = [];
   if (snap.notFound) problems.push({ rule: "not-found-page", detail: snap.path });
   if (snap.errorBoundary.length)
@@ -316,20 +327,19 @@ function checkSnapshot(snap, ctx, lang, userWords) {
   if (lang === "ar") {
     if (snap.dir !== "rtl") problems.push({ rule: "not-rtl", detail: snap.dir });
     for (const line of snap.texts) {
-      const words = englishWords(line);
+      // Whole user-data strings (seeded customer / vendor / item names) are excused; nothing else.
+      const words = userStrings ? englishOutsideUserData(line, userStrings) : englishWords(line);
       if (!words.length) continue;
-      // Seeded English record names (populated personas) are user data, not UI copy.
-      if (userWords && words.every((w) => userWords.has(w))) continue;
       problems.push({ rule: "english-in-arabic", detail: line.slice(0, 160) });
     }
   }
   return problems;
 }
 
-/** Words of every string the seeded records carry, so Arabic mode does not flag user data. */
-async function harvestUserWords(token, companyId) {
+/** Every whole string the seeded records carry (see collectUserStrings), for Arabic mode. */
+async function harvestUserStrings(token, companyId) {
   const api = apiClient(BASE);
-  const words = new Set();
+  const strings = new Set();
   const endpoints = [
     "",
     "/customer-contacts",
@@ -350,6 +360,7 @@ async function harvestUserWords(token, companyId) {
     "/products",
     "/inventory/valuation",
     "/inventory/reorder",
+    "/inventory-movements",
     "/bank-accounts",
     "/bank-transactions",
     "/quotes",
@@ -366,20 +377,7 @@ async function harvestUserWords(token, companyId) {
     "/payroll-runs",
     "/report-delivery/subscriptions",
   ];
-  const walk = (value, depth = 0) => {
-    if (depth > 6 || value == null) return;
-    if (typeof value === "string") {
-      if (value.length > 300) return;
-      for (const w of value.match(/[A-Za-z]{2,}/g) ?? []) words.add(w.toLowerCase());
-    } else if (Array.isArray(value)) value.slice(0, 300).forEach((v) => walk(v, depth + 1));
-    else if (typeof value === "object") {
-      for (const [key, v] of Object.entries(value)) {
-        if (/^(status|type|kind|category|role|currency|method|source|code|state|stage)$/i.test(key))
-          continue;
-        walk(v, depth + 1);
-      }
-    }
-  };
+  const walk = (value) => collectUserStrings(value, strings);
   for (const ep of endpoints) {
     const res = await api(token, "GET", `/api/companies/${companyId}${ep}`).catch(() => null);
     if (res && res.status < 300) walk(res.body);
@@ -390,10 +388,18 @@ async function harvestUserWords(token, companyId) {
     const res = await api(token, "GET", `/api/invoices/${inv.id}`).catch(() => null);
     if (res && res.status < 300) walk(res.body);
   }
+  // Budget lines (categories) live on the variance report of each plan.
+  const plans = await api(token, "GET", `/api/companies/${companyId}/budget-plans`).catch(
+    () => null
+  );
+  for (const plan of (Array.isArray(plans?.body) ? plans.body : []).slice(0, 10)) {
+    const res = await api(token, "GET", `/api/budget-plans/${plan.id}/variance`).catch(() => null);
+    if (res && res.status < 300) walk(res.body);
+  }
   const me = await api(token, "GET", "/api/auth/me");
   walk(me.body?.name);
   walk(me.body?.email);
-  return words;
+  return strings;
 }
 
 async function newContext(browser, persona, lang, viewport) {
@@ -476,7 +482,7 @@ async function loadAndCheck(page, state, url, ctx) {
   await settle(page, 900);
   await dismissOverlays(page);
   const snap = await settledSnapshot(page);
-  const problems = [...state.problems, ...checkSnapshot(snap, ctx, ctx.lang, ctx.userWords)];
+  const problems = [...state.problems, ...checkSnapshot(snap, ctx, ctx.lang, ctx.userStrings)];
   let failed = 0;
   for (const p of problems) if (fail({ ...ctx, route: url, ...p })) failed += 1;
   report.pages.push({
@@ -740,7 +746,7 @@ async function paletteSweep(page, state, ctx) {
     const snap = await settledSnapshot(page);
     const problems = [
       ...state.problems,
-      ...checkSnapshot(snap, ctx, ctx.lang, ctx.userWords),
+      ...checkSnapshot(snap, ctx, ctx.lang, ctx.userStrings),
     ].filter((p) => p.rule !== "horizontal-scroll" || true);
     let failed = 0;
     for (const p of problems)
@@ -791,7 +797,7 @@ async function mobileMoreSweep(page, state, ctx) {
     }
     await settle(page, 700);
     const snap = await settledSnapshot(page);
-    const problems = [...state.problems, ...checkSnapshot(snap, ctx, ctx.lang, ctx.userWords)];
+    const problems = [...state.problems, ...checkSnapshot(snap, ctx, ctx.lang, ctx.userStrings)];
     let failed = 0;
     for (const p of problems)
       if (fail({ ...ctx, route: `more:${rows[i]} -> ${snap.path}`, ...p })) failed += 1;
@@ -807,7 +813,7 @@ async function mobileMoreSweep(page, state, ctx) {
   }
 }
 
-async function sweepPersona(browser, name, persona, ids, userWords) {
+async function sweepPersona(browser, name, persona, ids, userStrings) {
   // A SWEEP_ROUTES param route (seeded in the owner's company) is only visited by personas whose
   // own route list has it: another tenant's record is a deliberate 404.
   const routes = (
@@ -817,12 +823,14 @@ async function sweepPersona(browser, name, persona, ids, userWords) {
   )
     .map((route) => resolveRoute(route, { ...ids, companyId: persona.companyId }))
     .filter(Boolean);
-  for (const lang of LANGS) {
+  // The Arabic-data persona only exists to run the strict Arabic check.
+  for (const lang of name === "ownerAr" ? LANGS.filter((l) => l === "ar") : LANGS) {
     const ctxBase = {
       persona: name,
       lang,
       viewport: "desktop",
-      userWords: name === "trial" ? null : userWords,
+      // trial and ownerAr own no English data at all: nothing is excused there.
+      userStrings: name === "trial" || name === "ownerAr" ? null : userStrings,
     };
     const context = await newContext(browser, { ...persona, name }, lang, {
       width: 1440,
@@ -831,7 +839,7 @@ async function sweepPersona(browser, name, persona, ids, userWords) {
     const page = await context.newPage();
     const state = freshState();
     attach(page, state);
-    if (["trial", "owner", "admin"].includes(name)) await finishOnboarding(page);
+    if (["trial", "owner", "ownerAr", "admin"].includes(name)) await finishOnboarding(page);
     const queue = [...routes];
     const seenKeys = new Set(queue.map(linkKey));
     const shellDone = new Set();
@@ -877,7 +885,7 @@ async function sweepPersona(browser, name, persona, ids, userWords) {
     if (PALETTE && name === "owner") await paletteSweep(page, state, ctxBase);
     await context.close();
 
-    if (MOBILE && (name === "owner" || name === "visitor" || name === "trial")) {
+    if (MOBILE && ["owner", "ownerAr", "visitor", "trial"].includes(name)) {
       const mctx = { ...ctxBase, viewport: "mobile" };
       const mobile = await newContext(browser, { ...persona, name }, lang, {
         width: 390,
@@ -886,8 +894,11 @@ async function sweepPersona(browser, name, persona, ids, userWords) {
       const mpage = await mobile.newPage();
       const mstate = freshState();
       attach(mpage, mstate);
-      for (const url of routes) await loadAndCheck(mpage, mstate, url, mctx);
-      if (name !== "visitor") await mobileMoreSweep(mpage, mstate, mctx);
+      // Phone width: the Arabic-data persona only re-checks the reports.
+      const mobileRoutes =
+        name === "ownerAr" ? routes.filter((r) => REPORT_URLS.includes(r)) : routes;
+      for (const url of mobileRoutes) await loadAndCheck(mpage, mstate, url, mctx);
+      if (name !== "visitor" && name !== "ownerAr") await mobileMoreSweep(mpage, mstate, mctx);
       await mobile.close();
     }
   }
@@ -897,9 +908,9 @@ async function main() {
   const setup = await setupPersonas(BASE);
   const personas = setup.personas;
   for (const p of Object.values(personas)) p.password = "Fake-Sweep-Password-123";
-  const userWords = await harvestUserWords(personas.owner.token, personas.owner.companyId);
-  for (const w of await harvestUserWords(personas.admin.token, personas.admin.companyId))
-    userWords.add(w);
+  const userStrings = await harvestUserStrings(personas.owner.token, personas.owner.companyId);
+  for (const text of await harvestUserStrings(personas.admin.token, personas.admin.companyId))
+    userStrings.add(text);
   report.links = Object.fromEntries(
     Object.entries(setup.links).map(([k, v]) => [k, v ? "set" : "missing"])
   );
@@ -908,7 +919,7 @@ async function main() {
     for (const name of PERSONAS) {
       console.log(`\n=== persona ${name} ===`);
       try {
-        await sweepPersona(browser, name, personas[name] ?? {}, setup.links, userWords);
+        await sweepPersona(browser, name, personas[name] ?? {}, setup.links, userStrings);
       } catch (error) {
         // One persona's crash (server gone, browser closed) is a failure, not the end of the run.
         fail({

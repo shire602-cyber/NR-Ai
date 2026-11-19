@@ -19,7 +19,7 @@ export default function VatTab() {
           <CardDescription>
             {dateRange.from && dateRange.to
               ? formatDateRange(dateRange.from, dateRange.to, locale)
-              : "UAE VAT (5%) summary for the current period"}
+              : t["reportCenter.text.vatPeriod"]}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -29,7 +29,7 @@ export default function VatTab() {
             <div className="space-y-6">
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-4">
-                  <h3 className="font-semibold text-success ">Sales (Output VAT)</h3>
+                  <h3 className="font-semibold text-success ">{t["reportCenter.text.vatSales"]}</h3>
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">
@@ -40,7 +40,7 @@ export default function VatTab() {
                       </span>
                     </div>
                     <div className="flex justify-between font-medium">
-                      <span>VAT collected (5%)</span>
+                      <span>{t["reportCenter.text.vatCollected"]}</span>
                       <span className="tabular-nums">
                         <Money amount={vatSummary?.salesVAT || 0} currency={"AED"} />
                       </span>
@@ -49,7 +49,9 @@ export default function VatTab() {
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="font-semibold text-info ">Purchases (Input VAT)</h3>
+                  <h3 className="font-semibold text-info ">
+                    {t["reportCenter.text.vatPurchases"]}
+                  </h3>
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">
@@ -60,7 +62,7 @@ export default function VatTab() {
                       </span>
                     </div>
                     <div className="flex justify-between font-medium">
-                      <span>VAT paid (5%)</span>
+                      <span>{t["reportCenter.text.vatPaid"]}</span>
                       <span className="tabular-nums">
                         <Money amount={vatSummary?.purchasesVAT || 0} currency={"AED"} />
                       </span>
@@ -78,7 +80,7 @@ export default function VatTab() {
                     className={`tabular-nums ${(vatSummary?.netVATPayable ?? 0) >= 0 ? "text-destructive " : "text-success "}`}
                   >
                     <Money amount={Math.abs(vatSummary?.netVATPayable ?? 0)} currency={"AED"} />
-                    {(vatSummary?.netVATPayable ?? 0) < 0 && " (Refund)"}
+                    {(vatSummary?.netVATPayable ?? 0) < 0 && ` ${t["reportCenter.text.vatRefund"]}`}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-2">

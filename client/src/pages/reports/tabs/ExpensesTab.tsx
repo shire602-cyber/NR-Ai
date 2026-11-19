@@ -1,6 +1,5 @@
 // Reports > expenses tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
-import { useTranslation } from "@/lib/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +15,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { expenseClaimAmount, expenseClaimStatusVariant, formatReportDate } from "../shared";
+import {
+  expenseClaimAmount,
+  expenseClaimStatusVariant,
+  formatReportDate,
+  reportCodeLabel,
+} from "../shared";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDateRange } from "@/lib/format-date";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
@@ -116,7 +121,9 @@ export default function ExpensesTab() {
               <div className="space-y-1">
                 <div className="tabular-nums text-kpi">{expenseReport.unpostedReceipts}</div>
                 <div className="text-xs text-muted-foreground">
-                  {expenseReport.autoPostedReceipts} auto-posted
+                  {formatMessage(t["reportCenter.text.autoPosted"], {
+                    count: expenseReport.autoPostedReceipts,
+                  })}
                 </div>
               </div>
             )}
@@ -318,10 +325,12 @@ export default function ExpensesTab() {
                       >
                         <div>
                           <Badge variant={expenseClaimStatusVariant(row.status)} dot>
-                            {row.status}
+                            {reportCodeLabel(row.status)}
                           </Badge>
                           <div className="mt-1 text-xs text-muted-foreground">
-                            {row.count} claims
+                            {formatMessage(t["reportCenter.text.claimsCount"], {
+                              count: row.count,
+                            })}
                           </div>
                         </div>
                         <div className="text-end tabular-nums">
@@ -364,7 +373,7 @@ export default function ExpensesTab() {
                           </TableCell>
                           <TableCell>
                             <Badge variant={expenseClaimStatusVariant(claim.status)} dot>
-                              {claim.status}
+                              {reportCodeLabel(claim.status)}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-muted-foreground">
@@ -509,7 +518,7 @@ export default function ExpensesTab() {
                           {line.accountCode || "-"}
                         </div>
                       </TableCell>
-                      <TableCell className="capitalize">{line.source}</TableCell>
+                      <TableCell>{reportCodeLabel(line.source)}</TableCell>
                       <TableCell data-numeric>
                         {line.debitAed > 0 ? formatCurrency(line.debitAed, "AED", locale) : "-"}
                       </TableCell>

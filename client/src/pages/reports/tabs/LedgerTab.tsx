@@ -1,6 +1,6 @@
 // Reports > ledger tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,8 @@ import { format } from "date-fns";
 import { formatDateRange } from "@/lib/format-date";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
-import { formatReportDate, ledgerDetailPageSize } from "../shared";
+import { localizeJournalMemo } from "@/lib/journal-memo";
+import { formatReportDate, ledgerDetailPageSize, reportCodeLabel } from "../shared";
 import { useReportsPageContext } from "../context";
 import { StatementDownloads } from "../StatementParts";
 
@@ -117,7 +118,9 @@ export default function LedgerTab() {
               <div className="space-y-1">
                 <div className="tabular-nums text-kpi">{ledgerReport.reviewEntries}</div>
                 <div className="text-xs text-muted-foreground">
-                  {ledgerReport.foreignCurrencyLines} FX lines
+                  {formatMessage(t["reportCenter.text.fxLines"], {
+                    count: ledgerReport.foreignCurrencyLines,
+                  })}
                 </div>
               </div>
             )}
@@ -170,9 +173,7 @@ export default function LedgerTab() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline" className="capitalize">
-                            {row.accountType}
-                          </Badge>
+                          <Badge variant="outline">{reportCodeLabel(row.accountType)}</Badge>
                         </TableCell>
                         <TableCell data-numeric>{row.lineCount}</TableCell>
                         <TableCell data-numeric>
@@ -230,7 +231,7 @@ export default function LedgerTab() {
                 <TableBody>
                   {ledgerSourceRows.map((row) => (
                     <TableRow key={row.source}>
-                      <TableCell className="capitalize">{row.source}</TableCell>
+                      <TableCell>{reportCodeLabel(row.source)}</TableCell>
                       <TableCell data-numeric>{row.entryCount}</TableCell>
                       <TableCell data-numeric>{row.lineCount}</TableCell>
                       <TableCell data-numeric>
@@ -271,8 +272,11 @@ export default function LedgerTab() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">
-                {ledgerLines.length} rows · page {ledgerDetailCurrentPage} of{" "}
-                {ledgerDetailPageCount}
+                {formatMessage(t["reportCenter.text.ledgerRowsPage"], {
+                  rows: ledgerLines.length,
+                  page: ledgerDetailCurrentPage,
+                  pages: ledgerDetailPageCount,
+                })}
               </Badge>
               <StatementDownloads
                 companyId={selectedCompanyId}
@@ -294,10 +298,11 @@ export default function LedgerTab() {
           ) : ledgerLines.length ? (
             <div className="space-y-3">
               <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
-                Showing rows {ledgerDetailStartIndex + 1}-
-                {Math.min(ledgerDetailStartIndex + ledgerDetailPageSize, ledgerLines.length)} of{" "}
-                {ledgerLines.length}. Excel and Google Sheets exports include every filtered ledger
-                line.
+                {formatMessage(t["reportCenter.text.ledgerShowing"], {
+                  from: ledgerDetailStartIndex + 1,
+                  to: Math.min(ledgerDetailStartIndex + ledgerDetailPageSize, ledgerLines.length),
+                  total: ledgerLines.length,
+                })}
               </div>
               <div className="overflow-x-auto rounded-md border">
                 <Table className="min-w-[980px]">
@@ -344,9 +349,9 @@ export default function LedgerTab() {
                             {line.accountCode || "-"}
                           </div>
                         </TableCell>
-                        <TableCell className="capitalize">{line.source}</TableCell>
+                        <TableCell>{reportCodeLabel(line.source)}</TableCell>
                         <TableCell className="max-w-[240px] truncate text-muted-foreground">
-                          {line.memo || "-"}
+                          {line.memo ? localizeJournalMemo(t, line.memo, locale) : "-"}
                         </TableCell>
                         <TableCell data-numeric>
                           {line.debit > 0 ? formatCurrency(line.debit, "AED", locale) : "-"}
@@ -356,7 +361,7 @@ export default function LedgerTab() {
                         </TableCell>
                         <TableCell>
                           {line.hasForeignCurrency ? (
-                            <Badge variant="info">FX</Badge>
+                            <Badge variant="info">{t["reportCenter.text.fxFlag"]}</Badge>
                           ) : (
                             <span className="text-xs text-muted-foreground">-</span>
                           )}
@@ -368,7 +373,7 @@ export default function LedgerTab() {
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-muted-foreground">
-                  Table is paginated for readability; exports are not truncated.
+                  {t["reportCenter.text.ledgerPaginated"]}
                 </p>
                 <div className="flex items-center gap-2">
                   <Button
@@ -378,7 +383,7 @@ export default function LedgerTab() {
                     disabled={ledgerDetailCurrentPage <= 1}
                     onClick={() => setLedgerDetailPage((page) => Math.max(1, page - 1))}
                   >
-                    <ArrowLeft className="me-1.5 h-3.5 w-3.5" />
+                    <ArrowLeft className="me-1.5 h-3.5 w-3.5 rtl:rotate-180" />
                     <T k="reportCenter.previous" />
                   </Button>
                   <Button
@@ -391,7 +396,7 @@ export default function LedgerTab() {
                     }
                   >
                     <T k="reportCenter.tabs.next" />
-                    <ArrowRight className="ms-1.5 h-3.5 w-3.5" />
+                    <ArrowRight className="ms-1.5 h-3.5 w-3.5 rtl:rotate-180" />
                   </Button>
                 </div>
               </div>

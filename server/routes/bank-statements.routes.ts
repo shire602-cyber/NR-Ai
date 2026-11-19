@@ -515,11 +515,17 @@ export function registerBankStatementRoutes(app: Express) {
         type: "bank_import",
         ...notificationCopy(
           "notification.bankStatementImported.title",
-          "notification.bankStatementImported.message",
+          // A re-import that adds nothing (or skips some rows) says so, instead of "0 imported".
+          created.length === 0 && skippedDuplicates > 0
+            ? "notification.bankStatementNothingNew.message"
+            : skippedDuplicates > 0
+              ? "notification.bankStatementImportedSkipped.message"
+              : "notification.bankStatementImported.message",
           // Sweep: the raw format id ("generic") showed in the Arabic notification; the
           // label is a proper name or a file-format acronym.
           {
             count: created.length,
+            skipped: skippedDuplicates,
             bank: bankAccount.bankName,
             format: importFormatLabel(format),
           }

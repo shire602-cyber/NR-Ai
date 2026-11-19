@@ -540,5 +540,11 @@
   "invoices.terms.dueOnReceipt": "مستحقة عند الاستلام",
   "invoices.terms.net": "صافي {days} يوماً",
   "invoices.receive.noCustomers": "تُستلم الدفعات من العملاء المحفوظين، ولا يوجد لديك عملاء بعد.",
-  "invoices.receive.addCustomer": "أضف عميلًا"
+  "invoices.receive.addCustomer": "أضف عميلًا",
+  "invoices.deposits.error.contactId": "اختر العميل.",
+  "invoices.deposits.error.date": "أدخل تاريخ الاستلام.",
+  "invoices.deposits.error.amount": "أدخل مبلغاً أكبر من الصفر بحد أقصى منزلتين عشريتين.",
+  "invoices.deposits.error.paymentAccountId": "اختر الحساب المستلم فيه.",
+  "invoices.deposits.error.invoice": "اختر الفاتورة المراد التطبيق عليها.",
+  "invoices.deposits.noCustomers": "لا يوجد عملاء بعد. أضف عميلاً لتسجيل دفعة مقدمة."
 }

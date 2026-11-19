@@ -8,6 +8,7 @@ import type {
   ReportWorkflowGapFilter,
 } from "@/lib/reportCatalog";
 import type { Vat201ExportReturn } from "@/lib/vat201-export";
+import type { CopyDescriptor } from "@shared/server-copy";
 
 export interface AccountLineItem {
   accountCode?: string;
@@ -642,6 +643,12 @@ export interface MonthEndChecklistItem {
   description: string;
   status: "complete" | "incomplete";
   details?: string;
+  /** Stable keys + params for title/description/details (shared/server-copy.ts). */
+  copy?: {
+    title: CopyDescriptor | null;
+    description: CopyDescriptor | null;
+    details: CopyDescriptor | null;
+  };
 }
 
 export interface MonthEndCloseStatusReport {

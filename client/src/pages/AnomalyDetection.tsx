@@ -3,6 +3,8 @@ import type { CopyDescriptor } from "@shared/server-copy";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatCard } from "@/components/ui/stat-card";
 import { anomalyRuleLabel } from "@/lib/anomaly-rules";
+import { anomalyRecordRef } from "@/lib/anomaly-record-link";
+import { Link } from "wouter";
 import { anomalyMessage, writtenLanguageProps } from "@/lib/server-message";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -57,6 +59,10 @@ interface Anomaly {
   date?: string | null;
   relatedId?: string | null;
   relatedType?: string | null;
+  /** The record's own number / merchant, so the finding says which one it means. */
+  relatedLabel?: string | null;
+  relatedLabelAr?: string | null;
+  relatedDate?: string | null;
 }
 
 interface AnomalySummary {
@@ -372,7 +378,28 @@ export function AnomalyChecks({ embedded = false }: { embedded?: boolean }) {
                           {relatedKey && (
                             <>
                               <span className="mx-1">|</span>
-                              <span>{t[relatedKey]}</span>
+                              {(() => {
+                                const ref = anomalyRecordRef(anomaly, locale);
+                                if (!ref) return <span>{t[relatedKey]}</span>;
+                                const text = (
+                                  <span translate="no" className="tabular-nums">
+                                    {ref.label}
+                                  </span>
+                                );
+                                return ref.href ? (
+                                  <Link
+                                    href={ref.href}
+                                    className="inline-flex min-h-6 items-center gap-1 text-primary hover:underline"
+                                    data-testid={`link-anomaly-record-${anomaly.id}`}
+                                  >
+                                    {t[relatedKey]} {text}
+                                  </Link>
+                                ) : (
+                                  <span>
+                                    {t[relatedKey]} {text}
+                                  </span>
+                                );
+                              })()}
                             </>
                           )}
                         </div>

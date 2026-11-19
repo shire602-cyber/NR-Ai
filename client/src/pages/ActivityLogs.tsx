@@ -81,6 +81,7 @@ export default function ActivityLogs() {
       [
         {
           sheetName: t["activityLog.export.sheet"],
+          rtl: locale === "ar",
           columns: [
             { header: t["activityLog.export.date"], key: "date", width: 20 },
             { header: t["activityLog.export.user"], key: "user", width: 28 },
@@ -93,7 +94,7 @@ export default function ActivityLogs() {
             user: users.find((u) => u.id === log.userId)?.email ?? "",
             action: activityActionLabel(t, log.action),
             entity: activityEntityLabel(t, log.entityType ?? ""),
-            description: log.description,
+            description: activitySentence(t, log, locale),
           })),
         },
       ],
@@ -186,7 +187,7 @@ export default function ActivityLogs() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="flex items-center gap-4 flex-1 min-w-[300px]">
+            <div className="flex w-full min-w-0 items-center gap-4 sm:min-w-[300px] sm:flex-1 sm:w-auto">
               <div className="relative flex-1 max-w-md">
                 <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -198,7 +199,7 @@ export default function ActivityLogs() {
                 />
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               <Select value={actionFilter} onValueChange={setActionFilter}>
                 <SelectTrigger className="w-32" data-testid="select-filter-action">
                   <SelectValue placeholder={t["components.vwColAction"]} />
@@ -256,7 +257,7 @@ export default function ActivityLogs() {
                   </SelectItem>
                 </SelectContent>
               </Select>
-              <Badge variant="secondary">
+              <Badge variant="secondary" className="whitespace-nowrap">
                 {formatMessage(t["activityLog.entries"], { count: filteredLogs.length })}
               </Badge>
             </div>

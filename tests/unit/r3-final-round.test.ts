@@ -156,7 +156,9 @@ describe("CTO 17: command palette", () => {
     expect(shellEn["shell.cmdActionScanReceipt"]).toBe("Scan receipt");
     expect(shellEn["shell.cmdGroupRecent"]).toBe("Recent");
     // Record deep links are honoured by the target pages.
-    expect(read("client/src/pages/Invoices.tsx")).toContain('params.get("open")');
+    // `?open=` is consumed by the hook the Invoices page uses (STEP1 F3: on every navigation).
+    expect(read("client/src/pages/Invoices.tsx")).toContain("useOpenInvoiceParam");
+    expect(read("client/src/hooks/use-open-invoice-param.ts")).toContain('params.get("open")');
     expect(read("client/src/pages/CustomerContacts.tsx")).toContain('.get("q")');
   });
 });

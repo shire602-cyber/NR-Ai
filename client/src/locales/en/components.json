@@ -963,5 +963,7 @@
   "components.newCompanyCancel": "Cancel",
   "components.newCompanyCreate": "Create and set up",
   "components.srv.notification.aiDraftsReview.title": "AI draft journal entries to review: {count}",
-  "components.srv.notification.aiDraftsReview.message": "The AI categorised {count} bank transaction(s) with high confidence. Review and approve each draft journal entry before it posts to the ledger."
+  "components.srv.notification.aiDraftsReview.message": "The AI categorised {count} bank transaction(s) with high confidence. Review and approve each draft journal entry before it posts to the ledger.",
+  "components.srv.notification.bankStatementImportedSkipped.message": "{count} transaction(s) imported from {bank} ({format} format); {skipped} already imported",
+  "components.srv.notification.bankStatementNothingNew.message": "No new transactions from {bank} ({format} format); {skipped} already imported"
 }

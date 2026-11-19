@@ -6,7 +6,11 @@
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { formatDate } from "@/lib/format";
 import { useCallback, useMemo, useState } from "react";
-import { collapseSessions, VISIBLE_DEVICE_ROWS } from "@/pages/settings/sessions";
+import {
+  collapseSessions,
+  describeUserAgent,
+  VISIBLE_DEVICE_ROWS,
+} from "@/pages/settings/sessions";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -98,35 +102,6 @@ type Verification = {
   firstBroken: { seq: number; reason: string } | null;
 };
 
-/** "Chrome · Linux" from a raw user-agent string (the full string stays in the tooltip). */
-function describeUserAgent(ua: string | null | undefined): string {
-  if (!ua) return "—";
-  const browser = /Edg\//.test(ua)
-    ? "Edge"
-    : /OPR\//.test(ua)
-      ? "Opera"
-      : /Firefox\//.test(ua)
-        ? "Firefox"
-        : /Chrome\//.test(ua)
-          ? "Chrome"
-          : /Safari\//.test(ua)
-            ? "Safari"
-            : null;
-  const os = /iPhone|iPad/.test(ua)
-    ? "iOS"
-    : /Android/.test(ua)
-      ? "Android"
-      : /Windows/.test(ua)
-        ? "Windows"
-        : /Mac OS X/.test(ua)
-          ? "macOS"
-          : /Linux/.test(ua)
-            ? "Linux"
-            : null;
-  if (!browser && !os) return ua;
-  return [browser, os].filter(Boolean).join(" · ");
-}
-
 /**
  * Date and time for session / audit rows: the app's one date format plus a 24-hour time in Latin
  * numerals, wrapped in a left-to-right isolate so the numbers keep their order inside Arabic text
@@ -212,7 +187,8 @@ export default function SecuritySettings() {
     });
   const [showAllDevices, setShowAllDevices] = useState(false);
   const deviceGroups = useMemo(
-    () => collapseSessions(sessions.data?.sessions ?? [], describeUserAgent),
+    () =>
+      collapseSessions(sessions.data?.sessions ?? [], (ua) => describeUserAgent(ua) ?? ua ?? ""),
     [sessions.data]
   );
 
@@ -522,14 +498,24 @@ export default function SecuritySettings() {
                 (g) => (
                   <li key={g.key} className="flex items-center justify-between gap-2 py-2">
                     <div className="min-w-0">
-                      <p
-                        className="truncate font-medium"
-                        dir="ltr"
-                        translate="no"
-                        title={g.lead.userAgent ?? undefined}
-                      >
-                        {describeUserAgent(g.lead.userAgent)}
-                      </p>
+                      {describeUserAgent(g.lead.userAgent) ? (
+                        <p
+                          className="truncate font-medium"
+                          dir="ltr"
+                          translate="no"
+                          title={g.lead.userAgent ?? undefined}
+                        >
+                          {describeUserAgent(g.lead.userAgent)}
+                        </p>
+                      ) : (
+                        <p
+                          className="truncate font-medium"
+                          title={g.lead.userAgent ?? undefined}
+                          data-testid="device-unknown"
+                        >
+                          {t["security.unknownDevice"]}
+                        </p>
+                      )}
                       <p className="text-caption text-muted-foreground">
                         <bdi dir="ltr">{g.lead.ipAddress ?? "—"}</bdi> ·{" "}
                         {formatMessage(t["security.sessionLastUsed"], {

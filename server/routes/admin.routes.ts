@@ -9,11 +9,14 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { db } from "../db";
-import { eq, and, desc, gte, lte, type SQL } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql, type SQL } from "drizzle-orm";
 import { activityLogs } from "../../shared/schema";
 import { createSpreadsheetBuffer, parseSpreadsheet } from "../services/spreadsheet.service";
 import { errorMessage } from "../errors";
+import { z } from "zod";
 import { strictBody } from "../http/strict-body";
+import { adminIntegrationStatus } from "../services/admin-integrations";
+import * as googleSheets from "../integrations/googleSheets";
 import { parsedBody } from "../http/parsed-body";
 import {
   adminCreateClientBody,
@@ -232,6 +235,32 @@ export function registerAdminRoutes(app: Express): void {
   );
 
   // =====================================
+  // ADMIN PANEL - INTEGRATIONS (STEP1 F6)
+  // =====================================
+
+  // Which platform credentials are configured. Secrets live in the server environment and are
+  // never entered through the UI.
+  router.get(
+    "/admin/integrations/status",
+    asyncHandler(async (_req: Request, res: Response) => {
+      res.json(adminIntegrationStatus());
+    })
+  );
+
+  // Real Google Sheets connectivity check (creates and removes a scratch spreadsheet).
+  router.post(
+    "/admin/integrations/google-sheets/test",
+    strictBody(z.object({}).strict()),
+    asyncHandler(async (_req: Request, res: Response) => {
+      if (!adminIntegrationStatus().googleSheets.configured) {
+        return res.json({ ok: false, code: "not_configured" });
+      }
+      const ok = await googleSheets.isGoogleSheetsConnected();
+      res.json({ ok, code: ok ? "connected" : "failed" });
+    })
+  );
+
+  // =====================================
   // ADMIN PANEL - DASHBOARD & STATS
   // =====================================
 
@@ -249,8 +278,16 @@ export function registerAdminRoutes(app: Express): void {
       const totalUsers = users.length;
       const adminUsers = users.filter((u) => u.isAdmin).length;
 
+      // AI calls this calendar month (the "AI credits used" tile; one metered call is one credit).
+      const aiUsed = await db.execute(
+        sql`SELECT count(*)::int AS n FROM ai_usage_events WHERE created_at >= date_trunc('month', now())`
+      );
+      const aiCreditsUsed = Number((aiUsed.rows[0] as { n?: number } | undefined)?.n ?? 0);
+
       res.json({
         totalClients: activeClients,
+        totalCompanies: companies.length,
+        aiCreditsUsed,
         totalUsers,
         adminUsers,
         clientUsers: totalUsers - adminUsers,

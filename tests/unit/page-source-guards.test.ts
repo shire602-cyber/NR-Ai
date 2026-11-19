@@ -190,9 +190,18 @@ describe("Mobile launch UX guards", () => {
     it("keeps a sample CSV path for buyers without live bank feeds", () => {
       expect(source).toContain("muhasib-sample-bank-statement.csv");
       expect(source).toContain('t["bankReconciliation.liveBankFeedsAreNot"]');
-      expect(source).toContain("Arabic/English generic");
-      expect(source).toContain("Comma, semicolon, and tab-delimited Excel exports are supported");
-      expect(source).toContain("Amount + Dr/Cr type columns are supported");
+      // Step 1 / F4: the supported-format lines are catalog copy (en and ar), not page literals.
+      for (const key of ["formatCsv", "formatDelimiters", "formatDrCr", "formatPdf"]) {
+        expect(source).toContain(`banking.import.${key}`);
+      }
+      const bankingEn = JSON.parse(readFileSync("client/src/locales/en/banking.json", "utf8"));
+      expect(bankingEn["banking.import.formatCsv"]).toContain("Arabic/English generic");
+      expect(bankingEn["banking.import.formatDelimiters"]).toBe(
+        "Comma, semicolon, and tab-delimited Excel exports are supported"
+      );
+      expect(bankingEn["banking.import.formatDrCr"]).toBe(
+        "Amount + Dr/Cr type columns are supported"
+      );
       expect(source).toContain('data-testid="button-download-sample-bank-csv"');
     });
 
@@ -217,8 +226,15 @@ describe("Mobile launch UX guards", () => {
       expect(source).toContain("select-map-");
       expect(source).toContain('data-testid="select-statement-date-order"');
       expect(source).toContain('data-testid="checkbox-acknowledge-ambiguity"');
-      expect(source).toContain("ربط الأعمدة");
-      expect(source).toContain("Column mapping");
+      // The mapper copy lives in the banking catalog, in both languages (F4).
+      expect(source).toContain("banking.import.columnMapping");
+      for (const [loc, text] of [
+        ["ar", "ربط الأعمدة"],
+        ["en", "Column mapping"],
+      ]) {
+        const catalog = JSON.parse(readFileSync(`client/src/locales/${loc}/banking.json`, "utf8"));
+        expect(catalog["banking.import.columnMapping"]).toBe(text);
+      }
       expect(source).toContain(".xlsx");
     });
 

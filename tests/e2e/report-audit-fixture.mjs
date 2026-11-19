@@ -9,6 +9,9 @@
  *
  * Env:
  *   BASE_URL or first arg          Target app URL.
+ *   REPORT_AUDIT_ARABIC=true      Write the same records with Arabic names and descriptions (the
+ *                                 broken-path sweep's Arabic-data persona: no English user data,
+ *                                 so any English left on a screen in Arabic mode is UI copy).
  *   REPORT_AUDIT_EMAIL            Optional existing/new smoke email.
  *   REPORT_AUDIT_PASSWORD         Optional smoke password.
  *   REPORT_AUDIT_REUSE=true       Login to an existing account instead of registering first.
@@ -38,6 +41,150 @@ const runStamp = new Date()
 const email = process.env.REPORT_AUDIT_EMAIL || `report-audit+${runStamp}@test.local`;
 const password = process.env.REPORT_AUDIT_PASSWORD || "ReportAudit123!";
 const reuseAccount = process.env.REPORT_AUDIT_REUSE === "true";
+const ARABIC = process.env.REPORT_AUDIT_ARABIC === "true";
+
+/** English record text -> Arabic text, applied to every request body when ARABIC is on. */
+const AR_TEXT = {
+  "Report Audit Owner": "مالك التدقيق التجريبي",
+  "Report Audit Trading LLC": "شركة التدقيق التجارية ذ.م.م",
+  "Blue Palm Services LLC": "شركة النخلة الزرقاء للخدمات ذ.م.م",
+  "Atlas Free Zone FZCO": "أطلس للمنطقة الحرة",
+  "Harbor Design Studio": "استوديو الميناء للتصميم",
+  "FX Export Client Inc": "شركة التصدير بالعملات الأجنبية",
+  "Draft Review Customer": "عميل مراجعة المسودة",
+  "Quote Prospect LLC": "شركة العميل المحتمل ذ.م.م",
+  "Gulf Hosting LLC": "شركة الخليج للاستضافة ذ.م.م",
+  "Al Noor Facilities": "مرافق النور",
+  "Strategy Consultants": "مستشارو الاستراتيجية",
+  "Hardware Supplier LLC": "شركة موردي الأجهزة ذ.م.م",
+  "Automation Starter Kit": "حزمة الأتمتة التمهيدية",
+  "Reporting Dashboard License": "ترخيص لوحة التقارير",
+  "Mariam Al Mansoori": "مريم المنصوري",
+  "Omar Khan": "عمر خان",
+  "Audit Workstation Fleet": "أجهزة محطات عمل التدقيق",
+  "Client Presentation Furniture": "أثاث عرض العملاء",
+  "Report Audit Operating Account": "حساب التدقيق التشغيلي",
+  "Emirates NBD": "بنك الإمارات دبي الوطني",
+  ADCB: "بنك أبوظبي التجاري",
+  "CloudStack FZ LLC": "كلاود ستاك للمنطقة الحرة",
+  "Dubai Office Properties": "عقارات مكاتب دبي",
+  "OfficeMart UAE": "أوفيس مارت الإمارات",
+  "Campaign Labs": "مختبرات الحملات",
+  "Legal Partners": "الشركاء القانونيون",
+  Careem: "كريم",
+  "DIFC Cafe": "مقهى مركز دبي المالي",
+  "Dubai Training Hub": "مركز دبي للتدريب",
+  Advisory: "الاستشارات",
+  Operations: "العمليات",
+  "Accounting advisory subscription": "اشتراك الاستشارات المحاسبية",
+  "Accounting automation workshop": "ورشة أتمتة المحاسبة",
+  "Advisory delivery cost allocation": "توزيع تكلفة تقديم الاستشارات",
+  "Advisory delivery payment clearing": "تسوية مدفوعات تقديم الاستشارات",
+  "Advisory receipts clearing": "تسوية مقبوضات الاستشارات",
+  "Advisory revenue allocation": "توزيع إيرادات الاستشارات",
+  "Audit laptop bundle": "حزمة أجهزة التدقيق المحمولة",
+  "Automation readiness workshop": "ورشة جاهزية الأتمتة",
+  "Automation setup": "إعداد الأتمتة",
+  "Cash sales banked": "مبيعات نقدية مودعة",
+  "Cash sales": "مبيعات نقدية",
+  "Client visit taxi and parking": "سيارة أجرة ومواقف لزيارة عميل",
+  "Client working lunch": "غداء عمل مع عميل",
+  "Cloud hosting": "الاستضافة السحابية",
+  "DEWA utilities": "فواتير الكهرباء والماء",
+  "Design automation review": "مراجعة أتمتة التصميم",
+  "Draft proposal": "مقترح مبدئي",
+  "Export advisory": "استشارات التصدير",
+  "Facilities and utilities": "المرافق والخدمات",
+  "Fractional CFO review": "مراجعة المدير المالي بدوام جزئي",
+  "Monthly bookkeeping": "مسك الدفاتر الشهري",
+  "Office rent": "إيجار المكتب",
+  "Opening bank": "رصيد افتتاحي بنكي",
+  "Opening cash": "رصيد افتتاحي نقدي",
+  "Opening equipment": "معدات افتتاحية",
+  "Opening inventory": "مخزون افتتاحي",
+  "Opening loan": "قرض افتتاحي",
+  "Operations receipts clearing": "تسوية مقبوضات العمليات",
+  "Operations revenue allocation": "توزيع إيرادات العمليات",
+  "Operations software allocation": "توزيع برمجيات العمليات",
+  "Operations software payment clearing": "تسوية مدفوعات برمجيات العمليات",
+  "Overheads paid": "مصروفات عامة مدفوعة",
+  "Owner capital": "رأس مال المالك",
+  "Payroll cost plan": "خطة تكلفة الرواتب",
+  "Point-of-sale integration": "ربط نقاط البيع",
+  "Services revenue target": "مستهدف إيرادات الخدمات",
+  "Software and automation tools": "أدوات البرمجيات والأتمتة",
+  "Synthetic advisory cost center": "مركز تكلفة الاستشارات التجريبي",
+  "Synthetic operations cost center": "مركز تكلفة العمليات التجريبي",
+  "Synthetic report audit expense claim": "مطالبة نفقات تجريبية لتدقيق التقارير",
+  "Synthetic stocked product for report audit": "منتج مخزني تجريبي لتدقيق التقارير",
+  "Synthetic cost-center allocation for report audit":
+    "توزيع مراكز التكلفة التجريبي لتدقيق التقارير",
+  "Synthetic opening balance for report audit": "رصيد افتتاحي تجريبي لتدقيق التقارير",
+  "Synthetic approved queue item": "عنصر تجريبي معتمد في قائمة الانتظار",
+  "Synthetic report audit asset with capitalization attempt":
+    "أصل تجريبي لتدقيق التقارير مع محاولة رسملة",
+  "Synthetic report audit asset": "أصل تجريبي لتدقيق التقارير",
+  "Synthetic report audit bill payment": "دفعة فاتورة تجريبية لتدقيق التقارير",
+  "Synthetic report audit bill": "فاتورة مورد تجريبية لتدقيق التقارير",
+  "Synthetic report audit budget": "موازنة تجريبية لتدقيق التقارير",
+  "USD advisory retainer": "اشتراك استشاري بالدولار الأمريكي",
+  "VAT return support": "دعم إقرار ضريبة القيمة المضافة",
+  "Approved reimbursement queue": "قائمة السداد المعتمدة",
+  "Client travel and training reimbursements": "سداد نفقات سفر وتدريب العملاء",
+  "license pool": "مجمع التراخيص",
+  "stock count": "جرد المخزون",
+  each: "حبة",
+  license: "ترخيص",
+  "Computers & Software": "الحواسيب والبرمجيات",
+  "Furniture & Fixtures": "الأثاث والتجهيزات",
+  Marketing: "التسويق",
+  Meals: "الوجبات",
+  "Office Supplies": "مستلزمات المكتب",
+  Payroll: "الرواتب",
+  "Professional Services": "الخدمات المهنية",
+  Rent: "الإيجار",
+  Revenue: "الإيرادات",
+  Software: "البرمجيات",
+  Technology: "التقنية",
+  Training: "التدريب",
+  Travel: "السفر",
+  Utilities: "المرافق",
+  "Exempt dividend income": "إيرادات أرباح موزعة معفاة",
+  "Traffic fines disallowed": "غرامات مرورية غير مقبولة",
+};
+const AR_PREFIX = [
+  ["Report Audit Trading ", "شركة التدقيق للتجارة "],
+  ["Report Audit Operating Budget ", "موازنة التدقيق التشغيلية "],
+  ["Monthly cash sales and overheads ", "المبيعات النقدية والمصروفات الشهرية "],
+  ["Synthetic report audit movement ", "حركة مخزون تجريبية "],
+];
+
+/** The Arabic text for a record string (identity when the Arabic mode is off). */
+function T(text) {
+  if (!ARABIC || typeof text !== "string") return text;
+  if (AR_TEXT[text]) return AR_TEXT[text];
+  for (const [en, ar] of AR_PREFIX) if (text.startsWith(en)) return ar + text.slice(en.length);
+  // Bank statement CSV: the description column carries English text.
+  if (text.includes("\n")) {
+    return text
+      .replace("Customer payment Blue Palm", "دفعة عميل النخلة الزرقاء")
+      .replace("CloudStack payment", "دفعة كلاود ستاك")
+      .replace("Bank service fee", "رسوم خدمة بنكية")
+      .replace("Customer receipt Atlas Free Zone", "مقبوضات العميل أطلس");
+  }
+  return text;
+}
+
+/** Deep-map every string of a request body through T. */
+function arabize(value) {
+  if (!ARABIC) return value;
+  if (typeof value === "string") return T(value);
+  if (Array.isArray(value)) return value.map(arabize);
+  if (value && typeof value === "object" && !(value instanceof Buffer)) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, arabize(v)]));
+  }
+  return value;
+}
 
 const cookieJar = new Map();
 let bearerToken = "";
@@ -106,7 +253,7 @@ async function http(name, route, options = {}) {
   let body = options.body;
   if (body !== undefined && typeof body !== "string" && !(body instanceof Buffer)) {
     headers["Content-Type"] = headers["Content-Type"] || "application/json";
-    body = JSON.stringify(body);
+    body = JSON.stringify(arabize(body));
   }
 
   const response = await fetch(`${BASE}${route}`, { ...options, method, headers, body });
@@ -204,8 +351,9 @@ async function getCompany() {
   }
 
   const preferred =
-    companies.find((company) => String(company.name || "").includes("Report Audit")) ||
-    companies[0];
+    companies.find((company) =>
+      String(company.name || "").match(/Report Audit|شركة التدقيق للتجارة/)
+    ) || companies[0];
   summary.company = { id: preferred.id, name: preferred.name };
 
   await http("company profile", `/api/companies/${preferred.id}`, {
@@ -1206,7 +1354,7 @@ async function seedBank(companyId, account, dates, invoices, receipts) {
     ? transactions.find((txn) => safeNumber(txn.amount) > 0)
     : null;
   const targetInvoice = invoices.find(
-    (invoice) => invoice.customerName === "Blue Palm Services LLC"
+    (invoice) => invoice.customerName === T("Blue Palm Services LLC")
   );
   if (creditTxn?.id && targetInvoice?.id) {
     await optional("manual bank match invoice", () =>
@@ -1225,7 +1373,7 @@ async function seedBank(companyId, account, dates, invoices, receipts) {
     ? transactions.find((txn) => safeNumber(txn.amount) < 0)
     : null;
   const postedReceipt =
-    receipts.find((receipt) => receipt.merchant === "CloudStack FZ LLC") || receipts[0];
+    receipts.find((receipt) => receipt.merchant === T("CloudStack FZ LLC")) || receipts[0];
   if (debitTxn?.id && postedReceipt?.id) {
     await optional("manual bank match receipt", () =>
       http(

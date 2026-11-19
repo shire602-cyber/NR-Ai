@@ -29,6 +29,8 @@ export interface GenericExportSheet {
   sheetName?: string;
   columns: GenericExportColumn[];
   rows: Record<string, unknown>[];
+  /** Right-to-left sheet (Arabic exports). */
+  rtl?: boolean;
 }
 
 const BRAND_COLOR = "FF0F172A"; // slate-900 — matches Muhasib editorial palette
@@ -197,7 +199,7 @@ export async function buildGenericWorkbook(
     const sheet = workbook.addWorksheet(
       safeSheetName(sourceSheet.sheetName || `Sheet ${index + 1}`),
       {
-        views: [{ state: "frozen", ySplit: 1 }],
+        views: [{ state: "frozen", ySplit: 1, rightToLeft: sourceSheet.rtl === true }],
         properties: { defaultRowHeight: 18 },
       }
     );
@@ -213,7 +215,11 @@ export async function buildGenericWorkbook(
     headerRow.eachCell((cell) => {
       cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: HEADER_FONT_COLOR } };
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_COLOR } };
-      cell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: sourceSheet.rtl ? "right" : "left",
+        indent: 1,
+      };
       cell.border = { bottom: { style: "thin", color: { argb: "FF1E293B" } } };
     });
 

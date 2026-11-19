@@ -15,7 +15,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { amountInAed, formatReportDate, invoiceStatusLabel, invoiceStatusVariant } from "../shared";
+import {
+  amountInAed,
+  formatReportDate,
+  invoiceStatusLabel,
+  invoiceStatusVariant,
+  reportCodeLabel,
+} from "../shared";
+import { formatMessage } from "@/lib/i18n";
 import { evidenceSourceHref } from "@/lib/evidenceLinks";
 import { format } from "date-fns";
 import { formatDateRange } from "@/lib/format-date";
@@ -174,7 +181,7 @@ export default function SalesTab() {
                   </div>
                 </div>
                 <div className="rounded-md border p-4">
-                  <div className="text-xs text-muted-foreground">Over 90 days</div>
+                  <div className="text-xs text-muted-foreground">{t["screens.aging90plus"]}</div>
                   <div className="tabular-nums text-2xl font-semibold">
                     <Money amount={receivableAgingSummary.over90} currency={"AED"} />
                   </div>
@@ -260,7 +267,9 @@ export default function SalesTab() {
               dot={productServiceSalesRows.length > 0}
             >
               {productServiceSalesRows.length
-                ? `${productServiceTopShare.toFixed(1)}% top share`
+                ? formatMessage(t["reportCenter.text.topShare"], {
+                    share: productServiceTopShare.toFixed(1),
+                  })
                 : t["reportCenter.noLineItems"]}
             </Badge>
           </div>
@@ -297,9 +306,19 @@ export default function SalesTab() {
                   {productServiceSalesRows.map((row) => (
                     <TableRow key={row.productService}>
                       <TableCell>
-                        <div className="font-medium">{row.productService}</div>
+                        <div className="font-medium">
+                          {row.productService.startsWith("[Credit] ")
+                            ? `${t["reportCenter.text.creditLinePrefix"]} ${row.productService.slice(9)}`
+                            : row.productService}
+                        </div>
                         <div className="text-xs text-muted-foreground">
-                          {row.lineCount} lines - {row.supplyTypes.join(", ")}
+                          {formatMessage(t["reportCenter.text.linesCount"], {
+                            count: row.lineCount,
+                          })}{" "}
+                          -{" "}
+                          {row.supplyTypes
+                            .map((type) => reportCodeLabel(type))
+                            .join(locale === "ar" ? "، " : ", ")}
                         </div>
                       </TableCell>
                       <TableCell data-numeric>{row.invoiceCount}</TableCell>
@@ -481,9 +500,17 @@ export default function SalesTab() {
                       <TableCell data-numeric className=" font-medium">
                         <Money amount={row.outstanding} currency={row.currency} />
                       </TableCell>
-                      <TableCell data-numeric>{row.maxDaysOverdue} days</TableCell>
                       <TableCell data-numeric>
-                        <Badge variant="warning">Level {row.recommendedLevel}</Badge>
+                        {formatMessage(t["reportCenter.text.daysCount"], {
+                          count: row.maxDaysOverdue,
+                        })}
+                      </TableCell>
+                      <TableCell data-numeric>
+                        <Badge variant="warning">
+                          {formatMessage(t["reportCenter.text.levelN"], {
+                            level: row.recommendedLevel,
+                          })}
+                        </Badge>
                       </TableCell>
                     </TableRow>
                   ))}

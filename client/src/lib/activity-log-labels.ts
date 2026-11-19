@@ -75,7 +75,12 @@ const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\
  * rebuilds it from `activityLog.desc.<action>` (the document number is pulled out of the server text) or, for other codes, from the action and
  * entity labels plus the entity id.
  */
-export function activityDescription(t: Translations, log: ActivityLogLike, locale: string): string {
+export function activityDescription(
+  t: Translations,
+  log: ActivityLogLike,
+  locale: string,
+  { includeId = true }: { includeId?: boolean } = {}
+): string {
   const server = log.description ?? "";
   if (locale !== "ar") return server;
   const template = t[`activityLog.desc.${log.action}`];
@@ -88,7 +93,15 @@ export function activityDescription(t: Translations, log: ActivityLogLike, local
       .trim();
   }
   const entity = log.entityType ?? log.resourceType ?? "";
-  const parts = [activityActionLabel(t, log.action)];
+  const action = activityActionLabel(t, log.action);
+  if (!includeId) {
+    // A sentence, not a record: a catalogued action reads as its label alone (as in English),
+    // otherwise "<action> · <entity>" with the entity only when it adds something.
+    if (t[`activityLog.action.${log.action}`] || !entity) return action;
+    const entityLabel = activityEntityLabel(t, entity);
+    return action.includes(entityLabel) ? action : `${action} · ${entityLabel}`;
+  }
+  const parts = [action];
   if (entity) parts.push(activityEntityLabel(t, entity));
   if (log.entityId) parts.push(log.entityId);
   return parts.join(" · ");
@@ -102,7 +115,7 @@ export function withoutIds(text: string): string {
     .replace(UUID_RE, "")
     .replace(/\s+([.,;:])/g, "$1")
     .replace(/\s{2,}/g, " ")
-    .trim();
+    .replace(/^[\s·]+|[\s·]+$/g, "");
 }
 
 /** The `changes` list from a log row's metadata JSON, joined ("name, rate"); "" otherwise. */
@@ -136,7 +149,7 @@ export function withDisplayDates(text: string, locale: string): string {
 /** One sentence for a log row: localised, no ids, display dates, generic server text replaced. */
 export function activitySentence(t: Translations, log: ActivityLogLike, locale: string): string {
   const sentence = readableSentence(
-    withDisplayDates(withoutIds(activityDescription(t, log, locale)), locale),
+    withDisplayDates(withoutIds(activityDescription(t, log, locale, { includeId: false })), locale),
     t[`activityLog.action.${log.action}`]
   );
   return sentence || activityActionLabel(t, log.action);

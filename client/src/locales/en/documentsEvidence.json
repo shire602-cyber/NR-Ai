@@ -74,7 +74,7 @@
   "evidenceCenter.pack.linkedFiles": "{count} linked source files",
   "evidenceCenter.pack.openGaps": "{count} open gaps",
   "evidenceCenter.focus.showing": "Showing proof rows for {source}.",
-  "evidenceCenter.focus.matching": "{count} matching row(s)",
+  "evidenceCenter.focus.matching": "{count, plural, one {# matching row} other {# matching rows}}",
   "evidenceCenter.auditReason": "Audit reason: {reason}",
   "evidenceCenter.reason": "Reason: {reason}",
   "evidenceCenter.noRecipient": "No recipient set",
@@ -174,5 +174,9 @@
   "documentVersions.versionHistory": "Version history",
   "documentVault.expiryAlert": "{expiring} expiring within 30 days · {expired} expired",
   "documentVault.noDocumentsYet": "No documents yet",
-  "documentVault.emptyBody": "Licences, contracts and certificates you upload appear here."
+  "documentVault.emptyBody": "Licences, contracts and certificates you upload appear here.",
+  "complianceCalendar.today": "Today",
+  "complianceCalendar.viewCalendar": "Calendar",
+  "complianceCalendar.viewList": "List",
+  "complianceCalendar.daysShort": "{count}d"
 }

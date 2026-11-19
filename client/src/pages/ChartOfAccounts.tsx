@@ -1,4 +1,5 @@
 import { T } from "@/components/layout/T";
+import { matchesAccountQuery } from "@/lib/account-search";
 import { useState, useMemo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -152,16 +153,10 @@ export default function ChartOfAccounts() {
   const groupedAccounts = useMemo(() => {
     if (!accountsWithBalances) return {};
 
-    const filtered = accountsWithBalances.filter((item) => {
-      if (!searchQuery) return true;
-      const query = searchQuery.toLowerCase();
-      // Sweep: accountants search by account code too ("6100" found nothing before).
-      return (
-        item.account.code.toLowerCase().includes(query) ||
-        item.account.nameEn.toLowerCase().includes(query) ||
-        item.account.nameAr?.toLowerCase().includes(query)
-      );
-    });
+    // Sweep: accountants search by account code too ("6100" found nothing before).
+    const filtered = accountsWithBalances.filter((item) =>
+      matchesAccountQuery(item.account, searchQuery)
+    );
 
     const grouped: Record<string, Array<AccountWithBalance & { depth: number }>> = {};
     ACCOUNT_TYPE_ORDER.forEach((type) => {
@@ -406,7 +401,7 @@ export default function ChartOfAccounts() {
                         {locale === "ar" ? config.labelAr : config.label}
                       </span>
                       <span className="text-caption text-muted-foreground">
-                        {accounts.length} {t.accountsCount}
+                        {formatMessage(t["accounts.groupCount"], { count: accounts.length })}
                       </span>
                       <Money
                         amount={Math.abs(typeTotals[type])}

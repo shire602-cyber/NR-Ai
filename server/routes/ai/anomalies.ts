@@ -9,11 +9,56 @@ import { resolveModel } from "../../services/ai/model-router";
 import { storage } from "../../storage";
 import { AiHandlerContext, UUID_RE, log } from "./shared";
 
+/** Language of the model-written `title` / `description`: the reader's UI language. */
+export function anomalyLanguageInstruction(locale: unknown): string {
+  return typeof locale === "string" && locale.toLowerCase().startsWith("ar")
+    ? "Write every `title` and `description` in clear, professional Modern Standard Arabic (UAE business register). Keep invoice numbers, merchant names, amounts and dates exactly as given and do not translate them. Keep the JSON keys and the `type`, `severity` and `entityType` values in English."
+    : "Write every `title` and `description` in English.";
+}
+
+/** System prompt of the AI anomaly scan, in the reader's language. */
+export function buildAnomalySystemPrompt(locale: unknown): string {
+  return `You are an AI fraud detection and anomaly detection system for UAE business accounting.
+
+Analyze transactions for:
+1. **Duplicates**: Same amount + similar date + same vendor/customer
+2. **Unusual amounts**: Transactions significantly higher/lower than typical patterns
+3. **Timing anomalies**: Transactions at unusual times or frequencies
+4. **Category mismatches**: Expenses that don't match their category
+5. **Potential fraud indicators**: Round numbers, weekend transactions, etc.
+
+Respond with JSON:
+{
+  "anomalies": [
+    {
+      "type": "duplicate|unusual_amount|timing|category_mismatch|potential_fraud",
+      "severity": "low|medium|high|critical",
+      "title": "Brief title",
+      "description": "Detailed explanation. Name documents by their number (invoices) or merchant and date (receipts); never quote an id.",
+      "entityType": "invoice|receipt",
+      "entityId": "uuid",
+      "duplicateOfId": "uuid if duplicate",
+      "confidence": 0.85
+    }
+  ],
+  "summary": {
+    "totalAnomalies": 5,
+    "criticalCount": 1,
+    "potentialDuplicates": 2,
+    "unusualTransactions": 2
+  }
+}
+
+${anomalyLanguageInstruction(locale)}
+
+${DATA_BLOCK_INSTRUCTION}`;
+}
+
 /** POST /api/ai/detect-anomalies */
 export function handlePostAiDetectAnomalies({ getAI }: Pick<AiHandlerContext, "getAI">) {
   return async (req: Request, res: Response) => {
     try {
-      const { companyId } = req.body;
+      const { companyId, locale } = req.body;
       const userId = req.user!.id;
 
       if (!companyId) {
@@ -55,38 +100,7 @@ export function handlePostAiDetectAnomalies({ getAI }: Pick<AiHandlerContext, "g
         messages: [
           {
             role: "system",
-            content: `You are an AI fraud detection and anomaly detection system for UAE business accounting.
-
-Analyze transactions for:
-1. **Duplicates**: Same amount + similar date + same vendor/customer
-2. **Unusual amounts**: Transactions significantly higher/lower than typical patterns
-3. **Timing anomalies**: Transactions at unusual times or frequencies
-4. **Category mismatches**: Expenses that don't match their category
-5. **Potential fraud indicators**: Round numbers, weekend transactions, etc.
-
-Respond with JSON:
-{
-  "anomalies": [
-    {
-      "type": "duplicate|unusual_amount|timing|category_mismatch|potential_fraud",
-      "severity": "low|medium|high|critical",
-      "title": "Brief title",
-      "description": "Detailed explanation. Name documents by their number (invoices) or merchant and date (receipts); never quote an id.",
-      "entityType": "invoice|receipt",
-      "entityId": "uuid",
-      "duplicateOfId": "uuid if duplicate",
-      "confidence": 0.85
-    }
-  ],
-  "summary": {
-    "totalAnomalies": 5,
-    "criticalCount": 1,
-    "potentialDuplicates": 2,
-    "unusualTransactions": 2
-  }
-}
-
-${DATA_BLOCK_INSTRUCTION}`,
+            content: buildAnomalySystemPrompt(locale),
           },
           {
             role: "user",

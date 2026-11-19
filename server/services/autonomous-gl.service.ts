@@ -536,7 +536,7 @@ async function notifyOwnerOfDrafts(companyId: string, draftCount: number): Promi
   await pool.query(
     `INSERT INTO notifications
        (user_id, company_id, type, title, message, priority, related_entity_type, action_url)
-     VALUES ($1, $2, 'system', $3, $4, 'high', 'journal_entry', '/journal')`,
+     VALUES ($1, $2, 'system', $3, $4, 'high', 'journal_entry', '/journal?status=draft')`,
     // Sweep: the link was /journal-entries?status=draft (no such page: 404) and the copy was
     // English-only; it is now catalog copy the client localises.
     [

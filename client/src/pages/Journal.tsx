@@ -10,7 +10,7 @@ import {
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueries } from "@tanstack/react-query";
 import { useForm, useFieldArray } from "react-hook-form";
-import { Link } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
@@ -183,10 +183,17 @@ export default function Journal() {
     retry: false,
   });
 
-  const { data: entries, isLoading } = useQuery<any[]>({
+  const { data: allEntries, isLoading } = useQuery<any[]>({
     queryKey: ["/api/companies", selectedCompanyId, "journal"],
     enabled: !!selectedCompanyId,
   });
+  // STEP1 F3: the AI-drafts notice (and the legacy /journal-entries?status=draft link) opens the
+  // journal filtered to drafts.
+  const [, navigateJournal] = useLocation();
+  const draftsOnly = new URLSearchParams(useSearch()).get("status") === "draft";
+  const entries = draftsOnly
+    ? allEntries?.filter((e) => (e.lifecycleStatus ?? e.status) === "draft")
+    : allEntries;
 
   const form = useForm<JournalFormData>({
     resolver: zodResolver(journalSchema),
@@ -872,6 +879,23 @@ export default function Journal() {
       />
       {/* R3 (CTO 23): books-balanced / period-lock status on the ledger. */}
       <BooksStatusStrip companyId={selectedCompanyId} />
+
+      {draftsOnly && (
+        <div
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-surface-sunken px-3 py-2 text-small"
+          data-testid="journal-drafts-filter"
+        >
+          <span>{t["journal.draftsFilter"]}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigateJournal("/journal", { replace: true })}
+            data-testid="button-clear-drafts-filter"
+          >
+            {t["journal.draftsFilterClear"]}
+          </Button>
+        </div>
+      )}
 
       {isLoading ? (
         <CardListSkeleton count={4} />

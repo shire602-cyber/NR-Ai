@@ -1,6 +1,13 @@
 // Reports > close tab.
 // Split out of Reports.tsx (W5-A, R20-09); state comes from useReportsPage via context.
 import { useTranslation } from "@/lib/i18n";
+import { formatEmbeddedDates } from "@/lib/format-date";
+import { localizeServerText } from "@shared/server-copy";
+import {
+  activityActionLabel,
+  activityEntityLabel,
+  activitySentence,
+} from "@/lib/activity-log-labels";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,13 +23,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { activityLogRiskVariant, consolidatedStatusVariant, formatReportDate } from "../shared";
+import {
+  activityLogRiskVariant,
+  consolidatedStatusVariant,
+  reportCodeLabel,
+  reportDate,
+  reportDateRange,
+} from "../shared";
 import { format } from "date-fns";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 
 export default function CloseTab() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const {
     auditTrailLoading,
     auditTrailPeriodLabel,
@@ -116,7 +129,7 @@ export default function CloseTab() {
               </CardTitle>
               <CardDescription>
                 {monthEndCloseStatus
-                  ? `${formatReportDate(monthEndCloseStatus.periodStart)} - ${formatReportDate(monthEndCloseStatus.periodEnd)}`
+                  ? reportDateRange(monthEndCloseStatus.periodStart, monthEndCloseStatus.periodEnd)
                   : monthEndPeriodLabel}
               </CardDescription>
             </div>
@@ -151,7 +164,9 @@ export default function CloseTab() {
               <TableBody>
                 {monthEndChecklist.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell className="font-medium">{item.title}</TableCell>
+                    <TableCell className="font-medium">
+                      {localizeServerText(item.title, t, item.copy?.title)}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={item.status === "complete" ? "success" : "warning"} dot>
                         {item.status === "complete"
@@ -160,9 +175,16 @@ export default function CloseTab() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {item.description}
+                      {localizeServerText(item.description, t, item.copy?.description)}
                     </TableCell>
-                    <TableCell className="text-sm">{item.details}</TableCell>
+                    <TableCell className="text-sm">
+                      {item.details
+                        ? formatEmbeddedDates(
+                            localizeServerText(item.details, t, item.copy?.details),
+                            locale
+                          )
+                        : ""}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -253,10 +275,10 @@ export default function CloseTab() {
                       <TableBody>
                         {auditTrailReport.actionRows.slice(0, 6).map((row) => (
                           <TableRow key={row.key}>
-                            <TableCell className="capitalize">{row.label}</TableCell>
+                            <TableCell>{activityActionLabel(t, row.key)}</TableCell>
                             <TableCell data-numeric>{row.count}</TableCell>
                             <TableCell className="text-muted-foreground">
-                              {formatReportDate(row.latestAt)}
+                              {reportDate(row.latestAt)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -291,10 +313,10 @@ export default function CloseTab() {
                       <TableBody>
                         {auditTrailReport.entityRows.slice(0, 6).map((row) => (
                           <TableRow key={row.key}>
-                            <TableCell className="capitalize">{row.label}</TableCell>
+                            <TableCell>{activityEntityLabel(t, row.key)}</TableCell>
                             <TableCell data-numeric>{row.count}</TableCell>
                             <TableCell className="text-muted-foreground">
-                              {formatReportDate(row.latestAt)}
+                              {reportDate(row.latestAt)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -334,22 +356,17 @@ export default function CloseTab() {
                       {auditTrailReport.rows.slice(0, 20).map((row) => (
                         <TableRow key={row.id}>
                           <TableCell className="text-muted-foreground">
-                            {formatReportDate(row.createdAt)}
+                            {reportDate(row.createdAt)}
                           </TableCell>
-                          <TableCell className="capitalize">{row.actionLabel}</TableCell>
-                          <TableCell>
-                            <div className="capitalize">{row.entityLabel}</div>
-                            <div className="tabular-nums text-xs text-muted-foreground">
-                              {row.entityId || "-"}
-                            </div>
-                          </TableCell>
+                          <TableCell>{activityActionLabel(t, row.action)}</TableCell>
+                          <TableCell>{activityEntityLabel(t, row.entityType)}</TableCell>
                           <TableCell>
                             <Badge variant={activityLogRiskVariant(row.riskLevel)} dot>
-                              {row.riskLevel}
+                              {reportCodeLabel(row.riskLevel)}
                             </Badge>
                           </TableCell>
                           <TableCell className="max-w-[360px] truncate">
-                            {row.description}
+                            {activitySentence(t, row, locale)}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -490,7 +507,7 @@ export default function CloseTab() {
                             <div className="font-medium">{row.companyName}</div>
                             <div className="text-xs text-muted-foreground">{row.baseCurrency}</div>
                           </TableCell>
-                          <TableCell className="capitalize">{row.companyType}</TableCell>
+                          <TableCell>{reportCodeLabel(row.companyType)}</TableCell>
                           <TableCell data-numeric>
                             <Money amount={row.revenue} currency={"AED"} />
                           </TableCell>

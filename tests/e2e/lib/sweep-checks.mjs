@@ -36,6 +36,74 @@ export function englishWords(line) {
   return (stripAllowlisted(line).match(/[A-Za-z]{2,}/g) ?? []).map((w) => w.toLowerCase());
 }
 
+// Fields that hold machine codes, not text a person typed: `status`, `claimStatus`, `entityType`,
+// `method`, `source`, `currency`, `role`, `code` ... (by name), plus snake_case values anywhere
+// ("bank_reconciliation"). A typed category ("Computers & Software"), unit ("each") or reference
+// ("license pool") is user data.
+const USER_DATA_SKIP_KEY =
+  /^(status|type|kind|role|currency|method|source|code|state|stage)$|(Status|Type|Kind|Method|Source|State|Stage|Code)$/;
+const MACHINE_CODE = /^[a-z][a-z0-9]*(_[a-z0-9]+)+$/;
+const normText = (value) => String(value).replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * Add every user-entered string of an API payload to `into` (normalised whole strings, not
+ * words). An object that has an Arabic name (`nameAr`) contributes no English `nameEn`/`name`: the
+ * screen must show the Arabic one, so the English name is UI-copy-grade text, not data to excuse.
+ * A `memo` counts as data only on a manual journal entry: the memos of system postings
+ * ("Payment received for Invoice ...") are written by the server and must read in Arabic (F9).
+ */
+export function collectUserStrings(value, into, depth = 0, skipMemo = false) {
+  if (depth > 6 || value == null) return into;
+  if (typeof value === "string") {
+    const text = normText(value);
+    if (
+      text.length >= 3 &&
+      text.length <= 300 &&
+      /[a-z]{2,}/.test(text) &&
+      !MACHINE_CODE.test(value.trim())
+    )
+      into.add(text);
+  } else if (Array.isArray(value)) {
+    for (const v of value.slice(0, 300)) collectUserStrings(v, into, depth + 1, skipMemo);
+  } else if (typeof value === "object") {
+    const hasArabicName = typeof value.nameAr === "string" && value.nameAr.trim() !== "";
+    // A journal entry written by the system (invoice, bill, payroll, inventory ...), not by hand.
+    const systemEntry =
+      typeof value.entryNumber === "string" &&
+      typeof value.source === "string" &&
+      value.source !== "manual";
+    for (const [key, v] of Object.entries(value)) {
+      if (USER_DATA_SKIP_KEY.test(key)) continue;
+      if (hasArabicName && (key === "nameEn" || key === "name")) continue;
+      if ((skipMemo || systemEntry) && (key === "memo" || key === "description")) continue;
+      collectUserStrings(v, into, depth + 1, skipMemo || systemEntry);
+    }
+  }
+  return into;
+}
+
+/**
+ * English words left in an Arabic-mode line once exact user-data strings are removed. A line is
+ * excused only where a whole user string (an invoice customer, a vendor, an item) appears in it;
+ * a word that merely occurs somewhere in the data does not excuse a UI sentence that uses it
+ * ("Review" in a heading, "Payroll" in a status). Mark data you render with translate="no" instead.
+ */
+export function englishOutsideUserData(line, userStrings) {
+  if (!userStrings || userStrings.size === 0) return englishWords(line);
+  // Matched case-insensitively, but the rest keeps its case: ALL-CAPS acronyms stay allow-listed.
+  let rest = ` ${String(line).replace(/\s+/g, " ").trim()} `;
+  const lower = rest.toLowerCase();
+  const candidates = [...userStrings]
+    .filter((text) => lower.includes(text))
+    .sort((a, b) => b.length - a.length);
+  for (const text of candidates) {
+    // Whole string only: not the middle of a longer Latin word.
+    const escaped = text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    rest = rest.replace(new RegExp(`(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`, "gi"), " ");
+  }
+  return englishWords(rest);
+}
+
 /**
  * Responses that are deliberate gates, not breakage: 401 before sign-in, 402 plan required,
  * 403 role/tier lock, 404 from a "not found yet" probe the page explains, and 409/422 refusals

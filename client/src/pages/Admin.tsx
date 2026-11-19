@@ -3,18 +3,18 @@ import { T } from "@/components/layout/T";
 import { StatCard } from "@/components/ui/stat-card";
 import { activityActionLabel, activityEntityLabel } from "@/lib/activity-log-labels";
 import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
-import { Money } from "@/components/ui/money";
 import { PageHeader } from "@/components/ui/page-header";
 import { Fragment, useState, useEffect } from "react";
 import { formatDate, formatDateTime } from "@/lib/format-date";
 import { auditDetailEntries } from "@/pages/admin/audit-details";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { IntegrationsTab } from "@/pages/admin/IntegrationsTab";
+import { auditExportRows, filterAuditLogs } from "@/pages/admin/audit-export";
+import { useQuery, useMutation, useIsFetching } from "@tanstack/react-query";
 import {
   Settings,
   Users,
   DollarSign,
   Shield,
-  Activity,
   Plug,
   Save,
   Plus,
@@ -24,8 +24,6 @@ import {
   Search,
   Download,
   BarChart3,
-  FileText,
-  CreditCard,
   Loader2,
 } from "lucide-react";
 import {
@@ -175,7 +173,6 @@ export default function Admin() {
     totalCompanies: number;
     totalInvoices: number;
     totalReceipts: number;
-    monthlyRevenue: number;
     aiCreditsUsed: number;
   }>({
     queryKey: ["/api/admin/stats"],
@@ -310,6 +307,7 @@ export default function Admin() {
       [
         {
           sheetName: t["admin.export.usersSheet"],
+          rtl: locale === "ar",
           columns: [
             { header: t["admin.export.name"], key: "name", width: 28 },
             { header: t["admin.export.email"], key: "email", width: 32 },
@@ -319,12 +317,18 @@ export default function Admin() {
           rows: users.map((u) => ({
             name: u.name,
             email: u.email,
-            type: u.userType,
+            type:
+              u.userType === "client"
+                ? t["adminConsole.userTypeClient"]
+                : u.userType === "customer"
+                  ? t["adminConsole.userTypeCustomer"]
+                  : u.userType,
             created: formatDate(u.createdAt, locale),
           })),
         },
         {
           sheetName: t["admin.export.companiesSheet"],
+          rtl: locale === "ar",
           columns: [
             { header: t["admin.export.name"], key: "name", width: 32 },
             { header: t["admin.export.trn"], key: "trn", width: 18 },
@@ -341,6 +345,36 @@ export default function Admin() {
       ],
       "admin-export"
     );
+
+  // Audit tab: search, action filter and export all work on the localised rows.
+  const [auditSearch, setAuditSearch] = useState("");
+  const [auditAction, setAuditAction] = useState("all");
+  const shownAuditLogs = filterAuditLogs(t, auditLogs, users, {
+    search: auditSearch,
+    action: auditAction,
+  });
+  const exportAuditLogs = () =>
+    exportToExcel(
+      [
+        {
+          sheetName: t["admin.export.auditSheet"],
+          rtl: locale === "ar",
+          columns: [
+            { header: t["pageLabels.timestamp"], key: "date", width: 22 },
+            { header: t["pages.action"], key: "action", width: 30 },
+            { header: t["pageLabels.resource"], key: "resource", width: 22 },
+            { header: t["settingsPages.auditUser"], key: "user", width: 28 },
+            { header: t["reportCenter.details"], key: "details", width: 50 },
+            { header: t["pageLabels.iPAddress"], key: "ip", width: 16 },
+          ],
+          rows: auditExportRows(t, shownAuditLogs, users, locale),
+        },
+      ],
+      "audit-log"
+    );
+  // Visible feedback while the admin queries re-read (STEP1 F6).
+  const refreshing =
+    useIsFetching({ predicate: (q) => /^\/api\/admin\//.test(String(q.queryKey[0])) }) > 0;
 
   // Filter functions
   const filteredUsers = users.filter(
@@ -398,9 +432,11 @@ export default function Admin() {
                   void queryClient.invalidateQueries({ queryKey: [key] });
                 }
               }}
+              disabled={refreshing}
+              aria-busy={refreshing}
               data-testid="button-refresh"
             >
-              <RefreshCw className="w-4 h-4 me-2" />
+              <RefreshCw className={`w-4 h-4 me-2 ${refreshing ? "animate-spin" : ""}`} />
               <T k="pages.refresh" />
             </Button>
           </>
@@ -438,7 +474,7 @@ export default function Admin() {
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
           {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <StatCard
               label={<T k="pageLabels.totalUsers" />}
               value={stats?.totalUsers || 0}
@@ -448,11 +484,6 @@ export default function Admin() {
               label={<T k="pageLabels.activeCompanies" />}
               value={stats?.totalCompanies || 0}
               testId="stat-total-companies"
-            />
-            <StatCard
-              label={<T k="pageLabels.monthlyRevenue" />}
-              value={<Money amount={stats?.monthlyRevenue || 0} currency="AED" />}
-              testId="stat-monthly-revenue"
             />
             <StatCard
               label={<T k="pageLabels.aICreditsUsed" />}
@@ -1232,155 +1263,25 @@ export default function Admin() {
           )}
         </TabsContent>
 
-        {/* Integrations Tab */}
+        {/* Integrations Tab (STEP1 F6: status from the server; no do-nothing buttons) */}
         <TabsContent value="integrations" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <div className="w-8 h-8 bg-[#6772e5] rounded flex items-center justify-center">
-                    <CreditCard className="w-4 h-4 text-white" />
-                  </div>
-                  <T k="pageLabels.stripeIntegration" />
-                </CardTitle>
-                <CardDescription>
-                  <T k="pageLabels.paymentProcessingAndSubscriptionBilling" />
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">
-                    <T k="banking.common.status" />
-                  </span>
-                  <Badge variant="outline" className="bg-warning-subtle text-warning">
-                    <T k="pageLabels.notConfigured" />
-                  </Badge>
-                </div>
-                <div className="space-y-2">
-                  <Label>
-                    <T k="pageLabels.stripePublicKey" />
-                  </Label>
-                  <Input
-                    type="password"
-                    placeholder="pk_live_..."
-                    data-testid="input-stripe-public"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>
-                    <T k="pageLabels.stripeSecretKey" />
-                  </Label>
-                  <Input
-                    type="password"
-                    placeholder="sk_live_..."
-                    data-testid="input-stripe-secret"
-                  />
-                </div>
-                <Button className="w-full" data-testid="button-save-stripe">
-                  <Save className="w-4 h-4 me-2" />
-                  <T k="pageLabels.saveConfiguration" />
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <div className="w-8 h-8 bg-black rounded flex items-center justify-center">
-                    <Activity className="w-4 h-4 text-white" />
-                  </div>
-                  <T k="pageLabels.openAIIntegration" />
-                </CardTitle>
-                <CardDescription>
-                  <T k="pageLabels.aIPoweredFeaturesAndCategorization" />
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">
-                    <T k="banking.common.status" />
-                  </span>
-                  <Badge variant="outline" className="bg-success-subtle text-success">
-                    <T k="pages.connected" />
-                  </Badge>
-                </div>
-                <div className="space-y-2">
-                  <Label>
-                    <T k="pageLabels.aPIKey" />
-                  </Label>
-                  <Input type="password" placeholder="sk-..." data-testid="input-openai-key" />
-                </div>
-                <div className="space-y-2">
-                  <Label>
-                    <T k="pageLabels.model" />
-                  </Label>
-                  <Select defaultValue="gpt-4o">
-                    <SelectTrigger data-testid="select-openai-model">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="gpt-4o">{t["adminConsole.modelRecommended"]}</SelectItem>
-                      <SelectItem value="gpt-4-turbo">
-                        <span translate="no">GPT-4 Turbo</span>
-                      </SelectItem>
-                      <SelectItem value="gpt-3.5-turbo">
-                        <span translate="no">GPT-3.5 Turbo</span>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button className="w-full" data-testid="button-save-openai">
-                  <Save className="w-4 h-4 me-2" />
-                  <T k="pageLabels.saveConfiguration" />
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <div className="w-8 h-8 bg-[#34A853] rounded flex items-center justify-center">
-                    <FileText className="w-4 h-4 text-white" />
-                  </div>
-                  <T k="pageLabels.googleSheets" />
-                </CardTitle>
-                <CardDescription>
-                  <T k="pageLabels.exportDataToGoogleSheets" />
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">
-                    <T k="banking.common.status" />
-                  </span>
-                  <Badge variant="outline" className="bg-success-subtle text-success">
-                    <T k="pages.connected" />
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  <T k="pageLabels.googleSheetsIntegrationIsConfiguredAndReadyToUse" />
-                </p>
-                <Button variant="outline" className="w-full" data-testid="button-test-sheets">
-                  <RefreshCw className="w-4 h-4 me-2" />
-                  <T k="pageLabels.testConnection" />
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
+          <IntegrationsTab />
         </TabsContent>
 
         {/* Audit Log Tab */}
         <TabsContent value="audit" className="space-y-6">
-          <div className="flex items-center gap-4">
-            <div className="relative flex-1 max-w-md">
+          <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+            <div className="relative min-w-0 flex-1 basis-56 max-w-md">
               <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder={t["admin.searchAuditLogs"]}
                 className="ps-10"
+                value={auditSearch}
+                onChange={(e) => setAuditSearch(e.target.value)}
                 data-testid="input-search-audit"
               />
             </div>
-            <Select defaultValue="all">
+            <Select value={auditAction} onValueChange={setAuditAction}>
               <SelectTrigger className="w-40" data-testid="select-audit-filter">
                 <SelectValue placeholder={t["admin.filterByAction"]} />
               </SelectTrigger>
@@ -1402,7 +1303,12 @@ export default function Admin() {
                 </SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" data-testid="button-export-audit">
+            <Button
+              variant="outline"
+              onClick={() => void exportAuditLogs()}
+              disabled={shownAuditLogs.length === 0}
+              data-testid="button-export-audit"
+            >
               <Download className="w-4 h-4 me-2" />
               <T k="pages.export" />
             </Button>
@@ -1439,15 +1345,15 @@ export default function Admin() {
                           <Loader2 className="w-6 h-6 animate-spin mx-auto" />
                         </TableCell>
                       </TableRow>
-                    ) : auditLogs.length === 0 ? (
+                    ) : shownAuditLogs.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                           <T k="pageLabels.noAuditLogsFound" />
                         </TableCell>
                       </TableRow>
                     ) : (
-                      auditLogs.map((log) => {
-                        const entries = auditDetailEntries(log.details);
+                      shownAuditLogs.map((log) => {
+                        const entries = auditDetailEntries(log.details, t);
                         const open = expandedLog === log.id;
                         const actor = log.userId ? users.find((u) => u.id === log.userId) : null;
                         return (

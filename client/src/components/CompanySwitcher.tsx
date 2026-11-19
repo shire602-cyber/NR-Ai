@@ -22,6 +22,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { canAccessNraCenter } from "@shared/access";
 import { useTranslation } from "@/lib/i18n";
 import { NewCompanyDialog } from "@/components/NewCompanyDialog";
+import { canCreateCompany } from "@/lib/company-create";
 
 /**
  * Switch which company the rest of the UI is scoped to. Hidden when the
@@ -50,7 +51,7 @@ export function CompanySwitcher({
   const canReturnToFirm = canAccessNraCenter(currentUser);
   // Broken-path sweep: a customer (owner) can add another company from here; the plan's company
   // cap is enforced by the server and explained by the PlanLimitDialog.
-  const canCreate = currentUser?.userType === "customer";
+  const canCreate = canCreateCompany(currentUser);
   const [creating, setCreating] = useState(false);
 
   // Render when there's something to switch between, OR when an NRA-eligible
