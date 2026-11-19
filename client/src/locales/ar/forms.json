@@ -480,5 +480,9 @@
   "forms.serverErrors.status.422": "تعذّر إتمام الطلب. راجع البيانات المدخلة وحاول مرة أخرى.",
   "forms.serverErrors.status.429": "عدد الطلبات كبير جدًا. انتظر قليلًا ثم حاول مرة أخرى.",
   "forms.serverErrors.status.5xx": "حدث خطأ من جانبنا. حاول مرة أخرى بعد قليل.",
-  "forms.serverErrors.status.other": "تعذّر إتمام الطلب. حاول مرة أخرى."
+  "forms.serverErrors.status.other": "تعذّر إتمام الطلب. حاول مرة أخرى.",
+  "forms.serverErrors.PLAN_ALREADY_ACTIVE": "هذه الشركة على خطة مدفوعة بالفعل.",
+  "forms.serverErrors.FIRM_BILLED": "تتم فوترة هذه الشركة عبر مكتب المحاسبة الخاص بك.",
+  "forms.serverErrors.NO_PLAN_CHOSEN": "اختر خطة أولًا.",
+  "forms.serverErrors.CHECKOUT_AVAILABLE": "الدفع عبر الإنترنت متاح: فعّل خطتك من هناك."
 }

@@ -248,5 +248,6 @@
   "onboarding.wq7StartOpeningBody": "ابدأ من ميزان مراجعة في تاريخ انتقال. نفتح لك الاستيراد بهذا التاريخ.",
   "onboarding.wq7Cutover": "تاريخ الانتقال",
   "onboarding.wq7CutoverHelp": "أرصدتك الافتتاحية كما في نهاية هذا اليوم.",
-  "onboarding.wq7CutoverRequired": "اختر تاريخ الانتقال."
+  "onboarding.wq7CutoverRequired": "اختر تاريخ الانتقال.",
+  "onboarding.trialStartedNote": "بدأت فترتك التجريبية لمدة 14 يومًا مع كل الميزات. الخطة بعد الفترة التجريبية: {plan}. يمكنك تغييرها في أي وقت من الإعدادات › الفوترة."
 }

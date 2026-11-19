@@ -248,5 +248,6 @@
   "onboarding.wq7StartOpeningBody": "Start from a trial balance at a cut-over date. We open the import with that date.",
   "onboarding.wq7Cutover": "Cut-over date",
   "onboarding.wq7CutoverHelp": "Your opening balances are as at the end of this day.",
-  "onboarding.wq7CutoverRequired": "Choose the cut-over date."
+  "onboarding.wq7CutoverRequired": "Choose the cut-over date.",
+  "onboarding.trialStartedNote": "Your 14-day trial of every feature has started. Plan after the trial: {plan}. Change it any time in Settings › Billing."
 }

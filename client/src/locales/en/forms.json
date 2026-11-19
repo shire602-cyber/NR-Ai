@@ -480,5 +480,9 @@
   "forms.serverErrors.status.422": "The request could not be completed. Check the details and try again.",
   "forms.serverErrors.status.429": "Too many requests. Wait a moment and try again.",
   "forms.serverErrors.status.5xx": "Something went wrong on our side. Try again in a moment.",
-  "forms.serverErrors.status.other": "The request could not be completed. Try again."
+  "forms.serverErrors.status.other": "The request could not be completed. Try again.",
+  "forms.serverErrors.PLAN_ALREADY_ACTIVE": "This company is already on a paid plan.",
+  "forms.serverErrors.FIRM_BILLED": "This company is billed through your accounting firm.",
+  "forms.serverErrors.NO_PLAN_CHOSEN": "Choose a plan first.",
+  "forms.serverErrors.CHECKOUT_AVAILABLE": "Online checkout is available: activate your plan there."
 }

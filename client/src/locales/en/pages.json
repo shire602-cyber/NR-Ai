@@ -1016,5 +1016,18 @@
   "pages.subscriptionChoosePlanContact": "Choose {plan}",
   "pages.subscriptionChoosePlanNamed": "Choose {plan}",
   "pages.subscriptionContactNote": "Online payment is not available yet. Choosing a plan sends us an email; we then set up your plan and send a tax invoice.",
-  "pages.subscriptionCompareHelp": "What each plan includes. Modules outside your plan stay readable."
+  "pages.subscriptionCompareHelp": "What each plan includes. Modules outside your plan stay readable.",
+  "pages.subscriptionChosenTitle": "You chose {plan}.",
+  "pages.subscriptionChosenStarts": "It starts after your trial ends on {date}, when you activate it.",
+  "pages.subscriptionChosenPrice": "{price} · billed {cycle}",
+  "pages.subscriptionNothingCharged": "Nothing is charged until you activate it.",
+  "pages.subscriptionActivatePlan": "Activate {plan}",
+  "pages.subscriptionChangePlan": "Change plan",
+  "pages.subscriptionYourChoice": "Your choice",
+  "pages.subscriptionChooseForAfterTrial": "Choose {plan}",
+  "pages.subscriptionChoiceSaved": "Saved: {plan} after your trial",
+  "pages.subscriptionActivationRequested": "Activation requested on {date}",
+  "pages.subscriptionActivationNext": "We'll email you to confirm. Your books stay fully open until {date}.",
+  "pages.subscriptionNoChoice": "Choose the plan you want after your trial.",
+  "pages.subscriptionSeePlans": "See plans"
 }

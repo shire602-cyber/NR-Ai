@@ -1,9 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../lib/queryClient";
 import { useDefaultCompany } from "./useDefaultCompany";
 import type { TrialState } from "@shared/trial";
 import {
   FEATURE_MIN_PLAN,
+  type BillingCycle,
   type PaidPlanId,
   type PlanFeature,
   type PlanLimits,
@@ -19,6 +20,18 @@ export interface EntitlementData {
   features: Record<PlanFeature, boolean> | null;
   limits?: PlanLimits;
   trialEndsAt?: string | null;
+  /** STEP4: the plan chosen for after the trial (never changes what the company can do now). */
+  chosenPlan?: ChosenPlan | null;
+  activationRequestedAt?: string | null;
+}
+
+export interface ChosenPlan {
+  planId: PaidPlanId;
+  billingCycle: BillingCycle;
+  source: string | null;
+  chosenAt: string | null;
+  /** Price per billing period in AED. */
+  price: number;
 }
 
 interface SubscriptionData {
@@ -125,6 +138,8 @@ export function useSubscription() {
     enforcement: subData?.enforcement === true,
     checkoutAvailable: subData?.checkoutAvailable === true,
     trial: subData?.trial ?? null,
+    chosenPlan: entitlement?.chosenPlan ?? null,
+    activationRequestedAt: entitlement?.activationRequestedAt ?? null,
     tierName,
     /** Trial over without a plan, with enforcement on: the workspace is read-only. */
     isReadOnly: !gatesOpen && planState === "expired",
@@ -135,4 +150,29 @@ export function useSubscription() {
     getRequiredTier,
     isLoading: subLoading || usageLoading,
   };
+}
+
+/** STEP4: the customer's mutations on their after-trial choice; both refresh the subscription. */
+export function usePlanChoiceActions() {
+  const { companyId } = useDefaultCompany();
+  const queryClient = useQueryClient();
+  const refresh = () =>
+    queryClient.invalidateQueries({
+      queryKey: ["/api/companies", companyId, "billing", "subscription"],
+    });
+  const choose = useMutation({
+    mutationFn: (body: { planId: PaidPlanId; billingCycle: BillingCycle }) =>
+      apiRequest("PUT", `/api/companies/${companyId}/billing/chosen-plan`, body),
+    onSuccess: refresh,
+  });
+  const activate = useMutation({
+    mutationFn: (note?: string) =>
+      apiRequest(
+        "POST",
+        `/api/companies/${companyId}/billing/activation-request`,
+        note ? { note } : {}
+      ),
+    onSuccess: refresh,
+  });
+  return { choose, activate };
 }

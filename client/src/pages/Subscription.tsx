@@ -12,10 +12,10 @@ import {
 } from "@/components/marketing/plans";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { T } from "@/components/layout/T";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
-import { useSubscription } from "@/hooks/useSubscription";
+import { usePlanChoiceActions, useSubscription, type ChosenPlan } from "@/hooks/useSubscription";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { apiRequest } from "@/lib/queryClient";
@@ -29,7 +29,13 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { ApiError } from "@/lib/queryClient";
 import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
-import { TOP_PLAN_ID, planRank, type PaidPlanId } from "@shared/plans";
+import {
+  TOP_PLAN_ID,
+  isBillingCycle,
+  isPaidPlanId,
+  planRank,
+  type PaidPlanId,
+} from "@shared/plans";
 import {
   Check,
   ExternalLink,
@@ -137,6 +143,102 @@ function UsageMeter({
   );
 }
 
+/** STEP4: "You chose Professional" and what happens next, honest about activation. */
+function AfterTrialBlock({
+  planName,
+  chosenPlan,
+  activationRequestedAt,
+  endsAt,
+  canManage,
+  pending,
+  onActivate,
+  onChange,
+}: {
+  planName: string | null;
+  chosenPlan: ChosenPlan | null;
+  activationRequestedAt: string | null;
+  endsAt: string | null;
+  canManage: boolean;
+  pending: boolean;
+  onActivate: () => void;
+  onChange: () => void;
+}) {
+  const { t, locale } = useTranslation();
+  const date = endsAt ? formatDisplayDate(endsAt, locale) : "";
+  return (
+    <div
+      id="after-trial"
+      className="scroll-mt-4 space-y-3 rounded-lg border border-border p-4"
+      data-testid="subscription-chosen-plan"
+    >
+      {chosenPlan && planName ? (
+        <>
+          <p className="font-medium">
+            {formatMessage(t["pages.subscriptionChosenTitle"], { plan: planName })}{" "}
+            <span className="font-normal text-muted-foreground">
+              {formatMessage(t["pages.subscriptionChosenStarts"], { date })}
+            </span>
+          </p>
+          <p className="text-muted-foreground">
+            {formatMessage(t["pages.subscriptionChosenPrice"], {
+              price: formatMoneyText(chosenPlan.price, "AED", locale, { fractionDigits: 0 }),
+              cycle: t[`pages.subscriptionCycle_${chosenPlan.billingCycle}`],
+            })}
+          </p>
+          {activationRequestedAt ? (
+            <div data-testid="activation-requested">
+              <Badge dot variant="info">
+                {formatMessage(t["pages.subscriptionActivationRequested"], {
+                  date: formatDisplayDate(activationRequestedAt, locale),
+                })}
+              </Badge>
+              <p className="mt-2 text-muted-foreground">
+                {formatMessage(t["pages.subscriptionActivationNext"], { date })}
+              </p>
+            </div>
+          ) : (
+            <>
+              <p className="text-muted-foreground">{t["pages.subscriptionNothingCharged"]}</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  onClick={onActivate}
+                  disabled={pending || !canManage}
+                  title={!canManage ? t["common.noPermission"] : undefined}
+                  data-testid="button-activate-plan"
+                >
+                  {pending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+                  {formatMessage(t["pages.subscriptionActivatePlan"], { plan: planName })}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={onChange}
+                  data-testid="button-change-plan"
+                >
+                  {t["pages.subscriptionChangePlan"]}
+                </Button>
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          <p>{t["pages.subscriptionNoChoice"]}</p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onChange}
+            data-testid="button-see-plans-choice"
+          >
+            {t["pages.subscriptionSeePlans"]}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function CompareCell({ cell, unit }: { cell: Cell; unit?: CompareRow["unit"] }) {
   const { t } = useTranslation();
   if (cell === true) {
@@ -172,8 +274,25 @@ function CompareCell({ cell, unit }: { cell: Cell; unit?: CompareRow["unit"] }) 
 export default function Subscription() {
   const { t, locale } = useTranslation();
   const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
-  const { subscription, usage, entitlement, planState, trial, isLoading, checkoutAvailable } =
-    useSubscription();
+  const {
+    subscription,
+    usage,
+    entitlement,
+    planState,
+    trial,
+    isLoading,
+    checkoutAvailable,
+    chosenPlan,
+    activationRequestedAt,
+  } = useSubscription();
+  const { choose, activate } = usePlanChoiceActions();
+  // STEP4: /subscription?choose=<plan>&cycle=<cycle> (a signed-in visitor who followed a plan link).
+  const [highlight] = useState<PaidPlanId | null>(() => {
+    if (typeof window === "undefined") return null;
+    const id = new URLSearchParams(window.location.search).get("choose");
+    return isPaidPlanId(id) ? id : null;
+  });
+  const inTrialFlow = (planState === "trial" || planState === "expired") && !checkoutAvailable;
   const { companyId } = useDefaultCompany();
   const { can } = useCompanyPermission();
   const { toast } = useToast();
@@ -222,6 +341,22 @@ export default function Subscription() {
       });
     },
   });
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (highlight) {
+      const c = new URLSearchParams(window.location.search).get("cycle");
+      if (isBillingCycle(c)) setBillingCycle(c);
+      document.getElementById("subscription-plans")?.scrollIntoView({ block: "center" });
+      document
+        .querySelector<HTMLElement>(
+          `[data-testid="plan-choose-${highlight}"], [data-testid="plan-upgrade-${highlight}"]`
+        )
+        ?.focus();
+    } else if (window.location.hash === "#after-trial") {
+      document.getElementById("after-trial")?.scrollIntoView({ block: "center" });
+    }
+  }, [isLoading, highlight]);
 
   if (isLoading) {
     return (
@@ -350,6 +485,22 @@ export default function Subscription() {
                   </span>
                 </div>
               ) : null}
+              {inTrialFlow ? (
+                <AfterTrialBlock
+                  planName={chosenPlan ? t[planNameKey(chosenPlan.planId)] : null}
+                  chosenPlan={chosenPlan}
+                  activationRequestedAt={activationRequestedAt ?? null}
+                  endsAt={trial?.endsAt ?? entitlement?.trialEndsAt ?? null}
+                  canManage={canManageBilling}
+                  pending={activate.isPending}
+                  onActivate={() =>
+                    activate.mutate(undefined, {
+                      onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
+                    })
+                  }
+                  onChange={scrollToPlans}
+                />
+              ) : null}
               <p className="text-muted-foreground">{t["pages.subscriptionUnlimitedUsersNote"]}</p>
               {subscription?.stripeCustomerId ? (
                 <Button
@@ -468,9 +619,54 @@ export default function Subscription() {
             {PLANS.map((plan) => {
               const isCurrent = plan.id === paidPlan;
               const planName = t[planNameKey(plan.id)];
+              const isChosen = inTrialFlow && chosenPlan?.planId === plan.id;
               const action = isCurrent ? (
                 <Button variant="outline" className="h-10 w-full" disabled>
                   <T k="pageLabels.currentPlan" />
+                </Button>
+              ) : isChosen && planState === "expired" ? (
+                <Button
+                  className="h-10 w-full"
+                  onClick={() => activate.mutate(undefined)}
+                  disabled={activate.isPending || !canManageBilling || !!activationRequestedAt}
+                  title={!canManageBilling ? t["common.noPermission"] : undefined}
+                  data-testid={`plan-activate-${plan.id}`}
+                >
+                  {formatMessage(t["pages.subscriptionActivatePlan"], { plan: planName })}
+                </Button>
+              ) : isChosen ? (
+                <Button
+                  variant="outline"
+                  className="h-10 w-full"
+                  disabled
+                  data-testid={`plan-chosen-${plan.id}`}
+                >
+                  <Check className="me-1.5 h-4 w-4" aria-hidden />
+                  {t["pages.subscriptionYourChoice"]}
+                </Button>
+              ) : inTrialFlow ? (
+                <Button
+                  className="h-10 w-full"
+                  variant={plan.featured ? "default" : "outline"}
+                  disabled={choose.isPending || !canManageBilling}
+                  title={!canManageBilling ? t["common.noPermission"] : undefined}
+                  onClick={() =>
+                    choose.mutate(
+                      { planId: plan.id, billingCycle },
+                      {
+                        onSuccess: () =>
+                          toast({
+                            title: formatMessage(t["pages.subscriptionChoiceSaved"], {
+                              plan: planName,
+                            }),
+                          }),
+                        onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
+                      }
+                    )
+                  }
+                  data-testid={`plan-choose-${plan.id}`}
+                >
+                  {formatMessage(t["pages.subscriptionChooseForAfterTrial"], { plan: planName })}
                 </Button>
               ) : !checkoutAvailable && canManageBilling ? (
                 <Button
@@ -507,7 +703,11 @@ export default function Subscription() {
                   cycle={billingCycle}
                   action={action}
                   headingLevel="h3"
-                  className={isCurrent ? "ring-1 ring-primary/40" : undefined}
+                  className={
+                    isCurrent || isChosen || highlight === plan.id
+                      ? "ring-1 ring-primary/40"
+                      : undefined
+                  }
                 />
               );
             })}
