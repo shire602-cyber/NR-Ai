@@ -26,7 +26,7 @@
  *
  * Environment: BASE_URL (default http://localhost:5000), DATABASE_URL (required), SHOT_DIR (save
  * screenshots there), E2E_SCENARIOS (comma list of en,ar,en-ar-contact), E2E_VIEWPORTS
- * (phone,desktop), CHROMIUM_PATH. Exits 1 on any failed check.
+ * (phone,android,desktop; android = 360 px, run it on its own after an app restart: bad links are throttled), CHROMIUM_PATH. Exits 1 on any failed check.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -224,7 +224,9 @@ async function openPage(browser, viewport, url, opts) {
   const base =
     viewport === "phone"
       ? { ...devices["iPhone 13"] }
-      : { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 };
+      : viewport === "android"
+        ? { ...devices["Galaxy S9+"], viewport: { width: 360, height: 740 } }
+        : { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 };
   const ctx = await browser.newContext({
     ...base,
     locale: opts.locale || "en-US",
@@ -247,6 +249,7 @@ async function openPage(browser, viewport, url, opts) {
     if (/\.js(\?|$)/.test(u)) jsBytes += Number(r.headers()["content-length"] || 0);
     if (u.startsWith("/api/") && r.status() >= 400) badApi.push(`${r.status()} ${u}`);
   });
+  if (opts.intercept) await opts.intercept(page);
   const response = await page.goto(BASE + url, { waitUntil: "load" });
   await page
     .waitForLoadState("networkidle", { timeout: 10000 })
@@ -277,11 +280,17 @@ async function openPage(browser, viewport, url, opts) {
     })(),
     html: document.body.innerHTML,
   }));
-  const ignorable = opts.valid
-    ? () => false
-    : (e) => /Failed to load resource: the server responded with a status of (404|410)/.test(e);
+  const ignorable = opts.intercept
+    ? (e) => /Failed to load resource: the server responded with a status of (404|410|500)/.test(e)
+    : opts.valid
+      ? () => false
+      : (e) => /Failed to load resource: the server responded with a status of (404|410)/.test(e);
   const realErrors = errors.filter((e) => !ignorable(e));
-  const apiBad = opts.valid ? badApi : badApi.filter((e) => !/^(404|410) \/api\//.test(e));
+  const apiBad = opts.intercept
+    ? badApi.filter((e) => !/^500 \/api\//.test(e))
+    : opts.valid
+      ? badApi
+      : badApi.filter((e) => !/^(404|410) \/api\//.test(e));
   check(response?.ok(), `page status ${response?.status()}`);
   check(realErrors.length === 0, "0 console errors", realErrors);
   check(
@@ -573,6 +582,26 @@ async function runScenario(browser, scenario, viewport) {
     });
     await checkTargets(p.page, ["portal-language"]);
     await p.ctx.close();
+    // A failing portal API is a readable state with a title, never a blank page.
+    const pf = await openPage(browser, viewport, new URL(portalLink).pathname, {
+      ...lean,
+      valid: false,
+      locale: scenario.lang === "ar" ? "ar-AE" : "en-US",
+      name: "portal-api-failure",
+      intercept: (pg) =>
+        pg.route("**/api/portal/**", (r) =>
+          r.fulfill({ status: 500, contentType: "application/json", body: '{"message":"boom"}' })
+        ),
+    });
+    check(
+      (await pf.page.locator("main, body").first().innerText()).trim().length > 20,
+      "portal with a failing API is not blank"
+    );
+    check(
+      !/boom/.test(await pf.page.locator("body").innerText()),
+      "portal with a failing API does not show the raw server message"
+    );
+    await pf.ctx.close();
   }
   const sto = `st+${RUN}${scenario.id}${viewport}@customer.example`;
   const st = await api(
@@ -670,6 +699,67 @@ async function runScenario(browser, scenario, viewport) {
   const expTitle = await exp.page.locator("h1").textContent();
   check(/expired|انتهت/.test(expTitle), "expired invoice link says expired", expTitle);
   await exp.ctx.close();
+  // Long English and Arabic names, 24 lines: the public page stays inside the screen.
+  {
+    const longEn = `Al Noor International Trading and Contracting Company Limited Liability ${RUN}`;
+    const longAr =
+      "شركة النور الدولية للتجارة والمقاولات العامة وخدمات الصيانة والتشغيل ذات المسؤولية المحدودة";
+    const lct = await api("POST", `/api/companies/${cid}/customer-contacts`, tok, {
+      name: longEn,
+      nameAr: longAr,
+      email: `long+${RUN}${scenario.id}${viewport}@customer.example`,
+      emirate: "dubai",
+      ...(ar ? { preferredLanguage: "ar" } : {}),
+    });
+    const linv = await api("POST", `/api/companies/${cid}/invoices`, tok, {
+      contactId: lct.json.id,
+      date: d(-3),
+      dueDate: d(27),
+      placeOfSupplyEmirate: "dubai",
+      lines: Array.from({ length: 24 }, (_, i) => ({
+        description: `Facilities management, security and landscaping services line ${i + 1}`,
+        quantity: 1 + i,
+        unitPrice: 1234.5 + i,
+        vatRate: 0.05,
+      })),
+    });
+    check(linv.status === 200, "create long invoice", linv.text.slice(0, 120));
+    await api("PATCH", `/api/invoices/${linv.json.id}/status`, tok, { status: "sent" });
+    const lto = `longinv+${RUN}${scenario.id}${viewport}@customer.example`;
+    await api("POST", `/api/companies/${cid}/invoices/${linv.json.id}/send-email`, tok, {
+      to: lto,
+    });
+    const lmail = await outbox("invoice", lto);
+    const llink = lmail && hrefsOf(lmail.html).find((l) => /\/view\/invoice\/[0-9a-f]{32}/.test(l));
+    check(!!llink, "long invoice e-mail links to the invoice page");
+    if (llink) {
+      const lp = await openPage(browser, viewport, new URL(llink).pathname, {
+        ...lean,
+        allow: [...allow, longEn, "Facilities management, security and landscaping services line"],
+        name: "invoice-long",
+      });
+      await lp.ctx.close();
+      // A failing invoice API shows the page's own error state, not a blank screen.
+      const lf = await openPage(browser, viewport, new URL(llink).pathname, {
+        lean: true,
+        valid: false,
+        lang: ar ? "ar" : "en",
+        allow,
+        locale: ar ? "ar-AE" : "en-US",
+        name: "invoice-api-failure",
+        intercept: (pg) =>
+          pg.route(/\/api\/public\/invoices\/[0-9a-f]{32}$/, (r) =>
+            r.fulfill({ status: 500, contentType: "application/json", body: '{"message":"boom"}' })
+          ),
+      });
+      check(
+        (await lf.page.locator("body").innerText()).trim().length > 20 &&
+          !/boom/.test(await lf.page.locator("body").innerText()),
+        "invoice link with a failing API shows a state, not a blank page or the raw message"
+      );
+      await lf.ctx.close();
+    }
+  }
   // Each bad link counts against the per-IP portal throttle (429 after about 20), so the bad
   // approver link is tried on the desktop runs only.
   if (viewport === "desktop") {

@@ -236,5 +236,8 @@
   "banking.import.formatDelimiters": "Comma, semicolon, and tab-delimited Excel exports are supported",
   "banking.import.formatDrCr": "Amount + Dr/Cr type columns are supported",
   "banking.import.formatPdf": "PDF — text extraction with OCR fallback",
-  "banking.import.importAction": "Import"
+  "banking.import.importAction": "Import",
+  "banking.rules.category": "Category (optional)",
+  "banking.rules.categoryPlaceholder": "e.g. Rent, Salary, Utilities",
+  "banking.rules.memo": "Memo (optional)"
 }

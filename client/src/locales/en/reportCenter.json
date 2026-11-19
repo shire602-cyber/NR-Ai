@@ -975,5 +975,15 @@
   "reportCenter.text.creditLinePrefix": "[Credit]",
   "reportCenter.downloadPdfArabic": "PDF (العربية)",
   "reportCenter.downloadPdfEnglish": "PDF (English)",
-  "reportCenter.sheetsNotConnected": "Google Sheets is not connected. Connect it in Integrations."
+  "reportCenter.sheetsNotConnected": "Google Sheets is not connected. Connect it in Integrations.",
+  "reportCenter.code.reversal": "Reversal",
+  "reportCenter.code.opening_balance": "Opening balance",
+  "reportCenter.code.cash_sale": "Cash sale",
+  "reportCenter.code.payment_gateway_fee": "Payment gateway fee",
+  "reportCenter.code.customer_receipt_fee": "Customer receipt fee",
+  "reportCenter.code.invoice_cogs": "Invoice cost of goods sold",
+  "reportCenter.code.credit_note_cogs": "Credit note cost of goods sold",
+  "reportCenter.code.expense_claim_payment": "Expense claim payment",
+  "reportCenter.code.inventory_adjustment": "Inventory adjustment",
+  "reportCenter.code.manual_workpaper": "Manual workpaper"
 }

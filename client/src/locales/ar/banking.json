@@ -236,5 +236,8 @@
   "banking.import.formatDelimiters": "تُدعم ملفات Excel المفصولة بفاصلة أو فاصلة منقوطة أو علامة جدولة",
   "banking.import.formatDrCr": "تُدعم أعمدة المبلغ مع نوع مدين/دائن",
   "banking.import.formatPdf": "PDF — استخراج النص مع التعرّف الضوئي عند الحاجة",
-  "banking.import.importAction": "استيراد"
+  "banking.import.importAction": "استيراد",
+  "banking.rules.category": "التصنيف (اختياري)",
+  "banking.rules.categoryPlaceholder": "مثال: إيجار، رواتب، مرافق",
+  "banking.rules.memo": "ملاحظة (اختياري)"
 }

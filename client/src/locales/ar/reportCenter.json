@@ -975,5 +975,15 @@
   "reportCenter.text.creditLinePrefix": "[إشعار دائن]",
   "reportCenter.downloadPdfArabic": "PDF (العربية)",
   "reportCenter.downloadPdfEnglish": "PDF (الإنجليزية)",
-  "reportCenter.sheetsNotConnected": "خدمة Google Sheets غير متصلة. اربطها من صفحة التكاملات."
+  "reportCenter.sheetsNotConnected": "خدمة Google Sheets غير متصلة. اربطها من صفحة التكاملات.",
+  "reportCenter.code.reversal": "عكس قيد",
+  "reportCenter.code.opening_balance": "رصيد افتتاحي",
+  "reportCenter.code.cash_sale": "بيع نقدي",
+  "reportCenter.code.payment_gateway_fee": "رسوم بوابة الدفع",
+  "reportCenter.code.customer_receipt_fee": "رسوم إيصال العميل",
+  "reportCenter.code.invoice_cogs": "تكلفة البضاعة المباعة للفاتورة",
+  "reportCenter.code.credit_note_cogs": "تكلفة البضاعة المباعة للإشعار الدائن",
+  "reportCenter.code.expense_claim_payment": "دفعة مطالبة مصروفات",
+  "reportCenter.code.inventory_adjustment": "تسوية المخزون",
+  "reportCenter.code.manual_workpaper": "ورقة عمل يدوية"
 }

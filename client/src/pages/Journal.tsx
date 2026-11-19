@@ -987,7 +987,7 @@ export default function Journal() {
                           <Link
                             href={`/journal/${entry.id}`}
                             dir="ltr"
-                            className="min-h-0 whitespace-nowrap font-medium tabular-nums text-foreground [unicode-bidi:isolate] hover:underline"
+                            className="whitespace-nowrap font-medium tabular-nums text-foreground [unicode-bidi:isolate] hover:underline max-md:inline-flex max-md:min-h-11 max-md:items-center"
                           >
                             {entry.entryNumber}
                           </Link>
@@ -1005,7 +1005,10 @@ export default function Journal() {
                           className="text-xs text-muted-foreground"
                           data-testid={`text-reversed-by-${entry.id}`}
                         >
-                          <Link href={`/journal/${entry.reversedByEntry.id}`}>
+                          <Link
+                            href={`/journal/${entry.reversedByEntry.id}`}
+                            className="max-md:inline-flex max-md:min-h-11 max-md:items-center"
+                          >
                             {formatMessage(
                               lifecycle === "voided"
                                 ? t["journal.voidedBy"]
@@ -1020,7 +1023,10 @@ export default function Journal() {
                           className="text-xs text-muted-foreground"
                           data-testid={`text-reversal-of-${entry.id}`}
                         >
-                          <Link href={`/journal/${entry.reversalOfEntry.id}`}>
+                          <Link
+                            href={`/journal/${entry.reversalOfEntry.id}`}
+                            className="max-md:inline-flex max-md:min-h-11 max-md:items-center"
+                          >
                             {formatMessage(t["journal.reversalOf"], {
                               number: entry.reversalOfEntry.entryNumber,
                             })}
@@ -1256,7 +1262,11 @@ function JournalLinesTable({
     lineParams?: Record<string, string> | null;
     account?: { code?: string; nameEn?: string; nameAr?: string | null } | null;
   }>;
-  entry?: { memo?: string | null; memoKey?: string | null; memoParams?: Record<string, string> | null };
+  entry?: {
+    memo?: string | null;
+    memoKey?: string | null;
+    memoParams?: Record<string, string> | null;
+  };
 }) {
   const { t, locale } = useTranslation();
   const debit = lines.reduce((sum, l) => sum + Number(l.debit || 0), 0);
