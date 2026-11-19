@@ -1549,7 +1549,6 @@ export default function Invoices() {
           : t["forms.invoice.newDesc"]
       }
       status={editingInvoice ? <InvoiceStatusBadge status={editingInvoice.status} /> : undefined}
-      headerActions={isIssued && editingInvoice ? issuedActions : undefined}
       previewLabel={t["invoices.editor.preview"]}
       preview={
         isIssued ? undefined : (
@@ -1653,6 +1652,7 @@ export default function Invoices() {
             <FormErrorSummary />
             {isIssued && editingInvoice && (
               <>
+                {issuedActions}
                 <div
                   className="flex items-start gap-2 rounded-lg border border-border bg-surface-sunken p-3 text-small text-muted-foreground"
                   role="status"
