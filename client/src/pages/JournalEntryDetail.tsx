@@ -1,4 +1,4 @@
-import { localizeJournalMemo } from "@/lib/journal-memo";
+import { localizeJournalLine, localizeJournalMemo } from "@/lib/journal-memo";
 import { DatePicker } from "@/components/ui/date-picker";
 import { T } from "@/components/layout/T";
 import { useState } from "react";
@@ -47,6 +47,10 @@ interface JournalLine {
   accountId: string;
   debit: string | number;
   credit: string | number;
+  description?: string | null;
+  /** Stored key + params of a system line description (migration 0132). */
+  lineKey?: string | null;
+  lineParams?: Record<string, string> | null;
   account?: {
     id: string;
     code: string;
@@ -465,6 +469,15 @@ export default function JournalEntryDetail() {
                 </TableCell>
                 <TableCell data-truncate="" dir="auto">
                   {accountDisplayName(line.account, locale) || t["screens.unknownAccount"]}
+                  {line.description ? (
+                    <span
+                      dir="auto"
+                      className="block truncate text-caption text-muted-foreground"
+                      data-testid={`text-line-description-${index}`}
+                    >
+                      {localizeJournalLine(t, locale, line, entry)}
+                    </span>
+                  ) : null}
                 </TableCell>
                 <TableCell data-nowrap="" className="hidden text-muted-foreground sm:table-cell">
                   {accountTypeLabel(line.account?.type)}

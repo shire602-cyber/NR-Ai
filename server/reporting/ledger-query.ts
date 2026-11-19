@@ -271,6 +271,8 @@ export interface LedgerLineRow {
   sourceId: string | null;
   accountId: string;
   description: string | null;
+  lineKey: string | null;
+  lineParams: Record<string, string> | null;
   debit: Fils;
   credit: Fils;
   isClosingEntry: boolean;
@@ -286,6 +288,7 @@ export async function ledgerLines(
     `SELECT je.id AS entry_id, je.entry_number, ${ENTRY_LOCAL_DATE_SQL}::text AS d, je.memo,
             je.memo_key, je.memo_params,
             je.source, je.source_id, jl.account_id, jl.description,
+            jl.line_key, jl.line_params,
             ROUND(jl.debit * 100)::bigint AS dr, ROUND(jl.credit * 100)::bigint AS cr,
             ${CLOSING_ENTRY_SQL} AS is_closing
        FROM journal_lines jl
@@ -318,6 +321,8 @@ export async function ledgerLines(
     sourceId: r.source_id ?? null,
     accountId: r.account_id,
     description: r.description ?? null,
+    lineKey: r.line_key ?? null,
+    lineParams: r.line_params ?? null,
     debit: Number(r.dr),
     credit: Number(r.cr),
     isClosingEntry: r.is_closing === true,

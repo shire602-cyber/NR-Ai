@@ -197,9 +197,9 @@ export async function planReceiptJournal(
   const merchant = receipt.merchant || "expense";
   const label = `${receipt.merchant || "Expense"} - ${receipt.category || "General"}`;
   // Line descriptions of the posting as keys (the shapes with no merchant name read "expense").
-  const has = !!receipt.merchant;
+  const hasMerchant = !!receipt.merchant;
   const labelLine = journalLine(
-    has
+    hasMerchant
       ? receipt.category
         ? "receiptLabel"
         : "receiptLabelNoCategory"
@@ -209,7 +209,7 @@ export async function planReceiptJournal(
     { merchant: receipt.merchant ?? "", category: receipt.category ?? "" }
   );
   const merchantLine = (key: "receiptInputVat" | "receiptInputVatRc" | "receiptOutputVatRc" | "receiptPayment") =>
-    journalLine(has ? key : (`${key}NoMerchant` as JournalLineKey), { merchant });
+    journalLine(hasMerchant ? key : (`${key}NoMerchant` as JournalLineKey), { merchant });
 
   // E3 (J2-r3): a company that is not VAT registered recovers no input VAT (it stays in the
   // expense) and does not self-account reverse-charge VAT (there is none to record).

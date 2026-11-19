@@ -24,6 +24,7 @@ import {
   type StatementSection,
 } from "../../reporting";
 import { computeVat201 } from "../../tax/vat-engine";
+import { journalLineText } from "./journal-text";
 import {
   computeCtLiability,
   CT_STANDARD_RATE,
@@ -427,7 +428,9 @@ export async function renderGeneralLedger(
         cells: {
           date: line.date,
           entry: line.entryNumber,
-          description: line.description ?? line.memo ?? "",
+          // The Arabic ledger names system lines from their stored key (migration 0132); rows
+          // posted earlier are matched by their English text. A person's own text is unchanged.
+          description: journalLineText(company.locale === "ar" ? "ar" : "en", line, line),
           debit: line.debit,
           credit: line.credit,
           balance: line.balance,

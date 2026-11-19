@@ -20,7 +20,7 @@ import { format } from "date-fns";
 import { formatDateRange } from "@/lib/format-date";
 import { formatCurrency } from "@/lib/format";
 import { Money } from "@/components/ui/money";
-import { localizeJournalMemo } from "@/lib/journal-memo";
+import { localizeJournalLine } from "@/lib/journal-memo";
 import { formatReportDate, ledgerDetailPageSize, reportCodeLabel } from "../shared";
 import { useReportsPageContext } from "../context";
 import { StatementDownloads } from "../StatementParts";
@@ -351,7 +351,14 @@ export default function LedgerTab() {
                         </TableCell>
                         <TableCell>{reportCodeLabel(line.source)}</TableCell>
                         <TableCell className="max-w-[240px] truncate text-muted-foreground">
-                          {line.memo ? localizeJournalMemo(t, line.memo, locale, line) : "-"}
+                          {line.memo
+                            ? localizeJournalLine(
+                                t,
+                                locale,
+                                { description: line.memo, lineKey: line.lineKey, lineParams: line.lineParams },
+                                line
+                              )
+                            : "-"}
                         </TableCell>
                         <TableCell data-numeric>
                           {line.debit > 0 ? formatCurrency(line.debit, "AED", locale) : "-"}
