@@ -199,3 +199,18 @@ One model for every migrating company (D1, accounting re-audit 3: N1-N4, N7, N14
   (a `DomainError` without its own message). The status-based Arabic sentence is the last resort.
 - Validation errors name each field by its form label (`serverErrors.field.<id>`), never the raw
   id; add a label when a new field can fail server validation.
+
+## Trial, plan choice and process time zone (STEP4)
+
+- One state rule: `client/src/lib/plan-state.ts` maps {trial running, ended} x {no choice, chosen,
+  activation requested} to a phase and its one call to action. Subscription, `TrialBanner`,
+  `PlanLockBanner`, `PlanLimitDialog` and the plan-choice emails all read it; add a state there,
+  never branch separately. Choosing a plan never keeps a workspace working: only activation does.
+- Plan names inside sentences use `marketing.prPlanPhrase_<id>` (Arabic "خطة المبتدئ", "الخطة
+  الاحترافية", "خطة المؤسسات"; the email `PLAN_NAMES` carries the same forms).
+- The trial end is `trialEndDate` in `shared/trial.ts`; the gate, the subscription API and the
+  banners all read it (no rounding of the trial length).
+- The server process runs in `TZ=UTC` (`server/config/pin-timezone.ts`, Dockerfile, compose).
+  Timestamp columns carry no zone; dates people read and the once-a-day email keys use `Asia/Dubai`.
+- In a read-only workspace `ReadOnlyForms` disables write forms under the lock banner; mark a form
+  `data-readonly-ok` (or `role="search"`) to keep it usable.
