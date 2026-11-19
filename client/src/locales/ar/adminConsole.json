@@ -403,7 +403,7 @@
   "adminConsole.colUser": "المستخدم",
   "adminConsole.fieldName": "الاسم",
   "adminConsole.trnVat": "الرقم الضريبي",
-  "adminConsole.companiesCount": "{count} شركات",
+  "adminConsole.companiesCount": "{count, plural, zero {لا شركات} one {شركة واحدة} two {شركتان} few {# شركات} many {# شركة} other {# شركة}}",
   "adminConsole.curSAR": "ريال سعودي (SAR)",
   "adminConsole.modelRecommended": "GPT-4o (موصى به)",
   "adminConsole.billsExpenses": "الفواتير والمصروفات",

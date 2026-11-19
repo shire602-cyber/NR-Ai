@@ -30,7 +30,7 @@ function safeNextPath(): string {
   return "/dashboard";
 }
 
-export function OAuthButtons() {
+export function OAuthButtons({ nextPath }: { nextPath?: string } = {}) {
   const { t } = useTranslation();
   const [pendingProvider, setPendingProvider] = useState<OAuthProvider | null>(null);
   const [providers, setProviders] = useState<OAuthProviderInfo[]>([]);
@@ -63,7 +63,7 @@ export function OAuthButtons() {
 
   const startOAuth = (provider: OAuthProvider) => {
     setPendingProvider(provider);
-    const next = encodeURIComponent(safeNextPath());
+    const next = encodeURIComponent(nextPath ?? safeNextPath());
     window.location.assign(apiUrl(`/api/auth/oauth/${provider}/start?next=${next}`));
   };
 

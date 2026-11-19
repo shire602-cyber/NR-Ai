@@ -187,6 +187,10 @@ describe.each(["en", "ar"] as const)("STEP3: Admin console (%s)", (locale) => {
     const { translateNow, formatMessage } = await import("../../client/src/lib/i18n");
     const label = (n: number) =>
       formatMessage(translateNow("adminConsole.companiesCount"), { count: n });
+    // ICU plural: "1 company", never "1 companies".
+    expect(label(1)).toBe(locale === "en" ? "1 company" : "شركة واحدة");
+    expect(label(3)).toBe(locale === "en" ? "3 companies" : "3 شركات");
+    expect(rows[0].textContent).not.toContain("1 companies");
     expect(rows[0].textContent).toContain(label(1));
     expect(rows[0].textContent).not.toContain(label(3));
     expect(rows[1].textContent).toContain(label(3));

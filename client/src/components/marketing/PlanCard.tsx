@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { formatMoneyParts, formatMoneyText } from "@/lib/format-money";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { UPGRADE_CONTACT_EMAIL } from "@shared/trial";
+import { signupPlanUrl } from "@/components/auth/signup-plan";
 import {
   planAudienceKey,
   planNameKey,
@@ -101,17 +102,26 @@ export function PlanCard({
 
   const defaultAction =
     plan.cta === "contact" ? (
-      <Button asChild variant="outline" className={cn("h-10 w-full", featured && "border-0")}>
-        <a
-          href={`mailto:${UPGRADE_CONTACT_EMAIL}?subject=${encodeURIComponent(`Muhasib.ai ${name}`)}`}
-          data-testid={`button-plan-${plan.id}`}
+      <>
+        <Button asChild variant="outline" className={cn("h-10 w-full", featured && "border-0")}>
+          <a
+            href={`mailto:${UPGRADE_CONTACT_EMAIL}?subject=${encodeURIComponent(`Muhasib.ai ${name}`)}`}
+            data-testid={`button-plan-${plan.id}`}
+          >
+            {t["marketing.pricingTalkToUs"]}
+          </a>
+        </Button>
+        <Link
+          href={signupPlanUrl(plan.id, cycle)}
+          className="mt-1 flex min-h-11 items-center justify-center text-small font-medium text-accent underline-offset-4 hover:underline"
+          data-testid={`link-plan-trial-${plan.id}`}
         >
-          {t["marketing.pricingTalkToUs"]}
-        </a>
-      </Button>
+          {t["marketing.pricingOrStartTrial"]}
+        </Link>
+      </>
     ) : (
       <Button asChild variant={featured ? "default" : "outline"} className="h-10 w-full">
-        <Link href="/register" data-testid={`button-plan-${plan.id}`}>
+        <Link href={signupPlanUrl(plan.id, cycle)} data-testid={`button-plan-${plan.id}`}>
           {t["marketing.startFreeTrial"]}
         </Link>
       </Button>

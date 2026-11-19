@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { RegisterForm } from "@/components/auth/RegisterForm";
+import { SignupPlanStep } from "@/components/auth/SignupPlanStep";
+import { readSignupPlan, signupPlanUrl, type SignupPlanState } from "@/components/auth/signup-plan";
 import { TurnstileWidget } from "@/components/security/TurnstileWidget";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { fetchCurrentUser } from "@/lib/auth";
@@ -8,7 +10,7 @@ import { establishAuthenticatedSession } from "@/lib/authSession";
 import { setActiveCompanyIdRaw } from "@/lib/activeCompany";
 import { apiRequest } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 import {
   AUTH_BUTTON,
   AUTH_INPUT,
@@ -228,24 +230,101 @@ function InviteAccept({ token, kind }: { token: string; kind: InviteKind }) {
 
 export default function Register() {
   const [, setLocation] = useLocation();
-  const { locale } = useTranslation();
+  const { locale, t } = useTranslation();
   const [notice, setNotice] = useState<string | null>(null);
   const query = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const teamInvite = query?.get("teamInvite") ?? null;
   const adminInvite = query?.get("invite") ?? null;
   const pendingInvite = teamInvite ?? adminInvite;
 
+  // STEP4: the two sign-up steps live in the URL (Back / Forward work, a reload keeps the step).
+  const [plan, setPlan] = useState<SignupPlanState>(() =>
+    readSignupPlan(typeof window !== "undefined" ? window.location.search : "")
+  );
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const focusTarget = useRef<"heading" | "radio" | null>(null);
+  const [announce, setAnnounce] = useState("");
+
   useEffect(() => {
     if (pendingInvite) return;
     fetchCurrentUser()
       .then((user) => {
-        if (user)
-          setLocation(
-            user.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard"
-          );
+        if (!user) return;
+        if (user.userType === "client_portal") return setLocation("/client-portal/dashboard");
+        // A signed-in visitor who followed a plan link goes to Settings > Billing with it chosen.
+        const initial = readSignupPlan(window.location.search);
+        if (initial.explicit) {
+          const q = new URLSearchParams({ choose: initial.planId, cycle: initial.cycle });
+          return setLocation(`/subscription?${q.toString()}`);
+        }
+        setLocation("/dashboard");
       })
       .catch(() => {});
   }, [setLocation, pendingInvite]);
+
+  // A deep link from /pricing lands on step 2: record the step in the URL without a new entry.
+  useEffect(() => {
+    if (pendingInvite) return;
+    const initial = readSignupPlan(window.location.search);
+    if (initial.explicit && !new URLSearchParams(window.location.search).has("step")) {
+      window.history.replaceState(
+        null,
+        "",
+        signupPlanUrl(initial.planId, initial.cycle, { step: "account", source: initial.source })
+      );
+    }
+  }, [pendingInvite]);
+
+  useEffect(() => {
+    const onPop = () => {
+      focusTarget.current = "radio";
+      setPlan(readSignupPlan(window.location.search));
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const goToStep = useCallback((next: SignupPlanState, target: "heading" | "radio") => {
+    focusTarget.current = target;
+    // Keep the selection on the step being left, so Back returns to it as it was.
+    window.history.replaceState(
+      null,
+      "",
+      signupPlanUrl(next.planId, next.cycle, {
+        step: next.step === "account" ? "plan" : "account",
+        source: next.source,
+      })
+    );
+    window.history.pushState(
+      null,
+      "",
+      signupPlanUrl(next.planId, next.cycle, { step: next.step, source: next.source })
+    );
+    setPlan(next);
+  }, []);
+
+  // Step change: move focus (heading on Continue, the selected radio on Change / Back) and say it.
+  useEffect(() => {
+    if (!focusTarget.current) return;
+    const target = focusTarget.current;
+    focusTarget.current = null;
+    const root = document.getElementById("main-content");
+    if (target === "radio") {
+      root?.querySelector<HTMLInputElement>('input[type="radio"]:checked')?.focus();
+    } else {
+      const h1 = root?.querySelector<HTMLElement>("h1");
+      if (h1) {
+        h1.tabIndex = -1;
+        h1.focus();
+        setAnnounce(
+          formatMessage(t["marketing.signupStepAnnounce"], {
+            n: plan.step === "plan" ? 1 : 2,
+            title: h1.textContent ?? "",
+          })
+        );
+      }
+    }
+  }, [plan.step, t, plan]);
 
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
@@ -264,8 +343,20 @@ export default function Register() {
 
   return (
     <AuthLayout variant="register">
+      <p role="status" aria-live="polite" className="sr-only" data-testid="signup-live">
+        {announce}
+      </p>
       {pendingInvite ? (
         <InviteAccept token={pendingInvite} kind={teamInvite ? "team" : "admin"} />
+      ) : plan.step === "plan" ? (
+        <SignupPlanStep
+          ref={headingRef}
+          planId={plan.planId}
+          cycle={plan.cycle}
+          onPlanChange={(planId) => setPlan({ ...plan, planId, source: "signup_picked" })}
+          onCycleChange={(cycle) => setPlan({ ...plan, cycle, source: "signup_picked" })}
+          onContinue={() => goToStep({ ...plan, step: "account" }, "heading")}
+        />
       ) : (
         <div className="w-full">
           {notice && (
@@ -277,6 +368,8 @@ export default function Register() {
             onSuccess={handleSuccess}
             captchaToken={captchaToken}
             captcha={<TurnstileWidget onToken={setCaptchaToken} />}
+            plan={{ planId: plan.planId, cycle: plan.cycle, source: plan.source }}
+            onChangePlan={() => goToStep({ ...plan, step: "plan" }, "radio")}
           />
         </div>
       )}

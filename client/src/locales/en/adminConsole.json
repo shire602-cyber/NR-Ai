@@ -403,7 +403,7 @@
   "adminConsole.colUser": "User",
   "adminConsole.fieldName": "Name",
   "adminConsole.trnVat": "TRN / VAT number",
-  "adminConsole.companiesCount": "{count} companies",
+  "adminConsole.companiesCount": "{count, plural, one {# company} other {# companies}}",
   "adminConsole.curSAR": "SAR (Saudi riyal)",
   "adminConsole.modelRecommended": "GPT-4o (recommended)",
   "adminConsole.billsExpenses": "Bills and expenses",
