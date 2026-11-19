@@ -125,7 +125,6 @@ export async function buildManualJournalLines(
   const base = (await loadBaseCurrency(companyId)).toUpperCase();
   const dateIso =
     date instanceof Date ? date.toISOString().slice(0, 10) : String(date).slice(0, 10);
-  let rate: number | null = null;
   const vatAccountIds = new Map<string, string>();
   const vatAccount = async (code: string): Promise<string> => {
     const cached = vatAccountIds.get(code);
@@ -229,7 +228,7 @@ export async function buildManualJournalLines(
       if (!account) throw lineError("ACCOUNT_NOT_FOUND", index, "accountId", "Choose an account");
       const baseDebit = debitFils ?? (present(debit) ? toFils(debit as string | number) : 0);
       const baseCredit = creditFils ?? (present(credit) ? toFils(credit as string | number) : 0);
-      rate ??= UAE_STANDARD_VAT_RATE;
+      const rate = UAE_STANDARD_VAT_RATE;
       const output = account.type === "income";
       const vatAccountId = await vatAccount(
         output ? ACCOUNT_CODES.VAT_OUTPUT : ACCOUNT_CODES.VAT_INPUT

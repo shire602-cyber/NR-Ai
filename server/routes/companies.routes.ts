@@ -5,6 +5,7 @@ import { asyncHandler } from "../middleware/errorHandler";
 import { checkCompanyQuota } from "../middleware/featureGate";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
+import { assertUaeVatRate } from "../http/vat-rate-guard";
 import { DomainError, errorCode, errorMessage } from "../errors";
 import {
   createCompanyBody,
@@ -17,7 +18,6 @@ import { recordAudit } from "../services/audit.service";
 import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
 import { deleteReceiptImage, readReceiptImage, saveReceiptFile } from "../services/fileStorage";
 import { z } from "zod";
-import { UAE_STANDARD_VAT_RATE } from "../../shared/vat-classification";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
 import { ensureCriticalSchema } from "../db";
@@ -226,6 +226,10 @@ export function registerCompanyRoutes(app: Express) {
       const { vatRegistered: _legacyVatRegistered, ...validated } =
         parsedBody<CreateCompanyBody>(req);
 
+      if (validated.defaultVatRate !== undefined) {
+        assertUaeVatRate(validated.defaultVatRate, "defaultVatRate", "default VAT rate");
+      }
+
       // companyType decides the access model (customer SaaS vs NRA-managed client): only a
       // platform admin may create anything other than a customer company (R17-05).
       if (
@@ -323,16 +327,7 @@ export function registerCompanyRoutes(app: Express) {
 
     // WQ3 (12.10): the default VAT rate is 0% or the UAE standard rate (5%).
     if ("defaultVatRate" in updateData) {
-      const rate = Number(updateData.defaultVatRate);
-      const standard = UAE_STANDARD_VAT_RATE;
-      if (rate !== 0 && Math.abs(rate - standard) > 1e-9) {
-        throw new DomainError(
-          "VAT_RATE_NOT_FOR_COUNTRY",
-          422,
-          { fields: { defaultVatRate: [`Use 0% or ${Math.round(standard * 100)}%`] } },
-          `The default VAT rate must be 0% or ${Math.round(standard * 100)}%, the UAE standard rate.`
-        );
-      }
+      assertUaeVatRate(updateData.defaultVatRate, "defaultVatRate", "default VAT rate");
     }
 
     // PRIVILEGE ESCALATION GUARD (R17-05). `companyType` decides whether a company is a

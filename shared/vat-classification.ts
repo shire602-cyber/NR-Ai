@@ -50,6 +50,12 @@ export interface SupplyClassification {
   reportable: boolean;
 }
 
+/** True for a stored/fraction VAT rate the UAE allows: exactly 0 or 0.05 (exempt/out-of-scope are treatments, not rates). */
+export function isUaeVatRateFraction(raw: unknown): boolean {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) && (n === 0 || Math.abs(n - UAE_STANDARD_VAT_RATE) < 1e-9);
+}
+
 /** Normalise 5 / "5" / 0.05 / "0.05" to the decimal rate; anything else is null. */
 export function normaliseUaeVatRate(raw: unknown): number | null {
   if (raw === null || raw === undefined || raw === "") return null;

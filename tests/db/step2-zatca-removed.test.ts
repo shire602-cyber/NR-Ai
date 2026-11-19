@@ -73,6 +73,51 @@ describe("STEP2: no 15% anywhere, even for a company with a Saudi address", () =
     }
   });
 
+  it("STEP2 company create refuses a default VAT rate other than 0 or 0.05 (422), same as update", async () => {
+    for (const [label, t] of both()) {
+      const tag = label.replace(/\W/g, "");
+      for (const [i, rate] of [0.15, 0.1, 0.04].entries()) {
+        const bad = await t.as.post("/api/companies", {
+          name: `Step2Bad${tag}${i}`,
+          addressCountry: "SA",
+          defaultVatRate: rate,
+        });
+        expect(bad.status, `${label} ${rate}: ${bad.text}`).toBe(422);
+        expect(bad.body.code, label).toBe("VAT_RATE_NOT_FOR_COUNTRY");
+      }
+      for (const [i, rate] of [0, 0.05].entries()) {
+        const ok = await t.as.post("/api/companies", {
+          name: `Step2Ok${tag}${i}`,
+          defaultVatRate: rate,
+        });
+        expect(ok.status, `${label} ${rate}: ${ok.text}`).toBe(200);
+        expect(Number(ok.body.defaultVatRate), label).toBe(rate);
+      }
+    }
+  });
+
+  it("STEP2 products refuse a VAT rate other than 0 or 0.05 (422); 0 and 0.05 are accepted", async () => {
+    for (const [label, t] of both()) {
+      const product = { name: "Step2 Item", unitPrice: 10 };
+      const bad = await t.as.post(`${base(t)}/products`, { ...product, vatRate: 0.15 });
+      expect(bad.status, `${label}: ${bad.text}`).toBe(422);
+      expect(bad.body.code, label).toBe("VAT_RATE_NOT_FOR_COUNTRY");
+      const ok0 = await t.as.post(`${base(t)}/products`, { ...product, name: "Zero", vatRate: 0 });
+      expect(ok0.status, `${label}: ${ok0.text}`).toBe(200);
+      const ok5 = await t.as.post(`${base(t)}/products`, {
+        ...product,
+        name: "Five",
+        vatRate: 0.05,
+      });
+      expect(ok5.status, `${label}: ${ok5.text}`).toBe(200);
+      const patchBad = await t.as.patch(`/api/products/${ok5.body.id}`, { vatRate: 0.15 });
+      expect(patchBad.status, `${label}: ${patchBad.text}`).toBe(422);
+      expect(patchBad.body.code, label).toBe("VAT_RATE_NOT_FOR_COUNTRY");
+      const patchOk = await t.as.patch(`/api/products/${ok5.body.id}`, { vatRate: 0 });
+      expect(patchOk.status, `${label}: ${patchOk.text}`).toBe(200);
+    }
+  });
+
   it("STEP2 a KSA VAT number is refused (400)", async () => {
     for (const [label, t] of both()) {
       const r = await t.as.patch(base(t), { trnVatNumber: "300000000000003" });

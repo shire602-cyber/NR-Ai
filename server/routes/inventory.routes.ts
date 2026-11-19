@@ -4,6 +4,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { assertUaeVatRate } from "../http/vat-rate-guard";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { createLogger } from "../config/logger";
@@ -163,6 +164,7 @@ export function registerInventoryRoutes(app: Express) {
       const { companyId } = req.params;
       await assertAccess(req, companyId);
       const body = parsedBody<CreateInventoryProductBody>(req);
+      if (body.vatRate !== undefined) assertUaeVatRate(body.vatRate, "vatRate", "VAT rate");
       await validateProductAccounts(companyId, body);
       const { currentStock, openingStockDate, ...fields } = body;
       const opening = currentStock ?? 0;
@@ -215,6 +217,7 @@ export function registerInventoryRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const product = await loadProduct(req);
       const body = parsedBody<UpdateInventoryProductBody>(req);
+      if (body.vatRate !== undefined) assertUaeVatRate(body.vatRate, "vatRate", "VAT rate");
       await validateProductAccounts(product.companyId, body);
       const typeChanges =
         (body.productType && body.productType !== product.productType) ||
