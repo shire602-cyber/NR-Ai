@@ -171,6 +171,7 @@ export default function Admin() {
     totalUsers: number;
     activeUsers: number;
     totalCompanies: number;
+    activeCompanies?: number;
     totalInvoices: number;
     totalReceipts: number;
     aiCreditsUsed: number;
@@ -482,7 +483,7 @@ export default function Admin() {
             />
             <StatCard
               label={<T k="pageLabels.activeCompanies" />}
-              value={stats?.totalCompanies || 0}
+              value={stats?.activeCompanies ?? stats?.totalCompanies ?? 0}
               testId="stat-total-companies"
             />
             <StatCard

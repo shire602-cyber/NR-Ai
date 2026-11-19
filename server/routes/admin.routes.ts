@@ -274,7 +274,8 @@ export function registerAdminRoutes(app: Express): void {
       const activityLogs = await storage.getActivityLogs(10);
 
       const pendingInvitations = invitations.filter((i) => i.status === "pending").length;
-      const activeClients = companies.length;
+      // "Active companies": not deleted (getAllCompanies) and not switched off by an admin.
+      const activeClients = companies.filter((c) => c.isActive !== false).length;
       const totalUsers = users.length;
       const adminUsers = users.filter((u) => u.isAdmin).length;
 
@@ -287,6 +288,7 @@ export function registerAdminRoutes(app: Express): void {
       res.json({
         totalClients: activeClients,
         totalCompanies: companies.length,
+        activeCompanies: activeClients,
         aiCreditsUsed,
         totalUsers,
         adminUsers,
