@@ -38,8 +38,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SHOT_DIR = path.join(__dirname, ".artifacts");
 const RUN_ARTIFACT_PATH = path.join(SHOT_DIR, "customer-launch-last-run.json");
 
+const LOCALIZED_HOMEPAGES = {
+  "/en": { lang: "en", dir: "ltr", title: "Accounting and VAT for UAE businesses" },
+  "/ar": { lang: "ar", dir: "rtl", title: "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات" },
+};
+
 const PUBLIC_ROUTES = [
   "/",
+  ...Object.keys(LOCALIZED_HOMEPAGES),
   "/register",
   "/login",
   "/forgot-password",
@@ -327,11 +333,71 @@ async function main() {
   // Public launch surface: these are the routes ads and prospects will hit first.
   for (const route of PUBLIC_ROUTES) {
     const bodyText = await crawlRoute(route);
+    const homepage = LOCALIZED_HOMEPAGES[route];
+    if (homepage) {
+      const actual = await page.locator("html").evaluate((html) => ({
+        lang: html.lang,
+        dir: html.dir,
+        title: html.querySelector("h1")?.textContent,
+      }));
+      if (
+        actual.lang !== homepage.lang ||
+        actual.dir !== homepage.dir ||
+        actual.title !== homepage.title
+      ) {
+        await fail(`localized homepage ${route}`, { expected: homepage, actual });
+      }
+    }
     const unsupportedClaim = bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ?? null;
     if (unsupportedClaim) {
       await fail(`public claim ${route}`, { unsupportedClaim });
     }
   }
+
+  await crawlRoute("/en/product/vat");
+  try {
+    await page.getByRole("heading", { level: 1, name: "VAT 201", exact: true }).waitFor();
+    await page.locator('a[hreflang="ar"]').click();
+    await page.waitForURL((url) => url.pathname === "/ar/product/vat");
+    await page.getByRole("heading", { level: 1, name: "إقرار VAT 201", exact: true }).waitFor();
+    await page.waitForFunction(() => document.documentElement.dir === "rtl");
+  } catch (error) {
+    await fail("VAT product language switch", { detail: String(error), url: page.url() });
+  }
+
+  // Keep public-only runs read-only even if client-side validation regresses.
+  const callbackApi = "**/api/marketing/demo-request";
+  let callbackAttempted = false;
+  await page.route(callbackApi, (route) => {
+    callbackAttempted = true;
+    return route.abort();
+  });
+  for (const [locale, message] of [
+    ["en", "Enter a valid phone number with at least 7 digits."],
+    ["ar", "أدخل رقم هاتف صالحًا يتكوّن من ٧ أرقام على الأقل."],
+  ]) {
+    const route = `/${locale}/book-a-demo`;
+    await crawlRoute(route);
+    try {
+      await page.locator('[name="name"]').fill("Local launch check");
+      await page.locator('[name="email"]').fill("qa@example.com");
+      const phone = page.locator('[name="phone"]');
+      await phone.fill(locale === "ar" ? "٠٥٠-١٢٣" : "050-123");
+      await page.locator('form button[type="submit"]').click();
+      await page.getByRole("alert").filter({ hasText: message }).waitFor();
+      if (
+        callbackAttempted ||
+        (await phone.getAttribute("aria-invalid")) !== "true" ||
+        (await phone.getAttribute("aria-describedby")) !== "callback-phone-error" ||
+        (await page.locator('form [role="status"]').innerText()).trim() !== ""
+      ) {
+        await fail(`callback phone validation ${locale}`, { callbackAttempted });
+      }
+    } catch (error) {
+      await fail(`callback phone validation ${locale}`, { detail: String(error) });
+    }
+  }
+  await page.unroute(callbackApi);
 
   if (PUBLIC_ONLY) {
     await browser.close();

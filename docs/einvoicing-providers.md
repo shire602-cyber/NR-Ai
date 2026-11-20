@@ -94,6 +94,9 @@ both providers may stay.
 
 ### Edit
 
+- `client/src/components/marketing/phase/content.ts` — update the bilingual e-invoicing product copy.
+- `client/src/components/marketing/phase/PhaseSite.tsx` — remove the provider from the homepage.
+
 - `server/services/einvoice/providers/registry.ts`: the `ACUBE_PROVIDER_MODULE` import and list entry
 - `server/routes.ts`: `registerEInvoiceAcubeRoutes` import and call
 - `scripts/ops/asp-sandbox-dryrun.ts`: the `acube` entry in `ASP_REQUIREMENTS` and its branch in `runProvider`
@@ -150,6 +153,9 @@ Env to unset: `ACUBE_*`.
 - `docs/einvoicing-complyance.md`
 
 ### Edit
+
+- `client/src/components/marketing/phase/content.ts` — update the bilingual e-invoicing product copy.
+- `client/src/components/marketing/phase/PhaseSite.tsx` — remove the provider from the homepage.
 
 - `server/services/einvoice/providers/registry.ts`: the `COMPLYANCE_PROVIDER_MODULE` import and list entry
 - `server/routes.ts`: `registerEInvoiceComplyanceRoutes` import and call

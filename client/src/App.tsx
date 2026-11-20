@@ -1,3 +1,4 @@
+import { siteLocale } from "@/components/marketing/phase/routes";
 // zod 3-compatible validation messages for forms (R17-27). Installed by the app root
 // (and by the public pages' providers) rather than main.tsx, so the landing page does
 // not download zod before its first paint (D1b).
@@ -42,7 +43,7 @@ const AuthCallback = lazyWithReload(() => import("@/pages/AuthCallback"));
 const ForgotPassword = lazyWithReload(() => import("@/pages/ForgotPassword"));
 const ResetPassword = lazyWithReload(() => import("@/pages/ResetPassword"));
 const Dashboard = lazyWithReload(() => import("@/pages/Dashboard"));
-const LandingPage = lazyWithReload(() => import("@/pages/MuhasibLanding"));
+const PhaseSite = lazyWithReload(() => import("@/components/marketing/phase/PhaseSite"));
 const Services = lazyWithReload(() => import("@/pages/Services"));
 const Pricing = lazyWithReload(() => import("@/pages/Pricing"));
 const PublicInvoiceView = lazyWithReload(() => import("@/pages/PublicInvoiceView"));
@@ -506,11 +507,11 @@ function Router() {
   // Landing page (public only).
   // `initial={false}` skips the entry fade so the page is visible immediately;
   // a stalled or throttled animation must never leave the root at opacity:0.
-  if (pathname === "/" && !user) {
+  if ((pathname === "/" && !user) || siteLocale(pathname)) {
     return (
       <div key="landing">
         <Suspense fallback={<MinimalPageLoader />}>
-          <LandingPage />
+          <PhaseSite />
         </Suspense>
       </div>
     );

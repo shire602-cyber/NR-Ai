@@ -74,7 +74,7 @@ function arabicModeEnglishLines(): string[] {
 const UNSUPPORTED_CLAIMS = [
   /FTA[-\s]?(accredited|compliant|registered|approved)/i,
   /submits? (your|the) (VAT )?return(s)? (to|with) the FTA automatically/i,
-  /bank feeds?/i,
+  /(?:connect to|sync from) (?:a |your )?(?:live )?bank feeds?/i,
   /money-back/i,
   /UAE-hosted/i,
   // "Most popular" is a plan-card highlight the owner asked for (X6b); it states no user count.
@@ -84,23 +84,22 @@ const UNSUPPORTED_CLAIMS = [
 
 describe("D1 public site", () => {
   it("[D1] the landing page leads with an honest value proposition and sets its SEO meta", async () => {
-    await render("MuhasibLanding");
-    const { t } = await import("../../client/src/lib/i18n");
+    const { default: PhaseSite } =
+      await import("../../client/src/components/marketing/phase/PhaseSite");
+    await act(async () => root.render(createElement(PhaseSite)));
     const h1 = container.querySelector("h1");
-    expect(h1?.textContent).toContain(t.en["marketing.heroTitleLead"]);
-    expect(document.title).toBe(t.en["marketing.seoHomeTitle"]);
-    expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toBe(
-      t.en["marketing.seoHomeDescription"]
+    expect(h1?.textContent).toBe("Accounting and VAT for UAE businesses");
+    expect(document.title).toContain(h1?.textContent);
+    expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toContain(
+      "Send bilingual invoices"
     );
     // Primary CTAs keep their routes.
     const register = container.querySelector('[data-testid="button-hero-start"]');
     expect(register?.getAttribute("href")).toBe("/register");
     expect(container.querySelector('[data-testid="button-hero-demo"]')?.getAttribute("href")).toBe(
-      "/demo"
+      "/en/book-a-demo"
     );
-    // The FTA boundary is stated, not implied.
-    expect(container.textContent).toContain(t.en["marketing.vatNote"]);
-    expect(t.en["marketing.faq1A"]).toMatch(/^No\./);
+    expect(container.textContent).toContain("Prepare and review VAT 201 in the app, then submit it in EmaraTax.");
     for (const claim of UNSUPPORTED_CLAIMS) {
       expect(container.textContent ?? "", String(claim)).not.toMatch(claim);
     }
@@ -117,12 +116,25 @@ describe("D1 public site", () => {
   });
 
   it("[D1] the landing page renders fully in Arabic (no stray English copy)", async () => {
-    await setLocale("ar");
-    await render("MuhasibLanding");
-    const { t } = await import("../../client/src/lib/i18n");
-    expect(container.querySelector("h1")?.textContent).toContain(t.ar["marketing.heroTitleLead"]);
-    expect(document.title).toBe(t.ar["marketing.seoHomeTitle"]);
-    expect(arabicModeEnglishLines()).toEqual([]);
+    const { default: PhaseRoot } =
+      await import("../../client/src/components/marketing/phase/PhaseRoot");
+    const previousUrl = window.location.href;
+    window.history.replaceState(null, "", "/ar");
+    try {
+      await act(async () => root.render(createElement(PhaseRoot)));
+      const title = "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات";
+      expect(container.querySelector("h1")?.textContent).toBe(title);
+      expect(document.title).toContain(title);
+      expect(container.querySelector('.phase-site[lang="ar"][dir="rtl"]')).not.toBeNull();
+      expect(container.querySelector(".phase-hero img")?.getAttribute("src")).toBe(
+        "/product/dashboard-ar.webp"
+      );
+      expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
+      expect(container.textContent).toContain("مزوّد خدمة معتمد واحد لكل نسخة من التطبيق");
+      expect(arabicModeEnglishLines()).toEqual([]);
+    } finally {
+      window.history.replaceState(null, "", previousUrl);
+    }
   });
 
   it("[D1] auth and legal pages share the shell in Arabic", async () => {

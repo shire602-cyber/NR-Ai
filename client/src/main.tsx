@@ -1,3 +1,4 @@
+import { siteLocale } from "@/components/marketing/phase/routes";
 import type { ComponentType } from "react";
 import { createRoot } from "react-dom/client";
 // Self-hosted fonts (Fontsource) — no external Google Fonts dependency, so the
@@ -39,10 +40,12 @@ import {
 // returning user landing on "/" (who is redirected to the app), gets <App />.
 // PublicApp hands over to <App /> as soon as the visitor leaves the public pages.
 const pathname = window.location.pathname;
-const locale = useI18n.getState().locale;
+const explicitLocale = siteLocale(pathname);
+const locale = explicitLocale ?? useI18n.getState().locale;
 const publicShell =
   isPublicPath(pathname) && pathname !== "/auth/callback" && !(pathname === "/" && hasAuthHint());
 
+const phaseBoot = publicShell && (explicitLocale !== undefined || pathname === "/");
 // A signed-in client opening a client-portal page gets the light PortalApp root (no accounting
 // shell); a signed-out visitor still goes through <App /> and its sign-in redirect.
 const portalShell = !publicShell && isPortalAppPath(pathname) && hasAuthHint();
@@ -50,7 +53,6 @@ const portalShell = !publicShell && isPortalAppPath(pathname) && hasAuthHint();
 // The page chunk of the public route the visitor landed on, fetched in parallel with
 // the root and its catalogs so the first paint does not wait for another round trip.
 const PUBLIC_ROUTE_CHUNKS: Record<string, () => Promise<unknown>> = {
-  "/": () => import("@/pages/MuhasibLanding"),
   "/pricing": () => import("@/pages/Pricing"),
   "/login": () => import("@/pages/Login"),
   "/forgot-password": () => import("@/pages/ForgotPassword"),
@@ -74,18 +76,21 @@ function customerLinkChunk(path: string): (() => Promise<unknown>) | undefined {
 // it lazily opens a form page after a client-side navigation.
 const zodFree =
   portalShell ||
-  (publicShell && (pathname === "/" || pathname === "/pricing" || isCustomerLinkPath(pathname)));
+  phaseBoot ||
+  (publicShell && (pathname === "/pricing" || isCustomerLinkPath(pathname)));
 const zodReady: Promise<unknown> = zodFree ? Promise.resolve() : import("@/lib/zod-config");
 
 // The firm build registers the app root statically (lib/staticRoot.ts); the main build never does.
 const staticRoot = getStaticRoot();
-const loadRoot: () => Promise<{ default: ComponentType }> = publicShell
-  ? () => import("./PublicApp")
-  : portalShell
-    ? () => import("./PortalApp")
-    : staticRoot
-      ? () => Promise.resolve({ default: staticRoot })
-      : () => import("./App");
+const loadRoot: () => Promise<{ default: ComponentType }> = phaseBoot
+  ? () => import("@/components/marketing/phase/PhaseRoot")
+  : publicShell
+    ? () => import("./PublicApp")
+    : portalShell
+      ? () => import("./PortalApp")
+      : staticRoot
+        ? () => Promise.resolve({ default: staticRoot })
+        : () => import("./App");
 
 // S5: locale catalogs are code-split; load what the first route needs before the first render
 // so translated copy never flashes keys. D1b: public pages load only their own namespaces
@@ -103,6 +108,9 @@ if (!lightBoot && hasAuthHint()) {
 }
 
 setPublicBootScope(scopedBoot ? pathname : "/__app");
+if (explicitLocale && useI18n.getState().locale !== explicitLocale) {
+  useI18n.getState().setLocale(explicitLocale);
+}
 
 // A signed-in user opening the app shell: the session and company-list reads every screen waits
 // for start now, in parallel with the app chunks (which are the slow part on a phone), instead of
@@ -122,9 +130,10 @@ const FIRM_ROUTE_CHUNKS: Record<string, () => Promise<unknown>> = {
 // Direction and language are settled before the first render, not in an effect
 // after it: an Arabic visitor sees right-to-left Arabic on first paint, with no layout shift.
 applyDocumentLocale(locale);
+const catalogsReady = loadLocaleForPath(locale, scopedBoot ? pathname : "/__app").catch(() => undefined);
 void Promise.all([
   zodReady.then(loadRoot),
-  loadLocaleForPath(locale, scopedBoot ? pathname : "/__app").catch(() => undefined),
+  phaseBoot ? undefined : catalogsReady,
   publicShell
     ? zodReady.then(() =>
         (PUBLIC_ROUTE_CHUNKS[pathname] ?? customerLinkChunk(pathname))?.().catch(() => undefined)

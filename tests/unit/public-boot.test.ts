@@ -152,11 +152,10 @@ describe("D1b PublicApp", () => {
     i18n.setPublicBootScope("/");
     await i18n.loadLocaleForPath("en", "/");
     const { default: PublicApp } = await import("../../client/src/PublicApp");
+    await import("../../client/src/components/marketing/phase/PhaseSite");
     await act(async () => root.render(createElement(PublicApp)));
     await settle();
-    expect(container.querySelector("h1")?.textContent).toContain(
-      i18n.t.en["marketing.heroTitleLead"]
-    );
+    expect(container.querySelector("h1")?.textContent).toBe("Accounting and VAT for UAE businesses");
     expect(appLoads).not.toHaveBeenCalled();
     expect(container.querySelector('[data-testid="full-app"]')).toBeNull();
 

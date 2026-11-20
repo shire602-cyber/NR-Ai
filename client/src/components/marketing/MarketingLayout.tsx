@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { useMarketingPage } from "./hooks";
+import { marketingBrand } from "@shared/marketing-brand";
 import "./marketing.css";
 
 export function MarketingBrand({
@@ -20,8 +21,7 @@ export function MarketingBrand({
     <Link href="/" className={`mk-brand ${className}`} data-testid={testId}>
       <BrandMark size="sm" />
       <span translate="no" lang="en" dir="ltr">
-        {"Muhasib"}
-        <span className="mk-brand__dot">{".ai"}</span>
+        {marketingBrand}
       </span>
     </Link>
   );

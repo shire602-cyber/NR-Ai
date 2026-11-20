@@ -214,6 +214,24 @@ export function precompressedAssets(assetsDir: string) {
   };
 }
 
+function loadMarketingDocument(distPath: string) {
+  try {
+    const html = fs.readFileSync(path.resolve(distPath, "index.html"), "utf-8");
+    const { scripts, styles } = JSON.parse(
+      fs.readFileSync(path.resolve(distPath, "marketing-preloads.json"), "utf-8")
+    ) as { scripts: string[]; styles: string[] };
+    const css = styles.filter((file) => !html.includes(`href="/${file}"`))
+      .map((file) => `<link rel="stylesheet" crossorigin href="/${file}">`)
+      .join("\n    ");
+    return injectModulePreloads(
+      html.replace("</head>", `    ${css}\n  </head>`),
+      scripts.filter((file) => !html.includes(`href="/${file}"`))
+    );
+  } catch {
+    return null;
+  }
+}
+
 export function serveStatic(app: Express) {
   const distPath = path.resolve(projectRoot, "dist", "public");
 
@@ -234,6 +252,26 @@ export function serveStatic(app: Express) {
         maxAge: "1y",
       })
     );
+  }
+
+  const marketingDocument = loadMarketingDocument(distPath);
+  if (marketingDocument) {
+    app.get(["/", /^\/(?:ar|en)(?:\/|$)/], (req, res, next) => {
+      const pathname = routeKey(req.originalUrl);
+      const cookies = req.cookies as Record<string, string> | undefined;
+      if (pathname === "/" && (cookies?.[accessCookieName()] || cookies?.[refreshCookieName()])) {
+        return next();
+      }
+      const locale = pathname === "/" ? null : pathname.split("/")[1] === "ar" ? "ar" : "en";
+      let html = marketingDocument;
+      if (locale) {
+        html = html.replace('<html lang="en">', `<html lang="${locale}" dir="${locale === "ar" ? "rtl" : "ltr"}">`);
+        if (pathname === `/${locale}`) {
+          html = html.replace("</head>", `    <link rel="preload" as="image" fetchpriority="high" imagesrcset="/product/dashboard-${locale}-small.webp 720w, /product/dashboard-${locale}.webp 1280w" imagesizes="(max-width: 760px) calc(100vw - 34px), 56vw">\n  </head>`);
+        }
+      }
+      res.set(NO_STORE_HEADERS).type("html").send(html);
+    });
   }
 
   // Everything else (favicon, manifest, robots, etc.) — short cache only.
