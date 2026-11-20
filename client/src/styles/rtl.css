@@ -48,27 +48,9 @@
    2. NUMBERS — keep LTR even inside RTL context
    ══════════════════════════════════════════════════════════════════════ */
 
-[dir="rtl"] .ltr-num,
-[dir="rtl"] [data-ltr-num],
-[dir="rtl"] input[type="number"],
-[dir="rtl"] input[type="tel"],
-[dir="rtl"] input[inputmode="numeric"],
-[dir="rtl"] input[inputmode="decimal"],
-/* D3a+D3b: figures isolate LTR only on leaf elements; table structure (table/thead/tbody/tfoot/tr)
-   and any container that merely sets tabular figures keep the document direction, otherwise
-   every <Table> reversed its columns in Arabic ("13 2026 نوفمبر"). */
-[dir="rtl"] .tabular-nums:not(table):not(thead):not(tbody):not(tfoot):not(tr):not(:has(*)) {
+[dir="rtl"] :where(.ltr-num, [data-ltr-num], .currency-amount, [data-currency]) {
   direction: ltr;
-  unicode-bidi: embed;
-  text-align: right;
-}
-
-/* Currency and financial figures */
-[dir="rtl"] .currency-amount,
-[dir="rtl"] [data-currency] {
-  direction: ltr;
-  unicode-bidi: embed;
-  text-align: right;
+  unicode-bidi: isolate;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -404,86 +386,69 @@
    5. TABLES
    ══════════════════════════════════════════════════════════════════════ */
 
-[dir="rtl"] table {
-  text-align: right;
-}
+/* Figure typography and cell alignment do not change the table direction. */
+@layer rtl-defaults {
+  :where(th, td):dir(rtl) {
+    text-align: start;
+  }
 
-[dir="rtl"] th {
-  text-align: right;
-}
-
-[dir="rtl"] td {
-  text-align: right;
-}
-
-/* Numeric columns stay LTR-aligned */
-[dir="rtl"] td.numeric,
-[dir="rtl"] th.numeric,
-[dir="rtl"] td[data-numeric],
-[dir="rtl"] th[data-numeric],
-[dir="rtl"] .table-numeric {
-  direction: ltr;
-  unicode-bidi: embed;
-  text-align: left;
-}
-
-/* Table action column (buttons) — flip to left */
-[dir="rtl"] td:last-child,
-[dir="rtl"] th:last-child {
-  text-align: left;
-}
-
-[dir="rtl"] td:first-child,
-[dir="rtl"] th:first-child {
-  text-align: right;
+  :where(th, td):dir(rtl):where(.numeric, [data-numeric], .table-numeric) {
+    text-align: end;
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════════════
    6. FORMS & INPUTS
    ══════════════════════════════════════════════════════════════════════ */
 
-[dir="rtl"] input,
-[dir="rtl"] textarea,
-[dir="rtl"] select {
-  text-align: right;
-}
-
-/* Email and URL fields should remain LTR */
-[dir="rtl"] input[type="email"],
-[dir="rtl"] input[type="url"] {
+/* Native controls outside the shared Input also need a stable direction. */
+[dir="rtl"]
+  input:not([dir]):where(
+    [type="email"],
+    [type="url"],
+    [type="tel"],
+    [type="number"],
+    [inputmode="numeric"],
+    [inputmode="decimal"]
+  ) {
   direction: ltr;
-  text-align: left;
 }
 
-/* Search input icon positioning */
-[dir="rtl"] .relative > input + svg,
-[dir="rtl"] .relative > svg + input {
-  /* Search icon flipped to right side */
+@layer rtl-defaults {
+  [dir="rtl"] :where(input, textarea, select, label, [role="alert"], .form-message) {
+    text-align: start;
+  }
+
+  [dir="rtl"]
+    :where(
+      input[data-ltr-num],
+      input[type="number"],
+      input[inputmode="numeric"],
+      input[inputmode="decimal"]
+    ) {
+    text-align: right;
+  }
 }
 
-/* Input with leading icon — swap padding */
-[dir="rtl"] input.pl-10,
+/* Legacy physical-padding utilities on controls with icons. */
 [dir="rtl"] input.pl-8 {
+  padding-left: 0.75rem;
+  padding-right: 2rem;
+}
+
+[dir="rtl"] input.pl-10 {
   padding-left: 0.75rem;
   padding-right: 2.5rem;
 }
 
-/* Input with trailing icon — swap padding */
-[dir="rtl"] input.pr-10,
 [dir="rtl"] input.pr-8 {
   padding-right: 0.75rem;
+  padding-left: 2rem;
+}
+
+[dir="rtl"] input.pr-10 {
+  padding-right: 0.75rem;
   padding-left: 2.5rem;
-}
-
-/* Form labels */
-[dir="rtl"] label {
-  text-align: right;
-}
-
-/* Form error messages */
-[dir="rtl"] [role="alert"],
-[dir="rtl"] .form-message {
-  text-align: right;
 }
 
 /* Checkbox / Radio — label after input in LTR becomes label before input */
@@ -500,10 +465,6 @@
 /* ── Dialog / AlertDialog ───────────────────────────────────────────── */
 [dir="rtl"] [role="dialog"] {
   text-align: right;
-}
-
-[dir="rtl"] [role="dialog"] .flex.justify-end {
-  justify-content: flex-start;
 }
 
 [dir="rtl"] [role="alertdialog"] {
@@ -529,12 +490,6 @@
 
 [dir="rtl"] [role="option"] {
   text-align: right;
-}
-
-/* Select trigger chevron */
-[dir="rtl"] [role="combobox"] svg {
-  margin-left: 0;
-  margin-right: auto;
 }
 
 /* ── Dropdown Menu ──────────────────────────────────────────────────── */
@@ -577,11 +532,6 @@
   text-align: right;
 }
 
-/* Accordion chevron icon — flip rotation direction */
-[dir="rtl"] [data-state="open"] > button svg {
-  transform: rotate(180deg);
-}
-
 /* ── Badge / Chip ───────────────────────────────────────────────────── */
 [dir="rtl"] .badge,
 [dir="rtl"] [data-badge] {
@@ -604,16 +554,6 @@
 /* ── Breadcrumb ─────────────────────────────────────────────────────── */
 [dir="rtl"] nav[aria-label="breadcrumb"] ol {
   direction: rtl;
-}
-
-/* Breadcrumb separator — flip chevron */
-[dir="rtl"] nav[aria-label="breadcrumb"] svg {
-  transform: scaleX(-1);
-}
-
-/* ── Pagination ─────────────────────────────────────────────────────── */
-[dir="rtl"] nav[aria-label="pagination"] svg {
-  transform: scaleX(-1);
 }
 
 /* ── Progress bar ───────────────────────────────────────────────────── */
@@ -644,23 +584,28 @@
    8. ICONS — flip directional icons
    ══════════════════════════════════════════════════════════════════════ */
 
-/* Flip chevrons, arrows, and directional icons */
-[dir="rtl"] .lucide-chevron-right,
-[dir="rtl"] .lucide-chevron-left,
-[dir="rtl"] .lucide-arrow-right,
-[dir="rtl"] .lucide-arrow-left,
-[dir="rtl"] .lucide-arrow-right-circle,
-[dir="rtl"] .lucide-arrow-left-circle,
-[dir="rtl"] .lucide-move-right,
-[dir="rtl"] .lucide-move-left,
-[dir="rtl"] .lucide-chevrons-right,
-[dir="rtl"] .lucide-chevrons-left,
-[dir="rtl"] .lucide-log-out,
-[dir="rtl"] .lucide-log-in,
-[dir="rtl"] .lucide-external-link,
-[dir="rtl"] .lucide-undo,
-[dir="rtl"] .lucide-redo {
-  transform: scaleX(-1);
+/* Mirror horizontal affordances. Explicit utility classes and embedded LTR
+   controls choose their own direction. Scale separately from position/animation. */
+:is(
+    .lucide-chevron-right,
+    .lucide-chevron-left,
+    .lucide-arrow-right,
+    .lucide-arrow-left,
+    .lucide-arrow-right-circle,
+    .lucide-arrow-left-circle,
+    .lucide-circle-arrow-right,
+    .lucide-circle-arrow-left,
+    .lucide-move-right,
+    .lucide-move-left,
+    .lucide-chevrons-right,
+    .lucide-chevrons-left,
+    .lucide-log-out,
+    .lucide-log-in,
+    .lucide-external-link,
+    .lucide-undo,
+    .lucide-redo
+  ):dir(rtl):not(.rtl-flip, .rtl-preserve, [class*="rtl:rotate-"], [class*="rtl:-scale-x-"]) {
+  scale: -1 1;
 }
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -690,11 +635,6 @@
 
 [dir="rtl"] ::-webkit-scrollbar {
   /* Scrollbar on left side — handled natively by RTL direction */
-}
-
-/* Custom scrollbar track — explicit for scroll areas */
-[dir="rtl"] [data-radix-scroll-area-viewport] {
-  direction: rtl;
 }
 
 /* ══════════════════════════════════════════════════════════════════════

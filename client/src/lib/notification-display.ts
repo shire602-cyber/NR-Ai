@@ -14,7 +14,7 @@ import {
 import { deliverySubscriptionIdForTitle } from "@/lib/deliveryTitleRegistry";
 import { formatAedText } from "@/lib/format";
 import { formatMoneyText } from "@/lib/format-money";
-import { formatDate, formatEmbeddedDates } from "@/lib/format-date";
+import { ARABIC_DISPLAY_LOCALE, formatDate, formatEmbeddedDates } from "@/lib/format-date";
 
 const ISO_DAY_PARAM = /^\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z?)?$/;
 
@@ -71,7 +71,7 @@ function monthYearLabel(month: string, year: string, locale: "en" | "ar"): strin
   const mo = Number(month);
   const yr = Number(year);
   if (!Number.isInteger(mo) || mo < 1 || mo > 12 || !Number.isInteger(yr)) return null;
-  return new Intl.DateTimeFormat(locale === "ar" ? "ar-AE" : "en-AE", {
+  return new Intl.DateTimeFormat(locale === "ar" ? ARABIC_DISPLAY_LOCALE : "en-AE", {
     month: "long",
     year: "numeric",
     timeZone: "UTC",

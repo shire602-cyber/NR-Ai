@@ -34,10 +34,12 @@ export function PortalStatePage({
       >
         <Icon aria-hidden="true" className="h-6 w-6" strokeWidth={1.5} />
       </span>
-      <h1 className="mt-5 text-h2 text-foreground text-balance" tabIndex={-1}>
+      <h1 className="mt-5 text-center text-h2 text-foreground text-balance" tabIndex={-1}>
         {title}
       </h1>
-      <p className="mx-auto mt-2 max-w-sm text-small text-muted-foreground text-pretty">{body}</p>
+      <p className="mx-auto mt-2 max-w-sm text-center text-small text-muted-foreground text-pretty">
+        {body}
+      </p>
       {actions ? (
         <div className="mt-6 flex flex-col items-stretch gap-3 sm:flex-row sm:justify-center">
           {actions}
