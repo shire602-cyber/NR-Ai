@@ -199,6 +199,13 @@ describe.each(LANGS)("invoice email (%s)", (language) => {
 });
 
 describe("invoice email details", () => {
+  it("includes the sender's Arabic note in the HTML and plain-text invoice", () => {
+    const note = "يرجى ذكر رقم الفاتورة عند التحويل";
+    const email = buildInvoiceEmail(invoice, company, note, { language: "ar" });
+    expect.soft(email.html).toContain(note);
+    expect(email.text).toContain(note);
+  });
+
   it("Arabic copy has no leaked English words", () => {
     const e = buildInvoiceEmail(invoice, company, undefined, { portalUrl: PAY, language: "ar" });
     const text = stripAllowedLatin(arabicText(e.html));
