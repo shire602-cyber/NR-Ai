@@ -275,7 +275,7 @@ describe.each(["en", "ar"] as const)("STEP2 rendered pages (%s)", (lang) => {
     expect(document.body.textContent).not.toMatch(BANNED);
   });
 
-  it("company settings (legacy Saudi company): the stored country still shows and 15% is not offered", async () => {
+  it("company settings preserves the stored Saudi label while omitting it from the country options", async () => {
     const { default: CompanySettings } = await import("../../client/src/pages/CompanySettings");
     setFixtures({
       [`/api/companies/${COMPANY_ID}`]: {
@@ -291,8 +291,12 @@ describe.each(["en", "ar"] as const)("STEP2 rendered pages (%s)", (lang) => {
     const vat = await optionsOf(byTestId("select-default-vat-rate"));
     expect(vat).toHaveLength(2);
     expect(vat.join(" ")).not.toMatch(/15|١٥/);
-    const countries = await optionsOf(byTestId("select-address-country"));
-    expect(countries.join("|")).toMatch(lang === "ar" ? /السعود/ : /Saudi/);
+    const country = byTestId("select-address-country");
+    expect(country?.textContent).toContain(
+      lang === "ar" ? "المملكة العربية السعودية" : "Saudi Arabia"
+    );
+    const countries = await optionsOf(country);
+    expect(countries.join("|")).not.toMatch(/Saudi|السعود/);
     expect(document.body.textContent).not.toMatch(BANNED);
   });
 

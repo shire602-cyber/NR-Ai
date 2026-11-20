@@ -790,7 +790,152 @@ async function portalInviteJourney(h, { phone }) {
   await customer?.context.close().catch(() => {});
 }
 
+async function expiredTrialJourney(h) {
+  const owner = await newOwner("trial-lock", h.lang);
+  const base = `/api/companies/${owner.companyId}`;
+  const invoice = await seedInvoice(owner, { issue: false });
+  const onboarding = await api(owner.token, "POST", `${base}/onboarding/complete`, {});
+  expect(onboarding.status === 200, `finish onboarding ${onboarding.status}`);
+  const page = await h.signIn(owner);
+  const saudi = h.ar ? "المملكة العربية السعودية" : "Saudi Arabia";
+
+  await h.step(
+    "company country picker excludes Saudi Arabia and preserves a legacy address",
+    async () => {
+      await goto(page, "/settings/company");
+      await click(page, "select-address-country");
+      expect(
+        (await page.getByRole("option", { name: saudi, exact: true }).count()) === 0,
+        "Saudi Arabia offered"
+      );
+      await page.keyboard.press("Escape");
+
+      const legacy = await api(owner.token, "PATCH", base, {
+        addressCountry: "SA",
+        addressStreet: "Legacy address",
+        addressCity: "Riyadh",
+      });
+      expect(legacy.status === 200, `seed existing Saudi address ${legacy.status}`);
+      await goto(page, "/settings/company");
+      await tid(page, "select-address-country").getByText(saudi, { exact: true }).waitFor();
+      await click(page, "select-address-country");
+      expect(
+        (await page.getByRole("option", { name: saudi, exact: true }).count()) === 0,
+        "legacy country is offered again"
+      );
+      await page.keyboard.press("Escape");
+      const saved = page.waitForResponse(
+        (res) => res.url().endsWith(base) && res.request().method() === "PATCH"
+      );
+      await fill(page, "input-address-street", "Legacy address updated");
+      await click(page, "button-save-company-settings");
+      expect((await saved).status() === 200, "company settings save failed");
+      const { body: company } = await api(owner.token, "GET", base);
+      expect(
+        company.addressCountry === "SA" &&
+          company.addressStreet === "Legacy address updated" &&
+          company.addressCity === "Riyadh",
+        "legacy address changed unexpectedly"
+      );
+    }
+  );
+
+  await h.step(
+    "expiry replaces dashboard, invoice deep link and onboarding with the localized lock",
+    async () => {
+      await dbRows("UPDATE subscriptions SET trial_ends_at = now() WHERE company_id = $1", [
+        owner.companyId,
+      ]);
+      const lock = tid(page, "trial-lock-screen");
+      for (const route of ["/dashboard", `/invoices/${invoice.id}`, "/onboarding"]) {
+        await goto(page, route);
+        await lock.waitFor({ timeout: 15000 });
+        const heading = h.ar
+          ? "انتهت تجربتك المجانية لمدة 14 يومًا"
+          : "Your 14-day trial has ended";
+        await lock.getByRole("heading", { name: heading }).waitFor();
+        expect(
+          (await page.locator("html").getAttribute("dir")) === (h.ar ? "rtl" : "ltr"),
+          "page direction is wrong"
+        );
+        expect(
+          (await tid(page, "button-sidebar-toggle").count()) === 0,
+          "workspace navigation mounted"
+        );
+        expect(
+          (await lock
+            .getByRole("link", { name: h.ar ? "تواصل مع الدعم" : "Contact support" })
+            .getAttribute("href")) === "mailto:support@muhasib.ai",
+          "support link is wrong"
+        );
+        await noSideScroll(page, route);
+      }
+      const request = await api(owner.token, "GET", `/api/invoices/${invoice.id}/pdf`);
+      expect(
+        request.status === 402 && request.body.code === "PLAN_REQUIRED",
+        "invoice PDF is accessible while locked"
+      );
+    }
+  );
+
+  await h.step(
+    "plan choice and activation request remain available while workspace is locked",
+    async () => {
+      const choose = tid(page, "trial-lock-screen").getByRole("link", {
+        name: h.ar ? "اختر خطة" : "Choose a plan",
+      });
+      await choose.click();
+      await page.waitForURL("**/subscription");
+      await click(page, "plan-choose-starter");
+      await tid(page, "button-activate-plan").waitFor();
+      await click(page, "button-activate-plan");
+      await tid(page, "activation-requested").waitFor();
+      expect(
+        (await tid(page, "settings-layout").count()) === 0,
+        "billing recovery mounted settings navigation"
+      );
+      expect(
+        (await tid(page, "button-sidebar-toggle").count()) === 0,
+        "billing recovery mounted workspace navigation"
+      );
+      await noSideScroll(page, "billing recovery");
+      expect(
+        (await api(owner.token, "GET", `/api/invoices/${invoice.id}`)).status === 402,
+        "pending activation opened the workspace"
+      );
+    }
+  );
+
+  await h.step("the paid plan restores the same invoice and legacy company address", async () => {
+    await dbRows(
+      "UPDATE subscriptions SET plan_id = 'starter', status = 'active' WHERE company_id = $1",
+      [owner.companyId]
+    );
+    await goto(page, "/invoices");
+    const { status, body: restored } = await api(owner.token, "GET", `/api/invoices/${invoice.id}`);
+    expect(status === 200 && restored.id === invoice.id, "same invoice was not restored");
+    expect((await tid(page, "trial-lock-screen").count()) === 0, "paid workspace is still locked");
+    expect(
+      (await api(owner.token, "GET", base)).body.addressCountry === "SA",
+      "stored country was lost"
+    );
+  });
+}
+
 const FLOWS = [
+  flow(
+    "trial-lock",
+    "Trial lock, billing recovery and legacy country on desktop",
+    expiredTrialJourney
+  ),
+  flow(
+    "trial-lock-phone",
+    "Trial lock, billing recovery and legacy country on phone",
+    expiredTrialJourney,
+    {
+      viewport: { width: 390, height: 844 },
+    }
+  ),
   flow(
     "signup",
     "Sign up: choose a plan (59/119/229), account, trial starts with the choice recorded",

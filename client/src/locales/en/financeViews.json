@@ -30,7 +30,6 @@
   "advancedReports.previousPeriod": "Previous period",
   "advancedReports.noComparisonDataAvailable": "No comparison data available",
   "advancedReports.comparisonChart": "Comparison chart",
-  "bankReconciliation.liveBankFeedsAreNot": "Live bank feeds are not required. Upload a statement, review suggestions, then post matches.",
   "bankReconciliation.selectAccount": "Select account...",
   "budgets.noVarianceDataAvailableAdd": "No variance data available. Add budget lines with account links to compare against actuals.",
   "budgets.thisWillPermanentlyDeleteThis": "This will permanently delete this budget plan and all its lines. This action cannot be undone.",

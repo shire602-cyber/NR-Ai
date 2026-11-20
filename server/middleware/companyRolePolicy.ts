@@ -388,8 +388,14 @@ const NESTED_RESOURCES: Array<[string[], string]> = [
 /** Routes that carry the company id as a later path parameter. */
 const COMPANY_PARAM_PREFIXES: string[][] = [
   ["chasing", "bulk-send"],
+  ["chasing", "overdue"],
+  ["chasing", "queue"],
+  ["chasing", "history"],
+  ["chasing", "effectiveness"],
   ["chasing", "config"],
   ["chasing", "templates"],
+  ["reports"],
+  ["vat", "autopilot", "calculate"],
 ];
 
 async function lookupCompany(sqlText: string, id: string): Promise<string | null> {
@@ -428,6 +434,10 @@ export async function resolveRequestCompanyWithSource(
   for (const prefix of COMPANY_PARAM_PREFIXES) {
     const id = segs[prefix.length];
     if (startsWith(segs, prefix) && id && UUID_RE.test(id)) return named(id.toLowerCase());
+  }
+  // A period's status route addresses a row, while list/detail routes name the company first.
+  if (startsWith(segs, ["vat", "autopilot", "periods"]) && segs[3] && segs[4] !== "status") {
+    return named(UUID_RE.test(segs[3]) ? segs[3].toLowerCase() : null);
   }
   for (const [prefix, sqlText] of NESTED_RESOURCES) {
     const id = segs[prefix.length];

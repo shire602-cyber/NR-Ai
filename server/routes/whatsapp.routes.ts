@@ -8,7 +8,9 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { db } from "../db";
 import { authMiddleware } from "../middleware/auth";
+import { billingEnforced, refuseExpiredTrial } from "../middleware/featureGate";
 import { requireFirmRole } from "../middleware/rbac";
+import { companyTrialLocked } from "../middleware/trialAccessPolicy";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { whatsappBridgeJobs, whatsappBridgeSessions, whatsappMessages } from "../../shared/schema";
@@ -140,6 +142,10 @@ export function registerWhatsAppRoutes(app: Express) {
       }
 
       const companyId = companies[0].id;
+      // Firm access authorizes the route. History availability follows the company being read.
+      if (billingEnforced() && (await companyTrialLocked(companyId))) {
+        return refuseExpiredTrial(res, companyId);
+      }
       const messages = await storage.getWhatsappMessagesByCompanyId(companyId);
       res.json(messages);
     })

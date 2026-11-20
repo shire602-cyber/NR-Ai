@@ -1,3 +1,4 @@
+import { siteLocale } from "@/components/marketing/phase/routes";
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import { Route, Switch, useLocation } from "wouter";
 import { lazyWithReload } from "@/lib/lazyWithReload";
@@ -31,7 +32,7 @@ const afterZod =
   () =>
     import("@/lib/zod-config").then(load);
 
-const LandingPage = lazyWithReload(() => import("@/pages/MuhasibLanding"));
+const PhaseSite = lazyWithReload(() => import("@/components/marketing/phase/PhaseSite"));
 const Pricing = lazyWithReload(() => import("@/pages/Pricing"));
 const Services = lazyWithReload(afterZod(() => import("@/pages/Services")));
 const DemoWorkspace = lazyWithReload(afterZod(() => import("@/pages/DemoWorkspace")));
@@ -65,10 +66,10 @@ function isPublicShellPath(pathname: string): boolean {
   return isPublicPath(pathname) && pathOnly(pathname) !== "/auth/callback";
 }
 
-function PublicRoutes() {
+function PublicRoutes({ path }: { path: string }) {
+  if (path === "/" || siteLocale(path)) return <PhaseSite />;
   return (
     <Switch>
-      <Route path="/" component={LandingPage} />
       <Route path="/pricing" component={Pricing} />
       <Route path="/services" component={Services} />
       <Route path="/demo" component={DemoWorkspace} />
@@ -93,7 +94,7 @@ function PublicRoutes() {
 }
 
 function WithProviders({ path, children }: { path: string; children: ReactNode }) {
-  if (PROVIDERLESS.has(path)) return <>{children}</>;
+  if (PROVIDERLESS.has(path) || siteLocale(path)) return <>{children}</>;
   // The no-login e-mail links need data fetching only (no toasts, no zod/forms).
   if (isCustomerLinkPath(path)) return <LinkProviders>{children}</LinkProviders>;
   return <PublicProviders>{children}</PublicProviders>;
@@ -125,7 +126,7 @@ export default function PublicApp() {
       <RTLProvider>
         <Suspense fallback={null}>
           <WithProviders path={path}>
-            <PublicRoutes />
+            <PublicRoutes path={path} />
           </WithProviders>
         </Suspense>
         {/* A customer opening an invoice link is not asked to install the app. */}

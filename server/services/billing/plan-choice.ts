@@ -2,7 +2,7 @@
  * STEP4: the plan a customer chose for after the 14-day trial.
  *
  * The choice lives in subscriptions.chosen_* (migration 0135) and is NEVER read by the plan gates:
- * the trial stays a planless trial of the top plan, and after it the workspace is read-only until
+ * the trial stays a planless trial of the top plan, and after it the workspace is locked until
  * the chosen plan is activated (an NR admin applies it, or checkout when Stripe is configured).
  * Every email goes through the durable outbox (sendEmail); without a provider it is queued as
  * blocked_no_provider and nothing claims to be sent.
@@ -216,7 +216,7 @@ export async function requestActivation(
   const companyName = co.rows[0]?.name ?? companyId;
   const end = await trialEndOf(companyId);
   const day = dubaiDay(now);
-  // The "books stay open" promise only holds while the trial runs; after it the books are read-only.
+  // The "books stay open" promise only holds while the trial runs; after it the workspace is locked.
   const ended = end !== null && end.getTime() <= now.getTime();
   const plan = PLAN_NAMES[choice.planId];
   const price = priceLine(choice.planId, choice.billingCycle);
@@ -251,7 +251,7 @@ export async function requestActivation(
     `We've got your request to activate ${plan.en} (${price.en}).`,
     "We'll email you to confirm. Nothing is charged until we confirm with you.",
     ended
-      ? "Your books are read-only until we activate it. Nothing is deleted."
+      ? "Your workspace is locked until we activate your plan. Your data is saved."
       : end
         ? `Your books stay fully open until ${dateEn(end)}.`
         : "",
@@ -261,7 +261,7 @@ export async function requestActivation(
     `استلمنا طلب تفعيل ${plan.ar} (${price.ar}).`,
     "سنراسلك بالبريد للتأكيد. لا يُحصَّل أي مبلغ حتى نؤكد معك.",
     ended
-      ? "دفاترك للقراءة فقط حتى نفعّلها. لم يُحذف شيء."
+      ? "تبقى مساحة عملك مقفلة حتى نفعّل خطتك. بياناتك محفوظة."
       : end
         ? `تبقى دفاترك مفتوحة بالكامل حتى ${dateAr(end)}.`
         : "",
@@ -485,29 +485,33 @@ export async function sendTrialReminders(now: Date = new Date()): Promise<Remind
       ? `الخطة بعد الفترة التجريبية: ${PLAN_NAMES[choice.planId].ar} (${priceLine(choice.planId, choice.billingCycle).ar}). فعّلها لمواصلة إضافة السجلات.`
       : "اختر الخطة التي تريدها لمواصلة إضافة السجلات.";
     const subjectEn = ended
-      ? "Your trial has ended: your books are read-only"
+      ? "Your trial ended and your workspace is locked"
       : `Your free trial ends on ${dateEn(end)}`;
     const subjectAr = ended
-      ? "انتهت الفترة التجريبية: دفاترك للقراءة فقط"
+      ? "انتهت الفترة التجريبية وأُقفلت مساحة عملك"
       : `تنتهي فترتك التجريبية في ${dateAr(end)}`;
     const bodyEn = ended
-      ? `Your free trial of ${r.company_name} ended on ${dateEn(end)}. Your books are read-only until a plan is activated; nothing was deleted.`
+      ? `Your free trial of ${r.company_name} ended on ${dateEn(end)}. Your workspace is locked until a paid plan is active.`
       : `Your free trial of ${r.company_name} ends on ${dateEn(end)}.`;
     const bodyAr = ended
-      ? `انتهت فترتك التجريبية لشركة ${r.company_name} في ${dateAr(end)}. دفاترك للقراءة فقط حتى تفعيل خطة؛ لم يُحذف شيء.`
+      ? `انتهت فترتك التجريبية لشركة ${r.company_name} في ${dateAr(end)}. تبقى مساحة عملك مقفلة حتى تفعيل خطة مدفوعة.`
       : `تنتهي فترتك التجريبية لشركة ${r.company_name} في ${dateAr(end)}.`;
     const text = [
       bodyEn,
       planEn,
       `Manage your plan: ${link}`,
-      "Your data stays safe and readable either way.",
+      ended
+        ? "Your data is kept safe. You can access it again once you choose and activate a paid plan."
+        : "Your data is kept safe and remains available through the end of your trial.",
       "",
       "---",
       "",
       bodyAr,
       planAr,
       `إدارة خطتك: ${link}`,
-      "تبقى بياناتك آمنة ومقروءة في الحالتين.",
+      ended
+        ? "تبقى بياناتك محفوظة بأمان. يمكنك الوصول إليها مجددًا بعد اختيار خطة مدفوعة وتفعيلها."
+        : "تبقى بياناتك محفوظة بأمان ومتاحة حتى نهاية فترتك التجريبية.",
     ].join("\n");
     const idempotencyKey = `${ended ? "trial-ended" : "trial-ending"}:${r.company_id}:${endDay}:${r.owner_email}`;
     const seen = await pq(`SELECT 1 FROM email_outbox WHERE idempotency_key = $1 LIMIT 1`, [

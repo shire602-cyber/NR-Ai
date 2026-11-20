@@ -36,13 +36,13 @@ describe("TrialBanner endedOnly (e-invoicing settings after the trial)", () => {
     const r = await render({ ended: false, daysLeft: 5 }, "en");
     expect(r.present).toBe(false);
   });
-  it("says the workspace is read-only once ended (en and ar)", async () => {
+  it("says the workspace is locked once ended (en and ar)", async () => {
     const en = await render({ ended: true, daysLeft: 0 }, "en");
     expect(en.present).toBe(true);
-    expect(en.html).toMatch(/read-only/i);
+    expect(en.html).toMatch(/workspace is locked/i);
     const ar = await render({ ended: true, daysLeft: 0 }, "ar");
     expect(ar.present).toBe(true);
-    expect(ar.html).toMatch(/[؀-ۿ]/);
+    expect(ar.html).toContain("مساحة عملك مقفلة");
   });
 });
 

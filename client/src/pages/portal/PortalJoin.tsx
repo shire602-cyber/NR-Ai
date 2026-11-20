@@ -382,6 +382,10 @@ function JoinPanel({
   ).format(new Date(info.expiresAt));
   const rulesOk = failedPasswordRules(password).length === 0;
 
+  useEffect(() => {
+    if (!busy && error?.field === "password") passwordRef.current?.focus();
+  }, [busy, error]);
+
   const accept = async (body: Record<string, unknown>) => {
     setBusy(true);
     setError(null);
@@ -399,7 +403,6 @@ function JoinPanel({
         ?.fields;
       if (api?.status === 400 && (fields?.password || /password/i.test(api.rawMessage))) {
         setError({ field: "password", message: api.message });
-        requestAnimationFrame(() => passwordRef.current?.focus());
       } else if (code === "LOGIN_REQUIRED") {
         onSignIn();
         return;
@@ -420,7 +423,6 @@ function JoinPanel({
     }
     if (!rulesOk) {
       setError({ field: "password", message: t["portal.join.passwordWeak"] });
-      passwordRef.current?.focus();
       return;
     }
     void accept({ name: name.trim(), password, acceptTerms: true });

@@ -22,7 +22,7 @@ const FIRM_BUILD = process.env.FIRM_BUILD === "1";
 export default defineConfig({
   plugins: [
     react(),
-    FIRM_BUILD && firmPreloads(),
+    FIRM_BUILD ? firmPreloads() : marketingPreloads(),
     ANALYZE &&
       visualizer({
         filename: path.resolve(__dirname, "dist/bundle-stats.html"),
@@ -79,7 +79,8 @@ export default defineConfig({
           groups: [
             {
               name: "vendor-react",
-              test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+              // Wouter also uses this shim, so public navigation should not pull in Radix.
+              test: /node_modules[\\/](react|react-dom|scheduler|use-sync-external-store)[\\/]/,
               priority: 2,
             },
             { name: vendorChunkName, priority: 1 },
@@ -163,6 +164,36 @@ function firmPreloads(): Plugin {
         type: "asset",
         fileName: "firm-preloads.json",
         source: JSON.stringify({ catalogs }),
+      });
+    },
+  };
+}
+
+/** Start the public page's imports with the HTML, without preloading app or tool routes. */
+function marketingPreloads(): Plugin {
+  return {
+    name: "marketing-preloads",
+    apply: "build",
+    generateBundle(_options, bundle) {
+      const entries = ["PhaseRoot"].map((name) =>
+        Object.values(bundle).find((file) => file.type === "chunk" && file.name === name)
+      );
+      const scripts = new Set<string>();
+      const styles = new Set<string>();
+      function walk(fileName: string) {
+        const file = bundle[fileName];
+        if (!file || file.type !== "chunk" || file.isEntry || scripts.has(fileName)) return;
+        scripts.add(fileName);
+        for (const css of file.viteMetadata?.importedCss ?? []) styles.add(css);
+        for (const dependency of file.imports) walk(dependency);
+      }
+      for (const file of entries) {
+        if (file?.type === "chunk") walk(file.fileName);
+      }
+      this.emitFile({
+        type: "asset",
+        fileName: "marketing-preloads.json",
+        source: JSON.stringify({ scripts: [...scripts], styles: [...styles] }),
       });
     },
   };
