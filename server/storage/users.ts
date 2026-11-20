@@ -5,6 +5,7 @@
 import {
   companies,
   customerPortalAccounts,
+  emailVerificationTokens,
   passwordResetTokens,
   users,
   type Company,
@@ -179,6 +180,7 @@ export class UserStorage {
         .set({ ...data, email, emailVerified: false, emailVerifiedAt: null })
         .where(eq(users.id, id))
         .returning();
+      await tx.delete(emailVerificationTokens).where(eq(emailVerificationTokens.userId, id));
       return user;
     });
   }

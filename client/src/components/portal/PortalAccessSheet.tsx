@@ -91,15 +91,16 @@ function InviteForm({
   supplierName,
   canInvite,
   onDelivered,
+  onFailed,
 }: {
   contact: PortalSheetContact;
   companyId: string;
   supplierName: string;
   canInvite: boolean;
   onDelivered: (res: InviteResponse) => void;
+  onFailed: (err: unknown) => void;
 }) {
   const { t } = useTranslation();
-  const { toast } = useToast();
   const { gate } = useCompanyPermission();
   const [email, setEmail] = useState(contact.email ?? "");
   const [name, setName] = useState(contact.contactPerson ?? "");
@@ -125,11 +126,7 @@ function InviteForm({
       setNote("");
       onDelivered(res);
     },
-    onError: (err) =>
-      toast({
-        title: err instanceof ApiError ? err.message : t["portal.invite.failed"],
-        variant: "destructive",
-      }),
+    onError: onFailed,
   });
 
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -321,11 +318,13 @@ export function PortalAccessSheet({
     void queryClient.invalidateQueries({ queryKey: portalSummaryKey(companyId) });
     setNow(Date.now());
   };
-  const fail = (err: unknown) =>
+  const fail = (err: unknown) => {
     toast({
       title: err instanceof ApiError ? err.message : t["portal.invite.failed"],
       variant: "destructive",
     });
+    if (err instanceof ApiError && err.body?.code === "PORTAL_INVITE_DELIVERY_FAILED") refresh();
+  };
   const reportDelivery = (res: InviteResponse) => {
     if (res.delivery === "email") {
       toast({ title: formatMessage(t["portal.invite.sentTo"], { email: res.invitation.email }) });
@@ -526,6 +525,7 @@ export function PortalAccessSheet({
                   supplierName={supplierName}
                   canInvite={canInvite}
                   onDelivered={reportDelivery}
+                  onFailed={fail}
                 />
               )}
             </section>

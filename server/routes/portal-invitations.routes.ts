@@ -152,6 +152,10 @@ export function registerPortalInvitationRoutes(app: Express): void {
           results.push({ contactId, outcome: "invited" });
         } catch (err) {
           const code = (err as { code?: string }).code;
+          if (code === "PORTAL_INVITE_DELIVERY_FAILED") {
+            results.push({ contactId, outcome: "delivery_failed" });
+            continue;
+          }
           const outcome =
             code === "CONTACT_EMAIL_REQUIRED"
               ? "skipped_no_email"

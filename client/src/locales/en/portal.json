@@ -354,6 +354,7 @@
   "portal.bulk.outcome.pending": "Already invited",
   "portal.bulk.outcome.not_found": "Not found",
   "portal.bulk.outcome.rate_limited": "Limit reached, try later",
+  "portal.bulk.outcome.delivery_failed": "Email delivery failed",
   "portal.dash.balanceDue": "Balance due",
   "portal.dash.overdueOf": "{count, plural, one {# overdue invoice:} other {# overdue invoices:}}",
   "portal.dash.nextDue": "Next payment due",

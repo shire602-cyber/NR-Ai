@@ -1026,7 +1026,7 @@
   "serverErrors.issue.website_must_be_an_http_s_url": "يجب أن يبدأ عنوان الموقع بـ http:// أو https://.",
   "serverErrors.PORTAL_INVITE_INVALID": "رابط الدعوة هذا غير صالح.",
   "serverErrors.PORTAL_INVITE_EMAIL_UNVERIFIED": "تحقّق من بريدك الإلكتروني قبل قبول هذه الدعوة.",
-  "serverErrors.PORTAL_INVITE_DELIVERY_FAILED": "تعذّر وضع رسالة الدعوة في قائمة الانتظار. حاول إعادة إرسال الدعوة.",
+  "serverErrors.PORTAL_INVITE_DELIVERY_FAILED": "تعذّر إرسال رسالة الدعوة. تحقّق من العنوان وحاول مرة أخرى.",
   "serverErrors.PORTAL_INVITE_EMAIL_RESERVED": "استخدم دعوة بوابة العملاء لإعداد هذا الحساب.",
   "serverErrors.PORTAL_ACCOUNT_EMAIL_CHANGE_BLOCKED": "ألغِ وصول المستخدم النشط إلى البوابة قبل تغيير بريده الإلكتروني.",
   "serverErrors.PORTAL_INVITE_EXPIRED": "انتهت صلاحية هذه الدعوة. اطلب من المورّد إرسال دعوة جديدة.",

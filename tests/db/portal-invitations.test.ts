@@ -491,20 +491,43 @@ describe("STEP5 portal invitations", () => {
     );
   });
 
-  it("refuses an old invite after the contact email changes and sends a new invite to the new address", async () => {
+  it("revokes the invitation at contact edit time, releases signup and prevents revival", async () => {
     const supplier = await h.createTenant();
     const oldEmail = `old-${uniq()}@example.test`;
     const newEmail = `new-${uniq()}@example.test`;
     const cid = await contact(supplier, "Changed email", { email: oldEmail });
     const issued = await invite(supplier, cid);
     const token = await tokenOf(issued.body.invitation.id);
-    await h.sql("UPDATE customer_contacts SET email = $2 WHERE id = $1", [cid, newEmail]);
+    const contactUrl = `/api/companies/${supplier.company.id}/customer-contacts/${cid}`;
+    expect((await supplier.as.put(contactUrl, { email: newEmail })).status).toBe(200);
+    expect((await supplier.as.put(contactUrl, { email: oldEmail })).status).toBe(200);
+    expect(
+      await h.sql("SELECT status FROM customer_portal_invitations WHERE id = $1", [
+        issued.body.invitation.id,
+      ])
+    ).toEqual([{ status: "revoked" }]);
     const guest = await browser();
+    expect(
+      (
+        await guest.post("/api/auth/register", {
+          email: oldEmail,
+          name: "Old mailbox",
+          password: PASSWORD,
+        })
+      ).status
+    ).toBe(200);
+    expect(await h.sql("SELECT id FROM users WHERE email = $1", [oldEmail])).toHaveLength(1);
     expect((await guest.lookup(token)).body.code).toBe("PORTAL_INVITE_REVOKED");
     expect(
       (await guest.accept(token, oldEmail, { password: PASSWORD, acceptTerms: true })).body.code
     ).toBe("PORTAL_INVITE_REVOKED");
+    const resend = await supplier.as.post(
+      `/api/companies/${supplier.company.id}/portal-invitations/${issued.body.invitation.id}/resend`,
+      {}
+    );
+    expect(resend.body.code).toBe("INVITATION_NOT_RESENDABLE");
 
+    expect((await supplier.as.put(contactUrl, { email: newEmail })).status).toBe(200);
     const replacement = await invite(supplier, cid);
     expect(replacement.status, replacement.text).toBe(201);
     const newToken = await tokenOf(replacement.body.invitation.id);
@@ -518,6 +541,10 @@ describe("STEP5 portal invitations", () => {
     const cid = await contact(t, "Expiring LLC");
     const r = await invite(t, cid);
     const oldToken = await tokenOf(r.body.invitation.id);
+    const [originalMail] = await h.sql(
+      "SELECT last_outbox_id FROM customer_portal_invitations WHERE id = $1",
+      [r.body.invitation.id]
+    );
     await h.sql(
       `UPDATE customer_portal_invitations SET expires_at = now() - interval '1 hour',
          last_sent_at = now() - interval '2 hours', last_outbox_id = NULL WHERE id = $1`,
@@ -548,6 +575,12 @@ describe("STEP5 portal invitations", () => {
     );
     expect(resend.status, resend.text).toBe(200);
     const newToken = await tokenOf(resend.body.invitation.id);
+    const { applyProviderEvent } = await import("../../server/outbox");
+    await applyProviderEvent({
+      provider: "test",
+      outboxId: originalMail.last_outbox_id,
+      type: "bounced",
+    });
     expect(newToken).not.toBe(oldToken);
     expect((await b.lookup(oldToken)).status).toBe(404);
     expect(
@@ -940,6 +973,11 @@ describe("STEP5 portal invitations", () => {
       type: "bounced",
       detail: `Bounced: ${rejectedLink}`,
     });
+    expect(
+      await h.sql("SELECT status FROM customer_portal_invitations WHERE id = $1", [
+        issued.body.invitation.id,
+      ])
+    ).toEqual([{ status: "revoked" }]);
     const errors = await h.sql("SELECT detail FROM email_delivery_events WHERE outbox_id = $1", [
       outbox.id,
     ]);
@@ -949,6 +987,106 @@ describe("STEP5 portal invitations", () => {
     );
     expect(staffHistory.status).toBe(200);
     expect(staffHistory.text).not.toContain(rejectedLink);
+  });
+
+  it("rolls back invite creation and resend when the outbox insert fails", async () => {
+    const supplier = await h.createTenant();
+    const email = `enqueue-failure-${uniq()}@example.test`;
+    const cid = await contact(supplier, "Outbox unavailable", {});
+    const earlier = await invite(supplier, await contact(supplier, "Previously queued"));
+    expect(earlier.status).toBe(201);
+    const earlierId = earlier.body.invitation.id;
+    const earlierToken = await tokenOf(earlierId);
+    await h.sql(
+      "UPDATE customer_portal_invitations SET last_sent_at = now() - interval '2 hours' WHERE id = $1",
+      [earlierId]
+    );
+    await h.sql(`CREATE FUNCTION reject_invite_enqueue() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'Simulated invite outbox failure'; END; $$;
+      CREATE TRIGGER reject_invite_enqueue BEFORE INSERT ON email_outbox
+      FOR EACH ROW WHEN (NEW.category = 'portal_invite') EXECUTE FUNCTION reject_invite_enqueue();`);
+    try {
+      const failed = await invite(supplier, cid, { email, saveEmailToContact: true });
+      expect(failed.status).toBe(503);
+      expect(failed.body.code).toBe("PORTAL_INVITE_DELIVERY_FAILED");
+      expect(
+        await h.sql("SELECT id FROM customer_portal_invitations WHERE contact_id = $1", [cid])
+      ).toHaveLength(0);
+      expect(await h.sql("SELECT email FROM customer_contacts WHERE id = $1", [cid])).toEqual([
+        { email: null },
+      ]);
+      expect(
+        (
+          await h.anon.post("/api/auth/register", {
+            email,
+            name: "Unreserved customer",
+            password: PASSWORD,
+          })
+        ).status
+      ).toBe(200);
+      expect(await h.sql("SELECT id FROM users WHERE email = $1", [email])).toHaveLength(1);
+      const resend = await supplier.as.post(
+        `/api/companies/${supplier.company.id}/portal-invitations/${earlierId}/resend`,
+        {}
+      );
+      expect(resend.body.code).toBe("PORTAL_INVITE_DELIVERY_FAILED");
+      expect((await (await browser()).lookup(earlierToken)).status).toBe(200);
+    } finally {
+      await h.sql(
+        "DROP TRIGGER reject_invite_enqueue ON email_outbox; DROP FUNCTION reject_invite_enqueue();"
+      );
+    }
+  });
+
+  it("reports a permanent delivery rejection and releases the address in single and bulk invites", async () => {
+    const supplier = await h.createTenant();
+    const email = `rejected-${uniq()}@example.test`;
+    const cid = await contact(supplier, "Rejected", { email });
+    const goodCid = await contact(supplier, "Deliverable");
+    const { setEmailTransportOverride, EmailTransportError } = await import("../../server/outbox");
+    let token = "";
+    setEmailTransportOverride({
+      name: "test",
+      send: async (mail) => {
+        if (mail.to !== email) return { providerMessageId: "delivered-test-message" };
+        token = TOKEN_RE.exec(mail.html)?.[1] ?? "";
+        throw new EmailTransportError(`Rejected ${token}`, true);
+      },
+    });
+    const failed = await invite(supplier, cid);
+    expect(failed.status).toBe(503);
+    expect(failed.body.code).toBe("PORTAL_INVITE_DELIVERY_FAILED");
+    expect(token).toMatch(/^[a-f0-9]{64}$/);
+    expect(failed.text).not.toContain(token);
+    expect((await (await browser()).lookup(token)).body.code).toBe("PORTAL_INVITE_REVOKED");
+    expect(
+      await h.sql(
+        `SELECT inv.status, mail.status AS mail_status, mail.html
+      FROM customer_portal_invitations inv JOIN email_outbox mail ON mail.id = inv.last_outbox_id
+      WHERE inv.contact_id = $1`,
+        [cid]
+      )
+    ).toEqual([{ status: "revoked", mail_status: "dead", html: null }]);
+
+    const bulk = await supplier.as.post(
+      `/api/companies/${supplier.company.id}/portal-invitations/bulk`,
+      { contactIds: [cid, goodCid] }
+    );
+    expect(bulk.status).toBe(200);
+    expect(bulk.body.results).toEqual([
+      { contactId: cid, outcome: "delivery_failed" },
+      { contactId: goodCid, outcome: "invited" },
+    ]);
+    expect(
+      (
+        await h.anon.post("/api/auth/register", {
+          email,
+          name: "Unreserved customer",
+          password: PASSWORD,
+        })
+      ).status
+    ).toBe(200);
+    expect(await h.sql("SELECT id FROM users WHERE email = $1", [email])).toHaveLength(1);
   });
 
   it("[S5-13] bulk invite reports a per-contact outcome and caps at 100", async () => {

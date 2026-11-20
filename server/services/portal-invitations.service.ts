@@ -47,7 +47,7 @@ import {
   listPortalLinks,
   logPortalAccess,
 } from "./portal-access.service";
-import { sendEmail } from "./email.service";
+import { deliverOutboxMessage, enqueueEmail, type OutboxResult } from "../outbox";
 import { renderPortalInviteEmail, normaliseInviteLanguage } from "./portal-invite-email";
 import { paymentsAvailability, publicBaseUrl } from "./payments";
 import { recordAudit } from "./audit.service";
@@ -158,56 +158,66 @@ async function loadCompany(companyId: string): Promise<Company> {
 
 // ─── Delivery ───────────────────────────────────────────────────────────────
 
-async function deliverInvitation(
+function deliveryFailed(): DomainError {
+  return new DomainError(
+    "PORTAL_INVITE_DELIVERY_FAILED",
+    503,
+    undefined,
+    "Could not deliver the invitation email"
+  );
+}
+
+async function enqueueInvitation(
+  tx: typeof db,
   inv: CustomerPortalInvitation,
   rawToken: string,
   company: Company,
   contact: CustomerContact
-): Promise<{ delivery: InviteDelivery; updated: CustomerPortalInvitation }> {
-  const url = portalInviteUrl(rawToken);
+): Promise<{ invitation: CustomerPortalInvitation; outbox: OutboxResult }> {
   const mail = renderPortalInviteEmail({
     company,
     contact,
     invitation: inv,
-    url,
+    url: portalInviteUrl(rawToken),
     onlinePayment: paymentsAvailability().available,
   });
-  const result = await sendEmail(inv.email, mail.subject, mail.text, {
-    html: mail.html,
-    fromName: company.name,
-    companyId: inv.companyId,
-    category: "portal_invite",
-    sensitive: true,
-    relatedEntityType: "customer_portal_invitation",
-    relatedEntityId: inv.id,
-    idempotencyKey: `portal-invite:${inv.id}:${inv.sendCount}`,
-    replyTo: company.contactEmail ?? null,
-  });
-  if (!result.id) {
-    throw new DomainError(
-      "PORTAL_INVITE_DELIVERY_FAILED",
-      503,
-      undefined,
-      "Could not queue the invitation email"
+  try {
+    const outbox = await enqueueEmail(
+      {
+        to: inv.email,
+        subject: mail.subject,
+        text: mail.text,
+        html: mail.html,
+        fromName: company.name,
+        companyId: inv.companyId,
+        category: "portal_invite",
+        sensitive: true,
+        relatedEntityType: "customer_portal_invitation",
+        relatedEntityId: inv.id,
+        idempotencyKey: `portal-invite:${inv.id}:${inv.sendCount}`,
+        replyTo: company.contactEmail ?? null,
+      },
+      tx
     );
+    const [invitation] = await tx
+      .update(customerPortalInvitations)
+      .set({ lastOutboxId: outbox.id })
+      .where(eq(customerPortalInvitations.id, inv.id))
+      .returning();
+    return { invitation, outbox };
+  } catch {
+    // Roll back the email reservation with the outbox write. Driver errors can contain mail bodies.
+    throw deliveryFailed();
   }
-  const [updated] = await db
-    .update(customerPortalInvitations)
-    .set({
-      lastOutboxId: result.id,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(customerPortalInvitations.id, inv.id),
-        eq(customerPortalInvitations.tokenHash, inv.tokenHash)
-      )
-    )
-    .returning();
-  return {
-    delivery: result.sent ? "email" : "queued",
-    updated: updated ?? inv,
-  };
+}
+
+async function deliverInvitation(outbox: OutboxResult): Promise<InviteDelivery> {
+  const result = outbox.status === "queued" ? await deliverOutboxMessage(outbox.id) : outbox;
+  if (result?.status === "sent" || result?.status === "delivered") return "email";
+  if (result && ["queued", "sending", "retrying", "blocked_no_provider"].includes(result.status)) {
+    return "queued";
+  }
+  throw deliveryFailed();
 }
 
 // ─── Staff operations ───────────────────────────────────────────────────────
@@ -312,8 +322,9 @@ export async function createInvitation(args: {
   }
   await enforceInviteRate(companyId);
 
+  const company = await loadCompany(companyId);
   const token = newToken();
-  const { inv, lockedContact } = await db.transaction(async (tx) => {
+  const { invitation, outbox } = await db.transaction(async (tx) => {
     await lockPortalInviteEmail(tx, email);
     const lockedContact = await lockContact(tx, companyId, contact.id);
     if (!lockedContact?.isActive || contactEmail(lockedContact) !== contactEmail(contact)) {
@@ -358,24 +369,23 @@ export async function createInvitation(args: {
         "An invitation is already pending"
       );
     }
-    return { inv, lockedContact };
+    return enqueueInvitation(tx, inv, token.raw, company, lockedContact);
   });
 
-  const company = await loadCompany(companyId);
-  const sent = await deliverInvitation(inv, token.raw, company, lockedContact);
+  const delivery = await deliverInvitation(outbox);
   await recordAudit({
     userId: args.invitedBy,
     companyId,
     action: "portal.invite",
     entityType: "customer_portal_invitation",
-    entityId: inv.id,
+    entityId: invitation.id,
     before: null,
-    after: { contactId: contact.id, email, language: body.language, delivery: sent.delivery },
+    after: { contactId: contact.id, email, language: body.language, delivery },
     req: args.req,
   });
   return {
-    invitation: publicInvitation(sent.updated),
-    delivery: sent.delivery,
+    invitation: publicInvitation(invitation),
+    delivery,
   };
 }
 
@@ -418,7 +428,7 @@ export async function resendInvitation(args: {
   }
   const company = await loadCompany(args.companyId);
   const token = newToken();
-  const { rotated, contact } = await db.transaction(async (tx) => {
+  const { invitation, outbox } = await db.transaction(async (tx) => {
     await lockPortalInviteEmail(tx, inv.email);
     const contact = await lockContact(tx, inv.companyId, inv.contactId);
     checkInvitedContact(inv, contact);
@@ -449,9 +459,9 @@ export async function resendInvitation(args: {
         "This invitation is closed"
       );
     }
-    return { rotated, contact };
+    return enqueueInvitation(tx, rotated, token.raw, company, contact);
   });
-  const sent = await deliverInvitation(rotated, token.raw, company, contact);
+  const delivery = await deliverInvitation(outbox);
   await recordAudit({
     userId: args.actorId,
     companyId: args.companyId,
@@ -459,12 +469,12 @@ export async function resendInvitation(args: {
     entityType: "customer_portal_invitation",
     entityId: inv.id,
     before: null,
-    after: { delivery: sent.delivery, sendCount: sent.updated.sendCount },
+    after: { delivery, sendCount: invitation.sendCount },
     req: args.req,
   });
   return {
-    invitation: publicInvitation(sent.updated),
-    delivery: sent.delivery,
+    invitation: publicInvitation(invitation),
+    delivery,
   };
 }
 
@@ -813,6 +823,8 @@ export async function acceptInvitation(args: {
 
   const outcome = await db.transaction(async (tx) => {
     await lockPortalInviteEmail(tx, email);
+    // Contact updates revoke invitations while holding the contact row lock.
+    const contact = await lockContact(tx, inv.companyId, inv.contactId);
     const [locked] = await tx
       .select()
       .from(customerPortalInvitations)
@@ -833,7 +845,6 @@ export async function acceptInvitation(args: {
       throw inviteStateError(locked.status);
     }
     if (locked.expiresAt.getTime() <= Date.now()) throw inviteStateError("expired");
-    const contact = await lockContact(tx, locked.companyId, locked.contactId);
     checkInvitedContact(locked, contact);
 
     const [existing] = await tx

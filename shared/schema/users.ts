@@ -239,6 +239,7 @@ export const emailVerificationTokens = pgTable("email_verification_tokens", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   tokenHash: text("token_hash").notNull().unique(),
+  email: text("email"), // Legacy tokens without an address cannot verify an account.
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

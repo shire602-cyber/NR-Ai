@@ -209,19 +209,17 @@ export function globalErrorHandler(
     });
     const status = err instanceof AppError ? err.statusCode : 500;
     const deliveryFailed = err instanceof AppError && err.code === "PORTAL_INVITE_DELIVERY_FAILED";
-    res
-      .status(status)
-      .json(
-        withRequestId(
-          deliveryFailed
-            ? {
-                message: "Could not queue the invitation email",
-                code: "PORTAL_INVITE_DELIVERY_FAILED",
-              }
-            : { message: "Could not process the invitation", code: "INTERNAL_ERROR" },
-          req
-        )
-      );
+    res.status(status).json(
+      withRequestId(
+        deliveryFailed
+          ? {
+              message: "Could not deliver the invitation email",
+              code: "PORTAL_INVITE_DELIVERY_FAILED",
+            }
+          : { message: "Could not process the invitation", code: "INTERNAL_ERROR" },
+        req
+      )
+    );
     return;
   }
 

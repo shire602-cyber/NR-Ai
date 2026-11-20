@@ -10,6 +10,7 @@ import {
 import { buildLimiter } from "../../server/middleware/rateLimit";
 import { requestLogger } from "../../server/middleware/requestLogger";
 import { applySecurityMiddleware } from "../../server/middleware/security";
+import { registerClientErrorRoutes } from "../../server/routes/client-errors.routes";
 
 const logs = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 vi.mock("../../server/config/logger", () => ({ createLogger: () => logs }));
@@ -22,6 +23,7 @@ it("keeps invite credentials out of request logs, throttling, error reports and 
   applySecurityMiddleware(app);
   app.use(express.json());
   app.use(requestLogger);
+  registerClientErrorRoutes(app);
   app.post("/api/test-report", cspReportHandler);
   app.post(
     `${invitePath}/lookup`,
@@ -55,6 +57,25 @@ it("keeps invite credentials out of request logs, throttling, error reports and 
     expect(await legacy.text()).not.toContain(token);
     expect((await fetch(`${base}${invitePath}/${token}/limited`)).status).toBe(204);
     expect((await fetch(`${base}${invitePath}/${token}/limited`)).status).toBe(429);
+    const encoded = [...token].map((c) => `%${c.charCodeAt(0).toString(16)}`).join("");
+    const report = await fetch(`${base}/api/client-errors`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: link,
+        message: `An error echoed ${token}`,
+        stack: `encoded ${encoded}`,
+      }),
+    });
+    expect(report.status).toBe(204);
+    expect(logs.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        url: "/portal/join",
+        message: "An error echoed [redacted]",
+        stack: "encoded [redacted]",
+      }),
+      "Client-side error reported"
+    );
     expect(
       (
         await fetch(`${base}/api/test-report`, {
@@ -83,6 +104,7 @@ it("keeps invite credentials out of request logs, throttling, error reports and 
     );
     const output = JSON.stringify(Object.values(logs).flatMap((level) => level.mock.calls));
     expect(output).not.toContain(token);
+    expect(output).not.toContain(encoded);
     expect(output).not.toContain("#t=");
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));

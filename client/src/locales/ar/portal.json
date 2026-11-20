@@ -354,6 +354,7 @@
   "portal.bulk.outcome.pending": "مدعو بالفعل",
   "portal.bulk.outcome.not_found": "غير موجود",
   "portal.bulk.outcome.rate_limited": "بلغت الحد، حاول لاحقًا",
+  "portal.bulk.outcome.delivery_failed": "تعذّر إرسال البريد الإلكتروني",
   "portal.dash.balanceDue": "الرصيد المستحق",
   "portal.dash.overdueOf": "{count, plural, zero {لا فواتير متأخرة:} one {فاتورة متأخرة واحدة:} two {فاتورتان متأخرتان:} few {# فواتير متأخرة:} many {# فاتورة متأخرة:} other {# فاتورة متأخرة:}}",
   "portal.dash.nextDue": "الدفعة التالية المستحقة",

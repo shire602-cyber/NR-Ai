@@ -459,7 +459,11 @@ export async function markOAuthLogin(
     .update(users)
     .set({
       lastLoginAt: now,
-      ...(profile?.emailVerified ? { emailVerified: true } : {}),
+      ...(profile?.emailVerified
+        ? {
+            emailVerified: sql<boolean>`CASE WHEN lower(${users.email}) = ${normalizeOAuthEmail(profile.email)} THEN true ELSE ${users.emailVerified} END`,
+          }
+        : {}),
     })
     .where(eq(users.id, userId));
 
