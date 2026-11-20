@@ -1,26 +1,25 @@
+import { T } from "@/components/layout/T";
+import { useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Mail,
-  Plus,
   Search,
   MoreHorizontal,
   RefreshCw,
   XCircle,
-  CheckCircle,
-  Clock,
   Trash2,
   Send,
   Building2,
   Copy,
-  ExternalLink,
 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
@@ -54,14 +53,18 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { format, formatDistanceToNow, isAfter } from "date-fns";
+import { formatDistanceToNow, isAfter } from "date-fns";
+import { dateFnsOptions } from "@/lib/date-locale";
+import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import type { Invitation, Company } from "@shared/schema";
 
 export default function UserInvitations() {
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
 
   const { data: invitations = [], isLoading } = useQuery<Invitation[]>({
@@ -83,13 +86,13 @@ export default function UserInvitations() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
-      toast({ title: "Invitation sent successfully" });
+      toast({ title: t["portal.inviteSent"] });
       setInviteDialogOpen(false);
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to send invitation",
+        title: translateNow("toasts.failedToSendInvitation"),
         description: error?.message,
       });
     },
@@ -101,12 +104,12 @@ export default function UserInvitations() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
-      toast({ title: "Invitation revoked" });
+      toast({ title: t["portal.inviteRevoked"] });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to revoke invitation",
+        title: translateNow("toasts.failedToRevokeInvitation"),
         description: error?.message,
       });
     },
@@ -118,12 +121,12 @@ export default function UserInvitations() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
-      toast({ title: "Invitation resent successfully" });
+      toast({ title: t["portal.inviteResent"] });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to resend invitation",
+        title: translateNow("toasts.failedToResendInvitation"),
         description: error?.message,
       });
     },
@@ -135,12 +138,12 @@ export default function UserInvitations() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/invitations"] });
-      toast({ title: "Invitation deleted" });
+      toast({ title: t["portal.inviteDeleted"] });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete invitation",
+        title: translateNow("toasts.failedToDeleteInvitation"),
         description: error?.message,
       });
     },
@@ -156,21 +159,44 @@ export default function UserInvitations() {
     const isExpired = invitation.expiresAt && isAfter(new Date(), new Date(invitation.expiresAt));
 
     if (invitation.status === "accepted") {
-      return <Badge className="bg-success/10 text-success border-success/20">Accepted</Badge>;
+      return (
+        <StatusBadge tone="success">
+          <T k="pages.accepted" />
+        </StatusBadge>
+      );
     }
     if (invitation.status === "revoked") {
-      return <Badge variant="destructive">Revoked</Badge>;
+      return (
+        <StatusBadge tone="danger">
+          <T k="pages.revoked" />
+        </StatusBadge>
+      );
     }
     if (isExpired) {
-      return <Badge variant="secondary">Expired</Badge>;
+      return (
+        <Badge variant="secondary">
+          <T k="pages.expired" />
+        </Badge>
+      );
     }
-    return <Badge className="bg-info/10 text-info border-info/20">Pending</Badge>;
+    return (
+      <StatusBadge tone="info">
+        <T k="pages.pending" />
+      </StatusBadge>
+    );
   };
 
   const handleSendInvitation = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    const email = formData.get("email") as string;
+    const email = String(formData.get("email") ?? "").trim();
+    // Broken-path sweep: an empty "Send invitation" did nothing visible (only the browser's own
+    // bubble, in the browser's language); the form now says what is wrong, in the app language.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setEmailError(t[email ? "forms.errors.emailAddressInvalid" : "forms.errors.required"]);
+      return;
+    }
+    setEmailError(null);
     const role = formData.get("role") as string;
     const userType = formData.get("userType") as string;
 
@@ -185,7 +211,7 @@ export default function UserInvitations() {
   const copyInviteLink = (token: string) => {
     const link = `${window.location.origin}/register?invite=${token}`;
     navigator.clipboard.writeText(link);
-    toast({ title: "Invitation link copied to clipboard" });
+    toast({ title: t["portal.inviteLinkCopied"] });
   };
 
   if (isLoading) {
@@ -196,54 +222,63 @@ export default function UserInvitations() {
     );
   }
 
-  const pendingCount = invitations.filter((i) => i.status === "pending").length;
-  const acceptedCount = invitations.filter((i) => i.status === "accepted").length;
-
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Admin"
-        title="User Invitations"
+        eyebrow={t["pages.eyebrowAdmin"]}
+        title={t["portal.inviteTitle"]}
         testId="text-invitations-title"
-        description="Invite clients to access their portal"
+        description={t["portal.inviteSubtitle"]}
         actions={
           <Button onClick={() => setInviteDialogOpen(true)} data-testid="button-send-invite">
-            <Mail className="w-4 h-4 mr-2" />
-            Send Invitation
+            <Mail className="w-4 h-4 me-2" />
+            <T k="pageLabels.sendInvitation" />
           </Button>
         }
       />
       <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Send Client Invitation</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.sendClientInvitation" />
+            </DialogTitle>
             <DialogDescription>
-              Invite a new user to access the client portal. They will receive a link to register.
+              <T k="portal.inviteDescription" />
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSendInvitation} className="space-y-4">
+          <form onSubmit={handleSendInvitation} noValidate className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email Address *</Label>
+              <Label htmlFor="email">{t["adminConsole.inviteEmail"]}</Label>
               <Input
                 id="email"
                 name="email"
                 type="email"
                 placeholder="client@example.com"
                 required
+                aria-invalid={emailError ? true : undefined}
+                aria-describedby={emailError ? "invite-email-error" : undefined}
+                onChange={() => setEmailError(null)}
                 data-testid="input-invite-email"
               />
+              {emailError && (
+                <p id="invite-email-error" role="alert" className="text-small text-danger">
+                  {emailError}
+                </p>
+              )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="company">Assign to Client (optional)</Label>
+              <Label htmlFor="company">{t["adminConsole.inviteAssignClient"]}</Label>
               <Select
                 value={selectedCompanyId || "none"}
                 onValueChange={(value) => setSelectedCompanyId(value === "none" ? "" : value)}
               >
                 <SelectTrigger data-testid="select-invite-company">
-                  <SelectValue placeholder="Select a client company" />
+                  <SelectValue placeholder={t["portal.inviteSelectCompany"]} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No company assigned</SelectItem>
+                  <SelectItem value="none">
+                    <T k="pageLabels.noCompanyAssigned" />
+                  </SelectItem>
                   {clients.map((client) => (
                     <SelectItem key={client.id} value={client.id}>
                       {client.name}
@@ -252,105 +287,93 @@ export default function UserInvitations() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                If assigned, the user will have access to this client's data.
+                <T k="pageLabels.ifAssignedTheUserWillHave" />
               </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="userType">User Type *</Label>
+              <Label htmlFor="userType">{t["adminConsole.inviteUserType"]}</Label>
               <Select name="userType" defaultValue="client">
                 <SelectTrigger data-testid="select-invite-usertype">
-                  <SelectValue placeholder="Select user type" />
+                  <SelectValue placeholder={t["portal.inviteSelectUserType"]} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="client">Client (NR-managed portal access)</SelectItem>
-                  <SelectItem value="customer">Customer (full SaaS bookkeeping)</SelectItem>
+                  <SelectItem value="client">{t["adminConsole.userTypeClient"]}</SelectItem>
+                  <SelectItem value="customer">{t["adminConsole.userTypeCustomer"]}</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                Client: Simplified portal for NR-managed clients. Customer: Full self-service
-                access.
-              </p>
+              <p className="text-xs text-muted-foreground">{t["firmOps.inviteUserTypeHint"]}</p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="role">Access Level</Label>
+              <Label htmlFor="role">
+                <T k="pageLabels.accessLevel" />
+              </Label>
               <Select name="role" defaultValue="client">
                 <SelectTrigger data-testid="select-invite-role">
-                  <SelectValue placeholder="Select access level" />
+                  <SelectValue placeholder={t["portal.inviteSelectAccess"]} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="client">Standard (view their company only)</SelectItem>
-                  <SelectItem value="staff">Staff (admin access)</SelectItem>
+                  <SelectItem value="client">{t["portal.invitations.roleStandard"]}</SelectItem>
+                  <SelectItem value="staff">{t["portal.invitations.roleStaff"]}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setInviteDialogOpen(false)}>
-                Cancel
+                <T k="pages.cancel" />
               </Button>
               <Button
                 type="submit"
                 disabled={createInvitationMutation.isPending}
                 data-testid="button-submit-invite"
               >
-                <Send className="w-4 h-4 mr-2" />
-                {createInvitationMutation.isPending ? "Sending..." : "Send Invitation"}
+                <Send className="w-4 h-4 me-2" />
+                {createInvitationMutation.isPending
+                  ? t["portal.inviteSending"]
+                  : t["pageLabels.sendInvitation"]}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Total Invitations</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{invitations.length}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Pending</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-info">{pendingCount}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Accepted</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-success">{acceptedCount}</div>
-          </CardContent>
-        </Card>
-      </div>
-
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-4 flex-1">
               <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by email..."
+                  placeholder={t["portal.inviteSearchPlaceholder"]}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
+                  className="ps-10"
                   data-testid="input-search-invites"
                 />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-40" data-testid="select-filter-status">
-                  <SelectValue placeholder="Filter by status" />
+                <SelectTrigger
+                  className="w-40"
+                  aria-label={t["firmOps.ariaInviteStatus"]}
+                  data-testid="select-filter-status"
+                >
+                  <SelectValue placeholder={t["portal.inviteFilterStatus"]} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="accepted">Accepted</SelectItem>
-                  <SelectItem value="revoked">Revoked</SelectItem>
-                  <SelectItem value="expired">Expired</SelectItem>
+                  <SelectItem value="all">
+                    <T k="pageLabels.allStatus" />
+                  </SelectItem>
+                  <SelectItem value="pending">
+                    <T k="pages.pending" />
+                  </SelectItem>
+                  <SelectItem value="accepted">
+                    <T k="pages.accepted" />
+                  </SelectItem>
+                  <SelectItem value="revoked">
+                    <T k="pages.revoked" />
+                  </SelectItem>
+                  <SelectItem value="expired">
+                    <T k="pages.expired" />
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -361,13 +384,23 @@ export default function UserInvitations() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Expires</TableHead>
-                  <TableHead>Sent</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>
+                    <T k="pages.email" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.client" />
+                  </TableHead>
+                  <TableHead>{t["portal.invitations.role"]}</TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pageLabels.expires" />
+                  </TableHead>
+                  <TableHead>{t["portal.invitations.sent"]}</TableHead>
+                  <TableHead data-numeric>
+                    <T k="pages.actions" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -387,12 +420,14 @@ export default function UserInvitations() {
                             {client.name}
                           </div>
                         ) : (
-                          <span className="text-muted-foreground">Not assigned</span>
+                          <span className="text-muted-foreground">
+                            <T k="pageLabels.notAssigned" />
+                          </span>
                         )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={invitation.role === "staff" ? "default" : "secondary"}>
-                          {invitation.role}
+                          {t[`portal.invitations.roleValue.${invitation.role}`] ?? invitation.role}
                         </Badge>
                       </TableCell>
                       <TableCell>{getStatusBadge(invitation)}</TableCell>
@@ -401,6 +436,7 @@ export default function UserInvitations() {
                           <span className={isExpired ? "text-destructive" : ""}>
                             {formatDistanceToNow(new Date(invitation.expiresAt), {
                               addSuffix: true,
+                              ...dateFnsOptions(locale),
                             })}
                           </span>
                         ) : (
@@ -409,10 +445,10 @@ export default function UserInvitations() {
                       </TableCell>
                       <TableCell>
                         {invitation.createdAt
-                          ? format(new Date(invitation.createdAt), "MMM d, yyyy")
+                          ? formatDisplayDate(invitation.createdAt, locale)
                           : "-"}
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell data-numeric>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
@@ -426,8 +462,8 @@ export default function UserInvitations() {
                           <DropdownMenuContent align="end">
                             {invitation.status === "pending" && !isExpired && (
                               <DropdownMenuItem onClick={() => copyInviteLink(invitation.token)}>
-                                <Copy className="w-4 h-4 mr-2" />
-                                Copy Invite Link
+                                <Copy className="w-4 h-4 me-2" />
+                                <T k="pageLabels.copyInviteLink" />
                               </DropdownMenuItem>
                             )}
                             {canResend && (
@@ -435,8 +471,8 @@ export default function UserInvitations() {
                                 onClick={() => resendInvitationMutation.mutate(invitation.id)}
                                 disabled={resendInvitationMutation.isPending}
                               >
-                                <RefreshCw className="w-4 h-4 mr-2" />
-                                Resend Invitation
+                                <RefreshCw className="w-4 h-4 me-2" />
+                                <T k="pageLabels.resendInvitation" />
                               </DropdownMenuItem>
                             )}
                             {invitation.status === "pending" && (
@@ -447,8 +483,8 @@ export default function UserInvitations() {
                                   onClick={() => revokeInvitationMutation.mutate(invitation.id)}
                                   disabled={revokeInvitationMutation.isPending}
                                 >
-                                  <XCircle className="w-4 h-4 mr-2" />
-                                  Revoke
+                                  <XCircle className="w-4 h-4 me-2" />
+                                  <T k="pageLabels.revoke" />
                                 </DropdownMenuItem>
                               </>
                             )}
@@ -460,8 +496,8 @@ export default function UserInvitations() {
                                 }
                               }}
                             >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
+                              <Trash2 className="w-4 h-4 me-2" />
+                              <T k="pages.delete" />
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -473,8 +509,8 @@ export default function UserInvitations() {
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       {searchTerm || statusFilter !== "all"
-                        ? "No invitations match your filters"
-                        : "No invitations sent yet"}
+                        ? t["portal.inviteNoMatches"]
+                        : t["portal.inviteNoneYet"]}
                     </TableCell>
                   </TableRow>
                 )}

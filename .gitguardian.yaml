@@ -1,0 +1,20 @@
+# GitGuardian (ggshield and the GitHub app) configuration. Keep every ignore narrow and reasoned.
+version: 2
+secret:
+  ignored-matches:
+    # Incident 40231730 ("Generic Password"), 8 occurrences: a fake password typed into a mocked
+    # registration form in tests/unit/e3-register-language-switch.test.ts (lines 102/131) in
+    # commits 31bd49e6, 953494b5, 691a699c, da03c336 on claude/eloquent-maxwell-kjxxjc. It was
+    # never an account credential: the test mocks the network, nothing is sent anywhere. The
+    # literal is gone from the tree (tests use FAKE_PASSWORD from
+    # tests/fixtures/credentials/fake-credentials.ts and
+    # tests/unit/no-real-looking-test-passwords.test.ts blocks new ones); this entry only clears
+    # the historical commits. Matched by SHA-256 so the value is not repeated here.
+    - name: "Fake fixture password in e3-register-language-switch.test.ts history (not a credential)"
+      match: 2afb52c2c21a814d59ee3529f739da9c4afbd4933d9e909aedcc442c1373e429
+    # Incident 40457455 ("Generic Password"): the same fake form value with a "Fake-" prefix, typed
+    # into the mocked registration form at tests/unit/step4-signup-plan.test.ts in commit 89147f8c
+    # on launch/hardening-on-67 (one commit only; the literal is replaced by FAKE_PASSWORD in the
+    # next commit). Not a credential: the test mocks the network. Historical-commit entry only.
+    - name: "Fake fixture password in step4-signup-plan.test.ts, commit 89147f8c (not a credential)"
+      match: 478d99d4725e43a17e258c061a34a070f291d4691b01728be5ebc978c66b73e9

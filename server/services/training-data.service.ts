@@ -115,7 +115,7 @@ async function loadRules(companyId: string): Promise<CompanyRuleSnapshot[]> {
     [companyId]
   );
 
-  return rows.map((r: any) => ({
+  return rows.map((r) => ({
     id: r.id,
     merchantPattern: r.merchant_pattern,
     descriptionPattern: r.description_pattern,
@@ -144,7 +144,7 @@ async function loadTrainingExamples(companyId: string): Promise<TrainingExample[
     [companyId]
   );
 
-  return rows.map((r: any) => ({
+  return rows.map((r) => ({
     merchant: r.merchant,
     category: r.category,
     accountId: r.account_id,
@@ -228,7 +228,7 @@ export async function getModelStats(companyId: string): Promise<ModelStats> {
   );
 
   const byMethod = ALL_METHODS.map((method) => {
-    const row = rows.find((r: any) => r.method === method);
+    const row = rows.find((r) => r.method === method);
     const accepted = row ? parseInt(row.accepted, 10) || 0 : 0;
     const rejected = row ? parseInt(row.rejected, 10) || 0 : 0;
     const pending = row ? parseInt(row.pending, 10) || 0 : 0;

@@ -1,3 +1,4 @@
+import { journalLine } from "@shared/journal-memo";
 // Pure, side-effect-free helpers for financial-statement construction so the
 // logic can be unit tested without a database.
 //
@@ -30,6 +31,7 @@ export type CFAccount = {
   subType?: string | null;
   code?: string | null;
   nameEn: string;
+  nameAr?: string | null;
 };
 
 export type CFLine = { accountId: string; debit?: number | null; credit?: number | null };
@@ -152,7 +154,7 @@ export function buildFxRevaluationLines(args: {
     fxLossId?: string | null;
   };
 }):
-  | { ok: true; lines: Array<{ accountId: string; debit: number; credit: number; description: string }> }
+  | { ok: true; lines: Array<{ accountId: string; debit: number; credit: number; description: string; lineKey?: string; lineParams?: Record<string, string> }> }
   | { ok: false; code: string; message: string } {
   const ar = round2(args.receivableRevalAed || 0);
   const ap = round2(args.payableRevalAed || 0);
@@ -161,7 +163,7 @@ export function buildFxRevaluationLines(args: {
     return { ok: false, code: "NO_REVALUATION", message: "No open foreign-currency balances to revalue." };
   }
   const { accounts } = args;
-  const lines: Array<{ accountId: string; debit: number; credit: number; description: string }> = [];
+  const lines: Array<{ accountId: string; debit: number; credit: number; description: string; lineKey?: string; lineParams?: Record<string, string> }> = [];
 
   if (Math.abs(ar) >= 0.01) {
     if (!accounts.arId)
@@ -170,7 +172,7 @@ export function buildFxRevaluationLines(args: {
       accountId: accounts.arId,
       debit: ar > 0 ? ar : 0,
       credit: ar < 0 ? -ar : 0,
-      description: "Unrealised FX revaluation — A/R",
+      ...journalLine("fxRevalAr"),
     });
   }
   if (Math.abs(ap) >= 0.01) {
@@ -180,18 +182,18 @@ export function buildFxRevaluationLines(args: {
       accountId: accounts.apId,
       debit: ap > 0 ? ap : 0,
       credit: ap < 0 ? -ap : 0,
-      description: "Unrealised FX revaluation — A/P",
+      ...journalLine("fxRevalAp"),
     });
   }
   if (Math.abs(net) >= 0.01) {
     if (net > 0) {
       if (!accounts.fxGainId)
         return { ok: false, code: "FX_GAIN_ACCOUNT_MISSING", message: "FX Gain account is missing." };
-      lines.push({ accountId: accounts.fxGainId, debit: 0, credit: net, description: "Unrealised FX gain" });
+      lines.push({ accountId: accounts.fxGainId, debit: 0, credit: net, ...journalLine("fxUnrealisedGain") });
     } else {
       if (!accounts.fxLossId)
         return { ok: false, code: "FX_LOSS_ACCOUNT_MISSING", message: "FX Loss account is missing." };
-      lines.push({ accountId: accounts.fxLossId, debit: -net, credit: 0, description: "Unrealised FX loss" });
+      lines.push({ accountId: accounts.fxLossId, debit: -net, credit: 0, ...journalLine("fxUnrealisedLoss") });
     }
   }
 
@@ -207,6 +209,7 @@ export type CashFlowBreakdownLine = {
   accountId: string;
   accountCode: string;
   accountName: string;
+  accountNameAr?: string | null;
   amount: number; // signed: positive = cash inflow
 };
 
@@ -274,6 +277,7 @@ export function computeCashFlow(args: {
         accountId,
         accountCode: acct?.code ?? "",
         accountName: acct?.nameEn ?? "Unclassified",
+        accountNameAr: acct?.nameAr ?? null,
         amount: round2(amount),
       });
     }

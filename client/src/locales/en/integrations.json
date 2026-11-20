@@ -1,0 +1,22 @@
+{
+  "integrations.title": "Integrations",
+  "integrations.description": "Connect your payment and sales platforms, or bring data in by import.",
+  "integrations.availableTitle": "Available",
+  "integrations.availableHelp": "Connect with your own account details. Imported records arrive as drafts for you to review.",
+  "integrations.byImportTitle": "By import",
+  "integrations.byImportHelp": "Bring data in from these systems with a CSV import.",
+  "integrations.importCsv": "Import a CSV",
+  "integrations.connect": "Connect",
+  "integrations.syncNow": "Sync now",
+  "integrations.syncDone": "Sync complete",
+  "integrations.lastSyncFailed": "The last sync did not finish. Try again.",
+  "integrations.tabConnectors": "Connectors",
+  "integrations.importedCount": "Imported",
+  "integrations.recentImports": "Recent imports",
+  "integrations.emptyTransactions": "Run a sync to bring in your latest transactions.",
+  "integrations.unnamedCustomer": "Unnamed customer",
+  "integrations.typeSale": "Sale",
+  "integrations.typeRefund": "Refund",
+  "integrations.connectHelp": "Enter the account details from your {name} dashboard.",
+  "integrations.stripeKeyHelp": "In Stripe, open Developers, then API keys. A restricted key with read access is enough."
+}

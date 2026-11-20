@@ -1,0 +1,133 @@
+import { useEffect, useState } from "react";
+import { Link } from "wouter";
+import { Lock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
+import { planCta, planPhase, planPhraseKey } from "@/lib/plan-state";
+import { PLAN_LIMIT_EVENT, type PlanLimitDetail } from "@/lib/plan-limit";
+import { planFeatureLabelKey } from "@/lib/plan-routes";
+import { useSubscription } from "@/hooks/useSubscription";
+import { planContactHref } from "@/lib/planContact";
+import type { PlanFeature } from "@shared/plans";
+
+/**
+ * The upgrade prompt for a write the server refused because of the plan (402 / 403 with
+ * PLAN_REQUIRED, TIER_LOCKED, USAGE_LIMIT_REACHED, STORAGE_LIMIT_REACHED or
+ * COMPANY_LIMIT_REACHED). Mounted once in the app shell; any API call announces the refusal
+ * (lib/plan-limit.ts), so every locked action explains itself the same way, in both languages.
+ */
+export function PlanLimitDialog() {
+  const { t, locale } = useTranslation();
+  const { checkoutAvailable, chosenPlan, activationRequestedAt } = useSubscription();
+  const [detail, setDetail] = useState<PlanLimitDetail | null>(null);
+
+  useEffect(() => {
+    const onLimit = (e: Event) => setDetail((e as CustomEvent<PlanLimitDetail>).detail);
+    window.addEventListener(PLAN_LIMIT_EVENT, onLimit);
+    return () => window.removeEventListener(PLAN_LIMIT_EVENT, onLimit);
+  }, []);
+
+  if (!detail) return null;
+  const plan = detail.requiredPlan ? t[planPhraseKey(detail.requiredPlan)] : undefined;
+  const module = detail.feature ? t[planFeatureLabelKey(detail.feature as PlanFeature)] : undefined;
+
+  const title =
+    detail.code === "PLAN_REQUIRED"
+      ? t["components.planLimitTrialEndedTitle"]
+      : detail.code === "TIER_LOCKED"
+        ? formatMessage(t["components.planLimitLockedTitle"], {
+            module: module ?? t["components.planLimitThisModule"],
+          })
+        : t["components.planLimitReachedTitle"];
+
+  // PLAN_REQUIRED only happens once the trial ended: the same state rule as the lock banner
+  // (lib/plan-state.ts), so the dialog never asks someone who chose to "choose a plan".
+  const phase = planPhase({ trialEnded: true, chosen: !!chosenPlan, activationRequestedAt });
+  const cta = planCta(phase);
+  const chosenPhrase = chosenPlan ? t[planPhraseKey(chosenPlan.planId)] : "";
+  const trialEndedBody =
+    phase.choice === "requested"
+      ? `${formatMessage(t["marketing.trialActivationRequested"], {
+          date: activationRequestedAt ? formatDate(activationRequestedAt, locale) : "",
+        })} ${t["components.planUntilThenReadable"]}`
+      : phase.choice === "chosen"
+        ? formatMessage(t["components.planLimitBodyChosen"], { plan: chosenPhrase })
+        : t["components.planLimitTrialEndedBody"];
+
+  const body =
+    detail.code === "PLAN_REQUIRED"
+      ? trialEndedBody
+      : detail.code === "TIER_LOCKED"
+        ? formatMessage(t["components.planLimitLockedBody"], { plan: plan ?? "" })
+        : detail.code === "STORAGE_LIMIT_REACHED"
+          ? t["components.planLimitStorageBody"]
+          : detail.code === "COMPANY_LIMIT_REACHED"
+            ? t["components.planLimitCompaniesBody"]
+            : (t[`components.planLimitUsageBody_${detail.resource ?? "default"}`] ??
+              t["components.planLimitUsageBody_default"]);
+
+  const contactHref = planContactHref(plan || undefined);
+
+  return (
+    <Dialog open onOpenChange={(open) => (!open ? setDetail(null) : undefined)}>
+      <DialogContent size="sm" data-testid="plan-limit-dialog" data-code={detail.code}>
+        {/* F1: the header (with the data-safe line) never shrinks, so the sticky footer cannot
+            cut "Nothing is deleted." in half. */}
+        <DialogHeader className="shrink-0">
+          <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300">
+            <Lock className="h-4 w-4" aria-hidden />
+          </span>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{body}</DialogDescription>
+          <p className="text-small text-muted-foreground" data-testid="plan-limit-data-safe">
+            {t["components.planLimitDataSafe"]}
+          </p>
+        </DialogHeader>
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button variant="outline" onClick={() => setDetail(null)}>
+            {t["components.planLimitNotNow"]}
+          </Button>
+          {detail.code === "PLAN_REQUIRED" && cta === "choose" ? (
+            <Button asChild onClick={() => setDetail(null)}>
+              <Link href="/subscription" data-testid="plan-limit-see-plans">
+                {t["components.planLockChoosePlan"]}
+              </Link>
+            </Button>
+          ) : detail.code === "PLAN_REQUIRED" ? (
+            <Button asChild onClick={() => setDetail(null)}>
+              <Link
+                href="/subscription#after-trial"
+                data-testid={cta === "activate" ? "plan-limit-activate" : "plan-limit-see-plan"}
+              >
+                {cta === "activate"
+                  ? formatMessage(t["components.planLockActivate"], { plan: chosenPhrase })
+                  : t["marketing.trialSeePlan"]}
+              </Link>
+            </Button>
+          ) : checkoutAvailable ? (
+            <Button asChild onClick={() => setDetail(null)}>
+              <Link href="/subscription" data-testid="plan-limit-see-plans">
+                {t["components.planLimitSeePlans"]}
+              </Link>
+            </Button>
+          ) : (
+            <Button asChild>
+              <a href={contactHref} data-testid="plan-limit-contact">
+                {t["components.planLimitContactUs"]}
+              </a>
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

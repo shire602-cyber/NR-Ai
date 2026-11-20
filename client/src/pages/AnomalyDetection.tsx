@@ -1,6 +1,17 @@
+import { T } from "@/components/layout/T";
+import type { CopyDescriptor } from "@shared/server-copy";
+import { EmptyState } from "@/components/ui/empty-state";
+import { StatCard } from "@/components/ui/stat-card";
+import { anomalyRuleLabel } from "@/lib/anomaly-rules";
+import { anomalyRecordRef } from "@/lib/anomaly-record-link";
+import { Link } from "wouter";
+import { anomalyMessage, writtenLanguageProps } from "@/lib/server-message";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { formatDate as formatDisplayDate } from "@/lib/format-date";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,11 +22,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import {
   ShieldAlert,
   AlertTriangle,
@@ -41,10 +52,17 @@ interface Anomaly {
   type: string;
   severity: RawAnomalySeverity;
   description: string;
-  amount?: number;
+  /** The same sentence as key + params (API); older rows are parsed back from the English. */
+  message?: CopyDescriptor | null;
+  rule?: string | null;
+  amount?: number | null;
   date?: string | null;
   relatedId?: string | null;
   relatedType?: string | null;
+  /** The record's own number / merchant, so the finding says which one it means. */
+  relatedLabel?: string | null;
+  relatedLabelAr?: string | null;
+  relatedDate?: string | null;
 }
 
 interface AnomalySummary {
@@ -57,26 +75,26 @@ interface AnomalySummary {
 interface AnomalyResult {
   anomalies: Anomaly[];
   summary: AnomalySummary;
-  scannedAt: string;
+  scannedAt: string | null;
+  newAlerts?: number;
 }
 
 const severityConfig: Record<
   AnomalySeverity,
-  { color: string; bg: string; icon: typeof AlertTriangle; label: string }
+  { color: string; icon: typeof AlertTriangle; labelKey: string }
 > = {
-  critical: {
-    color: "text-destructive",
-    bg: "bg-danger-subtle border-destructive/30",
-    icon: AlertCircle,
-    label: "Critical",
-  },
-  warning: {
-    color: "text-warning",
-    bg: "bg-warning-subtle border-warning/30",
-    icon: AlertTriangle,
-    label: "Warning",
-  },
-  info: { color: "text-info", bg: "bg-info-subtle border-info/30", icon: Info, label: "Info" },
+  critical: { color: "text-destructive", icon: AlertCircle, labelKey: "pages.critical" },
+  warning: { color: "text-warning", icon: AlertTriangle, labelKey: "pages.warning" },
+  info: { color: "text-info", icon: Info, labelKey: "anomalyDetection.info" },
+};
+
+/** Catalog key of the record type an alert points at (`relatedType` is a raw enum). */
+const RELATED_TYPE_KEY: Record<string, string> = {
+  journal_entry: "anomalyChecks.typeJournalEntry",
+  receipt: "anomalyChecks.typeReceipt",
+  invoice: "anomalyChecks.typeInvoice",
+  vendor_bill: "anomalyChecks.typeVendorBill",
+  account: "anomalyChecks.typeAccount",
 };
 
 const typeIcons: Record<string, typeof Copy> = {
@@ -86,6 +104,11 @@ const typeIcons: Record<string, typeof Copy> = {
   round_number: Hash,
   duplicate_vendor: UserX,
   expense_spike: TrendingUp,
+  cross_period_baseline: TrendingUp,
+  duplicate_supplier_invoice: Copy,
+  vat_rate_mismatch: Hash,
+  trn_missing: UserX,
+  trn_malformed: UserX,
 };
 
 const severityAliases: Record<string, AnomalySeverity> = {
@@ -102,20 +125,45 @@ function normalizeSeverity(severity: RawAnomalySeverity | null | undefined): Ano
 }
 
 export default function AnomalyDetection() {
+  return <AnomalyChecks />;
+}
+
+/**
+ * The checks list as a component (spec 3.11): the /anomaly-detection page renders it with its
+ * header; WP-E mounts it inside Assistant > Review with `embedded` (no page header).
+ */
+export function AnomalyChecks({ embedded = false }: { embedded?: boolean }) {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
   const [severityFilter, setSeverityFilter] = useState<string>("all");
 
-  const {
-    data: result,
-    isLoading,
-    refetch,
-    isFetching,
-  } = useQuery<AnomalyResult>({
+  // Reading the list never scans; "Run scan" is an explicit POST (R13-15).
+  const { data: result, isLoading } = useQuery<AnomalyResult>({
     queryKey: [`/api/companies/${companyId}/anomalies`],
     enabled: !!companyId,
   });
+
+  const scanMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/companies/${companyId}/anomalies/scan`),
+    onSuccess: (scanned: AnomalyResult) => {
+      queryClient.setQueryData([`/api/companies/${companyId}/anomalies`], scanned);
+      toast({
+        title: t["anomalyChecks.scanComplete"],
+        description: formatMessage(t["anomalyChecks.newAlerts"], {
+          count: scanned.newAlerts ?? 0,
+        }),
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
+    },
+  });
+  const isFetching = scanMutation.isPending;
 
   const dismissMutation = useMutation({
     mutationFn: async (anomalyId: string) => {
@@ -124,24 +172,24 @@ export default function AnomalyDetection() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/anomalies`] });
       toast({
-        title: "Anomaly dismissed",
-        description: "The anomaly has been removed from the list.",
+        title: translateNow("toasts.anomalyDismissed"),
+        description: translateNow("toasts.theAnomalyHasBeenRemovedFromThe"),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: translateNow("toasts.error"),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
   if (isLoadingCompany) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="space-y-6">
         <Skeleton className="h-10 w-64" />
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-24" />
-          ))}
-        </div>
+        <Skeleton className="h-24" />
       </div>
     );
   }
@@ -152,7 +200,7 @@ export default function AnomalyDetection() {
         <Card>
           <CardContent className="pt-6">
             <p className="text-muted-foreground text-center">
-              Please create a company first to use anomaly detection.
+              <T k="pages.pleaseCreateACompanyFirstToUseAnomalyDetection" />
             </p>
           </CardContent>
         </Card>
@@ -164,141 +212,107 @@ export default function AnomalyDetection() {
     result?.anomalies.filter(
       (a) => severityFilter === "all" || normalizeSeverity(a.severity) === severityFilter
     ) || [];
+  const hasAlerts = (result?.summary.total ?? 0) > 0;
 
   const formatAnomalyDate = (dateStr?: string | null) => {
-    if (!dateStr) return "N/A";
-
-    try {
-      const date = new Date(dateStr);
-      if (Number.isNaN(date.getTime())) return dateStr;
-
-      return date.toLocaleDateString("en-AE", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-    } catch {
-      return dateStr;
-    }
+    if (!dateStr) return "—";
+    const formatted = formatDisplayDate(dateStr, locale);
+    return formatted || dateStr;
   };
 
-  return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-danger-subtle rounded-lg">
-            <ShieldAlert className="h-6 w-6 text-destructive" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">AI Anomaly Detection</h1>
-            <p className="text-muted-foreground text-sm">
-              Automatically scan transactions for irregularities and potential issues
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          {result?.scannedAt && (
-            <span className="text-xs text-muted-foreground flex items-center gap-1">
-              <Clock className="h-3 w-3" />
-              Last scanned: {new Date(result.scannedAt).toLocaleString()}
-            </span>
-          )}
-          <Button onClick={() => refetch()} disabled={isFetching}>
-            {isFetching ? (
-              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Scan className="h-4 w-4 mr-2" />
-            )}
-            {isFetching ? "Scanning..." : "Run Scan"}
-          </Button>
-        </div>
-      </div>
+  // Embedded in Assistant > Review the page already has its primary action, so the scan here is
+  // a secondary button; on its own page it is the one primary.
+  const scanButton = (
+    <Button
+      variant={embedded ? "outline" : "default"}
+      onClick={() => scanMutation.mutate()}
+      disabled={isFetching}
+      data-testid="button-run-scan"
+    >
+      {isFetching ? (
+        <RefreshCw className="h-4 w-4 me-2 animate-spin" />
+      ) : (
+        <Scan className="h-4 w-4 me-2" />
+      )}
+      {t["aiInbox.runScan"]}
+    </Button>
+  );
 
-      {/* Summary Cards */}
+  const severityLabel = (severity: AnomalySeverity) => t[severityConfig[severity].labelKey];
+
+  return (
+    <div className="space-y-6">
+      {embedded ? null : (
+        <PageHeader
+          eyebrow={t["anomalyChecks.eyebrow"]}
+          title={t["anomalyDetection.accountingAnomalyChecks"]}
+          description={t["anomalyChecks.pageDescription"]}
+          primaryAction={scanButton}
+        />
+      )}
+      {result?.scannedAt ? (
+        <p className="flex items-center gap-1 text-caption text-muted-foreground">
+          <Clock className="h-3 w-3" aria-hidden />
+          {formatMessage(t["anomalyChecks.latestAlert"], {
+            date: formatDisplayDate(result.scannedAt, locale),
+          })}
+        </p>
+      ) : null}
+
+      {/* Summary: only when there is something to count (no row of zeros). */}
       {isLoading ? (
+        <Skeleton className="h-24" />
+      ) : result && hasAlerts && !embedded ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-24" />
+          {(
+            [
+              ["all", t["pages.totalAnomalies"], result.summary.total],
+              ["critical", severityLabel("critical"), result.summary.critical],
+              ["warning", severityLabel("warning"), result.summary.warning],
+              ["info", severityLabel("info"), result.summary.info],
+            ] as const
+          ).map(([id, label, count]) => (
+            <button
+              key={id}
+              type="button"
+              className="text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
+              onClick={() => setSeverityFilter(id)}
+              aria-pressed={severityFilter === id}
+            >
+              <StatCard label={label} value={count} />
+            </button>
           ))}
-        </div>
-      ) : result ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow"
-            onClick={() => setSeverityFilter("all")}
-          >
-            <CardHeader className="pb-1 pt-4 px-4">
-              <CardDescription className="text-xs">Total Anomalies</CardDescription>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold">{result.summary.total}</div>
-            </CardContent>
-          </Card>
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow border-destructive/30"
-            onClick={() => setSeverityFilter("critical")}
-          >
-            <CardHeader className="pb-1 pt-4 px-4">
-              <CardDescription className="text-xs flex items-center gap-1">
-                <AlertCircle className="h-3 w-3 text-destructive" />
-                Critical
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-destructive">{result.summary.critical}</div>
-            </CardContent>
-          </Card>
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow border-warning/30"
-            onClick={() => setSeverityFilter("warning")}
-          >
-            <CardHeader className="pb-1 pt-4 px-4">
-              <CardDescription className="text-xs flex items-center gap-1">
-                <AlertTriangle className="h-3 w-3 text-warning" />
-                Warning
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-warning">{result.summary.warning}</div>
-            </CardContent>
-          </Card>
-          <Card
-            className="cursor-pointer hover:shadow-md transition-shadow border-info/30"
-            onClick={() => setSeverityFilter("info")}
-          >
-            <CardHeader className="pb-1 pt-4 px-4">
-              <CardDescription className="text-xs flex items-center gap-1">
-                <Info className="h-3 w-3 text-info" />
-                Info
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-              <div className="text-3xl font-bold text-info">{result.summary.info}</div>
-            </CardContent>
-          </Card>
         </div>
       ) : null}
 
-      {/* Filters */}
-      <div className="flex items-center gap-3">
-        <span className="text-sm text-muted-foreground">Filter:</span>
-        <Select value={severityFilter} onValueChange={setSeverityFilter}>
-          <SelectTrigger className="w-[160px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Severities</SelectItem>
-            <SelectItem value="critical">Critical</SelectItem>
-            <SelectItem value="warning">Warning</SelectItem>
-            <SelectItem value="info">Info</SelectItem>
-          </SelectContent>
-        </Select>
-        {severityFilter !== "all" && (
-          <Button variant="ghost" size="sm" onClick={() => setSeverityFilter("all")}>
-            Clear filter
-          </Button>
+      {/* Filters and, embedded, the scan action */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {hasAlerts ? (
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-muted-foreground">{t["anomalyDetection.filter"]}</span>
+            <Select value={severityFilter} onValueChange={setSeverityFilter}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <T k="pages.allSeverities" />
+                </SelectItem>
+                <SelectItem value="critical">{severityLabel("critical")}</SelectItem>
+                <SelectItem value="warning">{severityLabel("warning")}</SelectItem>
+                <SelectItem value="info">{severityLabel("info")}</SelectItem>
+              </SelectContent>
+            </Select>
+            {severityFilter !== "all" && (
+              <Button variant="ghost" size="sm" onClick={() => setSeverityFilter("all")}>
+                <T k="pages.clearFilter" />
+              </Button>
+            )}
+          </div>
+        ) : (
+          <span />
         )}
+        {embedded ? scanButton : null}
       </div>
 
       {/* Anomaly List */}
@@ -314,11 +328,12 @@ export default function AnomalyDetection() {
             const severity = normalizeSeverity(anomaly.severity);
             const config = severityConfig[severity];
             const SeverityIcon = config.icon;
-            const anomalyType = anomaly.type || "anomaly";
+            const anomalyType = anomaly.rule || anomaly.type || "anomaly";
             const TypeIcon = typeIcons[anomalyType] || Info;
+            const relatedKey = anomaly.relatedType ? RELATED_TYPE_KEY[anomaly.relatedType] : null;
 
             return (
-              <Card key={anomaly.id} className={`${config.bg} border`}>
+              <Card key={anomaly.id}>
                 <CardContent className="p-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3 flex-1">
@@ -327,32 +342,64 @@ export default function AnomalyDetection() {
                       </div>
                       <div className="flex-1 space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Badge
-                            variant={severity === "critical" ? "destructive" : "secondary"}
+                          <StatusBadge
+                            tone={
+                              severity === "critical"
+                                ? "danger"
+                                : severity === "warning"
+                                  ? "warning"
+                                  : "info"
+                            }
                             className="text-xs"
                           >
-                            {config.label}
-                          </Badge>
+                            {severityLabel(severity)}
+                          </StatusBadge>
                           <Badge variant="outline" className="text-xs flex items-center gap-1">
                             <TypeIcon className="h-3 w-3" />
-                            {anomalyType.replace(/_/g, " ")}
+                            {anomalyRuleLabel(anomalyType, locale)}
                           </Badge>
                           {typeof anomaly.amount === "number" && anomaly.amount > 0 && (
                             <span className="text-sm font-medium">
-                              {formatCurrency(anomaly.amount, "AED", locale)}
+                              <Money amount={anomaly.amount} currency={"AED"} />
                             </span>
                           )}
                         </div>
-                        <p className="text-sm">{anomaly.description}</p>
+                        {(() => {
+                          const text = anomalyMessage(anomaly, t, locale);
+                          return (
+                            <p className="text-sm" {...writtenLanguageProps(text, locale)}>
+                              {text}
+                            </p>
+                          );
+                        })()}
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <Clock className="h-3 w-3" />
                           {formatAnomalyDate(anomaly.date)}
-                          {anomaly.relatedType && (
+                          {relatedKey && (
                             <>
                               <span className="mx-1">|</span>
-                              <span className="capitalize">
-                                {anomaly.relatedType.replace(/_/g, " ")}
-                              </span>
+                              {(() => {
+                                const ref = anomalyRecordRef(anomaly, locale);
+                                if (!ref) return <span>{t[relatedKey]}</span>;
+                                const text = (
+                                  <span translate="no" className="tabular-nums">
+                                    {ref.label}
+                                  </span>
+                                );
+                                return ref.href ? (
+                                  <Link
+                                    href={ref.href}
+                                    className="inline-flex min-h-6 items-center gap-1 text-primary hover:underline"
+                                    data-testid={`link-anomaly-record-${anomaly.id}`}
+                                  >
+                                    {t[relatedKey]} {text}
+                                  </Link>
+                                ) : (
+                                  <span>
+                                    {t[relatedKey]} {text}
+                                  </span>
+                                );
+                              })()}
                             </>
                           )}
                         </div>
@@ -365,8 +412,8 @@ export default function AnomalyDetection() {
                       disabled={dismissMutation.isPending}
                       className="shrink-0"
                     >
-                      <X className="h-4 w-4 mr-1" />
-                      Dismiss
+                      <X className="h-4 w-4 me-1" />
+                      <T k="pages.dismiss" />
                     </Button>
                   </div>
                 </CardContent>
@@ -375,19 +422,18 @@ export default function AnomalyDetection() {
           })}
         </div>
       ) : result ? (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center py-8 space-y-3">
-              <ShieldAlert className="h-12 w-12 text-success mx-auto" />
-              <h3 className="text-lg font-semibold">No Anomalies Found</h3>
-              <p className="text-muted-foreground text-sm">
-                {severityFilter !== "all"
-                  ? `No ${severityFilter} anomalies detected. Try changing the filter.`
-                  : "Your transactions look clean. No irregularities detected in the latest scan."}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={ShieldAlert}
+          title={t["pages.noAnomaliesFound"]}
+          description={
+            severityFilter !== "all"
+              ? formatMessage(t["anomalyChecks.noneForSeverity"], {
+                  severity: severityLabel(severityFilter as AnomalySeverity).toLowerCase(),
+                })
+              : t["anomalyChecks.emptyBody"]
+          }
+          testId="anomaly-empty"
+        />
       ) : null}
     </div>
   );

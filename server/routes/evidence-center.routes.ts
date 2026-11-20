@@ -5,6 +5,8 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
 import {
+  buildCtEvidencePack,
+  buildCtEvidencePackWorkbook,
   buildEvidenceCenter,
   buildEvidenceRefundPackCoverPdf,
   buildEvidenceRefundPackWorkbook,
@@ -29,7 +31,7 @@ async function authorizeEvidenceCenter(req: Request, res: Response) {
   const hasAccess = await storage.hasCompanyAccess(userId, companyId);
 
   if (!hasAccess) {
-    res.status(403).json({ message: "Access denied" });
+    res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
     return null;
   }
 
@@ -39,7 +41,12 @@ async function authorizeEvidenceCenter(req: Request, res: Response) {
 async function writeEvidenceActivity(input: {
   userId: string;
   companyId: string;
-  action: "resolve" | "waive" | "request_reviewed" | "refund_pack_exported";
+  action:
+    | "resolve"
+    | "waive"
+    | "request_reviewed"
+    | "refund_pack_exported"
+    | "ct_evidence_pack_exported";
   entityType: string;
   entityId?: string | null;
   description: string;
@@ -70,6 +77,45 @@ export function registerEvidenceCenterRoutes(app: Express) {
 
       const center = await buildEvidenceCenter(authorized.companyId);
       res.json(center);
+    })
+  );
+
+  // R08-22: corporate tax evidence pack (workpaper, adjustment support,
+  // related-party register) next to the VAT refund pack.
+  app.get(
+    "/api/companies/:companyId/evidence-center/ct-pack",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const authorized = await authorizeEvidenceCenter(req, res);
+      if (!authorized) return;
+      res.json(await buildCtEvidencePack(authorized.companyId));
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/evidence-center/ct-pack.xlsx",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const authorized = await authorizeEvidenceCenter(req, res);
+      if (!authorized) return;
+      const pack = await buildCtEvidencePack(authorized.companyId);
+      const buffer = await buildCtEvidencePackWorkbook(pack);
+      await writeEvidenceActivity({
+        ...authorized,
+        action: "ct_evidence_pack_exported",
+        entityType: "ct_evidence_pack",
+        entityId: pack.ctReturn?.id ?? null,
+        description: `Exported corporate tax evidence pack for ${pack.companyName}`,
+        metadata: { format: "xlsx", readinessScore: pack.readinessScore },
+      });
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader("Content-Disposition", `attachment; filename="${pack.workbookFilename}"`);
+      res.send(buffer);
     })
   );
 
@@ -185,7 +231,11 @@ export function registerEvidenceCenterRoutes(app: Express) {
       if (!parsed.success) {
         return res
           .status(400)
-          .json({ message: "Invalid evidence action", errors: parsed.error.flatten() });
+          .json({
+            message: "Invalid evidence action",
+            code: "VALIDATION_ERROR",
+            errors: parsed.error.flatten(),
+          });
       }
 
       const center = await buildEvidenceCenter(authorized.companyId);
@@ -195,7 +245,9 @@ export function registerEvidenceCenterRoutes(app: Express) {
       );
 
       if (!issue) {
-        return res.status(404).json({ message: "Evidence issue not found" });
+        return res
+          .status(404)
+          .json({ message: "Evidence issue not found", code: "EVIDENCE_ISSUE_NOT_FOUND" });
       }
 
       await writeEvidenceActivity({
@@ -228,7 +280,11 @@ export function registerEvidenceCenterRoutes(app: Express) {
       if (!parsed.success) {
         return res
           .status(400)
-          .json({ message: "Invalid reviewed request", errors: parsed.error.flatten() });
+          .json({
+            message: "Invalid reviewed request",
+            code: "VALIDATION_ERROR",
+            errors: parsed.error.flatten(),
+          });
       }
 
       const center = await buildEvidenceCenter(authorized.companyId);
@@ -239,6 +295,7 @@ export function registerEvidenceCenterRoutes(app: Express) {
         return res.status(409).json({
           message:
             "Draft content changed. Refresh the Evidence Center and review the exact request again.",
+          code: "EVIDENCE_DRAFT_CHANGED",
         });
       }
 

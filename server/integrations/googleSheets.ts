@@ -6,6 +6,7 @@
 import { google, sheets_v4 } from "googleapis";
 import type { JWT, OAuth2Client } from "google-auth-library";
 import { createLogger } from "../config/logger";
+import { errorMessage } from "../errors";
 
 const logger = createLogger("google-sheets");
 
@@ -116,7 +117,7 @@ export async function createSpreadsheet(title: string): Promise<string> {
 export async function exportToSheet(
   spreadsheetId: string,
   sheetName: string,
-  data: (string | number | null)[][]
+  data: ReadonlyArray<ReadonlyArray<unknown>>
 ): Promise<void> {
   const sheets = await getGoogleSheetsClient();
 
@@ -136,10 +137,10 @@ export async function exportToSheet(
         ],
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Sheet might already exist, that's fine
-    if (!error.message?.includes("already exists")) {
-      logger.info({ err: error.message }, "Google Sheets sheet may already exist");
+    if (!errorMessage(error)?.includes("already exists")) {
+      logger.info({ err: errorMessage(error) }, "Google Sheets sheet may already exist");
     }
   }
 
@@ -149,13 +150,18 @@ export async function exportToSheet(
     range: `${sheetName}!A1`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: data,
+      values: data as unknown[][],
     },
   });
 }
 
 // Read data from a spreadsheet
-export async function readFromSheet(spreadsheetId: string, range: string): Promise<any[][]> {
+/** Text of a sheet cell (`cell?.toString() ?? ""`). */
+function cellText(cell: unknown): string {
+  return cell === null || cell === undefined ? "" : String(cell);
+}
+
+export async function readFromSheet(spreadsheetId: string, range: string): Promise<unknown[][]> {
   const sheets = await getGoogleSheetsClient();
 
   const response = await sheets.spreadsheets.values.get({
@@ -190,9 +196,53 @@ export async function listSpreadsheets(): Promise<{ id: string; name: string }[]
 // Domain-specific export helpers
 // ---------------------------------------------------------------------------
 
+/** Loose row shapes the export helpers accept (callers pass DB rows or enriched objects). */
+interface SheetInvoiceInput {
+  invoiceNumber?: unknown;
+  customerName?: unknown;
+  customerEmail?: unknown;
+  customerTrn?: unknown;
+  issueDate?: unknown;
+  dueDate?: unknown;
+  subtotal?: unknown;
+  vatAmount?: unknown;
+  total?: unknown;
+  status?: unknown;
+  notes?: unknown;
+}
+interface SheetExpenseInput {
+  date?: unknown;
+  merchant?: unknown;
+  description?: unknown;
+  category?: unknown;
+  amount?: unknown;
+  vatAmount?: unknown;
+  paymentMethod?: unknown;
+  status?: unknown;
+}
+interface SheetJournalLineInput {
+  accountCode?: unknown;
+  accountName?: unknown;
+  debit?: unknown;
+  credit?: unknown;
+}
+interface SheetJournalEntryInput {
+  entryNumber?: unknown;
+  date?: unknown;
+  description?: unknown;
+  lines?: ReadonlyArray<SheetJournalLineInput> | null;
+}
+interface SheetAccountInput {
+  code?: unknown;
+  nameEn?: unknown;
+  nameAr?: unknown;
+  type?: unknown;
+  parentCode?: unknown;
+}
+
 // Export invoices to Google Sheets
 export async function exportInvoicesToSheet(
-  invoices: any[],
+  invoices: ReadonlyArray<SheetInvoiceInput>,
   spreadsheetId?: string
 ): Promise<{ spreadsheetId: string; url: string }> {
   let sheetId = spreadsheetId;
@@ -241,7 +291,7 @@ export async function exportInvoicesToSheet(
 
 // Export expenses/receipts to Google Sheets
 export async function exportExpensesToSheet(
-  expenses: any[],
+  expenses: ReadonlyArray<SheetExpenseInput>,
   spreadsheetId?: string
 ): Promise<{ spreadsheetId: string; url: string }> {
   let sheetId = spreadsheetId;
@@ -284,7 +334,7 @@ export async function exportExpensesToSheet(
 
 // Export journal entries to Google Sheets
 export async function exportJournalEntriesToSheet(
-  entries: any[],
+  entries: ReadonlyArray<SheetJournalEntryInput>,
   spreadsheetId?: string
 ): Promise<{ spreadsheetId: string; url: string }> {
   let sheetId = spreadsheetId;
@@ -305,7 +355,7 @@ export async function exportJournalEntriesToSheet(
     "Credit (AED)",
   ];
 
-  const rows: (string | number)[][] = [];
+  const rows: unknown[][] = [];
 
   for (const entry of entries) {
     if (entry.lines) {
@@ -333,7 +383,7 @@ export async function exportJournalEntriesToSheet(
 
 // Export Chart of Accounts to Google Sheets
 export async function exportChartOfAccountsToSheet(
-  accounts: any[],
+  accounts: ReadonlyArray<SheetAccountInput>,
   spreadsheetId?: string
 ): Promise<{ spreadsheetId: string; url: string }> {
   let sheetId = spreadsheetId;
@@ -390,7 +440,7 @@ export async function exportCustomDataToSheet(
 // ---------------------------------------------------------------------------
 
 // Import invoices from a Google Sheet
-export async function importInvoicesFromSheet(spreadsheetId: string): Promise<any[]> {
+export async function importInvoicesFromSheet(spreadsheetId: string) {
   const sheets = await getGoogleSheetsClient();
 
   // Get all sheets in the spreadsheet
@@ -416,23 +466,23 @@ export async function importInvoicesFromSheet(spreadsheetId: string): Promise<an
 
   return rows
     .map((row) => ({
-      invoiceNumber: row[0]?.toString() || "",
-      customerName: row[1]?.toString() || "",
-      customerEmail: row[2]?.toString() || "",
-      customerTrn: row[3]?.toString() || "",
-      issueDate: row[4]?.toString() || new Date().toISOString().split("T")[0],
-      dueDate: row[5]?.toString() || new Date().toISOString().split("T")[0],
+      invoiceNumber: cellText(row[0]) || "",
+      customerName: cellText(row[1]) || "",
+      customerEmail: cellText(row[2]) || "",
+      customerTrn: cellText(row[3]) || "",
+      issueDate: cellText(row[4]) || new Date().toISOString().split("T")[0],
+      dueDate: cellText(row[5]) || new Date().toISOString().split("T")[0],
       subtotal: parseFloat(row[6] as string) || 0,
       vatAmount: parseFloat(row[7] as string) || 0,
       total: parseFloat(row[8] as string) || 0,
-      status: row[9]?.toString() || "draft",
-      notes: row[10]?.toString() || "",
+      status: cellText(row[9]) || "draft",
+      notes: cellText(row[10]) || "",
     }))
     .filter((inv) => inv.subtotal > 0);
 }
 
 // Import expenses from a Google Sheet
-export async function importExpensesFromSheet(spreadsheetId: string): Promise<any[]> {
+export async function importExpensesFromSheet(spreadsheetId: string) {
   const sheets = await getGoogleSheetsClient();
 
   // Get all sheets in the spreadsheet
@@ -459,7 +509,7 @@ export async function importExpensesFromSheet(spreadsheetId: string): Promise<an
   return rows
     .map((row) => {
       let date = new Date().toISOString().split("T")[0];
-      const dateStr = row[0]?.toString().trim();
+      const dateStr = cellText(row[0]).trim();
       if (dateStr) {
         try {
           // Try to parse various date formats
@@ -469,8 +519,8 @@ export async function importExpensesFromSheet(spreadsheetId: string): Promise<an
           if (dateStr.includes("/")) {
             const parts = dateStr.split("/");
             if (parts.length === 3) {
-              let day = parseInt(parts[0], 10);
-              let month = parseInt(parts[1], 10);
+              const day = parseInt(parts[0], 10);
+              const month = parseInt(parts[1], 10);
               let year = parseInt(parts[2], 10);
 
               // Handle 2-digit year
@@ -490,20 +540,20 @@ export async function importExpensesFromSheet(spreadsheetId: string): Promise<an
           if (parsedDate && !isNaN(parsedDate.getTime())) {
             date = parsedDate.toISOString().split("T")[0];
           }
-        } catch (e) {
+        } catch (_e) {
           // Fall back to today's date
         }
       }
 
       return {
         date,
-        merchant: row[1] || "",
-        description: row[2] || "",
-        category: row[3] || "",
-        amount: parseFloat(row[4]) || 0,
-        vatAmount: parseFloat(row[5]) || 0,
-        paymentMethod: row[6] || "",
-        status: row[7] || "pending",
+        merchant: cellText(row[1]) || "",
+        description: cellText(row[2]) || "",
+        category: cellText(row[3]) || "",
+        amount: parseFloat(row[4] as string) || 0,
+        vatAmount: parseFloat(row[5] as string) || 0,
+        paymentMethod: cellText(row[6]) || "",
+        status: cellText(row[7]) || "pending",
       };
     })
     .filter((exp) => exp.amount > 0);

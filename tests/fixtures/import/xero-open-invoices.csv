@@ -1,0 +1,4 @@
+*ContactName,EmailAddress,*InvoiceNumber,*InvoiceDate,*DueDate,Total,AmountDue,Currency
+Gulf Retail LLC,ap@gulfretail.example,INV-0041,15/11/2025,15/12/2025,"1,050.00","1,000.00",AED
+Desert Logistics FZE,,INV-0042,02/12/2025,01/01/2026,500.00,500.00,AED
+Paid Already Co,,INV-0039,01/10/2025,31/10/2025,300.00,0.00,AED

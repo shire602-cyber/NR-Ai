@@ -24,7 +24,7 @@ export function registerClientErrorRoutes(app: Express) {
         return res.status(400).json({ error: "Invalid payload" });
       }
 
-      const userId = (req as any).user?.id ?? null;
+      const userId = req.user?.id ?? null;
       log.error(
         {
           ...parsed.data,

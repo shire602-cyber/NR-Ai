@@ -6,17 +6,15 @@
 //   RL_API_MAX=100000 RL_READ_MAX=100000 RL_AUTH_MAX=1000 npm start &
 //   BASE_URL=http://127.0.0.1:5000 node tests/integration/uncovered-modules.test.mjs
 
+import { fail as abort, rateLimitRetries, throttledFetch } from "./_http.mjs";
+import { withRegisterLogin } from "./register-compat.mjs";
+
+const api = withRegisterLogin(apiRaw, { status: "s", body: "j" });
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 let pass = 0,
-  fail = 0,
-  skipped = 0;
+  fail = 0;
 const fails = [];
 const ok = (name, cond, detail) => {
-  if (!cond && detail && (detail.status === 429 || detail.s === 429)) {
-    skipped++;
-    console.log("SKIP  " + name + "  (rate-limited)");
-    return;
-  }
   if (cond) {
     pass++;
     console.log("PASS  " + name);
@@ -27,10 +25,10 @@ const ok = (name, cond, detail) => {
   }
 };
 const note = (name, detail) => console.log("NOTE  " + name + "  " + JSON.stringify(detail));
-async function api(m, p, o = {}) {
+async function apiRaw(m, p, o = {}) {
   const h = { "Content-Type": "application/json" };
   if (o.token) h.Authorization = "Bearer " + o.token;
-  const r = await fetch(BASE + p, {
+  const r = await throttledFetch(BASE + p, {
     method: m,
     headers: h,
     body: o.body === undefined ? undefined : JSON.stringify(o.body),
@@ -81,8 +79,7 @@ async function main() {
     body: { name: "Uncov", email: `uncov_${s}@e.com`, password: "Password123!" },
   });
   if (!reg.j?.token) {
-    console.log("SKIP: registration rate-limited");
-    process.exit(0);
+    abort("registration failed (after rate-limit retries)", { status: reg.s, body: reg.t?.slice(0, 200) });
   }
   T = { token: reg.j.token, cid: reg.j.company.id };
   await api("PATCH", `/api/companies/${T.cid}`, {
@@ -146,12 +143,19 @@ async function main() {
       body: { accountId: expenseGl.id, memo: "Bank fee via reconciliation" },
     });
     ok("bankrec: create-entry posts a JE", r.s === 201 && !!r.j?.journalEntry, { s: r.s, j: r.j?.message });
+    const firstEntryId = r.j?.journalEntry?.id;
 
     r = await api("POST", `/api/companies/${T.cid}/bank-statements/${feeTxn.id}/create-entry`, {
       token: T.token,
       body: { accountId: expenseGl.id, memo: "duplicate attempt" },
     });
-    ok("bankrec: second create-entry on same txn → 409 (no double posting)", r.s === 409, { s: r.s });
+    // Repeating a create-entry on a line that already has its entry is an idempotent replay
+    // (200 + replayed:true, the SAME journal entry), never a second posting.
+    ok(
+      "bankrec: second create-entry on same txn replays the first entry (no double posting)",
+      r.s === 200 && r.j?.replayed === true && r.j?.journalEntry?.id === firstEntryId,
+      { s: r.s, replayed: r.j?.replayed, same: r.j?.journalEntry?.id === firstEntryId }
+    );
   } else {
     ok("bankrec: create-entry posts a JE", false, { reason: "fee txn or expense account not found" });
   }
@@ -164,7 +168,7 @@ async function main() {
       token: T.token,
       body: { matchedType: "invoice", matchedId: mkInv.inv.id },
     });
-    ok("bankrec: match deposit→invoice records payment", r.s === 200 && r.j?.matchStatus === "matched", {
+    ok("bankrec: match deposit→invoice records payment", r.s === 201 && r.j?.matchStatus === "matched", {
       s: r.s,
       j: r.j?.message || r.j?.code,
     });
@@ -209,7 +213,7 @@ async function main() {
   ok("claims: add items to draft", r.s === 200, { s: r.s, j: r.j?.message });
 
   r = await api("POST", `/api/expense-claims/${claimId}/approve`, { token: T.token, body: {} });
-  ok("claims: approve straight from draft → 400 (must submit first)", r.s === 400, { s: r.s });
+  ok("claims: approve straight from draft is refused (409, must submit first)", r.s === 409, { s: r.s });
 
   r = await api("POST", `/api/expense-claims/${claimId}/submit`, { token: T.token, body: {} });
   ok("claims: submit", r.s === 200 && r.j?.status === "submitted", { s: r.s, status: r.j?.status });
@@ -235,7 +239,7 @@ async function main() {
     token: T.token,
     body: { title: "should fail, not draft" },
   });
-  ok("claims: edit after approval → 400", r.s === 400, { s: r.s });
+  ok("claims: edit after approval is refused (409)", r.s === 409, { s: r.s });
 
   r = await api("POST", `/api/expense-claims/${claimId}/mark-paid`, {
     token: T.token,
@@ -251,7 +255,7 @@ async function main() {
   }
 
   r = await api("POST", `/api/expense-claims/${claimId}/mark-paid`, { token: T.token, body: {} });
-  ok("claims: mark-paid twice → 400", r.s === 400, { s: r.s });
+  ok("claims: mark-paid twice is refused (409)", r.s === 409, { s: r.s });
 
   // ════════ 3. COST CENTRES ════════
   r = await api("POST", `/api/companies/${T.cid}/cost-centers`, {
@@ -295,7 +299,7 @@ async function main() {
         ],
       },
     });
-    ok("costcentre: unknown costCenterId → 400", r.s === 400, { s: r.s, code: r.j?.code });
+    ok("costcentre: unknown costCenterId → 422 COST_CENTER_NOT_FOUND", r.s === 422 && r.j?.code === "COST_CENTER_NOT_FOUND", { s: r.s, code: r.j?.code });
 
     const yStart = today.slice(0, 4) + "-01-01";
     r = await api(
@@ -389,7 +393,7 @@ async function main() {
       token: T.token,
       body: { lines: [] },
     });
-    ok("cn: empty lines array → 422 INVALID_CREDIT_LINES", r.s === 422, { s: r.s, code: r.j?.code });
+    ok("cn: empty lines array is refused by the request validator (400 VALIDATION_ERROR)", r.s === 400 && r.j?.code === "VALIDATION_ERROR", { s: r.s, code: r.j?.code });
 
     r = await api("POST", `/api/companies/${T.cid}/invoices/${invId}/credit-note`, {
       token: T.token,
@@ -445,12 +449,13 @@ async function main() {
       ok("cn: credit note of a credit note → 400 CN_OF_CN", r.s === 400, { s: r.s, code: r.j?.code });
     }
 
-    // Standalone credit-note writes are retired
+    // POST /credit-notes now creates a DRAFT against an issued invoice, so a body without an
+    // invoiceId is refused by the strict validator.
     r = await api("POST", `/api/companies/${T.cid}/credit-notes`, {
       token: T.token,
       body: { customerName: "X" },
     });
-    ok("cn: standalone credit-note POST → 410 retired", r.s === 410, { s: r.s, code: r.j?.code });
+    ok("cn: credit-note POST without an invoiceId → 400 VALIDATION_ERROR", r.s === 400 && r.j?.code === "VALIDATION_ERROR", { s: r.s, code: r.j?.code });
 
     r = await api("GET", `/api/companies/${T.cid}/credit-notes`, { token: T.token });
     const cnList = Array.isArray(r.j) ? r.j : r.j?.creditNotes || [];
@@ -467,7 +472,7 @@ async function main() {
   const eq = n(bs.totalEquity ?? bs.equity?.total);
   ok("FINAL: balance sheet A = L + E", close(assets, liab + eq, 0.05), { assets, liab, eq });
 
-  console.log(`\n==== ${pass} passed, ${fail} failed, ${skipped} skipped ====`);
+  console.log(`\n==== ${pass} passed, ${fail} failed (${rateLimitRetries} rate-limit retries) ====`);
   if (fails.length) console.log("FAILURES:\n - " + fails.join("\n - "));
   process.exit(fail ? 1 : 0);
 }

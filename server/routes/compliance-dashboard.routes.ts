@@ -2,200 +2,319 @@ import type { Express, Request, Response } from "express";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { storage } from "../storage";
+import { pool } from "../db";
+import { DomainError } from "../errors";
+import { listCalendar, type CalendarRow } from "../services/compliance-obligations.service";
+import { getEffectiveLock } from "../services/period-lock.service";
+import { addDays, lastDayOfMonth, uaeToday } from "../services/corporate-tax/deadlines";
+
+type FilingState = "up_to_date" | "overdue" | "due_soon";
+
+export interface AuditCheck {
+  key: string;
+  label: string;
+  labelAr: string;
+  weight: number;
+  score: number;
+  status: "pass" | "partial" | "fail" | "not_applicable";
+  /** English explanation (fallback); clients translate `explanationKey` with `explanationParams`. */
+  explanation: string;
+  /** Stable i18n key: `<check key>.<variant>` (S4: CompliancePulse maps on keys, not strings). */
+  explanationKey: string;
+  explanationParams: Record<string, string | number>;
+}
+
+interface Explained {
+  variant: string;
+  params?: Record<string, string | number>;
+  text: string;
+}
+
+/**
+ * Filing status of one obligation type (R08-03): the next open obligation
+ * (rolls forward once a period's return is filed), its deadline, and whether
+ * anything is overdue. Status follows the return state, not the period end.
+ */
+function filingStatus(rows: CalendarRow[], type: string, today: string, dueSoonDays: number) {
+  const ofType = rows.filter((r) => r.obligationType === type);
+  const open = ofType.filter((r) => r.status === "upcoming" || r.status === "overdue");
+  const completed = ofType.filter((r) => r.status === "completed");
+  const overdue = open.filter((r) => r.status === "overdue");
+  const next = open.find((r) => r.status === "upcoming") ?? null;
+  const lastFiled = completed[completed.length - 1] ?? null;
+  let state: FilingState = "up_to_date";
+  if (overdue.length > 0) state = "overdue";
+  else if (next && next.daysUntilDue <= dueSoonDays) state = "due_soon";
+  return {
+    lastReturn: lastFiled?.periodEnd ? `${lastFiled.periodEnd}T00:00:00.000Z` : null,
+    nextDue: (overdue[0] ?? next)?.dueDate ?? null,
+    nextPeriodEnd: (overdue[0] ?? next)?.periodEnd ?? null,
+    nextObligationId: (overdue[0] ?? next)?.id ?? null,
+    overdueCount: overdue.length,
+    state,
+    dueInDays: (overdue[0] ?? next)?.daysUntilDue ?? null,
+    asOf: today,
+  };
+}
+
+function check(
+  key: string,
+  label: string,
+  labelAr: string,
+  weight: number,
+  ratio: number | null,
+  explained: Explained
+): AuditCheck {
+  const explanation = explained.text;
+  const explanationKey = `${key}.${explained.variant}`;
+  const explanationParams = explained.params ?? {};
+  if (ratio === null) {
+    return {
+      key,
+      label,
+      labelAr,
+      weight,
+      score: weight,
+      status: "not_applicable",
+      explanation,
+      explanationKey,
+      explanationParams,
+    };
+  }
+  const clamped = Math.max(0, Math.min(1, ratio));
+  const score = Math.round(weight * clamped * 10) / 10;
+  return {
+    key,
+    label,
+    labelAr,
+    weight,
+    score,
+    status: clamped >= 1 ? "pass" : clamped <= 0 ? "fail" : "partial",
+    explanation,
+    explanationKey,
+    explanationParams,
+  };
+}
+
+/** Audit readiness (R08-13): weighted by real checks, each explained. */
+export async function computeAuditReadiness(
+  companyId: string,
+  rows: CalendarRow[],
+  now: Date = new Date()
+): Promise<{ score: number; issues: string[]; checks: AuditCheck[] }> {
+  const today = uaeToday(now);
+  const since = addDays(today, -90);
+  const checks: AuditCheck[] = [];
+
+  // 1. Bank reconciliation completeness (last 90 days).
+  const bank = await pool.query(
+    `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_reconciled)::int AS reconciled
+       FROM bank_transactions
+      WHERE company_id = $1 AND transaction_date::date >= $2::date`,
+    [companyId, since]
+  );
+  const bankTotal = Number(bank.rows[0]?.total) || 0;
+  const bankRec = Number(bank.rows[0]?.reconciled) || 0;
+  checks.push(
+    check(
+      "bank_reconciliation",
+      "Bank reconciliation completeness",
+      "اكتمال التسوية البنكية",
+      25,
+      bankTotal === 0 ? null : bankRec / bankTotal,
+      bankTotal === 0
+        ? { variant: "none", text: "No bank transactions in the last 90 days." }
+        : {
+            variant: "ratio",
+            params: { done: bankRec, total: bankTotal },
+            text: `${bankRec} of ${bankTotal} bank transactions in the last 90 days are reconciled.`,
+          }
+    )
+  );
+
+  // 2. VAT return status per period (obligations already due).
+  const vatDue = rows.filter((r) => r.obligationType === "vat_return" && r.dueDate <= today);
+  const vatFiled = vatDue.filter((r) => r.status === "completed").length;
+  checks.push(
+    check(
+      "vat_returns",
+      "VAT returns filed for every due period",
+      "تقديم إقرارات ضريبة القيمة المضافة لكل فترة مستحقة",
+      25,
+      vatDue.length === 0 ? null : vatFiled / vatDue.length,
+      vatDue.length === 0
+        ? {
+            variant: "none",
+            text: "No VAT return was due yet (or the company is not VAT registered).",
+          }
+        : {
+            variant: "ratio",
+            params: { done: vatFiled, total: vatDue.length },
+            text: `${vatFiled} of ${vatDue.length} VAT returns that were due are filed.`,
+          }
+    )
+  );
+
+  // 3. Period locks: the last completed month is locked.
+  const [y, m] = today.split("-").map(Number);
+  const prev = m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 };
+  const lastMonthEnd = lastDayOfMonth(prev.y, prev.m);
+  const lock = await getEffectiveLock(companyId, lastMonthEnd);
+  checks.push(
+    check(
+      "period_locks",
+      "Last month closed and locked",
+      "إقفال الشهر الماضي",
+      15,
+      lock ? 1 : 0,
+      lock
+        ? {
+            variant: "locked",
+            params: { date: lastMonthEnd },
+            text: `Books are locked through ${lastMonthEnd}.`,
+          }
+        : {
+            variant: "open",
+            params: { date: lastMonthEnd },
+            text: `The month ending ${lastMonthEnd} is not locked yet.`,
+          }
+    )
+  );
+
+  // 4. Unposted documents: draft invoices, unposted receipts, draft journals.
+  const docs = await pool.query(
+    `SELECT
+       (SELECT COUNT(*) FROM invoices WHERE company_id = $1)::int AS inv_total,
+       (SELECT COUNT(*) FROM invoices WHERE company_id = $1 AND status = 'draft')::int AS inv_draft,
+       (SELECT COUNT(*) FROM receipts WHERE company_id = $1)::int AS rec_total,
+       (SELECT COUNT(*) FROM receipts WHERE company_id = $1 AND posted = false)::int AS rec_unposted,
+       (SELECT COUNT(*) FROM journal_entries WHERE company_id = $1)::int AS je_total,
+       (SELECT COUNT(*) FROM journal_entries WHERE company_id = $1 AND status = 'draft')::int AS je_draft`,
+    [companyId]
+  );
+  const d = docs.rows[0] ?? {};
+  const totalDocs =
+    (Number(d.inv_total) || 0) + (Number(d.rec_total) || 0) + (Number(d.je_total) || 0);
+  const unposted =
+    (Number(d.inv_draft) || 0) + (Number(d.rec_unposted) || 0) + (Number(d.je_draft) || 0);
+  checks.push(
+    check(
+      "unposted_documents",
+      "Documents posted to the ledger",
+      "ترحيل المستندات إلى دفتر الأستاذ",
+      20,
+      totalDocs === 0 ? null : 1 - unposted / totalDocs,
+      totalDocs === 0
+        ? { variant: "none", text: "No invoices, receipts or journals yet." }
+        : {
+            variant: "ratio",
+            params: {
+              unposted,
+              total: totalDocs,
+              invoices: Number(d.inv_draft) || 0,
+              receipts: Number(d.rec_unposted) || 0,
+              journals: Number(d.je_draft) || 0,
+            },
+            text: `${unposted} of ${totalDocs} documents are still unposted (${Number(d.inv_draft) || 0} draft invoices, ${Number(d.rec_unposted) || 0} receipts, ${Number(d.je_draft) || 0} draft journals).`,
+          }
+    )
+  );
+
+  // 5. Corporate tax return status (returns already due).
+  const ctDue = rows.filter(
+    (r) => r.obligationType === "corporate_tax_return" && r.dueDate <= today
+  );
+  const ctFiled = ctDue.filter((r) => r.status === "completed").length;
+  checks.push(
+    check(
+      "corporate_tax_returns",
+      "Corporate tax returns filed when due",
+      "تقديم إقرارات ضريبة الشركات في موعدها",
+      15,
+      ctDue.length === 0 ? null : ctFiled / ctDue.length,
+      ctDue.length === 0
+        ? { variant: "none", text: "No corporate tax return was due yet." }
+        : {
+            variant: "ratio",
+            params: { done: ctFiled, total: ctDue.length },
+            text: `${ctFiled} of ${ctDue.length} corporate tax returns that were due are filed.`,
+          }
+    )
+  );
+
+  const score = Math.round(checks.reduce((s, c) => s + c.score, 0));
+  const issues = checks
+    .filter((c) => c.status === "fail" || c.status === "partial")
+    .map((c) => c.explanation);
+  return { score, issues, checks };
+}
 
 export function registerComplianceDashboardRoutes(app: Express) {
   // =====================================
   // COMPLIANCE DASHBOARD (UAE Overview)
   // =====================================
 
-  // Get compliance overview for a company
   app.get(
     "/api/companies/:companyId/compliance/overview",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
       const { companyId } = req.params;
+      const hasAccess = await storage.hasCompanyAccess(req.user!.id, companyId);
+      if (!hasAccess) throw new DomainError("ACCESS_DENIED", 403, undefined, "Access denied");
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
+      const now = new Date();
+      const today = uaeToday(now);
+      // Read-only (S4): live specs are merged on read; nothing is generated here.
+      const rows = await listCalendar(companyId, { now });
 
-      // --- VAT Status ---
-      let vatStatus: {
-        lastReturn: string | null;
-        nextDue: string | null;
-        filingStatus: "up_to_date" | "overdue" | "due_soon";
-      } = { lastReturn: null, nextDue: null, filingStatus: "up_to_date" };
+      const vat = filingStatus(rows, "vat_return", today, 14);
+      const ct = filingStatus(rows, "corporate_tax_return", today, 30);
 
+      const documents = await pool.query(
+        `SELECT (SELECT COUNT(*) FROM invoices WHERE company_id = $1)::int
+              + (SELECT COUNT(*) FROM receipts WHERE company_id = $1)::int AS total`,
+        [companyId]
+      );
+      let withVersionHistory = 0;
       try {
-        const vatReturns = await storage.getVatReturnsByCompanyId(companyId);
-        if (vatReturns.length > 0) {
-          // Sort by period end descending to find the latest
-          const sorted = [...vatReturns].sort(
-            (a, b) => new Date(b.periodEnd).getTime() - new Date(a.periodEnd).getTime()
-          );
-          const latest = sorted[0];
-          vatStatus.lastReturn = new Date(latest.periodEnd).toISOString();
-
-          // Estimate next due: 28 days after the latest period end
-          const nextDue = new Date(latest.periodEnd);
-          nextDue.setDate(nextDue.getDate() + 28);
-          vatStatus.nextDue = nextDue.toISOString();
-
-          const now = new Date();
-          if (nextDue < now) {
-            vatStatus.filingStatus = "overdue";
-          } else {
-            const daysUntilDue = Math.ceil(
-              (nextDue.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-            );
-            vatStatus.filingStatus = daysUntilDue <= 14 ? "due_soon" : "up_to_date";
-          }
-        }
+        const versions = await pool.query(
+          `SELECT COUNT(DISTINCT (document_type, document_id))::int AS n
+             FROM document_versions WHERE company_id = $1`,
+          [companyId]
+        );
+        withVersionHistory = Number(versions.rows[0]?.n) || 0;
       } catch {
-        // Storage method may not exist; keep defaults
+        withVersionHistory = 0;
       }
 
-      // --- Corporate Tax Status ---
-      let corporateTaxStatus: {
-        lastReturn: string | null;
-        nextDue: string | null;
-        status: "up_to_date" | "overdue" | "due_soon";
-      } = { lastReturn: null, nextDue: null, status: "up_to_date" };
-
-      try {
-        const taxReturns = await storage.getCorporateTaxReturnsByCompanyId(companyId);
-        if (taxReturns.length > 0) {
-          const sorted = [...taxReturns].sort(
-            (a, b) => new Date(b.taxPeriodEnd).getTime() - new Date(a.taxPeriodEnd).getTime()
-          );
-          const latest = sorted[0];
-          corporateTaxStatus.lastReturn = new Date(latest.taxPeriodEnd).toISOString();
-
-          // UAE corporate tax: 9 months after financial year-end
-          const nextDue = new Date(latest.taxPeriodEnd);
-          nextDue.setMonth(nextDue.getMonth() + 9);
-          corporateTaxStatus.nextDue = nextDue.toISOString();
-
-          const now = new Date();
-          if (nextDue < now) {
-            corporateTaxStatus.status = "overdue";
-          } else {
-            const daysUntilDue = Math.ceil(
-              (nextDue.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-            );
-            corporateTaxStatus.status = daysUntilDue <= 30 ? "due_soon" : "up_to_date";
-          }
-        }
-      } catch {
-        // Storage method may not exist; keep defaults
-      }
-
-      // --- Document Completeness ---
-      let documentCompleteness = { totalDocuments: 0, withVersionHistory: 0 };
-
-      try {
-        const invoices = await storage.getInvoicesByCompanyId(companyId);
-        const receipts = await storage.getReceiptsByCompanyId(companyId);
-        documentCompleteness.totalDocuments = invoices.length + receipts.length;
-
-        // Check how many have at least one version tracked
-        let withVersions = 0;
-        for (const inv of invoices) {
-          const count =
-            (await (storage as any).getDocumentVersionCount?.(companyId, "invoice", inv.id)) ?? 0;
-          if (count > 0) withVersions++;
-        }
-        for (const rec of receipts) {
-          const count =
-            (await (storage as any).getDocumentVersionCount?.(companyId, "receipt", rec.id)) ?? 0;
-          if (count > 0) withVersions++;
-        }
-        documentCompleteness.withVersionHistory = withVersions;
-      } catch {
-        // Keep defaults
-      }
-
-      // --- Audit Readiness Score ---
-      let auditScore = 0;
-      const issues: string[] = [];
-
-      // 20pts: VAT filed
-      try {
-        const vatReturns = await storage.getVatReturnsByCompanyId(companyId);
-        if (vatReturns.length > 0) {
-          auditScore += 20;
-        } else {
-          issues.push("No VAT returns filed");
-        }
-      } catch {
-        issues.push("Unable to check VAT returns");
-      }
-
-      // 20pts: Chart of accounts exists
-      try {
-        const accounts = await storage.getAccountsByCompanyId(companyId);
-        if (accounts.length > 0) {
-          auditScore += 20;
-        } else {
-          issues.push("No chart of accounts configured");
-        }
-      } catch {
-        issues.push("Unable to check chart of accounts");
-      }
-
-      // 20pts: Recent journal entries (within last 90 days)
-      try {
-        const entries = await storage.getJournalEntriesByCompanyId(companyId);
-        const ninetyDaysAgo = new Date();
-        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
-        const recentEntries = entries.filter((e) => new Date(e.date) >= ninetyDaysAgo);
-        if (recentEntries.length > 0) {
-          auditScore += 20;
-        } else {
-          issues.push("No journal entries in the last 90 days");
-        }
-      } catch {
-        issues.push("Unable to check journal entries");
-      }
-
-      // 20pts: Bank reconciliation (check if reconciliation rules exist as proxy)
-      try {
-        const rules = (await (storage as any).getReconciliationRulesByCompanyId?.(companyId)) ?? [];
-        if (rules.length > 0) {
-          auditScore += 20;
-        } else {
-          issues.push("No bank reconciliation rules configured");
-        }
-      } catch {
-        issues.push("Bank reconciliation not set up");
-      }
-
-      // 20pts: Document backups exist
-      try {
-        const backups = await storage.getBackupsByCompanyId(companyId);
-        const completedBackups = backups.filter((b) => b.status === "completed");
-        if (completedBackups.length > 0) {
-          auditScore += 20;
-        } else {
-          issues.push("No completed data backups");
-        }
-      } catch {
-        issues.push("Unable to check backups");
-      }
-
-      const auditReadiness = {
-        score: auditScore,
-        issues,
-      };
+      const auditReadiness = await computeAuditReadiness(companyId, rows, now);
 
       res.json({
-        vatStatus,
-        corporateTaxStatus,
-        documentCompleteness,
+        vatStatus: {
+          lastReturn: vat.lastReturn,
+          nextDue: vat.nextDue,
+          nextPeriodEnd: vat.nextPeriodEnd,
+          overdueCount: vat.overdueCount,
+          dueInDays: vat.dueInDays,
+          filingStatus: vat.state,
+        },
+        corporateTaxStatus: {
+          lastReturn: ct.lastReturn,
+          nextDue: ct.nextDue,
+          nextPeriodEnd: ct.nextPeriodEnd,
+          overdueCount: ct.overdueCount,
+          dueInDays: ct.dueInDays,
+          status: ct.state,
+        },
+        documentCompleteness: {
+          totalDocuments: Number(documents.rows[0]?.total) || 0,
+          withVersionHistory,
+        },
         auditReadiness,
+        upcomingObligations: rows
+          .filter((r) => r.status === "upcoming" || r.status === "overdue")
+          .slice(0, 10),
       });
     })
   );

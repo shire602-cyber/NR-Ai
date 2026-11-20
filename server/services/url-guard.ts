@@ -7,16 +7,18 @@
  * - The hostname must not resolve to loopback, private, link-local,
  *   carrier-grade NAT, multicast, reserved, or documentation ranges
  *   (IPv4 and IPv6, including IPv4-mapped IPv6 and NAT64).
- * - DNS is re-resolved at dispatch time (not just at registration) so a
- *   record that later flips to an internal address is still rejected.
- * - Redirects are never followed (a redirect response is returned as-is),
- *   which closes the redirect-to-internal-host bypass.
+ * - DNS is resolved at dispatch time (not just at registration), ONCE per
+ *   hop, and the connection is pinned to the validated IP (R17-15).
+ * - Redirects are not followed unless asked; each followed hop is re-validated
+ *   and re-pinned, which closes the redirect-to-internal-host bypass.
  * - Response bodies are read with a hard byte cap.
  *
  * Escape hatch: WEBHOOK_ALLOW_PRIVATE_URLS=true disables the IP range checks
  * (self-hosted installs / local development against a local receiver).
  */
 import dns from "node:dns/promises";
+import http from "node:http";
+import https from "node:https";
 import net from "node:net";
 
 const PRIVATE_URLS_ALLOWED = () => process.env.WEBHOOK_ALLOW_PRIVATE_URLS === "true";
@@ -91,12 +93,39 @@ export function isBlockedIp(ip: string): boolean {
   return true; // not an IP — caller should have resolved first
 }
 
-export type UrlGuardResult = { ok: true; url: URL } | { ok: false; reason: string };
+// ─── Resolution (one lookup per hop; injectable for tests) ─────────────────
+
+export interface ResolvedAddress {
+  address: string;
+  family: 4 | 6;
+}
+
+type Resolver = (hostname: string) => Promise<ResolvedAddress[]>;
+
+const systemResolver: Resolver = async (hostname) => {
+  const rows = await dns.lookup(hostname, { all: true, verbatim: true });
+  return rows.map((r) => ({ address: r.address, family: r.family === 6 ? 6 : 4 }));
+};
+
+let resolver: Resolver = systemResolver;
+let blockedCheck: (ip: string) => boolean = isBlockedIp;
+
+/** Tests only: replace DNS resolution and/or the address policy (null restores both). */
+export function __setOutboundGuardForTests(
+  overrides: { resolve?: Resolver; isBlocked?: (ip: string) => boolean } | null
+): void {
+  resolver = overrides?.resolve ?? systemResolver;
+  blockedCheck = overrides?.isBlocked ?? isBlockedIp;
+}
+
+export type UrlGuardResult =
+  | { ok: true; url: URL; addresses: ResolvedAddress[] }
+  | { ok: false; reason: string };
 
 /**
- * Validate a user-supplied outbound URL. Resolves DNS and checks every
- * returned address, so call it again immediately before dispatch — not only
- * at registration time.
+ * Validate a user-supplied outbound URL. Resolves DNS ONCE and checks every returned
+ * address; the validated addresses are returned so the caller connects to exactly those
+ * (safeOutboundFetch pins them), which closes the DNS-rebinding window (R17-15).
  */
 export async function validateOutboundUrl(raw: string): Promise<UrlGuardResult> {
   let url: URL;
@@ -116,38 +145,37 @@ export async function validateOutboundUrl(raw: string): Promise<UrlGuardResult> 
     return { ok: false, reason: "URLs must not contain credentials" };
   }
 
-  if (PRIVATE_URLS_ALLOWED()) {
-    return { ok: true, url };
-  }
-
   const hostname = url.hostname.replace(/^\[|\]$/g, ""); // strip IPv6 brackets
-
-  if (net.isIP(hostname)) {
-    if (isBlockedIp(hostname)) {
+  const literal = net.isIP(hostname);
+  if (literal) {
+    if (!PRIVATE_URLS_ALLOWED() && blockedCheck(hostname)) {
       return { ok: false, reason: "URL resolves to a disallowed address" };
     }
-    return { ok: true, url };
+    return { ok: true, url, addresses: [{ address: hostname, family: literal === 6 ? 6 : 4 }] };
   }
 
-  let addresses: Array<{ address: string }>;
+  let addresses: ResolvedAddress[];
   try {
-    addresses = await dns.lookup(hostname, { all: true, verbatim: true });
+    addresses = await resolver(hostname);
   } catch {
     return { ok: false, reason: "Hostname could not be resolved" };
   }
   if (addresses.length === 0) {
     return { ok: false, reason: "Hostname could not be resolved" };
   }
-  for (const { address } of addresses) {
-    if (isBlockedIp(address)) {
-      return { ok: false, reason: "URL resolves to a disallowed address" };
+  if (!PRIVATE_URLS_ALLOWED()) {
+    for (const { address } of addresses) {
+      if (blockedCheck(address)) {
+        return { ok: false, reason: "URL resolves to a disallowed address" };
+      }
     }
   }
-  return { ok: true, url };
+  return { ok: true, url, addresses };
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
+const MAX_REDIRECTS_CAP = 5;
 
 export class OutboundUrlBlockedError extends Error {
   constructor(reason: string) {
@@ -156,51 +184,174 @@ export class OutboundUrlBlockedError extends Error {
   }
 }
 
-async function readBodyCapped(response: Response, maxBytes: number): Promise<string> {
-  const reader = response.body?.getReader();
-  if (!reader) return "";
-  const chunks: Buffer[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = Buffer.from(value);
-    total += chunk.byteLength;
-    if (total >= maxBytes) {
-      chunks.push(chunk.subarray(0, chunk.byteLength - (total - maxBytes)));
-      await reader.cancel().catch(() => {});
-      break;
-    }
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks).toString("utf8");
+/** A `lookup` that always answers with the pre-validated address (no second DNS query). */
+export function pinnedLookup(pinned: ResolvedAddress): net.LookupFunction {
+  return ((_hostname: string, options: unknown, callback?: unknown) => {
+    const cb = (typeof options === "function" ? options : callback) as (
+      err: NodeJS.ErrnoException | null,
+      address: string | Array<{ address: string; family: number }>,
+      family?: number
+    ) => void;
+    const wantsAll =
+      typeof options === "object" && options !== null && (options as { all?: boolean }).all;
+    if (wantsAll) cb(null, [{ address: pinned.address, family: pinned.family }]);
+    else cb(null, pinned.address, pinned.family);
+  }) as net.LookupFunction;
+}
+
+interface HopResult {
+  status: number;
+  headers: http.IncomingHttpHeaders;
+  bodyText: string;
+}
+
+function headersToObject(init: HeadersInit | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  new Headers(init ?? {}).forEach((value, key) => {
+    out[key] = value;
+  });
+  return out;
+}
+
+function bodyToBuffer(body: RequestInit["body"]): Buffer | null {
+  if (body === undefined || body === null) return null;
+  if (typeof body === "string") return Buffer.from(body, "utf8");
+  if (Buffer.isBuffer(body)) return body;
+  if (body instanceof Uint8Array) return Buffer.from(body);
+  if (body instanceof URLSearchParams) return Buffer.from(body.toString(), "utf8");
+  throw new TypeError("safeOutboundFetch supports string, Buffer or URLSearchParams bodies");
+}
+
+/** One request to a validated URL, connected to the pinned IP with Host/SNI preserved. */
+function requestPinned(
+  url: URL,
+  pinned: ResolvedAddress,
+  method: string,
+  headers: Record<string, string>,
+  body: Buffer | null,
+  timeoutMs: number,
+  maxBodyBytes: number
+): Promise<HopResult> {
+  const isHttps = url.protocol === "https:";
+  const lib = isHttps ? https : http;
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  return new Promise<HopResult>((resolve, reject) => {
+    const req = lib.request(
+      {
+        protocol: url.protocol,
+        hostname,
+        port: url.port || (isHttps ? 443 : 80),
+        path: `${url.pathname}${url.search}`,
+        method,
+        headers: { ...headers, ...(body ? { "content-length": String(body.length) } : {}) },
+        lookup: pinnedLookup(pinned),
+        // SNI and certificate checks use the real hostname, never the IP.
+        ...(isHttps && !net.isIP(hostname) ? { servername: hostname } : {}),
+        agent: false,
+        timeout: timeoutMs,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        let total = 0;
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          resolve({
+            status: res.statusCode ?? 0,
+            headers: res.headers,
+            bodyText: Buffer.concat(chunks).toString("utf8"),
+          });
+        };
+        res.on("data", (chunk: Buffer) => {
+          if (done) return;
+          total += chunk.length;
+          if (total >= maxBodyBytes) {
+            chunks.push(chunk.subarray(0, chunk.length - (total - maxBodyBytes)));
+            finish();
+            res.destroy();
+            return;
+          }
+          chunks.push(chunk);
+        });
+        res.on("end", finish);
+        res.on("error", () => finish());
+      }
+    );
+    const timer = setTimeout(() => req.destroy(new Error("Outbound request timed out")), timeoutMs);
+    req.on("timeout", () => req.destroy(new Error("Outbound request timed out")));
+    req.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    req.on("close", () => clearTimeout(timer));
+    if (body) req.write(body);
+    req.end();
+  });
 }
 
 /**
  * Fetch a user-supplied URL with SSRF checks applied at call time.
- * Never follows redirects; caps the response body; enforces a timeout.
- * Throws OutboundUrlBlockedError when the URL fails validation.
+ *
+ * - DNS is resolved once per hop; every address is validated and the connection is made
+ *   to the first validated address (pinned lookup), so a resolver that answers
+ *   differently on a second query (DNS rebinding) cannot redirect the connection.
+ * - Redirects are not followed by default (the 3xx is returned as-is). With
+ *   `maxRedirects` > 0 each hop's Location is validated and pinned again; 303 and
+ *   301/302 on POST switch to a body-less GET.
+ * - Response bodies are capped; a timeout applies per hop.
+ * Throws OutboundUrlBlockedError when any hop fails validation.
  */
 export async function safeOutboundFetch(
   rawUrl: string,
   init: RequestInit,
-  opts: { timeoutMs?: number; maxBodyBytes?: number } = {}
-): Promise<{ status: number; ok: boolean; bodyText: string }> {
-  const verdict = await validateOutboundUrl(rawUrl);
-  if (!verdict.ok) {
-    throw new OutboundUrlBlockedError(verdict.reason);
+  opts: { timeoutMs?: number; maxBodyBytes?: number; maxRedirects?: number } = {}
+): Promise<{ status: number; ok: boolean; bodyText: string; finalUrl: string; hops: number }> {
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const maxBodyBytes = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
+  const maxRedirects = Math.min(Math.max(opts.maxRedirects ?? 0, 0), MAX_REDIRECTS_CAP);
+  let method = (init.method ?? "GET").toUpperCase();
+  const headers = headersToObject(init.headers);
+  let body = bodyToBuffer(init.body);
+  let current = rawUrl;
+
+  for (let hop = 0; ; hop++) {
+    const verdict = await validateOutboundUrl(current);
+    if (!verdict.ok) throw new OutboundUrlBlockedError(verdict.reason);
+    const result = await requestPinned(
+      verdict.url,
+      verdict.addresses[0],
+      method,
+      headers,
+      body,
+      timeoutMs,
+      maxBodyBytes
+    );
+    const location = result.headers.location;
+    const isRedirect = result.status >= 300 && result.status < 400 && !!location;
+    if (!isRedirect || hop >= maxRedirects) {
+      return {
+        status: result.status,
+        ok: result.status >= 200 && result.status < 300,
+        bodyText: result.bodyText,
+        finalUrl: verdict.url.toString(),
+        hops: hop,
+      };
+    }
+    const next = new URL(String(location), verdict.url);
+    if (next.origin !== verdict.url.origin) {
+      // Never forward credentials-bearing headers to another origin.
+      delete headers.authorization;
+      delete headers.cookie;
+    }
+    if (
+      result.status === 303 ||
+      ((result.status === 301 || result.status === 302) && method === "POST")
+    ) {
+      method = "GET";
+      body = null;
+      delete headers["content-type"];
+    }
+    current = next.toString();
   }
-
-  const response = await fetch(verdict.url, {
-    ...init,
-    redirect: "manual",
-    signal: AbortSignal.timeout(opts.timeoutMs ?? DEFAULT_TIMEOUT_MS),
-  });
-
-  const bodyText = await readBodyCapped(
-    response,
-    opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES
-  ).catch(() => "");
-
-  return { status: response.status, ok: response.ok, bodyText };
 }

@@ -3,7 +3,7 @@
  *
  * All endpoints sit under /api/firm/command-center/* and require firm staff
  * access. Read endpoints accept firm_owner OR firm_admin (requireFirmAdmin);
- * batch / mutation endpoints require firm_owner specifically (requireFirmOwner).
+ * batch / mutation endpoints require the firm_owner-only firm.bulk.run permission.
  */
 
 import type { Express, Request, Response } from "express";
@@ -12,7 +12,13 @@ import { z } from "zod";
 import { and, eq, gte, inArray, isNull, lt, or, sql, sum } from "drizzle-orm";
 
 import { authMiddleware } from "../middleware/auth";
-import { requireFirmAdmin, requireFirmOwner } from "../middleware/rbac";
+import { denyClientAccess } from "./firm/shared";
+import {
+  firmContextOf,
+  requireFirmAdmin,
+  requireFirmPermission,
+  requireNrFirm,
+} from "../middleware/rbac";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
 import { db } from "../db";
@@ -20,6 +26,7 @@ import { companies, invoices, receipts } from "../../shared/schema";
 import { recordAudit } from "../services/audit.service";
 import {
   buildClientSnapshots,
+  clientEInvoicingStates,
   buildFirmDashboard,
   calculateHealthScore,
   calculatePeriodComparison,
@@ -63,19 +70,19 @@ const periodSchema = z.object({
 });
 
 const batchCompanyIdsSchema = z.object({
-  companyIds: z.array(z.string().uuid()).min(1).max(500),
+  companyIds: z.array(z.string().guid()).min(1).max(500),
 });
 
 const assignStaffSchema = z.object({
-  userId: z.string().uuid(),
-  companyId: z.string().uuid(),
-  role: z.enum(["accountant", "reviewer", "manager"]).default("accountant"),
+  userId: z.string().guid(),
+  companyId: z.string().guid(),
+  role: z.enum(["accountant", "reviewer", "manager", "preparer"]).default("accountant"),
 });
 
 // Path-param schemas. Drizzle parameterizes queries, but invalid UUIDs reach
 // Postgres and surface as 500s with 22P02. Validate at the edge to return 400.
-const uuidParamSchema = z.object({ id: z.string().uuid() });
-const companyIdParamSchema = z.object({ companyId: z.string().uuid() });
+const uuidParamSchema = z.object({ id: z.string().guid() });
+const companyIdParamSchema = z.object({ companyId: z.string().guid() });
 
 // ─── Range helpers ────────────────────────────────────────────────────────────
 
@@ -141,16 +148,16 @@ async function resolveBatchScope(
 export function registerFirmCommandCenterRoutes(app: Express): void {
   const router = Router();
 
-  router.use(authMiddleware as any);
+  router.use(authMiddleware);
   // requireFirmAdmin allows both firm_owner and firm_admin. Specific batch
-  // endpoints further narrow down to firm_owner via requireFirmOwner.
+  // endpoints further narrow down via requireFirmPermission("firm.bulk.run").
   router.use(requireFirmAdmin());
 
   // ─── GET /dashboard ─────────────────────────────────────────────────────
   router.get(
     "/dashboard",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const skipCache = req.query.skipCache === "true";
       const result = await buildFirmDashboard(userId, firmRole ?? null, { skipCache });
       res.json(result);
@@ -161,7 +168,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   router.get(
     "/clients/health",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const { by, dir } = rankSchema.parse({
         by: req.query.by ?? "health",
         dir: req.query.dir ?? "desc",
@@ -183,6 +190,8 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
         .where(and(inArray(invoices.companyId, companyIds), eq(invoices.status, "paid")))
         .groupBy(invoices.companyId)) as Array<{ companyId: string; total: string | null }>;
       const revenueMap = new Map(revenueRows.map((r) => [r.companyId, Number(r.total ?? 0)]));
+      // WQ5: the e-invoicing state column.
+      const einvoicing = await clientEInvoicingStates(companyIds);
 
       const ranked = snapshots.map((s) => {
         const health = snapshotToHealthScore(s);
@@ -191,6 +200,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
           healthScore: health.score,
           revenue: revenueMap.get(s.companyId) ?? 0,
           overdueBalance: s.overdueBalance,
+          einvoicing: einvoicing.get(s.companyId) ?? null,
           // Compliance score = 100 - (vatOverdue penalty + missingDocs penalty).
           // Used for the 'compliance' ranking key.
           complianceScore:
@@ -213,7 +223,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   router.get(
     "/clients/:companyId/health",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const parsed = companyIdParamSchema.safeParse(req.params);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid companyId" });
@@ -222,7 +232,8 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
 
       const accessible = await resolveAccessibleClientIds(userId, firmRole ?? null);
       if (!accessible.includes(companyId)) {
-        return res.status(403).json({ message: "Access denied to this client" });
+        // 404 outside the firm, 403 only for an own-firm client this member is not assigned to.
+        return denyClientAccess(res, companyId);
       }
 
       const snapshots = await buildClientSnapshots([companyId]);
@@ -240,9 +251,16 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   router.get(
     "/alerts",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const filters = alertFilterSchema.parse(req.query);
-      const alerts = await listFirmAlerts(userId, filters);
+      const accessible = new Set(
+        await resolveAccessibleClientIds(userId, req.user!.firmRole ?? null)
+      );
+      // Alerts are keyed per user; drop rows for clients no longer accessible
+      // (link revoked, unassigned) so a stale alert never leaks a client name.
+      const alerts = (await listFirmAlerts(userId, filters)).filter(
+        (a) => !a.companyId || accessible.has(a.companyId)
+      );
       res.json(alerts);
     })
   );
@@ -254,9 +272,9 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   // and create duplicate rows.
   router.post(
     "/alerts/refresh",
-    requireFirmOwner(),
+    requireFirmPermission("firm.bulk.run"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const companyIds = await resolveAccessibleClientIds(userId, firmRole ?? null);
       const snapshots = await buildClientSnapshots(companyIds);
       const candidates = snapshots.flatMap((s) => generateAlertsForClient(s));
@@ -283,9 +301,9 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   // read/resolved state.
   router.patch(
     "/alerts/:id/read",
-    requireFirmOwner(),
+    requireFirmPermission("firm.bulk.run"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const parsed = uuidParamSchema.safeParse(req.params);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid alert id" });
@@ -308,9 +326,9 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   // ─── PATCH /alerts/:id/resolve ──────────────────────────────────────────
   router.patch(
     "/alerts/:id/resolve",
-    requireFirmOwner(),
+    requireFirmPermission("firm.bulk.run"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const parsed = uuidParamSchema.safeParse(req.params);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid alert id" });
@@ -334,7 +352,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   router.get(
     "/staff/workload",
     asyncHandler(async (_req: Request, res: Response) => {
-      const workload = await fetchStaffWorkload();
+      const workload = await fetchStaffWorkload(firmContextOf(res));
       res.json(workload);
     })
   );
@@ -345,11 +363,12 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   // the correct status. Unknown DB errors surface as 500 (default), not 400.
   router.post(
     "/staff/assign",
-    requireFirmOwner(),
+    requireFirmPermission("firm.staff.manage"),
     asyncHandler(async (req: Request, res: Response) => {
-      const actorId = (req as any).user.id;
+      const actorId = req.user!.id;
       const { userId, companyId, role } = assignStaffSchema.parse(req.body);
-      await assignStaffToCompany(userId, companyId, role);
+      // R15-03: the one assignment service (same rule as /firm/clients/:id/assign-staff).
+      await assignStaffToCompany(firmContextOf(res), userId, companyId, role);
       await recordAudit({
         userId: actorId,
         companyId,
@@ -367,7 +386,7 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   router.get(
     "/metrics/comparison",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const { granularity } = periodSchema.parse({
         granularity: req.query.granularity ?? "month",
       });
@@ -388,9 +407,9 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   // ─── POST /batch/vat-calculate ──────────────────────────────────────────
   router.post(
     "/batch/vat-calculate",
-    requireFirmOwner(),
+    requireFirmPermission("firm.bulk.run"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const { companyIds } = batchCompanyIdsSchema.parse(req.body);
       const scope = await resolveBatchScope(req, res, companyIds);
       if (!scope) return;
@@ -495,9 +514,9 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   // ─── POST /batch/chase-payments ─────────────────────────────────────────
   router.post(
     "/batch/chase-payments",
-    requireFirmOwner(),
+    requireFirmPermission("firm.bulk.run"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const { companyIds } = batchCompanyIdsSchema.parse(req.body);
       const scope = await resolveBatchScope(req, res, companyIds);
       if (!scope) return;
@@ -581,9 +600,11 @@ export function registerFirmCommandCenterRoutes(app: Express): void {
   // ─── POST /batch/chase-documents ────────────────────────────────────────
   router.post(
     "/batch/chase-documents",
-    requireFirmOwner(),
+    requireFirmPermission("firm.bulk.run"),
+    // Document chasing is an NR firm-management-only feature.
+    requireNrFirm(),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const { companyIds } = batchCompanyIdsSchema.parse(req.body);
       const scope = await resolveBatchScope(req, res, companyIds);
       if (!scope) return;

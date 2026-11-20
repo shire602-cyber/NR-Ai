@@ -10,6 +10,7 @@
 // The liability is later cleared on reimbursement (Dr payable / Cr bank).
 
 import { ACCOUNT_CODES } from "../constants";
+import { journalLine } from "@shared/journal-memo";
 
 export type ExpenseClaimItem = {
   category?: string | null;
@@ -23,6 +24,8 @@ export type JournalLine = {
   debit: number;
   credit: number;
   description: string;
+  lineKey?: string;
+  lineParams?: Record<string, string>;
 };
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -39,7 +42,8 @@ const num = (v: unknown) => {
 export function mapExpenseCategoryToCode(category: string | null | undefined): string {
   const c = (category ?? "").trim().toLowerCase();
   if (!c) return "5050";
-  if (/(travel|flight|hotel|taxi|mileage|fuel|transport|meal|food|entertain)/.test(c)) return "5090";
+  if (/(travel|flight|hotel|taxi|mileage|fuel|transport|meal|food|entertain)/.test(c))
+    return "5090";
   if (/(rent|lease)/.test(c)) return "5010";
   if (/(util|electric|water|cooling|dewa|sewa)/.test(c)) return "5030";
   if (/(phone|telephone|internet|mobile|telecom|sim|etisalat|du)/.test(c)) return "5040";
@@ -61,11 +65,19 @@ export function buildExpenseClaimJournalLines(args: {
   resolveByCode: (code: string) => string | null | undefined;
   memoPrefix?: string;
 }):
-  | { ok: true; lines: Array<{ accountId: string; debit: number; credit: number; description: string }> }
+  | {
+      ok: true;
+      lines: Array<{ accountId: string; debit: number; credit: number; description: string }>;
+    }
   | { ok: false; status: number; code: string; message: string } {
   const { items, resolveByCode } = args;
   if (!items || items.length === 0) {
-    return { ok: false, status: 422, code: "NO_ITEMS", message: "Expense claim has no line items to post." };
+    return {
+      ok: false,
+      status: 422,
+      code: "NO_ITEMS",
+      message: "Expense claim has no line items to post.",
+    };
   }
 
   const reimbursementId = resolveByCode(ACCOUNT_CODES.EMP_REIMBURSEMENT_PAYABLE);
@@ -93,7 +105,8 @@ export function buildExpenseClaimJournalLines(args: {
     totalGross = round2(totalGross + net + vat);
   }
 
-  const lines: Array<{ accountId: string; debit: number; credit: number; description: string }> = [];
+  const lines: Array<{ accountId: string; debit: number; credit: number; description: string }> =
+    [];
   for (const [code, amount] of expenseByCode.entries()) {
     if (amount === 0) continue;
     const accountId = resolveByCode(code);
@@ -105,7 +118,12 @@ export function buildExpenseClaimJournalLines(args: {
         message: `Cannot post expense claim: expense account ${code} is missing from the chart of accounts.`,
       };
     }
-    lines.push({ accountId, debit: amount, credit: 0, description: `Expense claim — ${code}` });
+    lines.push({
+      accountId,
+      debit: amount,
+      credit: 0,
+      ...journalLine("claimExpense", { code }),
+    });
   }
 
   if (totalVat > 0) {
@@ -115,17 +133,23 @@ export function buildExpenseClaimJournalLines(args: {
         ok: false,
         status: 422,
         code: "INPUT_VAT_ACCOUNT_MISSING",
-        message: "Cannot post expense claim: Input VAT account is missing from the chart of accounts.",
+        message:
+          "Cannot post expense claim: Input VAT account is missing from the chart of accounts.",
       };
     }
-    lines.push({ accountId: vatId, debit: totalVat, credit: 0, description: "Expense claim — recoverable input VAT" });
+    lines.push({
+      accountId: vatId,
+      debit: totalVat,
+      credit: 0,
+      ...journalLine("claimInputVat"),
+    });
   }
 
   lines.push({
     accountId: reimbursementId,
     debit: 0,
     credit: totalGross,
-    description: "Expense claim — owed to employee",
+    ...journalLine("claimOwed"),
   });
 
   const dr = round2(lines.reduce((s, l) => s + l.debit, 0));
@@ -139,4 +163,203 @@ export function buildExpenseClaimJournalLines(args: {
     };
   }
   return { ok: true, lines };
+}
+
+// ─── W3-B: integer-fils posting plans (R04-03, R04-20) ───────────────────────
+
+export type ExpenseClaimItemFils = {
+  category?: string | null;
+  /** Net amount in base-currency fils. */
+  amountFils: number;
+  /** VAT in base-currency fils. */
+  vatFils: number;
+  /** Input VAT is recoverable only with a valid tax invoice; otherwise it is part of the cost. */
+  vatRecoverable: boolean;
+};
+
+export type FilsJournalLine = {
+  accountId: string;
+  debitFils?: number;
+  creditFils?: number;
+  description: string;
+  lineKey?: string;
+  lineParams?: Record<string, string>;
+  /** C1: the recoverable input VAT this plan derives (the kernel lets it sit on 1050). */
+  systemVat?: boolean;
+};
+
+/**
+ * Approval entry in integer fils: Dr expense per category (net + non-recoverable VAT),
+ * Dr Input VAT (recoverable only), Cr 2045 Employee Reimbursements Payable (gross).
+ */
+export function buildExpenseClaimApprovalLines(args: {
+  items: ExpenseClaimItemFils[];
+  resolveByCode: (code: string) => string | null | undefined;
+}):
+  | { ok: true; lines: FilsJournalLine[]; grossFils: number }
+  | { ok: false; status: number; code: string; message: string } {
+  const { items, resolveByCode } = args;
+  if (!items || items.length === 0) {
+    return {
+      ok: false,
+      status: 422,
+      code: "NO_ITEMS",
+      message: "Expense claim has no line items to post.",
+    };
+  }
+  const payable = resolveByCode(ACCOUNT_CODES.EMP_REIMBURSEMENT_PAYABLE);
+  if (!payable) {
+    return {
+      ok: false,
+      status: 422,
+      code: "REIMBURSEMENT_ACCOUNT_MISSING",
+      message: `Employee Reimbursements Payable (${ACCOUNT_CODES.EMP_REIMBURSEMENT_PAYABLE}) is missing.`,
+    };
+  }
+  const byCode = new Map<string, number>();
+  let recoverable = 0;
+  let gross = 0;
+  for (const item of items) {
+    if (item.amountFils < 0 || item.vatFils < 0) {
+      return {
+        ok: false,
+        status: 400,
+        code: "NEGATIVE_AMOUNT",
+        message: "Expense amounts cannot be negative.",
+      };
+    }
+    const code = mapExpenseCategoryToCode(item.category);
+    const cost = item.amountFils + (item.vatRecoverable ? 0 : item.vatFils);
+    byCode.set(code, (byCode.get(code) ?? 0) + cost);
+    if (item.vatRecoverable) recoverable += item.vatFils;
+    gross += item.amountFils + item.vatFils;
+  }
+  const lines: FilsJournalLine[] = [];
+  for (const [code, fils] of byCode) {
+    if (fils === 0) continue;
+    const id = resolveByCode(code);
+    if (!id) {
+      return {
+        ok: false,
+        status: 422,
+        code: "EXPENSE_ACCOUNT_MISSING",
+        message: `Expense account ${code} is missing.`,
+      };
+    }
+    lines.push({ accountId: id, debitFils: fils, ...journalLine("claimExpense", { code }) });
+  }
+  if (recoverable > 0) {
+    const vat = resolveByCode(ACCOUNT_CODES.VAT_INPUT);
+    if (!vat) {
+      return {
+        ok: false,
+        status: 422,
+        code: "INPUT_VAT_ACCOUNT_MISSING",
+        message: "Input VAT account is missing.",
+      };
+    }
+    lines.push({
+      accountId: vat,
+      debitFils: recoverable,
+      systemVat: true,
+      ...journalLine("claimInputVat"),
+    });
+  }
+  if (gross <= 0) {
+    return {
+      ok: false,
+      status: 422,
+      code: "CLAIM_ZERO_TOTAL",
+      message: "Expense claim total is zero.",
+    };
+  }
+  lines.push({
+    accountId: payable,
+    creditFils: gross,
+    ...journalLine("claimOwed"),
+  });
+  return { ok: true, lines, grossFils: gross };
+}
+
+/** Reimbursement entry: Dr 2045 (the approval credit) / Cr chosen cash or bank account. */
+export function buildExpenseClaimPaymentLines(args: {
+  payableAccountId: string;
+  paymentAccountId: string;
+  amountFils: number;
+  claimNumber: string;
+}): FilsJournalLine[] {
+  return [
+    {
+      accountId: args.payableAccountId,
+      debitFils: args.amountFils,
+      ...journalLine("reimbursementClear", { ref: args.claimNumber }),
+    },
+    {
+      accountId: args.paymentAccountId,
+      creditFils: args.amountFils,
+      ...journalLine("reimbursementPaid", { ref: args.claimNumber }),
+    },
+  ];
+}
+
+/**
+ * W5-C (R14-16): reimbursement of a foreign-currency claim paid FROM a bank account in that
+ * currency. The accrual credited 2045 at the expense-date rate(s) (`accruedFils`, base
+ * currency); the cash leg is the foreign amount at the payment-date rate (fx.getRate), tagged
+ * with the foreign currency so the bank's currency balance moves. The difference is realised
+ * FX: cash above the accrual is a loss, below it a gain. Paying from a base-currency account
+ * settles the accrual exactly (buildExpenseClaimPaymentLines) — no FX arises.
+ */
+export function buildExpenseClaimFxPaymentLines(args: {
+  payableAccountId: string;
+  paymentAccountId: string;
+  accruedFils: number;
+  foreignCurrency: string;
+  foreignFils: number;
+  /** Payment-date rate: base units per 1 foreign unit (6 dp string). */
+  paymentRate: string;
+  /** Base fils of the foreign amount at the payment rate (caller converts with fx). */
+  cashBaseFils: number;
+  fxGainAccountId: string;
+  fxLossAccountId: string;
+  claimNumber: string;
+}): Array<
+  FilsJournalLine & { foreignCurrency?: string; foreignCredit?: string; exchangeRate?: string }
+> {
+  const diff = args.cashBaseFils - args.accruedFils; // > 0 loss, < 0 gain
+  const foreignMajor = (args.foreignFils / 100).toFixed(2);
+  const lines: Array<
+    FilsJournalLine & { foreignCurrency?: string; foreignCredit?: string; exchangeRate?: string }
+  > = [
+    {
+      accountId: args.payableAccountId,
+      debitFils: args.accruedFils,
+      ...journalLine("reimbursementClear", { ref: args.claimNumber }),
+    },
+    {
+      accountId: args.paymentAccountId,
+      creditFils: args.cashBaseFils,
+      ...journalLine("reimbursementPaidFx", {
+        ref: args.claimNumber,
+        currency: args.foreignCurrency,
+      }),
+      foreignCurrency: args.foreignCurrency,
+      foreignCredit: foreignMajor,
+      exchangeRate: args.paymentRate,
+    },
+  ];
+  if (diff > 0) {
+    lines.push({
+      accountId: args.fxLossAccountId,
+      debitFils: diff,
+      ...journalLine("reimbursementFxLoss", { ref: args.claimNumber }),
+    });
+  } else if (diff < 0) {
+    lines.push({
+      accountId: args.fxGainAccountId,
+      creditFils: -diff,
+      ...journalLine("reimbursementFxGain", { ref: args.claimNumber }),
+    });
+  }
+  return lines;
 }

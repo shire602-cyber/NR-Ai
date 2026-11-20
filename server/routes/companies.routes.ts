@@ -2,14 +2,23 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
+import { billingEnforced, checkCompanyQuota } from "../middleware/featureGate";
+import { bypassesTrialLock, companyTrialLocked } from "../middleware/trialAccessPolicy";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { assertUaeVatRate } from "../http/vat-rate-guard";
+import { DomainError, errorCode, errorMessage } from "../errors";
 import {
-  insertCompanySchema,
-  companyPreferencesSchema,
-  insertBankAccountSchema,
-} from "../../shared/schema";
-import { pickAllowed } from "../utils/pick-allowed";
-import { checkCompanyQuota } from "../middleware/featureGate";
-import { ZodError } from "zod";
+  createCompanyBody,
+  updateCompanyBody,
+  LOGO_MAX_BYTES,
+  type CreateCompanyBody,
+  type UpdateCompanyBody,
+} from "../../shared/validators/companies";
+import { recordAudit } from "../services/audit.service";
+import { inspectUpload, UploadRejectedError } from "../services/upload-guard";
+import { deleteReceiptImage, readReceiptImage, saveReceiptFile } from "../services/fileStorage";
+import { z } from "zod";
 import { createDefaultAccountsForCompany } from "../defaultChartOfAccounts";
 import { createLogger } from "../config/logger";
 import { ensureCriticalSchema } from "../db";
@@ -17,8 +26,19 @@ import { withNrClientVatGroup } from "../services/firm-clients.service";
 
 const log = createLogger("companies");
 
-function isCompanySchemaDriftError(err: any): boolean {
-  return err?.code === "42703" || err?.code === "42P01";
+function isCompanySchemaDriftError(err: unknown): boolean {
+  const code = errorCode(err);
+  return code === "42703" || code === "42P01";
+}
+
+/** Fields node-postgres puts on a DatabaseError. */
+interface PgDriverError {
+  code?: string;
+  constraint?: string;
+  column?: string;
+  detail?: string;
+  table?: string;
+  message?: string;
 }
 
 async function withCompanySchemaRepair<T>(
@@ -27,11 +47,11 @@ async function withCompanySchemaRepair<T>(
 ): Promise<T> {
   try {
     return await operation();
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (!isCompanySchemaDriftError(err)) throw err;
 
     log.error(
-      { ...ctx, pgCode: err?.code, err: err?.message },
+      { ...ctx, pgCode: errorCode(err), err: errorMessage(err) },
       "Company write hit schema drift; running critical schema guard and retrying once"
     );
     await ensureCriticalSchema();
@@ -56,11 +76,12 @@ async function withCompanySchemaRepair<T>(
  * tell it apart from a generic crash.
  */
 export function handleCompanyWriteError(
-  err: any,
+  err: unknown,
   ctx: { route: string; id?: string; userId?: string },
   res: Response
 ): boolean {
-  const code: string | undefined = err?.code;
+  const pgErr = (err ?? {}) as PgDriverError;
+  const code: string | undefined = pgErr.code;
 
   // Always emit a structured log so production can tell apart 23505 from
   // 42703 from a connection drop. Includes the constraint/column the driver
@@ -69,11 +90,11 @@ export function handleCompanyWriteError(
     {
       ...ctx,
       pgCode: code,
-      pgConstraint: err?.constraint,
-      pgColumn: err?.column,
-      pgDetail: err?.detail,
-      pgTable: err?.table,
-      err: err?.message,
+      pgConstraint: pgErr.constraint,
+      pgColumn: pgErr.column,
+      pgDetail: pgErr.detail,
+      pgTable: pgErr.table,
+      err: pgErr.message,
     },
     "Company write failed"
   );
@@ -82,28 +103,33 @@ export function handleCompanyWriteError(
     case "23505": // unique_violation
       res.status(409).json({
         message: "That value is already taken by another tenant. Please pick a different one.",
-        field: err?.constraint?.includes("name") ? "name" : undefined,
+        code: "COMPANY_VALUE_TAKEN",
+        field: pgErr.constraint?.includes("name") ? "name" : undefined,
       });
       return true;
     case "23502": // not_null_violation
       res.status(400).json({
-        message: `Required field is missing: ${err?.column ?? "unknown"}`,
-        field: err?.column,
+        message: `Required field is missing: ${pgErr.column ?? "unknown"}`,
+        code: "REQUIRED_FIELD_MISSING",
+        field: pgErr.column,
       });
       return true;
     case "23514": // check_violation
       res.status(400).json({
-        message: `Value rejected by validation rule: ${err?.constraint ?? "check constraint"}`,
+        message: `Value rejected by validation rule: ${pgErr.constraint ?? "check constraint"}`,
+        code: "CONSTRAINT_VIOLATION",
       });
       return true;
     case "22001": // string_data_right_truncation (value too long)
       res.status(400).json({
         message: "One of the values you entered is too long for this field.",
+        code: "VALUE_TOO_LONG",
       });
       return true;
     case "22P02": // invalid_text_representation (e.g. bad uuid)
       res.status(400).json({
         message: "One of the values you entered is not valid for this field.",
+        code: "INVALID_IDENTIFIER",
       });
       return true;
     case "42703": // undefined_column — schema/DB drift
@@ -112,7 +138,7 @@ export function handleCompanyWriteError(
       // still hit it after the one-shot repair, return a clear retryable
       // service error instead of leaking a generic 500 to onboarding.
       log.error(
-        { ...ctx, pgCode: code, err: err?.message },
+        { ...ctx, pgCode: code, err: pgErr.message },
         "Schema drift: companies write referenced a missing column/table"
       );
       res.status(503).json({
@@ -142,12 +168,12 @@ async function seedChartOfAccounts(
   const defaultAccounts = createDefaultAccountsForCompany(companyId);
 
   try {
-    const createdAccounts = await storage.createBulkAccounts(defaultAccounts as any);
+    const createdAccounts = await storage.createBulkAccounts(defaultAccounts);
     log.info({ companyId, count: createdAccounts.length }, "Created chart of accounts");
     return { created: createdAccounts.length, alreadyExisted: false };
-  } catch (error: any) {
-    if (error.message?.includes("PARTIAL_INSERT")) {
-      log.error({ companyId, err: error.message }, "Partial insert detected during COA seed");
+  } catch (error: unknown) {
+    if (errorMessage(error)?.includes("PARTIAL_INSERT")) {
+      log.error({ companyId, err: errorMessage(error) }, "Partial insert detected during COA seed");
       throw new Error(
         "PARTIAL_CHART: Chart of Accounts partially created due to race condition. Please contact support."
       );
@@ -155,6 +181,12 @@ async function seedChartOfAccounts(
     throw error;
   }
 }
+
+/** Returned with company writes that carry a TRN: we check the format, not the FTA register. */
+const TRN_VERIFICATION = {
+  format: "checked",
+  ftaLookup: "external_not_integrated",
+} as const;
 
 export function registerCompanyRoutes(app: Express) {
   // =====================================
@@ -165,38 +197,90 @@ export function registerCompanyRoutes(app: Express) {
     "/api/companies",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
+      // A client_portal user sees its supplier only through /api/client-portal/company. The app
+      // shell still lists companies on every page, so answer that with nothing instead of a 403
+      // (no failed call, and no supplier company row leaks to the customer).
+      if (req.user!.userType === "client_portal" && !req.user!.isAdmin) {
+        return res.json([]);
+      }
       const companies = await storage.getAccessibleCompanies(
         userId,
         firmRole,
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
-      res.json(companies.map((company) => withNrClientVatGroup(company)));
+      // myRole lets the client keep owner-only flows (the setup wizard) away from
+      // invited members. Firm-accessible client companies have no direct membership.
+      const roles = await storage.getCompanyRolesByUserId(userId);
+      const enforceTrialLock = billingEnforced() && !bypassesTrialLock(req.user!);
+      res.set("Cache-Control", "private, no-store").json(
+        await Promise.all(
+          companies.map(async (company) => {
+            const myRole = roles[company.id] ?? null;
+            if (enforceTrialLock && (await companyTrialLocked(company.id))) {
+              // The company switcher and billing need identity and role, but no business data.
+              return {
+                id: company.id,
+                name: company.name,
+                companyType: company.companyType,
+                onboardingCompleted: company.onboardingCompleted,
+                myRole,
+              };
+            }
+            return { ...withNrClientVatGroup(company), myRole };
+          })
+        )
+      );
     })
   );
 
   app.post(
     "/api/companies",
     authMiddleware,
-    // H8: the free tier's caps (1 user, 20 invoices/month) were bypassable by
+    // H8: the old plan caps were bypassable by
     // simply creating another company. maxCompanies is now actually enforced.
     checkCompanyQuota(),
+    strictBody(createCompanyBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const validated = insertCompanySchema.parse(req.body);
+      const userId = req.user!.id;
+      const { vatRegistered: _legacyVatRegistered, ...validated } =
+        parsedBody<CreateCompanyBody>(req);
 
-      // Check if company name exists
-      const existing = await storage.getCompanyByName(validated.name);
-      if (existing) {
-        return res.status(400).json({ message: "Company name already exists" });
+      if (validated.defaultVatRate !== undefined) {
+        assertUaeVatRate(validated.defaultVatRate, "defaultVatRate", "default VAT rate");
+      }
+
+      // companyType decides the access model (customer SaaS vs NRA-managed client): only a
+      // platform admin may create anything other than a customer company (R17-05).
+      if (
+        validated.companyType !== undefined &&
+        validated.companyType !== "customer" &&
+        req.user?.isAdmin !== true
+      ) {
+        throw new DomainError(
+          "COMPANY_TYPE_ADMIN_ONLY",
+          403,
+          undefined,
+          "Only a platform admin can set the company type."
+        );
+      }
+
+      // Names are unique per owner (case-insensitive), not across tenants (R14-09).
+      if (await storage.ownerHasCompanyNamed(userId, validated.name)) {
+        throw new DomainError(
+          "COMPANY_NAME_TAKEN",
+          409,
+          { field: "name" },
+          "You already have a company with this name."
+        );
       }
 
       let company;
       try {
         company = await withCompanySchemaRepair({ route: "POST /api/companies", userId }, () =>
-          storage.createCompany(validated)
+          storage.createCompany(validated as never)
         );
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (handleCompanyWriteError(err, { route: "POST /api/companies", userId }, res)) {
           return;
         }
@@ -222,168 +306,238 @@ export function registerCompanyRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
 
       // Check if user has access to this company (or via firm role)
       const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const company = await storage.getCompany(id);
       if (!company) {
-        return res.status(404).json({ message: "Company not found" });
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
       }
 
       res.json(company);
     })
   );
 
+  /**
+   * Single write path for PUT, PATCH and PATCH /preferences (R14-07, R14-20): the body was
+   * validated by `updateCompanyBody`; this applies the business rules and writes.
+   */
+  async function updateCompanyHandler(route: string, req: Request, res: Response) {
+    const { id } = req.params;
+    const { id: userId, firmRole } = req.user!;
+
+    const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
+    if (!hasAccess) {
+      return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
+    }
+    const current = await storage.getCompany(id);
+    if (!current) {
+      return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
+    }
+
+    const updateData: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(req.body as UpdateCompanyBody)) {
+      if (value !== undefined && key !== "vatRegistered") updateData[key] = value;
+    }
+
+    // WQ3 (12.10): the default VAT rate is 0% or the UAE standard rate (5%).
+    if ("defaultVatRate" in updateData) {
+      assertUaeVatRate(updateData.defaultVatRate, "defaultVatRate", "default VAT rate");
+    }
+
+    // PRIVILEGE ESCALATION GUARD (R17-05). `companyType` decides whether a company is a
+    // self-serve customer or an accounting-firm/NRA tenant, which gates entire route families.
+    // Only a platform admin may change it; re-sending the current value is a no-op.
+    if ("companyType" in updateData) {
+      if (updateData.companyType === current.companyType) {
+        delete updateData.companyType;
+      } else if (req.user?.isAdmin !== true) {
+        throw new DomainError(
+          "COMPANY_TYPE_ADMIN_ONLY",
+          403,
+          undefined,
+          "Only a platform admin can change the company type."
+        );
+      }
+    }
+
+    // Base currency is part of every posted amount's meaning: freeze it once books exist (R14-08).
+    if (
+      typeof updateData.baseCurrency === "string" &&
+      updateData.baseCurrency !== current.baseCurrency
+    ) {
+      if (await storage.companyHasPostedJournal(id)) {
+        throw new DomainError(
+          "BASE_CURRENCY_LOCKED",
+          409,
+          { currentBaseCurrency: current.baseCurrency },
+          "Base currency cannot change after journal entries have been posted."
+        );
+      }
+    }
+
+    if (
+      typeof updateData.name === "string" &&
+      updateData.name.trim().toLowerCase() !== current.name.trim().toLowerCase() &&
+      (await storage.ownerHasCompanyNamed(userId, updateData.name, id))
+    ) {
+      throw new DomainError(
+        "COMPANY_NAME_TAKEN",
+        409,
+        { field: "name" },
+        "You already have a company with this name."
+      );
+    }
+
+    // Nothing updatable survived (e.g. only a no-op companyType): return the company unchanged
+    // rather than issuing an UPDATE with no columns, which the driver rejects.
+    if (Object.keys(updateData).length === 0) {
+      return res.json(withNrClientVatGroup(current));
+    }
+
+    try {
+      const company = await withCompanySchemaRepair({ route, id, userId }, () =>
+        storage.updateCompany(id, updateData as never)
+      );
+      await recordAudit({
+        userId,
+        companyId: id,
+        action: "company.update",
+        entityType: "company",
+        entityId: id,
+        before: {
+          baseCurrency: current.baseCurrency,
+          trnVatNumber: current.trnVatNumber,
+          fiscalYearStartMonth: current.fiscalYearStartMonth,
+        },
+        after: {
+          baseCurrency: company.baseCurrency,
+          trnVatNumber: company.trnVatNumber,
+          fiscalYearStartMonth: company.fiscalYearStartMonth,
+        },
+        req,
+        extra: { fields: Object.keys(updateData).filter((k) => k !== "logoUrl") },
+      });
+      log.info({ id: company.id, route }, "Company updated");
+      res.json(
+        company.trnVatNumber
+          ? { ...withNrClientVatGroup(company), trnVerification: TRN_VERIFICATION }
+          : withNrClientVatGroup(company)
+      );
+    } catch (err: unknown) {
+      if (handleCompanyWriteError(err, { route, id, userId }, res)) {
+        return;
+      }
+      throw err;
+    }
+  }
+
   // PUT is an alias for PATCH — some clients send PUT for full updates
   app.put(
     "/api/companies/:id",
     authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // S-M1: allowlist columns (strips id/createdAt/unknown) so a client can't
-      // set arbitrary real columns (firmId, isActive, subscription/tax fields)
-      // beyond what the form exposes.
-      const updateData: Record<string, any> = pickAllowed(req.body, insertCompanySchema);
-      if (updateData.taxRegistrationDate) {
-        if (typeof updateData.taxRegistrationDate === "string") {
-          updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
-        } else if (!(updateData.taxRegistrationDate instanceof Date)) {
-          updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
-        }
-      } else {
-        delete updateData.taxRegistrationDate;
-      }
-
-      try {
-        const company = await withCompanySchemaRepair(
-          { route: "PUT /api/companies/:id", id, userId },
-          () => storage.updateCompany(id, updateData)
-        );
-        res.json(withNrClientVatGroup(company));
-      } catch (err: any) {
-        if (handleCompanyWriteError(err, { route: "PUT /api/companies/:id", id, userId }, res)) {
-          return;
-        }
-        throw err;
-      }
-    })
+    strictBody(updateCompanyBody),
+    asyncHandler((req: Request, res: Response) =>
+      updateCompanyHandler("PUT /api/companies/:id", req, res)
+    )
   );
 
   app.patch(
     "/api/companies/:id",
     authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
-
-      // Check if user has access to this company (or via firm role)
-      const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Prepare update data with proper type conversions.
-      // S-M1: allowlist columns before the spread (see PUT handler above).
-      const updateData: Record<string, any> = pickAllowed(req.body, insertCompanySchema);
-
-      // PRIVILEGE ESCALATION GUARD.
-      // `companyType` decides whether a company is a self-serve customer or an
-      // accounting-firm/NRA tenant, which gates entire route families. It was in
-      // the allowlist, so any customer could PATCH their own company to
-      // companyType: "nra" and self-promote. It is set at creation and may only
-      // be changed by a platform admin.
-      if ("companyType" in updateData && (req as any).user?.isAdmin !== true) {
-        delete updateData.companyType;
-      }
-
-      // Convert taxRegistrationDate to Date if it exists and is not already a Date
-      if (updateData.taxRegistrationDate) {
-        if (typeof updateData.taxRegistrationDate === "string") {
-          updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
-        } else if (!(updateData.taxRegistrationDate instanceof Date)) {
-          // If it's not a string or Date, try to coerce it
-          updateData.taxRegistrationDate = new Date(updateData.taxRegistrationDate);
-        }
-      } else {
-        // If taxRegistrationDate is undefined or null, ensure it's properly set
-        delete updateData.taxRegistrationDate;
-      }
-
-      // Nothing updatable survived the allowlist (e.g. the body contained only
-      // fields the caller is not permitted to change). Return the company
-      // unchanged rather than issuing an UPDATE with no columns, which the
-      // driver rejects and which surfaced as a 500.
-      if (Object.keys(updateData).length === 0) {
-        const unchanged = await storage.getCompany(id);
-        if (!unchanged) return res.status(404).json({ message: "Company not found" });
-        return res.json(withNrClientVatGroup(unchanged));
-      }
-
-      try {
-        const company = await withCompanySchemaRepair(
-          { route: "PATCH /api/companies/:id", id, userId },
-          () => storage.updateCompany(id, updateData)
-        );
-        log.info({ id: company.id }, "Company profile updated");
-        res.json(withNrClientVatGroup(company));
-      } catch (err: any) {
-        if (handleCompanyWriteError(err, { route: "PATCH /api/companies/:id", id, userId }, res)) {
-          return;
-        }
-        throw err;
-      }
-    })
+    strictBody(updateCompanyBody),
+    asyncHandler((req: Request, res: Response) =>
+      updateCompanyHandler("PATCH /api/companies/:id", req, res)
+    )
   );
 
-  // QuickBooks-style company preferences page — strictly validated PATCH.
-  // Kept separate from PATCH /api/companies/:id so other callers that send
-  // unrelated fields (e.g. tax registration date, company type) keep working.
+  // QuickBooks-style company preferences page. Same contract as PATCH /api/companies/:id.
   app.patch(
     "/api/companies/:id/preferences",
     authMiddleware,
+    strictBody(updateCompanyBody),
+    asyncHandler((req: Request, res: Response) =>
+      updateCompanyHandler("PATCH /api/companies/:id/preferences", req, res)
+    )
+  );
+
+  // Logo upload: bytes are validated (magic-byte sniff, 1 MB cap, raster only) and stored
+  // through fileStorage; only the storage key lives on the company row (R14-13).
+  app.post(
+    "/api/companies/:id/logo",
+    authMiddleware,
+    requireCustomer,
+    strictBody(z.object({ imageData: z.string().min(1).max(2_000_000) })),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, id);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+      const userId = req.user!.id;
+      if (!(await storage.hasCompanyAccess(userId, id))) {
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
-
-      let validated;
+      let inspected;
       try {
-        validated = companyPreferencesSchema.parse(req.body);
+        inspected = await inspectUpload((req.body as { imageData: string }).imageData);
       } catch (err) {
-        if (err instanceof ZodError) {
-          return res.status(400).json({
-            message: "Invalid company preferences",
-            errors: err.flatten().fieldErrors,
-          });
+        if (err instanceof UploadRejectedError) {
+          return res.status(err.status).json({ message: err.message, code: err.code });
         }
         throw err;
       }
-
-      // Strip undefined keys so we never overwrite existing values with NULL
-      const updateData: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(validated)) {
-        if (value !== undefined) updateData[key] = value;
+      if (!/^image\/(png|jpeg|webp|gif)$/.test(inspected.mime)) {
+        throw new DomainError(
+          "LOGO_TYPE_UNSUPPORTED",
+          400,
+          undefined,
+          "Logo must be PNG, JPEG, WebP or GIF"
+        );
       }
+      if (inspected.size > LOGO_MAX_BYTES) {
+        throw new DomainError("LOGO_TOO_LARGE", 413, undefined, "Logo must be 1 MB or smaller");
+      }
+      const previous = await storage.getCompany(id);
+      const key = await saveReceiptFile(inspected.buffer, {
+        mime: inspected.mime,
+        ext: inspected.ext,
+      });
+      const company = await storage.updateCompany(id, { logoPath: key } as never);
+      if (previous?.logoPath) await deleteReceiptImage(previous.logoPath).catch(() => undefined);
+      await recordAudit({
+        userId,
+        companyId: id,
+        action: "company.logo_upload",
+        entityType: "company",
+        entityId: id,
+        before: null,
+        after: { mime: inspected.mime, size: inspected.size },
+        req,
+      });
+      res.json({ logoPath: company.logoPath, mime: inspected.mime, size: inspected.size });
+    })
+  );
 
-      const company = await storage.updateCompany(id, updateData as any);
-      log.info({ id: company.id }, "Company preferences updated");
-      res.json(withNrClientVatGroup(company));
+  app.get(
+    "/api/companies/:id/logo",
+    authMiddleware,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { id } = req.params;
+      const { id: userId, firmRole } = req.user!;
+      if (!(await storage.hasCompanyAccess(userId, id, firmRole))) {
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
+      }
+      const company = await storage.getCompany(id);
+      if (!company?.logoPath)
+        return res.status(404).json({ message: "No logo uploaded", code: "LOGO_NOT_FOUND" });
+      const image = await readReceiptImage(company.logoPath);
+      if (!image)
+        return res.status(404).json({ message: "No logo uploaded", code: "LOGO_NOT_FOUND" });
+      res.setHeader("Content-Type", image.contentType);
+      res.setHeader("Cache-Control", "private, max-age=300");
+      res.send(image.buffer);
     })
   );
 
@@ -394,11 +548,11 @@ export function registerCompanyRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const userId = (req as any).user.id;
+      const userId = req.user!.id;
 
       const hasAccess = await storage.hasCompanyAccess(userId, id);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       const company = await storage.updateCompany(id, { onboardingCompleted: true });
@@ -426,12 +580,12 @@ export function registerCompanyRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
 
       // Check if user has access to this company (or via firm role)
       const hasAccess = await storage.hasCompanyAccess(userId, id, firmRole);
       if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
 
       // Seed Chart of Accounts
@@ -442,6 +596,7 @@ export function registerCompanyRoutes(app: Express) {
       if (result.alreadyExisted) {
         return res.status(409).json({
           message: "Chart of Accounts already exists for this company",
+          code: "CHART_ALREADY_EXISTS",
           accounts: accountsWithBalances,
         });
       }

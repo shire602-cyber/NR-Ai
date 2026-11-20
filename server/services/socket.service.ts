@@ -5,6 +5,7 @@ import { getEnv, isProduction } from "../config/env";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import type { InsertNotification, Notification } from "../../shared/schema";
+import { withNotificationCopy } from "../../shared/server-copy";
 
 const log = createLogger("socket");
 
@@ -98,6 +99,6 @@ export function getIO(): SocketServer | null {
 
 export async function createAndEmitNotification(data: InsertNotification): Promise<Notification> {
   const notification = await storage.createNotification(data);
-  io?.to(`user:${data.userId}`).emit("notification:new", notification);
+  io?.to(`user:${data.userId}`).emit("notification:new", withNotificationCopy(notification));
   return notification;
 }

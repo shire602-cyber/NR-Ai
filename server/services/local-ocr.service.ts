@@ -19,6 +19,12 @@ function decodeImageData(imageData: string): Buffer {
   return Buffer.from(base64, "base64");
 }
 
+/** Tesseract language set: TESSERACT_LANGS (e.g. "eng+ara"); defaults to Arabic + English. */
+export function ocrLanguages(env: Record<string, string | undefined> = process.env): string {
+  const raw = (env.TESSERACT_LANGS || "eng+ara").trim();
+  return /^[a-z_]{3,8}(\+[a-z_]{3,8})*$/i.test(raw) ? raw : "eng+ara";
+}
+
 function ocrTimeoutMs(): number {
   const raw = Number(process.env.TESSERACT_OCR_TIMEOUT_MS);
   return Number.isFinite(raw) && raw >= 5_000 ? raw : DEFAULT_TIMEOUT_MS;
@@ -53,20 +59,33 @@ export async function extractReceiptWithLocalOcr(
   const timeoutMs = ocrTimeoutMs();
   const startedAt = Date.now();
 
-  const result = await withTimeout(
-    Tesseract.recognize(buffer, "eng", {
-      cachePath,
-      logger: (message) => {
-        if (message.status === "recognizing text" && message.progress >= 1) {
-          log.debug({ elapsedMs: Date.now() - startedAt }, "Local OCR recognition completed");
-        }
-      },
-      errorHandler: (err) => {
-        log.warn({ err: err?.message || err }, "Local OCR worker error");
-      },
-    }),
-    timeoutMs
-  );
+  const recognize = (langs: string) =>
+    withTimeout(
+      Tesseract.recognize(buffer, langs, {
+        cachePath,
+        logger: (message) => {
+          if (message.status === "recognizing text" && message.progress >= 1) {
+            log.debug({ elapsedMs: Date.now() - startedAt }, "Local OCR recognition completed");
+          }
+        },
+        errorHandler: (err) => {
+          log.warn({ err: err?.message || err }, "Local OCR worker error");
+        },
+      }),
+      timeoutMs
+    );
+
+  // Arabic + English by default (R05-16). If the Arabic model cannot be loaded (offline,
+  // blocked CDN) fall back to English only rather than failing the whole OCR path.
+  const langs = ocrLanguages();
+  let result;
+  try {
+    result = await recognize(langs);
+  } catch (err) {
+    if (langs === "eng") throw err;
+    log.warn({ err: (err as Error)?.message, langs }, "Multi-language OCR failed; retrying eng");
+    result = await recognize("eng");
+  }
 
   const text = result.data.text || "";
   if (text.trim().length < MIN_TEXT_LENGTH) {

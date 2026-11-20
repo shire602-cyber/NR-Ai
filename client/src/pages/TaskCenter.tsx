@@ -1,12 +1,19 @@
-import { PageHeader } from "@/components/ui/page-header";
-import { useState } from "react";
+import { DatePicker } from "@/components/ui/date-picker";
+import { displayObligationTitle, formatDate, parseCalendarDate } from "@/lib/format-date";
+import { localizeServerText } from "@shared/server-copy";
+import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
+import { StatCard } from "@/components/ui/stat-card";
+import { cn } from "@/lib/utils";
+import { T } from "@/components/layout/T";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, parseISO, differenceInDays, isBefore } from "date-fns";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { differenceInDays, isBefore } from "date-fns";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
@@ -23,28 +30,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useTranslation } from "@/lib/i18n";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import {
-  Plus,
-  Search,
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  Calendar,
-  Loader2,
-  Filter,
-  ListTodo,
-  ArrowUpDown,
-  MoreHorizontal,
-  Trash2,
-  Edit,
-} from "lucide-react";
+import { Plus, Search, Calendar, Loader2, ListTodo, MoreHorizontal, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -68,6 +60,54 @@ interface ComplianceTask {
   completedAt: string | null;
   notes: string | null;
   createdAt: string;
+  /** W4-A (R13-34): generated from the compliance calendar, not a manual task. */
+  generated?: boolean;
+  statusDerived?: boolean;
+  legalSource?: string | null;
+}
+
+interface CalendarObligation {
+  id: string;
+  source: "manual" | "generated";
+  obligationType: string | null;
+  title: string;
+  titleAr: string | null;
+  dueDate: string;
+  status: "upcoming" | "completed" | "overdue" | "dismissed";
+  statusDerived: boolean;
+  legalSource: string | null;
+  description: string;
+  completedAt: string | null;
+}
+
+function obligationTaskCategory(type: string | null): string {
+  if (type === "vat_return") return "vat_filing";
+  if (type === "corporate_tax_return" || type === "ct_registration") return "corporate_tax";
+  if (type === "wps_payroll" || type === "excise_return") return "payment";
+  return "other";
+}
+
+function obligationToTask(o: CalendarObligation, companyId: string): ComplianceTask {
+  return {
+    id: o.id,
+    companyId,
+    title: o.title,
+    titleAr: o.titleAr,
+    description: o.legalSource,
+    category: obligationTaskCategory(o.obligationType),
+    priority: o.status === "overdue" ? "urgent" : "high",
+    status: o.status === "completed" ? "completed" : "pending",
+    dueDate: o.dueDate,
+    reminderDate: null,
+    isRecurring: false,
+    recurrencePattern: null,
+    completedAt: o.completedAt,
+    notes: null,
+    createdAt: o.dueDate,
+    generated: true,
+    statusDerived: o.statusDerived,
+    legalSource: o.legalSource,
+  };
 }
 
 const CATEGORIES = [
@@ -81,12 +121,39 @@ const CATEGORIES = [
 
 const PRIORITIES = [
   { value: "low", labelEn: "Low", labelAr: "منخفض", color: "bg-muted text-foreground" },
-  { value: "medium", labelEn: "Medium", labelAr: "متوسط", color: "bg-info-subtle text-info-subtle-foreground" },
-  { value: "high", labelEn: "High", labelAr: "مرتفع", color: "bg-warning-subtle text-warning-subtle-foreground" },
-  { value: "urgent", labelEn: "Urgent", labelAr: "عاجل", color: "bg-danger-subtle text-danger-subtle-foreground" },
+  {
+    value: "medium",
+    labelEn: "Medium",
+    labelAr: "متوسط",
+    color: "bg-info-subtle text-info-subtle-foreground",
+  },
+  {
+    value: "high",
+    labelEn: "High",
+    labelAr: "مرتفع",
+    color: "bg-warning-subtle text-warning-subtle-foreground",
+  },
+  {
+    value: "urgent",
+    labelEn: "Urgent",
+    labelAr: "عاجل",
+    color: "bg-danger-subtle text-danger-subtle-foreground",
+  },
 ];
 
+/**
+ * Spec 3.15 (WP-D): the task centre is the "List" view of the compliance calendar (same
+ * obligations and tasks). /task-center stays as a redirect.
+ */
 export default function TaskCenter() {
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    navigate("/compliance-calendar?view=list", { replace: true });
+  }, [navigate]);
+  return <Skeleton className="h-96 w-full" />;
+}
+
+export function TaskListPanel() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
@@ -94,6 +161,10 @@ export default function TaskCenter() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("active");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  // X4 (J3): mark a generated obligation "not applicable" (e.g. before the company used
+  // Muhasib, filed elsewhere) with an audited note.
+  const [naTask, setNaTask] = useState<ComplianceTask | null>(null);
+  const [naNote, setNaNote] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newTask, setNewTask] = useState({
     title: "",
@@ -108,9 +179,57 @@ export default function TaskCenter() {
     notes: "",
   });
 
-  const { data: tasks, isLoading } = useQuery<ComplianceTask[]>({
+  const { data: manualTasks, isLoading } = useQuery<ComplianceTask[]>({
     queryKey: ["/api/companies", companyId, "compliance-tasks"],
     enabled: !!companyId,
+  });
+  // R13-34: generated obligations (VAT, CT, UBO, licence, excise, e-invoicing,
+  // WPS) appear alongside manual tasks.
+  const { data: obligations } = useQuery<CalendarObligation[]>({
+    queryKey: ["/api/companies", companyId, "compliance-calendar"],
+    enabled: !!companyId,
+  });
+  const tasks = useMemo<ComplianceTask[]>(
+    () => [
+      ...(manualTasks ?? []),
+      ...(obligations ?? [])
+        .filter((o) => o.source === "generated" && o.status !== "dismissed")
+        .map((o) => obligationToTask(o, companyId ?? "")),
+    ],
+    [manualTasks, obligations, companyId]
+  );
+
+  const obligationMutation = useMutation({
+    mutationFn: ({
+      id,
+      status,
+      note,
+    }: {
+      id: string;
+      status: "completed" | "upcoming" | "dismissed";
+      note?: string;
+    }) =>
+      apiRequest("PATCH", `/api/companies/${companyId}/compliance-calendar/${id}`, {
+        status,
+        ...(note ? { note } : {}),
+      }),
+    onSuccess: (_d, vars) => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/companies", companyId, "compliance-calendar"],
+      });
+      if (vars.status === "dismissed") {
+        setNaTask(null);
+        setNaNote("");
+        toast({ title: t["compliance.markedNotApplicable"] });
+      }
+    },
+    onError: (error: Error) => {
+      toast({
+        variant: "destructive",
+        title: t["compliance.updateFailed"],
+        description: error?.message,
+      });
+    },
   });
 
   const createMutation = useMutation({
@@ -121,7 +240,7 @@ export default function TaskCenter() {
         queryKey: ["/api/companies", companyId, "compliance-tasks"],
       });
       toast({
-        title: locale === "ar" ? "تمت الإضافة" : "Task Created",
+        title: locale === "ar" ? "تمت الإضافة" : "Task created",
         description:
           locale === "ar" ? "تم إنشاء المهمة بنجاح" : "Task has been created successfully",
       });
@@ -131,7 +250,7 @@ export default function TaskCenter() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: locale === "ar" ? "فشل الإنشاء" : "Creation Failed",
+        title: locale === "ar" ? "فشل الإنشاء" : "Creation failed",
         description: error?.message,
       });
     },
@@ -181,7 +300,7 @@ export default function TaskCenter() {
     if (!newTask.title || !newTask.dueDate) {
       toast({
         variant: "destructive",
-        title: locale === "ar" ? "معلومات ناقصة" : "Missing Information",
+        title: locale === "ar" ? "معلومات ناقصة" : "Missing information",
         description:
           locale === "ar"
             ? "يرجى إدخال العنوان وتاريخ الاستحقاق"
@@ -200,8 +319,8 @@ export default function TaskCenter() {
 
   const getTaskStatus = (task: ComplianceTask) => {
     if (task.status === "completed") return "completed";
-    if (isBefore(parseISO(task.dueDate), new Date())) return "overdue";
-    const daysLeft = differenceInDays(parseISO(task.dueDate), new Date());
+    if (isBefore(parseCalendarDate(task.dueDate), new Date())) return "overdue";
+    const daysLeft = differenceInDays(parseCalendarDate(task.dueDate), new Date());
     if (daysLeft <= 3) return "due_soon";
     return "pending";
   };
@@ -217,7 +336,9 @@ export default function TaskCenter() {
           const query = searchQuery.toLowerCase();
           return (
             task.title.toLowerCase().includes(query) ||
-            task.description?.toLowerCase().includes(query)
+            (task.generated ? localizeServerText(task.description, t) : task.description)
+              ?.toLowerCase()
+              .includes(query)
           );
         }
         return true;
@@ -229,6 +350,13 @@ export default function TaskCenter() {
       }) || [];
 
   const stats = {
+    open: tasks?.filter((t) => t.status !== "completed").length || 0,
+    dueThisWeek:
+      tasks?.filter((t) => {
+        if (t.status === "completed") return false;
+        const days = differenceInDays(parseCalendarDate(t.dueDate), new Date());
+        return days >= 0 && days <= 7;
+      }).length || 0,
     total: tasks?.length || 0,
     pending: tasks?.filter((t) => t.status === "pending").length || 0,
     completed: tasks?.filter((t) => t.status === "completed").length || 0,
@@ -238,9 +366,8 @@ export default function TaskCenter() {
   if (isLoadingCompany || isLoading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-24" />
           ))}
         </div>
@@ -251,107 +378,52 @@ export default function TaskCenter() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        eyebrow="Compliance"
-        title={locale === "ar" ? "مركز المهام" : "Task Center"}
-        description={
-          locale === "ar"
-            ? "إدارة مهام الامتثال والتذكيرات"
-            : "Manage compliance tasks and reminders"
-        }
-        actions={
-          <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-task">
-            <Plus className="w-4 h-4 mr-2" />
-            {locale === "ar" ? "مهمة جديدة" : "New Task"}
-          </Button>
-        }
-      />
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "إجمالي المهام" : "Total Tasks"}
-            </CardTitle>
-            <ListTodo className="w-4 h-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.total}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "قيد التنفيذ" : "Pending"}
-            </CardTitle>
-            <Clock className="w-4 h-4 text-info" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-info">{stats.pending}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "مكتملة" : "Completed"}
-            </CardTitle>
-            <CheckCircle2 className="w-4 h-4 text-success" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-success">{stats.completed}</div>
-          </CardContent>
-        </Card>
-
-        <Card className={stats.overdue > 0 ? "border-destructive" : ""}>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {locale === "ar" ? "متأخرة" : "Overdue"}
-            </CardTitle>
-            <AlertTriangle className="w-4 h-4 text-destructive" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">{stats.overdue}</div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard
+          label={locale === "ar" ? "مفتوحة" : "Open"}
+          value={stats.open}
+          testId="stat-tasks-open"
+        />
+        <StatCard
+          label={t["compliance.tasksDueThisWeek"]}
+          value={stats.dueThisWeek}
+          testId="stat-tasks-due-week"
+        />
+        <StatCard
+          label={locale === "ar" ? "متأخرة" : "Overdue"}
+          value={stats.overdue}
+          testId="stat-tasks-overdue"
+        />
       </div>
 
       <Card>
         <CardHeader>
           <div className="flex flex-col md:flex-row gap-4 justify-between">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
                 placeholder={locale === "ar" ? "بحث في المهام..." : "Search tasks..."}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="ps-10"
                 data-testid="input-search-tasks"
               />
             </div>
             <div className="flex gap-2">
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px]" data-testid="select-status-filter">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">{locale === "ar" ? "نشطة" : "Active"}</SelectItem>
-                  <SelectItem value="completed">
-                    {locale === "ar" ? "مكتملة" : "Completed"}
-                  </SelectItem>
-                  <SelectItem value="overdue">{locale === "ar" ? "متأخرة" : "Overdue"}</SelectItem>
-                  <SelectItem value="all">{locale === "ar" ? "الكل" : "All"}</SelectItem>
-                </SelectContent>
-              </Select>
+              <Button onClick={() => setAddDialogOpen(true)} data-testid="button-add-task">
+                <Plus className="w-4 h-4 me-2" />
+                {t["pages.taskCenterNewTask"]}
+              </Button>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[160px]" data-testid="select-category-filter">
+                <SelectTrigger
+                  className="w-[160px]"
+                  aria-label={t["pages.category"]}
+                  data-testid="select-category-filter"
+                >
                   <SelectValue placeholder={locale === "ar" ? "الفئة" : "Category"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">
-                    {locale === "ar" ? "جميع الفئات" : "All Categories"}
-                  </SelectItem>
+                  <SelectItem value="all">{t["pages.taskCenterAllCategories"]}</SelectItem>
                   {CATEGORIES.map((cat) => (
                     <SelectItem key={cat.value} value={cat.value}>
                       {locale === "ar" ? cat.labelAr : cat.labelEn}
@@ -361,14 +433,42 @@ export default function TaskCenter() {
               </Select>
             </div>
           </div>
+          <div
+            className="mt-3 flex flex-wrap gap-2"
+            role="group"
+            aria-label={t["pages.status"]}
+            data-testid="select-status-filter"
+          >
+            {(
+              [
+                ["active", locale === "ar" ? "نشطة" : "Active"],
+                ["overdue", locale === "ar" ? "متأخرة" : "Overdue"],
+                ["completed", locale === "ar" ? "مكتملة" : "Completed"],
+                ["all", locale === "ar" ? "الكل" : "All"],
+              ] as const
+            ).map(([value, label]) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={statusFilter === value ? "default" : "outline"}
+                aria-pressed={statusFilter === value}
+                className="h-8 rounded-full"
+                onClick={() => setStatusFilter(value)}
+                data-testid={`chip-task-status-${value}`}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
         </CardHeader>
         <CardContent>
           {filteredTasks.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <ListTodo className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>{locale === "ar" ? "لا توجد مهام" : "No tasks found"}</p>
+              <p>{t["pages.taskCenterNoTasksFound"]}</p>
               <Button variant="ghost" onClick={() => setAddDialogOpen(true)}>
-                {locale === "ar" ? "إنشاء أول مهمة" : "Create your first task"}
+                {t["pages.taskCenterCreateYourFirstTask"]}
               </Button>
             </div>
           ) : (
@@ -376,20 +476,35 @@ export default function TaskCenter() {
               {filteredTasks.map((task) => {
                 const status = getTaskStatus(task);
                 const category = CATEGORIES.find((c) => c.value === task.category);
-                const priority = PRIORITIES.find((p) => p.value === task.priority);
-                const daysLeft = differenceInDays(parseISO(task.dueDate), new Date());
+                const daysLeft = differenceInDays(parseCalendarDate(task.dueDate), new Date());
 
                 return (
                   <div
                     key={task.id}
-                    className={`flex items-center gap-4 p-4 rounded-lg border transition-colors ${
-                      task.status === "completed" ? "opacity-60 bg-muted/50" : "hover-elevate"
-                    } ${status === "overdue" ? "border-destructive/30 bg-danger-subtle " : ""}`}
+                    className={cn(
+                      "relative flex items-center gap-4 border-b border-border/70 py-3 pe-2 ps-4 last:border-b-0",
+                      task.status === "completed" && "opacity-60",
+                      status === "overdue" &&
+                        "before:absolute before:inset-y-2 before:start-0 before:w-0.5 before:rounded-full before:bg-danger"
+                    )}
                     data-testid={`task-${task.id}`}
                   >
                     <Checkbox
+                      aria-label={displayObligationTitle(
+                        locale === "ar" && task.titleAr ? task.titleAr : task.title,
+                        locale
+                      )}
                       checked={task.status === "completed"}
+                      disabled={task.statusDerived === true}
+                      title={task.statusDerived ? t["compliance.statusFollowsReturn"] : undefined}
                       onCheckedChange={(checked) => {
+                        if (task.generated) {
+                          obligationMutation.mutate({
+                            id: task.id,
+                            status: checked ? "completed" : "upcoming",
+                          });
+                          return;
+                        }
                         updateStatusMutation.mutate({
                           taskId: task.id,
                           status: checked ? "completed" : "pending",
@@ -403,36 +518,48 @@ export default function TaskCenter() {
                         <span
                           className={`font-medium ${task.status === "completed" ? "line-through" : ""}`}
                         >
-                          {locale === "ar" && task.titleAr ? task.titleAr : task.title}
+                          {displayObligationTitle(
+                            locale === "ar" && task.titleAr ? task.titleAr : task.title,
+                            locale
+                          )}
                         </span>
                         <Badge variant="outline" className="text-xs">
                           {locale === "ar" ? category?.labelAr : category?.labelEn}
                         </Badge>
-                        <Badge className={`text-xs ${priority?.color}`}>
-                          {locale === "ar" ? priority?.labelAr : priority?.labelEn}
-                        </Badge>
+                        {task.generated && (
+                          <span className="text-caption text-muted-foreground">
+                            <T k="compliance.generatedBadge" />
+                          </span>
+                        )}
                       </div>
                       {task.description && (
                         <p className="text-sm text-muted-foreground truncate mt-1">
-                          {task.description}
+                          {task.generated
+                            ? localizeServerText(task.description, t)
+                            : task.description}
                         </p>
                       )}
                     </div>
 
                     <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        <div className="flex items-center gap-1 text-sm">
-                          <Calendar className="w-3 h-3" />
-                          {format(parseISO(task.dueDate), "MMM d, yyyy")}
+                      <div className="text-end">
+                        <div
+                          className={cn(
+                            "flex items-center gap-1 text-sm tabular-nums",
+                            status === "overdue" && "text-danger"
+                          )}
+                        >
+                          <Calendar className="w-3 h-3" aria-hidden />
+                          {formatDate(task.dueDate.slice(0, 10), locale)}
                         </div>
                         {task.status !== "completed" && (
-                          <Badge
-                            variant={
+                          <StatusBadge
+                            tone={
                               status === "overdue"
-                                ? "destructive"
+                                ? "danger"
                                 : daysLeft <= 3
-                                  ? "secondary"
-                                  : "outline"
+                                  ? "warning"
+                                  : "neutral"
                             }
                             className="text-xs mt-1"
                           >
@@ -447,36 +574,51 @@ export default function TaskCenter() {
                                 : locale === "ar"
                                   ? `${daysLeft} يوم`
                                   : `${daysLeft}d left`}
-                          </Badge>
+                          </StatusBadge>
                         )}
                       </div>
 
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="icon" variant="ghost">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => {
-                              if (
-                                confirm(
-                                  locale === "ar"
-                                    ? "هل أنت متأكد من الحذف؟"
-                                    : "Are you sure you want to delete?"
-                                )
-                              ) {
-                                deleteMutation.mutate(task.id);
-                              }
-                            }}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            {locale === "ar" ? "حذف" : "Delete"}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {task.generated && task.status !== "completed" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          data-testid={`button-task-na-${task.id}`}
+                          onClick={() => {
+                            setNaNote("");
+                            setNaTask(task);
+                          }}
+                        >
+                          {t["compliance.notApplicable"]}
+                        </Button>
+                      )}
+                      {!task.generated && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="icon" variant="ghost">
+                              <MoreHorizontal className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => {
+                                if (
+                                  confirm(
+                                    locale === "ar"
+                                      ? "هل أنت متأكد من الحذف؟"
+                                      : "Are you sure you want to delete?"
+                                  )
+                                ) {
+                                  deleteMutation.mutate(task.id);
+                                }
+                              }}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="w-4 h-4 me-2" />
+                              {locale === "ar" ? "حذف" : "Delete"}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </div>
                   </div>
                 );
@@ -489,11 +631,9 @@ export default function TaskCenter() {
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{locale === "ar" ? "مهمة جديدة" : "New Task"}</DialogTitle>
+            <DialogTitle>{t["pages.taskCenterNewTask"]}</DialogTitle>
             <DialogDescription>
-              {locale === "ar"
-                ? "إنشاء مهمة امتثال جديدة مع تذكير"
-                : "Create a new compliance task with reminder"}
+              {t["pages.taskCenterCreateANewComplianceTaskWith"]}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto">
@@ -503,7 +643,7 @@ export default function TaskCenter() {
                 <Input
                   value={newTask.title}
                   onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                  placeholder="File Q1 VAT Return"
+                  placeholder={t["pages.taskCenterTitlePlaceholder"]}
                   data-testid="input-task-title"
                 />
               </div>
@@ -536,7 +676,10 @@ export default function TaskCenter() {
                   value={newTask.category}
                   onValueChange={(val) => setNewTask({ ...newTask, category: val })}
                 >
-                  <SelectTrigger data-testid="select-task-category">
+                  <SelectTrigger
+                    aria-label={t["pages.category"]}
+                    data-testid="select-task-category"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -554,7 +697,10 @@ export default function TaskCenter() {
                   value={newTask.priority}
                   onValueChange={(val) => setNewTask({ ...newTask, priority: val })}
                 >
-                  <SelectTrigger data-testid="select-task-priority">
+                  <SelectTrigger
+                    aria-label={t["pages.priority"]}
+                    data-testid="select-task-priority"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -570,20 +716,18 @@ export default function TaskCenter() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "تاريخ الاستحقاق" : "Due Date"} *</Label>
-                <Input
-                  type="date"
+                <Label>{t["pages.taskCenterDueDate"]} *</Label>
+                <DatePicker
                   value={newTask.dueDate}
-                  onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
+                  onChange={(value) => setNewTask({ ...newTask, dueDate: value })}
                   data-testid="input-due-date"
                 />
               </div>
               <div className="space-y-2">
-                <Label>{locale === "ar" ? "تاريخ التذكير" : "Reminder Date"}</Label>
-                <Input
-                  type="date"
+                <Label>{t["pages.taskCenterReminderDate"]}</Label>
+                <DatePicker
                   value={newTask.reminderDate}
-                  onChange={(e) => setNewTask({ ...newTask, reminderDate: e.target.value })}
+                  onChange={(value) => setNewTask({ ...newTask, reminderDate: value })}
                   data-testid="input-reminder-date"
                 />
               </div>
@@ -614,8 +758,45 @@ export default function TaskCenter() {
               disabled={isSubmitting}
               data-testid="button-confirm-create"
             >
-              {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {isSubmitting && <Loader2 className="w-4 h-4 me-2 animate-spin" />}
               {locale === "ar" ? "إنشاء" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!naTask} onOpenChange={(o) => !o && setNaTask(null)}>
+        <DialogContent size="sm">
+          <DialogHeader>
+            <DialogTitle>{t["compliance.notApplicable"]}</DialogTitle>
+            <DialogDescription>{t["compliance.notApplicableHint"]}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="task-na-note">{t["compliance.notApplicableReason"]}</Label>
+            <Textarea
+              id="task-na-note"
+              value={naNote}
+              onChange={(e) => setNaNote(e.target.value)}
+              data-testid="input-task-na-note"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setNaTask(null)}>
+              {t["compliance.cancelAction"]}
+            </Button>
+            <Button
+              disabled={naNote.trim().length < 3 || obligationMutation.isPending}
+              onClick={() =>
+                naTask &&
+                obligationMutation.mutate({
+                  id: naTask.id,
+                  status: "dismissed",
+                  note: naNote.trim(),
+                })
+              }
+              data-testid="button-task-na-confirm"
+            >
+              {t["compliance.notApplicable"]}
             </Button>
           </DialogFooter>
         </DialogContent>

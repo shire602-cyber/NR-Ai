@@ -5,12 +5,10 @@ import {
   validateForEInvoicing,
   vatCategoryFor,
 } from "../../server/services/einvoice.service";
+import { fixtureCompany } from "../fixtures/pint-ae/fixtures";
 
-const company = {
-  name: "Pearl Trading LLC",
-  trnVatNumber: "100123456700003",
-  businessAddress: "Dubai",
-} as any;
+// R07-04: a PINT AE-ready company (address, city, emirate, trade licence, Peppol id).
+const company = { ...fixtureCompany, name: "Pearl Trading LLC", legalName: null } as any;
 
 function makeInvoice(overrides: Record<string, unknown> = {}) {
   return {
@@ -20,6 +18,7 @@ function makeInvoice(overrides: Record<string, unknown> = {}) {
     customerName: "Acme LLC",
     customerTrn: "100765432100003",
     date: new Date("2026-06-01"),
+    dueDate: new Date("2026-07-01"),
     currency: "AED",
     subtotal: 1300,
     vatAmount: 50,
@@ -53,6 +52,11 @@ describe("VAT category mapping", () => {
     expect(vatCategoryFor({ vatSupplyType: "out_of_scope", vatRate: 0 } as any)).toBe("O");
     // Untagged 0% lines fall back to zero-rated, not standard.
     expect(vatCategoryFor({ vatSupplyType: null, vatRate: 0 } as any)).toBe("Z");
+    // R07-05: reverse charge is its own category (classifySupply), never Z.
+    expect(vatCategoryFor({ vatSupplyType: "reverse_charge", vatRate: 0 } as any)).toBe("AE");
+    expect(vatCategoryFor({ vatSupplyType: "standard_rated", vatRate: 0.05 } as any, true)).toBe(
+      "AE"
+    );
   });
 });
 
@@ -84,7 +88,13 @@ describe("PINT AE profile + document type", () => {
   it("adds the AED tax total + TaxCurrencyCode for a foreign-currency invoice", () => {
     // USD invoice, 1000 net + 50 VAT, booked at 3.67 AED/USD.
     const { xml } = generateEInvoiceXML(
-      makeInvoice({ currency: "USD", exchangeRate: 3.67, subtotal: 1000, vatAmount: 50, total: 1050 }),
+      makeInvoice({
+        currency: "USD",
+        exchangeRate: 3.67,
+        subtotal: 1000,
+        vatAmount: 50,
+        total: 1050,
+      }),
       lines,
       company
     );
@@ -95,11 +105,12 @@ describe("PINT AE profile + document type", () => {
 
   it("does not add a second tax total for an AED invoice", () => {
     const { xml } = generateEInvoiceXML(makeInvoice({ currency: "AED" }), lines, company);
-    const taxTotals = (xml.match(/<cac:TaxTotal>/g) || []).length;
+    // Document-level TaxTotal only (lines carry their own BTAE-08 TaxTotal).
+    const taxTotals = (xml.match(/\n {2}<cac:TaxTotal>/g) || []).length;
     expect(taxTotals).toBe(1); // foreign invoices get a second AED tax total
   });
 
-  it("emits type 381 and a billing reference for a credit note", () => {
+  it("emits a UBL CreditNote (type 381) with a billing reference for a credit note", () => {
     const cn = makeInvoice({
       invoiceType: "credit_note",
       originalInvoiceId: "inv-original-1",
@@ -108,7 +119,7 @@ describe("PINT AE profile + document type", () => {
       total: -1350,
     });
     const { xml } = generateEInvoiceXML(cn, lines, company);
-    expect(xml).toContain("<cbc:InvoiceTypeCode>381</cbc:InvoiceTypeCode>");
+    expect(xml).toContain("<cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>");
     expect(xml).toContain("<cac:BillingReference>");
     expect(xml).toContain("inv-original-1");
   });
@@ -119,7 +130,7 @@ describe("e-invoicing validation gate", () => {
     expect(validateForEInvoicing(makeInvoice(), lines, company)).toEqual([]);
   });
 
-  it("requires a valid supplier TRN", () => {
+  it("requires a valid supplier TRN (15 digits, 1...03)", () => {
     const issues = validateForEInvoicing(makeInvoice(), lines, { ...company, trnVatNumber: null });
     expect(issues.some((i) => i.field === "company.trnVatNumber")).toBe(true);
     const badFormat = validateForEInvoicing(makeInvoice(), lines, {
@@ -127,15 +138,39 @@ describe("e-invoicing validation gate", () => {
       trnVatNumber: "12345",
     });
     expect(badFormat.some((i) => i.message.includes("15 digits"))).toBe(true);
+    const badShape = validateForEInvoicing(makeInvoice(), lines, {
+      ...company,
+      trnVatNumber: "200123456700001",
+    });
+    expect(badShape.some((i) => i.message.includes("ibr-132-ae"))).toBe(true);
   });
 
-  it("rejects buyer TRNs with the wrong format but allows absent ones", () => {
+  it("rejects buyer TRNs with the wrong format; an absent TRN needs a recorded buyer endpoint", () => {
     expect(
       validateForEInvoicing(makeInvoice({ customerTrn: "ABC" }), lines, company).some(
         (i) => i.field === "invoice.customerTrn"
       )
     ).toBe(true);
-    expect(validateForEInvoicing(makeInvoice({ customerTrn: null }), lines, company)).toEqual([]);
+    // No TRN and no endpoint: the buyer EndpointID (IBT-049) cannot be built, so the data check
+    // names the fix instead of letting the document fail PINT-EndpointID later.
+    expect(validateForEInvoicing(makeInvoice({ customerTrn: null }), lines, company)).toEqual([
+      expect.objectContaining({
+        field: "customer.endpointId",
+        code: "EINVOICE_BUYER_ENDPOINT_MISSING",
+      }),
+    ]);
+    // A recorded Peppol endpoint (e.g. a foreign buyer) is enough without a TRN.
+    expect(
+      validateForEInvoicing(makeInvoice({ customerTrn: null }), lines, company, {
+        customer: {
+          endpointId: "DE123456789",
+          endpointScheme: "9930",
+          address: "Hauptstrasse 1",
+          city: "Berlin",
+          country: "DE",
+        },
+      })
+    ).toEqual([]);
   });
 
   it("catches totals that disagree with the lines", () => {

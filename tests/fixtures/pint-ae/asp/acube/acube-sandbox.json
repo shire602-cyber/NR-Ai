@@ -1,0 +1,326 @@
+{
+  "description": "DOC-DERIVED, NOT RECORDED. Request/response shapes for the A-Cube UAE API built from docs.acubeapi.com (UAE section and the OpenAPI pages, read 2026-11-16). Re-record every interaction against https://ae-sandbox.api.acubeapi.com before go-live; see README.md.",
+  "source": {
+    "login": "https://docs.acubeapi.com/documentation/common/authentication",
+    "submit": "https://docs.acubeapi.com/documentation/api/gov-ae/api-invoicesoutgoing-post",
+    "submitCreditNote": "https://docs.acubeapi.com/documentation/api/gov-ae/api-credit-notesoutgoing-post",
+    "status": "https://docs.acubeapi.com/documentation/api/gov-ae/api-invoices-uuid-get",
+    "tdd": "https://docs.acubeapi.com/documentation/api/gov-ae/api-invoices-uuidtdd-get",
+    "legalEntities": "https://docs.acubeapi.com/documentation/gov-ae/quick-start",
+    "list": "https://docs.acubeapi.com/documentation/api/gov-ae/api-invoices-get-collection"
+  },
+  "interactions": [
+    {
+      "name": "login",
+      "request": {
+        "method": "POST",
+        "url": "https://common.api.acubeapi.com/login",
+        "body": {
+          "email": "sandbox@example.test",
+          "password": "<redacted>",
+          "environment": "sandbox"
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3OTQ4MzA0MDAsImV4cCI6MTc5NDkxNjgwMCwicm9sZXMiOnsiYWUtc2FuZGJveC5hcGkuYWN1YmVhcGkuY29tIjpbIlJPTEVfV1JJVEVSIl19LCJ1c2VybmFtZSI6InNhbmRib3hAZXhhbXBsZS50ZXN0IiwidWlkIjoxLCJlbnZpcm9ubWVudCI6InNhbmRib3gifQ.ZG9jLWRlcml2ZWQtbm90LWEtcmVhbC1zaWduYXR1cmU"
+        }
+      }
+    },
+    {
+      "name": "login-unauthorized",
+      "request": { "method": "POST", "url": "https://common.api.acubeapi.com/login" },
+      "response": { "status": 401, "body": { "code": 401, "message": "Invalid credentials." } }
+    },
+    {
+      "name": "submit-invoice-201",
+      "request": {
+        "method": "POST",
+        "path": "/invoices/outgoing",
+        "contentType": "application/xml"
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "invoiceId": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+          "invoiceTypeCode": "380",
+          "createdAt": "2026-11-16T07:40:15+00:00",
+          "updatedAt": "2026-11-16T07:40:15+00:00",
+          "ownerFiscalId": "1001234567",
+          "legalEntityUuid": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
+          "documentType": "invoice",
+          "documentTypeCode": 380,
+          "direction": "outgoing",
+          "status": "valid",
+          "senderName": "Pearl Trading L.L.C.",
+          "senderIdentifier": "0235:1001234567",
+          "recipientName": "Acme Gulf FZ-LLC",
+          "recipientIdentifier": "0235:1007654321",
+          "invoiceNumber": "INV-2026-0001",
+          "invoiceDate": "2026-11-16T00:00:00+00:00",
+          "totalAmount": "1550.00",
+          "totalAmountNet": "1500.00",
+          "currencyCode": "AED",
+          "dueDate": "2026-12-16T00:00:00+00:00",
+          "externalReferenceId": null
+        }
+      }
+    },
+    {
+      "name": "submit-credit-note-201",
+      "request": {
+        "method": "POST",
+        "path": "/credit-notes/outgoing",
+        "contentType": "application/xml"
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "creditNoteId": "01a0aec8-7f31-7b17-9122-26ded8285826",
+          "ownerFiscalId": "1001234567",
+          "legalEntityUuid": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
+          "documentType": "credit-note",
+          "documentTypeCode": 381,
+          "direction": "outgoing",
+          "status": "valid",
+          "senderIdentifier": "0235:1001234567",
+          "recipientIdentifier": "0235:1007654321",
+          "creditNoteNumber": "CN-2026-0001",
+          "creditNoteDate": "2026-11-16T00:00:00+00:00",
+          "totalAmount": "105.00",
+          "totalAmountNet": "100.00",
+          "currencyCode": "AED",
+          "externalReferenceId": null
+        }
+      }
+    },
+    {
+      "name": "submit-invoice-422",
+      "request": {
+        "method": "POST",
+        "path": "/invoices/outgoing",
+        "contentType": "application/xml"
+      },
+      "response": {
+        "status": 422,
+        "body": {
+          "@id": "/validation_errors/ibr-138-ae",
+          "@type": "ConstraintViolation",
+          "status": 422,
+          "title": "An error occurred",
+          "detail": "AccountingCustomerParty/Party/PartyTaxScheme/CompanyID: Buyer TRN must be 15 digits",
+          "violations": [
+            {
+              "propertyPath": "AccountingCustomerParty/Party/PartyTaxScheme/CompanyID",
+              "message": "Buyer TRN must be 15 digits",
+              "code": "ibr-138-ae",
+              "hint": "Use the buyer's VAT TRN as registered with the FTA"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "submit-invoice-404",
+      "request": { "method": "POST", "path": "/invoices/outgoing" },
+      "response": {
+        "status": 404,
+        "body": { "title": "Not Found", "detail": "Legal entity not found", "status": 404 }
+      }
+    },
+    {
+      "name": "submit-invoice-503",
+      "request": { "method": "POST", "path": "/invoices/outgoing" },
+      "response": { "status": 503, "body": { "title": "Service Unavailable", "status": 503 } }
+    },
+    {
+      "name": "status-sending-queued",
+      "request": { "method": "GET", "path": "/invoices/01a0ab23-24d8-7787-bd01-883b1b089b00" },
+      "response": {
+        "status": 200,
+        "body": {
+          "invoiceId": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+          "direction": "outgoing",
+          "documentTypeCode": 380,
+          "status": "sending_queued",
+          "invoiceNumber": "INV-2026-0001"
+        }
+      }
+    },
+    {
+      "name": "status-delivered",
+      "request": { "method": "GET", "path": "/invoices/01a0ab23-24d8-7787-bd01-883b1b089b00" },
+      "response": {
+        "status": 200,
+        "body": {
+          "invoiceId": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+          "direction": "outgoing",
+          "documentTypeCode": 380,
+          "status": "delivered",
+          "invoiceNumber": "INV-2026-0001"
+        }
+      }
+    },
+    {
+      "name": "status-delivery-error",
+      "request": { "method": "GET", "path": "/invoices/01a0ab23-24d8-7787-bd01-883b1b089b00" },
+      "response": {
+        "status": 200,
+        "body": {
+          "invoiceId": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+          "direction": "outgoing",
+          "documentTypeCode": 380,
+          "status": "delivery_error",
+          "invoiceNumber": "INV-2026-0001"
+        }
+      }
+    },
+    {
+      "name": "tdd-pending",
+      "request": { "method": "GET", "path": "/invoices/01a0ab23-24d8-7787-bd01-883b1b089b00/tdd" },
+      "response": { "status": 204, "body": null }
+    },
+    {
+      "name": "tdd-reported",
+      "request": { "method": "GET", "path": "/invoices/01a0ab23-24d8-7787-bd01-883b1b089b00/tdd" },
+      "response": {
+        "status": 200,
+        "contentType": "application/xml",
+        "text": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!-- DOC-DERIVED placeholder: the TDD schema is not published; re-record from sandbox. -->\n<TaxDataDocument xmlns=\"urn:fta:ae:einvoicing:tdd\"><DocumentUUID>01a0ab23-24d8-7787-bd01-883b1b089b00</DocumentUUID></TaxDataDocument>"
+      }
+    },
+    {
+      "name": "list-outgoing",
+      "request": { "method": "GET", "path": "/invoices?direction=outgoing&itemsPerPage=30&page=1" },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "invoiceId": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+            "direction": "outgoing",
+            "status": "sending_queued",
+            "invoiceNumber": "INV-2026-0001"
+          }
+        ]
+      }
+    },
+    {
+      "name": "list-incoming-invoices",
+      "request": { "method": "GET", "path": "/invoices?direction=incoming&itemsPerPage=30&page=1" },
+      "response": {
+        "status": 200,
+        "body": [
+          {
+            "invoiceId": "01a0c453-5398-728c-8b10-84dd471cd797",
+            "ownerFiscalId": "1001234567",
+            "legalEntityUuid": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
+            "documentType": "invoice",
+            "documentTypeCode": 380,
+            "direction": "incoming",
+            "status": "received",
+            "senderIdentifier": "0235:1009876543",
+            "recipientIdentifier": "0235:1001234567",
+            "invoiceNumber": "AE-INV-005"
+          }
+        ]
+      }
+    },
+    {
+      "name": "list-incoming-credit-notes",
+      "request": {
+        "method": "GET",
+        "path": "/credit-notes?direction=incoming&itemsPerPage=30&page=1"
+      },
+      "response": { "status": 200, "body": [] }
+    },
+    {
+      "name": "incoming-detail",
+      "request": { "method": "GET", "path": "/invoices/01a0c453-5398-728c-8b10-84dd471cd797" },
+      "response": {
+        "status": 200,
+        "body": {
+          "invoiceId": "01a0c453-5398-728c-8b10-84dd471cd797",
+          "ownerFiscalId": "1001234567",
+          "legalEntityUuid": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
+          "documentTypeCode": 380,
+          "direction": "incoming",
+          "status": "received",
+          "invoiceNumber": "AE-INV-005"
+        }
+      }
+    },
+    {
+      "name": "legal-entity-reserve-201",
+      "request": { "method": "POST", "path": "/legal-entities", "body": { "tin": "1001234567" } },
+      "response": {
+        "status": 201,
+        "body": {
+          "legalEntityId": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
+          "tin": "1001234567",
+          "status": "RESERVED",
+          "legalType": null,
+          "nameEn": null,
+          "nameAr": null,
+          "vatTrn": null,
+          "contact": { "email": null, "mobile": null },
+          "isEnabled": false,
+          "enabledCapabilities": [],
+          "createdAt": "2026-11-16T08:00:00+00:00",
+          "updatedAt": "2026-11-16T08:00:00+00:00",
+          "smpSyncAt": null,
+          "registrySyncAt": null,
+          "reservationExpiresAt": "2026-11-23T08:00:00+00:00"
+        }
+      }
+    },
+    {
+      "name": "legal-entity-active",
+      "request": {
+        "method": "GET",
+        "path": "/legal-entities/64f50adc-1cd6-43e5-a627-437091a8a1d6"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "legalEntityId": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
+          "tin": "1001234567",
+          "status": "Active",
+          "legalType": "L3",
+          "nameEn": "Pearl Trading L.L.C.",
+          "nameAr": "بيرل للتجارة ش.ذ.م.م",
+          "effectiveDate": "2024-04-01T00:00:00+00:00",
+          "vatTrn": "100123456700003",
+          "contact": { "email": "admin@pearl.example", "mobile": null },
+          "isEnabled": true,
+          "enabledCapabilities": [
+            { "key": "billing.invoice", "domain": "billing", "type": "invoice" },
+            { "key": "billing.credit_note", "domain": "billing", "type": "credit_note" },
+            { "key": "mls.application_response", "domain": "mls", "type": "application_response" }
+          ],
+          "createdAt": "2026-11-16T08:00:00+00:00",
+          "updatedAt": "2026-11-16T08:04:55+00:00",
+          "smpSyncAt": "2026-11-16T08:04:52+00:00",
+          "registrySyncAt": "2026-11-16T08:04:55+00:00"
+        }
+      }
+    },
+    {
+      "name": "legal-entity-inactive",
+      "request": {
+        "method": "GET",
+        "path": "/legal-entities/64f50adc-1cd6-43e5-a627-437091a8a1d6"
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "legalEntityId": "64f50adc-1cd6-43e5-a627-437091a8a1d6",
+          "tin": "1001234567",
+          "status": "Inactive",
+          "isEnabled": false,
+          "enabledCapabilities": []
+        }
+      }
+    }
+  ]
+}

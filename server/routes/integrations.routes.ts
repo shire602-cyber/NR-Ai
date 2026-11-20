@@ -1,10 +1,19 @@
 import { type Express, type Request, type Response } from "express";
+import { parsedBody } from "../http/parsed-body";
+import { strictBody } from "../http/strict-body";
+import {
+  sheetsCustomExportBody,
+  sheetsExportBody,
+  sheetsImportBody,
+} from "../../shared/validators/route-bodies";
 import { storage } from "../storage";
 import * as googleSheets from "../integrations/googleSheets";
 import { authMiddleware, requireCompanyAccess, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { insertWaitlistSchema } from "../../shared/schema";
 import { createLogger } from "../config/logger";
+import { getCapability } from "../../shared/capabilities";
+import { connectorStatuses } from "../services/connectors/oauth";
 
 const log = createLogger("integrations");
 
@@ -21,7 +30,12 @@ export function registerIntegrationRoutes(app: Express) {
       // Check if email already exists
       const existing = await storage.getWaitlistByEmail(validated.email);
       if (existing) {
-        return res.status(400).json({ message: "Email already registered for waitlist" });
+        return res
+          .status(400)
+          .json({
+            code: "WAITLIST_EMAIL_EXISTS",
+            message: "Email already registered for waitlist",
+          });
       }
 
       const entry = await storage.createWaitlistEntry(validated);
@@ -37,30 +51,34 @@ export function registerIntegrationRoutes(app: Express) {
   // Integration Routes
   // =====================================
 
-  // Get integration status
+  // Get integration status (R19-09): only integrations with code behind them, each with an
+  // honest status. Accounting / POS connectors report `requires_external` until their
+  // provider app is registered; their data comes in through the CSV migration import.
   app.get(
     "/api/integrations/status",
     authMiddleware,
-    asyncHandler(async (req: Request, res: Response) => {
+    asyncHandler(async (_req: Request, res: Response) => {
       const googleSheetsConnected = await googleSheets.isGoogleSheetsConnected();
-
       res.json({
         googleSheets: {
           connected: googleSheetsConnected,
           name: "Google Sheets",
           description: "Export financial data to spreadsheets",
         },
-        xero: {
-          connected: false,
-          name: "Xero",
-          description: "Sync with Xero accounting",
-          comingSoon: true,
-        },
-        quickbooks: {
-          connected: false,
-          name: "QuickBooks Online",
-          description: "Sync with QuickBooks",
-          comingSoon: true,
+        ecommerce: (["shopify", "stripe_payouts"] as const).map((id) => {
+          const cap = getCapability(id);
+          return {
+            id,
+            label: cap.label,
+            // Per-merchant credentials: the platform app registration is optional.
+            status: "available_with_merchant_credentials",
+            platformCapability: cap.status,
+          };
+        }),
+        connectors: connectorStatuses(),
+        migrationImport: {
+          status: "live",
+          sources: ["xero", "quickbooks", "zoho", "wafeq", "generic"],
         },
       });
     })
@@ -74,7 +92,9 @@ export function registerIntegrationRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, integrationType } = req.query;
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res
+          .status(400)
+          .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID required" });
       }
 
       let syncs;
@@ -98,7 +118,9 @@ export function registerIntegrationRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       const spreadsheets = await googleSheets.listSpreadsheets();
@@ -113,15 +135,23 @@ export function registerIntegrationRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     requireCompanyAccess("body"),
+    strictBody(sheetsExportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, spreadsheetId } = req.body;
+      const { companyId, spreadsheetId } = parsedBody<{
+        companyId: string;
+        spreadsheetId?: string;
+      }>(req);
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res
+          .status(400)
+          .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID required" });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Fetch invoices
@@ -157,15 +187,23 @@ export function registerIntegrationRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     requireCompanyAccess("body"),
+    strictBody(sheetsExportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, spreadsheetId } = req.body;
+      const { companyId, spreadsheetId } = parsedBody<{
+        companyId: string;
+        spreadsheetId?: string;
+      }>(req);
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res
+          .status(400)
+          .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID required" });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Fetch receipts/expenses
@@ -201,15 +239,23 @@ export function registerIntegrationRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     requireCompanyAccess("body"),
+    strictBody(sheetsExportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, spreadsheetId } = req.body;
+      const { companyId, spreadsheetId } = parsedBody<{
+        companyId: string;
+        spreadsheetId?: string;
+      }>(req);
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res
+          .status(400)
+          .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID required" });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Fetch journal entries with lines — single batched join instead of one
@@ -268,15 +314,23 @@ export function registerIntegrationRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     requireCompanyAccess("body"),
+    strictBody(sheetsExportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, spreadsheetId } = req.body;
+      const { companyId, spreadsheetId } = parsedBody<{
+        companyId: string;
+        spreadsheetId?: string;
+      }>(req);
       if (!companyId) {
-        return res.status(400).json({ message: "Company ID required" });
+        return res
+          .status(400)
+          .json({ code: "COMPANY_ID_REQUIRED", message: "Company ID required" });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Fetch accounts
@@ -310,21 +364,28 @@ export function registerIntegrationRoutes(app: Express) {
     "/api/integrations/google-sheets/import/invoices",
     authMiddleware,
     requireCompanyAccess("body"),
+    strictBody(sheetsImportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, sheetUrl } = req.body;
+      const { companyId, sheetUrl } = parsedBody<{ companyId: string; sheetUrl: string }>(req);
       if (!companyId || !sheetUrl) {
-        return res.status(400).json({ message: "Company ID and sheet URL required" });
+        return res
+          .status(400)
+          .json({ code: "SHEET_URL_REQUIRED", message: "Company ID and sheet URL required" });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Extract spreadsheet ID from URL
       const match = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
       if (!match) {
-        return res.status(400).json({ message: "Invalid Google Sheets URL" });
+        return res
+          .status(400)
+          .json({ code: "INVALID_SHEETS_URL", message: "Invalid Google Sheets URL" });
       }
 
       const spreadsheetId = match[1];
@@ -376,24 +437,32 @@ export function registerIntegrationRoutes(app: Express) {
     "/api/integrations/google-sheets/import/expenses",
     authMiddleware,
     requireCompanyAccess("body"),
+    strictBody(sheetsImportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { companyId, sheetUrl } = req.body;
+      const userId = req.user?.id;
+      const { companyId, sheetUrl } = parsedBody<{ companyId: string; sheetUrl: string }>(req);
       if (!companyId || !sheetUrl || !userId) {
         return res
           .status(400)
-          .json({ message: "Company ID, sheet URL, and user authentication required" });
+          .json({
+            code: "SHEET_URL_REQUIRED",
+            message: "Company ID, sheet URL, and user authentication required",
+          });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Extract spreadsheet ID from URL
       const match = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
       if (!match) {
-        return res.status(400).json({ message: "Invalid Google Sheets URL" });
+        return res
+          .status(400)
+          .json({ code: "INVALID_SHEETS_URL", message: "Invalid Google Sheets URL" });
       }
 
       const spreadsheetId = match[1];
@@ -407,7 +476,8 @@ export function registerIntegrationRoutes(app: Express) {
         try {
           await storage.createReceipt({
             companyId,
-            date: expenseData.date,
+            // The sheet gives a YYYY-MM-DD string; the column is a timestamp.
+            date: new Date(expenseData.date),
             merchant: expenseData.merchant,
             category: expenseData.category,
             amount: expenseData.amount,
@@ -447,15 +517,27 @@ export function registerIntegrationRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     requireCompanyAccess("body"),
+    strictBody(sheetsCustomExportBody, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const { companyId, title, sheets } = req.body;
+      const { companyId, title, sheets } = parsedBody<{
+        companyId: string;
+        title: string;
+        sheets: Array<{ name: string; headers: string[]; rows: (string | number | null)[][] }>;
+      }>(req);
       if (!companyId || !title || !sheets) {
-        return res.status(400).json({ message: "Company ID, title, and sheets data required" });
+        return res
+          .status(400)
+          .json({
+            code: "SHEETS_EXPORT_INPUT_REQUIRED",
+            message: "Company ID, title, and sheets data required",
+          });
       }
 
       const isConnected = await googleSheets.isGoogleSheetsConnected();
       if (!isConnected) {
-        return res.status(400).json({ message: "Google Sheets not connected" });
+        return res
+          .status(400)
+          .json({ code: "GOOGLE_SHEETS_NOT_CONNECTED", message: "Google Sheets not connected" });
       }
 
       // Export custom data to sheet
@@ -469,7 +551,7 @@ export function registerIntegrationRoutes(app: Express) {
         dataType: "custom",
         status: "completed",
         recordCount: sheets.reduce(
-          (total: number, sheet: any) => total + (sheet.rows?.length || 0),
+          (total: number, sheet: { rows?: unknown[] }) => total + (sheet.rows?.length || 0),
           0
         ),
         externalId: result.spreadsheetId,

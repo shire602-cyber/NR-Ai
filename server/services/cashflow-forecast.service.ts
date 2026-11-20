@@ -1,22 +1,643 @@
-import { storage } from "../storage";
-import type { JournalEntry, JournalLine, Account, Invoice, Receipt } from "../../shared/schema";
+/**
+ * Cash forecast v2 (W3-E: R13-01, R13-06, R13-23, R13-24, R13-25, R12-04).
+ *
+ * Document driven, never extrapolated:
+ *   - opening cash = cash/bank accounts through the reporting kernel;
+ *   - inflows = remaining balances of sent/partial invoices on their due date
+ *     (overdue ones on an assumed recovery date), plus due recurring invoices;
+ *   - outflows = remaining balances of approved vendor bills on their due
+ *     date, payroll, VAT and corporate-tax due amounts, and manual scheduled
+ *     items (loan repayments, one-offs);
+ *   - what-if: delay receipts, add one-off adjustments, pick bank accounts.
+ * With no open documents and no scheduled items the forecast says so
+ * ("insufficient data") instead of inventing weekly averages.
+ */
+import { pool } from "../db";
+import { DomainError } from "../errors";
+import { cashForecastCopy, type CopyDescriptor } from "../../shared/server-copy";
+import {
+  accountTotals,
+  addDays,
+  addMonths,
+  agedPayables,
+  agedReceivables,
+  aed,
+  cashAccounts,
+  fiscalYearStart,
+  loadAccounts,
+  loadCompany,
+  monthEnd,
+  monthStart,
+  naturalBalance,
+  profitAndLoss,
+  uaeToday,
+  ENTRY_LOCAL_DATE_SQL,
+  NOT_CLOSING_SQL,
+  type IsoDate,
+  type Queryable,
+} from "../reporting";
+import { computeCtLiability } from "../../shared/ct-workpaper";
+import { UAE_CT_EXEMPTION_THRESHOLD } from "../constants";
+import type { CashFlowForecast } from "../../shared/schema";
 
-interface WeeklyProjection {
+const db: Queryable = pool as unknown as Queryable;
+
+export type ForecastScenario = "base" | "conservative" | "optimistic";
+export type ForecastItemKind =
+  | "receivable"
+  | "payable"
+  | "recurring_invoice"
+  | "payroll"
+  | "vat"
+  | "corporate_tax"
+  | "loan_repayment"
+  | "one_off_inflow"
+  | "one_off_outflow"
+  | "what_if";
+
+export interface ForecastItem {
+  kind: ForecastItemKind;
+  date: IsoDate;
+  /** Signed AED: inflow positive, outflow negative. */
+  amount: number;
+  description: string;
+  sourceId?: string;
+  /** Present when the date is an assumption (overdue recovery, delayed receipt). */
+  note?: string;
+}
+
+export interface ForecastAdjustment {
+  date: IsoDate;
+  /** Positive AED amount. */
+  amount: number;
+  direction: "inflow" | "outflow";
+  description: string;
+}
+
+export interface ForecastOptions {
+  days?: number;
+  scenario?: ForecastScenario;
+  /** GL cash account ids and/or bank_accounts ids; empty = every cash/bank account. */
+  accountIds?: string[];
+  delayReceiptsDays?: number;
+  adjustments?: ForecastAdjustment[];
+}
+
+export interface WeeklyProjection {
   week: number;
   weekStart: string;
   weekEnd: string;
   expectedInflows: number;
   expectedOutflows: number;
   projectedBalance: number;
+  components: Partial<Record<ForecastItemKind, number>>;
 }
 
-interface CashFlowForecastResult {
+export interface CashFlowForecastResult {
+  asOf: IsoDate;
+  horizonDays: number;
+  scenario: ForecastScenario;
   currentBalance: number;
+  accounts: Array<{ accountId: string; accountCode: string; accountName: string; balance: number }>;
   projections: WeeklyProjection[];
+  items: ForecastItem[];
   insights: string[];
+  /** Same sentences as `insights` as stable message keys + params (client localises). */
+  insightMessages: CopyDescriptor[];
+  insufficientData: boolean;
+  assumptions: string[];
+  assumptionMessages: CopyDescriptor[];
+  summary: {
+    receivablesOpen: number;
+    receivablesOverdue: number;
+    payablesOpen: number;
+    minProjectedBalance: number;
+    minProjectedWeek: number | null;
+    projectedShortfall: number;
+  };
 }
 
-interface MonthlyCashHistory {
+const fils = (n: number) => Math.round(n * 100);
+
+export function stepDate(date: IsoDate, frequency: string): IsoDate | null {
+  switch (frequency) {
+    case "weekly":
+      return addDays(date, 7);
+    case "fortnightly":
+    case "biweekly":
+      return addDays(date, 14);
+    case "monthly":
+      return addMonths(date, 1);
+    case "quarterly":
+      return addMonths(date, 3);
+    case "half_yearly":
+    case "semiannual":
+      return addMonths(date, 6);
+    case "yearly":
+    case "annually":
+      return addMonths(date, 12);
+    default:
+      return null;
+  }
+}
+
+const localDate = (col: string) => `((${col} + interval '4 hours')::date)::text`;
+
+async function loadScheduledItems(companyId: string, from: IsoDate, to: IsoDate) {
+  const { rows } = await db.query(
+    `SELECT id, kind, description, amount, due_date::text AS due_date, repeat_months,
+            occurrences, bank_account_id
+       FROM cash_forecast_items
+      WHERE company_id = $1 AND is_active = true`,
+    [companyId]
+  );
+  const out: ForecastItem[] = [];
+  for (const r of rows) {
+    const n = Math.max(1, Number(r.occurrences) || 1);
+    const step = Math.max(0, Number(r.repeat_months) || 0);
+    for (let i = 0; i < n; i++) {
+      const date = step > 0 ? addMonths(String(r.due_date), step * i) : String(r.due_date);
+      if (date < from || date > to) continue;
+      const inflow = r.kind === "one_off_inflow";
+      out.push({
+        kind: r.kind as ForecastItemKind,
+        date,
+        amount: inflow ? Number(r.amount) : -Number(r.amount),
+        description: String(r.description),
+        sourceId: String(r.id),
+      });
+      if (step === 0) break;
+    }
+  }
+  return out;
+}
+
+async function loadRecurringInvoices(companyId: string, today: IsoDate, to: IsoDate) {
+  const { rows } = await db.query(
+    `SELECT id, customer_name, frequency, ${localDate("next_run_date")} AS next_run,
+            ${localDate("end_date")} AS ends, lines_json
+       FROM recurring_invoices WHERE company_id = $1 AND is_active = true`,
+    [companyId]
+  );
+  const out: ForecastItem[] = [];
+  for (const r of rows) {
+    let lines: Array<{ quantity?: number; unitPrice?: number; vatRate?: number }> = [];
+    try {
+      lines = JSON.parse(String(r.lines_json));
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(lines)) continue;
+    let gross = 0;
+    for (const l of lines) {
+      const net = (Number(l.quantity) || 0) * (Number(l.unitPrice) || 0);
+      gross += net * (1 + (l.vatRate ?? 0.05));
+    }
+    gross = aed(fils(gross));
+    if (gross <= 0) continue;
+    let run: IsoDate | null = String(r.next_run);
+    let guard = 0;
+    while (run && run <= to && guard++ < 60) {
+      if (r.ends && run > String(r.ends)) break;
+      // Invoice issued on the run date and, on net-30 terms, collected 30 days later.
+      const collect = addDays(run, 30);
+      if (collect >= today && collect <= to) {
+        out.push({
+          kind: "recurring_invoice",
+          date: collect,
+          amount: gross,
+          description: `Recurring invoice – ${r.customer_name}`,
+          sourceId: String(r.id),
+          note: "Assumes net-30 collection after the run date",
+        });
+      }
+      run = stepDate(run, String(r.frequency));
+    }
+  }
+  return out;
+}
+
+async function loadPayroll(companyId: string, today: IsoDate, to: IsoDate) {
+  const { rows } = await db.query(
+    `SELECT id, period_year, period_month, total_net, status
+       FROM payroll_runs WHERE company_id = $1
+      ORDER BY period_year DESC, period_month DESC LIMIT 12`,
+    [companyId]
+  );
+  if (rows.length === 0) return [] as ForecastItem[];
+  const latest = rows[0];
+  const latestNet = Number(latest.total_net) || 0;
+  if (latestNet <= 0) return [];
+  // E2 (J3-r2): an estimated month counts only the employees of the latest run who are still
+  // employed at the start of that month (a termination ends their pay).
+  const { rows: items } = await db.query(
+    `SELECT pi.net_salary::text AS net, (e.termination_date)::text AS terminated_on
+       FROM payroll_items pi LEFT JOIN employees e ON e.id = pi.employee_id
+      WHERE pi.payroll_run_id = $1`,
+    [latest.id]
+  );
+  const monthlyNetFor = (monthStartIso: IsoDate): number => {
+    if (!items.length) return latestNet;
+    const fils = items
+      .filter((i) => !i.terminated_on || i.terminated_on >= monthStartIso)
+      .reduce((sum, i) => sum + Math.round(Number(i.net) * 100), 0);
+    return fils / 100;
+  };
+  const have = new Set(
+    rows.map((r) => `${r.period_year}-${String(r.period_month).padStart(2, "0")}`)
+  );
+  const out: ForecastItem[] = [];
+  let cursor = monthStart(today);
+  for (let i = 0; i < 14 && cursor <= to; i++) {
+    const key = cursor.slice(0, 7);
+    const payDate = monthEnd(cursor);
+    const run = rows.find(
+      (r) => `${r.period_year}-${String(r.period_month).padStart(2, "0")}` === key
+    );
+    const estimate = run ? Number(run.total_net) : monthlyNetFor(cursor);
+    if (payDate >= today && payDate <= to && estimate > 0) {
+      if (!have.has(key) || (run && run.status !== "paid")) {
+        out.push({
+          kind: "payroll",
+          date: payDate,
+          amount: -estimate,
+          description: `Payroll ${key}`,
+          note: run ? undefined : "Estimated from the latest payroll run",
+        });
+      }
+    }
+    cursor = addMonths(cursor, 1);
+  }
+  return out;
+}
+
+/**
+ * X4 (J3): known payroll liabilities that are not a monthly run: posted-but-unpaid final
+ * settlements (Salaries Payable, due 14 days after termination — Art. 53 reading) and the
+ * GPSSA contribution balance (2032 Pension Payable, assumed due on the 15th of next month).
+ */
+async function loadPayrollLiabilities(companyId: string, today: IsoDate, to: IsoDate) {
+  const out: ForecastItem[] = [];
+  const { rows } = await db.query(
+    `SELECT s.id, s.net_amount, to_char(s.termination_date, 'YYYY-MM-DD') AS term, e.full_name
+       FROM payroll_settlements s JOIN employees e ON e.id = s.employee_id
+      WHERE s.company_id = $1 AND s.status = 'posted' AND s.net_amount > 0`,
+    [companyId]
+  );
+  for (const r of rows) {
+    const due = addDays(String(r.term), 14);
+    const date = due < today ? today : due;
+    if (date > to) continue;
+    out.push({
+      kind: "payroll",
+      date,
+      amount: -(Number(r.net_amount) || 0),
+      description: `Final settlement – ${r.full_name}`,
+      sourceId: String(r.id),
+      note: due < today ? "Past the 14-day settlement deadline; assumed paid today" : undefined,
+    });
+  }
+  const [accounts, totals] = await Promise.all([
+    loadAccounts(companyId),
+    accountTotals(companyId, { to: today }),
+  ]);
+  const pension = accounts.find((a) => a.code === "2032" && a.type === "liability");
+  if (pension) {
+    const balanceFils = naturalBalance("liability", totals.get(pension.id));
+    if (balanceFils > 0) {
+      const date = addDays(monthEnd(today), 15);
+      if (date <= to) {
+        out.push({
+          kind: "payroll",
+          date,
+          amount: -aed(balanceFils),
+          description: "GPSSA pension contributions payable",
+          sourceId: pension.id,
+          note: "Amount = 2032 Pension Payable balance; due date assumed (15th of next month)",
+        });
+      }
+    }
+  }
+  return out;
+}
+
+async function loadTaxDues(companyId: string, today: IsoDate, to: IsoDate) {
+  const out: ForecastItem[] = [];
+  const [accounts, totals, fy] = await Promise.all([
+    loadAccounts(companyId),
+    accountTotals(companyId, { to: today }),
+    loadCompany(companyId),
+  ]);
+  let vatNet = 0; // fils
+  for (const a of accounts) {
+    if (!/\bvat\b|value added/i.test(a.nameEn)) continue;
+    const t = totals.get(a.id);
+    if (a.type === "liability") vatNet += naturalBalance("liability", t);
+    else if (a.type === "asset") vatNet -= naturalBalance("asset", t);
+  }
+  const calendar = await db.query(
+    `SELECT id, event_type, description, ${localDate("event_date")} AS d, status,
+            period_start::text AS period_start, period_end::text AS period_end
+       FROM compliance_calendar
+      WHERE company_id = $1 AND status <> 'completed'
+        AND event_date::date BETWEEN $2::date AND $3::date`,
+    [companyId, today, to]
+  );
+  const vatRows = calendar.rows.filter((r) => /vat/i.test(String(r.event_type)));
+  const ctRows = calendar.rows.filter((r) => /corporate|\bct\b/i.test(String(r.event_type)));
+
+  if (vatNet > 0) {
+    if (vatRows.length > 0) {
+      const r = vatRows[0];
+      out.push({
+        kind: "vat",
+        date: String(r.d),
+        amount: -aed(vatNet),
+        // X4 (J3): a template sentence (localised in the UI), never the calendar's free text.
+        description:
+          r.period_start && r.period_end
+            ? `VAT return payment ${String(r.period_start).slice(0, 10)} to ${String(r.period_end).slice(0, 10)}`
+            : "VAT return payment",
+        sourceId: String(r.id),
+        note: "Amount = current VAT payable balance in the ledger",
+      });
+    } else {
+      const draft = await db.query(
+        `SELECT id, ${localDate("due_date")} AS d, box14_payable_tax
+           FROM vat_returns
+          WHERE company_id = $1 AND status = 'draft'
+          ORDER BY period_end DESC LIMIT 1`,
+        [companyId]
+      );
+      const r = draft.rows[0];
+      if (r && String(r.d) >= today && String(r.d) <= to) {
+        const amount = Number(r.box14_payable_tax) || aed(vatNet);
+        out.push({
+          kind: "vat",
+          date: String(r.d),
+          amount: -aed(fils(amount)),
+          description: "VAT return payment (latest draft return)",
+          sourceId: String(r.id),
+        });
+      }
+    }
+  }
+
+  if (ctRows.length > 0) {
+    const ytdFrom = fiscalYearStart(today, fy.fiscalYearStartMonth);
+    const pl = await profitAndLoss({ companyId, from: ytdFrom, to: today });
+    const ct = computeCtLiability({
+      totalRevenue: Math.max(0, pl.totalIncome),
+      // Profit before tax: a posted CT provision is not deducted from its own base (A3 H3).
+      totalExpenses: Math.max(0, pl.totalExpenses - (pl.incomeTaxExpense ?? 0)),
+      totalDeductions: 0,
+      exemptionThreshold: UAE_CT_EXEMPTION_THRESHOLD,
+      taxRate: 0.09,
+    });
+    if (ct.taxPayable > 0) {
+      const r = ctRows[0];
+      out.push({
+        kind: "corporate_tax",
+        date: String(r.d),
+        amount: -aed(fils(ct.taxPayable)),
+        description:
+          r.period_start && r.period_end
+            ? `Corporate tax payment ${String(r.period_start).slice(0, 10)} to ${String(r.period_end).slice(0, 10)}`
+            : "Corporate tax payment",
+        sourceId: String(r.id),
+        note: "Estimate from fiscal-year-to-date ledger profit",
+      });
+    }
+  }
+  return out;
+}
+
+async function resolveCashAccounts(companyId: string, today: IsoDate, accountIds: string[]) {
+  const cash = await cashAccounts(companyId, today);
+  if (accountIds.length === 0) return cash;
+  const { rows } = await db.query(
+    `SELECT id, gl_account_id FROM bank_accounts WHERE company_id = $1`,
+    [companyId]
+  );
+  const glFromBank = new Map(rows.map((r) => [String(r.id), r.gl_account_id as string | null]));
+  const wanted = new Set<string>();
+  for (const id of accountIds) {
+    wanted.add(id);
+    const gl = glFromBank.get(id);
+    if (gl) wanted.add(gl);
+  }
+  const picked = cash.filter((c) => wanted.has(c.accountId));
+  if (picked.length === 0) {
+    throw new DomainError(
+      "FORECAST_ACCOUNT_NOT_FOUND",
+      400,
+      { accountIds },
+      "None of the selected accounts is a cash or bank account of this company"
+    );
+  }
+  return picked;
+}
+
+export async function generateCashFlowForecast(
+  companyId: string,
+  options: ForecastOptions | number = {}
+): Promise<CashFlowForecastResult> {
+  const opts: ForecastOptions = typeof options === "number" ? { days: options } : options;
+  const days = Math.min(Math.max(Math.trunc(opts.days ?? 90), 7), 365);
+  const scenario: ForecastScenario = opts.scenario ?? "base";
+  const today = uaeToday();
+  const horizonEnd = addDays(today, days - 1);
+
+  const delay =
+    opts.delayReceiptsDays !== undefined
+      ? Math.max(0, Math.min(Math.trunc(opts.delayReceiptsDays), 180))
+      : scenario === "conservative"
+        ? 14
+        : 0;
+  const overdueRecoveryDays = scenario === "optimistic" ? 3 : scenario === "conservative" ? 30 : 7;
+
+  const assumptionCopy = [
+    cashForecastCopy("cashForecast.assumeOpeningBalance"),
+    cashForecastCopy("cashForecast.assumeInvoices", { days: overdueRecoveryDays }),
+    cashForecastCopy("cashForecast.assumeBills"),
+    cashForecastCopy("cashForecast.assumeNoExtrapolation"),
+  ];
+  if (delay > 0) assumptionCopy.push(cashForecastCopy("cashForecast.assumeDelay", { days: delay }));
+  const assumptions = assumptionCopy.map((c) => c.text);
+
+  const [accts, ar, ap, scheduled, recurring, payroll, taxes, payrollLiabilities] =
+    await Promise.all([
+      resolveCashAccounts(companyId, today, opts.accountIds ?? []),
+      agedReceivables({ companyId, asOf: today }),
+      agedPayables({ companyId, asOf: today }),
+      loadScheduledItems(companyId, today, horizonEnd),
+      loadRecurringInvoices(companyId, today, horizonEnd),
+      loadPayroll(companyId, today, horizonEnd),
+      loadTaxDues(companyId, today, horizonEnd),
+      loadPayrollLiabilities(companyId, today, horizonEnd),
+    ]);
+
+  const openingFils = accts.reduce((s, a) => s + fils(a.balance), 0);
+  const items: ForecastItem[] = [];
+
+  let receivablesOverdue = 0;
+  for (const d of ar.documents) {
+    if (d.open <= 0) continue;
+    const overdue = d.dueDate < today;
+    let date = overdue ? addDays(today, overdueRecoveryDays) : d.dueDate;
+    if (overdue) receivablesOverdue += fils(d.open);
+    let note: string | undefined = overdue
+      ? `Overdue by ${d.daysPastDue} day(s); recovery date is an assumption`
+      : undefined;
+    if (delay > 0) {
+      date = addDays(date, delay);
+      note = `${note ? note + "; " : ""}delayed ${delay} day(s)`;
+    }
+    items.push({
+      kind: "receivable",
+      date,
+      amount: d.open,
+      description: `Invoice ${d.number ?? ""} – ${d.name}`.trim(),
+      sourceId: d.documentId,
+      note,
+    });
+  }
+  for (const d of ap.documents) {
+    if (d.open <= 0) continue;
+    const date = d.dueDate < today ? today : d.dueDate;
+    items.push({
+      kind: "payable",
+      date,
+      amount: -d.open,
+      description: `Bill ${d.number ?? ""} – ${d.name}`.trim(),
+      sourceId: d.documentId,
+      note:
+        d.dueDate < today ? `Overdue by ${d.daysPastDue} day(s); assumed paid today` : undefined,
+    });
+  }
+  for (const r of recurring) {
+    const date = delay > 0 ? addDays(r.date, delay) : r.date;
+    if (date <= horizonEnd) items.push({ ...r, date });
+  }
+  items.push(...scheduled, ...payroll, ...payrollLiabilities, ...taxes);
+  for (const a of opts.adjustments ?? []) {
+    items.push({
+      kind: "what_if",
+      date: a.date < today ? today : a.date,
+      amount: a.direction === "inflow" ? a.amount : -a.amount,
+      description: a.description,
+    });
+  }
+
+  const inHorizon = items
+    .filter((i) => i.date >= today && i.date <= horizonEnd)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const weeks = Math.ceil(days / 7);
+  const projections: WeeklyProjection[] = [];
+  let running = openingFils;
+  let minBalance = openingFils;
+  let minWeek: number | null = null;
+  for (let w = 1; w <= weeks; w++) {
+    const weekStart = addDays(today, (w - 1) * 7);
+    const weekEnd = addDays(weekStart, 6);
+    let inflow = 0;
+    let outflow = 0;
+    const components: Partial<Record<ForecastItemKind, number>> = {};
+    for (const it of inHorizon) {
+      if (it.date < weekStart || it.date > weekEnd) continue;
+      const f = fils(it.amount);
+      if (f >= 0) inflow += f;
+      else outflow += -f;
+      components[it.kind] = aed(fils(components[it.kind] ?? 0) + f);
+    }
+    running += inflow - outflow;
+    if (running < minBalance) {
+      minBalance = running;
+      minWeek = w;
+    }
+    projections.push({
+      week: w,
+      weekStart,
+      weekEnd: weekEnd > horizonEnd ? horizonEnd : weekEnd,
+      expectedInflows: aed(inflow),
+      expectedOutflows: aed(outflow),
+      projectedBalance: aed(running),
+      components,
+    });
+  }
+
+  const insightCopy: Array<{ text: string; message: CopyDescriptor }> = [];
+  const insufficientData = inHorizon.length === 0;
+  const fmt = (n: number) =>
+    n.toLocaleString("en-AE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (insufficientData) {
+    insightCopy.push(cashForecastCopy("cashForecast.insufficientData"));
+  }
+  const negative = projections.find((p) => p.projectedBalance < 0);
+  if (negative) {
+    insightCopy.push(
+      cashForecastCopy("cashForecast.negativeBalance", {
+        amount: fmt(Math.abs(negative.projectedBalance)),
+        week: negative.week,
+        weekStart: negative.weekStart,
+      })
+    );
+  } else {
+    const low = projections.find((p) => p.projectedBalance < 10000);
+    if (low && !insufficientData) {
+      insightCopy.push(
+        cashForecastCopy("cashForecast.lowCash", { week: low.week, weekStart: low.weekStart })
+      );
+    }
+  }
+  if (receivablesOverdue > 0) {
+    const overdueCount = ar.documents.filter((d) => d.dueDate < today && d.open > 0).length;
+    insightCopy.push(
+      cashForecastCopy("cashForecast.overdueReceivables", {
+        amount: fmt(aed(receivablesOverdue)),
+        count: overdueCount,
+        days: overdueRecoveryDays,
+      })
+    );
+  }
+  if (ap.totals.total > 0) {
+    insightCopy.push(
+      cashForecastCopy("cashForecast.openPayables", { amount: fmt(ap.totals.total) })
+    );
+  }
+  const insights = insightCopy.map((c) => c.text);
+
+  return {
+    asOf: today,
+    horizonDays: days,
+    scenario,
+    currentBalance: aed(openingFils),
+    accounts: accts.map((a) => ({
+      accountId: a.accountId,
+      accountCode: a.accountCode,
+      accountName: a.accountName,
+      balance: a.balance,
+    })),
+    projections,
+    items: inHorizon,
+    insights,
+    insightMessages: insightCopy.map((c) => c.message),
+    insufficientData,
+    assumptions,
+    assumptionMessages: assumptionCopy.map((c) => c.message),
+    summary: {
+      receivablesOpen: ar.totals.total,
+      receivablesOverdue: aed(receivablesOverdue),
+      payablesOpen: ap.totals.total,
+      minProjectedBalance: aed(minBalance),
+      minProjectedWeek: minWeek,
+      projectedShortfall: aed(Math.max(0, -minBalance)),
+    },
+  };
+}
+
+export interface MonthlyCashHistory {
   month: string;
   year: number;
   monthNum: number;
@@ -25,350 +646,149 @@ interface MonthlyCashHistory {
   netCashFlow: number;
 }
 
-/**
- * Generates a cash flow forecast for a company over a given number of days.
- * Analyzes historical journal entries, outstanding invoices (receivables),
- * and outstanding bills/expenses (payables) to project future cash flows.
- */
-export async function generateCashFlowForecast(
-  companyId: string,
-  days: number = 90
-): Promise<CashFlowForecastResult> {
-  const now = new Date();
-  const sixMonthsAgo = new Date(now);
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-
-  // Fetch all necessary data in parallel
-  const [accounts, journalEntries, invoices, receipts, bankTransactions] = await Promise.all([
-    storage.getAccountsByCompanyId(companyId),
-    storage.getJournalEntriesByCompanyId(companyId),
-    storage.getInvoicesByCompanyId(companyId),
-    storage.getReceiptsByCompanyId(companyId),
-    storage.getBankTransactionsByCompanyId(companyId),
-  ]);
-
-  // Build account lookup maps
-  const accountMap = new Map<string, Account>();
-  const incomeAccountIds = new Set<string>();
-  const expenseAccountIds = new Set<string>();
-  const assetAccountIds = new Set<string>();
-
-  for (const account of accounts) {
-    accountMap.set(account.id, account);
-    if (account.type === "income") incomeAccountIds.add(account.id);
-    if (account.type === "expense") expenseAccountIds.add(account.id);
-    if (account.type === "asset") assetAccountIds.add(account.id);
-  }
-
-  // Filter posted journal entries from last 6 months
-  const recentEntries = journalEntries.filter(
-    (e) => e.status === "posted" && new Date(e.date) >= sixMonthsAgo
-  );
-
-  // Get all journal lines for recent entries
-  const allLines: (JournalLine & { entryDate: Date })[] = [];
-  for (const entry of recentEntries) {
-    const lines = await storage.getJournalLinesByEntryId(entry.id);
-    for (const line of lines) {
-      allLines.push({ ...line, entryDate: new Date(entry.date) });
-    }
-  }
-
-  // Calculate historical weekly averages for income and expense.
-  // Dividing by a fixed 26 weeks (the lookback window) understates a young
-  // company's averages — a one-month-old business with AED 100k of activity
-  // would have its weekly average diluted to ~3.8k instead of 25k. Use the
-  // span between the earliest in-window transaction and now so the divisor
-  // tracks the data we actually have.
-  let totalHistoricalInflows = 0;
-  let totalHistoricalOutflows = 0;
-  let earliestActivity: Date | null = null;
-
-  for (const line of allLines) {
-    const account = accountMap.get(line.accountId);
-    if (!account) continue;
-
-    if (account.type === "income") {
-      totalHistoricalInflows += line.credit || 0;
-    } else if (account.type === "expense") {
-      totalHistoricalOutflows += line.debit || 0;
-    }
-
-    if (account.type === "income" || account.type === "expense") {
-      if (!earliestActivity || line.entryDate < earliestActivity) {
-        earliestActivity = line.entryDate;
-      }
-    }
-  }
-
-  // Span from first observed inflow/outflow to now, in weeks. Floor at 1
-  // week to avoid division by zero / wild extrapolation in the first days
-  // of activity. Capped at the lookback window so a long-running but
-  // recently-quiet company isn't penalised.
-  const spanStart =
-    earliestActivity && earliestActivity > sixMonthsAgo ? earliestActivity : sixMonthsAgo;
-  const weeksInHistory = Math.max(
-    1,
-    Math.ceil((now.getTime() - spanStart.getTime()) / (7 * 24 * 60 * 60 * 1000))
-  );
-
-  const avgWeeklyInflow = totalHistoricalInflows / weeksInHistory;
-  const avgWeeklyOutflow = totalHistoricalOutflows / weeksInHistory;
-
-  // Calculate current balance from bank transactions and asset accounts
-  // Use the net of all bank transactions as a proxy for current cash
-  let currentBalance = 0;
-  for (const txn of bankTransactions) {
-    currentBalance += txn.amount || 0;
-  }
-
-  // If no bank transactions, estimate from journal entries on asset (cash/bank) accounts
-  if (bankTransactions.length === 0) {
-    for (const line of allLines) {
-      const account = accountMap.get(line.accountId);
-      if (
-        account &&
-        account.type === "asset" &&
-        (account.code.startsWith("10") || // Cash accounts typically 1000-series
-          account.nameEn.toLowerCase().includes("cash") ||
-          account.nameEn.toLowerCase().includes("bank"))
-      ) {
-        currentBalance += (line.debit || 0) - (line.credit || 0);
-      }
-    }
-  }
-
-  // Outstanding invoices (receivables) - unpaid invoices
-  const outstandingInvoices = invoices.filter(
-    (inv) => inv.status === "sent" || inv.status === "draft"
-  );
-
-  // Outstanding receipts (payables) - unposted receipts
-  const outstandingReceipts = receipts.filter((r) => !r.posted && r.amount && r.amount > 0);
-
-  // Calculate total receivables and payables
-  const totalReceivables = outstandingInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
-  // receipts.amount is the net subtotal (excludes VAT); cash outflow when
-  // the receipt is paid is amount + vatAmount.
-  const totalPayables = outstandingReceipts.reduce(
-    (sum, r) => sum + (r.amount || 0) + (r.vatAmount || 0),
-    0
-  );
-  const overdueInvoices = outstandingInvoices.filter((inv) => new Date(inv.date) < now);
-  const overdueAmount = overdueInvoices.reduce((sum, inv) => sum + (inv.total || 0), 0);
-
-  // Generate weekly projections
-  const totalWeeks = Math.ceil(days / 7);
-  const projections: WeeklyProjection[] = [];
-  let runningBalance = currentBalance;
-
-  // ── Forecast guardrails ──────────────────────────────────────
-  // A single anomalous transaction in the lookback window can blow up
-  // the weekly average and produce absurd extrapolations. We cap the
-  // projected balance so it cannot exceed 3× the larger of currentBalance
-  // and total expected inflows over the horizon (i.e. >200% growth gets
-  // clamped). The floor is symmetric on the downside so a runaway
-  // outflow average can't project a fictitious bottomless drain. When
-  // a clamp fires we surface it as an insight so the user knows the
-  // raw model output was tempered.
-  const horizonInflowBudget = Math.abs(avgWeeklyInflow) * totalWeeks + totalReceivables;
-  const horizonOutflowBudget = Math.abs(avgWeeklyOutflow) * totalWeeks + totalPayables;
-  const upperBalanceCap = Math.max(
-    Math.abs(currentBalance) * 3,
-    Math.abs(currentBalance) + horizonInflowBudget,
-    10000
-  );
-  const lowerBalanceFloor = -Math.max(
-    Math.abs(currentBalance) * 3,
-    Math.abs(currentBalance) + horizonOutflowBudget,
-    10000
-  );
-  let clampedAny = false;
-
-  for (let w = 1; w <= totalWeeks; w++) {
-    const weekStart = new Date(now);
-    weekStart.setDate(weekStart.getDate() + (w - 1) * 7);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 6);
-
-    // Base inflow from historical average
-    let weekInflow = avgWeeklyInflow;
-    let weekOutflow = avgWeeklyOutflow;
-
-    // Add expected receivable collections (spread over first few weeks)
-    if (w <= 4 && totalReceivables > 0) {
-      // Assume receivables collected gradually over first 4 weeks
-      weekInflow += totalReceivables / 4;
-    }
-
-    // Add expected payable payments (spread over first few weeks)
-    if (w <= 3 && totalPayables > 0) {
-      // Assume payables paid over first 3 weeks
-      weekOutflow += totalPayables / 3;
-    }
-
-    runningBalance = runningBalance + weekInflow - weekOutflow;
-
-    if (runningBalance > upperBalanceCap) {
-      runningBalance = upperBalanceCap;
-      clampedAny = true;
-    } else if (runningBalance < lowerBalanceFloor) {
-      runningBalance = lowerBalanceFloor;
-      clampedAny = true;
-    }
-
-    projections.push({
-      week: w,
-      weekStart: weekStart.toISOString().split("T")[0],
-      weekEnd: weekEnd.toISOString().split("T")[0],
-      expectedInflows: Math.round(weekInflow * 100) / 100,
-      expectedOutflows: Math.round(weekOutflow * 100) / 100,
-      projectedBalance: Math.round(runningBalance * 100) / 100,
-    });
-  }
-
-  // Generate insights
-  const insights: string[] = [];
-
-  // Low balance warning
-  const lowBalanceWeek = projections.find((p) => p.projectedBalance < 10000);
-  if (lowBalanceWeek) {
-    insights.push(
-      `Cash may drop below AED 10,000 in week ${lowBalanceWeek.week} (${lowBalanceWeek.weekStart}). Consider collecting receivables sooner.`
-    );
-  }
-
-  // Negative balance warning
-  const negativeWeek = projections.find((p) => p.projectedBalance < 0);
-  if (negativeWeek) {
-    insights.push(
-      `Warning: Projected negative balance of AED ${Math.abs(negativeWeek.projectedBalance).toLocaleString()} in week ${negativeWeek.week}. Immediate action needed.`
-    );
-  }
-
-  // Overdue receivables insight
-  if (overdueAmount > 0) {
-    insights.push(
-      `You have AED ${overdueAmount.toLocaleString()} in overdue invoices from ${overdueInvoices.length} customer(s). Collecting these would improve cash position.`
-    );
-  }
-
-  // Outstanding receivables
-  if (totalReceivables > 0) {
-    insights.push(
-      `Expect up to AED ${totalReceivables.toLocaleString()} from ${outstandingInvoices.length} outstanding invoice(s) in the coming weeks.`
-    );
-  }
-
-  // Outstanding payables
-  if (totalPayables > 0) {
-    insights.push(
-      `AED ${totalPayables.toLocaleString()} in pending expenses (${outstandingReceipts.length} receipt(s)) may need to be settled soon.`
-    );
-  }
-
-  // Positive trend
-  if (
-    projections.length > 0 &&
-    projections[projections.length - 1].projectedBalance > currentBalance
-  ) {
-    insights.push(
-      `Positive outlook: Cash position is projected to improve by AED ${(projections[projections.length - 1].projectedBalance - currentBalance).toLocaleString()} over the forecast period.`
-    );
-  }
-
-  // Low activity warning
-  if (avgWeeklyInflow === 0 && avgWeeklyOutflow === 0) {
-    insights.push(
-      "No recent transaction activity found. Forecast is based on outstanding invoices and receipts only."
-    );
-  }
-
-  if (clampedAny) {
-    insights.push(
-      "Forecast extrapolated beyond a sanity bound and was clamped — recent activity may include an outlier transaction skewing the weekly average."
-    );
-  }
-
-  return {
-    currentBalance: Math.round(currentBalance * 100) / 100,
-    projections,
-    insights,
-  };
-}
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
 
 /**
- * Get actual monthly cash flow history for the last N months.
+ * Actual monthly income/expense history from the posted ledger (SQL, UAE
+ * calendar months). Kept under its legacy route name; the figures are
+ * accrual income/expense, not bank cash — see the cash-in/out chart on the
+ * dashboard for bank movement.
  */
 export async function getCashFlowHistory(
   companyId: string,
   months: number = 6
 ): Promise<MonthlyCashHistory[]> {
-  const now = new Date();
-  const accounts = await storage.getAccountsByCompanyId(companyId);
-  const journalEntries = await storage.getJournalEntriesByCompanyId(companyId);
-
-  const accountMap = new Map<string, Account>();
-  for (const account of accounts) {
-    accountMap.set(account.id, account);
-  }
-
-  // Filter posted entries only
-  const postedEntries = journalEntries.filter((e) => e.status === "posted");
-
-  // Build month buckets
-  const history: MonthlyCashHistory[] = [];
-  const monthNames = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-  ];
-
-  for (let i = months - 1; i >= 0; i--) {
-    const targetDate = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
-    const monthEnd = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0, 23, 59, 59);
-
-    const monthEntries = postedEntries.filter((e) => {
-      const d = new Date(e.date);
-      return d >= monthStart && d <= monthEnd;
-    });
-
-    let totalInflows = 0;
-    let totalOutflows = 0;
-
-    for (const entry of monthEntries) {
-      const lines = await storage.getJournalLinesByEntryId(entry.id);
-      for (const line of lines) {
-        const account = accountMap.get(line.accountId);
-        if (!account) continue;
-
-        if (account.type === "income") {
-          totalInflows += line.credit || 0;
-        } else if (account.type === "expense") {
-          totalOutflows += line.debit || 0;
-        }
-      }
+  const today = uaeToday();
+  let y = Number(today.slice(0, 4));
+  let m = Number(today.slice(5, 7));
+  const keys: Array<{ year: number; month: number }> = [];
+  for (let i = 0; i < months; i++) {
+    keys.unshift({ year: y, month: m });
+    m -= 1;
+    if (m === 0) {
+      m = 12;
+      y -= 1;
     }
-
-    history.push({
-      month: monthNames[targetDate.getMonth()],
-      year: targetDate.getFullYear(),
-      monthNum: targetDate.getMonth() + 1,
-      totalInflows: Math.round(totalInflows * 100) / 100,
-      totalOutflows: Math.round(totalOutflows * 100) / 100,
-      netCashFlow: Math.round((totalInflows - totalOutflows) * 100) / 100,
-    });
   }
+  const first = `${keys[0].year}-${String(keys[0].month).padStart(2, "0")}-01`;
+  const { rows } = await db.query(
+    `SELECT to_char(${ENTRY_LOCAL_DATE_SQL}, 'YYYY-MM') AS ym,
+            COALESCE(SUM(CASE WHEN a.type = 'income' THEN ROUND((jl.credit - jl.debit) * 100) ELSE 0 END), 0)::bigint AS inflow,
+            COALESCE(SUM(CASE WHEN a.type = 'expense' THEN ROUND((jl.debit - jl.credit) * 100) ELSE 0 END), 0)::bigint AS outflow
+       FROM journal_lines jl
+       JOIN journal_entries je ON je.id = jl.entry_id
+       JOIN accounts a ON a.id = jl.account_id
+      WHERE je.company_id = $1 AND je.status = 'posted'
+        AND ${ENTRY_LOCAL_DATE_SQL} >= $2::date AND ${ENTRY_LOCAL_DATE_SQL} <= $3::date
+        AND ${NOT_CLOSING_SQL} AND a.type IN ('income', 'expense')
+      GROUP BY 1`,
+    [companyId, first, monthEnd(today)]
+  );
+  const byKey = new Map(rows.map((r) => [r.ym as string, r]));
+  return keys.map(({ year, month }) => {
+    const r = byKey.get(`${year}-${String(month).padStart(2, "0")}`);
+    const inflow = r ? Number(r.inflow) : 0;
+    const outflow = r ? Number(r.outflow) : 0;
+    return {
+      month: MONTH_NAMES[month - 1],
+      year,
+      monthNum: month,
+      totalInflows: aed(inflow),
+      totalOutflows: aed(outflow),
+      netCashFlow: aed(inflow - outflow),
+    };
+  });
+}
 
-  return history;
+// ─── Stored monthly forecast snapshots (cash_flow_forecasts, S3) ──────────────
+
+/** `basis` of rows written by the document-driven generator below. */
+export const STORED_FORECAST_BASIS = "documents_and_scheduled_items";
+
+export interface StoredForecastResult {
+  forecasts: CashFlowForecast[];
+  insufficientData: boolean;
+  insights: string[];
+  insightMessages: CopyDescriptor[];
+}
+
+/**
+ * Replace the company's stored monthly forecast with a snapshot of the document-driven forecast.
+ * With no open documents or scheduled items nothing is stored (insufficientData) — never
+ * extrapolated or model-predicted figures.
+ */
+export async function regenerateStoredForecast(
+  companyId: string,
+  opts: { months?: number } = {}
+): Promise<StoredForecastResult> {
+  const { storage } = await import("../storage");
+  const months = Math.min(Math.max(Math.trunc(opts.months ?? 3), 1), 12);
+  const forecast = await generateCashFlowForecast(companyId, {
+    days: Math.min(months * 30, 365),
+  });
+  await storage.deleteCashFlowForecastsByCompanyId(companyId);
+  if (forecast.insufficientData) {
+    return {
+      forecasts: [],
+      insufficientData: true,
+      insights: forecast.insights,
+      insightMessages: forecast.insightMessages,
+    };
+  }
+  const byMonth = new Map<string, { inflowFils: number; outflowFils: number; balance: number }>();
+  for (const p of forecast.projections) {
+    const key = p.weekStart.slice(0, 7);
+    const cur = byMonth.get(key) ?? { inflowFils: 0, outflowFils: 0, balance: 0 };
+    cur.inflowFils += fils(p.expectedInflows);
+    cur.outflowFils += fils(p.expectedOutflows);
+    cur.balance = p.projectedBalance;
+    byMonth.set(key, cur);
+  }
+  const forecasts: CashFlowForecast[] = [];
+  for (const [key, v] of byMonth) {
+    forecasts.push(
+      await storage.createCashFlowForecast({
+        companyId,
+        forecastDate: new Date(`${key}-01T00:00:00.000Z`),
+        forecastType: "monthly",
+        predictedInflow: v.inflowFils / 100,
+        predictedOutflow: v.outflowFils / 100,
+        predictedBalance: v.balance,
+        confidenceLevel: null,
+        factors: JSON.stringify({ basis: STORED_FORECAST_BASIS }),
+        basis: STORED_FORECAST_BASIS,
+      })
+    );
+  }
+  return {
+    forecasts,
+    insufficientData: false,
+    insights: forecast.insights,
+    insightMessages: forecast.insightMessages,
+  };
+}
+
+/**
+ * Stored monthly forecast for display. Rows from the pre-0112 model (basis `legacy_model`, or
+ * anything not written by the document-driven generator) are discarded and regenerated on read,
+ * so fabricated figures are never served again.
+ */
+export async function readStoredForecast(companyId: string): Promise<CashFlowForecast[]> {
+  const { storage } = await import("../storage");
+  const rows = await storage.getCashFlowForecastsByCompanyId(companyId);
+  if (rows.every((r) => r.basis === STORED_FORECAST_BASIS)) return rows;
+  return (await regenerateStoredForecast(companyId)).forecasts;
 }

@@ -5,18 +5,14 @@ import { cn } from "@/lib/utils";
 export type StatusTone = "neutral" | "info" | "success" | "warning" | "danger" | "accent";
 
 const TONE_CLASSES: Record<StatusTone, string> = {
-  /* Each tone uses semantic chart tokens already defined in :root and .dark.
-   * Background is the token at low alpha; foreground is the token at full strength.
-   * This keeps badges readable in both light and dark modes from a single source. */
-  neutral: "border-transparent bg-muted text-muted-foreground hover:bg-muted/80",
-  info: "border-transparent bg-[hsl(var(--chart-1)/0.15)] text-[hsl(var(--chart-1))] hover:bg-[hsl(var(--chart-1)/0.20)]",
-  success:
-    "border-transparent bg-[hsl(var(--chart-5)/0.15)] text-[hsl(var(--chart-5))] hover:bg-[hsl(var(--chart-5)/0.20)]",
-  warning:
-    "border-transparent bg-[hsl(var(--chart-4)/0.18)] text-[hsl(var(--chart-4))] hover:bg-[hsl(var(--chart-4)/0.24)]",
-  danger: "border-transparent bg-destructive/15 text-destructive hover:bg-destructive/20",
-  accent:
-    "border-transparent bg-[hsl(var(--chart-3)/0.15)] text-[hsl(var(--chart-3))] hover:bg-[hsl(var(--chart-3)/0.20)]",
+  /* Semantic status tokens (index.css) — the same families the Badge
+   * variants use, so a "success" pill looks identical everywhere. */
+  neutral: "border-transparent bg-neutral-subtle text-neutral-subtle-foreground",
+  info: "border-transparent bg-info-subtle text-info-subtle-foreground",
+  success: "border-transparent bg-success-subtle text-success-subtle-foreground",
+  warning: "border-transparent bg-warning-subtle text-warning-subtle-foreground",
+  danger: "border-transparent bg-danger-subtle text-danger-subtle-foreground",
+  accent: "border-transparent bg-brand-50 text-brand-700 dark:bg-brand-950 dark:text-brand-300",
 };
 
 export interface StatusBadgeProps extends React.HTMLAttributes<HTMLDivElement> {

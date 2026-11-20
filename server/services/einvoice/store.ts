@@ -1,0 +1,320 @@
+/**
+ * Persistence for UAE e-invoicing (migration 0102): per-invoice documents,
+ * the immutable five-year archive, inbound supplier documents and buyer
+ * participant ids. Every query is scoped by company id.
+ */
+import crypto from "node:crypto";
+import { and, desc, eq, lt, lte, sql } from "drizzle-orm";
+import { db } from "../../db";
+import {
+  einvoiceArchive,
+  einvoiceBuyerEndpoints,
+  einvoiceDocuments,
+  einvoiceInboundDocuments,
+  type EInvoiceArchiveRow,
+  type EInvoiceBuyerEndpoint,
+  type EInvoiceDocument,
+  type EInvoiceInboundDocument,
+} from "../../../shared/schema";
+
+export const ARCHIVE_RETENTION_YEARS = 5;
+
+export function sha256Hex(xml: string): string {
+  return crypto.createHash("sha256").update(xml, "utf8").digest("hex");
+}
+
+/** Retain until the end of the fifth year after the year of archiving (FTA: 5 years). */
+export function retainUntil(now: Date): string {
+  return `${now.getUTCFullYear() + ARCHIVE_RETENTION_YEARS}-12-31`;
+}
+
+// ─── Documents ──────────────────────────────────────────────────────────
+
+export async function getEInvoiceDocument(
+  companyId: string,
+  invoiceId: string
+): Promise<EInvoiceDocument | undefined> {
+  const rows = await db
+    .select()
+    .from(einvoiceDocuments)
+    .where(
+      and(eq(einvoiceDocuments.companyId, companyId), eq(einvoiceDocuments.invoiceId, invoiceId))
+    )
+    .limit(1);
+  return rows[0];
+}
+
+export type EInvoiceDocumentPatch = Partial<
+  Omit<EInvoiceDocument, "id" | "companyId" | "invoiceId" | "createdAt">
+>;
+
+export async function upsertEInvoiceDocument(
+  companyId: string,
+  invoiceId: string,
+  patch: EInvoiceDocumentPatch
+): Promise<EInvoiceDocument> {
+  const now = new Date();
+  const [row] = await db
+    .insert(einvoiceDocuments)
+    .values({ companyId, invoiceId, status: patch.status ?? "generated", ...patch, updatedAt: now })
+    .onConflictDoUpdate({
+      target: einvoiceDocuments.invoiceId,
+      set: { ...patch, updatedAt: now },
+      where: eq(einvoiceDocuments.companyId, companyId),
+    })
+    .returning();
+  if (!row) throw new Error("e-invoice document belongs to another company");
+  return row;
+}
+
+export async function listEInvoiceDocuments(
+  companyId: string,
+  limit = 100
+): Promise<EInvoiceDocument[]> {
+  return db
+    .select()
+    .from(einvoiceDocuments)
+    .where(eq(einvoiceDocuments.companyId, companyId))
+    .orderBy(desc(einvoiceDocuments.updatedAt))
+    .limit(Math.min(Math.max(limit, 1), 500));
+}
+
+/** Failed submissions whose backoff has elapsed (all companies; the retry job). */
+export async function dueEInvoiceRetries(now: Date, limit = 50): Promise<EInvoiceDocument[]> {
+  return db
+    .select()
+    .from(einvoiceDocuments)
+    .where(and(eq(einvoiceDocuments.status, "failed"), lte(einvoiceDocuments.nextRetryAt, now)))
+    .orderBy(einvoiceDocuments.nextRetryAt)
+    .limit(limit);
+}
+
+// ─── Archive ────────────────────────────────────────────────────────────
+
+export interface ArchiveInput {
+  companyId: string;
+  invoiceId?: string | null;
+  direction: "outbound" | "inbound";
+  kind: "submitted" | "cleared" | "received";
+  documentNumber: string;
+  documentType?: string | null;
+  uuid?: string | null;
+  xml: string;
+  provider?: string | null;
+  providerMessageId?: string | null;
+  now?: Date;
+}
+
+/**
+ * Write-once: identical content (same company/direction/kind/hash) returns the
+ * existing row; the table itself rejects UPDATE/DELETE (migration trigger).
+ */
+export async function archiveEInvoiceXml(input: ArchiveInput): Promise<EInvoiceArchiveRow> {
+  const now = input.now ?? new Date();
+  const sha256 = sha256Hex(input.xml);
+  const inserted = await db
+    .insert(einvoiceArchive)
+    .values({
+      companyId: input.companyId,
+      invoiceId: input.invoiceId ?? null,
+      direction: input.direction,
+      kind: input.kind,
+      documentNumber: input.documentNumber,
+      documentType: input.documentType ?? null,
+      uuid: input.uuid ?? null,
+      xml: input.xml,
+      sha256,
+      provider: input.provider ?? null,
+      providerMessageId: input.providerMessageId ?? null,
+      retainUntil: retainUntil(now),
+      createdAt: now,
+    })
+    .onConflictDoNothing()
+    .returning();
+  if (inserted[0]) return inserted[0];
+  const existing = await db
+    .select()
+    .from(einvoiceArchive)
+    .where(
+      and(
+        eq(einvoiceArchive.companyId, input.companyId),
+        eq(einvoiceArchive.direction, input.direction),
+        eq(einvoiceArchive.kind, input.kind),
+        eq(einvoiceArchive.sha256, sha256)
+      )
+    )
+    .limit(1);
+  return existing[0];
+}
+
+export type ArchiveListItem = Omit<EInvoiceArchiveRow, "xml" | "companyId"> & { sizeBytes: number };
+
+export async function listArchive(
+  companyId: string,
+  opts: { limit?: number; before?: Date | null } = {}
+): Promise<ArchiveListItem[]> {
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  return db
+    .select({
+      id: einvoiceArchive.id,
+      invoiceId: einvoiceArchive.invoiceId,
+      direction: einvoiceArchive.direction,
+      kind: einvoiceArchive.kind,
+      documentNumber: einvoiceArchive.documentNumber,
+      documentType: einvoiceArchive.documentType,
+      uuid: einvoiceArchive.uuid,
+      sha256: einvoiceArchive.sha256,
+      provider: einvoiceArchive.provider,
+      providerMessageId: einvoiceArchive.providerMessageId,
+      retainUntil: einvoiceArchive.retainUntil,
+      createdAt: einvoiceArchive.createdAt,
+      sizeBytes: sql<number>`octet_length(${einvoiceArchive.xml})`,
+    })
+    .from(einvoiceArchive)
+    .where(
+      and(
+        eq(einvoiceArchive.companyId, companyId),
+        opts.before ? lt(einvoiceArchive.createdAt, opts.before) : undefined
+      )
+    )
+    .orderBy(desc(einvoiceArchive.createdAt))
+    .limit(limit);
+}
+
+export async function getArchiveEntry(
+  companyId: string,
+  id: string
+): Promise<EInvoiceArchiveRow | undefined> {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return undefined;
+  const rows = await db
+    .select()
+    .from(einvoiceArchive)
+    .where(and(eq(einvoiceArchive.companyId, companyId), eq(einvoiceArchive.id, id)))
+    .limit(1);
+  return rows[0];
+}
+
+// ─── Inbound ────────────────────────────────────────────────────────────
+
+export async function findInboundDuplicate(
+  companyId: string,
+  supplierKey: string,
+  documentNumber: string
+): Promise<EInvoiceInboundDocument | undefined> {
+  const rows = await db
+    .select()
+    .from(einvoiceInboundDocuments)
+    .where(
+      and(
+        eq(einvoiceInboundDocuments.companyId, companyId),
+        eq(einvoiceInboundDocuments.supplierKey, supplierKey),
+        eq(einvoiceInboundDocuments.documentNumber, documentNumber)
+      )
+    )
+    .limit(1);
+  return rows[0];
+}
+
+/** Claim the (company, supplier, document id) slot; null when it already exists. */
+export async function insertInboundDocument(
+  values: typeof einvoiceInboundDocuments.$inferInsert
+): Promise<EInvoiceInboundDocument | null> {
+  const rows = await db
+    .insert(einvoiceInboundDocuments)
+    .values(values)
+    .onConflictDoNothing()
+    .returning();
+  return rows[0] ?? null;
+}
+
+export async function updateInboundDocument(
+  companyId: string,
+  id: string,
+  patch: Partial<typeof einvoiceInboundDocuments.$inferInsert>
+): Promise<void> {
+  await db
+    .update(einvoiceInboundDocuments)
+    .set(patch)
+    .where(
+      and(eq(einvoiceInboundDocuments.companyId, companyId), eq(einvoiceInboundDocuments.id, id))
+    );
+}
+
+export type InboundListItem = Pick<
+  EInvoiceInboundDocument,
+  | "id"
+  | "supplierName"
+  | "supplierTrn"
+  | "documentNumber"
+  | "documentType"
+  | "status"
+  | "billId"
+  | "archiveId"
+  | "error"
+  | "validation"
+  | "receivedAt"
+>;
+
+export async function listInboundDocuments(
+  companyId: string,
+  limit = 100
+): Promise<InboundListItem[]> {
+  return db
+    .select({
+      id: einvoiceInboundDocuments.id,
+      supplierName: einvoiceInboundDocuments.supplierName,
+      supplierTrn: einvoiceInboundDocuments.supplierTrn,
+      documentNumber: einvoiceInboundDocuments.documentNumber,
+      documentType: einvoiceInboundDocuments.documentType,
+      status: einvoiceInboundDocuments.status,
+      billId: einvoiceInboundDocuments.billId,
+      archiveId: einvoiceInboundDocuments.archiveId,
+      error: einvoiceInboundDocuments.error,
+      validation: einvoiceInboundDocuments.validation,
+      receivedAt: einvoiceInboundDocuments.receivedAt,
+    })
+    .from(einvoiceInboundDocuments)
+    .where(eq(einvoiceInboundDocuments.companyId, companyId))
+    .orderBy(desc(einvoiceInboundDocuments.receivedAt))
+    .limit(Math.min(Math.max(limit, 1), 500));
+}
+
+// ─── Buyer endpoints ────────────────────────────────────────────────────
+
+export async function getBuyerEndpoint(
+  companyId: string,
+  contactId: string | null | undefined
+): Promise<EInvoiceBuyerEndpoint | undefined> {
+  if (!contactId) return undefined;
+  const rows = await db
+    .select()
+    .from(einvoiceBuyerEndpoints)
+    .where(
+      and(
+        eq(einvoiceBuyerEndpoints.companyId, companyId),
+        eq(einvoiceBuyerEndpoints.contactId, contactId)
+      )
+    )
+    .limit(1);
+  return rows[0];
+}
+
+export async function upsertBuyerEndpoint(
+  companyId: string,
+  contactId: string,
+  values: Pick<
+    EInvoiceBuyerEndpoint,
+    "participantId" | "scheme" | "legalId" | "legalIdType" | "legalAuthority"
+  >
+): Promise<EInvoiceBuyerEndpoint> {
+  const now = new Date();
+  const [row] = await db
+    .insert(einvoiceBuyerEndpoints)
+    .values({ companyId, contactId, ...values, updatedAt: now })
+    .onConflictDoUpdate({
+      target: [einvoiceBuyerEndpoints.companyId, einvoiceBuyerEndpoints.contactId],
+      set: { ...values, updatedAt: now },
+    })
+    .returning();
+  return row;
+}

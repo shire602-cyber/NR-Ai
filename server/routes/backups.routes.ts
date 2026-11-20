@@ -1,484 +1,529 @@
+/**
+ * Backups (W5-B, R19-06, R19-07, R17-08, R17-22, R19-17).
+ *
+ * Full-company encrypted snapshots (server/services/backup.service.ts).
+ * Every route needs the `backups.manage` permission in the backup's company
+ * (owners and admins); viewers and other roles get 403, non-members 404.
+ *
+ *   GET    /api/companies/:companyId/backups              list (no snapshot payload)
+ *   POST   /api/companies/:companyId/backups              create now
+ *   GET    /api/companies/:companyId/backups/manifest     tables captured / excluded (with reasons)
+ *   GET    /api/companies/:companyId/backups/schedule     schedule
+ *   PUT    /api/companies/:companyId/backups/schedule     set schedule (daily | weekly | monthly | off)
+ *   GET    /api/backups/:id                               details
+ *   GET    /api/backups/:id/download                      decrypted JSON export (?format=encrypted for the sealed file)
+ *   POST   /api/backups/:id/restore-preview               dry-run diff for a mode
+ *   POST   /api/backups/:id/restore                       restore: mode merge | replace
+ *   POST   /api/backups/:id/clone-preview                 S5: dry-run of loading this backup into
+ *                                                         another (empty) company
+ *   POST   /api/backups/:id/clone                         S5: load it there (backups.manage in both
+ *                                                         companies, MFA enrolled + fresh step-up,
+ *                                                         typed target name, audited in both)
+ *   DELETE /api/backups/:id
+ */
 import type { Express, Request, Response } from "express";
-import { storage } from "../storage";
+import { parsedBody } from "../http/parsed-body";
+import { z } from "zod";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import crypto from "crypto";
-import { db } from "../db";
+import { getCompanyRole, requirePermission } from "../middleware/companyRolePolicy";
+import { strictBody } from "../http/strict-body";
+import { DomainError } from "../errors";
+import { roleHasAnyPermission } from "../../shared/permissions";
+import { isNraFirmRole } from "../../shared/access";
+import { zText, zUuid } from "../../shared/validators/primitives";
+import { storage } from "../storage";
+import { pq } from "../services/connectors/pq";
+import { recordAudit } from "../services/audit.service";
 import {
-  accounts as accountsTable,
-  invoiceLines as invoiceLinesTable,
-  invoices as invoicesTable,
-  journalEntries as journalEntriesTable,
-  journalLines as journalLinesTable,
-  receipts as receiptsTable,
-  vatReturns as vatReturnsTable,
-} from "../../shared/schema";
+  BACKUP_EXCLUDED_TABLES,
+  buildBackupManifest,
+  companyScopedTables,
+  createCompanyBackup,
+  exclusionReason,
+  openSnapshot,
+  restoreBackupIntoCompany,
+  restoreCompanyBackup,
+  runScheduledBackups,
+} from "../services/backup.service";
+import { listJobs, registerJob } from "../platform/job-registry";
+import { hasRecentMfa } from "../services/security/policy";
 
-// JSON snapshots serialize Date columns as ISO strings; Drizzle timestamp
-// columns require Date objects. Any value that is exactly an ISO timestamp
-// string is coerced back.
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
-function coerceDates<T extends Record<string, unknown>>(row: T): T {
-  const out: Record<string, unknown> = { ...row };
-  for (const [k, v] of Object.entries(out)) {
-    if (typeof v === "string" && ISO_DATE.test(v)) out[k] = new Date(v);
+const createBody = z
+  .object({ name: zText(200).optional(), description: zText(1000).optional() })
+  .strict();
+
+const restoreBody = z
+  .object({
+    mode: z.enum(["merge", "replace"]),
+    confirmRestore: z.literal(true),
+    /** Replace mode only: the caller typed the backup name to confirm. */
+    confirmName: zText(200).optional(),
+  })
+  .strict();
+
+const previewBody = z.object({ mode: z.enum(["merge", "replace"]).default("replace") }).strict();
+
+const clonePreviewBody = z.object({ targetCompanyId: zUuid }).strict();
+
+const cloneBody = z
+  .object({
+    targetCompanyId: zUuid,
+    confirmRestore: z.literal(true),
+    /** The caller typed the TARGET company's name to confirm its data is replaced. */
+    confirmTargetName: zText(300),
+  })
+  .strict();
+
+const scheduleBody = z
+  .object({
+    frequency: z.enum(["daily", "weekly", "monthly", "off"]),
+    retentionDays: z.number().int().min(7).max(3650).optional(),
+  })
+  .strict();
+
+const BACKUP_COLUMNS = `id, company_id AS "companyId", name, description, backup_type AS "backupType",
+  status, accounts_count AS "accountsCount", journal_entries_count AS "journalEntriesCount",
+  invoices_count AS "invoicesCount", receipts_count AS "receiptsCount",
+  vat_returns_count AS "vatReturnsCount", checksum, size_bytes AS "sizeBytes",
+  table_counts AS "tableCounts", encrypted, format_version AS "formatVersion",
+  last_restore_mode AS "lastRestoreMode", last_restored_at AS "lastRestoredAt",
+  created_by AS "createdBy", created_at AS "createdAt", completed_at AS "completedAt",
+  expires_at AS "expiresAt"`;
+
+interface BackupRow {
+  id: string;
+  companyId: string;
+  name: string;
+  status: string;
+  tableCounts: string | null;
+  [k: string]: unknown;
+}
+
+function present(row: BackupRow) {
+  return { ...row, tableCounts: row.tableCounts ? JSON.parse(row.tableCounts) : null };
+}
+
+/** Load a backup and require backups.manage in its company (404 for non-members). */
+async function backupFor(req: Request): Promise<BackupRow> {
+  const id = req.params.id;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new DomainError("NOT_FOUND", 404);
+  const { rows } = await pq<BackupRow>(`SELECT ${BACKUP_COLUMNS} FROM backups WHERE id = $1`, [id]);
+  const backup = rows[0];
+  if (!backup) throw new DomainError("NOT_FOUND", 404, undefined, "Backup not found");
+  const user = req.user!;
+  if (!user.isAdmin && !isNraFirmRole(user.firmRole)) {
+    const role = await getCompanyRole(user.id, backup.companyId);
+    if (!role) throw new DomainError("NOT_FOUND", 404, undefined, "Backup not found");
+    if (!roleHasAnyPermission(role, ["backups.manage"])) {
+      throw new DomainError("PERMISSION_DENIED", 403, { permission: "backups.manage", role });
+    }
   }
-  return out as T;
+  return backup;
+}
+
+/** backups.manage in the clone target too (404 for non-members). Returns the target's name. */
+async function cloneTargetFor(req: Request, targetCompanyId: string): Promise<{ name: string }> {
+  const company = await storage.getCompany(targetCompanyId);
+  if (!company) throw new DomainError("NOT_FOUND", 404, undefined, "Company not found");
+  const user = req.user!;
+  if (!user.isAdmin && !isNraFirmRole(user.firmRole)) {
+    const role = await getCompanyRole(user.id, targetCompanyId);
+    if (!role) throw new DomainError("NOT_FOUND", 404, undefined, "Company not found");
+    if (!roleHasAnyPermission(role, ["backups.manage"])) {
+      throw new DomainError("PERMISSION_DENIED", 403, { permission: "backups.manage", role });
+    }
+  }
+  return { name: company.name };
+}
+
+/**
+ * Loading one company's books into another is the most sensitive data move in the product:
+ * the caller must have MFA enrolled (not just "MFA if enabled") and have verified a code within
+ * the step-up window.
+ */
+async function requireFreshMfaEnrolled(req: Request): Promise<void> {
+  const { rows } = await pq<{ mfa_enabled: boolean }>(
+    `SELECT mfa_enabled FROM users WHERE id = $1`,
+    [req.user!.id]
+  );
+  if (!rows[0]?.mfa_enabled) {
+    throw new DomainError(
+      "MFA_ENROLLMENT_REQUIRED",
+      403,
+      { enrollUrl: "/api/auth/mfa/enroll" },
+      "Turn on two-factor authentication before loading a backup into another company."
+    );
+  }
+  if (!hasRecentMfa(req)) {
+    throw new DomainError(
+      "MFA_STEP_UP_REQUIRED",
+      403,
+      { stepUpUrl: "/api/auth/mfa/step-up" },
+      "Confirm this action with your authenticator code."
+    );
+  }
 }
 
 export function registerBackupRoutes(app: Express) {
-  // =====================================
-  // DATA BACKUP & RESTORE
-  // =====================================
+  if (!listJobs().some((j) => j.name === "backups.scheduled")) {
+    registerJob({
+      name: "backups.scheduled",
+      cron: "17 22 * * *", // 02:17 UAE
+      description: "Run due scheduled company backups and expire old scheduled ones",
+      run: async () => {
+        await runScheduledBackups();
+      },
+    });
+  }
 
-  // Get all backups for company
+  const manage = [authMiddleware, requirePermission("backups.manage")];
+
   app.get(
     "/api/companies/:companyId/backups",
-    authMiddleware,
+    ...manage,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { companyId } = req.params;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const backupList = await storage.getBackupsByCompanyId(companyId);
-      // Don't send the full data snapshot in the list
-      const sanitizedBackups = backupList.map(({ dataSnapshot, ...backup }) => backup);
-      res.json(sanitizedBackups);
+      const { rows } = await pq<BackupRow>(
+        `SELECT ${BACKUP_COLUMNS} FROM backups WHERE company_id = $1 ORDER BY created_at DESC`,
+        [req.params.companyId]
+      );
+      res.json(rows.map(present));
     })
   );
 
-  // Create a new backup
   app.post(
     "/api/companies/:companyId/backups",
-    authMiddleware,
+    ...manage,
+    strictBody(createBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { companyId } = req.params;
-      const { name, description } = req.body;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Create initial backup record
-      let backup = await storage.createBackup({
-        companyId,
-        name: name || `Backup ${new Date().toLocaleDateString()}`,
-        description: description || "Manual backup",
+      const body = parsedBody<z.output<typeof createBody>>(req);
+      const backup = await createCompanyBackup({
+        companyId: req.params.companyId,
+        userId: req.user!.id,
+        name: body.name,
+        description: body.description,
         backupType: "manual",
-        status: "in_progress",
-        createdBy: userId,
       });
-
-      try {
-        // Gather all financial data — parallelise the top-level fetches and
-        // batch the lines instead of issuing one round-trip per parent row.
-        const [accounts, journalEntries, invoices, receipts, vatReturns] = await Promise.all([
-          storage.getAccountsByCompanyId(companyId),
-          storage.getJournalEntriesByCompanyId(companyId),
-          storage.getInvoicesByCompanyId(companyId),
-          storage.getReceiptsByCompanyId(companyId),
-          storage.getVatReturnsByCompanyId(companyId),
-        ]);
-
-        const [journalLines, invoiceLines] = await Promise.all([
-          storage.getJournalLinesByEntryIds(journalEntries.map((e) => e.id)),
-          storage.getInvoiceLinesByInvoiceIds(invoices.map((i) => i.id)),
-        ]);
-
-        // Create snapshot
-        const snapshot = {
-          version: "1.0",
-          createdAt: new Date().toISOString(),
-          companyId,
-          data: {
-            accounts,
-            journalEntries,
-            journalLines,
-            invoices,
-            invoiceLines,
-            receipts,
-            vatReturns,
-          },
-        };
-
-        const snapshotJson = JSON.stringify(snapshot);
-
-        // Calculate checksum (simple hash)
-        const checksum = crypto.createHash("sha256").update(snapshotJson).digest("hex");
-
-        // Update backup with data
-        backup = await storage.updateBackup(backup.id, {
-          status: "completed",
-          dataSnapshot: snapshotJson,
-          checksum,
-          sizeBytes: Buffer.byteLength(snapshotJson, "utf8"),
-          accountsCount: accounts.length,
-          journalEntriesCount: journalEntries.length,
-          invoicesCount: invoices.length,
-          receiptsCount: receipts.length,
-          vatReturnsCount: vatReturns.length,
-          completedAt: new Date(),
-          expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days
-        });
-
-        // Log activity
-        await storage.createActivityLog({
-          companyId,
-          userId,
-          action: "create",
-          entityType: "backup",
-          entityId: backup.id,
-          description: `Created backup: ${backup.name}`,
-        });
-
-        // Return without the full data snapshot
-        const { dataSnapshot, ...sanitizedBackup } = backup;
-        res.status(201).json(sanitizedBackup);
-      } catch (error: any) {
-        // Mark as failed
-        await storage.updateBackup(backup.id, {
-          status: "failed",
-        });
-        throw error;
-      }
+      await storage.createActivityLog({
+        companyId: req.params.companyId,
+        userId: req.user!.id,
+        action: "create",
+        entityType: "backup",
+        entityId: backup.id,
+        description: `Created encrypted full backup: ${backup.name}`,
+      });
+      const { rows } = await pq<BackupRow>(`SELECT ${BACKUP_COLUMNS} FROM backups WHERE id = $1`, [
+        backup.id,
+      ]);
+      res.status(201).json(present(rows[0]));
     })
   );
 
-  // Get backup details (without full data)
+  app.get(
+    "/api/companies/:companyId/backups/manifest",
+    ...manage,
+    asyncHandler(async (_req: Request, res: Response) => {
+      const manifest = await buildBackupManifest();
+      const all = await companyScopedTables();
+      res.json({
+        captured: manifest.tables.map((t) => ({
+          table: t.name,
+          scope: t.scope,
+          appendOnly: t.appendOnly,
+        })),
+        excluded: all
+          .filter((t) => exclusionReason(t))
+          .map((t) => ({ table: t, reason: exclusionReason(t) })),
+        exclusionPolicy: BACKUP_EXCLUDED_TABLES,
+        pointInTimeRecovery: {
+          status: "requires_external",
+          note: "Point-in-time recovery is a database-host setting (WAL archiving / PITR on the managed Postgres).",
+        },
+      });
+    })
+  );
+
+  app.get(
+    "/api/companies/:companyId/backups/schedule",
+    ...manage,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { rows } = await pq(
+        `SELECT frequency, retention_days AS "retentionDays", is_active AS "isActive",
+                last_run_at AS "lastRunAt" FROM backup_schedules WHERE company_id = $1`,
+        [req.params.companyId]
+      );
+      res.json(
+        rows[0] ?? { frequency: "off", retentionDays: 90, isActive: false, lastRunAt: null }
+      );
+    })
+  );
+
+  app.put(
+    "/api/companies/:companyId/backups/schedule",
+    ...manage,
+    strictBody(scheduleBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const body = parsedBody<z.output<typeof scheduleBody>>(req);
+      const active = body.frequency !== "off";
+      const { rows } = await pq(
+        `INSERT INTO backup_schedules (company_id, frequency, retention_days, is_active, created_by)
+              VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (company_id) DO UPDATE
+               SET frequency = EXCLUDED.frequency, retention_days = EXCLUDED.retention_days,
+                   is_active = EXCLUDED.is_active
+         RETURNING frequency, retention_days AS "retentionDays", is_active AS "isActive",
+                   last_run_at AS "lastRunAt"`,
+        [
+          req.params.companyId,
+          active ? body.frequency : "weekly",
+          body.retentionDays ?? 90,
+          active,
+          req.user!.id,
+        ]
+      );
+      res.json(active ? rows[0] : { ...rows[0], frequency: "off" });
+    })
+  );
+
   app.get(
     "/api/backups/:id",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { id } = req.params;
-
-      const backup = await storage.getBackup(id);
-      if (!backup) {
-        return res.status(404).json({ message: "Backup not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, backup.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Return without the full data snapshot for security
-      const { dataSnapshot, ...sanitizedBackup } = backup;
-      res.json(sanitizedBackup);
+      res.json(present(await backupFor(req)));
     })
   );
 
-  // Download backup data (for export)
   app.get(
     "/api/backups/:id/download",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { id } = req.params;
-
-      const backup = await storage.getBackup(id);
-      if (!backup) {
-        return res.status(404).json({ message: "Backup not found" });
+      const backup = await backupFor(req);
+      const { rows } = await pq<{ data_snapshot: string | null; checksum: string | null }>(
+        `SELECT data_snapshot, checksum FROM backups WHERE id = $1`,
+        [backup.id]
+      );
+      const stored = rows[0]?.data_snapshot;
+      if (backup.status !== "completed" || !stored) {
+        throw new DomainError("BACKUP_NOT_COMPLETE", 409, undefined, "Backup is not complete");
       }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, backup.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      if (backup.status !== "completed" || !backup.dataSnapshot) {
-        return res.status(400).json({ message: "Backup is not complete" });
-      }
-
-      // Log the download
+      const encrypted = req.query.format === "encrypted";
+      const body = encrypted ? stored : openSnapshot(stored, rows[0].checksum).json;
       await storage.createActivityLog({
         companyId: backup.companyId,
-        userId,
+        userId: req.user!.id,
         action: "view",
         entityType: "backup",
         entityId: backup.id,
-        description: `Downloaded backup: ${backup.name}`,
+        description: `Downloaded backup (${encrypted ? "encrypted" : "decrypted"}): ${backup.name}`,
       });
-
-      res.setHeader("Content-Type", "application/json");
+      const safe = backup.name.replace(/[^a-z0-9]/gi, "_").slice(0, 80);
+      res.setHeader("Content-Type", encrypted ? "application/octet-stream" : "application/json");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="${backup.name.replace(/[^a-z0-9]/gi, "_")}_${backup.id.slice(0, 8)}.json"`
+        `attachment; filename="${safe}_${backup.id.slice(0, 8)}.${encrypted ? "muhbak" : "json"}"`
       );
-      res.send(backup.dataSnapshot);
+      res.send(body);
     })
   );
 
-  // Restore from backup (preview first)
   app.post(
     "/api/backups/:id/restore-preview",
     authMiddleware,
+    strictBody(previewBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { id } = req.params;
-
-      const backup = await storage.getBackup(id);
-      if (!backup) {
-        return res.status(404).json({ message: "Backup not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, backup.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      if (backup.status !== "completed" || !backup.dataSnapshot) {
-        return res.status(400).json({ message: "Backup is not complete" });
-      }
-
-      // Get current data counts for comparison
-      const [currentAccounts, currentEntries, currentInvoices, currentReceipts] = await Promise.all(
-        [
-          storage.getAccountsByCompanyId(backup.companyId),
-          storage.getJournalEntriesByCompanyId(backup.companyId),
-          storage.getInvoicesByCompanyId(backup.companyId),
-          storage.getReceiptsByCompanyId(backup.companyId),
-        ]
-      );
-
+      const backup = await backupFor(req);
+      const { mode } = parsedBody<z.output<typeof previewBody>>(req);
+      const result = await restoreCompanyBackup({
+        backupId: backup.id,
+        companyId: backup.companyId,
+        userId: req.user!.id,
+        mode,
+        dryRun: true,
+      });
       res.json({
-        backup: {
-          id: backup.id,
-          name: backup.name,
-          createdAt: backup.createdAt,
-          accountsCount: backup.accountsCount,
-          journalEntriesCount: backup.journalEntriesCount,
-          invoicesCount: backup.invoicesCount,
-          receiptsCount: backup.receiptsCount,
-        },
-        current: {
-          accountsCount: currentAccounts.length,
-          journalEntriesCount: currentEntries.length,
-          invoicesCount: currentInvoices.length,
-          receiptsCount: currentReceipts.length,
-        },
+        backup: { id: backup.id, name: backup.name, createdAt: backup.createdAt },
+        ...result,
         warning:
-          "Restoring will replace ALL current financial data with the backup data. This action cannot be undone.",
+          mode === "replace"
+            ? "Replace makes this company's data match the backup exactly: records created after the backup are deleted and edited records are reverted. A pre-restore backup is taken automatically."
+            : "Merge only adds records that are missing. Edited records keep their current values and nothing is deleted.",
       });
     })
   );
 
-  // Execute restore from backup
   app.post(
     "/api/backups/:id/restore",
     authMiddleware,
+    strictBody(restoreBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { id } = req.params;
-      const { confirmRestore } = req.body;
-
-      if (!confirmRestore) {
-        return res.status(400).json({ message: "You must confirm the restore operation" });
+      const backup = await backupFor(req);
+      const body = parsedBody<z.output<typeof restoreBody>>(req);
+      if (body.mode === "replace" && body.confirmName !== backup.name) {
+        throw new DomainError(
+          "CONFIRMATION_REQUIRED",
+          400,
+          { fields: { confirmName: ["Type the backup name to confirm a replace restore"] } },
+          "Type the backup name to confirm a replace restore"
+        );
       }
-
-      const backup = await storage.getBackup(id);
-      if (!backup) {
-        return res.status(404).json({ message: "Backup not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, backup.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Check user role - only owner can restore
-      const userRole = await storage.getUserRole(backup.companyId, userId);
-      if (!userRole || userRole.role !== "owner") {
-        return res.status(403).json({ message: "Only company owners can restore backups" });
-      }
-
-      if (backup.status !== "completed" || !backup.dataSnapshot) {
-        return res.status(400).json({ message: "Backup is not complete" });
-      }
-
-      // Create a pre-restore backup first
-      const preRestoreBackup = await storage.createBackup({
+      const result = await restoreCompanyBackup({
+        backupId: backup.id,
         companyId: backup.companyId,
-        name: `Pre-restore backup (before restoring ${backup.name})`,
-        description: "Automatic backup created before restore operation",
-        backupType: "pre_restore",
-        status: "in_progress",
-        createdBy: userId,
+        userId: req.user!.id,
+        mode: body.mode,
+        dryRun: false,
       });
-
-      try {
-        // Gather current data for pre-restore backup — parallel + batched.
-        const [
-          currentAccounts,
-          currentEntries,
-          currentInvoices,
-          currentReceipts,
-          currentVatReturns,
-        ] = await Promise.all([
-          storage.getAccountsByCompanyId(backup.companyId),
-          storage.getJournalEntriesByCompanyId(backup.companyId),
-          storage.getInvoicesByCompanyId(backup.companyId),
-          storage.getReceiptsByCompanyId(backup.companyId),
-          storage.getVatReturnsByCompanyId(backup.companyId),
-        ]);
-
-        const [currentJournalLines, currentInvoiceLines] = await Promise.all([
-          storage.getJournalLinesByEntryIds(currentEntries.map((e) => e.id)),
-          storage.getInvoiceLinesByInvoiceIds(currentInvoices.map((i) => i.id)),
-        ]);
-
-        const preRestoreSnapshot = {
-          version: "1.0",
-          createdAt: new Date().toISOString(),
-          companyId: backup.companyId,
-          data: {
-            accounts: currentAccounts,
-            journalEntries: currentEntries,
-            journalLines: currentJournalLines,
-            invoices: currentInvoices,
-            invoiceLines: currentInvoiceLines,
-            receipts: currentReceipts,
-            vatReturns: currentVatReturns,
-          },
-        };
-
-        const preRestoreJson = JSON.stringify(preRestoreSnapshot);
-        const preRestoreChecksum = crypto.createHash("sha256").update(preRestoreJson).digest("hex");
-
-        await storage.updateBackup(preRestoreBackup.id, {
-          status: "completed",
-          dataSnapshot: preRestoreJson,
-          checksum: preRestoreChecksum,
-          sizeBytes: Buffer.byteLength(preRestoreJson, "utf8"),
-          accountsCount: currentAccounts.length,
-          journalEntriesCount: currentEntries.length,
-          invoicesCount: currentInvoices.length,
-          receiptsCount: currentReceipts.length,
-          vatReturnsCount: currentVatReturns.length,
-          completedAt: new Date(),
-          expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
-        });
-
-        // Log activity
-        await storage.createActivityLog({
-          companyId: backup.companyId,
-          userId,
-          action: "update",
-          entityType: "backup",
-          entityId: backup.id,
-          description: `Restored from backup: ${backup.name}`,
-        });
-
-        // Recovery restore: transactionally re-insert snapshot rows that no
-        // longer exist (matched by primary key). Existing rows are never
-        // touched and never deleted, so data created after the backup is safe
-        // and foreign keys from tables outside the snapshot cannot break.
-        const snapshot = JSON.parse(backup.dataSnapshot ?? "{}");
-        if (backup.checksum) {
-          const actual = crypto
-            .createHash("sha256")
-            .update(backup.dataSnapshot ?? "")
-            .digest("hex");
-          if (actual !== backup.checksum) {
-            return res
-              .status(409)
-              .json({ message: "Backup integrity check failed — checksum mismatch" });
-          }
-        }
-        const data = snapshot?.data ?? {};
-        const restored: Record<string, number> = {};
-
-        await db.transaction(async (tx: typeof db) => {
-          const insertMissing = async (label: string, table: any, rows: unknown[] | undefined) => {
-            if (!Array.isArray(rows) || rows.length === 0) {
-              restored[label] = 0;
-              return;
-            }
-            const result = await tx
-              .insert(table)
-              .values(rows.map((row) => coerceDates(row as Record<string, unknown>)) as any)
-              .onConflictDoNothing()
-              .returning({ id: (table as any).id });
-            restored[label] = result.length;
-          };
-
-          // FK-safe order: parents before children.
-          await insertMissing("accounts", accountsTable, data.accounts);
-          await insertMissing("journalEntries", journalEntriesTable, data.journalEntries);
-          await insertMissing("journalLines", journalLinesTable, data.journalLines);
-          await insertMissing("invoices", invoicesTable, data.invoices);
-          await insertMissing("invoiceLines", invoiceLinesTable, data.invoiceLines);
-          await insertMissing("receipts", receiptsTable, data.receipts);
-          await insertMissing("vatReturns", vatReturnsTable, data.vatReturns);
-        });
-
-        const totalRestored = Object.values(restored).reduce((sum, n) => sum + n, 0);
-        res.json({
-          success: true,
-          message:
-            totalRestored > 0
-              ? `Restore complete: ${totalRestored} missing record(s) recovered from the backup.`
-              : "Restore complete: all backed-up records already exist — nothing was missing.",
-          preRestoreBackupId: preRestoreBackup.id,
-          restored,
-          totalRestored,
-          restoredFrom: {
-            id: backup.id,
-            name: backup.name,
-            accountsCount: backup.accountsCount,
-            journalEntriesCount: backup.journalEntriesCount,
-            invoicesCount: backup.invoicesCount,
-            receiptsCount: backup.receiptsCount,
-          },
-        });
-      } catch (error: any) {
-        await storage.updateBackup(preRestoreBackup.id, { status: "failed" });
-        throw error;
-      }
+      // Written only after the restore transaction committed (R19-07).
+      await pq(
+        `UPDATE backups SET last_restore_mode = $2, last_restored_at = now() WHERE id = $1`,
+        [backup.id, body.mode]
+      );
+      await storage.createActivityLog({
+        companyId: backup.companyId,
+        userId: req.user!.id,
+        action: "update",
+        entityType: "backup",
+        entityId: backup.id,
+        description: `Restored from backup "${backup.name}" in ${body.mode} mode (inserted ${result.totals.insert}, updated ${result.totals.update}, deleted ${result.totals.delete})`,
+        metadata: JSON.stringify({
+          mode: body.mode,
+          totals: result.totals,
+          preRestoreBackupId: result.preRestoreBackupId,
+        }),
+      });
+      await recordAudit({
+        userId: req.user!.id,
+        companyId: backup.companyId,
+        action: "backup.restore",
+        entityType: "backup",
+        entityId: backup.id,
+        before: { preRestoreBackupId: result.preRestoreBackupId },
+        after: { mode: body.mode, totals: result.totals },
+        req,
+      });
+      res.json({
+        success: true,
+        message:
+          body.mode === "replace"
+            ? "Restore complete: company data now matches the backup."
+            : `Merge complete: ${result.totals.insert} missing record(s) added from the backup.`,
+        ...result,
+      });
     })
   );
 
-  // Delete backup
+  app.post(
+    "/api/backups/:id/clone-preview",
+    authMiddleware,
+    strictBody(clonePreviewBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const backup = await backupFor(req);
+      const { targetCompanyId } = parsedBody<z.output<typeof clonePreviewBody>>(req);
+      const target = await cloneTargetFor(req, targetCompanyId);
+      const result = await restoreBackupIntoCompany({
+        backupId: backup.id,
+        sourceCompanyId: backup.companyId,
+        targetCompanyId,
+        userId: req.user!.id,
+        dryRun: true,
+      });
+      res.json({
+        backup: { id: backup.id, name: backup.name, createdAt: backup.createdAt },
+        target: { id: targetCompanyId, name: target.name },
+        ...result,
+        warning:
+          "The target company's chart, settings and other company data are replaced by this backup's (with new record ids). The source company is not changed. A pre-restore backup of the target is taken automatically.",
+      });
+    })
+  );
+
+  app.post(
+    "/api/backups/:id/clone",
+    authMiddleware,
+    strictBody(cloneBody),
+    asyncHandler(async (req: Request, res: Response) => {
+      const backup = await backupFor(req);
+      const body = parsedBody<z.output<typeof cloneBody>>(req);
+      const target = await cloneTargetFor(req, body.targetCompanyId);
+      await requireFreshMfaEnrolled(req);
+      if (body.confirmTargetName !== target.name) {
+        throw new DomainError(
+          "CONFIRMATION_REQUIRED",
+          400,
+          { fields: { confirmTargetName: ["Type the target company's name to confirm"] } },
+          "Type the target company's name to confirm"
+        );
+      }
+      const result = await restoreBackupIntoCompany({
+        backupId: backup.id,
+        sourceCompanyId: backup.companyId,
+        targetCompanyId: body.targetCompanyId,
+        userId: req.user!.id,
+        dryRun: false,
+      });
+      // Written only after the clone transaction committed, in both companies.
+      const detail = `inserted ${result.totals.insert} row(s), replaced ${result.totals.replacedTargetRows}`;
+      await storage.createActivityLog({
+        companyId: body.targetCompanyId,
+        userId: req.user!.id,
+        action: "update",
+        entityType: "backup",
+        entityId: backup.id,
+        description: `Loaded backup "${backup.name}" from another company (${detail})`,
+        metadata: JSON.stringify({
+          sourceCompanyId: backup.companyId,
+          totals: result.totals,
+          preRestoreBackupId: result.preRestoreBackupId,
+        }),
+      });
+      await storage.createActivityLog({
+        companyId: backup.companyId,
+        userId: req.user!.id,
+        action: "export",
+        entityType: "backup",
+        entityId: backup.id,
+        description: `Backup "${backup.name}" was loaded into company "${target.name}"`,
+        metadata: JSON.stringify({ targetCompanyId: body.targetCompanyId }),
+      });
+      for (const companyId of [body.targetCompanyId, backup.companyId]) {
+        await recordAudit({
+          userId: req.user!.id,
+          companyId,
+          action: "backup.clone",
+          entityType: "backup",
+          entityId: backup.id,
+          before: { preRestoreBackupId: result.preRestoreBackupId },
+          after: {
+            sourceCompanyId: backup.companyId,
+            targetCompanyId: body.targetCompanyId,
+            totals: result.totals,
+            skippedTables: result.skippedTables.map((t) => t.table),
+          },
+          req,
+        });
+      }
+      res.json({
+        success: true,
+        message: `Backup loaded into ${target.name}: ${detail}.`,
+        ...result,
+      });
+    })
+  );
+
   app.delete(
     "/api/backups/:id",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
-      const { id } = req.params;
-
-      const backup = await storage.getBackup(id);
-      if (!backup) {
-        return res.status(404).json({ message: "Backup not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, backup.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Check user role - only owner can delete
-      const userRole = await storage.getUserRole(backup.companyId, userId);
-      if (!userRole || userRole.role !== "owner") {
-        return res.status(403).json({ message: "Only company owners can delete backups" });
-      }
-
-      await storage.deleteBackup(id);
-
+      const backup = await backupFor(req);
+      await pq(`DELETE FROM backups WHERE id = $1`, [backup.id]);
       await storage.createActivityLog({
         companyId: backup.companyId,
-        userId,
+        userId: req.user!.id,
         action: "delete",
         entityType: "backup",
-        entityId: id,
+        entityId: backup.id,
         description: `Deleted backup: ${backup.name}`,
       });
-
       res.json({ message: "Backup deleted successfully" });
     })
   );

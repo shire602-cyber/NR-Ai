@@ -1,4 +1,8 @@
+// Source inspection is intentional: this is the unsupported-claims guard for public marketing,
+// legal and help copy. It scans the shipped source/catalog text for banned compliance and security
+// claims across pages that cannot all be rendered without API data.
 import { readFileSync } from "node:fs";
+import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -8,13 +12,22 @@ function readRepoFile(path: string): string {
   return readFileSync(join(repoRoot, path), "utf8");
 }
 
+// S6a: page copy moved into the en catalogs; text assertions accept source or catalog copy.
+// D1b: the public pages' body copy lives in the marketing catalog (en + ar).
+function readRepoFileWithCatalog(path: string): string {
+  return [
+    readRepoFile(path),
+    readRepoFile("client/src/locales/en/pageLabels.json"),
+    readRepoFile("client/src/locales/en/marketing.json"),
+  ].join("\n");
+}
+
 const publicLaunchFiles = [
   "client/index.html",
-  "client/src/pages/MuhasibLanding.tsx",
+  "client/src/components/marketing/phase/PhaseSite.tsx",
+  "client/src/components/marketing/phase/content.ts",
+  "client/src/components/marketing/phase/Forms.tsx",
   "client/src/components/auth/AuthLayout.tsx",
-  // LandingPage.tsx and Landing.tsx were alternative landing pages that no
-  // route ever rendered; they were deleted. MuhasibLanding.tsx (above) is the
-  // one actually served, so this guard now scans the live page only.
   "client/src/pages/Register.tsx",
   "client/src/pages/Services.tsx",
   "client/src/pages/Pricing.tsx",
@@ -25,6 +38,9 @@ const publicLaunchFiles = [
   "client/src/pages/HelpCenter.tsx",
   "client/src/pages/MigrationGuides.tsx",
   "client/src/pages/DemoWorkspace.tsx",
+  // D1b: public page copy (landing, help, trust, migration, demo) is catalog-driven.
+  "client/src/locales/en/marketing.json",
+  "client/src/locales/ar/marketing.json",
 ];
 
 const bannedLaunchClaims = [
@@ -128,15 +144,27 @@ describe("Public SaaS launch surface", () => {
 
   it("keeps authenticated SaaS chrome and dashboard copy claim-safe", () => {
     const appSource = readRepoFile("client/src/App.tsx");
-    const dashboardSource = readRepoFile("client/src/pages/Dashboard.tsx");
-    const onboardingWizardSource = readRepoFile("client/src/components/Onboarding.tsx");
+    const dashboardSource = readDashboardSource();
+    // WQ7 (3.4): the floating tour (components/Onboarding.tsx) was retired and deleted.
     const onboardingPageSource = readRepoFile("client/src/pages/Onboarding.tsx");
 
-    expect(appSource).toContain("UAE Tax Ready");
+    // D2b (CTO checkpoint 10): the "UAE Tax Ready" top-bar chip implied a certification and
+    // was removed from the authenticated chrome and its catalog.
+    const shellCatalog = readRepoFile("client/src/locales/en/shell.json");
+    expect(appSource).not.toContain("shell.uaeTaxReady");
+    expect(shellCatalog).not.toContain("UAE Tax Ready");
     for (const [file, source] of [
+      ["client/src/locales/en/shell.json", shellCatalog],
+      [
+        "client/src/locales/en/onboarding.json",
+        readRepoFile("client/src/locales/en/onboarding.json"),
+      ],
+      [
+        "client/src/locales/en/dashboard.json",
+        readRepoFile("client/src/locales/en/dashboard.json"),
+      ],
       ["client/src/App.tsx", appSource],
       ["client/src/pages/Dashboard.tsx", dashboardSource],
-      ["client/src/components/Onboarding.tsx", onboardingWizardSource],
       ["client/src/pages/Onboarding.tsx", onboardingPageSource],
     ] as const) {
       for (const bannedClaim of bannedLaunchClaims) {
@@ -146,15 +174,15 @@ describe("Public SaaS launch surface", () => {
   });
 
   it("keeps certification and SLA language explicitly truthful", () => {
-    const trustSource = readRepoFile("client/src/pages/TrustSecurity.tsx");
-    const helpSource = readRepoFile("client/src/pages/HelpCenter.tsx");
-    const pricingSource = readRepoFile("client/src/pages/Pricing.tsx");
+    // S6a/S6b: page copy moved into the pageLabels catalog; page source plus catalog is the claim surface.
+    const trustSource = readRepoFileWithCatalog("client/src/pages/TrustSecurity.tsx");
+    const helpSource = readRepoFileWithCatalog("client/src/pages/HelpCenter.tsx");
+    const pricingSource = readRepoFileWithCatalog("client/src/pages/Pricing.tsx");
 
     expect(trustSource).toMatch(
       /We do not\s+claim SOC 2, ISO 27001, or FTA accreditation until those reviews are complete\./
     );
     expect(trustSource).toContain("External certifications are roadmap items, not current claims.");
-    expect(trustSource).toContain("Launch verification evidence");
     expect(trustSource).toContain("Backup and restore proof");
     expect(trustSource).toContain("Incident process");
     expect(trustSource).toContain("Privacy and DPA posture");
@@ -162,22 +190,106 @@ describe("Public SaaS launch surface", () => {
     expect(pricingSource).toContain("Enterprise support terms");
   });
 
+  it("keeps the trust, help and services pages customer-facing (R3, CTO 8/9)", () => {
+    const trustPage = readRepoFile("client/src/pages/TrustSecurity.tsx");
+    const helpPage = readRepoFile("client/src/pages/HelpCenter.tsx");
+    const servicesPage = readRepoFile("client/src/pages/Services.tsx");
+    const en = JSON.parse(readRepoFile("client/src/locales/en/marketing.json")) as Record<
+      string,
+      string
+    >;
+
+    // Internal release-gate / CI notes are not customer copy.
+    for (const key of [
+      "pageLabels.launchPosture",
+      "pageLabels.launchVerificationEvidence",
+      "pageLabels.internalReleaseGate",
+      "marketing.trustPosture",
+      "marketing.trustEvidence",
+    ]) {
+      expect(trustPage, `trust page still renders ${key}`).not.toContain(key);
+    }
+    // Leads with customer controls, then who operates the service and how to reach them.
+    expect(trustPage.indexOf("trustControlsTitle")).toBeLessThan(
+      trustPage.indexOf("trustWhoTitle")
+    );
+    for (const id of ["trust-data-residency", "trust-support-contact"]) {
+      expect(trustPage).toContain(id);
+    }
+    expect(trustPage).toContain("support@muhasib.ai");
+    // Owner-confirmed facts (T1): operator name, UAE hosting, named support contact, services terms.
+    const ar = JSON.parse(readRepoFile("client/src/locales/ar/marketing.json")) as Record<
+      string,
+      string
+    >;
+    expect(en["marketing.trustOperatorBody"]).toContain(
+      "Najma Al Raeda Accounting and Bookkeeping"
+    );
+    expect(ar["marketing.trustOperatorBody"]).toContain("نجمة الرائدة للمحاسبة ومسك الدفاتر");
+    expect(JSON.stringify(en)).not.toContain("Accounting LLC");
+    expect(en["marketing.trustResidencyBody"]).toContain(
+      "Customer data is hosted in the United Arab Emirates."
+    );
+    expect(ar["marketing.trustResidencyBody"]).toContain("الإمارات العربية المتحدة");
+    expect(en["marketing.trustSupportContact"]).toContain("Sara, customer support");
+    expect(ar["marketing.trustSupportContact"]).toContain("سارة");
+    expect(en["marketing.svcFact1"]).toContain("Licensed since 2017");
+    expect(en["marketing.svcFact4"]).toMatch(/Free consultation, no commitment/);
+    expect(en["marketing.svcFact5"]).toMatch(/within 24 hours/);
+    expect(ar["marketing.svcFact4"]).toContain("مجانية");
+    expect(ar["marketing.svcFact5"]).toContain("24");
+    // The services page (positive marketing claims) carries no certification claims or invented
+    // social proof; the trust page names certifications only as "not claimed" roadmap items.
+    const svcCopy = JSON.stringify(
+      Object.fromEntries(Object.entries(en).filter(([k]) => k.startsWith("marketing.svc")))
+    );
+    for (const banned of [
+      /ISO\s?27001/i,
+      /SOC\s?2/i,
+      /FTA[- ]accredited/i,
+      /\d+\s?\+?\s?(customers|users)/i,
+    ]) {
+      expect(svcCopy).not.toMatch(banned);
+    }
+    expect(en["marketing.trustAuditTitle"]).toBe("Hash-chained audit log");
+    expect(en["marketing.trustControl3Title"]).toBe("Two-factor authentication");
+
+    // Help: customer hero, brand casing.
+    expect(helpPage).not.toContain("launchSupportForUAEAccountingTeamsMovingFast");
+    expect(JSON.stringify(en)).not.toMatch(/\bmazeed\b/);
+
+    // Services: rebuilt on the home section system, no roadmap or hype blocks.
+    expect(servicesPage).toContain("@/components/marketing/Sections");
+    for (const banned of [
+      "Coming Soon",
+      "Voice Commands",
+      "AI CFO",
+      "Powered by AI",
+      "Cutting-edge",
+    ]) {
+      expect(servicesPage).not.toContain(banned);
+      expect(JSON.stringify(en)).not.toContain(banned);
+    }
+    expect(servicesPage).toContain('data-testid="button-book-consultation"');
+  });
+
   it("exposes customer-facing help and migration coverage for launch buyers", () => {
-    const helpSource = readRepoFile("client/src/pages/HelpCenter.tsx");
-    const migrationSource = readRepoFile("client/src/pages/MigrationGuides.tsx");
+    const helpSource = readRepoFileWithCatalog("client/src/pages/HelpCenter.tsx");
+    const migrationSource = readRepoFileWithCatalog("client/src/pages/MigrationGuides.tsx");
+    const migrationText = migrationSource.replace(/\s+/g, " ");
 
     for (const expectedHelpTopic of [
       "Set up your company",
       "Create VAT-ready invoices",
       "Import receipts and contacts",
       "Reconcile bank statements",
-      "Migrate from mazeed or Wafeq",
+      "Migrate from Mazeed or Wafeq",
     ]) {
       expect(helpSource).toContain(expectedHelpTopic);
     }
 
     for (const expectedMigrationTopic of [
-      "Move from mazeed",
+      "Move from Mazeed",
       "Move from Wafeq",
       "Move from Zoho Books",
       "Move from Excel",
@@ -186,14 +298,14 @@ describe("Public SaaS launch surface", () => {
     }
 
     expect(migrationSource).toContain(
-      "Switch from mazeed, Wafeq, Zoho Books, or Excel without losing audit trail."
+      "Switch from Mazeed, Wafeq, Zoho Books, or Excel without losing your audit trail."
     );
-    expect(migrationSource).toContain("Prior-system report packs from mazeed, Wafeq, Zoho Books");
-    expect(helpSource).toContain("Migration review covers mazeed, Wafeq, Zoho Books, and Excel");
+    expect(migrationText).toContain("Prior-system report packs from Mazeed, Wafeq, Zoho Books");
+    expect(helpSource).toContain("Migration review covers Mazeed, Wafeq, Zoho Books, and Excel");
   });
 
   it("keeps a public sample-data demo path for launch buyers", () => {
-    const demoSource = readRepoFile("client/src/pages/DemoWorkspace.tsx");
+    const demoSource = readRepoFileWithCatalog("client/src/pages/DemoWorkspace.tsx");
 
     for (const expectedDemoSignal of [
       "Sample company workspace",
@@ -204,4 +316,8 @@ describe("Public SaaS launch surface", () => {
       expect(demoSource).toContain(expectedDemoSignal);
     }
   });
+
+  // X6b: the old test here compared advertised free-plan limits with source text. Pricing, the
+  // trial banner and the Subscription page are now covered by rendering them
+  // (tests/unit/trial-pricing.test.ts), which also pins the public trial claim to TRIAL_DAYS.
 });

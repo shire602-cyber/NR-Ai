@@ -1,8 +1,18 @@
-import { useMemo, useState } from "react";
+import { T } from "@/components/layout/T";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Switch } from "@/components/ui/switch";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -24,11 +34,27 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fiscalYearContaining } from "@/lib/fiscal-year";
 import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
+import { PageHeader } from "@/components/ui/page-header";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  formatDate as formatDisplayDate,
+  formatDateRange,
+  parseCalendarDate,
+} from "@/lib/format-date";
 import {
   FileCheck,
   Calculator,
@@ -40,10 +66,21 @@ import {
   Trash2,
   Plus,
   RotateCcw,
+  MessageSquare,
+  MoreHorizontal,
   Download,
   BookOpen,
+  AlertTriangle,
+  ShieldCheck,
+  Users,
+  ClipboardCheck,
+  Send,
+  FilePen,
 } from "lucide-react";
 import { apiUrl } from "@/lib/api";
+import { CtYearEndPanel } from "./corporateTax/CtYearEndPanel";
+
+const ctTr = (locale: string, en: string, ar: string) => (locale === "ar" ? ar : en);
 
 type CorporateTaxWorkpaperRowType = "revenue" | "expense";
 
@@ -78,6 +115,15 @@ interface CorporateTaxReturn {
   taxPayable: number;
   status: string;
   filedAt: string | null;
+  filedBy?: string | null;
+  reviewedBy?: string | null;
+  preparedBy?: string | null;
+  amendmentNumber?: number;
+  amendsReturnId?: string | null;
+  provisionEntryId?: string | null;
+  filingDeadline?: string;
+  /** S1 (R12-12): estimate until reviewed; filing_ready once reviewed; filed after filing. */
+  figureStatus?: "estimate" | "filing_ready" | "filed" | "superseded";
   workpaper: CorporateTaxWorkpaper | null;
   notes: string | null;
   createdAt: string;
@@ -98,27 +144,72 @@ interface CalculationResult {
   journalEntriesProcessed: number;
 }
 
+/** S1 (R12-12): a computed CT figure is an estimate until the return is reviewed or filed. */
+function FigureBadge({ status }: { status?: string }) {
+  if (status === "filing_ready") {
+    return (
+      <Badge variant="outline" data-testid="badge-ct-filing-ready">
+        <T k="corporateTax.figureFilingReady" />
+      </Badge>
+    );
+  }
+  if (status === "filed") {
+    return (
+      <Badge variant="outline" data-testid="badge-ct-filed">
+        <T k="corporateTax.figureFiled" />
+      </Badge>
+    );
+  }
+  if (status === "superseded") return null;
+  return (
+    <Badge variant="secondary" data-testid="badge-ct-estimate">
+      <T k="corporateTax.figureEstimate" />
+    </Badge>
+  );
+}
+
 const statusBadge = (status: string) => {
   switch (status) {
     case "filed":
       return (
         <Badge variant="default" className="bg-info hover:bg-info">
-          <CheckCircle2 className="w-3 h-3 mr-1" />
-          Filed
+          <CheckCircle2 className="w-3 h-3 me-1" />
+          <T k="pages.filed" />
         </Badge>
       );
     case "paid":
       return (
         <Badge variant="default" className="bg-success hover:bg-success">
-          <Banknote className="w-3 h-3 mr-1" />
-          Paid
+          <Banknote className="w-3 h-3 me-1" />
+          <T k="corporateTax.statusPaid" />
+        </Badge>
+      );
+    case "computed":
+      return (
+        <Badge variant="secondary">
+          <Calculator className="w-3 h-3 me-1" />
+          <T k="corporateTax.statusComputed" />
+        </Badge>
+      );
+    case "reviewed":
+      return (
+        <Badge variant="outline">
+          <ClipboardCheck className="w-3 h-3 me-1" />
+          <T k="corporateTax.statusReviewed" />
+        </Badge>
+      );
+    case "amended":
+      return (
+        <Badge variant="outline">
+          <FilePen className="w-3 h-3 me-1" />
+          <T k="corporateTax.statusAmended" />
         </Badge>
       );
     default:
       return (
         <Badge variant="secondary">
-          <Clock className="w-3 h-3 mr-1" />
-          Draft
+          <Clock className="w-3 h-3 me-1" />
+          <T k="pages.draft" />
         </Badge>
       );
   }
@@ -127,18 +218,38 @@ const statusBadge = (status: string) => {
 const CT_EXEMPTION_THRESHOLD = 375000;
 const CT_TAX_RATE = 0.09;
 
-const defaultWorkpaperRows = (): CorporateTaxWorkpaperRow[] => [
-  { id: "revenue", label: "Revenue", type: "revenue", amount: 0 },
-  { id: "cogs", label: "COGS", type: "expense", amount: 0 },
-  { id: "rent", label: "Rent", type: "expense", amount: 0 },
-  { id: "transport", label: "Transport", type: "expense", amount: 0 },
-  { id: "utility", label: "Utility bill", type: "expense", amount: 0 },
-  { id: "telephone", label: "Telephone", type: "expense", amount: 0 },
-  { id: "license", label: "License", type: "expense", amount: 0 },
-  { id: "bank-charges", label: "Bank service charges", type: "expense", amount: 0 },
-  { id: "professional-fees", label: "Professional fees", type: "expense", amount: 0 },
-  { id: "food", label: "Food", type: "expense", amount: 0 },
-  { id: "office-expenses", label: "Office expenses", type: "expense", amount: 0 },
+const defaultWorkpaperRows = (locale: string): CorporateTaxWorkpaperRow[] => [
+  { id: "revenue", label: ctTr(locale, "Revenue", "الإيرادات"), type: "revenue", amount: 0 },
+  { id: "cogs", label: ctTr(locale, "COGS", "تكلفة البضاعة المباعة"), type: "expense", amount: 0 },
+  { id: "rent", label: ctTr(locale, "Rent", "الإيجار"), type: "expense", amount: 0 },
+  { id: "transport", label: ctTr(locale, "Transport", "النقل"), type: "expense", amount: 0 },
+  {
+    id: "utility",
+    label: ctTr(locale, "Utility bill", "فواتير المرافق"),
+    type: "expense",
+    amount: 0,
+  },
+  { id: "telephone", label: ctTr(locale, "Telephone", "الهاتف"), type: "expense", amount: 0 },
+  { id: "license", label: ctTr(locale, "License", "الرخص"), type: "expense", amount: 0 },
+  {
+    id: "bank-charges",
+    label: ctTr(locale, "Bank service charges", "الرسوم البنكية"),
+    type: "expense",
+    amount: 0,
+  },
+  {
+    id: "professional-fees",
+    label: ctTr(locale, "Professional fees", "الأتعاب المهنية"),
+    type: "expense",
+    amount: 0,
+  },
+  { id: "food", label: ctTr(locale, "Food", "الطعام"), type: "expense", amount: 0 },
+  {
+    id: "office-expenses",
+    label: ctTr(locale, "Office expenses", "مصروفات المكتب"),
+    type: "expense",
+    amount: 0,
+  },
 ];
 
 const moneyInputValue = (amount: number) => (amount === 0 ? "" : String(amount));
@@ -151,6 +262,8 @@ const parseMoneyInput = (value: string) => {
 export default function CorporateTax() {
   const { t, locale } = useTranslation();
   const { toast } = useToast();
+  // E2 (J3-r2): review / file / accrue follow the role and the maker-checker rule.
+  const { gate, gateApproval } = useCompanyPermission();
 
   const downloadBlob = async (url: string, fallbackName: string) => {
     try {
@@ -168,7 +281,11 @@ export default function CorporateTax() {
       link.remove();
       URL.revokeObjectURL(objectUrl);
     } catch (error: any) {
-      toast({ variant: "destructive", title: "Download failed", description: error?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.downloadFailed"),
+        description: error?.message,
+      });
     }
   };
 
@@ -180,28 +297,54 @@ export default function CorporateTax() {
         queryKey: [`/api/companies/${companyId}/corporate-tax/returns`],
       });
       toast({
-        title: `${result?.rows ?? 0} workpaper rows pulled from books`,
-        description: "One row per income/expense account with its posted net for the period.",
+        title: formatMessage(translateNow("toasts.workpaperRowsPulledFromBooks"), {
+          rows: result?.rows ?? 0,
+        }),
+        description: translateNow("toasts.oneRowPerIncomeExpenseAccountWith"),
       });
     },
     onError: (e: any) =>
       toast({
         variant: "destructive",
-        title: "Could not pull from books",
+        title: translateNow("toasts.couldNotPullFromBooks"),
         description: e?.message,
       }),
   });
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { company, companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
-  // Calculator state
-  const currentYear = new Date().getFullYear();
-  const [periodStart, setPeriodStart] = useState(`${currentYear}-01-01`);
-  const [periodEnd, setPeriodEnd] = useState(`${currentYear}-12-31`);
+  // Calculator state: defaults to the company's fiscal year (X4/J3), not 1 Jan - 31 Dec.
+  const fyStartMonth = (company as { fiscalYearStartMonth?: number } | null | undefined)
+    ?.fiscalYearStartMonth;
+  const defaultFy = fiscalYearContaining(fyStartMonth);
+  const [periodStart, setPeriodStart] = useState(defaultFy.start);
+  const [periodEnd, setPeriodEnd] = useState(defaultFy.end);
+  const periodTouched = useRef(false);
+  useEffect(() => {
+    if (periodTouched.current) return;
+    const fy = fiscalYearContaining(fyStartMonth);
+    setPeriodStart(fy.start);
+    setPeriodEnd(fy.end);
+  }, [fyStartMonth]);
+
+  // "Record as filed" dialog (X4/J3): confirmation, EmaraTax reference and filing date,
+  // and an audited soft-lock override reason when the provision lands in a closed period.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [fileTarget, setFileTarget] = useState<CorporateTaxReturn | null>(null);
+  const [filingReference, setFilingReference] = useState("");
+  const [filedOn, setFiledOn] = useState(todayIso);
+  const [unfileTarget, setUnfileTarget] = useState<CorporateTaxReturn | null>(null);
+  const [unfileReason, setUnfileReason] = useState("");
+  const openFileDialog = (r: CorporateTaxReturn) => {
+    setFileTarget(r);
+    setFilingReference("");
+    setFiledOn(todayIso);
+  };
   const [deductions, setDeductions] = useState(0);
   const [calculation, setCalculation] = useState<CalculationResult | null>(null);
   const [notes, setNotes] = useState("");
+  const [openNotes, setOpenNotes] = useState<Set<string>>(() => new Set());
   const [workpaperRows, setWorkpaperRows] = useState<CorporateTaxWorkpaperRow[]>(() =>
-    defaultWorkpaperRows()
+    defaultWorkpaperRows(locale)
   );
 
   // Detail dialog
@@ -270,15 +413,17 @@ export default function CorporateTax() {
     onSuccess: (data: CalculationResult) => {
       setCalculation(data);
       toast({
-        title: "Calculation Complete",
-        description: `Processed ${data.journalEntriesProcessed} journal entries.`,
+        title: translateNow("toasts.calculationComplete"),
+        description: formatMessage(translateNow("toasts.processedJournalEntries"), {
+          journalEntriesProcessed: data.journalEntriesProcessed,
+        }),
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Calculation Failed",
-        description: error?.message || "Failed to calculate corporate tax",
+        title: translateNow("toasts.calculationFailed"),
+        description: error?.message || translateNow("toasts.failedToCalculateCorporateTax"),
       });
     },
   });
@@ -287,10 +432,6 @@ export default function CorporateTax() {
   const saveDraftMutation = useMutation({
     mutationFn: () => {
       if (!adjustedCalculation) throw new Error("No corporate tax workpaper to save");
-      const taxableIncome =
-        adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses - deductions;
-      const taxableAmount = Math.max(0, taxableIncome - adjustedCalculation.exemptionThreshold);
-      const taxPayable = Math.round(taxableAmount * adjustedCalculation.taxRate * 100) / 100;
       const workpaper: CorporateTaxWorkpaper = {
         source: hasManualWorkpaper ? "manual_workpaper" : "journal_calculation",
         rows: workpaperRows.filter((row) => row.amount > 0 || row.notes?.trim()),
@@ -300,19 +441,15 @@ export default function CorporateTax() {
         preparedAt: new Date().toISOString(),
       };
 
+      // R08-09: the server computes taxable income, rate and liability.
       return apiRequest("POST", `/api/companies/${companyId}/corporate-tax/returns`, {
-        taxPeriodStart: new Date(periodStart).toISOString(),
-        taxPeriodEnd: new Date(periodEnd).toISOString(),
+        taxPeriodStart: periodStart,
+        taxPeriodEnd: periodEnd,
         totalRevenue: adjustedCalculation.totalRevenue,
         totalExpenses: adjustedCalculation.totalExpenses,
         totalDeductions: deductions,
-        taxableIncome: Math.round(taxableIncome * 100) / 100,
-        exemptionThreshold: adjustedCalculation.exemptionThreshold,
-        taxRate: adjustedCalculation.taxRate,
-        taxPayable,
-        status: "draft",
-        workpaper,
-        notes: notes || null,
+        workpaper: { source: workpaper.source, rows: workpaper.rows },
+        ...(notes ? { notes } : {}),
       });
     },
     onSuccess: () => {
@@ -320,62 +457,113 @@ export default function CorporateTax() {
         queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
       });
       toast({
-        title: "Draft Saved",
-        description: "Corporate tax return saved as draft.",
+        title: translateNow("toasts.draftSaved"),
+        description: translateNow("toasts.corporateTaxReturnSavedAsDraft"),
       });
       setCalculation(null);
       setNotes("");
       setDeductions(0);
-      setWorkpaperRows(defaultWorkpaperRows());
+      setWorkpaperRows(defaultWorkpaperRows(locale));
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Save Failed",
-        description: error?.message || "Failed to save draft",
+        title: translateNow("toasts.saveFailed"),
+        description: error?.message || translateNow("toasts.failedToSaveDraft"),
       });
     },
   });
 
-  // Update status mutation
-  const updateStatusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      apiRequest("PATCH", `/api/corporate-tax/returns/${id}`, {
-        status,
-        ...(status === "filed" ? { filedAt: new Date().toISOString() } : {}),
+  // Lifecycle transitions (R08-04): computed -> reviewed -> filed -> paid; void; amend.
+  const invalidateReturns = () =>
+    queryClient.invalidateQueries({
+      queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
+    });
+  const transitionMutation = useMutation({
+    mutationFn: ({
+      id,
+      to,
+      postProvision,
+      filingReference: reference,
+      filedOn: filedDate,
+    }: {
+      id: string;
+      to: "computed" | "reviewed" | "filed" | "paid" | "void";
+      postProvision?: boolean;
+      filingReference?: string;
+      filedOn?: string;
+    }) =>
+      // A provision that posts into a soft-locked period is handled by apiRequest: it asks for
+      // the audited override reason (PeriodLockReasonDialog) and replays once with the header.
+      apiRequest("POST", `/api/corporate-tax/returns/${id}/transition`, {
+        to,
+        ...(postProvision ? { postProvision: true } : {}),
+        ...(reference ? { filingReference: reference } : {}),
+        ...(filedDate ? { filedOn: filedDate } : {}),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
-      });
-      toast({ title: "Status Updated", description: "Tax return status has been updated." });
+      invalidateReturns();
+      setFileTarget(null);
+      toast({ title: t["corporateTax.statusUpdated"] });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({
         variant: "destructive",
-        title: "Update Failed",
-        description: error?.message || "Failed to update status",
+        title: t["corporateTax.statusUpdateFailed"],
+        description: error?.message,
       });
     },
   });
-
-  // Delete mutation
-  const deleteMutation = useMutation({
+  const amendMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("PATCH", `/api/corporate-tax/returns/${id}`, { status: "void" }),
+      apiRequest("POST", `/api/corporate-tax/returns/${id}/amend`, {
+        reason: t["corporateTax.amendDefaultReason"],
+      }),
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/companies", companyId, "corporate-tax", "returns"],
-      });
-      toast({ title: "Return Removed", description: "Corporate tax return has been removed." });
+      invalidateReturns();
+      toast({ title: t["corporateTax.amendmentCreated"] });
     },
-    onError: (error: any) => {
+    onError: (error: Error) =>
       toast({
         variant: "destructive",
-        title: "Delete Failed",
-        description: error?.message || "Failed to remove return",
+        title: t["corporateTax.statusUpdateFailed"],
+        description: error?.message,
+      }),
+  });
+  const [postProvision, setPostProvision] = useState(true);
+  // A4 (M2, IAS 12.12): accrue the computed tax at period end before the return is filed.
+  const accrueMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/corporate-tax/returns/${id}/accrue`, {}),
+    onSuccess: (data: { accrual?: { changed?: boolean } }) => {
+      invalidateReturns();
+      toast({
+        title: data?.accrual?.changed
+          ? t["corporateTax.accrued"]
+          : t["corporateTax.accrualUnchanged"],
       });
     },
+    onError: (error: Error) =>
+      toast({
+        variant: "destructive",
+        title: t["corporateTax.statusUpdateFailed"],
+        description: error?.message,
+      }),
+  });
+  const unfileMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiRequest("POST", `/api/corporate-tax/returns/${id}/unfile`, { reason }),
+    onSuccess: () => {
+      invalidateReturns();
+      setUnfileTarget(null);
+      setUnfileReason("");
+      toast({ title: t["corporateTax.markedNotFiled"] });
+    },
+    onError: (error: Error) =>
+      toast({
+        variant: "destructive",
+        title: t["corporateTax.statusUpdateFailed"],
+        description: error?.message,
+      }),
   });
 
   const updateWorkpaperRow = (id: string, patch: Partial<CorporateTaxWorkpaperRow>) => {
@@ -387,7 +575,7 @@ export default function CorporateTax() {
       ...rows,
       {
         id: `${type}-${Date.now()}`,
-        label: type === "revenue" ? "Other revenue" : "Other expense",
+        label: type === "revenue" ? t["corporateTax.otherRevenue"] : t["corporateTax.otherExpense"],
         type,
         amount: 0,
       },
@@ -410,173 +598,340 @@ export default function CorporateTax() {
   if (!companyId) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-muted-foreground">No company found. Please set up your company first.</p>
+        <p className="text-muted-foreground">
+          <T k="pageLabels.noCompanyFoundPleaseSetUpYourCompanyFirst" />
+        </p>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-3">
-          <FileCheck className="w-8 h-8 text-primary" />
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              {(t as any).corporateTax || "Corporate Tax (9%)"}
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              UAE Corporate Tax &mdash; 9% on taxable income above AED 375,000
-            </p>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Compliance"
+        title={(t as any).corporateTax || "Corporate tax (9%)"}
+        description={t["corporateTax.pageSubtitle"]}
+      />
 
       <Card>
         <CardHeader>
-          <CardTitle>Pre-submission Profit / Loss Workpaper</CardTitle>
-          <CardDescription>
-            Enter revenue and expense lines exactly like the Excel schedule used before filing.
-            These rows support the draft return and do not mark anything as submitted.
-          </CardDescription>
+          <CardTitle>{t["corporateTax.workpaperTitle"]}</CardTitle>
+          <CardDescription>{t["corporateTax.workpaperDescription"]}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div className="space-y-2">
-              <Label htmlFor="workpaperPeriodStart">Period Start</Label>
-              <Input
+              <Label htmlFor="workpaperPeriodStart">
+                <T k="pages.periodStart" />
+              </Label>
+              <DatePicker
                 id="workpaperPeriodStart"
-                type="date"
                 value={periodStart}
-                onChange={(e) => setPeriodStart(e.target.value)}
+                onChange={(v) => {
+                  periodTouched.current = true;
+                  setPeriodStart(v);
+                }}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="workpaperPeriodEnd">Period End</Label>
-              <Input
+              <Label htmlFor="workpaperPeriodEnd">
+                <T k="pages.periodEnd" />
+              </Label>
+              <DatePicker
                 id="workpaperPeriodEnd"
-                type="date"
                 value={periodEnd}
-                onChange={(e) => setPeriodEnd(e.target.value)}
+                onChange={(v) => {
+                  periodTouched.current = true;
+                  setPeriodEnd(v);
+                }}
               />
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" onClick={() => addWorkpaperRow("revenue")}>
-                <Plus className="w-4 h-4 mr-2" /> Revenue row
-              </Button>
-              <Button type="button" variant="outline" onClick={() => addWorkpaperRow("expense")}>
-                <Plus className="w-4 h-4 mr-2" /> Expense row
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => addWorkpaperRow("revenue")}
+                {...gate("documents.write")}
+              >
+                <Plus className="w-4 h-4 me-2" />
+                <T k="pageLabels.revenueRow" />
               </Button>
               <Button
                 type="button"
-                variant="ghost"
-                onClick={() => setWorkpaperRows(defaultWorkpaperRows())}
+                variant="outline"
+                onClick={() => addWorkpaperRow("expense")}
+                {...gate("documents.write")}
               >
-                <RotateCcw className="w-4 h-4 mr-2" /> Reset
+                <Plus className="w-4 h-4 me-2" />
+                <T k="pageLabels.expenseRow" />
               </Button>
+              {/* Spec 3.12: Reset lives in the overflow menu. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={t["reportCenter.moreActions"]}
+                    data-testid="button-workpaper-more"
+                  >
+                    <MoreHorizontal className="h-4 w-4" aria-hidden />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setWorkpaperRows(defaultWorkpaperRows(locale))}>
+                    <RotateCcw className="w-4 h-4 me-2" /> <T k="pages.reset" />
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-md border">
-            <Table>
+          {/* Below 768px: each worksheet line is a stacked card (description, amount, note, remove). */}
+          <div className="space-y-3 md:hidden" data-testid="mobile-workpaper-list">
+            {workpaperRows.map((row) => (
+              <div key={row.id} className="space-y-2 rounded-md border p-3">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={row.label}
+                    onChange={(e) => updateWorkpaperRow(row.id, { label: e.target.value })}
+                    className="font-medium"
+                    aria-label={`${ctTr(locale, "Workpaper line description", "وصف بند ورقة العمل")}: ${row.label}`}
+                  />
+                  {workpaperRows.length > 1 && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0"
+                      onClick={() => removeWorkpaperRow(row.id)}
+                      {...gate("documents.write")}
+                      aria-label={`${ctTr(locale, "Remove", "إزالة")} ${row.label}`}
+                    >
+                      <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
+                    </Button>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-20 shrink-0 text-caption text-muted-foreground">
+                    {row.type === "expense" ? <T k="pages.expense" /> : <T k="pages.revenue" />}
+                  </span>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="0.01"
+                    value={moneyInputValue(row.amount)}
+                    onChange={(e) =>
+                      updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
+                    }
+                    aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
+                    className="text-end"
+                    placeholder="0.00"
+                  />
+                </div>
+                <Input
+                  value={row.notes ?? ""}
+                  onChange={(e) => updateWorkpaperRow(row.id, { notes: e.target.value })}
+                  placeholder={ctTr(
+                    locale,
+                    "Evidence or adjustment note",
+                    "ملاحظة الدليل أو التسوية"
+                  )}
+                  aria-label={`${row.label} ${ctTr(locale, "note", "ملاحظة")}`}
+                />
+              </div>
+            ))}
+            <div className="space-y-1 rounded-md bg-muted/40 p-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-bold">
+                  <T k="pages.totals" />
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">
+                  <T k="pages.expense" />
+                </span>
+                <Money amount={workpaperTotals.totalExpenses} currency={"AED"} />
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">
+                  <T k="pages.revenue" />
+                </span>
+                <Money amount={workpaperTotals.totalRevenue} currency={"AED"} />
+              </div>
+              <div className="flex items-center justify-between gap-3 border-t border-border-strong pt-1 font-semibold">
+                <span>{t["corporateTax.workpaperProfitLoss"]}</span>
+                <span
+                  className={workpaperTotals.profitOrLoss < 0 ? "text-negative" : "text-foreground"}
+                >
+                  {workpaperTotals.profitOrLoss < 0
+                    ? `(${formatCurrency(Math.abs(workpaperTotals.profitOrLoss), "AED", locale)})`
+                    : formatCurrency(workpaperTotals.profitOrLoss, "AED", locale)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="hidden overflow-x-auto rounded-md border md:block">
+            <Table density="compact">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-[260px] text-base font-bold">
-                    Year {new Date(periodEnd || periodStart).getFullYear() || currentYear}
+                  <TableHead className="min-w-[260px]">
+                    {formatMessage(t["corporateTax.workpaperYear"], {
+                      year:
+                        new Date(periodEnd || periodStart).getFullYear() || defaultFy.fiscalYear,
+                    })}
                   </TableHead>
-                  <TableHead className="min-w-[180px] text-right text-base font-bold">
-                    Expense
+                  <TableHead data-numeric className="min-w-[180px]">
+                    <T k="pages.expense" />
                   </TableHead>
-                  <TableHead className="min-w-[180px] text-right text-base font-bold">
-                    Revenue
+                  <TableHead data-numeric className="min-w-[180px]">
+                    <T k="pages.revenue" />
                   </TableHead>
-                  <TableHead className="min-w-[220px]">Notes</TableHead>
+                  <TableHead className="w-[56px]">
+                    <span className="sr-only">
+                      <T k="pages.notes" />
+                    </span>
+                  </TableHead>
                   <TableHead className="w-[56px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {workpaperRows.map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell>
-                      <Input
-                        value={row.label}
-                        onChange={(e) => updateWorkpaperRow(row.id, { label: e.target.value })}
-                        className="font-medium"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {row.type === "expense" ? (
+                  <Fragment key={row.id}>
+                    <TableRow>
+                      <TableCell>
                         <Input
-                          type="number"
-                          inputMode="decimal"
-                          min={0}
-                          step="0.01"
-                          value={moneyInputValue(row.amount)}
-                          onChange={(e) =>
-                            updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
-                          }
-                          className="text-right"
-                          placeholder="0.00"
+                          value={row.label}
+                          onChange={(e) => updateWorkpaperRow(row.id, { label: e.target.value })}
+                          className="h-8 font-medium"
+                          aria-label={`${ctTr(locale, "Workpaper line description", "وصف بند ورقة العمل")}: ${row.label}`}
                         />
-                      ) : (
-                        <div className="h-10 rounded-md border bg-muted/30" />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {row.type === "revenue" ? (
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          min={0}
-                          step="0.01"
-                          value={moneyInputValue(row.amount)}
-                          onChange={(e) =>
-                            updateWorkpaperRow(row.id, { amount: parseMoneyInput(e.target.value) })
-                          }
-                          className="text-right"
-                          placeholder="0.00"
-                        />
-                      ) : (
-                        <div className="h-10 rounded-md border bg-muted/30" />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={row.notes ?? ""}
-                        onChange={(e) => updateWorkpaperRow(row.id, { notes: e.target.value })}
-                        placeholder="Evidence or adjustment note"
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {workpaperRows.length > 1 && (
+                      </TableCell>
+                      <TableCell>
+                        {row.type === "expense" ? (
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            step="0.01"
+                            value={moneyInputValue(row.amount)}
+                            onChange={(e) =>
+                              updateWorkpaperRow(row.id, {
+                                amount: parseMoneyInput(e.target.value),
+                              })
+                            }
+                            aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
+                            className="h-8 text-end"
+                            placeholder="0.00"
+                          />
+                        ) : (
+                          <span className="block pe-3 text-end text-muted-foreground" aria-hidden>
+                            –
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {row.type === "revenue" ? (
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            min={0}
+                            step="0.01"
+                            value={moneyInputValue(row.amount)}
+                            onChange={(e) =>
+                              updateWorkpaperRow(row.id, {
+                                amount: parseMoneyInput(e.target.value),
+                              })
+                            }
+                            aria-label={`${row.label} ${ctTr(locale, "amount", "المبلغ")}`}
+                            className="h-8 text-end"
+                            placeholder="0.00"
+                          />
+                        ) : (
+                          <span className="block pe-3 text-end text-muted-foreground" aria-hidden>
+                            –
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {/* Spec 3.12: the note opens as a row under the line (expander). */}
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          onClick={() => removeWorkpaperRow(row.id)}
-                          aria-label={`Remove ${row.label}`}
+                          aria-expanded={openNotes.has(row.id) || Boolean(row.notes)}
+                          aria-label={`${row.label} ${ctTr(locale, "note", "ملاحظة")}`}
+                          onClick={() =>
+                            setOpenNotes((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(row.id)) next.delete(row.id);
+                              else next.add(row.id);
+                              return next;
+                            })
+                          }
                         >
-                          <Trash2 className="w-4 h-4 text-destructive" />
+                          <MessageSquare
+                            className={`h-4 w-4 ${row.notes ? "text-foreground" : "text-muted-foreground"}`}
+                            aria-hidden
+                          />
                         </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
+                      </TableCell>
+                      <TableCell data-numeric>
+                        {workpaperRows.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => removeWorkpaperRow(row.id)}
+                            {...gate("documents.write")}
+                            aria-label={`${ctTr(locale, "Remove", "إزالة")} ${row.label}`}
+                          >
+                            <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                    {openNotes.has(row.id) || row.notes ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="pt-0">
+                          <Input
+                            value={row.notes ?? ""}
+                            onChange={(e) => updateWorkpaperRow(row.id, { notes: e.target.value })}
+                            placeholder={ctTr(
+                              locale,
+                              "Evidence or adjustment note",
+                              "ملاحظة الدليل أو التسوية"
+                            )}
+                            aria-label={`${row.label} ${ctTr(locale, "note", "ملاحظة")}`}
+                            className="h-8"
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                  </Fragment>
                 ))}
                 <TableRow className="bg-muted/40">
-                  <TableCell className="font-bold">Totals</TableCell>
-                  <TableCell className="text-right font-bold text-destructive">
-                    {formatCurrency(workpaperTotals.totalExpenses, "AED", locale)}
+                  <TableCell className="font-bold">
+                    <T k="pages.totals" />
                   </TableCell>
-                  <TableCell className="text-right font-bold">
-                    {formatCurrency(workpaperTotals.totalRevenue, "AED", locale)}
+                  <TableCell data-numeric className="font-semibold">
+                    <Money amount={workpaperTotals.totalExpenses} currency={"AED"} />
+                  </TableCell>
+                  <TableCell data-numeric className=" font-bold">
+                    <Money amount={workpaperTotals.totalRevenue} currency={"AED"} />
                   </TableCell>
                   <TableCell colSpan={2} />
                 </TableRow>
                 <TableRow>
-                  <TableCell className="font-bold">PROFIT / LOSS (Revenue - Expense)</TableCell>
+                  <TableCell className="font-bold">
+                    {t["corporateTax.workpaperProfitLoss"]}
+                  </TableCell>
                   <TableCell />
                   <TableCell
-                    className={`text-right font-bold ${workpaperTotals.profitOrLoss < 0 ? "text-destructive" : "text-success"}`}
+                    data-numeric
+                    className={`font-semibold ${workpaperTotals.profitOrLoss < 0 ? "text-negative" : "text-foreground"}`}
                   >
                     {workpaperTotals.profitOrLoss < 0
                       ? `(${formatCurrency(Math.abs(workpaperTotals.profitOrLoss), "AED", locale)})`
@@ -588,10 +943,7 @@ export default function CorporateTax() {
             </Table>
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            This is a corporate tax support schedule. It creates a draft return only; it does not
-            submit to the FTA and it does not post accounting entries.
-          </p>
+          <p className="text-xs text-muted-foreground">{t["corporateTax.workpaperDisclaimer"]}</p>
         </CardContent>
       </Card>
 
@@ -600,45 +952,53 @@ export default function CorporateTax() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calculator className="w-5 h-5" />
-            Tax Calculator
+            <T k="pageLabels.taxCalculator" />
           </CardTitle>
-          <CardDescription>
-            Calculate corporate tax from your journal entries for a given period
-          </CardDescription>
+          <CardDescription>{t["corporateTax.calculatorDescription"]}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Period Selector */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-4 items-end">
             <div className="space-y-2">
-              <Label htmlFor="periodStart">Period Start</Label>
-              <Input
+              <Label htmlFor="periodStart">
+                <T k="pages.periodStart" />
+              </Label>
+              <DatePicker
                 id="periodStart"
-                type="date"
                 value={periodStart}
-                onChange={(e) => setPeriodStart(e.target.value)}
+                onChange={(v) => {
+                  periodTouched.current = true;
+                  setPeriodStart(v);
+                }}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="periodEnd">Period End</Label>
-              <Input
+              <Label htmlFor="periodEnd">
+                <T k="pages.periodEnd" />
+              </Label>
+              <DatePicker
                 id="periodEnd"
-                type="date"
                 value={periodEnd}
-                onChange={(e) => setPeriodEnd(e.target.value)}
+                onChange={(v) => {
+                  periodTouched.current = true;
+                  setPeriodEnd(v);
+                }}
               />
             </div>
             <Button
               onClick={() => calculateMutation.mutate()}
               disabled={calculateMutation.isPending || !periodStart || !periodEnd}
-              className="w-full md:w-auto"
+              className="w-full md:w-auto md:justify-self-end"
             >
               {calculateMutation.isPending ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Calculating...
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                  <T k="pageLabels.calculating" />
                 </>
               ) : (
                 <>
-                  <Calculator className="w-4 h-4 mr-2" /> Calculate
+                  <Calculator className="w-4 h-4 me-2" />
+                  <T k="hr.calculate" />
                 </>
               )}
             </Button>
@@ -649,42 +1009,51 @@ export default function CorporateTax() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="rounded-lg border p-4 space-y-3">
-                  <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-                    Income Summary
+                  <h3 className="font-semibold text-sm text-muted-foreground">
+                    <T k="pageLabels.incomeSummary" />
                   </h3>
                   <div className="flex justify-between">
-                    <span>Total Revenue</span>
+                    <span>
+                      <T k="pages.totalRevenue" />
+                    </span>
                     <span className="font-medium">
-                      {formatCurrency(adjustedCalculation.totalRevenue, "AED", locale)}
+                      <Money amount={adjustedCalculation.totalRevenue} currency={"AED"} />
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Total Expenses</span>
-                    <span className="font-medium text-destructive">
+                    <span>
+                      <T k="pages.totalExpenses" />
+                    </span>
+                    <span className="font-medium">
                       ({formatCurrency(adjustedCalculation.totalExpenses, "AED", locale)})
                     </span>
                   </div>
                   <div className="flex justify-between border-t pt-2">
-                    <span className="font-semibold">Gross Profit</span>
                     <span className="font-semibold">
-                      {formatCurrency(
-                        adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses,
-                        "AED",
-                        locale
-                      )}
+                      <T k="corporateTax.accountingProfit" />
+                    </span>
+                    <span className="font-semibold">
+                      <Money
+                        amount={
+                          adjustedCalculation.totalRevenue - adjustedCalculation.totalExpenses
+                        }
+                        currency={"AED"}
+                      />
                     </span>
                   </div>
                 </div>
 
                 <div className="rounded-lg border p-4 space-y-3">
-                  <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-                    Tax Calculation
+                  <h3 className="font-semibold text-sm text-muted-foreground">
+                    <T k="pageLabels.taxCalculation" />
                   </h3>
                   <div className="flex justify-between items-center">
-                    <span>Deductions</span>
+                    <span>
+                      <T k="pages.deductions" />
+                    </span>
                     <Input
                       type="number"
-                      className="w-40 text-right"
+                      className="w-40 text-end"
                       value={deductions}
                       onChange={(e) => setDeductions(parseFloat(e.target.value) || 0)}
                       min={0}
@@ -692,33 +1061,44 @@ export default function CorporateTax() {
                     />
                   </div>
                   <div className="flex justify-between">
-                    <span>Taxable Income</span>
+                    <span>
+                      <T k="pages.taxableIncome" />
+                    </span>
                     <span className="font-medium">
-                      {formatCurrency(adjustedCalculation.taxableIncome, "AED", locale)}
+                      <Money amount={adjustedCalculation.taxableIncome} currency={"AED"} />
                     </span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>Exemption Threshold</span>
                     <span>
-                      {formatCurrency(adjustedCalculation.exemptionThreshold, "AED", locale)}
+                      <T k="pages.exemptionThreshold" />
+                    </span>
+                    <span>
+                      <Money amount={adjustedCalculation.exemptionThreshold} currency={"AED"} />
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span>Taxable Amount (above threshold)</span>
                     <span className="font-medium">
-                      {formatCurrency(adjustedCalculation.taxableAmount, "AED", locale)}
+                      <Money amount={adjustedCalculation.taxableAmount} currency={"AED"} />
                     </span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>Tax Rate</span>
+                    <span>
+                      <T k="pages.taxRate" />
+                    </span>
                     <span>9%</span>
                   </div>
                   <div className="flex justify-between border-t pt-2">
-                    <span className="text-lg font-bold">Tax Payable</span>
+                    <span className="text-lg font-bold">
+                      <T k="pages.taxPayable" /> <FigureBadge status="estimate" />
+                    </span>
                     <span className="text-lg font-bold text-primary">
-                      {formatCurrency(adjustedCalculation.taxPayable, "AED", locale)}
+                      <Money amount={adjustedCalculation.taxPayable} currency={"AED"} />
                     </span>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    <T k="corporateTax.figureEstimateHint" />
+                  </p>
                 </div>
               </div>
 
@@ -734,7 +1114,7 @@ export default function CorporateTax() {
                   <Label htmlFor="notes">Notes (optional)</Label>
                   <Textarea
                     id="notes"
-                    placeholder="Add any notes for this tax return..."
+                    placeholder={t["corporateTax.addAnyNotesForThis"]}
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
                     rows={2}
@@ -743,10 +1123,12 @@ export default function CorporateTax() {
                 <Button
                   onClick={() => saveDraftMutation.mutate()}
                   disabled={saveDraftMutation.isPending}
+                  {...gate("documents.write")}
                 >
                   {saveDraftMutation.isPending ? (
                     <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...
+                      <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                      <T k="pageLabels.saving" />
                     </>
                   ) : (
                     "Save as Draft"
@@ -758,13 +1140,27 @@ export default function CorporateTax() {
         </CardContent>
       </Card>
 
+      <CtCompliancePanel companyId={companyId} />
+      <CtYearEndPanel companyId={companyId} />
+
       {/* Returns Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Tax Returns</CardTitle>
-          <CardDescription>Saved corporate tax returns and their filing status</CardDescription>
+          <CardTitle>
+            <T k="pageLabels.taxReturns" />
+          </CardTitle>
+          <CardDescription>
+            <T k="pageLabels.savedCorporateTaxReturnsAndTheirFilingStatus" />
+          </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 p-3 text-sm">
+            <p className="text-muted-foreground">{t["corporateTax.lifecycleHelp"]}</p>
+            <label className="flex items-center gap-2">
+              <Switch checked={postProvision} onCheckedChange={setPostProvision} />
+              {t["corporateTax.postProvisionOnFiling"]}
+            </label>
+          </div>
           {isLoadingReturns ? (
             <div className="space-y-3">
               <Skeleton className="h-10 w-full" />
@@ -774,20 +1170,36 @@ export default function CorporateTax() {
           ) : !taxReturns || taxReturns.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <FileCheck className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No corporate tax returns yet.</p>
-              <p className="text-sm">Use the calculator above to generate your first return.</p>
+              <p>
+                <T k="pageLabels.noCorporateTaxReturnsYet" />
+              </p>
+              <p className="text-sm">
+                <T k="pageLabels.useTheCalculatorAboveToGenerateYourFirstReturn" />
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Period</TableHead>
-                    <TableHead className="text-right">Revenue</TableHead>
-                    <TableHead className="text-right">Taxable Income</TableHead>
-                    <TableHead className="text-right">Tax Payable</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead>
+                      <T k="pages.period" />
+                    </TableHead>
+                    <TableHead data-numeric>
+                      <T k="pages.revenue" />
+                    </TableHead>
+                    <TableHead data-numeric>
+                      <T k="pages.taxableIncome" />
+                    </TableHead>
+                    <TableHead data-numeric>
+                      <T k="pages.taxPayable" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.status" />
+                    </TableHead>
+                    <TableHead data-numeric>
+                      <T k="pages.actions" />
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -795,21 +1207,37 @@ export default function CorporateTax() {
                     .filter((r) => r.status !== "void")
                     .map((taxReturn) => (
                       <TableRow key={taxReturn.id}>
-                        <TableCell className="font-medium">
-                          {format(new Date(taxReturn.taxPeriodStart), "dd MMM yyyy")} &mdash;{" "}
-                          {format(new Date(taxReturn.taxPeriodEnd), "dd MMM yyyy")}
+                        <TableCell className="font-medium" data-nowrap>
+                          {formatDateRange(
+                            taxReturn.taxPeriodStart,
+                            taxReturn.taxPeriodEnd,
+                            locale
+                          )}
                         </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(taxReturn.totalRevenue, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={taxReturn.totalRevenue} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(taxReturn.taxableIncome, "AED", locale)}
+                        <TableCell data-numeric>
+                          <Money amount={taxReturn.taxableIncome} currency={"AED"} />
                         </TableCell>
-                        <TableCell className="text-right font-semibold">
-                          {formatCurrency(taxReturn.taxPayable, "AED", locale)}
+                        <TableCell data-numeric className=" font-semibold">
+                          <Money amount={taxReturn.taxPayable} currency={"AED"} />
+                          <div>
+                            <FigureBadge status={taxReturn.figureStatus} />
+                          </div>
                         </TableCell>
-                        <TableCell>{statusBadge(taxReturn.status)}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            {statusBadge(taxReturn.status)}
+                            {taxReturn.filingDeadline && (
+                              <span className="text-xs text-muted-foreground">
+                                {t["corporateTax.dueBy"]}{" "}
+                                {formatDisplayDate(taxReturn.filingDeadline, locale)}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell data-numeric>
                           <div className="flex items-center justify-end gap-1">
                             <Button
                               variant="ghost"
@@ -830,61 +1258,152 @@ export default function CorporateTax() {
                                   "ct-workpaper.xlsx"
                                 )
                               }
-                              title="Download Excel workpaper"
+                              title={t["corporateTax.downloadExcelWorkpaper"]}
                               data-testid={`button-ct-export-${taxReturn.id}`}
                             >
                               <Download className="w-4 h-4" />
                             </Button>
-                            {taxReturn.status === "draft" && (
+                            {(taxReturn.status === "draft" || taxReturn.status === "computed") && (
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => pullFromBooksMutation.mutate(taxReturn.id)}
                                 disabled={pullFromBooksMutation.isPending}
-                                title="Pull workpaper from books"
+                                title={t["corporateTax.pullFromBooks"]}
+                                {...gate("documents.write")}
                                 data-testid={`button-ct-pull-${taxReturn.id}`}
                               >
                                 <BookOpen className="w-4 h-4" />
                               </Button>
                             )}
                             {taxReturn.status === "draft" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  transitionMutation.mutate({ id: taxReturn.id, to: "computed" })
+                                }
+                                disabled={transitionMutation.isPending}
+                                title={t["corporateTax.markComputed"]}
+                                {...gate("documents.write")}
+                                data-testid={`button-ct-compute-${taxReturn.id}`}
+                              >
+                                <Calculator className="w-4 h-4" />
+                              </Button>
+                            )}
+                            {(taxReturn.status === "computed" ||
+                              taxReturn.status === "reviewed") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => accrueMutation.mutate(taxReturn.id)}
+                                disabled={accrueMutation.isPending}
+                                title={t["corporateTax.accrue"]}
+                                {...gate("ledger.post")}
+                                aria-label={t["corporateTax.accrue"]}
+                                data-testid={`button-ct-accrue-${taxReturn.id}`}
+                              >
+                                <BookOpen className="w-4 h-4 text-muted-foreground" aria-hidden />
+                              </Button>
+                            )}
+                            {taxReturn.status === "computed" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  transitionMutation.mutate({ id: taxReturn.id, to: "reviewed" })
+                                }
+                                disabled={transitionMutation.isPending}
+                                title={t["corporateTax.markReviewed"]}
+                                data-testid={`button-ct-review-${taxReturn.id}`}
+                                {...gateApproval("tax.submit", taxReturn.preparedBy)}
+                              >
+                                <ClipboardCheck className="w-4 h-4 text-muted-foreground" />
+                              </Button>
+                            )}
+                            {taxReturn.status === "reviewed" && (
                               <>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() =>
-                                    updateStatusMutation.mutate({
-                                      id: taxReturn.id,
-                                      status: "filed",
-                                    })
-                                  }
-                                  disabled={updateStatusMutation.isPending}
-                                  title="Mark as Filed"
+                                  onClick={() => openFileDialog(taxReturn)}
+                                  disabled={transitionMutation.isPending}
+                                  title={t["corporateTax.markFiled"]}
+                                  {...gate("tax.submit")}
+                                  data-testid={`button-ct-file-${taxReturn.id}`}
                                 >
-                                  <CheckCircle2 className="w-4 h-4 text-info" />
+                                  <Send className="w-4 h-4 text-muted-foreground" />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => deleteMutation.mutate(taxReturn.id)}
-                                  disabled={deleteMutation.isPending}
-                                  title="Delete"
+                                  onClick={() =>
+                                    transitionMutation.mutate({ id: taxReturn.id, to: "computed" })
+                                  }
+                                  disabled={transitionMutation.isPending}
+                                  title={t["corporateTax.sendBack"]}
+                                  {...gate("documents.write")}
                                 >
-                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                  <RotateCcw className="w-4 h-4" />
                                 </Button>
                               </>
+                            )}
+                            {(taxReturn.status === "draft" || taxReturn.status === "computed") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  transitionMutation.mutate({ id: taxReturn.id, to: "void" })
+                                }
+                                disabled={transitionMutation.isPending}
+                                title={t["corporateTax.voidReturn"]}
+                                {...gate("documents.write")}
+                              >
+                                <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
+                              </Button>
                             )}
                             {taxReturn.status === "filed" && (
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() =>
-                                  updateStatusMutation.mutate({ id: taxReturn.id, status: "paid" })
+                                  transitionMutation.mutate({ id: taxReturn.id, to: "paid" })
                                 }
-                                disabled={updateStatusMutation.isPending}
-                                title="Mark as Paid"
+                                disabled={transitionMutation.isPending}
+                                title={t["corporateTax.markPaid"]}
+                                {...gate("tax.submit")}
                               >
-                                <Banknote className="w-4 h-4 text-success" />
+                                <Banknote className="w-4 h-4 text-muted-foreground" aria-hidden />
+                              </Button>
+                            )}
+                            {taxReturn.status === "filed" && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setUnfileReason("");
+                                  setUnfileTarget(taxReturn);
+                                }}
+                                disabled={unfileMutation.isPending}
+                                title={t["corporateTax.markNotFiled"]}
+                                {...gate("tax.submit")}
+                                aria-label={t["corporateTax.markNotFiled"]}
+                                data-testid={`button-ct-unfile-${taxReturn.id}`}
+                              >
+                                <RotateCcw className="w-4 h-4" aria-hidden />
+                              </Button>
+                            )}
+                            {(taxReturn.status === "filed" || taxReturn.status === "paid") && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => amendMutation.mutate(taxReturn.id)}
+                                disabled={amendMutation.isPending}
+                                title={t["corporateTax.amend"]}
+                                {...gate("tax.submit")}
+                                data-testid={`button-ct-amend-${taxReturn.id}`}
+                              >
+                                <FilePen className="w-4 h-4" />
                               </Button>
                             )}
                           </div>
@@ -902,12 +1421,14 @@ export default function CorporateTax() {
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Corporate Tax Return Details</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.corporateTaxReturnDetails" />
+            </DialogTitle>
             <DialogDescription>
               {viewReturn && (
                 <>
-                  Period: {format(new Date(viewReturn.taxPeriodStart), "dd MMM yyyy")} &mdash;{" "}
-                  {format(new Date(viewReturn.taxPeriodEnd), "dd MMM yyyy")}
+                  Period: {format(parseCalendarDate(viewReturn.taxPeriodStart), "dd MMM yyyy")}{" "}
+                  &mdash; {format(parseCalendarDate(viewReturn.taxPeriodEnd), "dd MMM yyyy")}
                 </>
               )}
             </DialogDescription>
@@ -915,37 +1436,51 @@ export default function CorporateTax() {
           {viewReturn && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-2">
-                <span className="text-muted-foreground">Total Revenue</span>
-                <span className="text-right font-medium">
-                  {formatCurrency(viewReturn.totalRevenue, "AED", locale)}
+                <span className="text-muted-foreground">
+                  <T k="pages.totalRevenue" />
+                </span>
+                <span className="text-end font-medium">
+                  <Money amount={viewReturn.totalRevenue} currency={"AED"} />
                 </span>
 
-                <span className="text-muted-foreground">Total Expenses</span>
-                <span className="text-right font-medium">
-                  {formatCurrency(viewReturn.totalExpenses, "AED", locale)}
+                <span className="text-muted-foreground">
+                  <T k="pages.totalExpenses" />
+                </span>
+                <span className="text-end font-medium">
+                  <Money amount={viewReturn.totalExpenses} currency={"AED"} />
                 </span>
 
-                <span className="text-muted-foreground">Deductions</span>
-                <span className="text-right font-medium">
-                  {formatCurrency(viewReturn.totalDeductions, "AED", locale)}
+                <span className="text-muted-foreground">
+                  <T k="pages.deductions" />
+                </span>
+                <span className="text-end font-medium">
+                  <Money amount={viewReturn.totalDeductions} currency={"AED"} />
                 </span>
 
-                <span className="text-muted-foreground">Taxable Income</span>
-                <span className="text-right font-medium">
-                  {formatCurrency(viewReturn.taxableIncome, "AED", locale)}
+                <span className="text-muted-foreground">
+                  <T k="pages.taxableIncome" />
+                </span>
+                <span className="text-end font-medium">
+                  <Money amount={viewReturn.taxableIncome} currency={"AED"} />
                 </span>
 
-                <span className="text-muted-foreground">Exemption Threshold</span>
-                <span className="text-right">
-                  {formatCurrency(viewReturn.exemptionThreshold, "AED", locale)}
+                <span className="text-muted-foreground">
+                  <T k="pages.exemptionThreshold" />
+                </span>
+                <span className="text-end">
+                  <Money amount={viewReturn.exemptionThreshold} currency={"AED"} />
                 </span>
 
-                <span className="text-muted-foreground">Tax Rate</span>
-                <span className="text-right">{(viewReturn.taxRate * 100).toFixed(0)}%</span>
+                <span className="text-muted-foreground">
+                  <T k="pages.taxRate" />
+                </span>
+                <span className="text-end">{(viewReturn.taxRate * 100).toFixed(0)}%</span>
 
-                <span className="font-semibold border-t pt-2">Tax Payable</span>
-                <span className="text-right font-bold text-primary border-t pt-2">
-                  {formatCurrency(viewReturn.taxPayable, "AED", locale)}
+                <span className="font-semibold border-t pt-2">
+                  <T k="pages.taxPayable" /> <FigureBadge status={viewReturn.figureStatus} />
+                </span>
+                <span className="text-end font-bold text-primary border-t pt-2">
+                  <Money amount={viewReturn.taxPayable} currency={"AED"} />
                 </span>
               </div>
 
@@ -954,6 +1489,14 @@ export default function CorporateTax() {
                 {statusBadge(viewReturn.status)}
               </div>
 
+              {viewReturn.filingDeadline && (
+                <div className="text-muted-foreground text-xs">
+                  {t["corporateTax.dueBy"]} {formatDisplayDate(viewReturn.filingDeadline, locale)}
+                  {viewReturn.amendmentNumber
+                    ? ` · ${t["corporateTax.amendmentLabel"]} ${viewReturn.amendmentNumber}`
+                    : ""}
+                </div>
+              )}
               {viewReturn.filedAt && (
                 <div className="text-muted-foreground text-xs">
                   Filed on: {format(new Date(viewReturn.filedAt), "dd MMM yyyy, HH:mm")}
@@ -975,20 +1518,24 @@ export default function CorporateTax() {
                       <TableHeader>
                         <TableRow>
                           <TableHead>Line</TableHead>
-                          <TableHead className="text-right">Expense</TableHead>
-                          <TableHead className="text-right">Revenue</TableHead>
+                          <TableHead data-numeric>
+                            <T k="pages.expense" />
+                          </TableHead>
+                          <TableHead data-numeric>
+                            <T k="pages.revenue" />
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {viewReturn.workpaper.rows.map((row) => (
                           <TableRow key={row.id}>
                             <TableCell>{row.label}</TableCell>
-                            <TableCell className="text-right">
+                            <TableCell data-numeric>
                               {row.type === "expense"
                                 ? formatCurrency(row.amount, "AED", locale)
                                 : "-"}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell data-numeric>
                               {row.type === "revenue"
                                 ? formatCurrency(row.amount, "AED", locale)
                                 : "-"}
@@ -1003,12 +1550,413 @@ export default function CorporateTax() {
             </div>
           )}
           <DialogFooter>
+            {viewReturn && (
+              <AskNajmaButton
+                companyId={companyId}
+                topic="corporate_tax"
+                period={`${viewReturn.taxPeriodStart.slice(0, 10)} to ${viewReturn.taxPeriodEnd.slice(0, 10)}`}
+                reference={viewReturn.id.slice(0, 8)}
+                figures={[
+                  {
+                    label: t["pages.totalRevenue"],
+                    value: `AED ${Number(viewReturn.totalRevenue).toFixed(2)}`,
+                  },
+                  {
+                    label: t["pages.taxableIncome"],
+                    value: `AED ${Number(viewReturn.taxableIncome).toFixed(2)}`,
+                  },
+                  {
+                    label: t["pages.taxPayable"],
+                    value: `AED ${Number(viewReturn.taxPayable).toFixed(2)}`,
+                  },
+                ]}
+                testId="button-ask-najma-ct"
+              />
+            )}
             <Button variant="outline" onClick={() => setViewDialogOpen(false)}>
-              Close
+              <T k="pages.close" />
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Record as filed (X4/J3): confirm, capture the EmaraTax reference and date */}
+      <Dialog
+        open={!!fileTarget}
+        onOpenChange={(open) => {
+          if (!open) setFileTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t["corporateTax.fileDialogTitle"]}</DialogTitle>
+            <DialogDescription>{t["corporateTax.fileDialogHint"]}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="ct-filing-reference">{t["corporateTax.filingReference"]}</Label>
+              <Input
+                id="ct-filing-reference"
+                dir="ltr"
+                value={filingReference}
+                onChange={(e) => setFilingReference(e.target.value)}
+                data-testid="input-ct-filing-reference"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ct-filed-on">{t["corporateTax.filedOn"]}</Label>
+              <DatePicker
+                id="ct-filed-on"
+                value={filedOn}
+                onChange={(v) => setFiledOn(v > todayIso ? todayIso : v)}
+                data-testid="input-ct-filed-on"
+              />
+            </div>
+            {postProvision && (
+              <p className="text-sm text-muted-foreground">
+                {t["corporateTax.fileDialogProvision"]}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFileTarget(null)}>
+              {t["corporateTax.cancelAction"]}
+            </Button>
+            <Button
+              disabled={
+                transitionMutation.isPending || filingReference.trim().length < 3 || !filedOn
+              }
+              onClick={() =>
+                fileTarget &&
+                transitionMutation.mutate({
+                  id: fileTarget.id,
+                  to: "filed",
+                  postProvision,
+                  filingReference: filingReference.trim(),
+                  filedOn,
+                })
+              }
+              data-testid="button-ct-file-confirm"
+            >
+              {t["corporateTax.markFiled"]}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mark not filed (X4/J3): audited undo of a mistaken filing record */}
+      <Dialog
+        open={!!unfileTarget}
+        onOpenChange={(open) => {
+          if (!open) setUnfileTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t["corporateTax.markNotFiled"]}</DialogTitle>
+            <DialogDescription>{t["corporateTax.unfileHint"]}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="ct-unfile-reason">{t["corporateTax.unfileReason"]}</Label>
+            <Textarea
+              id="ct-unfile-reason"
+              value={unfileReason}
+              onChange={(e) => setUnfileReason(e.target.value)}
+              data-testid="input-ct-unfile-reason"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnfileTarget(null)}>
+              {t["corporateTax.cancelAction"]}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={unfileMutation.isPending || unfileReason.trim().length < 3}
+              onClick={() =>
+                unfileTarget &&
+                unfileMutation.mutate({ id: unfileTarget.id, reason: unfileReason.trim() })
+              }
+              data-testid="button-ct-unfile-confirm"
+            >
+              {t["corporateTax.markNotFiled"]}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export interface CtProfile {
+  isQfzp: boolean;
+  freeZone: string | null;
+  mneGroupRevenue: number | null;
+  tradeLicenceExpiry: string | null;
+  exciseRegistered: boolean;
+  einvoicingRevenueBand: "ge_50m" | "lt_50m" | null;
+  adviserConfirmedAt: string | null;
+  adviserName: string | null;
+  adviserReviewPending: boolean;
+}
+
+interface RelatedParty {
+  id: string;
+  name: string;
+  relationship: "related_party" | "connected_person";
+  jurisdiction: string | null;
+  transactionValue: number;
+}
+
+/**
+ * CT profile (QFZP, compliance settings), adviser confirmation and the
+ * related-party register (W4-A: R08-15, R08-17, R08-21).
+ */
+export function CtCompliancePanel({ companyId }: { companyId: string }) {
+  const { t } = useTranslation();
+  const { toast } = useToast();
+  const profileKey = [`/api/companies/${companyId}/corporate-tax/profile`];
+  const partiesKey = [`/api/companies/${companyId}/corporate-tax/related-parties`];
+  const { data: profile } = useQuery<CtProfile>({ queryKey: profileKey });
+  const { data: parties = [] } = useQuery<RelatedParty[]>({ queryKey: partiesKey });
+  const [adviserName, setAdviserName] = useState("");
+  const [partyName, setPartyName] = useState("");
+  const [partyValue, setPartyValue] = useState("");
+  const [partyKind, setPartyKind] = useState<RelatedParty["relationship"]>("related_party");
+
+  const onError = (e: Error) =>
+    toast({ variant: "destructive", title: t["corporateTax.saveFailed"], description: e.message });
+
+  const saveProfile = useMutation({
+    mutationFn: (patch: Partial<CtProfile>) =>
+      apiRequest("PUT", `/api/companies/${companyId}/corporate-tax/profile`, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: profileKey });
+      toast({ title: t["corporateTax.profileSaved"] });
+    },
+    onError,
+  });
+
+  const confirmAdviser = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/companies/${companyId}/corporate-tax/profile/adviser-confirmation`, {
+        adviserName,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: profileKey });
+      setAdviserName("");
+      toast({ title: t["corporateTax.adviserConfirmed"] });
+    },
+    onError,
+  });
+
+  const addParty = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/companies/${companyId}/corporate-tax/related-parties`, {
+        name: partyName,
+        relationship: partyKind,
+        transactionValue: Number(partyValue) || 0,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: partiesKey });
+      setPartyName("");
+      setPartyValue("");
+    },
+    onError,
+  });
+
+  const removeParty = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("DELETE", `/api/companies/${companyId}/corporate-tax/related-parties/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: partiesKey }),
+    onError,
+  });
+
+  const total = parties
+    .filter((p) => p.relationship === "related_party")
+    .reduce((s, p) => s + p.transactionValue, 0);
+
+  return (
+    <Card data-testid="ct-compliance-panel">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5" />
+          {t["corporateTax.profileTitle"]}
+        </CardTitle>
+        <CardDescription>{t["corporateTax.profileDescription"]}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {profile?.adviserReviewPending !== false ? (
+          <div
+            className="flex items-start gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+            data-testid="ct-adviser-review-pending"
+          >
+            <AlertTriangle className="w-4 h-4 mt-0.5 text-warning shrink-0" />
+            <div className="space-y-2 flex-1">
+              <p className="font-medium">{t["corporateTax.adviserPendingTitle"]}</p>
+              <p className="text-muted-foreground">{t["corporateTax.adviserPendingBody"]}</p>
+              <div className="flex flex-wrap gap-2">
+                <Input
+                  className="max-w-xs"
+                  value={adviserName}
+                  onChange={(e) => setAdviserName(e.target.value)}
+                  placeholder={t["corporateTax.adviserNamePlaceholder"]}
+                  aria-label={t["corporateTax.adviserNamePlaceholder"]}
+                />
+                <Button
+                  size="sm"
+                  onClick={() => confirmAdviser.mutate()}
+                  disabled={adviserName.trim().length < 2 || confirmAdviser.isPending}
+                >
+                  {t["corporateTax.recordAdviserConfirmation"]}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <Badge variant="success">
+            {t["corporateTax.adviserConfirmedBy"]} {profile.adviserName}
+          </Badge>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <Label htmlFor="ct-qfzp">{t["corporateTax.qfzpLabel"]}</Label>
+              <p className="text-xs text-muted-foreground">{t["corporateTax.qfzpHelp"]}</p>
+            </div>
+            <Switch
+              id="ct-qfzp"
+              checked={profile?.isQfzp === true}
+              onCheckedChange={(checked) => saveProfile.mutate({ isQfzp: checked })}
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div>
+              <Label htmlFor="ct-excise">{t["corporateTax.exciseLabel"]}</Label>
+              <p className="text-xs text-muted-foreground">{t["corporateTax.exciseHelp"]}</p>
+            </div>
+            <Switch
+              id="ct-excise"
+              checked={profile?.exciseRegistered === true}
+              onCheckedChange={(checked) => saveProfile.mutate({ exciseRegistered: checked })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="ct-licence">{t["corporateTax.tradeLicenceExpiry"]}</Label>
+            <DatePicker
+              id="ct-licence"
+              value={profile?.tradeLicenceExpiry ?? ""}
+              onChange={(v) =>
+                v !== (profile?.tradeLicenceExpiry ?? "") &&
+                saveProfile.mutate({ tradeLicenceExpiry: v || null })
+              }
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="ct-band">{t["corporateTax.einvoicingBand"]}</Label>
+            <Select
+              value={profile?.einvoicingRevenueBand ?? "auto"}
+              onValueChange={(value) =>
+                saveProfile.mutate({
+                  einvoicingRevenueBand: (value === "auto"
+                    ? null
+                    : value) as CtProfile["einvoicingRevenueBand"],
+                })
+              }
+            >
+              <SelectTrigger id="ct-band">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">{t["corporateTax.einvoicingBandAuto"]}</SelectItem>
+                <SelectItem value="ge_50m">{t["corporateTax.einvoicingBandLarge"]}</SelectItem>
+                <SelectItem value="lt_50m">{t["corporateTax.einvoicingBandSmall"]}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-medium flex items-center gap-2">
+              <Users className="w-4 h-4" /> {t["corporateTax.relatedPartiesTitle"]}
+            </h3>
+            <span className="text-sm text-muted-foreground">
+              {t["corporateTax.relatedPartiesTotal"]} <Money amount={total} currency={"AED"} />
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground">{t["corporateTax.relatedPartiesHelp"]}</p>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              className="max-w-xs"
+              value={partyName}
+              onChange={(e) => setPartyName(e.target.value)}
+              placeholder={t["corporateTax.partyName"]}
+              aria-label={t["corporateTax.partyName"]}
+            />
+            <Select
+              value={partyKind}
+              onValueChange={(value) => setPartyKind(value as RelatedParty["relationship"])}
+            >
+              <SelectTrigger className="w-48" aria-label={t["corporateTax.partyRelationship"]}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="related_party">{t["corporateTax.relatedParty"]}</SelectItem>
+                <SelectItem value="connected_person">
+                  {t["corporateTax.connectedPerson"]}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              className="max-w-[180px]"
+              type="number"
+              min={0}
+              value={partyValue}
+              onChange={(e) => setPartyValue(e.target.value)}
+              placeholder={t["corporateTax.partyValue"]}
+              aria-label={t["corporateTax.partyValue"]}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => addParty.mutate()}
+              disabled={!partyName.trim() || addParty.isPending}
+            >
+              {t["corporateTax.addParty"]}
+            </Button>
+          </div>
+          {parties.length > 0 && (
+            <ul className="divide-y rounded-md border text-sm">
+              {parties.map((p) => (
+                <li key={p.id} className="flex items-center justify-between px-3 py-2">
+                  <span>
+                    {p.name}{" "}
+                    <span className="text-muted-foreground">
+                      (
+                      {p.relationship === "related_party"
+                        ? t["corporateTax.relatedParty"]
+                        : t["corporateTax.connectedPerson"]}
+                      )
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <Money amount={p.transactionValue} currency={"AED"} />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeParty.mutate(p.id)}
+                      aria-label={t["corporateTax.removeParty"]}
+                    >
+                      <Trash2 className="w-4 h-4 text-muted-foreground" aria-hidden />
+                    </Button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

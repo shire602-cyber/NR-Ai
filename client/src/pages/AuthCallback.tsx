@@ -1,10 +1,14 @@
-import { useEffect } from "react";
-import { useLocation } from "wouter";
-import { Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, useLocation } from "wouter";
+import { Loader2, ShieldAlert } from "lucide-react";
 import { currentUserQueryKey } from "@/hooks/useCurrentUser";
-import { fetchCurrentUser } from "@/lib/auth";
+import { probeCurrentUser } from "@/lib/auth";
 import { queryClient } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
+import { landingPathFor } from "@/lib/app-landing";
+import { useTranslation } from "@/lib/i18n";
+import { Button } from "@/components/ui/button";
+import { AuthLayout } from "@/components/auth/AuthLayout";
+import { AuthState } from "@/components/auth/AuthBlocks";
 
 function safeNextPath(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
@@ -19,9 +23,14 @@ function safeNextPath(value: string | null): string {
   }
 }
 
+/**
+ * OAuth return page. Success hands over to the app; a failure is its own state on the auth
+ * layout (spec 3.2: "We could not sign you in", the reason, "Back to sign in"), never a toast.
+ */
 export default function AuthCallback() {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
+  const { t } = useTranslation();
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,24 +39,17 @@ export default function AuthCallback() {
       try {
         const params = new URLSearchParams(window.location.search);
         const requestedNext = safeNextPath(params.get("next"));
-        const user = await fetchCurrentUser();
+        const user = await probeCurrentUser();
         if (!user) throw new Error("Session was not established");
 
         queryClient.setQueryData(currentUserQueryKey, user);
         await queryClient.invalidateQueries({ queryKey: currentUserQueryKey });
 
         if (cancelled) return;
-        const fallback =
-          user.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard";
+        const fallback = landingPathFor(user);
         setLocation(requestedNext === "/dashboard" ? fallback : requestedNext);
       } catch {
-        if (cancelled) return;
-        toast({
-          variant: "destructive",
-          title: "Login failed",
-          description: "We could not complete social login. Please try again.",
-        });
-        setLocation("/login?oauth_error=1");
+        if (!cancelled) setFailed(true);
       }
     };
 
@@ -55,14 +57,35 @@ export default function AuthCallback() {
     return () => {
       cancelled = true;
     };
-  }, [setLocation, toast]);
+  }, [setLocation]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="flex items-center gap-3 text-muted-foreground">
-        <Loader2 className="h-5 w-5 animate-spin" />
-        Completing secure login...
-      </div>
-    </div>
+    <AuthLayout variant="login">
+      {failed ? (
+        <AuthState
+          icon={ShieldAlert}
+          tone="danger"
+          testId="auth-callback-failed"
+          title={t["marketing.authCallbackFailedTitle"]}
+          body={t["marketing.authCallbackFailedBody"]}
+          actions={
+            <Button asChild className="h-11">
+              <Link href="/login" data-testid="button-callback-sign-in">
+                {t["marketing.authBackToSignIn"]}
+              </Link>
+            </Button>
+          }
+        />
+      ) : (
+        <p
+          className="flex items-center gap-3 text-small text-muted-foreground"
+          role="status"
+          data-testid="auth-callback-working"
+        >
+          <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+          {t["pageLabels.completingSecureLogin"]}
+        </p>
+      )}
+    </AuthLayout>
   );
 }

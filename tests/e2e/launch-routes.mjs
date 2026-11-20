@@ -1,0 +1,226 @@
+/**
+ * The 22 customer launch routes crawled by tests/e2e/a11y-crawl.mjs and
+ * tests/e2e/arabic-runtime-crawl.mjs.
+ */
+export const LAUNCH_ROUTES = [
+  "/dashboard",
+  "/invoices",
+  "/receipts",
+  "/bank-reconciliation",
+  "/vat-filing",
+  "/corporate-tax",
+  "/reports",
+  "/analytics",
+  "/payment-chasing",
+  "/contacts",
+  "/integrations-hub",
+  "/document-vault",
+  "/subscription",
+  "/chart-of-accounts",
+  "/journal",
+  "/assistant",
+  "/quotes",
+  "/payroll",
+  "/inventory",
+  // The merged company page (CL-B); /company-profile only redirects here.
+  "/settings/company",
+  // INTEGRATE-I: the cash sale editor (own CS series) and the numbering settings it links to.
+  "/sales/cash-sale",
+  "/settings/numbering",
+];
+
+/**
+ * The 14 public (signed-out) routes: marketing, pricing, auth, legal and help.
+ * Crawled in Arabic by `npm run e2e:arabic-public` (arabic-runtime-crawl.mjs
+ * with ARABIC_PUBLIC=true) and screenshotted by the design passes.
+ */
+export const PUBLIC_ROUTES = [
+  "/",
+  "/pricing",
+  "/services",
+  "/demo",
+  "/login",
+  "/register",
+  "/register?plan=professional&cycle=yearly",
+  "/forgot-password",
+  "/reset-password?token=synthetic-preview-token",
+  "/privacy",
+  "/terms",
+  "/cookies",
+  "/help",
+  "/trust",
+  "/migration-guides",
+];
+
+/**
+ * Every authenticated route in client/src/App.tsx that a customer account can open without
+ * route params (settings, books, banking, tax, payroll, AI, reports, onboarding). Used by
+ * `arabic-runtime-crawl.mjs --all`. tests/unit/launch-routes-all.test.ts keeps these lists in
+ * step with App.tsx so a new route cannot ship unvisited.
+ */
+export const ALL_AUTH_ROUTES = [
+  "/dashboard",
+  "/onboarding",
+  "/company-profile",
+  "/firm-relationship",
+  "/settings/company",
+  "/settings/security",
+  "/settings/einvoicing",
+  "/settings/approvals",
+  "/settings/numbering",
+  "/settings/tax-rates",
+  "/chart-of-accounts",
+  "/invoices",
+  "/invoices/new",
+  "/recurring-invoices",
+  "/recurring-invoices/new",
+  "/sales/receive-payment",
+  "/sales/cash-sale",
+  "/payment-chasing",
+  "/journal",
+  "/reports",
+  "/reports/statements-of-account",
+  "/receipts",
+  "/receipt-autopilot",
+  "/contacts",
+  "/inventory",
+  "/quotes",
+  "/quotes/new",
+  "/credit-notes",
+  "/credit-notes/new",
+  "/purchase-orders",
+  "/purchase-orders/new",
+  "/cost-centers",
+  "/financial-statements",
+  "/reconciliation-rules",
+  "/invoice-templates",
+  "/document-versions",
+  "/developer-settings",
+  "/notification-preferences",
+  "/subscription",
+  "/exchange-rates",
+  "/company-groups",
+  "/consolidation",
+  "/payroll",
+  "/bill-pay",
+  "/bill-pay/new",
+  "/vendors",
+  "/debit-notes",
+  "/debit-notes/new",
+  "/fixed-assets",
+  "/budgets",
+  "/expense-claims",
+  "/cashflow-forecast",
+  "/anomaly-detection",
+  "/auto-reconcile",
+  "/assistant",
+  "/ai",
+  "/ai-inbox",
+  "/month-end",
+  "/ai-cfo",
+  "/ai-features",
+  "/smart-assistant",
+  "/ai-chat",
+  "/advanced-analytics",
+  "/integrations",
+  "/integrations-hub",
+  "/notifications",
+  "/reminders",
+  "/feedback",
+  "/analytics",
+  "/bank-reconciliation",
+  "/bank-accounts",
+  "/bank-feeds",
+  "/bank-feeds/callback",
+  "/evidence-center",
+  "/vat-filing",
+  "/vat-autopilot",
+  "/corporate-tax",
+  "/team",
+  "/history",
+  "/backup-restore",
+  "/import",
+  "/advanced-reports",
+  "/document-vault",
+  "/tax-return-archive",
+  "/compliance-calendar",
+  "/task-center",
+  "/news-feed",
+  // Legacy notification links (broken-path sweep): redirect to the real page.
+  "/banking",
+  "/compliance",
+  "/settings",
+];
+
+/** Admin-only routes (need `users.is_admin`); `--all` promotes its synthetic user when it can. */
+export const ADMIN_ROUTES = [
+  "/admin/dashboard",
+  "/admin/clients",
+  "/admin/documents",
+  "/admin/invitations",
+  "/admin/import",
+  "/admin/activity-logs",
+  "/admin/users",
+  "/admin",
+];
+
+/** Firm-staff routes (need `users.firm_role`); `--all` promotes its synthetic user when it can. */
+export const FIRM_ROUTES = [
+  "/firm/command-center",
+  "/firm/value-ops",
+  "/firm/health",
+  "/firm/clients",
+  "/firm/practice",
+  "/firm/staff",
+  "/firm/bulk",
+  "/firm/comms",
+  "/firm/document-chasing",
+  "/firm/email-intake",
+  "/firm/analytics",
+  "/firm/pipeline",
+];
+
+/**
+ * Routes with params, resolved against one seeded record by `arabic-runtime-crawl.mjs --all`.
+ * Keys are the App.tsx patterns, values the kind of seeded record that fills the param.
+ */
+export const PARAM_ROUTES = {
+  "/accounts/:id/ledger": "account",
+  "/journal/:id": "journal",
+  // WP-C full-page invoice editor; resolved only when the crawl seeds an invoice id.
+  "/invoices/:id/edit": "invoice",
+  // Legacy notification link: redirects to /invoices?open=<id>.
+  "/invoices/:id": "invoice",
+  "/admin/clients/:id": "company",
+  "/admin/clients/:id/documents": "company",
+  "/admin/clients/:id/tasks": "company",
+  "/firm/clients/:companyId": "company",
+};
+
+/**
+ * App.tsx routes deliberately not visited by --all: public pages (covered by the public
+ * crawl), portal-user routes (a different account type) and OAuth/e-mail callbacks.
+ */
+export const ALL_CRAWL_SKIPPED = [
+  "/client-portal/dashboard",
+  "/client-portal/invoices",
+  "/client-portal/documents",
+  "/client-portal/statements",
+  "/client-portal/messages",
+  "/client-portal/account",
+  "/auth/callback",
+  "/verify-email",
+  "/view/invoice/:token",
+  "/portal/:token",
+  // STEP5: needs a live invitation token; the portal-invite e2e flow checks it in Arabic.
+  "/portal/join",
+  "/portal/einvoicing-approve/:token",
+  "/accounts",
+  // Legacy redirect to /journal (the AI-drafts notice stored /journal-entries?status=draft).
+  "/journal-entries",
+  // Edit routes of the document editors: the same editor as the matching /new route, for one record.
+  "/recurring-invoices/:id/edit",
+  "/quotes/:id/edit",
+  "/purchase-orders/:id/edit",
+  "/bill-pay/:id/edit",
+];

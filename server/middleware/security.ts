@@ -3,7 +3,7 @@ import cors from "cors";
 import type { Express, Request, Response, NextFunction } from "express";
 import { getEnv, isProduction } from "../config/env";
 import { createLogger } from "../config/logger";
-import { buildLimiter, limiterProfiles } from "./rateLimit";
+import { buildLimiter, clientIp, limiterProfiles } from "./rateLimit";
 import {
   cspNonce,
   buildCspDirectives,
@@ -16,13 +16,82 @@ import {
  * brute-force. Only these consume the strict auth rate-limit budget.
  * `path` is relative to the /api/auth mount (e.g. '/login').
  */
-const CREDENTIAL_AUTH_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
+const CREDENTIAL_AUTH_PATHS = [
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/change-password",
+  // W5-E: MFA codes and verification tokens are brute-forceable too.
+  "/mfa/verify-login",
+  "/mfa/step-up",
+  "/verify-email",
+];
 
 export function isCredentialAuthPath(path: string): boolean {
   return CREDENTIAL_AUTH_PATHS.some((p) => path === p || path.startsWith(`${p}/`));
 }
 
+/**
+ * The OAuth limiter guards the actions that leave the app (start a provider
+ * flow, handle the callback). The providers list is a read-only lookup that
+ * every login/register/forgot-password page load fires, so it must not spend
+ * the budget (it used to 429 after 30 loads and the social buttons vanished).
+ */
+export function isOAuthLimiterExempt(path: string): boolean {
+  return path === "/providers" || path === "/providers/";
+}
+
 const log = createLogger("security");
+
+export type TrustProxySetting = number | false | string;
+
+/**
+ * R01-09: how many reverse-proxy hops to trust for req.ip.
+ *
+ * TRUST_PROXY_HOPS = "1" (Railway/Render: one load balancer), "2" (CDN + LB),
+ * "0"/"false" (directly reachable, ignore X-Forwarded-For entirely), or an
+ * Express trust list such as "loopback, 10.0.0.0/8". With N hops Express takes
+ * the N-th address from the right of X-Forwarded-For, so entries a client
+ * prepends (spoofed) never become req.ip and never create new rate-limit
+ * buckets. "true" (trust everything) is refused because it makes req.ip
+ * attacker-controlled. Unset defaults to 1, with a warning in production.
+ */
+export function parseTrustProxy(raw: string | undefined): {
+  value: TrustProxySetting;
+  warning?: string;
+} {
+  const v = (raw ?? "").trim();
+  if (!v) {
+    return {
+      value: 1,
+      warning:
+        "TRUST_PROXY_HOPS is not set; trusting one proxy hop. Set it to the number of reverse proxies in front of the app (0 if none) so X-Forwarded-For cannot be spoofed.",
+    };
+  }
+  if (/^(false|no|off)$/i.test(v)) return { value: false };
+  if (/^\d+$/.test(v)) {
+    const n = parseInt(v, 10);
+    return { value: n === 0 ? false : n };
+  }
+  if (/^true$/i.test(v)) {
+    return {
+      value: 1,
+      warning: "TRUST_PROXY_HOPS=true would trust any X-Forwarded-For value; using 1 hop instead.",
+    };
+  }
+  return { value: v };
+}
+
+export function configureTrustProxy(
+  app: Express,
+  raw: string | undefined = process.env.TRUST_PROXY_HOPS
+): TrustProxySetting {
+  const { value, warning } = parseTrustProxy(raw);
+  app.set("trust proxy", value);
+  if (warning && (isProduction() || raw)) log.warn({ trustProxy: value }, warning);
+  return value;
+}
 
 /**
  * Resolve the CORS allowlist from env: FRONTEND_URL (first-party default)
@@ -71,6 +140,9 @@ export function resolveAllowedOrigins(
 export function applySecurityMiddleware(app: Express): void {
   const env = getEnv();
 
+  // ─── Trust proxy (R01-09) — before anything reads req.ip ──
+  configureTrustProxy(app);
+
   // ─── Per-request CSP nonce (must run before helmet) ───────
   app.use(cspNonce);
 
@@ -103,6 +175,9 @@ export function applySecurityMiddleware(app: Express): void {
   app.use(
     helmet({
       contentSecurityPolicy: buildCspDirectives(),
+      // R17-18: CSP says frame-ancestors 'none', so the legacy header must agree
+      // (helmet defaults to SAMEORIGIN).
+      frameguard: { action: "deny" },
       crossOriginEmbedderPolicy: false, // Allow embedding (PDF viewers, etc.)
     })
   );
@@ -112,7 +187,9 @@ export function applySecurityMiddleware(app: Express): void {
   // /api/csp-report. Once the logs are clean, promote these directives into the
   // enforced policy above. See buildCspReportOnlyDirectives for the runbook.
   app.use(
-    helmet.contentSecurityPolicy(buildCspReportOnlyDirectives() as Parameters<typeof helmet.contentSecurityPolicy>[0])
+    helmet.contentSecurityPolicy(
+      buildCspReportOnlyDirectives() as Parameters<typeof helmet.contentSecurityPolicy>[0]
+    )
   );
 
   // ─── CORS: Cross-Origin Resource Sharing ──────────────────
@@ -141,6 +218,7 @@ export function applySecurityMiddleware(app: Express): void {
         "X-Requested-With",
         "X-CSRF-Token",
         "X-XSRF-Token",
+        "X-Period-Lock-Reason",
       ],
       exposedHeaders: ["X-Total-Count", "X-Page", "X-Per-Page", "Retry-After", "RateLimit-Reset"],
       maxAge: 86400, // Cache preflight for 24 hours
@@ -149,22 +227,40 @@ export function applySecurityMiddleware(app: Express): void {
 
   // ─── Rate Limiting (sliding window, configurable per route) ──
   // Each limiter has its own in-memory sliding-window store, sized via
-  // env vars (RL_*). Composite key (ip+userId) prevents NAT collisions.
+  // env vars (RL_*). Requests carrying a valid access token count against
+  // `userId:companyId`; anonymous traffic counts against the client IP
+  // (R01-10). Requests rejected with 429 are not counted (R17-06).
   // Order matters: more specific paths must be registered before /api/.
-  app.use("/api/auth/oauth/", buildLimiter(limiterProfiles.authOAuth));
-  // Brute-force guard for credential-bearing attempts ONLY. Session reads
-  // (/me, /refresh, /oauth/providers, /logout) fire on every page load, so
-  // counting them here used to exhaust the 5/min budget before the user even
-  // submitted the login form — locking the whole app behind 429s. Those
-  // routes fall through to the general /api limiter below instead.
-  // Successful attempts refund their hit, so legitimate sign-ins on a shared
-  // office IP never throttle each other; only failures accumulate.
+  app.use(
+    "/api/auth/oauth/",
+    buildLimiter({
+      ...limiterProfiles.authOAuth,
+      keyGenerator: clientIp,
+      skipIf: (req) => isOAuthLimiterExempt(req.path),
+    })
+  );
+  // Pre-auth brute-force tier for credential-bearing attempts ONLY, keyed by
+  // IP. Session reads and token plumbing (/me, /refresh, /oauth/providers,
+  // /logout) fire on every page load and are excluded, so several tabs
+  // refreshing cannot lock a user out. Successful attempts refund their hit;
+  // per-email progressive lockout lives in auth.routes (R01-12).
   app.use(
     "/api/auth/",
     buildLimiter({
       ...limiterProfiles.auth,
+      keyGenerator: clientIp,
       skipSuccessfulRequests: true,
       skipIf: (req) => !isCredentialAuthPath(req.path),
+    })
+  );
+  // STEP5: accepting a portal invitation sets a password, so it shares the credential budget.
+  app.use(
+    "/api/portal-invitations/",
+    buildLimiter({
+      ...limiterProfiles.auth,
+      keyGenerator: clientIp,
+      skipSuccessfulRequests: true,
+      skipIf: (req) => req.method !== "POST" || !/\/accept$/.test(req.path),
     })
   );
   app.use("/api/ai/", buildLimiter(limiterProfiles.ai));
@@ -196,7 +292,7 @@ export function applySecurityMiddleware(app: Express): void {
     const contentLength = parseInt(req.headers["content-length"] || "0", 10);
     if (contentLength > 10_485_760) {
       // 10MB
-      return res.status(413).json({ message: "Request too large" });
+      return res.status(413).json({ message: "Request too large", code: "PAYLOAD_TOO_LARGE" });
     }
     next();
   });

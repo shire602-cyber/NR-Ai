@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
+  <BkToCstmrStmt>
+    <Stmt>
+      <Id>STMT-1</Id>
+      <Acct><Id><IBAN>AE070331234567890123456</IBAN></Id><Ccy>AED</Ccy></Acct>
+      <Ntry>
+        <NtryRef>NTRY-1</NtryRef>
+        <Amt Ccy="AED">125.50</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <BookgDt><Dt>2026-11-03</Dt></BookgDt>
+        <ValDt><Dt>2026-11-03</Dt></ValDt>
+        <AcctSvcrRef>SVC-1</AcctSvcrRef>
+        <AddtlNtryInf>POS PURCHASE &amp; CO</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="AED">15000.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <BookgDt><Dt>2026-11-04</Dt></BookgDt>
+        <NtryDtls><TxDtls><RmtInf><Ustrd>SALARY</Ustrd><Ustrd>ACME LLC</Ustrd></RmtInf></TxDtls></NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

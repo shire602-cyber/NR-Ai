@@ -12,10 +12,15 @@ export const customerOnlyRoutes = [
   "/inventory",
   "/fixed-assets",
   "/bank-reconciliation",
+  "/bank-accounts",
+  "/bank-feeds",
   "/payroll",
   "/budgets",
+  "/assistant",
+  "/ai",
   "/ai-cfo",
   "/ai-features",
+  "/smart-assistant",
   "/ai-chat",
   "/cashflow-forecast",
   "/anomaly-detection",
@@ -41,12 +46,12 @@ export const commonRoutes = [
   "/news-feed",
   "/notifications",
   "/reminders",
-  "/referrals",
   "/feedback",
   "/analytics",
   "/history",
   "/backup-restore",
   "/advanced-reports",
+  "/advanced-analytics",
   "/pricing",
 ];
 
@@ -62,18 +67,9 @@ export const adminOnlyRoutes = [
   "/admin/activity-logs",
 ];
 
-export const firmOnlyRoutes = [
-  "/firm",
-  "/firm/command-center",
-  "/firm/value-ops",
-  "/firm/clients",
-  "/firm/staff",
-  "/firm/health",
-  "/firm/comms",
-  "/firm/document-chasing",
-  "/firm/analytics",
-  "/firm/pipeline",
-];
+// Every /firm/* page is NR-internal. The prefix match in isFirmOnlyRoute covers
+// current and future firm routes, so this list cannot drift from App.tsx.
+export const firmOnlyRoutes = ["/firm"];
 
 // Helper to check if a path requires customer type
 export function isCustomerOnlyRoute(path: string): boolean {
@@ -86,4 +82,17 @@ export function isAdminOnlyRoute(path: string): boolean {
 
 export function isFirmOnlyRoute(path: string): boolean {
   return firmOnlyRoutes.some((r) => path === r || path.startsWith(r + "/"));
+}
+
+/**
+ * Destination for a consolidated/legacy route redirect. The legacy URL's query
+ * string is carried over so deep links (`/advanced-reports?tab=comparison`)
+ * keep their state; destination parameters take precedence over stale ones.
+ */
+export function mergeLegacySearch(to: string, legacySearch: string): string {
+  const [path, destQuery = ""] = to.split("?");
+  const params = new URLSearchParams(legacySearch);
+  new URLSearchParams(destQuery).forEach((value, key) => params.set(key, value));
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
 }

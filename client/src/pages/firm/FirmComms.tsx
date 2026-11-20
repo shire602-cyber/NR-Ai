@@ -1,3 +1,4 @@
+import { T } from "@/components/layout/T";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -32,7 +33,8 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { useTranslation } from "@/lib/i18n";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
+import { formatDate } from "@/lib/format-date";
 import {
   Mail,
   MessageCircle,
@@ -41,7 +43,6 @@ import {
   Zap,
   CheckCircle,
   XCircle,
-  Clock,
   Inbox,
   Plus,
   Eye,
@@ -174,22 +175,22 @@ function CommStatusBadge({ status }: { status: CommStatus }) {
   return <Badge variant={variant}>{label}</Badge>;
 }
 
-function formatRelativeTime(dateStr: string): string {
+function formatRelativeTime(dateStr: string, t: Record<string, string>, locale: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return t["firmOps.agoJustNow"];
+  if (mins < 60) return formatMessage(t["firmOps.agoMinutes"], { n: mins });
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
+  if (hrs < 24) return formatMessage(t["firmOps.agoHours"], { n: hrs });
   const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString("en-AE");
+  if (days < 7) return formatMessage(t["firmOps.agoDays"], { n: days });
+  return formatDate(dateStr, locale);
 }
 
 // ─── Inbox Tab ────────────────────────────────────────────────────────────────
 
 function InboxTab() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [filterCompany, setFilterCompany] = useState("");
   const [filterChannel, setFilterChannel] = useState("");
   const [page, setPage] = useState(1);
@@ -221,7 +222,7 @@ function InboxTab() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="w-48" aria-label={t["firmOps.ariaCommsClient"]}>
             <SelectValue placeholder={t.selectClient} />
           </SelectTrigger>
           <SelectContent>
@@ -241,7 +242,7 @@ function InboxTab() {
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-36">
+          <SelectTrigger className="w-36" aria-label={t["firmOps.ariaCommsChannel"]}>
             <SelectValue placeholder={t.channel} />
           </SelectTrigger>
           <SelectContent>
@@ -268,7 +269,7 @@ function InboxTab() {
                   <TableRow>
                     <TableHead>{t.channel}</TableHead>
                     <TableHead>{t.clientPortfolio}</TableHead>
-                    <TableHead>Subject / Preview</TableHead>
+                    <TableHead>{t["firmOps.commsSubjectPreview"]}</TableHead>
                     <TableHead>{t.status}</TableHead>
                     <TableHead>{t.date}</TableHead>
                   </TableRow>
@@ -295,7 +296,7 @@ function InboxTab() {
                         <CommStatusBadge status={c.status} />
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatRelativeTime(c.sentAt)}
+                        {formatRelativeTime(c.sentAt, t, locale)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -316,7 +317,7 @@ function InboxTab() {
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
             >
-              Previous
+              <T k="pages.previous" />
             </Button>
             <span className="px-2 py-1">
               Page {page} / {totalPages}
@@ -327,7 +328,7 @@ function InboxTab() {
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
             >
-              Next
+              {t["firmOps.commsNext"]}
             </Button>
           </div>
         </div>
@@ -373,9 +374,13 @@ function ComposeTab() {
     onSuccess: (res: { success: boolean; note?: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/comms/log"] });
       if (res.success) {
-        toast({ title: "Message sent" });
+        toast({ title: t["firmComms.messageSent"] });
       } else {
-        toast({ title: "Logged (not sent)", description: res.note, variant: "destructive" });
+        toast({
+          title: translateNow("toasts.loggedNotSent"),
+          description: res.note,
+          variant: "destructive",
+        });
       }
       setBody("");
       setSubject("");
@@ -402,12 +407,14 @@ function ComposeTab() {
   }
 
   function handleSend() {
-    if (!companyId) return toast({ variant: "destructive", title: "Select a client first" });
-    if (!body.trim()) return toast({ variant: "destructive", title: "Message body is required" });
+    if (!companyId)
+      return toast({ variant: "destructive", title: t["firmComms.selectAClientFirst"] });
+    if (!body.trim())
+      return toast({ variant: "destructive", title: t["firmComms.messageBodyIsRequired"] });
     if (channel === "email" && !recipientEmail)
-      return toast({ variant: "destructive", title: "Recipient email is required" });
+      return toast({ variant: "destructive", title: t["firmComms.recipientEmailIsRequired"] });
     if (channel === "whatsapp" && !recipientPhone)
-      return toast({ variant: "destructive", title: "Recipient phone is required" });
+      return toast({ variant: "destructive", title: t["firmComms.recipientPhoneIsRequired"] });
 
     const payload: Record<string, string> = { companyId, body };
     if (channel === "email") {
@@ -429,7 +436,7 @@ function ComposeTab() {
           size="sm"
           onClick={() => setChannel("email")}
         >
-          <Mail className="h-4 w-4 mr-1.5" />
+          <Mail className="h-4 w-4 me-1.5" />
           {t.sendEmail}
         </Button>
         <Button
@@ -437,7 +444,7 @@ function ComposeTab() {
           size="sm"
           onClick={() => setChannel("whatsapp")}
         >
-          <MessageCircle className="h-4 w-4 mr-1.5" />
+          <MessageCircle className="h-4 w-4 me-1.5" />
           {t.sendWhatsApp}
         </Button>
       </div>
@@ -482,7 +489,7 @@ function ComposeTab() {
       {channel === "email" ? (
         <>
           <div className="space-y-1.5">
-            <Label>{t.recipient} (email)</Label>
+            <Label>{t["firmOps.commsRecipientEmail"]}</Label>
             <Input
               type="email"
               value={recipientEmail}
@@ -491,11 +498,13 @@ function ComposeTab() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Subject</Label>
+            <Label>
+              <T k="pages.subject" />
+            </Label>
             <Input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              placeholder="e.g. VAT Return Reminder"
+              placeholder={t["firmOps.commsSubjectPlaceholder"]}
             />
           </div>
         </>
@@ -512,24 +521,26 @@ function ComposeTab() {
 
       {/* Body */}
       <div className="space-y-1.5">
-        <Label>Message</Label>
+        <Label>
+          <T k="pages.message" />
+        </Label>
         <Textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
           rows={6}
-          placeholder="Enter your message here..."
+          placeholder={t["firmComms.enterYourMessageHere"]}
           className="resize-none"
         />
       </div>
 
       <Button onClick={handleSend} disabled={sendMutation.isPending}>
-        <Send className="h-4 w-4 mr-1.5" />
+        <Send className="h-4 w-4 me-1.5" />
         {sendMutation.isPending ? t.loading : t.sendEmail}
       </Button>
 
       {channel === "whatsapp" && (
         <p className="text-xs text-muted-foreground mt-1">
-          WhatsApp Business API integration is pending. Messages will be logged but not delivered.
+          {t["firmComms.whatsappBusinessApiIntegrationIs"]}
         </p>
       )}
     </div>
@@ -571,7 +582,7 @@ function TemplatesTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/comms/templates"] });
-      toast({ title: "Default templates added" });
+      toast({ title: t["firmComms.defaultTemplatesAdded"] });
     },
   });
 
@@ -595,7 +606,7 @@ function TemplatesTab() {
 
   function handleSave() {
     if (!editTemplate?.name || !editTemplate?.bodyTemplate) {
-      return toast({ variant: "destructive", title: "Name and body are required" });
+      return toast({ variant: "destructive", title: t["firmComms.nameAndBodyAreRequired"] });
     }
     saveMutation.mutate(editTemplate);
   }
@@ -612,7 +623,7 @@ function TemplatesTab() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <p className="text-sm text-muted-foreground">
-          {templates?.length ?? 0} template{(templates?.length ?? 0) !== 1 ? "s" : ""}
+          {formatMessage(t["firmOps.commsTemplateCount"], { count: templates?.length ?? 0 })}
         </p>
         <div className="flex gap-2">
           {(templates?.length ?? 0) === 0 && (
@@ -622,12 +633,12 @@ function TemplatesTab() {
               onClick={() => seedMutation.mutate()}
               disabled={seedMutation.isPending}
             >
-              <Zap className="h-4 w-4 mr-1.5" />
-              {seedMutation.isPending ? t.loading : "Add Defaults"}
+              <Zap className="h-4 w-4 me-1.5" />
+              {seedMutation.isPending ? t.loading : t["firmComms.addDefaults"]}
             </Button>
           )}
           <Button size="sm" onClick={openNew}>
-            <Plus className="h-4 w-4 mr-1.5" />
+            <Plus className="h-4 w-4 me-1.5" />
             {t.addTemplate}
           </Button>
         </div>
@@ -649,8 +660,10 @@ function TemplatesTab() {
                   <TableRow>
                     <TableHead>{t.templateName}</TableHead>
                     <TableHead>{t.channel}</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Language</TableHead>
+                    <TableHead>{t["firmOps.colType"]}</TableHead>
+                    <TableHead>
+                      <T k="pages.language" />
+                    </TableHead>
                     <TableHead>{t.status}</TableHead>
                     <TableHead>{t.actions}</TableHead>
                   </TableRow>
@@ -715,13 +728,17 @@ function TemplatesTab() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="email">Email</SelectItem>
-                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                    <SelectItem value="email">
+                      <T k="pages.email" />
+                    </SelectItem>
+                    <SelectItem value="whatsapp">
+                      <T k="pages.whatsapp" />
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Type</Label>
+                <Label>{t["firmOps.colType"]}</Label>
                 <Select
                   value={editTemplate?.templateType ?? "custom"}
                   onValueChange={(v) => setEditTemplate((p) => ({ ...p, templateType: v }))}
@@ -730,11 +747,21 @@ function TemplatesTab() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="vat_reminder">VAT Reminder</SelectItem>
-                    <SelectItem value="invoice">Invoice</SelectItem>
-                    <SelectItem value="document_request">Document Request</SelectItem>
-                    <SelectItem value="payment_confirmation">Payment Confirmation</SelectItem>
-                    <SelectItem value="custom">Custom</SelectItem>
+                    <SelectItem value="vat_reminder">
+                      <T k="pages.vatReminder" />
+                    </SelectItem>
+                    <SelectItem value="invoice">
+                      <T k="pages.invoice" />
+                    </SelectItem>
+                    <SelectItem value="document_request">
+                      <T k="pages.documentRequest" />
+                    </SelectItem>
+                    <SelectItem value="payment_confirmation">
+                      <T k="pages.paymentConfirmation" />
+                    </SelectItem>
+                    <SelectItem value="custom">
+                      <T k="pages.custom" />
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -747,7 +774,7 @@ function TemplatesTab() {
                   onChange={(e) =>
                     setEditTemplate((p) => ({ ...p, subjectTemplate: e.target.value }))
                   }
-                  placeholder="e.g. VAT Return Reminder — Due [date]"
+                  placeholder={t["firmOps.commsSubjectTplPlaceholder"]}
                 />
               </div>
             )}
@@ -781,7 +808,7 @@ function TemplatesTab() {
 // ─── Bulk Actions Tab ─────────────────────────────────────────────────────────
 
 function BulkActionsTab() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -805,7 +832,11 @@ function BulkActionsTab() {
     onSuccess: (res: BulkResult) => {
       queryClient.invalidateQueries({ queryKey: ["/api/firm/comms/log"] });
       toast({
-        title: `${t.bulkRemindSuccess}: ${res.sent} sent, ${res.failed} failed`,
+        title: formatMessage(translateNow("toasts.sentFailed"), {
+          bulkRemindSuccess: t.bulkRemindSuccess,
+          sent: res.sent,
+          failed: res.failed,
+        }),
       });
       setPreview(null);
     },
@@ -841,7 +872,7 @@ function BulkActionsTab() {
               <SelectContent>
                 {[3, 5, 7, 10, 14, 30].map((d) => (
                   <SelectItem key={d} value={String(d)}>
-                    {d} days
+                    {formatMessage(t["firmOps.commsDays"], { n: d })}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -854,12 +885,12 @@ function BulkActionsTab() {
               onClick={() => previewMutation.mutate()}
               disabled={previewMutation.isPending}
             >
-              <Eye className="h-4 w-4 mr-1.5" />
+              <Eye className="h-4 w-4 me-1.5" />
               {previewMutation.isPending ? t.loading : t.previewReminders}
             </Button>
             {preview !== null && preview.length > 0 && (
               <Button onClick={() => sendMutation.mutate()} disabled={sendMutation.isPending}>
-                <Send className="h-4 w-4 mr-1.5" />
+                <Send className="h-4 w-4 me-1.5" />
                 {sendMutation.isPending ? t.loading : `${t.sendReminders} (${preview.length})`}
               </Button>
             )}
@@ -880,9 +911,13 @@ function BulkActionsTab() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Client</TableHead>
+                        <TableHead>
+                          <T k="pages.client" />
+                        </TableHead>
                         <TableHead>{t.recipient}</TableHead>
-                        <TableHead>VAT Due</TableHead>
+                        <TableHead>
+                          <T k="pages.vatDue" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -898,12 +933,12 @@ function BulkActionsTab() {
                             ) : (
                               <span className="flex items-center gap-1 text-destructive">
                                 <XCircle className="h-3 w-3" />
-                                No email
+                                <T k="pages.noEmail" />
                               </span>
                             )}
                           </TableCell>
                           <TableCell className="text-sm">
-                            {new Date(item.dueDate).toLocaleDateString("en-AE")}
+                            {formatDate(item.dueDate, locale)}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -929,12 +964,12 @@ export default function FirmComms() {
       <PageHeader
         eyebrow="Firm"
         title={t.communicationsHub}
-        description="Send emails, manage templates, and track all client communications."
+        description={t["firmComms.sendEmailsManageTemplatesAnd"]}
       />
 
       <Tabs defaultValue="inbox">
         <div className="overflow-x-auto">
-          <TabsList className="flex w-max">
+          <TabsList className="w-max">
             <TabsTrigger value="inbox" className="flex items-center gap-1.5">
               <Inbox className="h-4 w-4" />
               {t.inbox}

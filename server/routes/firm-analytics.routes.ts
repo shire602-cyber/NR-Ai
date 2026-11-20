@@ -4,7 +4,14 @@ import type { Express } from "express";
 import { z } from "zod";
 
 import { authMiddleware } from "../middleware/auth";
-import { requireFirmRole, getAccessibleCompanyIds } from "../middleware/rbac";
+import {
+  firmContextOf,
+  getAccessibleCompanyIds,
+  requireFirmAccess,
+  requireFirmPermission,
+  requireNrFirm,
+} from "../middleware/rbac";
+import { canAccessFirmClient, listFirmMembers } from "../services/firm/scope";
 import { asyncHandler } from "../middleware/errorHandler";
 import { db } from "../db";
 import {
@@ -34,6 +41,7 @@ import {
   ne,
   sql,
   notInArray,
+  type SQL,
 } from "drizzle-orm";
 import { createLogger } from "../config/logger";
 
@@ -41,17 +49,19 @@ const logger = createLogger("firm-analytics-routes");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getClientWhereClause(accessibleIds: string[] | null) {
+function getClientWhereClause(accessibleIds: string[] | null): SQL {
   if (accessibleIds === null) return eq(companies.companyType, "client");
   if (accessibleIds.length === 0) return sql`false`;
-  return and(eq(companies.companyType, "client"), inArray(companies.id, accessibleIds));
+  // Accessible ids are already scoped to the caller's firm (R15-12) and may
+  // include linked organisations that are not company_type 'client'.
+  return inArray(companies.id, accessibleIds);
 }
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
 
 const createLeadSchema = z.object({
-  userId: z.string().uuid(),
-  companyId: z.string().uuid().optional(),
+  userId: z.string().guid(),
+  companyId: z.string().guid().optional(),
   stage: z.enum(["prospect", "contacted", "interested", "converted", "lost"]).default("prospect"),
   source: z.enum(["saas_signup", "referral", "manual", "website"]).default("manual"),
   notes: z.string().optional(),
@@ -63,7 +73,7 @@ const updateLeadSchema = z.object({
   source: z.enum(["saas_signup", "referral", "manual", "website"]).optional(),
   notes: z.string().nullable().optional(),
   score: z.number().int().min(0).max(100).optional(),
-  companyId: z.string().uuid().nullable().optional(),
+  companyId: z.string().guid().nullable().optional(),
 });
 
 // ─── Route registration ───────────────────────────────────────────────────────
@@ -73,18 +83,19 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
 
   // Scope auth + firm-role guards to /firm/* so this router (mounted at /api)
   // does not short-circuit unrelated /api requests like /api/health.
-  router.use("/firm", authMiddleware as any);
-  router.use("/firm", requireFirmRole());
+  router.use("/firm", authMiddleware);
+  // Multi-firm (R15-12): analytics and leads are scoped to the caller's firm.
+  router.use("/firm", requireFirmAccess());
 
   // ─── GET /api/firm/analytics/revenue ──────────────────────────────────────
   router.get(
     "/firm/analytics/revenue",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
       const whereClause = getClientWhereClause(accessibleIds);
 
@@ -93,7 +104,7 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
         .select({ totalMrr: sum(engagements.monthlyFee) })
         .from(engagements)
         .innerJoin(companies, eq(companies.id, engagements.companyId))
-        .where(and(eq(engagements.status, "active"), whereClause as any));
+        .where(and(eq(engagements.status, "active"), whereClause));
       const mrrRow = mrrRows[0];
 
       // Revenue by client (top 10)
@@ -105,16 +116,13 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
         })
         .from(serviceInvoices)
         .innerJoin(companies, eq(companies.id, serviceInvoices.companyId))
-        .where(and(eq(serviceInvoices.status, "paid"), whereClause as any))
+        .where(and(eq(serviceInvoices.status, "paid"), whereClause))
         .groupBy(serviceInvoices.companyId, companies.name)
         .orderBy(desc(sum(serviceInvoices.total)))
         .limit(10);
 
       // Total clients
-      const clientCountRows = await db
-        .select({ cnt: count() })
-        .from(companies)
-        .where(whereClause as any);
+      const clientCountRows = await db.select({ cnt: count() }).from(companies).where(whereClause);
       const clientCount = Number(clientCountRows[0]?.cnt ?? 0);
 
       const totalRevenue = revenueByClient.reduce(
@@ -136,7 +144,7 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
           and(
             eq(serviceInvoices.status, "paid"),
             gte(serviceInvoices.paidAt, thirtyDaysAgo),
-            whereClause as any
+            whereClause
           )
         );
 
@@ -149,7 +157,7 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
             eq(serviceInvoices.status, "paid"),
             gte(serviceInvoices.paidAt, sixtyDaysAgo),
             lt(serviceInvoices.paidAt, thirtyDaysAgo),
-            whereClause as any
+            whereClause
           )
         );
 
@@ -177,26 +185,21 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
   router.get(
     "/firm/analytics/utilization",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
 
-      // Staff count
-      const staffRows = await db
-        .select({ cnt: count() })
-        .from(users)
-        .where(or(eq(users.firmRole, "firm_owner"), eq(users.firmRole, "firm_admin")));
-      const staffCount = Number(staffRows[0]?.cnt ?? 0);
+      // Staff count: the caller's firm only (R15-03 staff definition).
+      const ctx = firmContextOf(res);
+      const members = await listFirmMembers(ctx.firmId, ctx.isNr);
+      const staffCount = members.length;
 
       // Client count
       const whereClause = getClientWhereClause(accessibleIds);
-      const clientRows = await db
-        .select({ cnt: count() })
-        .from(companies)
-        .where(whereClause as any);
+      const clientRows = await db.select({ cnt: count() }).from(companies).where(whereClause);
       const clientCount = Number(clientRows[0]?.cnt ?? 0);
 
       // Per-admin assignment distribution
@@ -206,6 +209,21 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
           clientCount: count(firmStaffAssignments.companyId),
         })
         .from(firmStaffAssignments)
+        .where(
+          and(
+            members.length
+              ? inArray(
+                  firmStaffAssignments.userId,
+                  members.map((m) => m.userId)
+                )
+              : sql`false`,
+            accessibleIds === null
+              ? undefined
+              : accessibleIds.length
+                ? inArray(firmStaffAssignments.companyId, accessibleIds)
+                : sql`false`
+          )
+        )
         .groupBy(firmStaffAssignments.userId);
 
       const avgClientsPerAdmin =
@@ -231,18 +249,15 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
   router.get(
     "/firm/analytics/client-health-summary",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
       const whereClause = getClientWhereClause(accessibleIds);
 
-      const clientList = await db
-        .select({ id: companies.id })
-        .from(companies)
-        .where(whereClause as any);
+      const clientList = await db.select({ id: companies.id }).from(companies).where(whereClause);
 
       const clientIds = clientList.map((c: { id: string }) => c.id);
 
@@ -368,6 +383,7 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
         .from(firmLeads)
         .leftJoin(users, eq(users.id, firmLeads.userId))
         .leftJoin(companies, eq(companies.id, firmLeads.companyId))
+        .where(eq(firmLeads.firmId, firmContextOf(res).firmId))
         .orderBy(desc(firmLeads.updatedAt));
 
       type LeadRow = (typeof leads)[0];
@@ -438,6 +454,7 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
         .from(firmLeads)
         .leftJoin(users, eq(users.id, firmLeads.userId))
         .leftJoin(companies, eq(companies.id, firmLeads.companyId))
+        .where(eq(firmLeads.firmId, firmContextOf(res).firmId))
         .orderBy(desc(firmLeads.updatedAt));
 
       res.json(leads);
@@ -447,15 +464,24 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
   // ─── POST /api/firm/pipeline/leads ───────────────────────────────────────
   router.post(
     "/firm/pipeline/leads",
+    requireFirmPermission("firm.leads.manage"),
     asyncHandler(async (req: Request, res: Response) => {
       const parsed = createLeadSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: "Validation error", errors: parsed.error.errors });
+        return res.status(400).json({ message: "Validation error", errors: parsed.error.issues });
+      }
+
+      if (
+        parsed.data.companyId &&
+        !(await canAccessFirmClient(firmContextOf(res), parsed.data.companyId))
+      ) {
+        return res.status(404).json({ message: "Client not found", code: "CLIENT_NOT_FOUND" });
       }
 
       const [lead] = await db
         .insert(firmLeads)
         .values({
+          firmId: firmContextOf(res).firmId,
           userId: parsed.data.userId,
           companyId: parsed.data.companyId ?? null,
           stage: parsed.data.stage,
@@ -472,11 +498,22 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
   // ─── PUT /api/firm/pipeline/leads/:id ────────────────────────────────────
   router.put(
     "/firm/pipeline/leads/:id",
+    requireFirmPermission("firm.leads.manage"),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
+      if (!z.string().guid().safeParse(id).success) {
+        return res.status(400).json({ message: "Invalid lead id", code: "INVALID_ID" });
+      }
       const parsed = updateLeadSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: "Validation error", errors: parsed.error.errors });
+        return res.status(400).json({ message: "Validation error", errors: parsed.error.issues });
+      }
+
+      if (
+        parsed.data.companyId &&
+        !(await canAccessFirmClient(firmContextOf(res), parsed.data.companyId))
+      ) {
+        return res.status(404).json({ message: "Client not found", code: "CLIENT_NOT_FOUND" });
       }
 
       const updateData: Record<string, unknown> = {
@@ -490,8 +527,8 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
 
       const [updated] = await db
         .update(firmLeads)
-        .set(updateData as Parameters<typeof db.update>[0])
-        .where(eq(firmLeads.id, id))
+        .set(updateData as Partial<typeof firmLeads.$inferInsert>)
+        .where(and(eq(firmLeads.id, id), eq(firmLeads.firmId, firmContextOf(res).firmId)))
         .returning();
 
       if (!updated) return res.status(404).json({ message: "Lead not found" });
@@ -502,11 +539,15 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
   // ─── DELETE /api/firm/pipeline/leads/:id ─────────────────────────────────
   router.delete(
     "/firm/pipeline/leads/:id",
+    requireFirmPermission("firm.leads.manage"),
     asyncHandler(async (req: Request, res: Response) => {
       const { id } = req.params;
+      if (!z.string().guid().safeParse(id).success) {
+        return res.status(400).json({ message: "Invalid lead id", code: "INVALID_ID" });
+      }
       const [deleted] = await db
         .delete(firmLeads)
-        .where(eq(firmLeads.id, id))
+        .where(and(eq(firmLeads.id, id), eq(firmLeads.firmId, firmContextOf(res).firmId)))
         .returning({ id: firmLeads.id });
 
       if (!deleted) return res.status(404).json({ message: "Lead not found" });
@@ -517,6 +558,8 @@ export function registerFirmAnalyticsRoutes(app: Express): void {
   // ─── GET /api/firm/pipeline/saas-prospects ───────────────────────────────
   router.get(
     "/firm/pipeline/saas-prospects",
+    // Platform SaaS customers are NR's prospects only; other firms never see them.
+    requireNrFirm(),
     asyncHandler(async (_req: Request, res: Response) => {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 

@@ -1,6 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { DatePicker } from "@/components/ui/date-picker";
+import { parseCalendarDate } from "@/lib/format-date";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { addDays, format, parseISO } from "date-fns";
+import { addDays } from "date-fns";
+import {
+  calendarDayKey,
+  formatDate as formatDisplayDate,
+  formatDateRange,
+} from "@/lib/format-date";
 import { Link } from "wouter";
 import {
   AlertTriangle,
@@ -34,10 +42,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { T } from "@/components/layout/T";
 import { useToast } from "@/hooks/use-toast";
 import { apiUrl } from "@/lib/api";
-import { formatCurrency } from "@/lib/format";
+import { Money } from "@/components/ui/money";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { resolveSelectedId } from "@/lib/selection";
 import {
   evaluateAmountExpression,
   parseVatPasteRows,
@@ -126,18 +136,8 @@ function canPostVatWorkpaperRow(row: VatWorkpaperRow) {
 
 function inputDate(value: string | Date | null | undefined) {
   if (!value) return "";
-  const parsed = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return format(parsed, "yyyy-MM-dd");
-}
-
-function formatDate(value: string | null | undefined) {
-  if (!value) return "-";
-  try {
-    return format(parseISO(String(value)), "dd MMM yyyy");
-  } catch {
-    return "-";
-  }
+  // The calendar day of a stored period date, not the browser-zone instant (N1).
+  return calendarDayKey(value);
 }
 
 function toMoney(value: unknown) {
@@ -172,8 +172,14 @@ export default function VatWorkpaperPanel({
   defaultEmirate,
   onVatReturnGenerated,
 }: VatWorkpaperPanelProps) {
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
-  const [selectedWorkpaperId, setSelectedWorkpaperId] = useState<string | null>(null);
+  // B14: every label in the reader's language (category, emirate, status).
+  const categoryLabel = (value: string) =>
+    t[`components.vwCategory.${value}`] ?? vatRowCategoryLabel(value);
+  const emirateLabel = (value: string) => t[`invoices.emirate.${value}`] ?? value;
+  const statusLabel = (value: string) => t[`components.vwStatus.${value}`] ?? value;
+  const [pickedWorkpaperId, setSelectedWorkpaperId] = useState<string | null>(null);
   const [periodStart, setPeriodStart] = useState(inputDate(defaultPeriodStart));
   const [periodEnd, setPeriodEnd] = useState(inputDate(defaultPeriodEnd));
   const [pastedRows, setPastedRows] = useState("");
@@ -192,7 +198,8 @@ export default function VatWorkpaperPanel({
 
   const dueDate = useMemo(() => {
     if (!periodEnd) return "";
-    const parsed = new Date(periodEnd);
+    // INTEGRATE-H: the period end is a calendar date (DF3 N1), never the browser zone's day.
+    const parsed = parseCalendarDate(periodEnd);
     if (Number.isNaN(parsed.getTime())) return "";
     return inputDate(addDays(parsed, 28));
   }, [periodEnd]);
@@ -202,19 +209,12 @@ export default function VatWorkpaperPanel({
     enabled: !!companyId,
     queryFn: () => apiRequest("GET", `/api/companies/${companyId}/vat-workpapers`),
   });
-  const workpapers = workpapersQuery.data?.workpapers ?? [];
-
-  useEffect(() => {
-    if (!selectedWorkpaperId && workpapers.length > 0) {
-      setSelectedWorkpaperId(workpapers[0].id);
-    } else if (
-      selectedWorkpaperId &&
-      workpapers.length > 0 &&
-      !workpapers.some((workpaper) => workpaper.id === selectedWorkpaperId)
-    ) {
-      setSelectedWorkpaperId(workpapers[0].id);
-    }
-  }, [selectedWorkpaperId, workpapers]);
+  const workpapers = useMemo(
+    () => workpapersQuery.data?.workpapers ?? [],
+    [workpapersQuery.data?.workpapers]
+  );
+  // Default to the first workpaper whenever nothing (or a stale id) is picked.
+  const selectedWorkpaperId = resolveSelectedId(pickedWorkpaperId, workpapers);
 
   const detailQuery = useQuery<VatWorkpaperDetail>({
     queryKey: ["/api/companies", companyId, "vat-workpapers", selectedWorkpaperId],
@@ -261,12 +261,12 @@ export default function VatWorkpaperPanel({
     onSuccess: (workpaper: VatWorkpaperSummary) => {
       setSelectedWorkpaperId(workpaper.id);
       invalidateWorkpapers();
-      toast({ title: "VAT workpaper ready" });
+      toast({ title: translateNow("toasts.vatWorkpaperReady") });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not create VAT workpaper",
+        title: translateNow("toasts.couldNotCreateVatWorkpaper"),
         description: error?.message,
       }),
   });
@@ -301,7 +301,7 @@ export default function VatWorkpaperPanel({
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not add VAT row",
+        title: translateNow("toasts.couldNotAddVatRow"),
         description: error?.message,
       }),
   });
@@ -315,12 +315,14 @@ export default function VatWorkpaperPanel({
       ),
     onSuccess: (result: { updated: number }) => {
       invalidateWorkpapers();
-      toast({ title: `${result.updated} draft rows approved` });
+      toast({
+        title: formatMessage(translateNow("toasts.draftRowsApproved"), { updated: result.updated }),
+      });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not approve draft rows",
+        title: translateNow("toasts.couldNotApproveDraftRows"),
         description: error?.message,
       }),
   });
@@ -334,17 +336,20 @@ export default function VatWorkpaperPanel({
     onSuccess: (result: { created: number }) => {
       invalidateWorkpapers();
       toast({
-        title: result.created > 0 ? `${result.created} rows pulled from books` : "Books up to date",
+        title:
+          result.created > 0
+            ? formatMessage(translateNow("toasts.rowsPulledFromBooks"), { created: result.created })
+            : translateNow("toasts.booksUpToDate"),
         description:
           result.created > 0
-            ? "Review and approve draft invoice/receipt rows before generating the VAT return."
-            : "Every document in this period is already on the workpaper.",
+            ? translateNow("toasts.reviewDraftRowsBeforeVat")
+            : translateNow("toasts.everyDocumentOnWorkpaper"),
       });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not pull from books",
+        title: translateNow("toasts.couldNotPullFromBooks"),
         description: error?.message,
       }),
   });
@@ -371,8 +376,8 @@ export default function VatWorkpaperPanel({
 
   const importRowsMutation = useMutation({
     mutationFn: () => {
-      if (!selectedWorkpaperId) throw new Error("Create or select a VAT workpaper first");
-      if (pastePreviewRows.length === 0) throw new Error("Paste at least one VAT row");
+      if (!selectedWorkpaperId) throw new Error(translateNow("components.vwSelectFirst"));
+      if (pastePreviewRows.length === 0) throw new Error(translateNow("components.vwPasteFirst"));
       return apiRequest(
         "POST",
         `/api/companies/${companyId}/vat-workpapers/${selectedWorkpaperId}/rows/bulk`,
@@ -382,19 +387,21 @@ export default function VatWorkpaperPanel({
     onSuccess: (result: { created: number }) => {
       invalidateWorkpapers();
       setPastedRows("");
-      toast({ title: `${result.created} VAT rows imported` });
+      toast({
+        title: formatMessage(translateNow("toasts.vatRowsImported"), { created: result.created }),
+      });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not import pasted rows",
+        title: translateNow("toasts.couldNotImportPastedRows"),
         description: error?.message,
       }),
   });
 
   const postRowMutation = useMutation({
     mutationFn: (rowId: string) => {
-      if (!selectedWorkpaperId) throw new Error("Create or select a VAT workpaper first");
+      if (!selectedWorkpaperId) throw new Error(translateNow("components.vwSelectFirst"));
       return apiRequest(
         "POST",
         `/api/companies/${companyId}/vat-workpapers/${selectedWorkpaperId}/rows/${rowId}/post`
@@ -402,19 +409,19 @@ export default function VatWorkpaperPanel({
     },
     onSuccess: () => {
       invalidateWorkpapers();
-      toast({ title: "VAT row posted to ledger" });
+      toast({ title: translateNow("toasts.vatRowPostedToLedger") });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not post VAT row",
+        title: translateNow("toasts.couldNotPostVatRow"),
         description: error?.message,
       }),
   });
 
   const deleteRowMutation = useMutation({
     mutationFn: (rowId: string) => {
-      if (!selectedWorkpaperId) throw new Error("Create or select a VAT workpaper first");
+      if (!selectedWorkpaperId) throw new Error(translateNow("components.vwSelectFirst"));
       return apiRequest(
         "DELETE",
         `/api/companies/${companyId}/vat-workpapers/${selectedWorkpaperId}/rows/${rowId}`
@@ -422,12 +429,12 @@ export default function VatWorkpaperPanel({
     },
     onSuccess: () => {
       invalidateWorkpapers();
-      toast({ title: "VAT row removed" });
+      toast({ title: translateNow("toasts.vatRowRemoved") });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not remove VAT row",
+        title: translateNow("toasts.couldNotRemoveVatRow"),
         description: error?.message,
       }),
   });
@@ -443,14 +450,14 @@ export default function VatWorkpaperPanel({
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "vat-returns"] });
       onVatReturnGenerated?.();
       toast({
-        title: "VAT return generated",
-        description: "The VAT 201 draft now uses approved workpaper row totals.",
+        title: translateNow("toasts.vatReturnGenerated"),
+        description: translateNow("toasts.theVat201DraftNowUsesApproved"),
       });
     },
     onError: (error: any) =>
       toast({
         variant: "destructive",
-        title: "Could not generate VAT return",
+        title: translateNow("toasts.couldNotGenerateVatReturn"),
         description: error?.message,
       }),
   });
@@ -479,7 +486,7 @@ export default function VatWorkpaperPanel({
     } catch (error: any) {
       toast({
         variant: "destructive",
-        title: "Could not export VAT workpaper",
+        title: translateNow("toasts.couldNotExportVatWorkpaper"),
         description: error?.message,
       });
     } finally {
@@ -535,11 +542,11 @@ export default function VatWorkpaperPanel({
       <CardHeader className="pb-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-1">
-            <CardTitle>VAT evidence workpaper</CardTitle>
+            <CardTitle>
+              <T k="components.vwTitle" />
+            </CardTitle>
             <CardDescription>
-              Excel-like area for the VAT return. Record each invoice, bill, receipt, refund, or
-              import line with date, party, document number, category, and amount; approved rows
-              total into the VAT 201 boxes.
+              <T k="components.vwDescription" />
             </CardDescription>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -549,8 +556,10 @@ export default function VatWorkpaperPanel({
               disabled={!selectedWorkpaperId || pullFromBooksMutation.isPending}
               data-testid="button-pull-vat-workpaper-from-books"
             >
-              <BookOpen className="w-4 h-4 mr-2" />
-              {pullFromBooksMutation.isPending ? "Pulling..." : "Pull from books"}
+              <BookOpen className="w-4 h-4 me-2" />
+              {pullFromBooksMutation.isPending
+                ? t["components.vatWorkpaperPulling"]
+                : t["components.vatWorkpaperPull"]}
             </Button>
             <Button
               variant="outline"
@@ -558,8 +567,8 @@ export default function VatWorkpaperPanel({
               disabled={!selectedWorkpaperId || exporting}
               data-testid="button-export-vat-workpaper"
             >
-              <Download className="w-4 h-4 mr-2" />
-              {exporting ? "Exporting..." : "Excel"}
+              <Download className="w-4 h-4 me-2" />
+              {exporting ? t["components.vwExporting"] : t["components.vwExport"]}
             </Button>
             {canGenerateVatReturn ? (
               <Button
@@ -568,17 +577,17 @@ export default function VatWorkpaperPanel({
                 data-testid="button-generate-return-from-workpaper"
               >
                 {generateReturnMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                 ) : (
-                  <Check className="w-4 h-4 mr-2" />
+                  <Check className="w-4 h-4 me-2" />
                 )}
-                Generate VAT return
+                <T k="components.vwGenerateReturn" />
               </Button>
             ) : (
               <Button asChild data-testid="link-workpaper-add-trn">
                 <Link href="/company-profile">
-                  <AlertTriangle className="w-4 h-4 mr-2" />
-                  Add TRN
+                  <AlertTriangle className="w-4 h-4 me-2" />
+                  <T k="components.vwAddTrn" />
                 </Link>
               </Button>
             )}
@@ -589,36 +598,44 @@ export default function VatWorkpaperPanel({
         <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1">
-              <Label htmlFor="vatWorkpaperPeriodStart">Period start</Label>
-              <Input
+              <Label htmlFor="vatWorkpaperPeriodStart">
+                <T k="components.vwPeriodStart" />
+              </Label>
+              <DatePicker
                 id="vatWorkpaperPeriodStart"
-                type="date"
                 value={periodStart}
-                onChange={(event) => setPeriodStart(event.target.value)}
+                onChange={(value) => setPeriodStart(value)}
               />
             </div>
             <div className="space-y-1">
-              <Label htmlFor="vatWorkpaperPeriodEnd">Period end</Label>
-              <Input
+              <Label htmlFor="vatWorkpaperPeriodEnd">
+                <T k="components.vwPeriodEnd" />
+              </Label>
+              <DatePicker
                 id="vatWorkpaperPeriodEnd"
-                type="date"
                 value={periodEnd}
-                onChange={(event) => setPeriodEnd(event.target.value)}
+                onChange={(value) => setPeriodEnd(value)}
               />
             </div>
             <div className="space-y-1">
-              <Label>Workpaper</Label>
+              <Label>
+                <T k="components.vwWorkpaper" />
+              </Label>
               <Select value={selectedWorkpaperId ?? ""} onValueChange={setSelectedWorkpaperId}>
                 <SelectTrigger data-testid="select-vat-workpaper">
                   <SelectValue
-                    placeholder={workpapers.length ? "Select workpaper" : "No workpaper"}
+                    placeholder={
+                      workpapers.length
+                        ? t["components.vatWorkpaperSelect"]
+                        : t["components.vatWorkpaperNone"]
+                    }
                   />
                 </SelectTrigger>
                 <SelectContent>
                   {workpapers.map((workpaper) => (
                     <SelectItem key={workpaper.id} value={workpaper.id}>
-                      {formatDate(workpaper.periodStart)} - {formatDate(workpaper.periodEnd)} ·{" "}
-                      {workpaper.status}
+                      {formatDateRange(workpaper.periodStart, workpaper.periodEnd, locale)} ·{" "}
+                      {statusLabel(workpaper.status)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -631,8 +648,8 @@ export default function VatWorkpaperPanel({
               disabled={!companyId || !periodStart || !periodEnd || createMutation.isPending}
               data-testid="button-create-vat-workpaper"
             >
-              <Plus className="w-4 h-4 mr-2" />
-              {createMutation.isPending ? "Opening..." : "Create/Open"}
+              <Plus className="w-4 h-4 me-2" />
+              {createMutation.isPending ? t["components.vwOpening"] : t["components.vwCreateOpen"]}
             </Button>
             <Button
               variant="outline"
@@ -642,7 +659,7 @@ export default function VatWorkpaperPanel({
                 })
               }
               disabled={!selectedWorkpaperId}
-              title="Refresh workpaper"
+              title={t["components.vatWorkpaperRefresh"]}
             >
               <RefreshCw className="w-4 h-4" />
             </Button>
@@ -651,11 +668,15 @@ export default function VatWorkpaperPanel({
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Approved rows</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="components.vwApprovedRows" />
+            </p>
             <p className="text-lg font-semibold">{approvedRows.length}</p>
           </div>
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Draft rows</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="components.vwDraftRows" />
+            </p>
             <div className="flex items-center justify-between gap-2">
               <p className="text-lg font-semibold">{draftRows.length}</p>
               {draftRows.length > 0 && (
@@ -667,76 +688,103 @@ export default function VatWorkpaperPanel({
                   disabled={approveAllMutation.isPending}
                   data-testid="button-approve-vat-workpaper-drafts"
                 >
-                  Approve
+                  <T k="components.vwApprove" />
                 </Button>
               )}
             </div>
           </div>
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Output amount</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="components.vwOutputAmount" />
+            </p>
             <p className="text-lg font-semibold" data-testid="vat-workpaper-total-sales">
-              {formatCurrency(outputAmount)}
+              <Money amount={outputAmount} />
             </p>
           </div>
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Input amount</p>
-            <p className="text-lg font-semibold">{formatCurrency(inputAmount)}</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="components.vwInputAmount" />
+            </p>
+            <p className="text-lg font-semibold">
+              <Money amount={inputAmount} />
+            </p>
           </div>
           <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-xs text-muted-foreground">Net VAT</p>
+            <p className="text-xs text-muted-foreground">
+              <T k="components.vwNetVat" />
+            </p>
             <p
-              className={`text-lg font-semibold ${payableVat >= 0 ? "text-destructive" : "text-success"}`}
+              className={`text-lg font-semibold ${payableVat >= 0 ? "text-foreground" : "text-positive"}`}
               data-testid="vat-workpaper-net-vat"
             >
-              {formatCurrency(Math.abs(payableVat))}
+              <Money amount={Math.abs(payableVat)} />
             </p>
             <p className="text-xs text-muted-foreground">
-              Output {formatCurrency(outputVat)} / input {formatCurrency(inputVat)}
+              <T k="components.vwOutputShort" /> <Money amount={outputVat} /> ·{" "}
+              <T k="components.vwInputShort" /> <Money amount={inputVat} />
             </p>
           </div>
         </div>
 
         <div className="rounded-md border">
           <div className="border-b bg-muted/30 px-3 py-2">
-            <p className="font-medium">Entry grid</p>
+            <p className="font-medium">
+              <T k="components.vwEntryGrid" />
+            </p>
             <p className="text-xs text-muted-foreground">
-              Add rows manually or paste rows from Excel. Approved rows are included in VAT 201
-              totals; draft rows wait for review.
+              <T k="components.vwGridHint" />
             </p>
           </div>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="min-w-36">Date</TableHead>
-                  <TableHead className="min-w-56">Customer / vendor</TableHead>
-                  <TableHead className="min-w-36">Sr. / invoice no.</TableHead>
-                  <TableHead className="min-w-44">VAT category</TableHead>
-                  <TableHead className="min-w-32">Emirate</TableHead>
-                  <TableHead className="min-w-32 text-right">Amount</TableHead>
-                  <TableHead className="min-w-32 text-right">VAT</TableHead>
-                  <TableHead className="min-w-32 text-right">Gross</TableHead>
-                  <TableHead className="min-w-28">Status</TableHead>
-                  <TableHead className="w-12 text-right">Action</TableHead>
+                  <TableHead className="min-w-36">
+                    <T k="components.vwColDate" />
+                  </TableHead>
+                  <TableHead className="min-w-56">
+                    <T k="components.vwColParty" />
+                  </TableHead>
+                  <TableHead className="min-w-36">
+                    <T k="components.vwColNumber" />
+                  </TableHead>
+                  <TableHead className="min-w-44">
+                    <T k="components.vwColCategory" />
+                  </TableHead>
+                  <TableHead className="min-w-32">
+                    <T k="components.vwColEmirate" />
+                  </TableHead>
+                  <TableHead data-numeric className="min-w-32">
+                    <T k="components.vwColAmount" />
+                  </TableHead>
+                  <TableHead data-numeric className="min-w-32">
+                    <T k="components.vwColVat" />
+                  </TableHead>
+                  <TableHead data-numeric className="min-w-32">
+                    <T k="components.vwColGross" />
+                  </TableHead>
+                  <TableHead className="min-w-28">
+                    <T k="components.vwColStatus" />
+                  </TableHead>
+                  <TableHead data-numeric className="w-12">
+                    <T k="components.vwColAction" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 <TableRow className="bg-background">
                   <TableCell>
-                    <Input
-                      type="date"
+                    <DatePicker
                       className="h-8 min-w-32"
                       value={rowForm.documentDate}
-                      onChange={(event) =>
-                        setRowForm((form) => ({ ...form, documentDate: event.target.value }))
-                      }
+                      onChange={(value) => setRowForm((form) => ({ ...form, documentDate: value }))}
                       data-testid="input-vat-row-document-date"
                     />
                   </TableCell>
                   <TableCell>
                     <Input
                       className="h-8 min-w-52"
-                      placeholder="Customer or vendor"
+                      placeholder={t["components.vatWorkpaperCounterparty"]}
                       value={rowForm.counterpartyName}
                       onChange={(event) =>
                         setRowForm((form) => ({ ...form, counterpartyName: event.target.value }))
@@ -766,7 +814,7 @@ export default function VatWorkpaperPanel({
                       <SelectContent>
                         {vatRowCategories.map((category) => (
                           <SelectItem key={category.value} value={category.value}>
-                            {category.label}
+                            {categoryLabel(category.value)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -783,7 +831,7 @@ export default function VatWorkpaperPanel({
                       <SelectContent>
                         {vatEmirates.map((emirate) => (
                           <SelectItem key={emirate.value} value={emirate.value}>
-                            {emirate.label}
+                            {emirateLabel(emirate.value)}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -791,7 +839,7 @@ export default function VatWorkpaperPanel({
                   </TableCell>
                   <TableCell>
                     <Input
-                      className="h-8 min-w-28 text-right"
+                      className="h-8 min-w-28 text-end"
                       inputMode="decimal"
                       placeholder="0.00"
                       value={rowForm.taxableAmount}
@@ -801,7 +849,7 @@ export default function VatWorkpaperPanel({
                   </TableCell>
                   <TableCell>
                     <Input
-                      className="h-8 min-w-28 text-right"
+                      className="h-8 min-w-28 text-end"
                       inputMode="decimal"
                       placeholder="0.00"
                       value={rowForm.vatAmount}
@@ -811,7 +859,7 @@ export default function VatWorkpaperPanel({
                   </TableCell>
                   <TableCell>
                     <Input
-                      className="h-8 min-w-28 text-right"
+                      className="h-8 min-w-28 text-end"
                       inputMode="decimal"
                       placeholder="0.00"
                       value={rowForm.grossAmount}
@@ -821,16 +869,16 @@ export default function VatWorkpaperPanel({
                     />
                   </TableCell>
                   <TableCell>
-                    <Badge variant="default">approved</Badge>
+                    <Badge variant="default">{statusLabel("approved")}</Badge>
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell data-numeric>
                     <Button
                       size="sm"
                       onClick={() => addRowMutation.mutate()}
                       disabled={!selectedWorkpaperId || addRowMutation.isPending}
                       data-testid="button-add-vat-workpaper-row"
                     >
-                      Add
+                      <T k="components.vwAdd" />
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -840,7 +888,7 @@ export default function VatWorkpaperPanel({
                       colSpan={10}
                       className="py-8 text-center text-sm text-muted-foreground"
                     >
-                      Loading VAT workpaper...
+                      <T k="components.vwLoading" />
                     </TableCell>
                   </TableRow>
                 ) : rows.length === 0 ? (
@@ -849,14 +897,13 @@ export default function VatWorkpaperPanel({
                       colSpan={10}
                       className="py-8 text-center text-sm text-muted-foreground"
                     >
-                      No rows yet. Create a workpaper, add the first row, paste from Excel, or pull
-                      issued invoices and posted receipts from books.
+                      <T k="components.vatWorkpaperEmpty" />
                     </TableCell>
                   </TableRow>
                 ) : (
                   rows.map((row) => (
                     <TableRow key={row.id}>
-                      <TableCell>{formatDate(row.documentDate)}</TableCell>
+                      <TableCell>{formatDisplayDate(row.documentDate, locale) || "-"}</TableCell>
                       <TableCell>
                         <p className="max-w-56 truncate">{row.counterpartyName || "-"}</p>
                         {row.counterpartyTrn && (
@@ -867,16 +914,16 @@ export default function VatWorkpaperPanel({
                         <p className="font-medium">{row.invoiceNumber || "-"}</p>
                         <p className="text-xs text-muted-foreground">{row.vat201Box}</p>
                       </TableCell>
-                      <TableCell>{vatRowCategoryLabel(row.rowCategory)}</TableCell>
-                      <TableCell>{row.emirate || "-"}</TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(Number(row.taxableAmount ?? 0))}
+                      <TableCell>{categoryLabel(row.rowCategory)}</TableCell>
+                      <TableCell>{row.emirate ? emirateLabel(row.emirate) : "-"}</TableCell>
+                      <TableCell data-numeric>
+                        <Money amount={Number(row.taxableAmount ?? 0)} />
                       </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(Number(row.vatAmount ?? 0))}
+                      <TableCell data-numeric>
+                        <Money amount={Number(row.vatAmount ?? 0)} />
                       </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(Number(row.grossAmount ?? 0))}
+                      <TableCell data-numeric>
+                        <Money amount={Number(row.grossAmount ?? 0)} />
                       </TableCell>
                       <TableCell>
                         <Badge
@@ -888,13 +935,15 @@ export default function VatWorkpaperPanel({
                                 : "secondary"
                           }
                         >
-                          {row.status}
+                          {statusLabel(row.status)}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell data-numeric>
                         <div className="flex items-center justify-end gap-1.5">
                           {row.journalEntryId ? (
-                            <Badge variant="outline">posted</Badge>
+                            <Badge variant="outline">
+                              <T k="components.vwPosted" />
+                            </Badge>
                           ) : canPostVatWorkpaperRow(row) ? (
                             <Button
                               variant="outline"
@@ -904,7 +953,7 @@ export default function VatWorkpaperPanel({
                               onClick={() => postRowMutation.mutate(row.id)}
                               data-testid={`button-post-vat-workpaper-row-${row.id}`}
                             >
-                              Post
+                              <T k="components.vwPost" />
                             </Button>
                           ) : null}
                           <Button
@@ -912,17 +961,12 @@ export default function VatWorkpaperPanel({
                             size="icon"
                             className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
                             disabled={deleteRowMutation.isPending}
-                            aria-label={`Remove VAT row ${row.invoiceNumber || row.id}`}
-                            title="Remove VAT row"
+                            aria-label={formatMessage(t["components.vwRemoveRowLabel"], {
+                              number: row.invoiceNumber || "",
+                            }).trim()}
+                            title={t["components.vatWorkpaperRemoveRow"]}
                             onClick={() => {
-                              const label = row.invoiceNumber
-                                ? `VAT row ${row.invoiceNumber}`
-                                : "this VAT row";
-                              if (
-                                window.confirm(
-                                  `Remove ${label}? This will recalculate the VAT workpaper and reverse any linked journal entry.`
-                                )
-                              ) {
+                              if (window.confirm(t["components.vwRemoveConfirm"])) {
                                 deleteRowMutation.mutate(row.id);
                               }
                             }}
@@ -942,25 +986,29 @@ export default function VatWorkpaperPanel({
 
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_18rem]">
           <div className="space-y-2">
-            <Label htmlFor="vatWorkpaperPaste">Paste from Excel</Label>
+            <Label htmlFor="vatWorkpaperPaste">
+              <T k="components.vwPasteFromExcel" />
+            </Label>
             <Textarea
               id="vatWorkpaperPaste"
               value={pastedRows}
               onChange={(event) => setPastedRows(event.target.value)}
-              className="min-h-28 font-mono text-xs"
-              placeholder={
-                "Date\tVendor\tSr. Number\tAmount\n06/12/2025\tABDUL LATIF BROTHERS STORE\t23319\t31030"
-              }
+              className="min-h-28 tabular-nums text-xs"
+              placeholder={t["components.vwPastePlaceholder"]}
               data-testid="textarea-vat-workpaper-paste"
             />
           </div>
           <div className="space-y-3 rounded-md border bg-muted/20 p-3">
             <div>
-              <p className="text-xs text-muted-foreground">Default pasted-row category</p>
-              <p className="text-sm font-medium">{vatRowCategoryLabel(rowForm.rowCategory)}</p>
+              <p className="text-xs text-muted-foreground">
+                <T k="components.vwDefaultPastedCategory" />
+              </p>
+              <p className="text-sm font-medium">{categoryLabel(rowForm.rowCategory)}</p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Preview rows</p>
+              <p className="text-xs text-muted-foreground">
+                <T k="components.vwPreviewRows" />
+              </p>
               <p className="text-lg font-semibold">{pastePreviewRows.length}</p>
             </div>
             <Button
@@ -973,7 +1021,7 @@ export default function VatWorkpaperPanel({
               }
               data-testid="button-import-vat-workpaper-paste"
             >
-              Import pasted rows
+              <T k="components.vwImportPastedRows" />
             </Button>
           </div>
         </div>

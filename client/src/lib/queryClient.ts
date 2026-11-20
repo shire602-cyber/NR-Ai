@@ -1,14 +1,32 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { getAuthHeaders, refreshSession } from "./auth";
+import { getAuthHeaders, hasAuthHint, refreshSession } from "./auth";
 import { apiUrl } from "./api";
+import { takeBootFetch } from "./bootFetch";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
 import { isOnline, queueForSync } from "./pwa";
+import {
+  localizeApiError,
+  localizeApiErrorByStatus,
+  SERVER_ERROR_NAMESPACES,
+} from "./validation-messages";
+import { loadNamespaces, useI18n } from "./i18n";
+import { announcePlanLimit } from "./plan-limit";
+import {
+  PERIOD_LOCK_REASON_HEADER,
+  askLockReason,
+  encodeLockReason,
+  isOverridableSoftLock,
+} from "./period-lock-reason";
 
 /** Error that carries the HTTP status code — used to decide retry behaviour. */
 export class ApiError extends Error {
   constructor(
     message: string,
-    public readonly status: number
+    public readonly status: number,
+    /** Parsed JSON error body (code, issues, details, ...) when the server sent one. */
+    public readonly body?: Record<string, unknown>,
+    /** The server's own message, unchanged (`message` is Arabic for known errors in Arabic mode). */
+    public readonly rawMessage: string = message
   ) {
     super(message);
     this.name = "ApiError";
@@ -18,10 +36,12 @@ export class ApiError extends Error {
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     let errorMessage = res.statusText;
+    let body: Record<string, unknown> | undefined;
     try {
       const contentType = res.headers.get("content-type");
       if (contentType && contentType.includes("application/json")) {
         const json = await res.json();
+        if (json && typeof json === "object") body = json;
         errorMessage = json.message || json.error || JSON.stringify(json);
       } else {
         const text = await res.text();
@@ -35,7 +55,18 @@ async function throwIfResNotOk(res: Response) {
     } catch {
       errorMessage = res.statusText;
     }
-    throw new ApiError(errorMessage, res.status);
+    // E3 (J2-r3): the localised error copy lives in `forms`, which public routes do not load.
+    await loadNamespaces(useI18n.getState().locale, SERVER_ERROR_NAMESPACES).catch(() => undefined);
+    // WQ7: a plan refusal (402/403 with a plan code) also opens the upgrade prompt.
+    announcePlanLimit(body);
+    // Arabic never shows the server's English: a known code has catalog copy, anything else a
+    // sentence for its status.
+    throw new ApiError(
+      localizeApiError(body) ?? localizeApiErrorByStatus(res.status, errorMessage) ?? errorMessage,
+      res.status,
+      body,
+      errorMessage
+    );
   }
 }
 
@@ -91,9 +122,12 @@ async function buildRequestHeaders(
 export async function apiRequest(
   method: string,
   url: string,
-  data?: unknown | undefined
+  data?: unknown | undefined,
+  /** Extra request headers, e.g. `X-Period-Lock-Reason` for an audited soft-lock override. */
+  extraHeaders?: Record<string, string>
 ): Promise<any> {
-  let headers = await buildRequestHeaders(method, data);
+  const withExtra = (h: Record<string, string>) => (extraHeaders ? { ...h, ...extraHeaders } : h);
+  let headers = withExtra(await buildRequestHeaders(method, data));
 
   const fullUrl = apiUrl(url);
   const upperMethod = method.toUpperCase();
@@ -117,7 +151,7 @@ export async function apiRequest(
   if (res.status === 401) {
     const refreshed = await refreshSession();
     if (refreshed) {
-      headers = await buildRequestHeaders(method, data);
+      headers = withExtra(await buildRequestHeaders(method, data));
       res = await fetch(fullUrl, {
         method,
         headers,
@@ -144,19 +178,58 @@ export async function apiRequest(
     }
   }
 
+  // X5 (J1 D3): a soft-locked period the user may override: ask for a reason, replay once.
+  if (res.status === 403 && MUTATING_METHODS.has(upperMethod)) {
+    const lockBody = await softLockBody(res);
+    if (lockBody) {
+      const reason = await askLockReason(lockBody);
+      if (reason) {
+        const lockHeaders = withExtra(await buildRequestHeaders(method, data));
+        lockHeaders[PERIOD_LOCK_REASON_HEADER] = encodeLockReason(reason);
+        res = await fetch(fullUrl, {
+          method,
+          headers: lockHeaders,
+          body,
+          credentials: "include",
+        });
+      }
+    }
+  }
+
   await throwIfResNotOk(res);
   return parseResponseBody(res);
 }
+
+async function softLockBody(res: Response): Promise<Record<string, unknown> | undefined> {
+  try {
+    const json = await res.clone().json();
+    return isOverridableSoftLock(json) ? json : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const ANONYMOUS_SKIP_KEYS = new Set(["/api/companies", "/api/auth/me"]);
 
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
     const url = apiUrl(queryKey.join("/") as string);
-    let res = await fetch(url, {
-      credentials: "include",
-      headers: getAuthHeaders(),
-    });
+    // R18-04: anonymous visitors have no session, so skip the bootstrap probes
+    // that would only produce 401 console noise. This resolves exactly as the
+    // 401 would have (null / thrown 401) WITHOUT caching a successful empty
+    // result, so the first query after sign-in still fetches the real data.
+    if (!hasAuthHint() && ANONYMOUS_SKIP_KEYS.has(queryKey.join("/") as string)) {
+      if (unauthorizedBehavior === "returnNull") return null as never;
+      throw new ApiError("Not signed in", 401);
+    }
+    let res =
+      (await takeBootFetch(url)) ??
+      (await fetch(url, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      }));
 
     if (res.status === 401) {
       const refreshed = await refreshSession();

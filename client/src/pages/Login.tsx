@@ -1,10 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { landingPathFor } from "@/lib/app-landing";
 import { useLocation } from "wouter";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { fetchCurrentUser } from "@/lib/auth";
+import { apiUrl } from "@/lib/api";
+import { serverErrorMessage, VALIDATION_NAMESPACES } from "@/lib/validation-messages";
 import { establishAuthenticatedSession } from "@/lib/authSession";
-import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/lib/i18n";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { AUTH_BUTTON, AUTH_INPUT, AuthAlert, AuthHeader } from "@/components/auth/AuthBlocks";
+import { VerifyEmailState } from "@/components/auth/VerifyEmailState";
 
 function safeNextPath(): string {
   const params = new URLSearchParams(window.location.search);
@@ -31,55 +39,147 @@ function safeNextPath(): string {
   }
 }
 
+/** W5-E: second sign-in step (TOTP or recovery code). */
+function MfaChallenge({
+  mfaToken,
+  onDone,
+  onBack,
+}: {
+  mfaToken: string | null;
+  onDone(user: unknown, body: Record<string, unknown>): Promise<void>;
+  onBack: () => void;
+}) {
+  const { t } = useTranslation(VALIDATION_NAMESPACES);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(apiUrl("/api/auth/mfa/verify-login"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ ...(mfaToken ? { mfaToken } : {}), code: code.trim() }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(serverErrorMessage(body, t["security.error"]));
+      await onDone(body.user, body);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div data-testid="mfa-challenge">
+      <AuthHeader title={t["security.loginMfaTitle"]} description={t["security.loginMfaHelp"]} />
+      {error && <AuthAlert tone="danger">{error}</AuthAlert>}
+      <form onSubmit={submit} className="space-y-5">
+        <div className="space-y-2">
+          <Label htmlFor="mfa-code">{t["security.mfaCode"]}</Label>
+          <Input
+            id="mfa-code"
+            autoComplete="one-time-code"
+            inputMode="text"
+            autoFocus
+            className={AUTH_INPUT}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            data-testid="input-mfa-code"
+          />
+        </div>
+        <Button type="submit" className={AUTH_BUTTON} disabled={busy || code.trim().length < 6}>
+          {t["security.verify"]}
+        </Button>
+        <Button type="button" variant="ghost" className="w-full" onClick={onBack}>
+          {t["security.loginMfaBack"]}
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+function isVerifyEmailPath(): boolean {
+  return typeof window !== "undefined" && window.location.pathname === "/verify-email";
+}
+
 export default function Login() {
+  if (isVerifyEmailPath()) {
+    return (
+      <AuthLayout variant="login">
+        <VerifyEmailState />
+      </AuthLayout>
+    );
+  }
+  return <SignIn />;
+}
+
+function SignIn() {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
+  const { t } = useTranslation();
+  // Spec 3.2: a failed social sign-in is an inline alert above the form, not a toast.
+  const [oauthFailed] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("oauth_error") === "1"
+  );
+  const [mfa, setMfa] = useState<{ token: string | null } | null>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("mfa") === "1"
+      ? { token: null }
+      : null
+  );
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("oauth_error") === "1") {
-      toast({
-        title: "Login failed",
-        description: "We could not complete social login. Please try again.",
-        variant: "destructive",
-      });
+    if (new URLSearchParams(window.location.search).get("oauth_error") === "1") {
       window.history.replaceState({}, "", "/login");
     }
 
     fetchCurrentUser()
       .then((user) => {
         if (user) {
-          const fallback =
-            user.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard";
+          const fallback = landingPathFor(user);
           const next = safeNextPath();
           setLocation(next === "/dashboard" ? fallback : next);
         }
       })
       .catch(() => {});
-  }, [setLocation, toast]);
+  }, [setLocation]);
 
-  const handleSuccess = async (user: any) => {
+  const handleSuccess = async (user: any, result?: Record<string, unknown>) => {
+    if (result?.mfaRequired) {
+      setMfa({ token: typeof result.mfaToken === "string" ? result.mfaToken : null });
+      return;
+    }
     const currentUser = await establishAuthenticatedSession(user);
-    const fallback =
-      currentUser?.userType === "client_portal" ? "/client-portal/dashboard" : "/dashboard";
-    const next = safeNextPath();
+    const fallback = landingPathFor(currentUser);
+    const next = result?.mfaEnrollmentRequired ? "/settings/security" : safeNextPath();
     setLocation(next === "/dashboard" ? fallback : next);
   };
 
   return (
-    <AuthLayout
-      headline={
-        <>
-          Your books,{" "}
-          <span className="italic" style={{ color: "#C19E50" }}>
-            beautifully
-          </span>{" "}
-          kept.
-        </>
-      }
-      subline="Sign back in to a real-time portrait of your revenue, expenses, and filings — every number where you left it."
-    >
-      <LoginForm onSuccess={handleSuccess} />
+    <AuthLayout variant="login">
+      {mfa ? (
+        <MfaChallenge
+          mfaToken={mfa.token}
+          onDone={(user, body) => handleSuccess(user, { ...body, mfaRequired: false })}
+          onBack={() => setMfa(null)}
+        />
+      ) : (
+        <LoginForm
+          onSuccess={handleSuccess}
+          notice={
+            oauthFailed
+              ? {
+                  title: t["marketing.authOauthFailedTitle"],
+                  body: t["marketing.authOauthFailedBody"],
+                }
+              : null
+          }
+        />
+      )}
     </AuthLayout>
   );
 }

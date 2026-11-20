@@ -1,0 +1,5 @@
+{
+  "description": "R17-20 ratchet: raw req.body reaching storage. Burn down to empty; regenerate with `node scripts/check-raw-body.mjs --update` only after removing offenders.",
+  "total": 0,
+  "files": {}
+}

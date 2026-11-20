@@ -1,0 +1,97 @@
+/**
+ * First path segments the authenticated app routes (App.tsx) live under. A signed-out visitor
+ * on a path under one of these is sent to sign in (deep link kept); any other unknown path
+ * gets the public 404 instead of the login screen (spec 3.1).
+ *
+ * tests/unit/wp-a-app-sections.test.ts pins this list to the router: a new top-level route in
+ * App.tsx must add its first segment here.
+ */
+export const APP_SECTIONS: ReadonlySet<string> = new Set([
+  "accounts",
+  "admin",
+  "advanced-analytics",
+  "advanced-reports",
+  "ai",
+  "ai-cfo",
+  "ai-chat",
+  "ai-features",
+  "ai-inbox",
+  "analytics",
+  "anomaly-detection",
+  "assistant",
+  "auto-reconcile",
+  "backup-restore",
+  "bank-accounts",
+  // Legacy notification links (broken-path sweep): /banking, /compliance redirect.
+  "banking",
+  "bank-feeds",
+  "bank-reconciliation",
+  "bill-pay",
+  "budgets",
+  "cashflow-forecast",
+  "chart-of-accounts",
+  "client-portal",
+  "company-groups",
+  "company-profile",
+  "compliance",
+  "compliance-calendar",
+  "consolidation",
+  "contacts",
+  "corporate-tax",
+  "cost-centers",
+  "credit-notes",
+  "dashboard",
+  "developer-settings",
+  "document-vault",
+  "document-versions",
+  "evidence-center",
+  "exchange-rates",
+  "expense-claims",
+  "feedback",
+  "financial-statements",
+  "firm",
+  "firm-relationship",
+  "fixed-assets",
+  "history",
+  "import",
+  "integrations",
+  "integrations-hub",
+  "inventory",
+  "invoice-templates",
+  "invoices",
+  "journal",
+  // Legacy notification link (STEP1 F3): /journal-entries redirects to /journal.
+  "journal-entries",
+  "month-end",
+  "news-feed",
+  "notification-preferences",
+  "notifications",
+  "onboarding",
+  "payment-chasing",
+  "payroll",
+  "purchase-orders",
+  "quotes",
+  "receipt-autopilot",
+  "receipts",
+  "reconciliation-rules",
+  "recurring-invoices",
+  "reminders",
+  "reports",
+  "sales",
+  "settings",
+  "smart-assistant",
+  "subscription",
+  "task-center",
+  "tax-return-archive",
+  "team",
+  "vat-autopilot",
+  "vat-filing",
+  "vendors",
+  "debit-notes",
+]);
+
+/** True when `pathname` belongs to the signed-in app (sign-in required, not a 404). */
+export function isAppSectionPath(pathname: string): boolean {
+  const first = pathname.split("?")[0].split("/")[1] ?? "";
+  return APP_SECTIONS.has(first);
+}

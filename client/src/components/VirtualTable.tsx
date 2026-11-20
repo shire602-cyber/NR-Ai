@@ -54,7 +54,7 @@ export function VirtualTable<T>({
 
   const renderHeader = () => (
     <div
-      className="grid border-b border-border/70 bg-muted/30 sticky top-0 z-10 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+      className="sticky top-0 z-10 grid h-9 items-center border-b border-border bg-surface-sunken/95 text-caption font-medium text-muted-foreground"
       style={{ gridTemplateColumns }}
       role="row"
     >
@@ -63,8 +63,8 @@ export function VirtualTable<T>({
           key={col.key}
           role="columnheader"
           className={cn(
-            "px-4 py-2.5 truncate",
-            col.align === "right" && "text-right",
+            "truncate px-4",
+            col.align === "right" && "text-end",
             col.align === "center" && "text-center",
             col.headerClassName
           )}
@@ -87,7 +87,7 @@ export function VirtualTable<T>({
       data-index={index}
       data-testid={rowTestId ? rowTestId(row, index) : undefined}
       role="row"
-      className="grid items-center border-b border-border/50 hover:bg-muted/30 transition-colors"
+      className="grid min-h-11 items-center border-b border-border/70 transition-colors duration-fast last:border-b-0 hover:bg-muted/50"
       style={{ gridTemplateColumns, ...style }}
     >
       {columns.map((col) => (
@@ -95,8 +95,8 @@ export function VirtualTable<T>({
           key={col.key}
           role="cell"
           className={cn(
-            "px-4 py-3 text-sm",
-            col.align === "right" && "text-right",
+            "px-4 py-2 text-sm",
+            col.align === "right" && "text-end",
             col.align === "center" && "text-center",
             col.className
           )}
@@ -109,7 +109,7 @@ export function VirtualTable<T>({
 
   if (rows.length === 0) {
     return (
-      <div className={cn("rounded-lg border border-border/70 bg-card overflow-hidden", className)}>
+      <div className={cn("overflow-hidden bg-card", className)}>
         {renderHeader()}
         <div>{emptyState}</div>
       </div>
@@ -118,10 +118,7 @@ export function VirtualTable<T>({
 
   if (rows.length < threshold) {
     return (
-      <div
-        className={cn("rounded-lg border border-border/70 bg-card overflow-hidden", className)}
-        role="table"
-      >
+      <div className={cn("overflow-hidden bg-card", className)} role="table">
         {renderHeader()}
         <div className="overflow-x-auto">{rows.map((row, i) => renderRow(row, i))}</div>
       </div>
@@ -133,7 +130,7 @@ export function VirtualTable<T>({
 
   return (
     <div
-      className={cn("rounded-lg border border-border/70 bg-card overflow-hidden", className)}
+      className={cn("overflow-hidden bg-card", className)}
       role="table"
       data-testid="virtual-table"
     >

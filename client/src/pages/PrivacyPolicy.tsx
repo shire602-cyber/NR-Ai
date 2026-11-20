@@ -1,61 +1,78 @@
-import { useEffect } from "react";
+import { T } from "@/components/layout/T";
 import { LegalLayout } from "@/components/LegalLayout";
+import { PrivacyPolicyAr } from "./legal/legalAr";
 
 export default function PrivacyPolicy() {
-  useEffect(() => {
-    document.title = "Privacy Policy | Muhasib.ai";
-  }, []);
-
   return (
-    <LegalLayout title="Privacy Policy" effectiveDate="26 April 2026">
+    <LegalLayout slug="privacy" effectiveDate="2026-04-26" arabic={<PrivacyPolicyAr />}>
       <p>
-        This Privacy Policy describes how Najma Al Raeda Accounting LLC (<strong>"NRA"</strong>,
-        <strong>"we"</strong>, <strong>"us"</strong>, or <strong>"our"</strong>) collects, uses, and
-        protects personal data through the Muhasib.ai platform (the <strong>"Service"</strong>). We
-        are committed to handling your data in accordance with UAE Federal Decree-Law No. 45 of 2021
-        on the Protection of Personal Data (PDPL) and applicable Federal Tax Authority (FTA)
-        requirements.
+        This Privacy Policy describes how Najma Al Raeda Accounting and Bookkeeping (
+        <strong>"NRA"</strong>,<strong>"we"</strong>, <strong>"us"</strong>, or{" "}
+        <strong>"our"</strong>) collects, uses, and protects personal data through the Muhasib.ai
+        platform (the <strong>"Service"</strong>). We are committed to handling your data in
+        accordance with UAE Federal Decree-Law No. 45 of 2021 on the Protection of Personal Data
+        (PDPL) and applicable Federal Tax Authority (FTA) requirements.
       </p>
 
-      <h2>1. Data We Collect</h2>
+      <h2>1. Data we collect</h2>
       <p>We collect the following categories of personal and business data:</p>
       <ul>
         <li>
-          <strong>Account data</strong> — name, email, phone number, password (hashed).
+          <strong>
+            <T k="pageLabels.accountData" />
+          </strong>{" "}
+          — name, email, phone number, password (hashed).
         </li>
         <li>
-          <strong>Company data</strong> — trade licence number, TRN, address, business activity.
+          <strong>
+            <T k="pageLabels.companyData" />
+          </strong>{" "}
+          — trade licence number, TRN, address, business activity.
         </li>
         <li>
-          <strong>Financial data</strong> — invoices, receipts, bank transactions, ledger entries.
+          <strong>
+            <T k="pageLabels.financialData" />
+          </strong>{" "}
+          — invoices, receipts, bank transactions, ledger entries.
         </li>
         <li>
-          <strong>Usage data</strong> — pages visited, features used, IP address, device and browser
-          information.
+          <strong>
+            <T k="pageLabels.usageData" />
+          </strong>{" "}
+          — pages visited, features used, IP address, device and browser information.
         </li>
         <li>
-          <strong>Support data</strong> — communications you send to our support team.
+          <strong>
+            <T k="pageLabels.supportData" />
+          </strong>{" "}
+          — communications you send to our support team.
         </li>
       </ul>
 
-      <h2>2. How We Use Your Data</h2>
+      <h2>2. How we use your data</h2>
       <p>We use your data to:</p>
       <ul>
-        <li>Provide, operate, and maintain the Service.</li>
+        <li>
+          <T k="pageLabels.provideOperateAndMaintainTheService" />
+        </li>
         <li>Generate VAT-ready tax workpapers, e-invoices, and financial reports.</li>
         <li>Send service-related notifications (e.g. invoice reminders, filing deadlines).</li>
-        <li>Improve features through aggregated, anonymised analytics.</li>
-        <li>Comply with our legal obligations under UAE law.</li>
+        <li>
+          <T k="pageLabels.improveFeaturesThroughAggregatedAnonymisedAnalytics" />
+        </li>
+        <li>
+          <T k="pageLabels.complyWithOurLegalObligationsUnder" />
+        </li>
       </ul>
 
-      <h2>3. Legal Basis for Processing</h2>
+      <h2>3. Legal basis for processing</h2>
       <p>
         We process personal data on the basis of your consent, performance of our contract with you,
         compliance with legal obligations (including FTA record-keeping rules), and our legitimate
         interests in providing and improving the Service.
       </p>
 
-      <h2>4. Data Retention</h2>
+      <h2>4. Data retention</h2>
       <p>
         Financial records and tax-related data are retained for a minimum of{" "}
         <strong>five (5) years</strong>
@@ -64,22 +81,30 @@ export default function PrivacyPolicy() {
         reasonable period after closure to handle disputes and legal obligations.
       </p>
 
-      <h2>5. Data Sharing</h2>
+      <h2>5. Data sharing</h2>
       <p>We do not sell your personal data. We may share data with:</p>
       <ul>
         <li>
-          <strong>Service providers</strong> (cloud hosting, email delivery, payment processors)
-          under data-processing agreements.
+          <strong>
+            <T k="pageLabels.serviceProviders" />
+          </strong>{" "}
+          (cloud hosting, email delivery, payment processors) under data-processing agreements.
         </li>
         <li>
-          <strong>UAE regulatory authorities</strong> (FTA, MoF) where legally required.
+          <strong>
+            <T k="pageLabels.uaeRegulatoryAuthorities" />
+          </strong>{" "}
+          (FTA, MoF) where legally required.
         </li>
         <li>
-          <strong>Your authorised users</strong> (team members, accountants you have invited).
+          <strong>
+            <T k="pageLabels.yourAuthorisedUsers" />
+          </strong>{" "}
+          (team members, accountants you have invited).
         </li>
       </ul>
 
-      <h2>6. Data Security</h2>
+      <h2>6. Data security</h2>
       <p>
         We use TLS encryption for data in transit, encrypted storage at rest, role-based access
         controls, and regular security audits. Despite these safeguards, no system is 100% secure;
@@ -87,7 +112,7 @@ export default function PrivacyPolicy() {
         authentication.
       </p>
 
-      <h2>7. Your Rights</h2>
+      <h2>7. Your rights</h2>
       <p>
         Subject to UAE PDPL, you have the right to access, correct, delete, or restrict processing
         of your personal data, to object to certain processing, and to receive a portable copy of
@@ -95,20 +120,21 @@ export default function PrivacyPolicy() {
         <a href="mailto:privacy@muhasib.ai">privacy@muhasib.ai</a>.
       </p>
 
-      <h2>8. International Transfers</h2>
+      <h2>8. International transfers</h2>
+      {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
-        Your data is primarily hosted in data centres located within the UAE or jurisdictions
-        providing an adequate level of protection. Where transfers outside the UAE are necessary, we
-        apply appropriate safeguards as required by PDPL.
+        Customer data is hosted in the United Arab Emirates. Where transfers outside the UAE are
+        necessary, we apply appropriate safeguards as required by PDPL.
       </p>
 
       <h2>9. Children</h2>
+      {/* i18n-ignore: legal body copy; the English text is the authoritative version until a reviewed Arabic translation exists */}
       <p>
         The Service is intended for businesses and is not directed to individuals under 18. We do
         not knowingly collect personal data from children.
       </p>
 
-      <h2>10. Changes to This Policy</h2>
+      <h2>10. Changes to this policy</h2>
       <p>
         We may update this Privacy Policy from time to time. Material changes will be notified
         through the Service or by email. The "Effective date" above indicates the latest revision.
@@ -118,7 +144,7 @@ export default function PrivacyPolicy() {
       <p>
         For privacy questions, contact our Data Protection Officer at{" "}
         <a href="mailto:privacy@muhasib.ai">privacy@muhasib.ai</a> or write to: Najma Al Raeda
-        Accounting LLC, Dubai, United Arab Emirates.
+        Accounting and Bookkeeping, Dubai, United Arab Emirates.
       </p>
     </LegalLayout>
   );

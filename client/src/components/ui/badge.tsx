@@ -2,17 +2,19 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
+import { STATUS_MAP, STATUS_NAMESPACES, statusDotClass, type StatusKind } from "./status-meta";
 
 const badgeVariants = cva(
-  "whitespace-nowrap inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium tracking-tight transition-colors" +
+  "whitespace-nowrap inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium leading-4 transition-colors" +
     " focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
   {
     variants: {
       variant: {
-        default: "border-transparent bg-primary text-primary-foreground shadow-xs",
+        default: "border-transparent bg-primary text-primary-foreground",
         secondary: "border-transparent bg-secondary text-secondary-foreground",
-        destructive: "border-transparent bg-destructive text-destructive-foreground shadow-xs",
-        outline: "border [border-color:var(--badge-outline)] shadow-xs",
+        destructive: "border-transparent bg-destructive text-destructive-foreground",
+        outline: "border-border bg-transparent text-foreground",
 
         /* Semantic — subtle (filled background, slim border) */
         success: "border-transparent bg-success-subtle text-success-subtle-foreground",
@@ -22,8 +24,8 @@ const badgeVariants = cva(
         neutral: "border-transparent bg-neutral-subtle text-neutral-subtle-foreground",
 
         /* Semantic — solid (high contrast) */
-        "success-solid": "border-transparent bg-success text-success-foreground shadow-xs",
-        "warning-solid": "border-transparent bg-warning text-warning-foreground shadow-xs",
+        "success-solid": "border-transparent bg-success text-success-foreground",
+        "warning-solid": "border-transparent bg-warning text-warning-foreground",
       },
     },
     defaultVariants: {
@@ -45,12 +47,7 @@ function Badge({ className, variant, dot, children, ...props }: BadgeProps) {
         <span
           aria-hidden
           className={cn(
-            "inline-block h-1.5 w-1.5 rounded-full",
-            variant === "success" && "bg-success",
-            variant === "warning" && "bg-warning",
-            variant === "info" && "bg-info",
-            variant === "danger" && "bg-destructive",
-            variant === "neutral" && "bg-muted-foreground",
+            statusDotClass(variant),
             (variant === "default" || !variant) && "bg-current"
           )}
         />
@@ -64,47 +61,33 @@ function Badge({ className, variant, dot, children, ...props }: BadgeProps) {
  * StatusBadge — convenience wrapper that maps an invoice/payment status string
  * to the right semantic Badge variant. Use this in tables.
  */
-export type StatusKind =
-  | "paid"
-  | "sent"
-  | "draft"
-  | "void"
-  | "overdue"
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "posted"
-  | "active"
-  | "inactive"
-  | "submitted";
-
-const STATUS_MAP: Record<StatusKind, { variant: BadgeProps["variant"]; label: string }> = {
-  paid: { variant: "success", label: "Paid" },
-  posted: { variant: "success", label: "Posted" },
-  approved: { variant: "success", label: "Approved" },
-  active: { variant: "success", label: "Active" },
-  sent: { variant: "info", label: "Sent" },
-  submitted: { variant: "info", label: "Submitted" },
-  pending: { variant: "warning", label: "Pending" },
-  overdue: { variant: "danger", label: "Overdue" },
-  rejected: { variant: "danger", label: "Rejected" },
-  void: { variant: "neutral", label: "Void" },
-  draft: { variant: "neutral", label: "Draft" },
-  inactive: { variant: "neutral", label: "Inactive" },
-};
-
 interface StatusBadgeProps extends Omit<BadgeProps, "variant" | "children"> {
   status: string;
-  /** Override the displayed label (default: capitalized status) */
+  /** Override the displayed label (default: the localized status label) */
   label?: React.ReactNode;
+  /** For overdue documents: "45 days overdue" / "متأخر 45 يومًا". */
+  overdueDays?: number;
 }
 
-function StatusBadge({ status, label, className, ...props }: StatusBadgeProps) {
+/**
+ * StatusBadge — the one document-status pill (CTO issue 7): localized label in sentence
+ * case, semantic colour, a dot. Unknown statuses render neutral with the raw value.
+ */
+function StatusBadge({ status, label, overdueDays, className, ...props }: StatusBadgeProps) {
   const key = (status || "").toLowerCase() as StatusKind;
-  const meta = STATUS_MAP[key] ?? { variant: "neutral" as const, label: status };
+  const meta = STATUS_MAP[key];
+  // E3: some status labels live in `screens`, which a public route does not load by itself.
+  const { t } = useTranslation(meta?.label.startsWith("screens.") ? STATUS_NAMESPACES : undefined);
+  const overdueLabel =
+    overdueDays !== undefined && overdueDays > 0
+      ? overdueDays === 1
+        ? t["components.statusOverdueOneDay"]
+        : (t["components.statusOverdueDays"] ?? "{days}").replace("{days}", String(overdueDays))
+      : undefined;
+  const variant = overdueLabel ? "danger" : (meta?.variant ?? "neutral");
   return (
-    <Badge variant={meta.variant} dot className={cn("py-0.5", className)} {...props}>
-      {label ?? meta.label}
+    <Badge variant={variant} dot className={cn("py-0.5", className)} {...props}>
+      {label ?? overdueLabel ?? (meta ? (t[meta.label] ?? status) : status)}
     </Badge>
   );
 }

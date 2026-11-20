@@ -13,17 +13,27 @@ import {
   vatReturns,
 } from "../../shared/schema";
 import { authMiddleware } from "../middleware/auth";
+import { denyClientAccess } from "./firm/shared";
 import { requireFirmRole, getAccessibleCompanyIds } from "../middleware/rbac";
 import { asyncHandler } from "../middleware/errorHandler";
 import { createLogger } from "../config/logger";
-import {
-  sendEmail,
-  renderTemplate,
-  hasSmtpConfig,
-  sendGenericEmail,
-} from "../services/email.service";
+import { sendEmail, renderTemplate } from "../services/email.service";
 import { createAndEmitNotification } from "../services/socket.service";
+import { notificationCopy } from "../../shared/server-copy";
 import { recordAudit } from "../services/audit.service";
+import { calendarDateKey } from "../../shared/uae-date";
+
+/** "30 September 2026": the calendar day of a business date in any server TZ (N1). */
+function longCalendarDate(value: Date | string): string {
+  const key = calendarDateKey(value);
+  if (!key) return "";
+  return new Date(`${key}T00:00:00Z`).toLocaleDateString("en-AE", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
 
 const logger = createLogger("firm-comms-routes");
 
@@ -31,22 +41,22 @@ const logger = createLogger("firm-comms-routes");
 
 const sendEmailSchema = z
   .object({
-    companyId: z.string().uuid(),
+    companyId: z.string().guid(),
     recipientEmail: z.string().email(),
     subject: z.string().min(1).optional(),
     body: z.string().min(1).optional(),
     templateType: z
       .enum(["vat_reminder", "invoice", "document_request", "payment_confirmation", "custom"])
       .optional(),
-    templateId: z.string().uuid().optional(),
-    invoiceId: z.string().uuid().optional(),
+    templateId: z.string().guid().optional(),
+    invoiceId: z.string().guid().optional(),
   })
   .refine((d) => (d.subject && d.body) || d.templateId, {
     message: "Provide subject+body or a templateId",
   });
 
 const sendWhatsAppSchema = z.object({
-  companyId: z.string().uuid(),
+  companyId: z.string().guid(),
   recipientPhone: z.string().min(1),
   body: z.string().min(1),
   templateType: z
@@ -55,7 +65,7 @@ const sendWhatsAppSchema = z.object({
 });
 
 const templateSchema = z.object({
-  id: z.string().uuid().optional(),
+  id: z.string().guid().optional(),
   name: z.string().min(1),
   channel: z.enum(["whatsapp", "email", "sms"]),
   templateType: z.enum([
@@ -83,14 +93,17 @@ export function registerFirmCommsRoutes(app: Express): void {
 
   // Scope auth + firm-role guards to /firm/* so this router (mounted at /api)
   // does not short-circuit unrelated /api requests like /api/health.
-  router.use("/firm", authMiddleware as any);
-  router.use("/firm", requireFirmRole());
+  // NR-only client comms (WhatsApp + email to NR clients). Scoped to
+  // /firm/comms so this NR guard never shadows the multi-firm /firm/* routers
+  // registered after it.
+  router.use("/firm/comms", authMiddleware);
+  router.use("/firm/comms", requireFirmRole());
 
   // ─── GET /api/firm/comms/log ──────────────────────────────────────────────
   router.get(
     "/firm/comms/log",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const {
         companyId,
         channel,
@@ -103,7 +116,7 @@ export function registerFirmCommsRoutes(app: Express): void {
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
 
       if (accessibleIds !== null && accessibleIds.length === 0) {
@@ -162,15 +175,15 @@ export function registerFirmCommsRoutes(app: Express): void {
     "/firm/comms/log/:companyId",
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
 
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
       if (accessibleIds !== null && !accessibleIds.includes(companyId)) {
-        return res.status(403).json({ message: "Access denied to this client" });
+        return denyClientAccess(res, companyId);
       }
 
       const rows = await db
@@ -188,13 +201,13 @@ export function registerFirmCommsRoutes(app: Express): void {
   router.post(
     "/firm/comms/send-email",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const validated = sendEmailSchema.parse(req.body);
 
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
       if (accessibleIds !== null && !accessibleIds.includes(validated.companyId)) {
         return res.status(403).json({ message: "Access denied to this client" });
@@ -245,18 +258,8 @@ export function registerFirmCommsRoutes(app: Express): void {
           if (inv) {
             vars.invoiceNumber = inv.number;
             vars.customerName = inv.customerName;
-            vars.invoiceDate = new Date(inv.date).toLocaleDateString("en-AE", {
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            });
-            vars.dueDate = inv.dueDate
-              ? new Date(inv.dueDate).toLocaleDateString("en-AE", {
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })
-              : "";
+            vars.invoiceDate = longCalendarDate(inv.date);
+            vars.dueDate = inv.dueDate ? longCalendarDate(inv.dueDate) : "";
             vars.total = `${inv.currency} ${inv.total.toFixed(2)}`;
             vars.subtotal = `${inv.currency} ${inv.subtotal.toFixed(2)}`;
             vars.vatAmount = `${inv.currency} ${inv.vatAmount.toFixed(2)}`;
@@ -306,8 +309,11 @@ export function registerFirmCommsRoutes(app: Express): void {
         userId,
         companyId: validated.companyId,
         type: "communication",
-        title: "Email sent to client",
-        message: `Email "${validated.subject}" sent to ${validated.recipientEmail}`,
+        ...notificationCopy(
+          "notification.emailSentToClient.title",
+          "notification.emailSentToClient.message",
+          { subject: validated.subject, recipient: validated.recipientEmail }
+        ),
         priority: "normal",
         relatedEntityType: "communication",
         relatedEntityId: comm.id,
@@ -343,13 +349,13 @@ export function registerFirmCommsRoutes(app: Express): void {
   router.post(
     "/firm/comms/send-whatsapp",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const validated = sendWhatsAppSchema.parse(req.body);
 
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
       if (accessibleIds !== null && !accessibleIds.includes(validated.companyId)) {
         return res.status(403).json({ message: "Access denied to this client" });
@@ -378,8 +384,11 @@ export function registerFirmCommsRoutes(app: Express): void {
         userId,
         companyId: validated.companyId,
         type: "communication",
-        title: "WhatsApp message logged",
-        message: `WhatsApp draft logged for ${validated.recipientPhone}; no provider delivery occurred.`,
+        ...notificationCopy(
+          "notification.whatsappLogged.title",
+          "notification.whatsappLogged.message",
+          { phone: validated.recipientPhone }
+        ),
         priority: "normal",
         relatedEntityType: "communication",
         relatedEntityId: comm.id,
@@ -427,7 +436,7 @@ export function registerFirmCommsRoutes(app: Express): void {
   router.post(
     "/firm/comms/templates",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId } = (req as any).user;
+      const { id: userId } = req.user!;
       const validated = templateSchema.parse(req.body);
 
       if (validated.id) {
@@ -494,13 +503,13 @@ export function registerFirmCommsRoutes(app: Express): void {
   router.post(
     "/firm/comms/bulk-remind",
     asyncHandler(async (req: Request, res: Response) => {
-      const { id: userId, firmRole } = (req as any).user;
+      const { id: userId, firmRole } = req.user!;
       const { daysAhead, dryRun } = bulkRemindSchema.parse(req.body);
 
       const accessibleIds = await getAccessibleCompanyIds(
         userId,
         firmRole ?? "",
-        (req as any).user?.isAdmin === true
+        req.user?.isAdmin === true
       );
       if (accessibleIds !== null && accessibleIds.length === 0) {
         return res.json({ sent: 0, failed: 0, results: [], preview: [] });
@@ -560,11 +569,7 @@ export function registerFirmCommsRoutes(app: Express): void {
           continue;
         }
 
-        const dueDate = new Date(target.dueDate).toLocaleDateString("en-AE", {
-          year: "numeric",
-          month: "long",
-          day: "numeric",
-        });
+        const dueDate = longCalendarDate(target.dueDate);
         const subject = `VAT Return Reminder — Due ${dueDate}`;
         const body = [
           `Dear ${target.companyName},`,

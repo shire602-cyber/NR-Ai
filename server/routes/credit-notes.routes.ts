@@ -1,9 +1,33 @@
+// Credit notes (W3-A: R03-08, R03-21).
+//
+// Credit notes live in `invoices` (invoice_type = 'credit_note', negative
+// totals). A standalone credit note is created as a DRAFT (no journal),
+// issued with /issue — which mirrors the original invoice's revenue / VAT legs
+// through the ledger kernel and turns any excess over the invoice's open
+// balance into a customer credit — and voided with /void (kernel reversal,
+// unused customer credit closed, invoice settlement restored).
+// POST /api/companies/:id/invoices/:invoiceId/credit-note creates and issues
+// in one step.
 import type { Express, Request, Response } from "express";
+import { z } from "zod";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
+import { strictBody } from "../http/strict-body";
+import { DomainError } from "../errors";
 import { storage } from "../storage";
+import type { Invoice, InvoiceLine } from "../../shared/schema";
 import { generateCreditNotePDF } from "../services/pdf-credit-note.service";
+import { salesLinesSchema } from "../../shared/validators/invoices";
+import { zDate, zText, zUuid } from "../../shared/validators/primitives";
+import {
+  createDraftCreditNote,
+  issueDraftCreditNote,
+  voidCreditNote,
+} from "../services/invoice-posting.service";
+import { toCreditLines } from "./invoices.routes";
+import { emitDomainEvent } from "../platform/domain-events";
+import { fromFils, toFils } from "../../shared/money";
 
 function canonicalCreditNoteStatus(status: string): string {
   if (status === "draft") return "draft";
@@ -11,7 +35,7 @@ function canonicalCreditNoteStatus(status: string): string {
   return "issued";
 }
 
-function toCanonicalCreditNote(invoice: any, originalInvoice?: any) {
+function toCanonicalCreditNote(invoice: Invoice, originalInvoice?: Invoice) {
   return {
     id: invoice.id,
     companyId: invoice.companyId,
@@ -26,14 +50,14 @@ function toCanonicalCreditNote(invoice: any, originalInvoice?: any) {
     vatAmount: Math.abs(Number(invoice.vatAmount) || 0),
     total: Math.abs(Number(invoice.total) || 0),
     status: canonicalCreditNoteStatus(invoice.status),
-    reason: "Invoice credit note",
+    reason: invoice.notes || "Invoice credit note",
     journalEntryId: null,
     createdAt: invoice.createdAt,
     updatedAt: invoice.createdAt,
   };
 }
 
-function toCanonicalCreditNoteLine(line: any) {
+function toCanonicalCreditNoteLine(line: InvoiceLine) {
   return {
     id: line.id,
     creditNoteId: line.invoiceId,
@@ -47,7 +71,7 @@ function toCanonicalCreditNoteLine(line: any) {
 
 async function getCanonicalCreditNote(id: string) {
   const invoice = await storage.getInvoiceById(id);
-  if (!invoice || (invoice as any).invoiceType !== "credit_note") return null;
+  if (!invoice || invoice.invoiceType !== "credit_note") return null;
   const originalInvoice = invoice.originalInvoiceId
     ? await storage.getInvoiceById(invoice.originalInvoiceId)
     : undefined;
@@ -58,27 +82,37 @@ async function getCanonicalCreditNoteWithLines(id: string) {
   const creditNote = await getCanonicalCreditNote(id);
   if (!creditNote) return null;
   const invoiceLines = await storage.getInvoiceLinesByInvoiceId(id);
-  return {
-    ...creditNote,
-    lines: invoiceLines.map(toCanonicalCreditNoteLine),
-  };
+  return { ...creditNote, lines: invoiceLines.map(toCanonicalCreditNoteLine) };
 }
 
-function sendLegacyWriteDisabled(res: Response) {
-  return res.status(410).json({
-    message:
-      "Standalone credit-note writes are retired. Create credit notes from the original invoice so VAT, FX, caps, and journal entries stay unified.",
-    code: "STANDALONE_CREDIT_NOTES_RETIRED",
-    replacement: "POST /api/companies/:companyId/invoices/:invoiceId/credit-note",
-  });
+const userOf = (req: Request): string => (req as Request & { user: { id: string } }).user.id;
+
+/** The body after `strictBody(schema)` replaced it with the parsed, canonical value. */
+function validated<T>(req: Request): T {
+  return req.body as T;
 }
+
+/** A credit note the user may see; another tenant's id is a 404 (never 403). */
+async function creditNoteForUser(userId: string, id: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new DomainError("CREDIT_NOTE_NOT_FOUND", 404);
+  const creditNote = await getCanonicalCreditNote(id);
+  if (!creditNote || !(await storage.hasCompanyAccess(userId, creditNote.companyId))) {
+    throw new DomainError("CREDIT_NOTE_NOT_FOUND", 404, undefined, "Credit note not found");
+  }
+  return creditNote;
+}
+
+const standaloneCreditNoteSchema = z
+  .object({
+    invoiceId: zUuid,
+    lines: salesLinesSchema.optional(),
+    restock: z.boolean().optional(),
+    reason: zText(500).optional(),
+    date: zDate.optional(),
+  })
+  .strict();
 
 export function registerCreditNoteRoutes(app: Express) {
-  // =====================================
-  // Credit Note Routes
-  // =====================================
-
-  // Customer-only: List credit notes by company
   app.get(
     "/api/companies/:companyId/credit-notes",
     authMiddleware,
@@ -86,187 +120,165 @@ export function registerCreditNoteRoutes(app: Express) {
     requireFeature("creditNotes"),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = (req as any).user.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+      if (!(await storage.hasCompanyAccess(userOf(req), companyId))) {
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
-
       const invoices = await storage.getInvoicesByCompanyId(companyId);
-      const byId = new Map(invoices.map((invoice: any) => [invoice.id, invoice]));
+      const byId = new Map(invoices.map((invoice) => [invoice.id, invoice]));
       const creditNotes = invoices
-        .filter((invoice: any) => invoice.invoiceType === "credit_note")
-        .map((invoice: any) => toCanonicalCreditNote(invoice, byId.get(invoice.originalInvoiceId)))
-        .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        .filter((invoice) => invoice.invoiceType === "credit_note")
+        .map((invoice) =>
+          toCanonicalCreditNote(
+            invoice,
+            invoice.originalInvoiceId ? byId.get(invoice.originalInvoiceId) : undefined
+          )
+        )
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       res.json(creditNotes);
     })
   );
 
-  // Customer-only: Get single credit note with lines
   app.get(
     "/api/credit-notes/:id",
     authMiddleware,
     requireCustomer,
     requireFeature("creditNotes"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = (req as any).user.id;
-
-      const creditNote = await getCanonicalCreditNoteWithLines(id);
-      if (!creditNote) {
-        return res.status(404).json({ message: "Credit note not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, creditNote.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      res.json(creditNote);
+      await creditNoteForUser(userOf(req), req.params.id);
+      res.json(await getCanonicalCreditNoteWithLines(req.params.id));
     })
   );
 
-  // Customer-only: Create credit note with lines
+  // Create a DRAFT credit note against an issued invoice (no journal yet).
   app.post(
     "/api/companies/:companyId/credit-notes",
     authMiddleware,
     requireCustomer,
     requireFeature("creditNotes"),
+    strictBody(standaloneCreditNoteSchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
       const { companyId } = req.params;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+      if (!(await storage.hasCompanyAccess(userOf(req), companyId))) {
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       }
-
-      return sendLegacyWriteDisabled(res);
+      const body = validated<z.output<typeof standaloneCreditNoteSchema>>(req);
+      const original = await storage.getInvoice(body.invoiceId, companyId);
+      if (!original) throw new DomainError("INVOICE_NOT_FOUND", 404);
+      const draft = await createDraftCreditNote({
+        invoiceId: body.invoiceId,
+        companyId,
+        lines: body.lines ? toCreditLines(body.lines, original) : undefined,
+        restock: body.restock,
+        date: body.date,
+        reason: body.reason,
+      });
+      res.status(201).json(await getCanonicalCreditNoteWithLines(draft.id));
     })
   );
 
-  // Customer-only: Update credit note
+  // Issued credit notes are immutable; drafts are replaced (delete + create).
   app.put(
     "/api/credit-notes/:id",
     authMiddleware,
     requireCustomer,
     requireFeature("creditNotes"),
-    asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = (req as any).user.id;
-      const creditNote = await getCanonicalCreditNote(id);
-      if (!creditNote) {
-        return res.status(404).json({ message: "Credit note not found" });
+    asyncHandler(async (req: Request) => {
+      const creditNote = await creditNoteForUser(userOf(req), req.params.id);
+      if (creditNote.status === "draft") {
+        throw new DomainError(
+          "CREDIT_NOTE_EDIT_BY_REPLACE",
+          409,
+          undefined,
+          "Delete the draft credit note and create a new one."
+        );
       }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, creditNote.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      return sendLegacyWriteDisabled(res);
+      throw new DomainError(
+        "CREDIT_NOTE_ISSUED_IMMUTABLE",
+        409,
+        undefined,
+        "An issued credit note cannot be changed; void it and issue a new one."
+      );
     })
   );
 
-  // Customer-only: Delete credit note
   app.delete(
     "/api/credit-notes/:id",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = (req as any).user.id;
-
-      const creditNote = await getCanonicalCreditNote(id);
-      if (!creditNote) {
-        return res.status(404).json({ message: "Credit note not found" });
+      const userId = userOf(req);
+      const creditNote = await creditNoteForUser(userId, req.params.id);
+      if (creditNote.status !== "draft") {
+        throw new DomainError(
+          "CREDIT_NOTE_ISSUED_IMMUTABLE",
+          409,
+          undefined,
+          "An issued credit note cannot be deleted; void it instead."
+        );
       }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, creditNote.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      return sendLegacyWriteDisabled(res);
+      await storage.safeDeleteInvoice(creditNote.id, userId);
+      res.json({ message: "Credit note deleted" });
     })
   );
 
-  // Customer-only: Issue credit note (creates reversing journal entry)
+  // Issue a draft credit note: posts the mirrored reversal through the kernel.
   app.post(
     "/api/credit-notes/:id/issue",
     authMiddleware,
     requireCustomer,
     requireFeature("creditNotes"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = (req as any).user.id;
-
-      const creditNote = await getCanonicalCreditNote(id);
-      if (!creditNote) {
-        return res.status(404).json({ message: "Credit note not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, creditNote.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      return sendLegacyWriteDisabled(res);
+      const userId = userOf(req);
+      const creditNote = await creditNoteForUser(userId, req.params.id);
+      const result = await issueDraftCreditNote(creditNote.id, creditNote.companyId, userId);
+      emitDomainEvent("credit_note.issued", {
+        companyId: creditNote.companyId,
+        entityId: creditNote.id,
+        invoiceId: creditNote.invoiceId ?? undefined,
+        totalFils: toFils(creditNote.total, { rounding: "halfUp" }),
+        actorUserId: userId,
+      });
+      res.json({
+        ...(await getCanonicalCreditNoteWithLines(creditNote.id)),
+        journalEntryId: result.journalEntryId,
+        customerCredit: result.customerCreditId
+          ? { id: result.customerCreditId, amount: fromFils(result.customerCreditFils) }
+          : null,
+      });
     })
   );
 
-  // Customer-only: Void credit note
+  // Void a credit note: kernel reversal, unused customer credit closed,
+  // invoice balance restored. Refused when its customer credit was used.
   app.post(
     "/api/credit-notes/:id/void",
     authMiddleware,
     requireCustomer,
     requireFeature("creditNotes"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = (req as any).user.id;
-
-      const creditNote = await getCanonicalCreditNote(id);
-      if (!creditNote) {
-        return res.status(404).json({ message: "Credit note not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, creditNote.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      return sendLegacyWriteDisabled(res);
+      const userId = userOf(req);
+      const creditNote = await creditNoteForUser(userId, req.params.id);
+      await voidCreditNote(creditNote.id, creditNote.companyId, userId);
+      res.json(await getCanonicalCreditNoteWithLines(creditNote.id));
     })
   );
 
-  // Customer-only: Generate PDF
   app.get(
     "/api/credit-notes/:id/pdf",
     authMiddleware,
     requireCustomer,
     requireFeature("creditNotes"),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = (req as any).user.id;
-
-      const creditNote = await getCanonicalCreditNoteWithLines(id);
-      if (!creditNote) {
-        return res.status(404).json({ message: "Credit note not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, creditNote.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
+      await creditNoteForUser(userOf(req), req.params.id);
+      const creditNote = (await getCanonicalCreditNoteWithLines(req.params.id))!;
       const company = await storage.getCompany(creditNote.companyId);
-      if (!company) {
-        return res.status(404).json({ message: "Company not found" });
-      }
-
-      const pdfBuffer = await generateCreditNotePDF(creditNote as any, creditNote.lines as any, company);
-
+      if (!company)
+        return res.status(404).json({ message: "Company not found", code: "COMPANY_NOT_FOUND" });
+      const pdfBuffer = await generateCreditNotePDF(
+        creditNote as unknown as Parameters<typeof generateCreditNotePDF>[0],
+        creditNote.lines as unknown as Parameters<typeof generateCreditNotePDF>[1],
+        company
+      );
       res.set({
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="credit-note-${creditNote.number}.pdf"`,

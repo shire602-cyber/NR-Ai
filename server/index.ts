@@ -1,12 +1,24 @@
 // ─── Load environment variables first ────────────────────────
 import "dotenv/config";
+// The process runs in UTC: timestamp columns carry no zone (server/config/pin-timezone.ts).
+import "./config/pin-timezone";
+// zod 3-compatible validation messages, before any schema parses (R17-27).
+import "../shared/zod-config";
 
 import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 
+import type { Server as HttpServer } from "http";
+import type { Server as IoServer } from "socket.io";
 import express from "express";
+import {
+  LARGE_JSON_LIMIT,
+  RAW_WEBHOOK_PREFIXES,
+  SMALL_JSON_LIMIT,
+  usesLargeJson,
+} from "./http/body-limits";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import passport from "passport";
@@ -19,17 +31,23 @@ import { createLogger } from "./config/logger";
 import { applySecurityMiddleware } from "./middleware/security";
 import { requestId } from "./middleware/requestId";
 import { requestLogger } from "./middleware/requestLogger";
-import { globalErrorHandler, notFoundHandler } from "./middleware/errorHandler";
+import {
+  globalErrorHandler,
+  notFoundHandler,
+  requestTransportErrorHandler,
+} from "./middleware/errorHandler";
 import { csrfProtection, csrfTokenHandler, csrfErrorHandler } from "./middleware/csrf";
 import { logBillingEnforcementStatus } from "./middleware/featureGate";
 import { registerRoutes } from "./routes";
 import { initSocketServer } from "./services/socket.service";
 import { setupVite, serveStatic } from "./vite";
 import { initScheduler } from "./services/scheduler.service";
-import { runMigrations, closePool, ensureCriticalSchema, pingDb, getPoolStats } from "./db";
+import { runMigrations, closePool, ensureCriticalSchema, pingDb } from "./db";
+import { createHealthHandler } from "./routes/admin-health.routes";
 import { installGracefulShutdown } from "./shutdown";
-import { captureException, monitoringConfigured } from "./services/monitoring";
+import { captureException } from "./services/monitoring";
 import { assessStorageDurability } from "./services/fileStorage";
+import { artefactFilesPresent } from "./services/einvoice/validate";
 
 // ─── Validate environment on startup ─────────────────────────
 const env = validateEnv();
@@ -41,7 +59,8 @@ const projectRoot = path.resolve(__dirname, "..");
 const app = express();
 
 // ─── Trust proxy (required behind reverse proxy / Railway / Render) ──
-app.set("trust proxy", 1);
+// R01-09: applySecurityMiddleware sets it from TRUST_PROXY_HOPS (default 1,
+// warning in production when unset) before anything reads req.ip.
 
 // ─── Correlation ID — must run before logging / security so every
 //     request log line and rate-limit warn carries the same trace ID.
@@ -56,27 +75,31 @@ app.use(compression());
 // ─── Body parsing ────────────────────────────────────────────
 // Most endpoints accept small JSON. A handful of image-upload routes
 // (OCR + receipts) accept base64 data URLs and need a larger limit.
-const largeJsonRoutes = [
-  /^\/api\/ocr\//,
-  /^\/api\/export\//,
-  /^\/api\/firm\/bulk\/ocr/,
-  /^\/api\/companies\/[^/]+\/receipts$/,
-  /^\/api\/companies\/[^/]+\/bank-statements\/import$/,
-];
-
-const largeJson = express.json({ limit: "10mb" });
-const smallJson = express.json({ limit: "1mb" });
+// Route list shared with the DB test harness (server/http/body-limits.ts).
+const largeJson = express.json({ limit: LARGE_JSON_LIMIT });
+const smallJson = express.json({ limit: SMALL_JSON_LIMIT });
 
 // The inbound email webhook needs the EXACT raw bytes to verify its HMAC
 // signature, so it gets a raw-body parser and is skipped by the JSON parser.
 app.use("/api/webhooks/email-intake", express.raw({ type: "*/*", limit: "20mb" }));
+// W4-D: payment-gateway and email-delivery webhooks are verified over the raw bytes too.
+// E1: A-Cube webhooks are signed over the raw bytes (HTTP Message Signatures + content-digest).
+// RAW_WEBHOOK_PREFIXES (server/http/body-limits.ts): W4-D gateways, A-Cube, Complyance, Stripe.
+app.use([...RAW_WEBHOOK_PREFIXES], express.raw({ type: "*/*", limit: "1mb" }));
 
 app.use((req, res, next) => {
   if (req.path === "/api/webhooks/email-intake") return next(); // raw body handled above
-  const useLarge = largeJsonRoutes.some((rx) => rx.test(req.path));
+  if (RAW_WEBHOOK_PREFIXES.some((p) => req.path.startsWith(`${p}/`))) return next();
+  const useLarge = usesLargeJson(req.path);
   return (useLarge ? largeJson : smallJson)(req, res, next);
 });
 app.use(express.urlencoded({ extended: false, limit: "1mb" }));
+
+// R17-12: malformed JSON (400 INVALID_JSON), oversize bodies (413) and CORS
+// rejections from applySecurityMiddleware, including preflight
+// (403 ORIGIN_NOT_ALLOWED), are client errors. Answer them here, before
+// session/auth/CSRF, instead of letting them surface as a 500.
+app.use(requestTransportErrorHandler);
 
 // ─── Cookie parser (must run before CSRF + session) ─────────
 app.use(cookieParser(env.SESSION_SECRET));
@@ -146,33 +169,9 @@ app.get("/health/ready", async (_req, res) => {
   });
 });
 
-// Readiness/full health — depends on DB. Reports pool + memory + version.
-app.get("/health", async (_req, res) => {
-  const ping = await pingDb();
-  const status = ping.ok ? "ok" : "degraded";
-  const mem = process.memoryUsage();
-  res.status(ping.ok ? 200 : 503).json({
-    status,
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: env.NODE_ENV,
-    version: process.env.APP_VERSION || "1.0.0",
-    node: process.version,
-    pid: process.pid,
-    memory: {
-      rssMB: Math.round(mem.rss / 1024 / 1024),
-      heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
-      heapTotalMB: Math.round(mem.heapTotal / 1024 / 1024),
-    },
-    checks: {
-      database: ping.ok ? "ok" : "error",
-      databaseLatencyMs: ping.latencyMs,
-      databaseError: ping.error,
-      pool: getPoolStats(),
-      errorTracking: monitoringConfigured() ? "configured" : "logs-only",
-    },
-  });
-});
+// Readiness/full health — depends on DB. R17-13: anonymous callers get only
+// { status }; version, pid, memory and pool stats are for platform admins.
+app.get("/health", createHealthHandler(env.NODE_ENV));
 
 // ─── Ensure required directories exist & fix mounted-volume ownership ──
 // On Railway, the durable receipt-image storage is a mounted Volume. Railway
@@ -189,9 +188,7 @@ const APP_UID = 1001;
 const APP_GID = 1001;
 
 const runningAsRoot =
-  process.platform === "linux" &&
-  typeof process.getuid === "function" &&
-  process.getuid() === 0;
+  process.platform === "linux" && typeof process.getuid === "function" && process.getuid() === 0;
 
 if (runningAsRoot) {
   // We own everything right now — create the tree and hand the (root-owned)
@@ -216,20 +213,14 @@ if (runningAsRoot) {
   } catch (err) {
     // Staying root is acceptable: the volume is already chowned and root can
     // write it, so receipt saving works — we only lose the hardening.
-    log.error(
-      { err: (err as Error).message },
-      "Failed to drop privileges; continuing as root"
-    );
+    log.error({ err: (err as Error).message }, "Failed to drop privileges; continuing as root");
   }
 } else {
   // Non-root (local dev, or already-unprivileged): just ensure the dirs.
   try {
     fs.mkdirSync(receiptsDir, { recursive: true });
   } catch (err) {
-    log.warn(
-      { err: (err as Error).message, receiptsDir },
-      "Could not create uploads directory"
-    );
+    log.warn({ err: (err as Error).message, receiptsDir }, "Could not create uploads directory");
   }
 }
 
@@ -267,8 +258,8 @@ if (runningAsRoot) {
 }
 
 // ─── Module-level refs for graceful shutdown ─────────────────
-let httpServer: any = null;
-let ioServer: any = null;
+let httpServer: HttpServer | null = null;
+let ioServer: IoServer | null = null;
 
 // ─── Bootstrap application ───────────────────────────────────
 async function bootstrap() {
@@ -335,6 +326,18 @@ async function bootstrap() {
     log.info(`✓ Database: ${env.DATABASE_URL ? "Connected" : "Not configured"}`);
     log.info(`✓ AI: ${env.OPENAI_API_KEY ? "Configured" : "Not configured"}`);
     logBillingEnforcementStatus();
+    // W4-C: e-invoice XSD + PINT AE schematron ship in server/assets/einvoice
+    // (copied into the image with server/assets). Without them validation
+    // reports `available: false` for those layers, so say so at boot.
+    const einvoiceArtefacts = artefactFilesPresent();
+    if (einvoiceArtefacts.xsd && einvoiceArtefacts.schematron) {
+      log.info(`✓ E-invoice artefacts: XSD + schematron found in ${einvoiceArtefacts.dir}`);
+    } else {
+      log.warn(
+        einvoiceArtefacts,
+        "E-invoice validation artefacts missing: UBL XSD and/or PINT AE schematron layers will report unavailable"
+      );
+    }
   });
 
   server.on("error", (error: NodeJS.ErrnoException) => {

@@ -1,19 +1,34 @@
+# Keep the build context to what `npm run build` needs (client, server, shared, config, migrations).
 node_modules
 dist
+coverage
 .git
+.github
 .env
-.env.local
+.env.*
+*.log
 *.md
-docs/qa/*-benchmark-audit-local/
-attached_assets
 uploads
-*.png
-*.jpg
-backend
-frontend
-backend-fixed.tar
+
+# Not part of the product image
+sites
+brand
+docs
+tests
+tools
+extensions
+deploy
+.claude
+.claire
+.cursor
+.codex-artifacts
+tmp
+outputs
+.eslintcache
+
+# Local/editor leftovers
 .replit
 replit.md
 *.nix
-.cursor
-*.log
+*.png
+*.jpg

@@ -3,6 +3,8 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { z } from "zod";
+import { notificationCopy } from "../../shared/server-copy";
+import { pq } from "../services/connectors/pq";
 
 export function registerReferralRoutes(app: Express) {
   const router = Router();
@@ -18,7 +20,7 @@ export function registerReferralRoutes(app: Express) {
   router.get(
     "/my-code",
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       let referralCode = await storage.getReferralCodeByUserId(userId);
 
       // Auto-generate referral code if not exists
@@ -46,7 +48,7 @@ export function registerReferralRoutes(app: Express) {
   router.get(
     "/stats",
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user?.id;
+      const userId = req.user!.id;
       const referralCode = await storage.getReferralCodeByUserId(userId);
       const referrals = await storage.getReferralsByReferrerId(userId);
 
@@ -73,11 +75,23 @@ export function registerReferralRoutes(app: Express) {
       const referralCode = await storage.getReferralCodeByCode(code);
 
       if (!referralCode || !referralCode.isActive) {
-        return res.status(404).json({ valid: false, message: "Invalid or expired referral code" });
+        return res
+          .status(404)
+          .json({
+            valid: false,
+            message: "Invalid or expired referral code",
+            code: "REFERRAL_CODE_INVALID",
+          });
       }
 
       if (referralCode.expiresAt && new Date(referralCode.expiresAt) < new Date()) {
-        return res.status(400).json({ valid: false, message: "Referral code has expired" });
+        return res
+          .status(400)
+          .json({
+            valid: false,
+            message: "Referral code has expired",
+            code: "REFERRAL_CODE_EXPIRED",
+          });
       }
 
       res.json({
@@ -104,7 +118,17 @@ export function registerReferralRoutes(app: Express) {
 
       const referralCode = await storage.getReferralCodeByCode(code);
       if (!referralCode || !referralCode.isActive) {
-        return res.status(400).json({ message: "Invalid referral code" });
+        return res
+          .status(400)
+          .json({ message: "Invalid referral code", code: "REFERRAL_CODE_INVALID" });
+      }
+      const self = await pq<{ email: string }>(`SELECT email FROM users WHERE id = $1`, [
+        referralCode.userId,
+      ]);
+      if (self.rows[0]?.email?.toLowerCase() === refereeEmail.toLowerCase()) {
+        return res
+          .status(400)
+          .json({ message: "You cannot refer yourself", code: "SELF_REFERRAL" });
       }
 
       // Create referral record
@@ -129,13 +153,31 @@ export function registerReferralRoutes(app: Express) {
       await storage.createNotification({
         userId: referralCode.userId,
         type: "referral",
-        title: "New Referral Signup!",
-        message: `Someone signed up using your referral code. They'll need to complete a qualifying action for you to earn your reward.`,
+        ...notificationCopy(
+          "notification.referralSignup.title",
+          "notification.referralSignup.message"
+        ),
         priority: "normal",
-        actionUrl: "/referrals",
+        actionUrl: "/notifications",
       });
 
       res.json(referral);
+    })
+  );
+
+  // Rewards earned or received (R19-11): applied as a Stripe credit/coupon on the referred
+  // customer's first paid invoice, or ledgered here when Stripe is not configured.
+  router.get(
+    "/credits",
+    asyncHandler(async (req: Request, res: Response) => {
+      const userId = req.user!.id;
+      const { rows } = await pq(
+        `SELECT id, beneficiary, kind, amount_fils AS "amountFils", percent_off AS "percentOff",
+                currency, status, note, created_at AS "createdAt", applied_at AS "appliedAt"
+           FROM billing_credits WHERE user_id = $1 ORDER BY created_at DESC`,
+        [userId]
+      );
+      res.json(rows);
     })
   );
 

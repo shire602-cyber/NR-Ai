@@ -3,6 +3,7 @@ import { FcGoogle } from "react-icons/fc";
 import { FaMicrosoft } from "react-icons/fa";
 import { Button } from "@/components/ui/button";
 import { apiUrl } from "@/lib/api";
+import { formatMessage, useTranslation } from "@/lib/i18n";
 
 type OAuthProvider = "google" | "microsoft";
 type OAuthProviderInfo = {
@@ -29,7 +30,8 @@ function safeNextPath(): string {
   return "/dashboard";
 }
 
-export function OAuthButtons() {
+export function OAuthButtons({ nextPath }: { nextPath?: string } = {}) {
+  const { t } = useTranslation();
   const [pendingProvider, setPendingProvider] = useState<OAuthProvider | null>(null);
   const [providers, setProviders] = useState<OAuthProviderInfo[]>([]);
 
@@ -61,7 +63,7 @@ export function OAuthButtons() {
 
   const startOAuth = (provider: OAuthProvider) => {
     setPendingProvider(provider);
-    const next = encodeURIComponent(safeNextPath());
+    const next = encodeURIComponent(nextPath ?? safeNextPath());
     window.location.assign(apiUrl(`/api/auth/oauth/${provider}/start?next=${next}`));
   };
 
@@ -73,8 +75,10 @@ export function OAuthButtons() {
         <div className="absolute inset-0 flex items-center">
           <span className="w-full border-t" />
         </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+        <div className="relative flex justify-center text-caption">
+          <span className="bg-background px-2 text-muted-foreground">
+            {t["components.authOrContinueWith"]}
+          </span>
         </div>
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -85,7 +89,7 @@ export function OAuthButtons() {
               key={provider.id}
               type="button"
               variant="outline"
-              className="w-full gap-2"
+              className="h-11 w-full gap-2"
               disabled={pendingProvider !== null}
               onClick={() => startOAuth(provider.id)}
               data-testid={`button-oauth-${provider.id}`}
@@ -98,7 +102,9 @@ export function OAuthButtons() {
       </div>
       {pendingProvider && (
         <p className="text-center text-xs text-muted-foreground" role="status">
-          Redirecting to {pendingProvider === "google" ? "Google" : "Microsoft"}...
+          {formatMessage(t["marketing.authRedirecting"], {
+            provider: pendingProvider === "google" ? "Google" : "Microsoft",
+          })}
         </p>
       )}
     </div>

@@ -1,6 +1,7 @@
 import { and, count, desc, eq, gte, inArray, lt, lte, max, ne, sql, sum } from "drizzle-orm";
 
 import { db } from "../db";
+import { aed, ledgerBalanceCheckByCompany } from "../reporting";
 import {
   anomalyAlerts,
   bankTransactions,
@@ -12,13 +13,12 @@ import {
   documents,
   engagements,
   invoices,
-  journalEntries,
-  journalLines,
   receipts,
   serviceInvoices,
   taxReturnArchive,
   vatReturns,
 } from "../../shared/schema";
+import { describeAnomalyText, type CopyDescriptor } from "../../shared/server-copy";
 
 type Priority = "critical" | "high" | "medium" | "low";
 type ValueLane =
@@ -212,6 +212,9 @@ export interface FirmReviewItem {
   title: string;
   explanation: string;
   suggestedAction: string;
+  /** Anomaly items: the check that raised it and its sentence as key + params (client catalogs). */
+  rule?: string | null;
+  message?: CopyDescriptor | null;
   confidence: number;
   amountAed: number;
   dueDate: Date | null;
@@ -525,7 +528,8 @@ export async function buildFirmValueOps(
     .select({
       companyId: documentRequirements.companyId,
       missing: sql<string>`count(*) filter (where ${documentRequirements.status} in ('pending', 'requested', 'overdue'))`,
-      overdue: sql<string>`count(*) filter (where ${documentRequirements.status} = 'overdue' or ${documentRequirements.dueDate} < ${now})`,
+      // Received/waived requirements are closed even when their due date passed.
+      overdue: sql<string>`count(*) filter (where ${documentRequirements.status} = 'overdue' or (${documentRequirements.dueDate} < ${now} and ${documentRequirements.status} in ('pending', 'requested')))`,
     })
     .from(documentRequirements)
     .where(inArray(documentRequirements.companyId, companyIds))
@@ -563,7 +567,7 @@ export async function buildFirmValueOps(
     .select({
       companyId: complianceTasks.companyId,
       openTasks: sql<string>`count(*) filter (where ${complianceTasks.status} in ('pending', 'in_progress', 'overdue'))`,
-      overdueTasks: sql<string>`count(*) filter (where ${complianceTasks.status} = 'overdue' or ${complianceTasks.dueDate} < ${now})`,
+      overdueTasks: sql<string>`count(*) filter (where ${complianceTasks.status} = 'overdue' or (${complianceTasks.dueDate} < ${now} and coalesce(${complianceTasks.status}, 'pending') in ('pending', 'in_progress')))`,
     })
     .from(complianceTasks)
     .where(inArray(complianceTasks.companyId, companyIds))
@@ -579,7 +583,8 @@ export async function buildFirmValueOps(
     .select({
       companyId: complianceCalendar.companyId,
       upcoming: sql<string>`count(*) filter (where ${complianceCalendar.status} = 'upcoming' and ${complianceCalendar.eventDate} <= ${new Date(now.getTime() + 30 * 86_400_000)})`,
-      overdue: sql<string>`count(*) filter (where ${complianceCalendar.status} = 'overdue' or ${complianceCalendar.eventDate} < ${now})`,
+      // W4-A carry-over: completed / dismissed obligations are never overdue.
+      overdue: sql<string>`count(*) filter (where ${complianceCalendar.status} = 'overdue' or (${complianceCalendar.eventDate} < ${now} and ${complianceCalendar.status} = 'upcoming'))`,
     })
     .from(complianceCalendar)
     .where(inArray(complianceCalendar.companyId, companyIds))
@@ -651,24 +656,7 @@ export async function buildFirmValueOps(
     .groupBy(anomalyAlerts.companyId)) as AnomalyAggRow[];
   const anomalyMap = new Map(anomalyRows.map((r) => [r.companyId, r]));
 
-  type TrialBalanceRow = {
-    companyId: string;
-    debit: string | null;
-    credit: string | null;
-    lastJournalAt: Date | null;
-  };
-  const trialRows = (await db
-    .select({
-      companyId: journalEntries.companyId,
-      debit: sum(journalLines.debit),
-      credit: sum(journalLines.credit),
-      lastJournalAt: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
-    })
-    .from(journalEntries)
-    .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
-    .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, "posted")))
-    .groupBy(journalEntries.companyId)) as TrialBalanceRow[];
-  const trialMap = new Map(trialRows.map((r) => [r.companyId, r]));
+  const trialMap = await ledgerBalanceCheckByCompany(companyIds);
 
   type EngagementRow = { companyId: string; monthlyFee: number | null };
   const engagementRows = (await db
@@ -734,12 +722,11 @@ export async function buildFirmValueOps(
     const anomalyCount = asNumber(anomaly?.open);
     const criticalAnomalies = asNumber(anomaly?.critical);
     const overdueTasks = asNumber(comp?.overdueTasks) + asNumber(cal?.overdue);
-    const upcomingCompliance = asNumber(cal?.upcoming);
     const daysToVatDue = daysUntil(vat?.dueDate, now);
     const vatOpen = vat ? vat.status !== "filed" && vat.status !== "submitted" : true;
     const vatOverdue = vatOpen && daysToVatDue !== null && daysToVatDue < 0;
     const vatDueSoon = vatOpen && daysToVatDue !== null && daysToVatDue <= 14;
-    const trialDiscrepancy = Math.abs(asNumber(trial?.debit) - asNumber(trial?.credit));
+    const trialDiscrepancy = aed(trial?.differenceFils ?? 0);
     const lastClientActivity = latestDate(
       invoice?.lastInvoiceAt,
       receipt?.lastReceiptAt,
@@ -1591,6 +1578,7 @@ export async function buildFirmReviewQueue(
     severity: string;
     title: string;
     description: string;
+    rule: string | null;
     relatedEntityType: string | null;
     relatedEntityId: string | null;
     aiConfidence: number | null;
@@ -1603,6 +1591,7 @@ export async function buildFirmReviewQueue(
       severity: anomalyAlerts.severity,
       title: anomalyAlerts.title,
       description: anomalyAlerts.description,
+      rule: anomalyAlerts.rule,
       relatedEntityType: anomalyAlerts.relatedEntityType,
       relatedEntityId: anomalyAlerts.relatedEntityId,
       aiConfidence: anomalyAlerts.aiConfidence,
@@ -1672,23 +1661,7 @@ export async function buildFirmReviewQueue(
     .orderBy(documentRequirements.dueDate)
     .limit(80)) as DocumentReviewRow[];
 
-  type TrialReviewRow = {
-    companyId: string;
-    debit: string | null;
-    credit: string | null;
-    lastJournalAt: Date | null;
-  };
-  const trialRows = (await db
-    .select({
-      companyId: journalEntries.companyId,
-      debit: sum(journalLines.debit),
-      credit: sum(journalLines.credit),
-      lastJournalAt: sql<Date | null>`max(coalesce(${journalEntries.updatedAt}, ${journalEntries.postedAt}, ${journalEntries.createdAt}))`,
-    })
-    .from(journalEntries)
-    .innerJoin(journalLines, eq(journalLines.entryId, journalEntries.id))
-    .where(and(inArray(journalEntries.companyId, companyIds), eq(journalEntries.status, "posted")))
-    .groupBy(journalEntries.companyId)) as TrialReviewRow[];
+  const trialRows = [...(await ledgerBalanceCheckByCompany(companyIds)).values()];
 
   const items: FirmReviewItem[] = [];
 
@@ -1754,6 +1727,8 @@ export async function buildFirmReviewQueue(
       entityType: row.relatedEntityType ?? "anomaly",
       title: row.title,
       explanation: row.description,
+      rule: row.rule ?? null,
+      message: describeAnomalyText(row.description),
       suggestedAction: "Review the source transaction and resolve or document the exception.",
       confidence: row.aiConfidence ?? 0.55,
       amountAed: 0,
@@ -1808,8 +1783,7 @@ export async function buildFirmReviewQueue(
   }
 
   for (const row of trialRows) {
-    const discrepancy =
-      Math.round(Math.abs(asNumber(row.debit) - asNumber(row.credit)) * 100) / 100;
+    const discrepancy = aed(row.differenceFils);
     if (discrepancy <= 0.01) continue;
     items.push({
       id: `trial:${row.companyId}`,

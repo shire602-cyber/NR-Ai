@@ -1,284 +1,279 @@
+/**
+ * Webhook endpoint management (W5-B, R19-02, R19-05, R19-15).
+ *
+ * Deliveries are produced by domain events (server/services/webhook.service.ts):
+ * signed, queued, retried with backoff and dead-lettered. These routes manage
+ * endpoints, list deliveries, send a test event and replay a delivery. All of
+ * them need the `webhooks` plan feature; writes need `settings.company`.
+ */
 import type { Express, Request, Response } from "express";
+import { parsedBody } from "../http/parsed-body";
+import { z } from "zod";
+import { pool } from "../db";
+import { pq } from "../services/connectors/pq";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
-import { storage } from "../storage";
+import { requirePermission } from "../middleware/companyRolePolicy";
+import { strictBody } from "../http/strict-body";
+import { DomainError } from "../errors";
+import { validateOutboundUrl } from "../services/url-guard";
+import { decryptSecret, encryptSecret } from "../services/secret-vault";
 import {
-  validateOutboundUrl,
-  safeOutboundFetch,
-  OutboundUrlBlockedError,
-} from "../services/url-guard";
+  WEBHOOK_EVENTS,
+  attemptWebhookDelivery,
+  enqueueWebhookEvent,
+  normaliseEventList,
+  registerWebhookDispatch,
+  replayWebhookDelivery,
+} from "../services/webhook.service";
 import crypto from "crypto";
 
-export function registerWebhookRoutes(app: Express) {
-  // =====================================
-  // WEBHOOK ENDPOINT MANAGEMENT
-  // =====================================
+const zEvents = z
+  .union([z.array(z.string().trim().min(1)).min(1).max(50), z.string().trim().min(1).max(2000)])
+  .transform((v, ctx) => {
+    try {
+      return normaliseEventList(v);
+    } catch (err) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: (err as Error).message });
+      return z.NEVER;
+    }
+  });
 
-  // List all webhook endpoints for a company
+const zWebhookUrl = z
+  .string()
+  .trim()
+  .max(2000)
+  .refine((s) => {
+    try {
+      return new URL(s).protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, "Webhook URL must be an https:// URL");
+
+const createEndpointBody = z.object({ url: zWebhookUrl, events: zEvents }).strict();
+const updateEndpointBody = z
+  .object({
+    url: zWebhookUrl.optional(),
+    events: zEvents.optional(),
+    isActive: z.boolean().optional(),
+  })
+  .strict();
+
+interface EndpointRow {
+  id: string;
+  company_id: string;
+  url: string;
+  secret: string;
+  events: string;
+  is_active: boolean;
+  failure_count: number;
+  last_triggered_at: Date | null;
+  created_by: string | null;
+  created_at: Date;
+}
+
+const ENDPOINT_COLUMNS = `id, company_id, url, secret, events, is_active, failure_count,
+  last_triggered_at, created_by, created_at`;
+
+function present(row: EndpointRow) {
+  const plain = decryptSecret(row.secret) ?? "";
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    url: row.url,
+    events: row.events,
+    isActive: row.is_active,
+    failureCount: row.failure_count,
+    lastTriggeredAt: row.last_triggered_at,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    secretLast4: plain.slice(-4),
+  };
+}
+
+/** Endpoint owned by a company the caller belongs to, else 404. */
+async function endpointForUser(id: string, userId: string): Promise<EndpointRow> {
+  const { rows } = await pq<EndpointRow>(
+    `SELECT ${ENDPOINT_COLUMNS} FROM webhook_endpoints
+      WHERE id = $1 AND company_id IN (SELECT company_id FROM company_users WHERE user_id = $2)`,
+    [id, userId]
+  );
+  if (!rows[0]) throw new DomainError("NOT_FOUND", 404, undefined, "Webhook endpoint not found");
+  return rows[0];
+}
+
+async function assertSafeUrl(url: string): Promise<void> {
+  const verdict = await validateOutboundUrl(url);
+  if (!verdict.ok) {
+    throw new DomainError(
+      "WEBHOOK_URL_BLOCKED",
+      400,
+      { fields: { url: [verdict.reason] } },
+      `Invalid webhook URL: ${verdict.reason}`
+    );
+  }
+}
+
+export function registerWebhookRoutes(app: Express) {
+  registerWebhookDispatch();
+
+  // Event catalogue (en/ar) for the Developer Settings UI and docs.
+  app.get("/api/webhooks/events", authMiddleware, (_req: Request, res: Response) => {
+    res.json({ events: WEBHOOK_EVENTS });
+  });
+
   app.get(
     "/api/companies/:companyId/webhooks",
     authMiddleware,
     requireCustomer,
-    requireFeature("apiAccess"),
+    requirePermission("settings.company"),
+    requireFeature("webhooks"),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const { companyId } = req.params;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const endpoints = await storage.getWebhookEndpointsByCompanyId(companyId);
-
-      // Mask secrets — only show last 4 chars
-      const masked = endpoints.map(({ secret, ...endpoint }) => ({
-        ...endpoint,
-        secretLast4: secret.slice(-4),
-      }));
-
-      res.json(masked);
+      const { rows } = await pq<EndpointRow>(
+        `SELECT ${ENDPOINT_COLUMNS} FROM webhook_endpoints WHERE company_id = $1 ORDER BY created_at DESC`,
+        [req.params.companyId]
+      );
+      res.json(rows.map(present));
     })
   );
 
-  // Create a new webhook endpoint
   app.post(
     "/api/companies/:companyId/webhooks",
     authMiddleware,
     requireCustomer,
-    requireFeature("apiAccess"),
+    requirePermission("settings.company"),
+    requireFeature("webhooks"),
+    strictBody(createEndpointBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const { companyId } = req.params;
-      const { url, events } = req.body;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      if (!url || typeof url !== "string") {
-        return res.status(400).json({ message: "Webhook URL is required" });
-      }
-
-      if (!events || typeof events !== "string" || events.trim().length === 0) {
-        return res.status(400).json({ message: "At least one event is required" });
-      }
-
-      // Validate URL format and reject SSRF targets (private/internal hosts)
-      const urlVerdict = await validateOutboundUrl(url);
-      if (!urlVerdict.ok) {
-        return res.status(400).json({ message: `Invalid webhook URL: ${urlVerdict.reason}` });
-      }
-
-      const secret = crypto.randomBytes(32).toString("hex");
-
-      const created = await storage.createWebhookEndpoint({
-        companyId,
-        url,
-        secret,
-        events: events.trim(),
-        isActive: true,
-        createdBy: userId,
-      });
-
-      // Return the secret ONLY on creation
-      res.status(201).json({
-        ...created,
-        secret, // full secret returned only once
-      });
+      const body = parsedBody<z.output<typeof createEndpointBody>>(req);
+      await assertSafeUrl(body.url);
+      const secret = `whsec_${crypto.randomBytes(32).toString("hex")}`;
+      const { rows } = await pq<EndpointRow>(
+        `INSERT INTO webhook_endpoints (company_id, url, secret, events, is_active, created_by)
+              VALUES ($1, $2, $3, $4, true, $5) RETURNING ${ENDPOINT_COLUMNS}`,
+        [req.params.companyId, body.url, encryptSecret(secret), body.events, req.user!.id]
+      );
+      // The signing secret is returned ONLY on creation.
+      res.status(201).json({ ...present(rows[0]), secret });
     })
   );
 
-  // Update a webhook endpoint (url, events, isActive)
   app.put(
     "/api/webhooks/:id",
     authMiddleware,
     requireCustomer,
-    requireFeature("apiAccess"),
+    requireFeature("webhooks"),
+    strictBody(updateEndpointBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const { id } = req.params;
-      const { url, events, isActive } = req.body;
-
-      const endpoint = await storage.getWebhookEndpoint(id);
-      if (!endpoint) {
-        return res.status(404).json({ message: "Webhook endpoint not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, endpoint.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      if (url) {
-        const urlVerdict = await validateOutboundUrl(url);
-        if (!urlVerdict.ok) {
-          return res.status(400).json({ message: `Invalid webhook URL: ${urlVerdict.reason}` });
-        }
-      }
-
-      const updateData: Record<string, any> = {};
-      if (url !== undefined) updateData.url = url;
-      if (events !== undefined) updateData.events = events;
-      if (isActive !== undefined) updateData.isActive = isActive;
-
-      const updated = await storage.updateWebhookEndpoint(id, updateData);
-      if (!updated) {
-        return res.status(404).json({ message: "Webhook endpoint not found" });
-      }
-      const { secret, ...safeEndpoint } = updated;
-
-      res.json({
-        ...safeEndpoint,
-        secretLast4: secret.slice(-4),
-      });
+      const body = parsedBody<z.output<typeof updateEndpointBody>>(req);
+      const existing = await endpointForUser(req.params.id, req.user!.id);
+      if (body.url) await assertSafeUrl(body.url);
+      const { rows } = await pq<EndpointRow>(
+        `UPDATE webhook_endpoints
+            SET url = COALESCE($2, url), events = COALESCE($3, events),
+                is_active = COALESCE($4, is_active),
+                failure_count = CASE WHEN $4 IS TRUE THEN 0 ELSE failure_count END
+          WHERE id = $1 RETURNING ${ENDPOINT_COLUMNS}`,
+        [existing.id, body.url ?? null, body.events ?? null, body.isActive ?? null]
+      );
+      res.json(present(rows[0]));
     })
   );
 
-  // Delete a webhook endpoint
   app.delete(
     "/api/webhooks/:id",
     authMiddleware,
     requireCustomer,
-    requireFeature("apiAccess"),
+    requireFeature("webhooks"),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const { id } = req.params;
-
-      const endpoint = await storage.getWebhookEndpoint(id);
-      if (!endpoint) {
-        return res.status(404).json({ message: "Webhook endpoint not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, endpoint.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      await storage.deleteWebhookEndpoint(id);
+      const existing = await endpointForUser(req.params.id, req.user!.id);
+      await pool.query(`DELETE FROM webhook_endpoints WHERE id = $1`, [existing.id]);
       res.json({ message: "Webhook endpoint deleted successfully" });
     })
   );
 
-  // List recent deliveries for a webhook endpoint
   app.get(
     "/api/webhooks/:id/deliveries",
     authMiddleware,
     requireCustomer,
-    requireFeature("apiAccess"),
+    requireFeature("webhooks"),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const { id } = req.params;
-
-      const endpoint = await storage.getWebhookEndpoint(id);
-      if (!endpoint) {
-        return res.status(404).json({ message: "Webhook endpoint not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, endpoint.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const deliveries = await storage.getWebhookDeliveriesByEndpointId(id);
-      res.json(deliveries);
+      const existing = await endpointForUser(req.params.id, req.user!.id);
+      const { rows } = await pool.query(
+        `SELECT id, event, event_id AS "eventId", status, attempt_number AS "attemptNumber",
+                max_attempts AS "maxAttempts", response_status AS "responseStatus",
+                response_body AS "responseBody", success, last_error AS "lastError",
+                next_attempt_at AS "nextAttemptAt", delivered_at AS "deliveredAt",
+                created_at AS "createdAt", payload
+           FROM webhook_deliveries WHERE webhook_endpoint_id = $1
+          ORDER BY created_at DESC LIMIT 100`,
+        [existing.id]
+      );
+      res.json(rows);
     })
   );
 
-  // Send a test webhook event
+  // Send a signed `test` event through the same queue (one attempt, no retries).
   app.post(
     "/api/webhooks/:id/test",
     authMiddleware,
     requireCustomer,
-    requireFeature("apiAccess"),
+    requireFeature("webhooks"),
     asyncHandler(async (req: Request, res: Response) => {
-      const userId = (req as any).user.id;
-      const { id } = req.params;
-
-      const endpoint = await storage.getWebhookEndpoint(id);
-      if (!endpoint) {
-        return res.status(404).json({ message: "Webhook endpoint not found" });
-      }
-
-      const hasAccess = await storage.hasCompanyAccess(userId, endpoint.companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const testPayload = {
-        event: "test",
-        timestamp: new Date().toISOString(),
-        data: {
-          message: "This is a test webhook from Muhasib.ai",
-          companyId: endpoint.companyId,
-          webhookEndpointId: endpoint.id,
-        },
-      };
-
-      const payloadStr = JSON.stringify(testPayload);
-      const signature = crypto
-        .createHmac("sha256", endpoint.secret)
-        .update(payloadStr)
-        .digest("hex");
-
-      let responseStatus: number | null = null;
-      let responseBody: string | null = null;
-      let success = false;
-
-      try {
-        const response = await safeOutboundFetch(
-          endpoint.url,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Webhook-Signature": `sha256=${signature}`,
-              "X-Webhook-Event": "test",
-            },
-            body: payloadStr,
-          },
-          { timeoutMs: 10000 }
-        );
-
-        responseStatus = response.status;
-        responseBody = response.bodyText || null;
-        success = response.ok;
-      } catch (err: any) {
-        if (err instanceof OutboundUrlBlockedError) {
-          responseBody = `Blocked: ${err.message}`;
-        } else {
-          responseBody = err.message || "Network error";
-        }
-        success = false;
-      }
-
-      // Record the delivery
-      const delivery = await storage.createWebhookDelivery({
-        webhookEndpointId: endpoint.id,
-        event: "test",
-        payload: payloadStr,
-        responseStatus,
-        responseBody,
-        success,
-        attemptNumber: 1,
+      const existing = await endpointForUser(req.params.id, req.user!.id);
+      const eventId = `test_${crypto.randomUUID()}`;
+      const body = JSON.stringify({
+        id: eventId,
+        type: "test",
+        createdAt: new Date().toISOString(),
+        companyId: existing.company_id,
+        data: { message: "This is a test webhook from Muhasib.ai", webhookEndpointId: existing.id },
       });
-
-      // Update last triggered
-      await storage.updateWebhookEndpoint(id, {
-        lastTriggeredAt: new Date(),
-      } as any);
-
-      if (!success) {
-        await storage.incrementWebhookFailureCount(id);
-      }
-
+      const { rows } = await pq<{ id: string }>(
+        `INSERT INTO webhook_deliveries
+           (webhook_endpoint_id, company_id, event, event_id, payload, status, attempt_number,
+            max_attempts, next_attempt_at, success, updated_at)
+         VALUES ($1, $2, 'test', $3, $4, 'pending', 0, 1, now(), false, now()) RETURNING id`,
+        [existing.id, existing.company_id, eventId, body]
+      );
+      const outcome = await attemptWebhookDelivery(rows[0].id, { force: true });
+      const { rows: d } = await pool.query(
+        `SELECT id, status, response_status AS "responseStatus", last_error AS "lastError"
+           FROM webhook_deliveries WHERE id = $1`,
+        [rows[0].id]
+      );
       res.json({
-        success,
-        delivery,
-        responseStatus,
+        success: outcome === "delivered",
+        delivery: d[0],
+        responseStatus: d[0]?.responseStatus ?? null,
       });
     })
   );
+
+  app.post(
+    "/api/webhooks/:id/deliveries/:deliveryId/replay",
+    authMiddleware,
+    requireCustomer,
+    requireFeature("webhooks"),
+    asyncHandler(async (req: Request, res: Response) => {
+      const existing = await endpointForUser(req.params.id, req.user!.id);
+      const { rows } = await pq<{ id: string }>(
+        `SELECT id FROM webhook_deliveries WHERE id = $1 AND webhook_endpoint_id = $2`,
+        [req.params.deliveryId, existing.id]
+      );
+      if (!rows[0]) throw new DomainError("NOT_FOUND", 404, undefined, "Delivery not found");
+      const replayId = await replayWebhookDelivery(rows[0].id);
+      const { rows: d } = await pool.query(
+        `SELECT id, status, attempt_number AS "attemptNumber", response_status AS "responseStatus"
+           FROM webhook_deliveries WHERE id = $1`,
+        [replayId]
+      );
+      res.status(201).json(d[0]);
+    })
+  );
 }
+
+/** Re-exported for tests that queue events without going through the bus. */
+export { enqueueWebhookEvent };

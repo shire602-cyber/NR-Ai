@@ -1,0 +1,30 @@
+{
+  "name": "example-asp",
+  "endpoints": {
+    "submit": { "method": "POST", "path": "/api/v2/documents" },
+    "status": { "method": "GET", "path": "/api/v2/documents/{id}/state" },
+    "inbox": null,
+    "cancel": null
+  },
+  "request": {
+    "format": "xml",
+    "documentField": "payload"
+  },
+  "response": {
+    "id": ["submission.reference"],
+    "status": ["submission.state", "state"],
+    "message": ["submission.note"],
+    "reasons": ["submission.findings"],
+    "reasonCode": ["rule"],
+    "reasonMessage": ["text"],
+    "reasonField": ["xpath"],
+    "inboxItems": [],
+    "inboxId": [],
+    "inboxDocument": []
+  },
+  "statusMap": {
+    "in_review": "submitted",
+    "fta_acknowledged": "cleared",
+    "refused": "rejected"
+  }
+}

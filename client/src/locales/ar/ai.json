@@ -1,0 +1,17 @@
+{
+  "ai.hubDescription": "المدير المالي الذكي والميزات والمساعد الذكي والمحادثة والبريد الوارد في مكان واحد.",
+  "ai.hubTitle": "مركز الذكاء الاصطناعي",
+  "ai.tabAssistant": "المساعد الذكي",
+  "ai.tabCfo": "المدير المالي الذكي",
+  "ai.tabChat": "المحادثة",
+  "ai.tabFeatures": "ميزات الذكاء الاصطناعي",
+  "ai.tabInbox": "بريد الذكاء الاصطناعي",
+  "ai.kpiProfitMargin": "هامش الربح",
+  "ai.kpiExpenseRatio": "نسبة المصروفات",
+  "ai.kpiTotalRevenue": "إجمالي الإيرادات",
+  "ai.kpiNetProfit": "صافي الربح",
+  "ai.cfoSubtitle": "اطرح أسئلة حول بياناتك المالية واحصل على إرشادات مولّدة بالذكاء الاصطناعي.",
+  "ai.cfoMarginValue": "هامش {value}%",
+  "ai.cfoNoRevenueYet": "لا توجد إيرادات بعد",
+  "ai.cfoOutstandingHint": "لديك مبالغ مستحقة تحتاج متابعة. أرسل تذكيرات لتحسين التدفق النقدي."
+}

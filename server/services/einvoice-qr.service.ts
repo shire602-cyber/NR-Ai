@@ -1,10 +1,11 @@
 import QRCode from "qrcode";
 
-// ZATCA / UAE FTA Phase 2 e-invoicing QR payload tags.
-// The QR code is a base64-encoded sequence of TLV records — one per field —
-// where each record is: 1-byte tag, 1-byte length, n bytes UTF-8 value.
-// Per spec each value must fit in 255 bytes; longer values would need a
-// multi-byte length encoding which the spec does not currently use.
+// Invoice PDF QR: a five-tag TLV summary (seller, TRN, timestamp, total, VAT).
+// It is a convenience for readers of the PDF, NOT a
+// cryptographic stamp: it carries no invoice hash, signature or public key, and
+// the UAE PINT AE e-invoice is signed by the Accredited Service Provider, not
+// by this QR.
+// Each record is: 1-byte tag, 1-byte length, n bytes UTF-8 value (≤255 bytes).
 export const EINVOICE_QR_TAGS = {
   SELLER_NAME: 1,
   VAT_REG_NUMBER: 2,

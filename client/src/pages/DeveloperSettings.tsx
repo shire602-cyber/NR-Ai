@@ -1,3 +1,6 @@
+import { T } from "@/components/layout/T";
+import { SettingsLayout } from "@/components/layout/SettingsLayout";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -51,7 +54,8 @@ interface ApiKeyItem {
   companyId: string;
   name: string;
   keyPrefix: string;
-  scopes: string;
+  scopes: string[];
+  rateLimitPerMinute?: number;
   lastUsedAt: string | null;
   expiresAt: string | null;
   isActive: boolean;
@@ -79,6 +83,10 @@ interface WebhookDeliveryItem {
   responseBody: string | null;
   success: boolean;
   attemptNumber: number;
+  maxAttempts?: number;
+  status?: "pending" | "in_flight" | "retrying" | "delivered" | "dead";
+  nextAttemptAt?: string | null;
+  lastError?: string | null;
   createdAt: string;
 }
 
@@ -86,18 +94,32 @@ interface WebhookDeliveryItem {
 // Constants
 // ===========================
 
-const API_KEY_SCOPES = ["read", "write", "admin"] as const;
+// W5-B: must match API_SCOPES in server/middleware/api-key-auth.ts and WEBHOOK_EVENTS in
+// server/services/webhook.service.ts (the server rejects anything else).
+const API_KEY_SCOPES = [
+  "read:invoices",
+  "write:invoices",
+  "read:contacts",
+  "write:contacts",
+  "read:bills",
+  "read:payments",
+  "write:payments",
+  "read:accounts",
+  "read:reports",
+] as const;
 
 const WEBHOOK_EVENTS = [
   "invoice.created",
+  "invoice.issued",
   "invoice.paid",
-  "invoice.overdue",
+  "invoice.voided",
   "payment.received",
-  "quote.created",
-  "quote.accepted",
-  "receipt.uploaded",
-  "credit_note.created",
-  "vat_return.filed",
+  "credit_note.issued",
+  "bill.approved",
+  "bill.paid",
+  "contact.created",
+  "payroll.approved",
+  "payroll.paid",
 ] as const;
 
 // ===========================
@@ -105,52 +127,59 @@ const WEBHOOK_EVENTS = [
 // ===========================
 
 export default function DeveloperSettings() {
+  const { t } = useTranslation();
   const { companyId } = useDefaultCompany();
   const { canAccess, getRequiredTier } = useSubscription();
 
   if (!canAccess("apiAccess")) {
     return (
-      <div className="container mx-auto py-8 px-4 max-w-6xl">
-        <PageHeader eyebrow="Settings" title="Developer Settings" className="mb-6" />
+      <div className="max-w-narrow">
+        <PageHeader
+          eyebrow="Settings"
+          title={t["developerSettings.developerSettings"]}
+          className="mb-6"
+        />
         <UpgradePrompt
           feature="apiAccess"
           requiredTier={getRequiredTier("apiAccess")}
-          title="Unlock API & Webhook Access"
-          description="API keys and webhooks are available on the Enterprise plan. Integrate Muhasib.ai with your own systems."
+          title={t["developerSettings.unlockApiWebhookAccess"]}
+          description={t["developerSettings.apiKeysAndWebhooksAre"]}
         />
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto py-8 px-4 max-w-6xl">
-      <PageHeader
-        eyebrow="Settings"
-        title="Developer Settings"
-        description="Manage API keys and webhook endpoints for integrating with external services."
-        className="mb-6"
-      />
-      <Tabs defaultValue="api-keys">
-        <TabsList className="mb-6">
-          <TabsTrigger value="api-keys" className="gap-2">
-            <Key className="h-4 w-4" />
-            API Keys
-          </TabsTrigger>
-          <TabsTrigger value="webhooks" className="gap-2">
-            <Webhook className="h-4 w-4" />
-            Webhooks
-          </TabsTrigger>
-        </TabsList>
+    <SettingsLayout>
+      <div className="max-w-narrow">
+        <PageHeader
+          eyebrow="Settings"
+          title={t["developerSettings.developerSettings"]}
+          description={t["developerSettings.manageApiKeysAndWebhook"]}
+          className="mb-6"
+        />
+        <Tabs defaultValue="api-keys">
+          <TabsList className="mb-6">
+            <TabsTrigger value="api-keys" className="gap-2">
+              <Key className="h-4 w-4" />
+              <T k="pages.apiKeys" />
+            </TabsTrigger>
+            <TabsTrigger value="webhooks" className="gap-2">
+              <Webhook className="h-4 w-4" />
+              <T k="pageLabels.webhooks" />
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="api-keys">
-          {companyId && <ApiKeysTab companyId={companyId} />}
-        </TabsContent>
+          <TabsContent value="api-keys">
+            {companyId && <ApiKeysTab companyId={companyId} />}
+          </TabsContent>
 
-        <TabsContent value="webhooks">
-          {companyId && <WebhooksTab companyId={companyId} />}
-        </TabsContent>
-      </Tabs>
-    </div>
+          <TabsContent value="webhooks">
+            {companyId && <WebhooksTab companyId={companyId} />}
+          </TabsContent>
+        </Tabs>
+      </div>
+    </SettingsLayout>
   );
 }
 
@@ -159,6 +188,7 @@ export default function DeveloperSettings() {
 // ===========================
 
 function ApiKeysTab({ companyId }: { companyId: string }) {
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
   const [createdKey, setCreatedKey] = useState<string | null>(null);
@@ -168,7 +198,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
 
   // Form state
   const [newKeyName, setNewKeyName] = useState("");
-  const [newKeyScopes, setNewKeyScopes] = useState<string[]>(["read"]);
+  const [newKeyScopes, setNewKeyScopes] = useState<string[]>(["read:invoices"]);
 
   const { data: apiKeys, isLoading } = useQuery<ApiKeyItem[]>({
     queryKey: ["/api/companies", companyId, "api-keys"],
@@ -176,7 +206,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; scopes: string }) =>
+    mutationFn: (data: { name: string; scopes: string[] }) =>
       apiRequest("POST", `/api/companies/${companyId}/api-keys`, data),
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "api-keys"] });
@@ -189,7 +219,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create API key",
+        title: translateNow("toasts.failedToCreateApiKey"),
         description: error?.message,
       });
     },
@@ -200,12 +230,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
       apiRequest("PUT", `/api/api-keys/${id}`, { isActive }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "api-keys"] });
-      toast({ title: "API key updated" });
+      toast({ title: translateNow("toasts.apiKeyUpdated") });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update API key",
+        title: translateNow("toasts.failedToUpdateApiKey"),
         description: error?.message,
       });
     },
@@ -215,13 +245,13 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/api-keys/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "api-keys"] });
-      toast({ title: "API key revoked" });
+      toast({ title: translateNow("toasts.apiKeyRevoked") });
       setDeleteId(null);
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to revoke API key",
+        title: translateNow("toasts.failedToRevokeApiKey"),
         description: error?.message,
       });
     },
@@ -246,22 +276,31 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>API Keys</CardTitle>
-            <CardDescription>
-              Create and manage API keys for programmatic access to Muhasib.ai.
-            </CardDescription>
+            <CardTitle>
+              <T k="pages.apiKeys" />
+            </CardTitle>
+            <CardDescription>{t["developerSettings.createAndManageApiKeys"]}</CardDescription>
+            {/* W5-B (R19-15): keys authenticate the versioned public API only. */}
+            <p className="mt-2 text-xs text-muted-foreground" dir="ltr">
+              <span translate="no">{"Authorization: ApiKey muh_…  ·  /api/v1  ·  "}</span>
+              <a className="underline" href="/api/v1/openapi.json" target="_blank" rel="noreferrer">
+                <span translate="no">{"openapi.json"}</span>
+              </a>
+            </p>
           </div>
           <Button onClick={() => setCreateOpen(true)} className="gap-2">
             <Plus className="h-4 w-4" />
-            Create Key
+            <T k="pageLabels.createKey" />
           </Button>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-muted-foreground py-8 text-center">Loading...</p>
+            <p className="text-muted-foreground py-8 text-center">
+              <T k="pages.loading" />
+            </p>
           ) : !apiKeys?.length ? (
             <p className="text-muted-foreground py-8 text-center">
-              No API keys created yet. Create one to get started.
+              <T k="pageLabels.noAPIKeysCreatedYetCreateOneToGetStarted" />
             </p>
           ) : (
             <Table>
@@ -269,10 +308,18 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Key</TableHead>
-                  <TableHead>Scopes</TableHead>
-                  <TableHead>Last Used</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>
+                    <T k="pages.scopes" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pageLabels.lastUsed" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead data-numeric>
+                    <T k="pages.actions" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -284,15 +331,19 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1 flex-wrap">
-                        {key.scopes.split(",").map((scope) => (
-                          <Badge key={scope} variant="secondary" className="text-xs">
-                            {scope.trim()}
+                        {key.scopes.map((scope) => (
+                          <Badge key={scope} variant="secondary" className="text-xs" dir="ltr">
+                            {scope}
                           </Badge>
                         ))}
                       </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {key.lastUsedAt ? new Date(key.lastUsedAt).toLocaleDateString() : "Never"}
+                      {key.lastUsedAt
+                        ? new Date(key.lastUsedAt).toLocaleDateString(
+                            locale === "ar" ? "ar-AE" : undefined
+                          )
+                        : t["banking.feeds.never"]}
                     </TableCell>
                     <TableCell>
                       <Switch
@@ -302,9 +353,9 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                         }
                       />
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell data-numeric>
                       <Button variant="ghost" size="icon" onClick={() => setDeleteId(key.id)}>
-                        <Trash2 className="h-4 w-4 text-destructive" />
+                        <Trash2 className="h-4 w-4 text-muted-foreground" />
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -319,8 +370,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create API Key</DialogTitle>
-            <DialogDescription>Generate a new API key for programmatic access.</DialogDescription>
+            <DialogTitle>
+              <T k="pageLabels.createAPIKey" />
+            </DialogTitle>
+            <DialogDescription>
+              <T k="pageLabels.generateANewAPIKeyForProgrammaticAccess" />
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -333,7 +388,9 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Scopes</Label>
+              <Label>
+                <T k="pages.scopes" />
+              </Label>
               <div className="flex flex-col gap-2">
                 {API_KEY_SCOPES.map((scope) => (
                   <div key={scope} className="flex items-center gap-2">
@@ -342,11 +399,12 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
                       checked={newKeyScopes.includes(scope)}
                       onCheckedChange={() => handleScopeToggle(scope)}
                     />
-                    <Label htmlFor={`scope-${scope}`} className="font-normal capitalize">
+                    <Label
+                      htmlFor={`scope-${scope}`}
+                      className="tabular-nums text-xs font-normal"
+                      dir="ltr"
+                    >
                       {scope}
-                      {scope === "read" && " — Read-only access to your data"}
-                      {scope === "write" && " — Create and update records"}
-                      {scope === "admin" && " — Full access including deletions"}
                     </Label>
                   </div>
                 ))}
@@ -355,18 +413,18 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() =>
                 createMutation.mutate({
                   name: newKeyName,
-                  scopes: newKeyScopes.join(","),
+                  scopes: newKeyScopes,
                 })
               }
               disabled={!newKeyName.trim() || newKeyScopes.length === 0 || createMutation.isPending}
             >
-              {createMutation.isPending ? "Creating..." : "Create Key"}
+              {createMutation.isPending ? "Creating..." : t["pageLabels.createKey"]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -385,24 +443,22 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>API Key Created</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.aPIKeyCreated" />
+            </DialogTitle>
             <DialogDescription>
-              Copy this key now. You will not be able to see it again.
+              <T k="pageLabels.copyThisKeyNowYouWillNotBeAbleToSeeItAgain" />
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-2">
-              <Input readOnly value={createdKey || ""} className="font-mono text-sm" />
+              <Input readOnly value={createdKey || ""} className="tabular-nums text-sm" />
               <Button variant="outline" size="icon" onClick={handleCopy}>
-                {copied ? (
-                  <Check className="h-4 w-4 text-success" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
+                {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              Store this key securely. It provides programmatic access to your Muhasib.ai account.
+              {t["developerSettings.storeThisKeySecurelyIt"]}
             </p>
           </div>
           <DialogFooter>
@@ -423,19 +479,22 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Revoke API Key?</AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pageLabels.revokeAPIKey" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. Any applications using this key will immediately lose
-              access.
+              {t["developerSettings.thisActionCannotBeUndone"]}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteId && deleteMutation.mutate(deleteId)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Revoke Key
+              <T k="pageLabels.revokeKey" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -449,6 +508,7 @@ function ApiKeysTab({ companyId }: { companyId: string }) {
 // ===========================
 
 function WebhooksTab({ companyId }: { companyId: string }) {
+  const { t } = useTranslation();
   const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
   const [showSecretDialog, setShowSecretDialog] = useState(false);
@@ -472,6 +532,16 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     enabled: !!deliveriesEndpointId,
   });
 
+  // W5-B (R19-02): replay any delivery (same event id, new signed attempt).
+  const replayMutation = useMutation({
+    mutationFn: (deliveryId: string) =>
+      apiRequest("POST", `/api/webhooks/${deliveriesEndpointId}/deliveries/${deliveryId}/replay`),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: ["/api/webhooks", deliveriesEndpointId, "deliveries"],
+      }),
+  });
+
   const createMutation = useMutation({
     mutationFn: (data: { url: string; events: string }) =>
       apiRequest("POST", `/api/companies/${companyId}/webhooks`, data),
@@ -486,7 +556,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create webhook",
+        title: translateNow("toasts.failedToCreateWebhook"),
         description: error?.message,
       });
     },
@@ -497,12 +567,12 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       apiRequest("PUT", `/api/webhooks/${id}`, { isActive }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "webhooks"] });
-      toast({ title: "Webhook updated" });
+      toast({ title: t["developerSettings.webhookUpdated"] });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update webhook",
+        title: translateNow("toasts.failedToUpdateWebhook"),
         description: error?.message,
       });
     },
@@ -512,13 +582,13 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     mutationFn: (id: string) => apiRequest("DELETE", `/api/webhooks/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "webhooks"] });
-      toast({ title: "Webhook deleted" });
+      toast({ title: t["developerSettings.webhookDeleted"] });
       setDeleteId(null);
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete webhook",
+        title: translateNow("toasts.failedToDeleteWebhook"),
         description: error?.message,
       });
     },
@@ -529,19 +599,30 @@ function WebhooksTab({ companyId }: { companyId: string }) {
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "webhooks"] });
       if (result.success) {
-        toast({ title: "Test sent", description: `Received HTTP ${result.responseStatus}` });
+        toast({
+          title: translateNow("toasts.testSent"),
+          description: formatMessage(translateNow("toasts.receivedHttp"), {
+            responseStatus: result.responseStatus,
+          }),
+        });
       } else {
         toast({
           variant: "destructive",
-          title: "Test failed",
+          title: translateNow("toasts.testFailed"),
           description: result.responseStatus
-            ? `Received HTTP ${result.responseStatus}`
-            : "Could not reach endpoint",
+            ? formatMessage(translateNow("toasts.receivedHttp"), {
+                responseStatus: result.responseStatus,
+              })
+            : translateNow("toasts.couldNotReachEndpoint"),
         });
       }
     },
     onError: (error: any) => {
-      toast({ variant: "destructive", title: "Test failed", description: error?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.testFailed"),
+        description: error?.message,
+      });
     },
   });
 
@@ -564,33 +645,47 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
-            <CardTitle>Webhook Endpoints</CardTitle>
+            <CardTitle>
+              <T k="pageLabels.webhookEndpoints" />
+            </CardTitle>
             <CardDescription>
-              Receive real-time notifications when events happen in your account.
+              {t["developerSettings.receiveRealTimeNotificationsWhen"]}
             </CardDescription>
           </div>
           <Button onClick={() => setCreateOpen(true)} className="gap-2">
             <Plus className="h-4 w-4" />
-            Add Endpoint
+            <T k="pageLabels.addEndpoint" />
           </Button>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-muted-foreground py-8 text-center">Loading...</p>
+            <p className="text-muted-foreground py-8 text-center">
+              <T k="pages.loading" />
+            </p>
           ) : !webhooks?.length ? (
             <p className="text-muted-foreground py-8 text-center">
-              No webhook endpoints configured. Add one to start receiving events.
+              {t["developerSettings.noWebhookEndpointsConfiguredAdd"]}
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>URL</TableHead>
-                  <TableHead>Events</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Failures</TableHead>
-                  <TableHead>Last Triggered</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>
+                    <T k="pages.events" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pages.status" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pageLabels.failures" />
+                  </TableHead>
+                  <TableHead>
+                    <T k="pageLabels.lastTriggered" />
+                  </TableHead>
+                  <TableHead data-numeric>
+                    <T k="pages.actions" />
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -636,12 +731,12 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                         ? new Date(wh.lastTriggeredAt).toLocaleDateString()
                         : "Never"}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell data-numeric>
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
-                          title="View deliveries"
+                          title={t["developerSettings.viewDeliveries"]}
                           onClick={() => setDeliveriesEndpointId(wh.id)}
                         >
                           <Eye className="h-4 w-4" />
@@ -649,7 +744,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                         <Button
                           variant="ghost"
                           size="icon"
-                          title="Send test event"
+                          title={t["developerSettings.sendTestEvent"]}
                           disabled={testMutation.isPending}
                           onClick={() => testMutation.mutate(wh.id)}
                         >
@@ -660,7 +755,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                           )}
                         </Button>
                         <Button variant="ghost" size="icon" onClick={() => setDeleteId(wh.id)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
+                          <Trash2 className="h-4 w-4 text-muted-foreground" />
                         </Button>
                       </div>
                     </TableCell>
@@ -676,14 +771,16 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Add Webhook Endpoint</DialogTitle>
-            <DialogDescription>
-              We will send POST requests to this URL when selected events occur.
-            </DialogDescription>
+            <DialogTitle>
+              <T k="pageLabels.addWebhookEndpoint" />
+            </DialogTitle>
+            <DialogDescription>{t["developerSettings.weWillSendPostRequests"]}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="webhook-url">Endpoint URL</Label>
+              <Label htmlFor="webhook-url">
+                <T k="pageLabels.endpointURL" />
+              </Label>
               <Input
                 id="webhook-url"
                 placeholder="https://example.com/webhook"
@@ -692,7 +789,9 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               />
             </div>
             <div className="space-y-2">
-              <Label>Events</Label>
+              <Label>
+                <T k="pages.events" />
+              </Label>
               <div className="grid grid-cols-2 gap-2">
                 {WEBHOOK_EVENTS.map((event) => (
                   <div key={event} className="flex items-center gap-2">
@@ -711,7 +810,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={() =>
@@ -722,7 +821,7 @@ function WebhooksTab({ companyId }: { companyId: string }) {
               }
               disabled={!newUrl.trim() || newEvents.length === 0 || createMutation.isPending}
             >
-              {createMutation.isPending ? "Creating..." : "Add Endpoint"}
+              {createMutation.isPending ? "Creating..." : t["pageLabels.addEndpoint"]}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -741,26 +840,20 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Webhook Secret Created</DialogTitle>
-            <DialogDescription>
-              Copy this signing secret now. You will not be able to see it again. Use it to verify
-              webhook signatures.
-            </DialogDescription>
+            <DialogTitle>
+              <T k="pageLabels.webhookSecretCreated" />
+            </DialogTitle>
+            <DialogDescription>{t["developerSettings.copyThisSigningSecretNow"]}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-2">
               <Input readOnly value={createdSecret || ""} className="font-mono text-sm" />
               <Button variant="outline" size="icon" onClick={handleCopySecret}>
-                {copied ? (
-                  <Check className="h-4 w-4 text-success" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
+                {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
             <p className="text-sm text-muted-foreground">
-              Each webhook delivery includes an X-Webhook-Signature header signed with HMAC-SHA256
-              using this secret.
+              {t["developerSettings.eachWebhookDeliveryIncludesAn"]}
             </p>
           </div>
           <DialogFooter>
@@ -784,22 +877,33 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       >
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Recent Deliveries</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.recentDeliveries" />
+            </DialogTitle>
             <DialogDescription>
-              Last 100 webhook delivery attempts for this endpoint.
+              {t["developerSettings.last100WebhookDeliveryAttempts"]}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             {!deliveries?.length ? (
-              <p className="text-muted-foreground text-center py-4">No deliveries recorded yet.</p>
+              <p className="text-muted-foreground text-center py-4">
+                <T k="pageLabels.noDeliveriesRecordedYet" />
+              </p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Event</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Response</TableHead>
+                    <TableHead>
+                      <T k="pageLabels.event" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pages.status" />
+                    </TableHead>
+                    <TableHead>
+                      <T k="pageLabels.response" />
+                    </TableHead>
                     <TableHead>Time</TableHead>
+                    <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -811,19 +915,43 @@ function WebhooksTab({ companyId }: { companyId: string }) {
                       <TableCell>
                         {delivery.success ? (
                           <Badge className="bg-success-subtle text-success-subtle-foreground ">
-                            Success
+                            {delivery.status ?? "delivered"}
                           </Badge>
                         ) : (
-                          <Badge variant="destructive">Failed</Badge>
+                          <Badge
+                            variant={delivery.status === "retrying" ? "outline" : "destructive"}
+                          >
+                            {delivery.status ?? "failed"}
+                          </Badge>
                         )}
+                        <span className="ms-2 text-xs text-muted-foreground">
+                          {delivery.attemptNumber}/{delivery.maxAttempts ?? 1}
+                        </span>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {delivery.responseStatus
                           ? `HTTP ${delivery.responseStatus}`
-                          : "No response"}
+                          : t["developerSettings.noResponse"]}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {new Date(delivery.createdAt).toLocaleString()}
+                        {delivery.status === "retrying" && delivery.nextAttemptAt && (
+                          <span className="block text-xs">
+                            → {new Date(delivery.nextAttemptAt).toLocaleTimeString()}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title={t["developerSettings.replay"]}
+                          onClick={() => replayMutation.mutate(delivery.id)}
+                          disabled={replayMutation.isPending}
+                          data-testid={`button-replay-${delivery.id}`}
+                        >
+                          <RefreshCw className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -838,19 +966,22 @@ function WebhooksTab({ companyId }: { companyId: string }) {
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Webhook Endpoint?</AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pageLabels.deleteWebhookEndpoint" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this endpoint and all delivery history. Events will no
-              longer be sent to this URL.
+              {t["developerSettings.thisWillPermanentlyDeleteThis"]}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteId && deleteMutation.mutate(deleteId)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete Endpoint
+              <T k="pageLabels.deleteEndpoint" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

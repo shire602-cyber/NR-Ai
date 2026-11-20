@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { z } from "zod";
 import type { Request, Response, NextFunction } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import { isProduction } from "../config/env";
@@ -23,18 +24,26 @@ export function cspNonce(_req: Request, res: Response, next: NextFunction): void
  * Development: relaxed CSP — Vite needs inline scripts and HMR over ws://, so we
  * keep the directives but allow 'unsafe-inline' and 'unsafe-eval' for scripts.
  */
+// helmet hands raw http types to its directive callback, not express types.
+const nonceFn = (_req: IncomingMessage, res: ServerResponse): string => {
+  const expressRes = res as unknown as Response;
+  return `'nonce-${(expressRes.locals?.cspNonce as string) ?? ""}'`;
+};
+
 export function buildCspDirectives() {
   const prod = isProduction();
-  // helmet hands raw http types to its directive callback, not express types.
-  const nonceFn = (_req: IncomingMessage, res: ServerResponse): string => {
-    const expressRes = res as unknown as Response;
-    return `'nonce-${(expressRes.locals?.cspNonce as string) ?? ""}'`;
-  };
+  // W5-E: the Turnstile widget (script + iframe) is allowed only when CAPTCHA is configured.
+  const turnstile = process.env.TURNSTILE_SECRET_KEY ? ["https://challenges.cloudflare.com"] : [];
 
   return {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: prod ? ["'self'", nonceFn] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      scriptSrc: prod
+        ? ["'self'", nonceFn, ...turnstile]
+        : ["'self'", "'unsafe-inline'", "'unsafe-eval'", ...turnstile],
+      // Broken-path sweep: bill / receipt previews show the file from a blob: URL in an iframe
+      // (the PDF viewer); without blob: the fallback default-src 'self' blocked it.
+      frameSrc: ["'self'", "blob:", ...turnstile],
       // D4 — the ENFORCED policy keeps `'unsafe-inline'` for styles. The client
       // uses 219 React `style={{ … }}` props across 22 files (inline style
       // ATTRIBUTES), and Radix/framer-motion inject `<style>` ELEMENTS at
@@ -87,10 +96,19 @@ export function buildCspReportOnlyDirectives() {
   const prod = isProduction();
   return {
     reportOnly: true,
+    // R17-18 / R18-05: never merge helmet's default directives. They add
+    // `upgrade-insecure-requests` (ignored, and logged as a console error, in a
+    // report-only policy) and a script-src without the per-request nonce, which
+    // made this policy differ from the enforced one. Everything is listed
+    // explicitly instead.
+    useDefaults: false,
     directives: {
       // Only the style directives differ; everything else mirrors the enforced
       // policy so a violation here unambiguously means "the style split broke".
       defaultSrc: ["'self'"],
+      // Same script policy as the enforced header: report-only must not be more
+      // permissive than what is actually enforced.
+      scriptSrc: prod ? ["'self'", nonceFn] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       // The -elem / -attr pair is what we are actually testing. `styleSrc` is
       // only the fallback for browsers without CSP3 support; pin it to today's
       // enforced value (rather than letting helmet merge its looser
@@ -105,6 +123,7 @@ export function buildCspReportOnlyDirectives() {
         ? ["'self'"]
         : ["'self'", "ws://localhost:*", "http://localhost:*", "ws://127.0.0.1:*"],
       workerSrc: ["'self'", "blob:"],
+      frameSrc: ["'self'", "blob:"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
@@ -114,13 +133,20 @@ export function buildCspReportOnlyDirectives() {
   };
 }
 
+const cspReportBodySchema = z.record(z.string(), z.unknown());
+
 /**
  * CSP violation report endpoint. The browser POSTs JSON describing the
  * blocked resource. We log a structured warning so it shows up in pino output
  * and any downstream log aggregator without spamming at error level.
  */
 export function cspReportHandler(req: Request, res: Response): void {
-  const report = (req.body && (req.body["csp-report"] || req.body)) || {};
+  // Browser-generated, unauthenticated and only logged: accept any JSON object, nothing is stored.
+  const parsed = cspReportBodySchema.safeParse(req.body);
+  const body = parsed.success ? parsed.data : {};
+  const nested = body["csp-report"];
+  const report: Record<string, unknown> =
+    nested && typeof nested === "object" ? (nested as Record<string, unknown>) : body;
   log.warn(
     {
       blockedUri: report["blocked-uri"],

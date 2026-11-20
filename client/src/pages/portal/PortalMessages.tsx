@@ -1,15 +1,36 @@
 import { useState } from "react";
+import { useTranslation, translateNow } from "@/lib/i18n";
+import { T } from "@/components/layout/T";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Send, MessageSquare, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { format } from "date-fns";
+import { formatDate } from "@/lib/format-date";
 
+/** "17 Nov 2026 · 14:05" in the reader's language (Latin digits). */
+function formatStamp(value: string, locale: string): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const time = d.toLocaleTimeString(locale === "ar" ? "ar-AE-u-nu-latn" : "en-AE", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `${formatDate(d, locale)} · ${time}`;
+}
+
+/**
+ * Client portal messages (WP-F, spec 3.18): one thread, oldest first, with the composer at the
+ * bottom of the thread.
+ */
 export default function PortalMessages() {
+  const { t, locale } = useTranslation();
   const qc = useQueryClient();
   const { toast } = useToast();
   const [subject, setSubject] = useState("");
@@ -26,10 +47,17 @@ export default function PortalMessages() {
       qc.invalidateQueries({ queryKey: ["portal-messages"] });
       setSubject("");
       setContent("");
-      toast({ title: "Message sent", description: "NR Accounting will respond shortly." });
+      toast({
+        title: translateNow("toasts.messageSent"),
+        description: translateNow("toasts.nrAccountingWillRespondShortly"),
+      });
     },
     onError: (e: any) =>
-      toast({ title: "Failed to send", description: e.message, variant: "destructive" }),
+      toast({
+        title: translateNow("toasts.failedToSend"),
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   function handleSend() {
@@ -37,89 +65,93 @@ export default function PortalMessages() {
     sendMutation.mutate({ subject: subject.trim() || null, content: content.trim() });
   }
 
-  const sorted = [...messages].sort(
-    (a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
+  const thread = [...messages].sort(
+    (a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime()
   );
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h2 className="text-xl font-semibold text-foreground">Messages</h2>
-        <p className="text-sm text-muted-foreground mt-1">Communicate with your NR Accounting team.</p>
-      </div>
+    <div className="mx-auto max-w-[760px] space-y-6">
+      <PageHeader
+        title={t["portal.doc.messagesTitle"]}
+        description={t["portal.doc.messagesHint"]}
+      />
 
-      {/* Compose */}
-      <Card>
-        <CardContent className="pt-4 space-y-3">
-          <p className="text-sm font-medium text-foreground">New Message</p>
-          <Input
-            placeholder="Subject (optional)"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-          />
-          <Textarea
-            placeholder="Write your message..."
-            rows={4}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-          />
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSend}
-              disabled={!content.trim() || sendMutation.isPending}
-              className="bg-info hover:bg-info text-white"
-            >
-              {sendMutation.isPending ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4 mr-2" />
-              )}
-              Send
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Message list */}
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="flex items-center justify-center h-32">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+            <div className="flex h-32 items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
             </div>
-          ) : sorted.length === 0 ? (
-            <div className="text-center py-12">
-              <MessageSquare className="w-9 h-9 text-muted-foreground/70 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground/70">No messages yet.</p>
-            </div>
+          ) : thread.length === 0 ? (
+            <EmptyState
+              headingLevel="h2"
+              icon={MessageSquare}
+              title={t["portal.doc.noMessagesTitle"]}
+              description={t["portal.doc.noMessagesBody"]}
+            />
           ) : (
-            <div className="divide-y divide-border">
-              {sorted.map((msg: any) => (
-                <div key={msg.id} className="px-4 py-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      {msg.subject && (
-                        <p className="text-sm font-semibold text-foreground truncate">
-                          {msg.subject}
-                        </p>
-                      )}
-                      <p className="text-sm text-foreground mt-0.5 whitespace-pre-wrap">
-                        {msg.content}
-                      </p>
-                    </div>
-                    <span className="text-xs text-muted-foreground/70 flex-shrink-0 mt-0.5">
-                      {msg.createdAt ? format(new Date(msg.createdAt), "MMM d, h:mm a") : ""}
+            <ol className="divide-y divide-border" aria-label={t["portal.doc.messagesTitle"]}>
+              {thread.map((msg: any) => (
+                <li key={msg.id} className="space-y-1 px-5 py-4">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p
+                      className="min-w-0 truncate text-small font-semibold text-foreground"
+                      dir="auto"
+                    >
+                      {msg.subject ?? ""}
+                    </p>
+                    <span className="shrink-0 text-caption text-muted-foreground">
+                      {msg.createdAt ? formatStamp(msg.createdAt, locale) : ""}
                     </span>
                   </div>
+                  <p className="whitespace-pre-wrap text-small text-foreground" dir="auto">
+                    {msg.content}
+                  </p>
                   {!msg.isRead && (
-                    <span className="inline-block mt-1 text-xs bg-info-subtle text-info rounded px-1.5 py-0.5">
-                      Unread
-                    </span>
+                    <StatusBadge tone="accent">
+                      <T k="portal.doc.unread" />
+                    </StatusBadge>
                   )}
-                </div>
+                </li>
               ))}
-            </div>
+            </ol>
           )}
+          <form
+            className="space-y-3 border-t border-border bg-surface-sunken p-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSend();
+            }}
+          >
+            <Input
+              className="h-11 md:h-9"
+              aria-label={t["portal.doc.messageSubject"]}
+              placeholder={t["portal.doc.messageSubject"]}
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+            />
+            <Textarea
+              aria-label={t["portal.doc.messageBody"]}
+              placeholder={t["portal.doc.messageBody"]}
+              rows={3}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+            />
+            <div className="flex justify-end">
+              <Button
+                type="submit"
+                disabled={!content.trim() || sendMutation.isPending}
+                data-testid="button-portal-send"
+              >
+                {sendMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 me-2 animate-spin" aria-hidden />
+                ) : (
+                  <Send className="h-4 w-4 me-2 rtl:-scale-x-100" aria-hidden />
+                )}
+                <T k="portal.doc.send" />
+              </Button>
+            </div>
+          </form>
         </CardContent>
       </Card>
     </div>

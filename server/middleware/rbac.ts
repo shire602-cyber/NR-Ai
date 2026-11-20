@@ -1,34 +1,58 @@
-import type { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { db } from "../db";
-import { eq, and, isNull } from "drizzle-orm";
-import { companyUsers, companies, firmStaffAssignments } from "../../shared/schema";
-import { canAccessNraCenter, hasFullNraScope, isNraFirmRole } from "../../shared/access";
+import { eq, and } from "drizzle-orm";
+import { companyUsers } from "../../shared/schema";
+import {
+  canAccessNraCenter,
+  firmRoleCanWrite,
+  firmRoleHasPermission,
+  hasFullNraScope,
+  isFirmRole,
+  type FirmPermission,
+} from "../../shared/access";
+import {
+  NR_FIRM_ID,
+  canAccessFirmClient,
+  listAccessibleClientIds,
+  resolveFirmContext,
+  type FirmContext,
+} from "../services/firm/scope";
 
 export type { NraFirmRole as FirmRole } from "../../shared/access";
+export type { FirmContext } from "../services/firm/scope";
+
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /**
  * Require the requesting user to have one of the given roles in the active
  * company (identified by req.params.companyId or req.body.companyId).
  *
- * Must be used AFTER authMiddleware.
+ * Platform admins pass; firm staff pass only for a client of their own firm
+ * that they may access. Must be used AFTER authMiddleware.
  */
 export function requireRole(...roles: string[]) {
   return async function (req: Request, res: Response, next: NextFunction): Promise<void> {
     if (!req.user) {
-      res.status(401).json({ message: "Authentication required" });
-      return;
-    }
-
-    // Platform admins and firm_owner bypass company-level role checks.
-    if (hasFullNraScope(req.user as any)) {
-      next();
+      res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
       return;
     }
 
     const companyId = req.params.companyId ?? req.body?.companyId;
-    if (!companyId) {
-      res.status(400).json({ message: "Company context required" });
+    if (req.user.isAdmin === true) {
+      next();
       return;
+    }
+    if (!companyId) {
+      res.status(400).json({ message: "Company context required", code: "COMPANY_REQUIRED" });
+      return;
+    }
+
+    if (hasFullNraScope(req.user)) {
+      const ctx = await resolveFirmContext(req.user);
+      if (ctx && (await canAccessFirmClient(ctx, companyId))) {
+        next();
+        return;
+      }
     }
 
     const [membership] = await db
@@ -38,13 +62,16 @@ export function requireRole(...roles: string[]) {
       .limit(1);
 
     if (!membership) {
-      res.status(403).json({ message: "Not a member of this company" });
+      res
+        .status(403)
+        .json({ message: "Not a member of this company", code: "COMPANY_ACCESS_DENIED" });
       return;
     }
 
     if (!roles.includes(membership.role)) {
       res.status(403).json({
         message: `Role '${membership.role}' is not authorized. Required: ${roles.join(", ")}`,
+        code: "PERMISSION_DENIED",
       });
       return;
     }
@@ -54,21 +81,141 @@ export function requireRole(...roles: string[]) {
 }
 
 /**
- * Canonical NRA Center gate: platform admins (isAdmin) and NRA firm staff
- * (firm_owner / firm_admin). Every /api/firm/* and NRA surface mounts this —
+ * NR-only gate: platform admins and NR firm staff (users.firm_role, any firm
+ * role). Mounted by the NR-only surfaces — WhatsApp, document chasing, email
+ * intake, SaaS prospects, growth ops — so staff of other accounting firms,
  * SaaS customers and client-portal users are always rejected, even when they
- * guess URLs. Mirrors canAccessNraCenter() used by the client UI.
+ * guess URLs. NR viewers are read-only here too. Mirrors canAccessNraCenter().
  *
  * Must be used AFTER authMiddleware.
  */
 export function requireNraAccess() {
   return function (req: Request, res: Response, next: NextFunction): void {
     if (!req.user) {
-      res.status(401).json({ message: "Authentication required" });
+      res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
       return;
     }
-    if (!canAccessNraCenter(req.user as any)) {
-      res.status(403).json({ message: "NRA firm staff access required" });
+    if (!canAccessNraCenter(req.user)) {
+      res.status(403).json({ message: "NRA firm staff access required", code: "NR_FIRM_ONLY" });
+      return;
+    }
+    if (
+      req.user.isAdmin !== true &&
+      !READ_METHODS.has(req.method) &&
+      !firmRoleCanWrite(req.user.firmRole)
+    ) {
+      res.status(403).json({ message: "Your firm role is read-only", code: "FIRM_READ_ONLY" });
+      return;
+    }
+    next();
+  };
+}
+
+/** The firm context requireFirmAccess() resolved for this request. */
+export function firmContextOf(res: Response): FirmContext {
+  const ctx = res.locals.firmContext as FirmContext | undefined;
+  if (!ctx) throw new Error("firmContextOf() called without requireFirmAccess()");
+  return ctx;
+}
+
+function attachFirmContext(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  ctx: FirmContext | null
+): void {
+  if (!ctx) {
+    res.status(403).json({ message: "Firm staff access required", code: "FIRM_ACCESS_REQUIRED" });
+    return;
+  }
+  // Accounting-firm management is NR-internal: staff of any other firm are refused on every
+  // /api/firm/* surface, whatever the route-level permission would have said.
+  if (!ctx.isNr) {
+    res.status(403).json({ message: "NRA firm staff access required", code: "NR_FIRM_ONLY" });
+    return;
+  }
+  if (!ctx.platformAdmin && !READ_METHODS.has(req.method) && !firmRoleCanWrite(ctx.role)) {
+    res.status(403).json({ message: "Your firm role is read-only", code: "FIRM_READ_ONLY" });
+    return;
+  }
+  res.locals.firmContext = ctx;
+  next();
+}
+
+/**
+ * Firm-workspace gate: platform admins and NR staff only (accounting-firm features are
+ * NR-internal; a member of any other firm gets 403 NR_FIRM_ONLY). Resolves the caller's firm onto
+ * res.locals.firmContext (read it with firmContextOf). Viewers are read-only.
+ * NR staff and admins resolve synchronously (no DB hit).
+ *
+ * Must be used AFTER authMiddleware.
+ */
+export function requireFirmAccess(): RequestHandler {
+  return function (req: Request, res: Response, next: NextFunction): void {
+    const user = req.user;
+    if (!user) {
+      res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
+      return;
+    }
+    if (isFirmRole(user.firmRole)) {
+      attachFirmContext(req, res, next, {
+        firmId: NR_FIRM_ID,
+        isNr: true,
+        role: user.firmRole,
+        userId: user.id,
+        platformAdmin: false,
+      });
+      return;
+    }
+    if (user.isAdmin === true) {
+      attachFirmContext(req, res, next, {
+        firmId: NR_FIRM_ID,
+        isNr: true,
+        role: "firm_owner",
+        userId: user.id,
+        platformAdmin: true,
+      });
+      return;
+    }
+    if (!user.id) {
+      attachFirmContext(req, res, next, null);
+      return;
+    }
+    resolveFirmContext({ id: user.id, isAdmin: false, firmRole: null })
+      .then((ctx) => attachFirmContext(req, res, next, ctx))
+      .catch(next);
+  };
+}
+
+/**
+ * Require a firm permission (shared/access.ts FIRM_ROLE_PERMISSIONS). Mount
+ * after requireFirmAccess(). Platform admins pass.
+ */
+export function requireFirmPermission(permission: FirmPermission): RequestHandler {
+  return function (_req: Request, res: Response, next: NextFunction): void {
+    const ctx = res.locals.firmContext as FirmContext | undefined;
+    if (!ctx) {
+      res.status(403).json({ message: "Firm staff access required", code: "FIRM_ACCESS_REQUIRED" });
+      return;
+    }
+    if (ctx.platformAdmin || firmRoleHasPermission(ctx.role, permission)) {
+      next();
+      return;
+    }
+    res.status(403).json({
+      message: "Your firm role does not allow this action",
+      code: "FIRM_PERMISSION_DENIED",
+      details: { permission, role: ctx.role },
+    });
+  };
+}
+
+/** NR-only routes (keyed on firms.is_nr) mounted after requireFirmAccess(). */
+export function requireNrFirm(): RequestHandler {
+  return function (_req: Request, res: Response, next: NextFunction): void {
+    const ctx = res.locals.firmContext as FirmContext | undefined;
+    if (!ctx?.isNr) {
+      res.status(403).json({ message: "NRA firm staff access required", code: "NR_FIRM_ONLY" });
       return;
     }
     next();
@@ -76,35 +223,36 @@ export function requireNraAccess() {
 }
 
 /**
- * @deprecated Alias of requireNraAccess() kept so existing route modules keep
- * reading naturally; new code should mount requireNraAccess().
+ * @deprecated Alias of requireNraAccess() kept for the NR-only surfaces
+ * (WhatsApp, document chasing, email intake, NRA routes). Practice tools use
+ * requireFirmAccess().
  */
 export function requireFirmRole() {
   return requireNraAccess();
 }
 
 /**
- * @deprecated Alias of requireNraAccess(); see requireFirmRole.
+ * @deprecated Alias of requireFirmAccess() (command centre, VAT workspace).
  */
 export function requireFirmAdmin() {
-  return requireNraAccess();
+  return requireFirmAccess();
 }
 
 /**
- * Require firm_owner (or a platform admin acting in support). Gates
- * destructive / batch / firm-wide configuration endpoints — firm_admin is
- * rejected.
+ * Require NR firm_owner (or a platform admin acting in support). Kept for
+ * NR-only destructive endpoints; multi-firm routes use
+ * requireFirmPermission("firm.bulk.run" | "firm.staff.manage" | ...).
  *
  * Must be used AFTER authMiddleware.
  */
 export function requireFirmOwner() {
   return function (req: Request, res: Response, next: NextFunction): void {
     if (!req.user) {
-      res.status(401).json({ message: "Authentication required" });
+      res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
       return;
     }
-    if (!hasFullNraScope(req.user as any)) {
-      res.status(403).json({ message: "Firm owner access required" });
+    if (!hasFullNraScope(req.user)) {
+      res.status(403).json({ message: "Firm owner access required", code: "FIRM_ACCESS_REQUIRED" });
       return;
     }
     next();
@@ -112,59 +260,24 @@ export function requireFirmOwner() {
 }
 
 /**
- * Returns the list of client company IDs a user may access through the NRA
- * Center, or null for "all client companies".
- * - platform admin (isAdmin) and firm_owner: all (returns null → caller
- *   should not filter)
- * - firm_admin: client companies the user is linked to via either
- *     (a) firm_staff_assignments — explicit firm-staff assignment, or
- *     (b) company_users — direct membership added through /assign-staff or
- *         auto-assigned when the firm_admin creates/imports the client.
- *   Soft-deleted and non-client companies are excluded so firm-admin
- *   listings stay consistent with the firm_owner view (which always
- *   filters by companyType='client' AND deletedAt IS NULL).
+ * Returns the client company IDs a user may access through the firm
+ * workspace, or null for "all client companies" (platform admins only).
  *
- * Why both tables? POST /firm/clients, POST /firm/clients/import and
- * POST /firm/clients/:id/assign-staff write to company_users; the
- * firm_staff_assignments table was added later for analytics joins.
- * Filtering on assignments alone would silently hide every client a
- * firm_admin has access to, so we union both sources.
+ * - firm_owner: every client of the caller's firm (firm_client_links; for NR
+ *   also legacy unlinked company_type='client' companies).
+ * - firm_admin / preparer / reviewer / viewer: the firm's clients they are
+ *   assigned to via firm_staff_assignments or company_users.
+ * - not firm staff: [].
+ *
+ * Never returns another firm's clients (R15-12).
  */
 export async function getAccessibleCompanyIds(
   userId: string,
   firmRole: string,
   isAdmin = false
 ): Promise<string[] | null> {
-  if (isAdmin || firmRole === "firm_owner") return null;
-  if (!isNraFirmRole(firmRole)) return [];
-
-  const [byAssignment, byMembership] = await Promise.all([
-    db
-      .select({ companyId: companies.id })
-      .from(firmStaffAssignments)
-      .innerJoin(companies, eq(companies.id, firmStaffAssignments.companyId))
-      .where(
-        and(
-          eq(firmStaffAssignments.userId, userId),
-          eq(companies.companyType, "client"),
-          isNull(companies.deletedAt)
-        )
-      ),
-    db
-      .select({ companyId: companies.id })
-      .from(companyUsers)
-      .innerJoin(companies, eq(companies.id, companyUsers.companyId))
-      .where(
-        and(
-          eq(companyUsers.userId, userId),
-          eq(companies.companyType, "client"),
-          isNull(companies.deletedAt)
-        )
-      ),
-  ]);
-
-  const ids = new Set<string>();
-  for (const r of byAssignment as { companyId: string }[]) ids.add(r.companyId);
-  for (const r of byMembership as { companyId: string }[]) ids.add(r.companyId);
-  return Array.from(ids);
+  if (isAdmin && !isFirmRole(firmRole)) return null;
+  const ctx = await resolveFirmContext({ id: userId, isAdmin, firmRole: firmRole || null });
+  if (!ctx) return [];
+  return listAccessibleClientIds(ctx);
 }

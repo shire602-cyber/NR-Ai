@@ -1,7 +1,12 @@
+import { T } from "@/components/layout/T";
+import { DatePicker } from "@/components/ui/date-picker";
+import { useTranslation, translateNow, formatMessage } from "@/lib/i18n";
+import { formatDate, parseCalendarDate } from "@/lib/format-date";
 import { PageHeader } from "@/components/ui/page-header";
+import { LoadErrorState } from "@/components/ui/load-error-state";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, differenceInDays, parseISO } from "date-fns";
+import { differenceInDays } from "date-fns";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +39,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { downloadStoredFile } from "@/lib/stored-file";
+import { openStoredFile, readFileAsDataUrl } from "@/lib/purchase-files";
 import {
   Upload,
   FileText,
@@ -43,7 +50,6 @@ import {
   AlertTriangle,
   Clock,
   FolderOpen,
-  Calendar,
   Loader2,
   Plus,
   Eye,
@@ -79,23 +85,38 @@ interface Document {
 }
 
 const DOCUMENT_CATEGORIES = [
-  { value: "invoice", labelEn: "Invoice" },
-  { value: "bill", labelEn: "Bill/Expense" },
-  { value: "receipt", labelEn: "Receipt" },
-  { value: "quote", labelEn: "Quote/Quotation" },
-  { value: "purchase_order", labelEn: "Purchase Order" },
-  { value: "trade_license", labelEn: "Trade License" },
-  { value: "contract", labelEn: "Contract" },
-  { value: "tax_certificate", labelEn: "Tax Certificate" },
-  { value: "audit_report", labelEn: "Audit Report" },
-  { value: "bank_statement", labelEn: "Bank Statement" },
-  { value: "insurance", labelEn: "Insurance" },
-  { value: "visa", labelEn: "Visa/Emirates ID" },
-  { value: "vat_return", labelEn: "VAT Return" },
-  { value: "other", labelEn: "Other" },
+  { value: "invoice", labelKey: "invoices.publicInvoice" },
+  { value: "bill", labelKey: "adminDocuments.cat.bill" },
+  { value: "receipt", labelKey: "pages.receipt" },
+  { value: "quote", labelKey: "adminDocuments.cat.quote" },
+  { value: "purchase_order", labelKey: "adminDocuments.purchaseOrder" },
+  { value: "trade_license", labelKey: "adminDocuments.tradeLicense" },
+  { value: "contract", labelKey: "adminDocuments.cat.contract" },
+  { value: "tax_certificate", labelKey: "adminDocuments.taxCertificate" },
+  { value: "audit_report", labelKey: "adminDocuments.auditReport" },
+  { value: "bank_statement", labelKey: "adminDocuments.bankStatement" },
+  { value: "insurance", labelKey: "forms.budget.cat.Insurance" },
+  { value: "visa", labelKey: "adminDocuments.cat.visa" },
+  { value: "vat_return", labelKey: "adminDocuments.cat.vat_return" },
+  { value: "other", labelKey: "forms.claim.cat.Other" },
 ];
 
+/** Categories the document vault accepts on upload (DOC_CATEGORIES); older rows may carry others. */
+const UPLOAD_CATEGORIES = DOCUMENT_CATEGORIES.filter((c) =>
+  [
+    "trade_license",
+    "contract",
+    "tax_certificate",
+    "audit_report",
+    "bank_statement",
+    "insurance",
+    "visa",
+    "other",
+  ].includes(c.value)
+);
+
 export default function AdminDocuments() {
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -106,22 +127,36 @@ export default function AdminDocuments() {
   const [newDocument, setNewDocument] = useState({
     name: "",
     nameAr: "",
-    category: "invoice",
+    category: "other",
     description: "",
     expiryDate: "",
     reminderDays: 30,
   });
 
-  const { data: companies, isLoading: isLoadingCompanies } = useQuery<Company[]>({
-    queryKey: ["/api/admin/companies"],
+  const {
+    data: companies,
+    isLoading: isLoadingCompanies,
+    isError: companiesFailed,
+    error: companiesError,
+    refetch: refetchCompanies,
+  } = useQuery<Company[]>({
+    queryKey: ["/api/admin/documents/companies"],
   });
 
-  const { data: documents, isLoading: isLoadingDocs } = useQuery<Document[]>({
+  const {
+    data: documents,
+    isLoading: isLoadingDocs,
+    isError: docsFailed,
+    error: docsError,
+    refetch: refetchDocs,
+  } = useQuery<Document[]>({
     queryKey: ["/api/companies", selectedCompanyId, "documents"],
     enabled: !!selectedCompanyId,
   });
 
   const uploadMutation = useMutation({
+    // The bytes go to the document vault (JSON base64 contract); the server sniffs the type and
+    // stores the file, so View / Download work afterwards.
     mutationFn: async (data: {
       name: string;
       nameAr: string;
@@ -129,13 +164,18 @@ export default function AdminDocuments() {
       description: string;
       expiryDate: string;
       reminderDays: number;
-      fileName: string;
-      fileSize: number;
-      mimeType: string;
+      file: File;
     }) => {
       return apiRequest("POST", `/api/companies/${selectedCompanyId}/documents`, {
-        ...data,
-        fileUrl: `/uploads/${data.fileName}`,
+        name: data.name,
+        nameAr: data.nameAr || null,
+        category: data.category,
+        description: data.description || null,
+        expiryDate: data.expiryDate || null,
+        reminderDays: data.reminderDays,
+        fileName: data.file.name,
+        mimeType: data.file.type || undefined,
+        fileData: await readFileAsDataUrl(data.file),
       });
     },
     onSuccess: () => {
@@ -143,8 +183,8 @@ export default function AdminDocuments() {
         queryKey: ["/api/companies", selectedCompanyId, "documents"],
       });
       toast({
-        title: "Upload Successful",
-        description: "Document has been saved for the client",
+        title: translateNow("toasts.uploadSuccessful"),
+        description: translateNow("toasts.documentHasBeenSavedForTheClient"),
       });
       setUploadDialogOpen(false);
       resetForm();
@@ -152,7 +192,7 @@ export default function AdminDocuments() {
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Upload Failed",
+        title: translateNow("toasts.uploadFailed"),
         description: error?.message,
       });
     },
@@ -165,8 +205,15 @@ export default function AdminDocuments() {
         queryKey: ["/api/companies", selectedCompanyId, "documents"],
       });
       toast({
-        title: "Deleted",
-        description: "Document has been deleted",
+        title: translateNow("toasts.deleted"),
+        description: translateNow("toasts.documentHasBeenDeleted"),
+      });
+    },
+    onError: (error: unknown) => {
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.deleteFailed"),
+        description: error instanceof Error ? error.message : undefined,
       });
     },
   });
@@ -175,7 +222,7 @@ export default function AdminDocuments() {
     setNewDocument({
       name: "",
       nameAr: "",
-      category: "invoice",
+      category: "other",
       description: "",
       expiryDate: "",
       reminderDays: 30,
@@ -187,8 +234,17 @@ export default function AdminDocuments() {
     if (!newDocument.name) {
       toast({
         variant: "destructive",
-        title: "Missing Information",
-        description: "Please enter document name",
+        title: translateNow("toasts.missingInformation"),
+        description: translateNow("toasts.pleaseEnterDocumentName"),
+      });
+      return;
+    }
+
+    if (!selectedFile) {
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.missingInformation"),
+        description: translateNow("adminDocuments.chooseFile"),
       });
       return;
     }
@@ -196,8 +252,8 @@ export default function AdminDocuments() {
     if (!selectedCompanyId) {
       toast({
         variant: "destructive",
-        title: "Select Client",
-        description: "Please select a client first",
+        title: translateNow("toasts.selectClient"),
+        description: translateNow("toasts.pleaseSelectAClientFirst"),
       });
       return;
     }
@@ -211,18 +267,34 @@ export default function AdminDocuments() {
         description: newDocument.description,
         expiryDate: newDocument.expiryDate,
         reminderDays: newDocument.reminderDays,
-        fileName: selectedFile?.name || "document.pdf",
-        fileSize: selectedFile?.size || 0,
-        mimeType: selectedFile?.type || "application/pdf",
+        file: selectedFile,
       });
+    } catch {
+      // A refused upload is reported by the mutation's onError toast; the dialog stays open.
     } finally {
       setIsUploading(false);
     }
   };
 
+  // View / Download read the stored file from the vault. Rows saved before uploads were stored
+  // (metadata only) have no bytes: say so instead of failing silently.
+  const openStored = async (doc: Document, mode: "view" | "download") => {
+    try {
+      const url = `/api/documents/${doc.id}/download`;
+      if (mode === "view") await openStoredFile(url);
+      else await downloadStoredFile(url, doc.fileName);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: t["adminDocuments.fileUnavailable"],
+        description: (error as Error)?.message,
+      });
+    }
+  };
+
   const getExpiryStatus = (expiryDate: string | null) => {
     if (!expiryDate) return null;
-    const days = differenceInDays(parseISO(expiryDate), new Date());
+    const days = differenceInDays(parseCalendarDate(expiryDate), new Date());
     if (days < 0) return { status: "expired", color: "destructive" as const, days: Math.abs(days) };
     if (days <= 30) return { status: "expiring_soon", color: "secondary" as const, days };
     return { status: "valid", color: "default" as const, days };
@@ -230,7 +302,7 @@ export default function AdminDocuments() {
 
   const getCategoryLabel = (category: string) => {
     const cat = DOCUMENT_CATEGORIES.find((c) => c.value === category);
-    return cat?.labelEn || category;
+    return cat ? t[cat.labelKey] : category;
   };
 
   const filteredDocuments =
@@ -252,7 +324,7 @@ export default function AdminDocuments() {
 
   if (isLoadingCompanies) {
     return (
-      <div className="space-y-6 p-6">
+      <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-12 w-full" />
         <Skeleton className="h-96" />
@@ -261,20 +333,20 @@ export default function AdminDocuments() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Admin"
-        title="Client Document Management"
+        title={t["adminDocuments.clientDocumentManagement"]}
         testId="text-admin-documents-title"
-        description="Upload and manage invoices, bills, and documents for your clients"
+        description={t["adminDocuments.uploadAndManageInvoicesBills"]}
         actions={
           <Button
             onClick={() => setUploadDialogOpen(true)}
             disabled={!selectedCompanyId}
             data-testid="button-upload-client-document"
           >
-            <Plus className="w-4 h-4 mr-2" />
-            Upload Document
+            <Plus className="w-4 h-4 me-2" />
+            <T k="pages.uploadDocument" />
           </Button>
         }
       />
@@ -283,14 +355,20 @@ export default function AdminDocuments() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Building2 className="w-5 h-5" />
-            Select Client
+            <T k="pages.selectClient" />
           </CardTitle>
-          <CardDescription>Choose a client to view or upload documents for them</CardDescription>
+          <CardDescription>
+            <T k="pages.chooseAClientToViewOrUploadDocumentsForThem" />
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Select value={selectedCompanyId} onValueChange={setSelectedCompanyId}>
-            <SelectTrigger className="w-full md:w-[400px]" data-testid="select-client-company">
-              <SelectValue placeholder="Select a client company..." />
+            <SelectTrigger
+              className="w-full md:w-[400px]"
+              aria-label={t["pages.selectClient"]}
+              data-testid="select-client-company"
+            >
+              <SelectValue placeholder={t["adminDocuments.selectAClientCompany"]} />
             </SelectTrigger>
             <SelectContent>
               {companies?.map((company) => (
@@ -300,7 +378,7 @@ export default function AdminDocuments() {
                     <span>{company.name}</span>
                     {company.trnNumber && (
                       <span className="text-muted-foreground text-xs">
-                        (TRN: {company.trnNumber})
+                        ({t["forms.preview.trnShort"]}: <bdi>{company.trnNumber}</bdi>)
                       </span>
                     )}
                   </div>
@@ -308,6 +386,21 @@ export default function AdminDocuments() {
               ))}
             </SelectContent>
           </Select>
+          {companiesFailed && (
+            <LoadErrorState
+              error={companiesError}
+              onRetry={() => void refetchCompanies()}
+              testId="admin-documents-companies-error"
+            />
+          )}
+          {!isLoadingCompanies && !companiesFailed && (companies?.length ?? 0) === 0 && (
+            <p
+              className="mt-3 text-sm text-muted-foreground"
+              data-testid="text-no-writable-clients"
+            >
+              <T k="adminDocuments.noWritableClients" />
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -316,7 +409,9 @@ export default function AdminDocuments() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Documents</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pages.totalDocuments" />
+                </CardTitle>
                 <FolderOpen className="w-4 h-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
@@ -326,7 +421,9 @@ export default function AdminDocuments() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Invoices</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pages.invoices" />
+                </CardTitle>
                 <FileText className="w-4 h-4 text-info" />
               </CardHeader>
               <CardContent>
@@ -338,7 +435,9 @@ export default function AdminDocuments() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Bills/Expenses</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  {t["adminConsole.billsExpenses"]}
+                </CardTitle>
                 <FileUp className="w-4 h-4 text-warning" />
               </CardHeader>
               <CardContent>
@@ -350,14 +449,16 @@ export default function AdminDocuments() {
 
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Expiring Soon</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  <T k="pages.expiringSoon" />
+                </CardTitle>
                 <Clock className="w-4 h-4 text-warning" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-warning">
                   {documents?.filter((doc) => {
                     if (!doc.expiryDate || doc.isArchived) return false;
-                    const days = differenceInDays(parseISO(doc.expiryDate), new Date());
+                    const days = differenceInDays(parseCalendarDate(doc.expiryDate), new Date());
                     return days >= 0 && days <= 30;
                   }).length || 0}
                 </div>
@@ -369,25 +470,31 @@ export default function AdminDocuments() {
             <CardHeader>
               <div className="flex flex-col md:flex-row gap-4 justify-between">
                 <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                  <Search className="absolute start-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
                   <Input
-                    placeholder="Search documents..."
+                    placeholder={t["adminDocuments.searchDocuments"]}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
+                    className="ps-10"
                     data-testid="input-search-client-documents"
                   />
                 </div>
                 <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                  <SelectTrigger className="w-[200px]" data-testid="select-category-filter">
-                    <Filter className="w-4 h-4 mr-2" />
-                    <SelectValue placeholder="Filter by category" />
+                  <SelectTrigger
+                    className="w-[200px]"
+                    aria-label={t["pages.category"]}
+                    data-testid="select-category-filter"
+                  >
+                    <Filter className="w-4 h-4 me-2" />
+                    <SelectValue placeholder={t["adminDocuments.filterByCategory"]} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
+                    <SelectItem value="all">
+                      <T k="pages.allCategories" />
+                    </SelectItem>
                     {DOCUMENT_CATEGORIES.map((cat) => (
                       <SelectItem key={cat.value} value={cat.value}>
-                        {cat.labelEn}
+                        {t[cat.labelKey]}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -401,12 +508,22 @@ export default function AdminDocuments() {
                     <Skeleton key={i} className="h-16" />
                   ))}
                 </div>
+              ) : docsFailed ? (
+                <LoadErrorState
+                  error={docsError}
+                  onRetry={() => void refetchDocs()}
+                  testId="admin-documents-list-error"
+                />
               ) : filteredDocuments.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground">
                   <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                  <p>No documents found for {selectedCompany?.name}</p>
+                  <p>
+                    {formatMessage(t["adminDocuments.noneFor"], {
+                      name: selectedCompany?.name ?? "",
+                    })}
+                  </p>
                   <Button variant="ghost" onClick={() => setUploadDialogOpen(true)}>
-                    Upload a document
+                    <T k="pages.uploadADocument" />
                   </Button>
                 </div>
               ) : (
@@ -414,12 +531,22 @@ export default function AdminDocuments() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Document Name</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead>File</TableHead>
-                        <TableHead>Expiry</TableHead>
-                        <TableHead>Uploaded</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead>
+                          <T k="pages.documentName" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.category" />
+                        </TableHead>
+                        <TableHead>{t["adminConsole.colFile"]}</TableHead>
+                        <TableHead>
+                          <T k="pages.expiry" />
+                        </TableHead>
+                        <TableHead>
+                          <T k="pages.uploaded" />
+                        </TableHead>
+                        <TableHead data-numeric>
+                          <T k="pages.actions" />
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -464,10 +591,14 @@ export default function AdminDocuments() {
                                   )}
                                   <Badge variant={expiryStatus.color}>
                                     {expiryStatus.status === "expired"
-                                      ? `Expired ${expiryStatus.days}d ago`
+                                      ? formatMessage(t["adminConsole.expiredDaysAgo"], {
+                                          n: expiryStatus.days,
+                                        })
                                       : expiryStatus.status === "expiring_soon"
-                                        ? `${expiryStatus.days}d left`
-                                        : format(parseISO(doc.expiryDate!), "MMM d, yyyy")}
+                                        ? formatMessage(t["adminConsole.daysLeft"], {
+                                            n: expiryStatus.days,
+                                          })
+                                        : formatDate(doc.expiryDate, locale)}
                                   </Badge>
                                 </div>
                               ) : (
@@ -476,14 +607,17 @@ export default function AdminDocuments() {
                             </TableCell>
                             <TableCell>
                               <div className="text-sm text-muted-foreground">
-                                {format(parseISO(doc.createdAt), "MMM d, yyyy")}
+                                {formatDate(doc.createdAt, locale)}
                               </div>
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell data-numeric>
                               <div className="flex items-center justify-end gap-1">
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  aria-label={t["adminDocuments.view"]}
+                                  title={t["adminDocuments.view"]}
+                                  onClick={() => void openStored(doc, "view")}
                                   data-testid={`button-view-${doc.id}`}
                                 >
                                   <Eye className="w-4 h-4" />
@@ -491,6 +625,9 @@ export default function AdminDocuments() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  aria-label={t["adminDocuments.download"]}
+                                  title={t["adminDocuments.download"]}
+                                  onClick={() => void openStored(doc, "download")}
                                   data-testid={`button-download-${doc.id}`}
                                 >
                                   <Download className="w-4 h-4" />
@@ -498,10 +635,12 @@ export default function AdminDocuments() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  aria-label={t["adminDocuments.delete"]}
+                                  title={t["adminDocuments.delete"]}
                                   onClick={() => deleteMutation.mutate(doc.id)}
                                   data-testid={`button-delete-${doc.id}`}
                                 >
-                                  <Trash2 className="w-4 h-4 text-destructive" />
+                                  <Trash2 className="w-4 h-4 text-muted-foreground" />
                                 </Button>
                               </div>
                             </TableCell>
@@ -522,38 +661,42 @@ export default function AdminDocuments() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="w-5 h-5" />
-              Upload Document for {selectedCompany?.name}
+              {formatMessage(t["adminDocuments.uploadFor"], { name: selectedCompany?.name ?? "" })}
             </DialogTitle>
             <DialogDescription>
-              Add an invoice, bill, or other document for this client
+              <T k="pages.addAnInvoiceBillOrOtherDocumentForThisClient" />
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Document Name *</Label>
+                <Label htmlFor="name">{t["adminConsole.docName"]}</Label>
                 <Input
                   id="name"
-                  placeholder="e.g., Invoice #001"
+                  placeholder={t["adminConsole.docNamePlaceholder"]}
                   value={newDocument.name}
                   onChange={(e) => setNewDocument({ ...newDocument, name: e.target.value })}
                   data-testid="input-document-name"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="category">Category *</Label>
+                <Label htmlFor="category">{t["adminConsole.docCategory"]}</Label>
                 <Select
                   value={newDocument.category}
                   onValueChange={(value) => setNewDocument({ ...newDocument, category: value })}
                 >
-                  <SelectTrigger data-testid="select-document-category">
+                  <SelectTrigger
+                    aria-label={t["adminConsole.docCategory"]}
+                    id="category"
+                    data-testid="select-document-category"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {DOCUMENT_CATEGORIES.map((cat) => (
+                    {UPLOAD_CATEGORIES.map((cat) => (
                       <SelectItem key={cat.value} value={cat.value}>
-                        {cat.labelEn}
+                        {t[cat.labelKey]}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -562,10 +705,12 @@ export default function AdminDocuments() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description">
+                <T k="pages.description" />
+              </Label>
               <Textarea
                 id="description"
-                placeholder="Brief description of this document..."
+                placeholder={t["adminDocuments.briefDescriptionOfThisDocument"]}
                 value={newDocument.description}
                 onChange={(e) => setNewDocument({ ...newDocument, description: e.target.value })}
                 rows={2}
@@ -575,17 +720,16 @@ export default function AdminDocuments() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="expiryDate">Expiry Date (if applicable)</Label>
-                <Input
+                <Label htmlFor="expiryDate">{t["adminConsole.expiryIfAny"]}</Label>
+                <DatePicker
                   id="expiryDate"
-                  type="date"
                   value={newDocument.expiryDate}
-                  onChange={(e) => setNewDocument({ ...newDocument, expiryDate: e.target.value })}
+                  onChange={(v) => setNewDocument({ ...newDocument, expiryDate: v })}
                   data-testid="input-expiry-date"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="reminderDays">Remind Before (days)</Label>
+                <Label htmlFor="reminderDays">{t["adminConsole.remindBefore"]}</Label>
                 <Input
                   id="reminderDays"
                   type="number"
@@ -601,7 +745,9 @@ export default function AdminDocuments() {
             </div>
 
             <div className="space-y-2">
-              <Label>Upload File</Label>
+              <Label>
+                <T k="pages.uploadFile" />
+              </Label>
               <div className="border-2 border-dashed rounded-lg p-6 text-center">
                 <input
                   type="file"
@@ -625,8 +771,10 @@ export default function AdminDocuments() {
                   ) : (
                     <div className="text-muted-foreground">
                       <Upload className="w-8 h-8 mx-auto mb-2" />
-                      <p>Click to upload or drag and drop</p>
-                      <p className="text-xs">PDF, DOC, XLS, JPG, PNG (max 10MB)</p>
+                      <p>
+                        <T k="pages.clickToUploadOrDragAndDrop" />
+                      </p>
+                      <p className="text-xs">{t["adminConsole.uploadFormats"]}</p>
                     </div>
                   )}
                 </label>
@@ -636,22 +784,22 @@ export default function AdminDocuments() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setUploadDialogOpen(false)}>
-              Cancel
+              <T k="pages.cancel" />
             </Button>
             <Button
               onClick={handleUpload}
-              disabled={isUploading || !newDocument.name}
+              disabled={isUploading || !newDocument.name || !selectedFile}
               data-testid="button-submit-upload"
             >
               {isUploading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Uploading...
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                  <T k="pages.uploading" />
                 </>
               ) : (
                 <>
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Document
+                  <Upload className="w-4 h-4 me-2" />
+                  <T k="pages.uploadDocument" />
                 </>
               )}
             </Button>

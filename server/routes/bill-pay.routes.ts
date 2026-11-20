@@ -1,898 +1,1242 @@
+/**
+ * Vendor bills (W3-B). State machine draft → pending → approved → partial → paid, plus rejected
+ * and void; every transition is one conditional update in the same ledger transaction as its
+ * journal. Payments only on approved / partial bills (R04-01); approved bills are corrected by
+ * POST /bills/:id/revise (kernel reversal + repost, R04-02) or voided (R04-08).
+ */
+import { journalMemo } from "@shared/journal-memo";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
+import { requirePermission } from "../middleware/companyRolePolicy";
 import { asyncHandler } from "../middleware/errorHandler";
-import { validate } from "../middleware/validate";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
 import { storage } from "../storage";
 import { pool } from "../db";
-import Decimal from "decimal.js";
 import { createLogger } from "../config/logger";
+import { DomainError } from "../errors";
 import { assertRetentionExpired } from "../services/retention.service";
-import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
-import { postBillApprovalJournal, postBillPaymentJournal } from "../services/bill-posting.service";
+import { emitDomainEventInTx } from "../platform/event-outbox";
+import {
+  assertTransition,
+  loadBaseCurrency,
+  postJournal,
+  transitionRow,
+  withLedgerTx,
+} from "../ledger";
+import {
+  BILL_PAYMENT_JE_SOURCE,
+  billHasPostedJournal,
+  billMachine,
+  filsOf,
+  isForeign,
+  planBillJournal,
+  postBillJournal,
+  rateTextOf,
+  requireApAccount,
+  reverseBillJournal,
+  toBase,
+  txRows,
+  vendorBillsTable,
+  type BillRow,
+} from "../services/bill-posting.service";
+import {
+  applyBillRevision,
+  applyDebitNote,
+  applyPrepayment,
+  batchPaymentCsv,
+  createBill,
+  createDebitNote,
+  createDraftFromParsedInbound,
+  createVendorCreditFromInbound,
+  createPrepayment,
+  createRecurringBill,
+  prepareBillRevision,
+  recordBillPayment,
+  registerBillServices,
+  resolvePaymentAccount,
+  runRecurringBill,
+  updateBillInPlace,
+  voidBillPayment,
+} from "../services/bill-payment.service";
+import {
+  actorFromRequest,
+  assertCompanyPermission,
+  clearApprovalDecisions,
+  evaluateApproval,
+} from "../services/approval-rules.service";
+import { payablesAging } from "../services/vendor.service";
+import {
+  applyCreditSchema,
+  batchPaymentExportSchema,
+  billAttachmentSchema,
+  billCaptureSchema,
+  billCreateSchema,
+  billOptionalReasonSchema,
+  billPaymentSchema,
+  billReasonSchema,
+  billReviseSchema,
+  billUpdateSchema,
+  debitNoteCreateSchema,
+  inboundBillSchema,
+  inboundVendorCreditSchema,
+  prepaymentCreateSchema,
+  recurringBillCreateSchema,
+  type BillCreateInput,
+  type BillPaymentInput,
+  type BillReviseInput,
+  type BillUpdateInput,
+  type InboundVendorCreditInput,
+} from "../../shared/validators/bills";
+import { zUuid } from "../../shared/validators/primitives";
+import { fromFils, toFils } from "../../shared/money";
+import { receipts } from "../../shared/schema";
+import { scopedGet } from "../tenancy";
+import { parseReportDate, uaeToday } from "../reporting";
+import { readReceiptImage } from "../services/fileStorage";
+import { captureBillFromDocument, storePurchaseFile } from "../services/bill-capture.service";
+import { billApprovalQueue } from "../services/bill-approval-queue";
+import { docRateSql, payableOpenSql, payableSettledSql } from "../reporting/settlement";
 
 const log = createLogger("bill-pay");
 
-// =====================================
-// Zod schemas
-// =====================================
+/** Load a bill the caller may act on; another tenant's bill is a 404 (never 403). */
+async function loadBill(req: Request): Promise<BillRow & Record<string, unknown>> {
+  const { id } = req.params;
+  if (!zUuid.safeParse(id).success)
+    throw new DomainError("BILL_NOT_FOUND", 404, undefined, "Bill not found");
+  const r = await pool.query("SELECT * FROM vendor_bills WHERE id = $1", [id]);
+  const bill = r.rows[0];
+  if (!bill) throw new DomainError("BILL_NOT_FOUND", 404, undefined, "Bill not found");
+  const ok = await storage.hasCompanyAccess(req.user!.id, bill.company_id);
+  if (!ok) throw new DomainError("BILL_NOT_FOUND", 404, undefined, "Bill not found");
+  return bill;
+}
 
-const billIsoDate = z
-  .string()
-  .min(1)
-  .refine((v) => !Number.isNaN(Date.parse(v)), { message: "Must be a valid ISO date" });
+async function assertCompanyAccess(req: Request, companyId: string) {
+  const ok = await storage.hasCompanyAccess(req.user!.id, companyId);
+  if (!ok) throw new DomainError("COMPANY_ACCESS_DENIED", 403, undefined, "Access denied");
+}
 
-const billLineItemSchema = z.object({
-  description: z.string().min(1, "Line description is required").max(500),
-  quantity: z.union([z.number(), z.string()]).optional(),
-  unit_price: z.union([z.number(), z.string()]),
-  // UAE VAT: only 0% and 5% exist. Accept percent (5) or decimal (0.05) form.
-  vat_rate: z
-    .union([z.number(), z.string()])
-    .optional()
-    .nullable()
-    .refine(
-      (v) => {
-        if (v === null || v === undefined || v === "") return true;
-        const n = Number(v);
-        return n === 0 || n === 5 || n === 0.05;
-      },
-      { message: "VAT rate must be 0% or 5% (UAE)" }
+const todayIso = () => uaeToday();
+
+function displayStatus(bill: Record<string, unknown>): {
+  is_overdue: boolean;
+  display_status: string;
+} {
+  const status = String(bill.status ?? "pending");
+  const open = filsOf(bill.total_amount as string) - filsOf(bill.amount_paid as string);
+  const due = bill.due_date ? new Date(bill.due_date as string).toISOString().slice(0, 10) : null;
+  const isOverdue =
+    ["approved", "partial", "overdue"].includes(status) && open > 0 && !!due && due < todayIso();
+  return {
+    is_overdue: isOverdue,
+    display_status: isOverdue ? "overdue" : status === "overdue" ? "approved" : status,
+  };
+}
+
+async function billWithLines(billId: string) {
+  const [b, l, p] = await Promise.all([
+    pool.query("SELECT * FROM vendor_bills WHERE id = $1", [billId]),
+    pool.query("SELECT * FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at ASC", [
+      billId,
+    ]),
+    pool.query(
+      "SELECT * FROM bill_payments WHERE bill_id = $1 ORDER BY payment_date DESC, created_at DESC",
+      [billId]
     ),
-  account_id: z.string().uuid().optional().nullable(),
-});
-
-const billCreateSchema = z.object({
-  vendor_name: z.string().min(1, "Vendor name is required").max(255),
-  vendor_trn: z.string().max(20).optional().nullable(),
-  bill_number: z.string().max(64).optional().nullable(),
-  bill_date: billIsoDate,
-  due_date: billIsoDate.optional().nullable(),
-  currency: z.string().length(3).optional(),
-  category: z.string().max(64).optional().nullable(),
-  notes: z.string().max(2000).optional().nullable(),
-  attachment_url: z.string().url().optional().nullable(),
-  reverse_charge: z.boolean().optional(),
-  exchange_rate: z
-    .union([z.number(), z.string()])
-    .optional()
-    .nullable()
-    .refine((v) => v === null || v === undefined || v === "" || Number(v) > 0, {
-      message: "exchange_rate must be positive",
-    }),
-  line_items: z.array(billLineItemSchema).min(1, "At least one line item is required"),
-});
-
-const billUpdateSchema = z.object({
-  vendor_name: z.string().min(1).max(255).optional(),
-  vendor_trn: z.string().max(20).optional().nullable(),
-  bill_number: z.string().max(64).optional().nullable(),
-  bill_date: billIsoDate.optional(),
-  due_date: billIsoDate.optional().nullable(),
-  currency: z.string().length(3).optional(),
-  category: z.string().max(64).optional().nullable(),
-  notes: z.string().max(2000).optional().nullable(),
-  attachment_url: z.string().url().optional().nullable(),
-  line_items: z.array(billLineItemSchema).min(1).optional(),
-});
-
-const billPaymentSchema = z.object({
-  payment_date: billIsoDate,
-  amount: z
-    .union([z.number(), z.string()])
-    .transform((v) => (typeof v === "string" ? Number(v) : v))
-    .pipe(z.number().positive("Payment amount must be positive")),
-  payment_method: z.enum(["bank_transfer", "cash", "cheque", "credit_card", "other"]).optional(),
-  reference: z.string().max(255).optional().nullable(),
-  notes: z.string().max(2000).optional().nullable(),
-});
-
-// Resolve a VAT rate (stored as percent in bill_line_items.vat_rate) honouring
-// explicit zero-rated lines. Only treat null/undefined/non-numeric as missing
-// and fall back to the UAE standard 5%; explicit 0 must remain 0.
-function resolveVatRatePercent(raw: unknown): number {
-  if (raw === null || raw === undefined || raw === "") return 5;
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return 5;
-  // Normalise decimal form (0.05) to percent form (5).
-  return n === 0.05 ? 5 : n;
+  ]);
+  const bill = b.rows[0];
+  return {
+    ...bill,
+    ...displayStatus(bill),
+    has_attachment: !!bill.attachment_path,
+    line_items: l.rows,
+    payments: p.rows,
+  };
 }
 
 export function registerBillPayRoutes(app: Express) {
-  // =====================================
-  // Vendor Bill Routes
-  // =====================================
+  registerBillServices();
 
-  // List all bills for a company (with filters)
+  // ── List ────────────────────────────────────────────────────────────────
   app.get(
     "/api/companies/:companyId/bills",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = req.user!.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+      await assertCompanyAccess(req, companyId);
+      const { status, vendor, vendor_id, dateFrom, dateTo } = req.query;
+      // Open balance from the one settlement rule (server/reporting/settlement.ts): total less
+      // Σ bill_payments (payments, prepayments, vendor-credit applications, reversals).
+      let query = `SELECT vendor_bills.*,
+                          ${payableOpenSql("vendor_bills")}::float8 AS open_balance,
+                          (ROUND(${payableOpenSql("vendor_bills")} * ${docRateSql("vendor_bills")} * 100)::bigint / 100.0)::float8 AS open_balance_base
+                     FROM vendor_bills WHERE company_id = $1`;
+      const params: unknown[] = [companyId];
+      const add = (cond: string, v: unknown) => {
+        params.push(v);
+        query += ` AND ${cond.replace("?", `$${params.length}`)}`;
+      };
+      if (typeof status === "string" && status && status !== "all") {
+        if (status === "overdue") {
+          add("status = ANY(?)", ["approved", "partial", "overdue"]);
+          add("due_date::date < ?::date", todayIso());
+          query += " AND total_amount > amount_paid";
+        } else add("status = ?", status);
       }
-
-      const { status, vendor, dateFrom, dateTo } = req.query;
-
-      let query = `
-      SELECT * FROM vendor_bills
-      WHERE company_id = $1
-    `;
-      const params: any[] = [companyId];
-      let paramIndex = 2;
-
-      if (status && status !== "all") {
-        query += ` AND status = $${paramIndex}`;
-        params.push(status);
-        paramIndex++;
-      }
-
-      if (vendor) {
-        query += ` AND vendor_name ILIKE $${paramIndex}`;
-        params.push(`%${vendor}%`);
-        paramIndex++;
-      }
-
-      if (dateFrom) {
-        query += ` AND bill_date >= $${paramIndex}`;
-        params.push(dateFrom);
-        paramIndex++;
-      }
-
-      if (dateTo) {
-        query += ` AND bill_date <= $${paramIndex}`;
-        params.push(dateTo);
-        paramIndex++;
-      }
-
-      query += ` ORDER BY bill_date DESC`;
-
+      if (typeof vendor === "string" && vendor) add("vendor_name ILIKE ?", `%${vendor}%`);
+      if (typeof vendor_id === "string" && zUuid.safeParse(vendor_id).success)
+        add("vendor_id = ?", vendor_id);
+      const from = parseReportDate(dateFrom, "dateFrom");
+      const to = parseReportDate(dateTo, "dateTo");
+      if (from) add("bill_date::date >= ?::date", from);
+      if (to) add("bill_date::date <= ?::date", to);
+      query += ` ORDER BY bill_date DESC, created_at DESC`;
       const result = await pool.query(query, params);
-
-      // Mark overdue bills
-      const now = new Date();
-      const bills = result.rows.map((bill: any) => {
-        if (
-          bill.due_date &&
-          new Date(bill.due_date) < now &&
-          bill.status !== "paid" &&
-          bill.status !== "overdue"
-        ) {
-          return { ...bill, status: "overdue" };
-        }
-        return bill;
-      });
-
-      res.json(bills);
+      res.json(
+        (result.rows as Array<Record<string, unknown>>).map((b) => ({
+          ...b,
+          ...displayStatus(b),
+          has_attachment: !!b.attachment_path,
+        }))
+      );
     })
   );
 
-  // Get single bill with line items and payments
+  // ── Read one ────────────────────────────────────────────────────────────
   app.get(
     "/api/bills/:id",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = req.user!.id;
-
-      const billResult = await pool.query("SELECT * FROM vendor_bills WHERE id = $1", [id]);
-
-      if (billResult.rows.length === 0) {
-        return res.status(404).json({ message: "Bill not found" });
-      }
-
-      const bill = billResult.rows[0];
-
-      const hasAccess = await storage.hasCompanyAccess(userId, bill.company_id);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const linesResult = await pool.query(
-        "SELECT * FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at ASC",
-        [id]
-      );
-
-      const paymentsResult = await pool.query(
-        "SELECT * FROM bill_payments WHERE bill_id = $1 ORDER BY payment_date DESC",
-        [id]
-      );
-
-      res.json({
-        ...bill,
-        line_items: linesResult.rows,
-        payments: paymentsResult.rows,
-      });
+      const bill = await loadBill(req);
+      res.json(await billWithLines(bill.id));
     })
   );
 
-  // Create bill with line items
+  // ── Create ──────────────────────────────────────────────────────────────
   app.post(
     "/api/companies/:companyId/bills",
     authMiddleware,
     requireCustomer,
-    validate({ body: billCreateSchema }),
+    strictBody(billCreateSchema),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = req.user!.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const {
-        vendor_name,
-        vendor_trn,
-        bill_number,
-        bill_date,
-        due_date,
-        currency,
-        category,
-        notes,
-        attachment_url,
-        line_items,
-        reverse_charge,
-        exchange_rate,
-      } = req.body;
-
-      // Foreign-currency bills must carry a rate to AED — the GL and VAT 201
-      // are AED. AED bills default to 1.
-      const docCurrency = (currency || "AED").toUpperCase();
-      const fxRate = Number(exchange_rate) > 0 ? Number(exchange_rate) : 1;
-      if (docCurrency !== "AED" && fxRate === 1 && !(Number(exchange_rate) > 0)) {
-        return res.status(422).json({
-          message: `Foreign-currency bills require exchange_rate (${docCurrency}→AED).`,
-          code: "NO_EXCHANGE_RATE",
-        });
-      }
-
-      // Bills post a JE on the bill_date once approved — refuse to even draft
-      // one inside a closed period.
-      await assertPeriodNotLocked(companyId, bill_date);
-
-      // Reverse charge is a specific legal treatment (imports of goods and
-      // services, designated zones) — it must be chosen, never guessed.
-      //
-      // This used to default to `!vendor_trn`, i.e. ON whenever the vendor's TRN
-      // field was blank. A blank TRN overwhelmingly means "not typed in yet",
-      // not "foreign supplier". The consequences were severe and silent:
-      //   * the bill self-assessed output VAT into Box 3 and claimed input VAT
-      //     in Box 10, instead of ordinary recoverable input VAT in Box 9 —
-      //     materially changing the VAT return in both directions;
-      //   * total_amount excluded the VAT (correct FOR reverse charge), so the
-      //     payable to the vendor was understated by the VAT and A/P was wrong.
-      //
-      // Default is now OFF. A missing TRN raises an advisory flag on the
-      // response so an accountant can review it, rather than silently changing
-      // the tax treatment.
-      const billReverseCharge = reverse_charge === true;
-      const missingVendorTrn = !vendor_trn;
-
-      // Calculate totals from line items
-      let subtotal = 0;
-      let vatAmount = 0;
-
-      for (const line of line_items) {
-        const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
-        const lineVat = lineAmount * (resolveVatRatePercent(line.vat_rate) / 100);
-        subtotal += lineAmount;
-        vatAmount += lineVat;
-      }
-
-      // For reverse-charge bills the vendor does not charge VAT — the cash payable
-      // is just the subtotal. The VAT is still tracked for the VAT return (input
-      // and output legs net to zero).
-      const totalAmount = billReverseCharge ? subtotal : subtotal + vatAmount;
-
-      const billResult = await pool.query(
-        `INSERT INTO vendor_bills (
-        company_id, vendor_name, vendor_trn, bill_number, bill_date, due_date,
-        currency, subtotal, vat_amount, total_amount, amount_paid, status,
-        category, notes, attachment_url, reverse_charge, exchange_rate
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-      RETURNING *`,
-        [
-          companyId,
-          vendor_name,
-          vendor_trn || null,
-          bill_number || null,
-          bill_date,
-          due_date || null,
-          docCurrency,
-          subtotal.toFixed(2),
-          vatAmount.toFixed(2),
-          totalAmount.toFixed(2),
-          "0.00",
-          "pending",
-          category || null,
-          notes || null,
-          attachment_url || null,
-          billReverseCharge,
-          fxRate,
-        ]
-      );
-
-      const bill = billResult.rows[0];
-
-      // Create line items
-      for (const line of line_items) {
-        const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
-        await pool.query(
-          `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id, reverse_charge)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [
-            bill.id,
-            line.description,
-            Number(line.quantity) || 1,
-            Number(line.unit_price),
-            resolveVatRatePercent(line.vat_rate),
-            lineAmount.toFixed(2),
-            line.account_id || null,
-            billReverseCharge,
-          ]
-        );
-      }
-
-      log.info({ billId: bill.id, companyId, reverseCharge: billReverseCharge }, "Vendor bill created");
+      await assertCompanyAccess(req, companyId);
+      const body = parsedBody<BillCreateInput>(req);
+      const result = await createBill({ companyId, actorId: req.user!.id, input: body });
+      log.info({ billId: result.bill.id, companyId }, "Vendor bill created");
       res.json({
-        ...bill,
-        // Advisory only — never a silent change of tax treatment.
-        ...(missingVendorTrn && !billReverseCharge
-          ? {
-              warnings: [
-                {
-                  code: "VENDOR_TRN_MISSING",
-                  message:
-                    "No vendor TRN recorded. This bill is treated as an ordinary domestic purchase " +
-                    "(input VAT recoverable in Box 9). If this supply is subject to the reverse charge " +
-                    "(imports, designated zones), set reverse_charge explicitly.",
-                },
-              ],
-            }
-          : {}),
+        ...result.bill,
+        ...displayStatus(result.bill),
+        line_items: result.lines,
+        ...(result.warnings.length ? { warnings: result.warnings } : {}),
       });
     })
   );
 
-  // Update bill
+  // ── Edit in place (draft / pending / rejected only) ─────────────────────
   app.patch(
     "/api/bills/:id",
     authMiddleware,
     requireCustomer,
-    validate({ body: billUpdateSchema }),
+    strictBody(billUpdateSchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = req.user!.id;
-
-      const billResult = await pool.query("SELECT * FROM vendor_bills WHERE id = $1", [id]);
-
-      if (billResult.rows.length === 0) {
-        return res.status(404).json({ message: "Bill not found" });
-      }
-
-      const bill = billResult.rows[0];
-
-      const hasAccess = await storage.hasCompanyAccess(userId, bill.company_id);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const {
-        vendor_name,
-        vendor_trn,
-        bill_number,
-        bill_date,
-        due_date,
-        currency,
-        category,
-        notes,
-        attachment_url,
-        line_items,
-      } = req.body;
-
-      // Block edits that touch a locked period — the existing bill_date and any
-      // requested new bill_date must both be outside any closed period.
-      await assertPeriodNotLocked(bill.company_id, bill.bill_date);
-      if (bill_date) {
-        await assertPeriodNotLocked(bill.company_id, bill_date);
-      }
-
-      // Build dynamic update
-      const updates: string[] = [];
-      const values: any[] = [];
-      let paramIdx = 1;
-
-      const addUpdate = (field: string, value: any) => {
-        if (value !== undefined) {
-          updates.push(`${field} = $${paramIdx}`);
-          values.push(value);
-          paramIdx++;
-        }
-      };
-
-      addUpdate("vendor_name", vendor_name);
-      addUpdate("vendor_trn", vendor_trn);
-      addUpdate("bill_number", bill_number);
-      addUpdate("bill_date", bill_date);
-      addUpdate("due_date", due_date);
-      addUpdate("currency", currency);
-      addUpdate("category", category);
-      addUpdate("notes", notes);
-      addUpdate("attachment_url", attachment_url);
-
-      // If line_items provided, recalculate totals
-      if (line_items && Array.isArray(line_items) && line_items.length > 0) {
-        let subtotal = 0;
-        let vatAmount = 0;
-
-        for (const line of line_items) {
-          const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
-          const lineVat = lineAmount * (resolveVatRatePercent(line.vat_rate) / 100);
-          subtotal += lineAmount;
-          vatAmount += lineVat;
-        }
-
-        const totalAmount = subtotal + vatAmount;
-
-        addUpdate("subtotal", subtotal.toFixed(2));
-        addUpdate("vat_amount", vatAmount.toFixed(2));
-        addUpdate("total_amount", totalAmount.toFixed(2));
-      }
-
-      if (updates.length === 0 && !line_items) {
-        return res.status(400).json({ message: "No fields to update" });
-      }
-
-      let updatedBill = bill;
-      if (updates.length > 0) {
-        values.push(id);
-        const updateResult = await pool.query(
-          `UPDATE vendor_bills SET ${updates.join(", ")} WHERE id = $${paramIdx} RETURNING *`,
-          values
-        );
-        updatedBill = updateResult.rows[0];
-      }
-
-      // Replace line items if provided
-      if (line_items && Array.isArray(line_items) && line_items.length > 0) {
-        await pool.query("DELETE FROM bill_line_items WHERE bill_id = $1", [id]);
-
-        for (const line of line_items) {
-          const lineAmount = (Number(line.quantity) || 1) * Number(line.unit_price);
-          await pool.query(
-            `INSERT INTO bill_line_items (bill_id, description, quantity, unit_price, vat_rate, amount, account_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-            [
-              id,
-              line.description,
-              Number(line.quantity) || 1,
-              Number(line.unit_price),
-              resolveVatRatePercent(line.vat_rate),
-              lineAmount.toFixed(2),
-              line.account_id || null,
-            ]
-          );
-        }
-      }
-
-      log.info({ billId: id }, "Vendor bill updated");
-      res.json(updatedBill);
+      const bill = await loadBill(req);
+      const result = await updateBillInPlace({
+        companyId: bill.company_id,
+        billId: bill.id,
+        input: req.body as BillUpdateInput,
+      });
+      log.info({ billId: bill.id }, "Vendor bill updated");
+      res.json({
+        ...result.bill,
+        ...displayStatus(result.bill),
+        line_items: result.lines,
+        ...(result.warnings.length ? { warnings: result.warnings } : {}),
+      });
     })
   );
 
-  // Delete bill
+  // ── Submit for approval (draft / rejected → pending) ────────────────────
+  app.post(
+    "/api/bills/:id/submit",
+    authMiddleware,
+    requireCustomer,
+    strictBody(z.object({})),
+    asyncHandler(async (req: Request, res: Response) => {
+      const bill = await loadBill(req);
+      assertTransition(billMachine, String(bill.status), "pending");
+      const row = await withLedgerTx((tx) =>
+        transitionRow(
+          tx,
+          vendorBillsTable,
+          bill.id,
+          ["draft", "rejected"],
+          "pending",
+          {},
+          {
+            machine: billMachine,
+            where: eq(vendorBillsTable.companyId, bill.company_id),
+          }
+        )
+      );
+      if (!row) throw new DomainError("BILL_STATE_CHANGED", 409);
+      res.json(await billWithLines(bill.id));
+    })
+  );
+
+  // ── Approve (maker-checker + approval rules; posts the A/P journal) ────
+  app.post(
+    "/api/bills/:id/approve",
+    authMiddleware,
+    requireCustomer,
+    strictBody(z.object({ comment: z.string().max(500).optional().nullable() })),
+    asyncHandler(async (req: Request, res: Response) => {
+      const bill = await loadBill(req);
+      if (bill.status !== "pending") {
+        throw new DomainError(
+          "BILL_NOT_PENDING",
+          409,
+          { status: bill.status },
+          "Only pending bills can be approved"
+        );
+      }
+      const actor = actorFromRequest(req);
+      await assertCompanyPermission(actor, bill.company_id, ["documents.approve"]);
+      const lines = (
+        await pool.query(
+          `SELECT description, amount, vat_amount, account_id, reverse_charge FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
+          [bill.id]
+        )
+      ).rows;
+      const vendorDefault = bill.vendor_id
+        ? ((
+            await pool.query(`SELECT default_expense_account_id FROM vendors WHERE id = $1`, [
+              bill.vendor_id,
+            ])
+          ).rows[0]?.default_expense_account_id ?? null)
+        : null;
+      const plan = await planBillJournal(bill, lines, { vendorDefaultAccountId: vendorDefault });
+      const billBase = await loadBaseCurrency(String(bill.company_id));
+      const amountFils = toBase(
+        filsOf(bill.total_amount),
+        rateTextOf(bill, billBase),
+        isForeign(bill, billBase)
+      );
+      const outcome = await withLedgerTx(async (tx) => {
+        const locked = (
+          await txRows<BillRow>(tx, `SELECT * FROM vendor_bills WHERE id = $1 FOR UPDATE`, [
+            bill.id,
+          ])
+        )[0];
+        if (locked.status !== "pending")
+          throw new DomainError("BILL_NOT_PENDING", 409, { status: locked.status });
+        const gate = await evaluateApproval(tx, {
+          companyId: bill.company_id,
+          documentType: "bill",
+          documentId: bill.id,
+          amountFils,
+          makerId: bill.created_by ?? null,
+          actor,
+          comment: (req.body as { comment?: string | null }).comment ?? null,
+        });
+        if (!gate.final) return { gate, entryId: null as string | null };
+        const posted = await postBillJournal(tx, locked, plan, actor.id);
+        const row = await transitionRow(
+          tx,
+          vendorBillsTable,
+          bill.id,
+          "pending",
+          "approved",
+          { approvedBy: actor.id, approvedAt: new Date() },
+          { machine: billMachine, where: eq(vendorBillsTable.companyId, bill.company_id) }
+        );
+        if (!row) throw new DomainError("BILL_STATE_CHANGED", 409);
+        // F8: durable event, written in the approval transaction.
+        await emitDomainEventInTx(tx, "bill.approved", {
+          companyId: bill.company_id,
+          entityId: bill.id,
+          actorUserId: actor.id,
+          totalFils: amountFils,
+        });
+        return { gate, entryId: posted.entry.id };
+      });
+      await recordAudit({
+        userId: actor.id,
+        companyId: bill.company_id,
+        action: outcome.gate.final ? "bill.approve" : "bill.approve_step",
+        entityType: "vendor_bill",
+        entityId: bill.id,
+        after: {
+          journalEntryId: outcome.entryId,
+          step: outcome.gate.stepOrder,
+          remaining: outcome.gate.remainingSteps,
+        },
+        req,
+      });
+      res.json({
+        ...(await billWithLines(bill.id)),
+        approval: {
+          final: outcome.gate.final,
+          step: outcome.gate.stepOrder,
+          remainingSteps: outcome.gate.remainingSteps,
+        },
+        journal_entry_id: outcome.entryId,
+      });
+    })
+  );
+
+  // ── Reject (pending → rejected) ─────────────────────────────────────────
+  app.post(
+    "/api/bills/:id/reject",
+    authMiddleware,
+    requireCustomer,
+    strictBody(billReasonSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const bill = await loadBill(req);
+      const actor = actorFromRequest(req);
+      await assertCompanyPermission(actor, bill.company_id, ["documents.approve"]);
+      assertTransition(billMachine, String(bill.status), "rejected");
+      const reason = (req.body as { reason: string }).reason;
+      await withLedgerTx(async (tx) => {
+        const row = await transitionRow(
+          tx,
+          vendorBillsTable,
+          bill.id,
+          "pending",
+          "rejected",
+          { rejectedBy: actor.id, rejectedAt: new Date(), statusReason: reason },
+          { machine: billMachine, where: eq(vendorBillsTable.companyId, bill.company_id) }
+        );
+        if (!row) throw new DomainError("BILL_STATE_CHANGED", 409);
+        await clearApprovalDecisions(tx, bill.company_id, "bill", bill.id);
+      });
+      await recordAudit({
+        userId: actor.id,
+        companyId: bill.company_id,
+        action: "bill.reject",
+        entityType: "vendor_bill",
+        entityId: bill.id,
+        after: { reason },
+        req,
+      });
+      res.json(await billWithLines(bill.id));
+    })
+  );
+
+  // ── Revise an approved, unpaid bill (reverse + repost, audited) ─────────
+  app.post(
+    "/api/bills/:id/revise",
+    authMiddleware,
+    requireCustomer,
+    strictBody(billReviseSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const bill = await loadBill(req);
+      const actor = actorFromRequest(req);
+      await assertCompanyPermission(actor, bill.company_id, ["documents.approve", "ledger.post"]);
+      if (!["approved", "overdue"].includes(String(bill.status))) {
+        throw new DomainError(
+          "BILL_NOT_APPROVED",
+          409,
+          { status: bill.status },
+          bill.status === "partial" || bill.status === "paid"
+            ? "A bill with payments cannot be revised; void the payments first"
+            : "Only approved bills are revised; edit pending bills directly"
+        );
+      }
+      const { reason, ...changes } = parsedBody<BillReviseInput>(req);
+      const prepared = await prepareBillRevision(bill.company_id, bill, changes as BillUpdateInput);
+      const vendorDefault = bill.vendor_id
+        ? ((
+            await pool.query(`SELECT default_expense_account_id FROM vendors WHERE id = $1`, [
+              bill.vendor_id,
+            ])
+          ).rows[0]?.default_expense_account_id ?? null)
+        : null;
+      const before = {
+        subtotal: bill.subtotal,
+        vat_amount: bill.vat_amount,
+        total_amount: bill.total_amount,
+      };
+      const out = await withLedgerTx(async (tx) => {
+        const locked = (
+          await txRows<BillRow>(tx, `SELECT * FROM vendor_bills WHERE id = $1 FOR UPDATE`, [
+            bill.id,
+          ])
+        )[0];
+        if (!["approved", "overdue"].includes(String(locked.status))) {
+          throw new DomainError("BILL_NOT_APPROVED", 409, { status: locked.status });
+        }
+        const pays = await txRows(tx, `SELECT 1 FROM bill_payments WHERE bill_id = $1 LIMIT 1`, [
+          bill.id,
+        ]);
+        if (pays.length)
+          throw new DomainError(
+            "BILL_HAS_PAYMENTS",
+            409,
+            undefined,
+            "Void the bill's payments first"
+          );
+        const reversals = await reverseBillJournal(tx, locked, actor.id, { reason });
+        const updated = await applyBillRevision(tx, bill.id, prepared);
+        const lines = await txRows<{
+          description: string;
+          amount: string;
+          vat_amount: string;
+          account_id: string | null;
+          reverse_charge: boolean;
+        }>(
+          tx,
+          `SELECT description, amount, vat_amount, account_id, reverse_charge FROM bill_line_items WHERE bill_id = $1 ORDER BY created_at`,
+          [bill.id]
+        );
+        const plan = await planBillJournal(updated, lines, {
+          vendorDefaultAccountId: vendorDefault,
+        });
+        const posted = await postBillJournal(tx, updated, plan, actor.id);
+        return {
+          reversalIds: reversals.map((r) => r.reversal.id),
+          entryId: posted.entry.id,
+          updated,
+        };
+      });
+      await recordAudit({
+        userId: actor.id,
+        companyId: bill.company_id,
+        action: "bill.revise",
+        entityType: "vendor_bill",
+        entityId: bill.id,
+        before,
+        after: {
+          subtotal: out.updated.subtotal,
+          vat_amount: out.updated.vat_amount,
+          total_amount: out.updated.total_amount,
+          reason,
+          reversalEntryIds: out.reversalIds,
+          journalEntryId: out.entryId,
+        },
+        req,
+      });
+      res.json({
+        ...(await billWithLines(bill.id)),
+        journal_entry_id: out.entryId,
+        reversal_entry_ids: out.reversalIds,
+      });
+    })
+  );
+
+  // ── Void (pending, or approved with no payments; reverses the journal) ─
+  app.post(
+    "/api/bills/:id/void",
+    authMiddleware,
+    requireCustomer,
+    strictBody(billOptionalReasonSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const bill = await loadBill(req);
+      const actor = actorFromRequest(req);
+      await assertCompanyPermission(actor, bill.company_id, ["documents.approve", "ledger.post"]);
+      assertTransition(billMachine, String(bill.status), "void");
+      const reason = (req.body as { reason?: string | null }).reason ?? null;
+      const out = await withLedgerTx(async (tx) => {
+        const locked = (
+          await txRows<BillRow>(tx, `SELECT * FROM vendor_bills WHERE id = $1 FOR UPDATE`, [
+            bill.id,
+          ])
+        )[0];
+        const pays = await txRows<{ fils: string }>(
+          tx,
+          `SELECT COALESCE(SUM(ROUND(amount*100)),0)::bigint AS fils FROM bill_payments WHERE bill_id = $1`,
+          [bill.id]
+        );
+        if (Number(pays[0]?.fils ?? 0) !== 0) {
+          throw new DomainError(
+            "BILL_HAS_PAYMENTS",
+            409,
+            undefined,
+            "Void the bill's payments first"
+          );
+        }
+        const reversals = await reverseBillJournal(tx, locked, actor.id, { void: true, reason });
+        const row = await transitionRow(
+          tx,
+          vendorBillsTable,
+          bill.id,
+          String(locked.status) as never,
+          "void",
+          { voidedBy: actor.id, voidedAt: new Date(), statusReason: reason },
+          { machine: billMachine, where: eq(vendorBillsTable.companyId, bill.company_id) }
+        );
+        if (!row) throw new DomainError("BILL_STATE_CHANGED", 409);
+        await clearApprovalDecisions(tx, bill.company_id, "bill", bill.id);
+        return reversals.map((r) => r.reversal.id);
+      });
+      await recordAudit({
+        userId: actor.id,
+        companyId: bill.company_id,
+        action: "bill.void",
+        entityType: "vendor_bill",
+        entityId: bill.id,
+        after: { reason, reversalEntryIds: out },
+        req,
+      });
+      res.json({ ...(await billWithLines(bill.id)), reversal_entry_ids: out });
+    })
+  );
+
+  // ── Delete (never-posted bills; posted bills keep the 5-year retention) ─
   app.delete(
     "/api/bills/:id",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = req.user!.id;
-
-      const billResult = await pool.query("SELECT * FROM vendor_bills WHERE id = $1", [id]);
-
-      if (billResult.rows.length === 0) {
-        return res.status(404).json({ message: "Bill not found" });
+      const bill = await loadBill(req);
+      const everPosted =
+        (
+          await pool.query(
+            `SELECT 1 FROM journal_entries WHERE company_id = $1 AND source = 'bill' AND source_id = $2 LIMIT 1`,
+            [bill.company_id, bill.id]
+          )
+        ).rows.length > 0;
+      const payments =
+        (await pool.query(`SELECT 1 FROM bill_payments WHERE bill_id = $1 LIMIT 1`, [bill.id])).rows
+          .length > 0;
+      if (everPosted || payments || bill.approved_at) {
+        if (!["void"].includes(String(bill.status))) {
+          throw new DomainError(
+            "BILL_POSTED",
+            409,
+            { status: bill.status },
+            "This bill was posted to the ledger; void it instead of deleting it"
+          );
+        }
+        // FTA 5-year retention applies to posted documents.
+        assertRetentionExpired(
+          {
+            createdAt: bill.created_at as string,
+            retentionExpiresAt: bill.retention_expires_at as string | null,
+          },
+          "Vendor bill"
+        );
       }
-
-      const bill = billResult.rows[0];
-
-      const hasAccess = await storage.hasCompanyAccess(userId, bill.company_id);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // FTA 5-year retention.
-      assertRetentionExpired(
-        { createdAt: bill.created_at, retentionExpiresAt: bill.retention_expires_at },
-        "Vendor bill"
-      );
-
-      // Cascade delete will handle line_items and payments
-      await pool.query("DELETE FROM vendor_bills WHERE id = $1", [id]);
-
-      log.info({ billId: id }, "Vendor bill deleted");
+      await pool.query("DELETE FROM vendor_bills WHERE id = $1 AND company_id = $2", [
+        bill.id,
+        bill.company_id,
+      ]);
+      await recordAudit({
+        userId: req.user!.id,
+        companyId: bill.company_id,
+        action: "bill.delete",
+        entityType: "vendor_bill",
+        entityId: bill.id,
+        before: { status: bill.status, total_amount: bill.total_amount },
+        req,
+      });
       res.json({ message: "Bill deleted successfully" });
     })
   );
 
-  // Approve bill
-  app.post(
-    "/api/bills/:id/approve",
-    authMiddleware,
-    requireCustomer,
-    asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = req.user!.id;
-
-      const billResult = await pool.query("SELECT * FROM vendor_bills WHERE id = $1", [id]);
-
-      if (billResult.rows.length === 0) {
-        return res.status(404).json({ message: "Bill not found" });
-      }
-
-      const bill = billResult.rows[0];
-
-      const hasAccess = await storage.hasCompanyAccess(userId, bill.company_id);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      if (bill.status !== "pending") {
-        return res.status(400).json({ message: "Only pending bills can be approved" });
-      }
-
-      // Approval triggers the AP journal entry on bill_date — block if locked.
-      await assertPeriodNotLocked(bill.company_id, bill.bill_date);
-
-      // Post the AP journal entry BEFORE flipping status — if posting fails the
-      // bill stays pending and the books never diverge from the subledger.
-      const linesResult = await pool.query(
-        `SELECT description, amount, account_id FROM bill_line_items WHERE bill_id = $1`,
-        [id]
-      );
-      await postBillApprovalJournal(bill, linesResult.rows, bill.category ?? null, userId);
-
-      const updateResult = await pool.query(
-        `UPDATE vendor_bills
-       SET status = 'approved', approved_by = $1, approved_at = NOW()
-       WHERE id = $2 RETURNING *`,
-        [userId, id]
-      );
-
-      log.info({ billId: id, approvedBy: userId }, "Vendor bill approved");
-      res.json(updateResult.rows[0]);
-    })
-  );
-
-  // Record payment against bill
+  // ── Payments ────────────────────────────────────────────────────────────
   app.post(
     "/api/bills/:id/payments",
     authMiddleware,
     requireCustomer,
-    validate({ body: billPaymentSchema }),
+    strictBody(billPaymentSchema),
     asyncHandler(async (req: Request, res: Response) => {
-      const { id } = req.params;
-      const userId = req.user!.id;
-
-      const billResult = await pool.query("SELECT * FROM vendor_bills WHERE id = $1", [id]);
-
-      if (billResult.rows.length === 0) {
-        return res.status(404).json({ message: "Bill not found" });
-      }
-
-      const bill = billResult.rows[0];
-
-      const hasAccess = await storage.hasCompanyAccess(userId, bill.company_id);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const { payment_date, amount, payment_method, reference, notes } = req.body;
-
-      const paymentAmount = amount;
-
-      // Recording a payment posts a cash JE on payment_date — block if locked.
-      await assertPeriodNotLocked(bill.company_id, payment_date);
-
-      // S-C1: serialize concurrent payments and keep the subledger consistent.
-      // Lock the bill row, recompute the paid total from bill_payments UNDER the
-      // lock (never trust a possibly-stale amount_paid column), guard the
-      // overpayment with Decimal math, and write the payment row + bill update
-      // in one transaction. Previously these were independent pool.query calls
-      // with a float guard and no row lock, so two concurrent payments could
-      // each pass the check and overpay the vendor, and a failed final UPDATE
-      // left amount_paid stale (the next payment then computed off a wrong base).
-      const client = await pool.connect();
-      let payment: any;
-      let newAmountPaid = 0;
-      let newStatus = "partial";
-      let totalAmount = 0;
-      try {
-        await client.query("BEGIN");
-        const lockRes = await client.query(
-          "SELECT total_amount FROM vendor_bills WHERE id = $1 FOR UPDATE",
-          [id]
-        );
-        const sumRes = await client.query(
-          "SELECT COALESCE(SUM(amount), 0) AS paid FROM bill_payments WHERE bill_id = $1",
-          [id]
-        );
-        const totalD = new Decimal(lockRes.rows[0]?.total_amount ?? bill.total_amount ?? 0);
-        const paidD = new Decimal(sumRes.rows[0]?.paid ?? 0);
-        const remainingD = totalD.minus(paidD);
-        const amountD = new Decimal(paymentAmount);
-        // 0.005 tolerance for legitimate 2dp rounding.
-        if (amountD.greaterThan(remainingD.plus("0.005"))) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({
-            message: `Payment amount (${amountD.toFixed(2)}) exceeds remaining balance (${remainingD.toFixed(2)})`,
-          });
-        }
-        const insertRes = await client.query(
-          `INSERT INTO bill_payments (bill_id, payment_date, amount, payment_method, reference, notes)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           RETURNING *`,
-          [
-            id,
-            payment_date,
-            amountD.toFixed(2),
-            payment_method || "bank_transfer",
-            reference || null,
-            notes || null,
-          ]
-        );
-        payment = insertRes.rows[0];
-        const newPaidD = paidD.plus(amountD);
-        newStatus = newPaidD.greaterThanOrEqualTo(totalD.minus("0.005")) ? "paid" : "partial";
-        newAmountPaid = newPaidD.toNumber();
-        totalAmount = totalD.toNumber();
-        await client.query(
-          `UPDATE vendor_bills
-             SET amount_paid = $1, status = $2, paid_at = ${newStatus === "paid" ? "NOW()" : "paid_at"}
-           WHERE id = $3`,
-          [newPaidD.toFixed(2), newStatus, id]
-        );
-        await client.query("COMMIT");
-      } catch (txErr) {
-        await client.query("ROLLBACK").catch(() => {});
-        throw txErr;
-      } finally {
-        client.release();
-      }
-
-      // Post the cash JE (Dr A/P, Cr Bank) after the subledger commit. The
-      // poster is idempotent (dedupes by source) and any missing GL posting can
-      // be repaired with the backfill-gl endpoint, so a failure here cannot
-      // corrupt or roll back the recorded payment — we surface it instead.
-      // (The bill subledger and the Drizzle-managed GL are separate drivers;
-      // unifying bill-pay onto storage.recordInvoicePayment-style posting is the
-      // ideal future step.)
-      try {
-        await postBillPaymentJournal(bill, payment, userId);
-      } catch (postErr) {
-        log.error(
-          { billId: id, paymentId: payment.id, err: postErr },
-          "Bill payment recorded but GL posting failed — run backfill-gl to repair"
-        );
-      }
-
-      log.info(
-        { billId: id, paymentId: payment.id, amount: paymentAmount, newStatus },
-        "Bill payment recorded"
-      );
-      // S-H4: audit every money movement.
-      await recordAudit({
-        userId,
+      const bill = await loadBill(req);
+      const body = parsedBody<BillPaymentInput>(req);
+      const result = await recordBillPayment({
+        billId: bill.id,
         companyId: bill.company_id,
-        action: "bill.payment",
-        entityType: "vendor_bill",
-        entityId: id,
-        after: { paymentId: payment.id, amount: Number(paymentAmount), status: newStatus },
+        amountFils: body.amount,
+        date: body.payment_date,
+        paymentAccountId: body.payment_account_id ?? null,
+        exchangeRate: body.exchange_rate ?? null,
+        bankAmountFils: body.bank_amount ?? null,
+        bankExchangeRate: body.bank_exchange_rate ?? null,
+        method: body.payment_method ?? null,
+        reference: body.reference ?? null,
+        notes: body.notes ?? null,
+        actorId: req.user!.id,
         req,
       });
       res.json({
-        payment,
-        bill_status: newStatus,
-        amount_paid: newAmountPaid,
-        remaining: totalAmount - newAmountPaid,
+        payment: result.payment,
+        bill_status: result.billStatus,
+        amount_paid: result.amountPaid,
+        remaining: result.remaining,
+        journal_entry_id: result.journalEntryId,
+        fx_difference: result.fxDifference,
       });
     })
   );
 
-  // Backfill GL postings for bills approved/paid before bill→GL posting
-  // existed. Idempotent: bills/payments that already carry a journal entry
-  // are skipped, so this is safe to run repeatedly.
   app.post(
-    "/api/companies/:companyId/bills/backfill-gl",
+    "/api/bills/:id/payments/:paymentId/void",
+    authMiddleware,
+    requireCustomer,
+    strictBody(billOptionalReasonSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const bill = await loadBill(req);
+      const actor = actorFromRequest(req);
+      await assertCompanyPermission(actor, bill.company_id, ["payments.release"]);
+      if (!zUuid.safeParse(req.params.paymentId).success)
+        throw new DomainError("PAYMENT_NOT_FOUND", 404);
+      const result = await voidBillPayment({
+        billId: bill.id,
+        paymentId: req.params.paymentId,
+        companyId: bill.company_id,
+        actorId: actor.id,
+        reason: (req.body as { reason?: string | null }).reason ?? null,
+        req,
+      });
+      res.json({ bill_status: result.billStatus, amount_paid: result.amountPaid });
+    })
+  );
+
+  // ── Attachments (stored through fileStorage, not URL-only) ──────────────
+  app.post(
+    "/api/bills/:id/attachment",
+    authMiddleware,
+    requireCustomer,
+    strictBody(billAttachmentSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const bill = await loadBill(req);
+      const { file, filename } = req.body as { file: string; filename?: string | null };
+      // WQ2: the upload guard checks the bytes; a rejected file is a 4xx, never a 500.
+      const path = await storePurchaseFile(file);
+      await pool.query(
+        `UPDATE vendor_bills SET attachment_path = $2, attachment_name = $3 WHERE id = $1 AND company_id = $4`,
+        [bill.id, path, filename ?? null, bill.company_id]
+      );
+      res.json({ attachment_name: filename ?? null, has_attachment: true });
+    })
+  );
+
+  app.get(
+    "/api/bills/:id/attachment",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const bill = await loadBill(req);
+      if (!bill.attachment_path) throw new DomainError("ATTACHMENT_NOT_FOUND", 404);
+      const file = await readReceiptImage(String(bill.attachment_path));
+      if (!file) throw new DomainError("ATTACHMENT_NOT_FOUND", 404);
+      res.setHeader("Content-Type", file.contentType);
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("Cache-Control", "private, no-store");
+      res.send(file.buffer);
+    })
+  );
+
+  // ── WQ2 (8.2): read a supplier invoice into a bill draft (writes nothing) ──
+  app.post(
+    "/api/companies/:companyId/bills/capture",
+    authMiddleware,
+    requireCustomer,
+    strictBody(billCaptureSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      const { file } = parsedBody<{ file: string }>(req);
+      const result = await captureBillFromDocument({ companyId, userId: req.user!.id, file });
+      res.json(result);
+    })
+  );
+
+  // ── WQ2 (8.15): pending bills and whether the caller may sign the next step ──
+  app.get(
+    "/api/companies/:companyId/bills/approval-queue",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      res.json(await billApprovalQueue(companyId, actorFromRequest(req)));
+    })
+  );
+
+  // ── GL backfill for legacy approved bills / payments (kernel, idempotent) ─
+  app.post(
+    "/api/companies/:companyId/bills/backfill-gl",
+    authMiddleware,
+    requireCustomer,
+    strictBody(z.object({})),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
       const userId = req.user!.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
       const billsRes = await pool.query(
-        `SELECT * FROM vendor_bills
-         WHERE company_id = $1 AND status IN ('approved','paid','partial','overdue')`,
+        `SELECT * FROM vendor_bills WHERE company_id = $1 AND status IN ('approved','paid','partial','overdue')`,
         [companyId]
       );
-
       let billsPosted = 0;
       let paymentsPosted = 0;
       const errors: Array<{ billId: string; error: string }> = [];
-
-      for (const bill of billsRes.rows) {
+      const ap = await requireApAccount(companyId);
+      for (const bill of billsRes.rows as BillRow[]) {
         try {
-          await assertPeriodNotLocked(companyId, bill.bill_date);
-          const before = await storage.getJournalEntriesBySource(companyId, "bill", bill.id);
-          if (!before.some((e) => e.status === "posted")) {
-            const linesRes = await pool.query(
-              `SELECT description, amount, account_id FROM bill_line_items WHERE bill_id = $1`,
+          const lines = (
+            await pool.query(
+              `SELECT description, amount, vat_amount, account_id, reverse_charge FROM bill_line_items WHERE bill_id = $1`,
               [bill.id]
-            );
-            await postBillApprovalJournal(bill, linesRes.rows, bill.category ?? null, userId);
-            billsPosted++;
-          }
-
-          const paymentsRes = await pool.query(`SELECT * FROM bill_payments WHERE bill_id = $1`, [
-            bill.id,
-          ]);
-          for (const payment of paymentsRes.rows) {
-            const existing = await storage.getJournalEntriesBySource(
-              companyId,
-              "bill_payment",
-              payment.id
-            );
-            if (!existing.some((e) => e.status === "posted")) {
-              await assertPeriodNotLocked(companyId, payment.payment_date);
-              await postBillPaymentJournal(bill, payment, userId);
-              paymentsPosted++;
+            )
+          ).rows;
+          const plan = await planBillJournal(bill, lines);
+          await withLedgerTx(async (tx) => {
+            if (!(await billHasPostedJournal(tx, companyId, bill.id))) {
+              const anyEntry = await txRows(
+                tx,
+                `SELECT 1 FROM journal_entries WHERE company_id = $1 AND source = 'bill' AND source_id = $2 LIMIT 1`,
+                [companyId, bill.id]
+              );
+              if (anyEntry.length === 0) {
+                await postBillJournal(tx, bill, plan, userId);
+                billsPosted++;
+              }
             }
+          });
+          const pays = (
+            await pool.query(
+              `SELECT * FROM bill_payments WHERE bill_id = $1 AND kind = 'payment'`,
+              [bill.id]
+            )
+          ).rows;
+          for (const p of pays) {
+            const has = await pool.query(
+              `SELECT 1 FROM journal_entries WHERE company_id = $1 AND source = $2 AND source_id = $3 LIMIT 1`,
+              [companyId, BILL_PAYMENT_JE_SOURCE, p.id]
+            );
+            if (has.rows.length) continue;
+            const cash = await resolvePaymentAccount(
+              companyId,
+              p.payment_account_id,
+              p.payment_method
+            );
+            const billBase = await loadBaseCurrency(companyId);
+            const amount = toBase(
+              filsOf(p.amount),
+              rateTextOf(bill, billBase),
+              isForeign(bill, billBase)
+            );
+            await postJournal(
+              {
+                companyId,
+                date: new Date(p.payment_date).toISOString().slice(0, 10),
+                ...journalMemo("billPaymentBackfill", {
+                  ref: bill.bill_number || bill.id.slice(0, 8),
+                }),
+                status: "posted",
+                source: BILL_PAYMENT_JE_SOURCE,
+                sourceId: p.id,
+                idempotencyKey: `bill_payment:${p.id}`,
+                allowFutureDate: true,
+                lines: [
+                  { accountId: ap.id, debitFils: amount, controlLeg: "payables" },
+                  { accountId: cash.id, creditFils: amount },
+                ],
+              },
+              { actorId: userId }
+            );
+            paymentsPosted++;
           }
-        } catch (err: any) {
-          errors.push({ billId: bill.id, error: err?.message || String(err) });
+        } catch (err) {
+          errors.push({ billId: bill.id, error: (err as Error)?.message || String(err) });
         }
       }
-
       log.info({ companyId, billsPosted, paymentsPosted }, "Bill GL backfill complete");
       res.json({ billsScanned: billsRes.rows.length, billsPosted, paymentsPosted, errors });
     })
   );
 
-  // =====================================
-  // Summary & Reports
-  // =====================================
-
-  // Bills summary (totals by status)
+  // ── Summary (AED; remaining balances; approved-only payables; pending shown separately) ────
   app.get(
     "/api/companies/:companyId/bills/summary",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = req.user!.id;
-
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      const result = await pool.query(
+      await assertCompanyAccess(req, companyId);
+      const today = todayIso();
+      const fx = `COALESCE(NULLIF(b.exchange_rate, 0), 1)`;
+      // Payables are remaining balances under the one settlement rule (server/reporting/
+      // settlement.ts, D5c) that agedPayables / the dashboard outstandingPayables use,
+      // approved-and-later bills only.
+      const rem = payableOpenSql("b");
+      const r = await pool.query(
         `SELECT
-        COUNT(*) FILTER (WHERE status = 'pending') AS pending_count,
-        COALESCE(SUM(total_amount) FILTER (WHERE status = 'pending'), 0) AS pending_total,
-        COUNT(*) FILTER (WHERE status = 'approved') AS approved_count,
-        COALESCE(SUM(total_amount) FILTER (WHERE status = 'approved'), 0) AS approved_total,
-        COUNT(*) FILTER (WHERE status = 'partial') AS partial_count,
-        COALESCE(SUM(total_amount) FILTER (WHERE status = 'partial'), 0) AS partial_total,
-        COALESCE(SUM(amount_paid) FILTER (WHERE status = 'partial'), 0) AS partial_paid,
-        COUNT(*) FILTER (WHERE status = 'paid') AS paid_count,
-        COALESCE(SUM(total_amount) FILTER (WHERE status = 'paid'), 0) AS paid_total,
-        COUNT(*) FILTER (WHERE due_date < NOW() AND status NOT IN ('paid')) AS overdue_count,
-        COALESCE(SUM(total_amount - amount_paid) FILTER (WHERE due_date < NOW() AND status NOT IN ('paid')), 0) AS overdue_total
-      FROM vendor_bills
-      WHERE company_id = $1`,
-        [companyId]
+          COUNT(*) FILTER (WHERE b.status IN ('draft','pending'))::int AS pending_count,
+          COALESCE(SUM(ROUND(b.total_amount * ${fx} * 100)) FILTER (WHERE b.status IN ('draft','pending')), 0)::bigint AS pending_total,
+          COUNT(*) FILTER (WHERE b.status IN ('approved','overdue'))::int AS approved_count,
+          COALESCE(SUM(ROUND(${rem} * ${fx} * 100)) FILTER (WHERE b.status IN ('approved','overdue')), 0)::bigint AS approved_total,
+          COUNT(*) FILTER (WHERE b.status = 'partial')::int AS partial_count,
+          COALESCE(SUM(ROUND(${rem} * ${fx} * 100)) FILTER (WHERE b.status = 'partial'), 0)::bigint AS partial_total,
+          COALESCE(SUM(ROUND(${payableSettledSql("b")} * ${fx} * 100)) FILTER (WHERE b.status = 'partial'), 0)::bigint AS partial_paid,
+          COUNT(*) FILTER (WHERE b.status = 'paid')::int AS paid_count,
+          COALESCE(SUM(ROUND(b.total_amount * ${fx} * 100)) FILTER (WHERE b.status = 'paid'), 0)::bigint AS paid_total,
+          COUNT(*) FILTER (WHERE b.status IN ('approved','partial','overdue') AND b.due_date::date < $2::date AND ${rem} > 0)::int AS overdue_count,
+          COALESCE(SUM(ROUND(${rem} * ${fx} * 100)) FILTER (WHERE b.status IN ('approved','partial','overdue') AND b.due_date::date < $2::date), 0)::bigint AS overdue_total,
+          COUNT(*) FILTER (WHERE b.status IN ('approved','partial','overdue') AND ${rem} > 0)::int AS open_count,
+          COALESCE(SUM(ROUND(${rem} * ${fx} * 100)) FILTER (WHERE b.status IN ('approved','partial','overdue')), 0)::bigint AS open_total
+        FROM vendor_bills b
+        WHERE b.company_id = $1`,
+        [companyId, today]
       );
-
-      const summary = result.rows[0];
-
+      const s = r.rows[0];
+      const aed = (v: string) => Number(fromFils(Number(v)));
       res.json({
-        pending: { count: Number(summary.pending_count), total: Number(summary.pending_total) },
-        approved: { count: Number(summary.approved_count), total: Number(summary.approved_total) },
+        currency: "AED",
+        pending: { count: Number(s.pending_count), total: aed(s.pending_total), inPayables: false },
+        approved: { count: Number(s.approved_count), total: aed(s.approved_total) },
         partial: {
-          count: Number(summary.partial_count),
-          total: Number(summary.partial_total),
-          paid: Number(summary.partial_paid),
+          count: Number(s.partial_count),
+          total: aed(s.partial_total),
+          paid: aed(s.partial_paid),
         },
-        paid: { count: Number(summary.paid_count), total: Number(summary.paid_total) },
-        overdue: { count: Number(summary.overdue_count), total: Number(summary.overdue_total) },
+        paid: { count: Number(s.paid_count), total: aed(s.paid_total) },
+        overdue: { count: Number(s.overdue_count), total: aed(s.overdue_total) },
+        open: { count: Number(s.open_count), total: aed(s.open_total) },
       });
     })
   );
 
-  // Aging report
+  // ── Aging (as-of, AED, approved only, by vendor, reconciled to 2010) ────
   app.get(
     "/api/companies/:companyId/bills/aging",
     authMiddleware,
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
-      const userId = req.user!.id;
+      await assertCompanyAccess(req, companyId);
+      const asOf = parseReportDate(req.query.as_of ?? req.query.asOf, "as_of") ?? todayIso();
+      const report = await payablesAging(companyId, asOf);
+      const count = (b: string) => report.documents.filter((d) => d.bucket === b).length;
+      res.json({
+        as_of: asOf,
+        currency: "AED",
+        current: { amount: report.totals.current, count: count("current") },
+        days_1_30: { amount: report.totals.days30, count: count("days30") },
+        days_31_60: { amount: report.totals.days60, count: count("days60") },
+        days_61_90: { amount: report.totals.days90, count: count("days90") },
+        days_90_plus: { amount: report.totals.over90, count: count("over90") },
+        unapplied_credits: report.unappliedCredits,
+        by_vendor: report.vendors,
+        documents: report.documents,
+        reconciliation: report.reconciliation,
+      });
+    })
+  );
 
-      const hasAccess = await storage.hasCompanyAccess(userId, companyId);
-      if (!hasAccess) {
-        return res.status(403).json({ message: "Access denied" });
+  // ── Batch payment export (CSV for the bank portal; pays nothing) ────────
+  app.post(
+    "/api/companies/:companyId/bills/payment-batch",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("payments.release"),
+    strictBody(batchPaymentExportSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const { bill_ids } = parsedBody<{ bill_ids: string[] }>(req);
+      const out = await batchPaymentCsv(companyId, bill_ids);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="bill-payment-batch-${todayIso()}.csv"`
+      );
+      res.setHeader("X-Batch-Rows", String(out.rows));
+      res.setHeader("X-Batch-Skipped", String(out.skipped.length));
+      res.send(out.csv);
+    })
+  );
+
+  // ── Create a draft bill from a receipt / OCR result ─────────────────────
+  app.post(
+    "/api/companies/:companyId/bills/from-receipt",
+    authMiddleware,
+    requireCustomer,
+    strictBody(z.object({ receipt_id: zUuid })),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      const receipt = await scopedGet(
+        receipts,
+        companyId,
+        (req.body as { receipt_id: string }).receipt_id
+      );
+      if (!receipt) throw new DomainError("RECEIPT_NOT_FOUND", 404);
+      if (receipt.posted) {
+        throw new DomainError(
+          "RECEIPT_POSTED",
+          409,
+          undefined,
+          "A posted receipt is already in the ledger"
+        );
       }
+      const existing = await pool.query(
+        `SELECT id FROM vendor_bills WHERE company_id = $1 AND origin = 'receipt' AND origin_ref = $2 LIMIT 1`,
+        [companyId, receipt.id]
+      );
+      if (existing.rows[0]) {
+        throw new DomainError("BILL_ALREADY_CREATED", 409, { billId: existing.rows[0].id });
+      }
+      const netFils = toFils(String(receipt.amount ?? 0), { rounding: "halfUp" });
+      if (netFils <= 0) throw new DomainError("RECEIPT_AMOUNT_INVALID", 422);
+      const vatFils = toFils(String(receipt.vatAmount ?? 0), { rounding: "halfUp" });
+      const date = (receipt.date ?? new Date()).toISOString().slice(0, 10);
+      const result = await createDraftFromParsedInbound(companyId, req.user!.id, {
+        vendorName: receipt.merchant || "Unknown vendor",
+        vendorTrn:
+          receipt.supplierTrn && /^\d{15}$/.test(receipt.supplierTrn) ? receipt.supplierTrn : null,
+        billDate: date,
+        currency: receipt.currency || "AED",
+        exchangeRate:
+          receipt.currency && receipt.currency !== "AED" ? String(receipt.exchangeRate) : null,
+        reverseCharge: receipt.reverseCharge,
+        category: receipt.category ?? null,
+        origin: "receipt",
+        originRef: receipt.id,
+        lines: [
+          {
+            description: receipt.category || receipt.merchant || "Receipt",
+            unitPrice: netFils,
+            vatRate: vatFils > 0 ? 5 : 0,
+            accountId: receipt.accountId ?? null,
+          },
+        ],
+      });
+      res.status(201).json({ ...result.bill, line_items: result.lines, warnings: result.warnings });
+    })
+  );
 
-      const result = await pool.query(
-        `SELECT
-        COALESCE(SUM(total_amount - amount_paid) FILTER (
-          WHERE due_date >= NOW() OR due_date IS NULL
-        ), 0) AS current_amount,
-        COUNT(*) FILTER (
-          WHERE due_date >= NOW() OR due_date IS NULL
-        ) AS current_count,
-        COALESCE(SUM(total_amount - amount_paid) FILTER (
-          WHERE due_date < NOW() AND due_date >= NOW() - INTERVAL '30 days'
-        ), 0) AS days_1_30_amount,
-        COUNT(*) FILTER (
-          WHERE due_date < NOW() AND due_date >= NOW() - INTERVAL '30 days'
-        ) AS days_1_30_count,
-        COALESCE(SUM(total_amount - amount_paid) FILTER (
-          WHERE due_date < NOW() - INTERVAL '30 days' AND due_date >= NOW() - INTERVAL '60 days'
-        ), 0) AS days_31_60_amount,
-        COUNT(*) FILTER (
-          WHERE due_date < NOW() - INTERVAL '30 days' AND due_date >= NOW() - INTERVAL '60 days'
-        ) AS days_31_60_count,
-        COALESCE(SUM(total_amount - amount_paid) FILTER (
-          WHERE due_date < NOW() - INTERVAL '60 days' AND due_date >= NOW() - INTERVAL '90 days'
-        ), 0) AS days_61_90_amount,
-        COUNT(*) FILTER (
-          WHERE due_date < NOW() - INTERVAL '60 days' AND due_date >= NOW() - INTERVAL '90 days'
-        ) AS days_61_90_count,
-        COALESCE(SUM(total_amount - amount_paid) FILTER (
-          WHERE due_date < NOW() - INTERVAL '90 days'
-        ), 0) AS days_90_plus_amount,
-        COUNT(*) FILTER (
-          WHERE due_date < NOW() - INTERVAL '90 days'
-        ) AS days_90_plus_count
-      FROM vendor_bills
-      WHERE company_id = $1 AND status NOT IN ('paid')`,
+  // ── Inbound structured document → draft bill ────────────────────────────
+  app.post(
+    "/api/companies/:companyId/bills/inbound",
+    authMiddleware,
+    requireCustomer,
+    strictBody(inboundBillSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      const result = await createDraftFromParsedInbound(companyId, req.user!.id, req.body);
+      res.status(201).json({ ...result.bill, line_items: result.lines, warnings: result.warnings });
+    })
+  );
+
+  // ── Reviewed inbound supplier credit note → vendor debit note (W4-C residual) ─
+  app.post(
+    "/api/companies/:companyId/bills/inbound/:inboundId/vendor-credit",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("ledger.post", "documents.approve"),
+    strictBody(inboundVendorCreditSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, inboundId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      if (!zUuid.safeParse(inboundId).success) {
+        throw new DomainError("INBOUND_DOCUMENT_NOT_FOUND", 404);
+      }
+      const out = await createVendorCreditFromInbound({
+        companyId,
+        actorId: req.user!.id,
+        inboundId,
+        input: parsedBody<InboundVendorCreditInput>(req),
+        req,
+      });
+      res.status(201).json(out);
+    })
+  );
+
+  // ── Debit notes / vendor credits ────────────────────────────────────────
+  app.get(
+    "/api/companies/:companyId/debit-notes",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      const r = await pool.query(
+        `SELECT * FROM vendor_debit_notes WHERE company_id = $1 ORDER BY note_date DESC, created_at DESC`,
         [companyId]
       );
+      res.json(r.rows);
+    })
+  );
 
-      const aging = result.rows[0];
-
-      res.json({
-        current: { amount: Number(aging.current_amount), count: Number(aging.current_count) },
-        days_1_30: { amount: Number(aging.days_1_30_amount), count: Number(aging.days_1_30_count) },
-        days_31_60: {
-          amount: Number(aging.days_31_60_amount),
-          count: Number(aging.days_31_60_count),
-        },
-        days_61_90: {
-          amount: Number(aging.days_61_90_amount),
-          count: Number(aging.days_61_90_count),
-        },
-        days_90_plus: {
-          amount: Number(aging.days_90_plus_amount),
-          count: Number(aging.days_90_plus_count),
-        },
+  app.post(
+    "/api/companies/:companyId/debit-notes",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("ledger.post", "documents.approve"),
+    strictBody(debitNoteCreateSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const out = await createDebitNote({ companyId, actorId: req.user!.id, input: req.body, req });
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "debit_note.create",
+        entityType: "vendor_debit_note",
+        entityId: String(out.debitNote.id),
+        after: { ...out.debitNote, journalEntryId: out.journalEntryId },
+        req,
       });
+      res.status(201).json({ ...out.debitNote, journal_entry_id: out.journalEntryId });
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/debit-notes/:debitNoteId/apply",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("ledger.post", "documents.approve", "payments.release"),
+    strictBody(applyCreditSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, debitNoteId } = req.params;
+      if (!zUuid.safeParse(debitNoteId).success) throw new DomainError("DEBIT_NOTE_NOT_FOUND", 404);
+      const out = await applyDebitNote({
+        companyId,
+        debitNoteId,
+        actorId: req.user!.id,
+        input: req.body,
+      });
+      res.json({
+        application_id: out.applicationId,
+        bill_status: out.billStatus,
+        amount_paid: out.amountPaid,
+      });
+    })
+  );
+
+  // ── Vendor prepayments / advances ───────────────────────────────────────
+  app.get(
+    "/api/companies/:companyId/vendor-prepayments",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      const r = await pool.query(
+        `SELECT * FROM vendor_prepayments WHERE company_id = $1 ORDER BY payment_date DESC, created_at DESC`,
+        [companyId]
+      );
+      res.json(r.rows);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/vendor-prepayments",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("payments.release"),
+    strictBody(prepaymentCreateSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      const out = await createPrepayment({
+        companyId,
+        actorId: req.user!.id,
+        input: req.body,
+        req,
+      });
+      await recordAudit({
+        userId: req.user!.id,
+        companyId,
+        action: "vendor_prepayment.create",
+        entityType: "vendor_prepayment",
+        entityId: String(out.prepayment.id),
+        after: { ...out.prepayment, journalEntryId: out.journalEntryId },
+        req,
+      });
+      res.status(201).json({ ...out.prepayment, journal_entry_id: out.journalEntryId });
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/vendor-prepayments/:prepaymentId/apply",
+    authMiddleware,
+    requireCustomer,
+    requirePermission("payments.release"),
+    strictBody(applyCreditSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, prepaymentId } = req.params;
+      if (!zUuid.safeParse(prepaymentId).success)
+        throw new DomainError("PREPAYMENT_NOT_FOUND", 404);
+      const out = await applyPrepayment({
+        companyId,
+        prepaymentId,
+        actorId: req.user!.id,
+        input: req.body,
+      });
+      res.json({
+        application_id: out.applicationId,
+        bill_status: out.billStatus,
+        amount_paid: out.amountPaid,
+      });
+    })
+  );
+
+  // ── Recurring bills (job bills.recurring) ───────────────────────────────
+  app.get(
+    "/api/companies/:companyId/recurring-bills",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      const r = await pool.query(
+        `SELECT * FROM recurring_bills WHERE company_id = $1 ORDER BY next_run_on`,
+        [companyId]
+      );
+      res.json(r.rows);
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/recurring-bills",
+    authMiddleware,
+    requireCustomer,
+    strictBody(recurringBillCreateSchema),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      res.status(201).json(await createRecurringBill(companyId, req.user!.id, req.body));
+    })
+  );
+
+  app.post(
+    "/api/companies/:companyId/recurring-bills/:recurringId/run",
+    authMiddleware,
+    requireCustomer,
+    strictBody(z.object({})),
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, recurringId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      if (!zUuid.safeParse(recurringId).success)
+        throw new DomainError("RECURRING_BILL_NOT_FOUND", 404);
+      const out = await runRecurringBill(recurringId, companyId);
+      res.json(out ? { created: true, bill: out.bill } : { created: false });
+    })
+  );
+
+  app.delete(
+    "/api/companies/:companyId/recurring-bills/:recurringId",
+    authMiddleware,
+    requireCustomer,
+    asyncHandler(async (req: Request, res: Response) => {
+      const { companyId, recurringId } = req.params;
+      await assertCompanyAccess(req, companyId);
+      if (!zUuid.safeParse(recurringId).success)
+        throw new DomainError("RECURRING_BILL_NOT_FOUND", 404);
+      const r = await pool.query(
+        `UPDATE recurring_bills SET is_active = false WHERE id = $1 AND company_id = $2 RETURNING id`,
+        [recurringId, companyId]
+      );
+      if (!r.rowCount) throw new DomainError("RECURRING_BILL_NOT_FOUND", 404);
+      res.json({ deactivated: true });
     })
   );
 }

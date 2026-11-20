@@ -20,6 +20,9 @@ import { chromium } from "playwright-core";
 import pg from "pg";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
+// Fable N1: browse in UAE time so a business date formatted as a browser-zone instant (a 30 Sep
+// period end shown as 1 Oct) shows up here. Override with E2E_TIMEZONE.
+const BROWSER_TIMEZONE = process.env.E2E_TIMEZONE || "Asia/Dubai";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SHOT_DIR = path.join(__dirname, ".artifacts");
 
@@ -35,39 +38,41 @@ const ROUTES = [
   "/payment-chasing",
   "/contacts",
   "/receipts",
-  "/receipt-autopilot",
+  // WP-C: /receipt-autopilot redirects to the Receipts Automation tab.
+  "/receipts?tab=automation",
   "/chart-of-accounts",
-  "/accounts",
   "/journal",
   "/vat-filing",
-  "/vat-autopilot",
+  // WP-D: /vat-autopilot redirects to the VAT Periods tab.
+  "/vat-filing?tab=periods",
   "/bank-reconciliation",
   "/corporate-tax",
   "/compliance-calendar",
   "/tax-return-archive",
   "/reports",
-  "/advanced-reports",
-  "/analytics",
-  "/advanced-analytics",
+  // WP-D: /analytics (all views) redirects to the Reports Insights workspace.
+  "/reports?workspace=insights",
   "/cashflow-forecast",
   "/anomaly-detection",
-  "/auto-reconcile",
-  "/ai-cfo",
-  "/ai-chat",
-  "/ai-features",
-  "/ai-inbox",
-  "/smart-assistant",
+  // WP-C: /auto-reconcile and /reconciliation-rules redirect to the reconciliation tabs.
+  "/bank-reconciliation?tab=suggestions",
+  "/bank-reconciliation?tab=rules",
+  // WP-E: the /ai hub (every legacy tab) redirects to the Assistant.
+  "/assistant?tab=ask",
+  "/assistant?tab=review",
+  "/assistant?tab=automations",
   "/payroll",
   "/fixed-assets",
   "/budgets",
   "/bill-pay",
   "/expense-claims",
   "/inventory",
-  "/integrations",
+  // /integrations redirects to /integrations-hub.
   "/integrations-hub",
   "/notifications",
-  "/reminders",
-  "/company-profile",
+  // WP-C: /reminders redirects to the Payment reminders Schedule tab.
+  "/payment-chasing?tab=schedule",
+  // /company-profile redirects to /settings/company since CL-B merged the two pages.
   "/settings/company",
   "/team",
   "/document-vault",
@@ -80,21 +85,19 @@ const ROUTES = [
   "/purchase-orders",
   "/cost-centers",
   "/financial-statements",
-  "/reconciliation-rules",
   "/invoice-templates",
   "/document-versions",
   "/developer-settings",
   "/notification-preferences",
   "/subscription",
-  "/task-center",
-  "/news-feed",
-  "/admin/dashboard",
-  "/admin/clients",
+  // WP-D: /task-center redirects to the calendar's List view.
+  "/compliance-calendar?view=list",
+  // WP-E: /news-feed redirects to the compliance calendar (crawled above); /admin and
+  // /admin/dashboard redirect to /admin/users (crawled below).
   "/admin/invitations",
   "/admin/import",
   "/admin/activity-logs",
   "/admin/users",
-  "/admin",
   "/firm/command-center",
   "/firm/clients",
   "/firm/staff",
@@ -115,6 +118,21 @@ const FAIL_TEXT = /something went wrong|an error occurred|failed to load|unexpec
 const NOT_FOUND = (t) =>
   /not found/i.test(t) && t.trim().length < 300 && !/no [a-z ]*found/i.test(t);
 
+/** Poll the page's <main> until it shows `text` (client render after a fetch is not instant). */
+async function mainShows(page, text, timeoutMs = 20000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    const body = await page
+      .locator("main")
+      .innerText()
+      .catch(() => "");
+    // Long document numbers wrap across lines in table cells, so compare without whitespace.
+    if (body.replace(/\s+/g, "").includes(text.replace(/\s+/g, ""))) return true;
+    await page.waitForTimeout(500);
+  }
+  return false;
+}
+
 async function resolveExecutablePath() {
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
   try {
@@ -130,7 +148,14 @@ async function main() {
     executablePath: await resolveExecutablePath(),
     args: ["--no-sandbox"],
   });
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const ctx = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+    timezoneId: BROWSER_TIMEZONE,
+  });
+  await ctx.addInitScript(() => {
+    // The client only probes the cookie session when this non-secret sign-in hint is set (R18-04).
+    localStorage.setItem("muhasib_auth_hint", "1");
+  });
   const page = await ctx.newPage();
 
   let routeErrors = [];
@@ -165,14 +190,26 @@ async function main() {
     await fail("register", { detail: `status ${reg.status()}` });
     throw new Error(`register failed: ${reg.status()}`);
   }
+  // W5-E: registration returns no session; sign in (sets the auth cookies).
+  await page.request.post(`${BASE}/api/auth/login`, { data: { email, password: "Password123!" } });
 
   await page.goto(`${BASE}/dashboard`);
   await page.waitForTimeout(3000);
   if (page.url().includes("onboarding")) {
     const express = page.locator('[data-testid="onboarding-express"]');
+    // The redirect to /onboarding can land after a fixed wait on a cold build.
+    await express.waitFor({ timeout: 10000 }).catch(() => undefined);
     if (await express.count()) {
       await express.click();
       await page.waitForTimeout(4000);
+      // WP-B: onboarding is three screens; skip the starting point, then look around.
+      for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
+        const next = page.locator(`[data-testid="${id}"]`);
+        if (await next.count()) {
+          await next.click();
+          await page.waitForTimeout(1500);
+        }
+      }
     }
   }
   if (!page.url().includes("dashboard")) {
@@ -258,6 +295,7 @@ async function main() {
       data: {
         date: new Date().toISOString().slice(0, 10),
         memo,
+        status: "posted",
         lines: [
           { accountId: debitAccount.id, debit: 150, credit: 0 },
           { accountId: creditAccount.id, debit: 0, credit: 150 },
@@ -272,12 +310,7 @@ async function main() {
       routeErrors = [];
       apiFailures = [];
       await page.goto(`${BASE}/journal`);
-      await page.waitForTimeout(2500);
-      const journalText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
-      if (!journalText.includes(memo)) {
+      if (!(await mainShows(page, memo))) {
         await fail("journal-flow render", { detail: "posted entry not visible in journal UI" });
       }
     }
@@ -289,18 +322,14 @@ async function main() {
   try {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
-    const quoteNumber = `Q-${Date.now()}`;
     const quoteRes = await page.request.post(`${BASE}/api/companies/${companyId}/quotes`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
-        number: quoteNumber,
+        // number, status and totals are server-owned (strict body).
         customerName: "Quote Customer LLC",
-        date: new Date().toISOString(),
+        date: new Date().toISOString().slice(0, 10),
         currency: "AED",
-        subtotal: 1000,
-        vatAmount: 50,
-        total: 1050,
-        status: "sent",
+        placeOfSupplyEmirate: "dubai",
         lines: [{ description: "Consulting services", quantity: 2, unitPrice: 500, vatRate: 0.05 }],
       },
     });
@@ -310,15 +339,11 @@ async function main() {
       });
     } else {
       const quote = await quoteRes.json();
+      const quoteNumber = quote.number;
       routeErrors = [];
       apiFailures = [];
       await page.goto(`${BASE}/quotes`);
-      await page.waitForTimeout(2500);
-      const quotesText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
-      if (!quotesText.includes(quoteNumber)) {
+      if (!(await mainShows(page, quoteNumber))) {
         await fail("quote-flow render", { detail: "created quote not visible in quotes UI" });
       }
       const convertRes = await page.request.post(
@@ -347,10 +372,32 @@ async function main() {
   try {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
-    const invoices = await (
-      await page.request.get(`${BASE}/api/companies/${companyId}/invoices`)
-    ).json();
-    const sourceInvoice = invoices?.find?.((invoice) => invoice?.invoiceType !== "credit_note");
+    // Credit notes are raised against an ISSUED invoice: create and issue one here. 0% (out of
+    // scope) because the crawl company has no TRN yet and VAT cannot be issued without one (X6a).
+    const srcRes = await page.request.post(`${BASE}/api/companies/${companyId}/invoices`, {
+      headers: { "x-csrf-token": csrfToken ?? "" },
+      data: {
+        customerName: "Credit Note Customer LLC",
+        date: new Date().toISOString().slice(0, 10),
+        placeOfSupplyEmirate: "dubai",
+        lines: [
+          {
+            description: "Consulting",
+            quantity: 1,
+            unitPrice: 400,
+            vatRate: 0,
+            vatSupplyType: "out_of_scope",
+          },
+        ],
+      },
+    });
+    const sourceInvoice = srcRes.status() < 300 ? await srcRes.json() : undefined;
+    if (sourceInvoice?.id) {
+      await page.request.patch(`${BASE}/api/invoices/${sourceInvoice.id}/status`, {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: { status: "sent" },
+      });
+    }
     if (!sourceInvoice?.id) {
       await fail("credit-note-flow source", { detail: "no source invoice available" });
     } else {
@@ -370,13 +417,10 @@ async function main() {
         routeErrors = [];
         apiFailures = [];
         await page.goto(`${BASE}/credit-notes`);
-        await page.waitForTimeout(2500);
-        const cnText = await page
-          .locator("main")
-          .innerText()
-          .catch(() => "");
-        if (!cnText.includes(cnNumber)) {
-          await fail("credit-note-flow render", { detail: "created credit note not visible in UI" });
+        if (!(await mainShows(page, cnNumber))) {
+          await fail("credit-note-flow render", {
+            detail: "created credit note not visible in UI",
+          });
         }
         const detail = await (await page.request.get(`${BASE}/api/credit-notes/${note.id}`)).json();
         if (detail?.status !== "issued" || detail?.invoiceId !== sourceInvoice.id) {
@@ -395,18 +439,13 @@ async function main() {
   try {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
-    const poNumber = `PO-${Date.now()}`;
     const poRes = await page.request.post(`${BASE}/api/companies/${companyId}/purchase-orders`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
-        number: poNumber,
         vendorName: "Supplier Trading FZE",
-        date: new Date().toISOString(),
-        expectedDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString(),
+        date: new Date().toISOString().slice(0, 10),
+        expectedDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
         currency: "AED",
-        subtotal: 500,
-        vatAmount: 25,
-        total: 525,
         lines: [{ description: "Office supplies", quantity: 5, unitPrice: 100, vatRate: 0.05 }],
       },
     });
@@ -416,15 +455,11 @@ async function main() {
       });
     } else {
       const po = await poRes.json();
+      const poNumber = po.number; // server-assigned
       routeErrors = [];
       apiFailures = [];
       await page.goto(`${BASE}/purchase-orders`);
-      await page.waitForTimeout(2500);
-      const poText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
-      if (!poText.includes(poNumber)) {
+      if (!(await mainShows(page, poNumber))) {
         await fail("po-flow render", { detail: "created purchase order not visible in UI" });
       }
       for (const step of ["send", "approve", "receive"]) {
@@ -466,12 +501,7 @@ async function main() {
       routeErrors = [];
       apiFailures = [];
       await page.goto(`${BASE}/cost-centers`);
-      await page.waitForTimeout(2500);
-      const ccText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
-      if (!ccText.includes(ccCode) && !ccText.includes("Dubai Branch")) {
+      if (!(await mainShows(page, "Dubai Branch"))) {
         await fail("cost-center-flow render", { detail: "created cost center not visible in UI" });
       }
       const summaryRes = await page.request.get(
@@ -512,7 +542,11 @@ async function main() {
     }
 
     // Reconciliation rule: create then run auto-match (no transactions is fine
-    // — the endpoint must respond coherently, not 500).
+    // — the endpoint must respond coherently, not 500). A rule posts to a real contra GL account.
+    const ruleAccounts = await (
+      await page.request.get(`${BASE}/api/companies/${companyId}/accounts`)
+    ).json();
+    const ruleAccount = ruleAccounts.find((a) => a.type === "expense");
     const ruleRes = await page.request.post(
       `${BASE}/api/companies/${companyId}/reconciliation-rules`,
       {
@@ -522,6 +556,8 @@ async function main() {
           matchField: "description",
           matchType: "contains",
           matchValue: "SALARY",
+          accountId: ruleAccount?.id,
+          vatTreatment: "none",
           category: "Payroll",
         },
       }
@@ -597,13 +633,19 @@ async function main() {
   try {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
+    // Rules post through the bank account's GL account, so the statement connection must be
+    // linked to a managed bank account (BANK_ACCOUNT_NOT_LINKED otherwise).
+    const baRes = await page.request.post(`${BASE}/api/companies/${companyId}/bank-accounts`, {
+      headers: { "x-csrf-token": csrfToken ?? "" },
+      data: { nameEn: "E2E Current AED", bankName: "Emirates NBD", currency: "AED" },
+    });
+    const bankAccount = await baRes.json().catch(() => ({}));
     const connRes = await page.request.post(`${BASE}/api/companies/${companyId}/bank-connections`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
-        provider: "manual",
-        connectionType: "statement",
         bankName: "Emirates NBD",
         accountName: "Current AED",
+        bankAccountId: bankAccount?.id,
       },
     });
     if (connRes.status() !== 201) {
@@ -668,9 +710,6 @@ async function main() {
           totalRevenue: 0,
           totalExpenses: 0,
           totalDeductions: 0,
-          taxableIncome: 0,
-          taxPayable: 0,
-          status: "draft",
         },
       }
     );
@@ -819,7 +858,6 @@ async function main() {
     const acctRes = await page.request.post(`${BASE}/api/companies/${companyId}/accounts`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
-        companyId,
         code: `9${Date.now() % 100000}`,
         nameEn: marker,
         type: "expense",
@@ -852,12 +890,12 @@ async function main() {
         } else {
           const restoreRes = await page.request.post(`${BASE}/api/backups/${backup.id}/restore`, {
             headers: { "x-csrf-token": csrfToken ?? "" },
-            data: { confirmRestore: true },
+            data: { mode: "merge", confirmRestore: true },
           });
           const restore = await restoreRes.json().catch(() => ({}));
-          if (restoreRes.status() >= 300 || (restore?.totalRestored ?? 0) < 1) {
+          if (restoreRes.status() >= 300 || (restore?.totals?.insert ?? 0) < 1) {
             await fail("backup-flow restore", {
-              detail: `status ${restoreRes.status()}, restored ${restore?.totalRestored}: ${JSON.stringify(restore?.restored ?? {}).slice(0, 150)}`,
+              detail: `status ${restoreRes.status()}, restored ${restore?.totals?.insert}: ${JSON.stringify(restore).slice(0, 150)}`,
             });
           } else {
             const accountsAfter = await (
@@ -883,16 +921,31 @@ async function main() {
   try {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
+    // PINT AE needs a complete buyer (TRN endpoint, street, city, emirate): use a real contact.
+    const buyerRes = await page.request.post(
+      `${BASE}/api/companies/${companyId}/customer-contacts`,
+      {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: {
+          name: "EInvoice Customer LLC",
+          trnNumber: "100765432100003",
+          address: "Building 7, Dubai Internet City",
+          city: "Dubai",
+          emirate: "dubai",
+          country: "AE",
+        },
+      }
+    );
+    const buyer = await buyerRes.json().catch(() => ({}));
     const invRes = await page.request.post(`${BASE}/api/companies/${companyId}/invoices`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
       data: {
         customerName: "EInvoice Customer LLC",
+        customerTrn: "100765432100003",
+        contactId: buyer?.id,
         date: new Date().toISOString().slice(0, 10),
         currency: "AED",
-        subtotal: 1300,
-        vatAmount: 50,
-        total: 1350,
-        status: "sent",
+        placeOfSupplyEmirate: "dubai",
         lines: [
           {
             description: "Consulting",
@@ -917,6 +970,10 @@ async function main() {
       });
     } else {
       const invoice = await invRes.json();
+      await page.request.patch(`${BASE}/api/invoices/${invoice.id}/status`, {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: { status: "sent" },
+      });
 
       // Company has no TRN yet → the gate must refuse generation with issues.
       const blocked = await page.request.post(
@@ -933,7 +990,17 @@ async function main() {
 
       await page.request.patch(`${BASE}/api/companies/${companyId}`, {
         headers: { "x-csrf-token": csrfToken ?? "" },
-        data: { trnVatNumber: "100123456700003" },
+        data: {
+          trnVatNumber: "100123456700003",
+          addressStreet: "Sheikh Zayed Road",
+          addressCity: "Dubai",
+          emirate: "dubai",
+        },
+      });
+      // PINT AE also needs the supplier's trade licence (ibr-150-ae).
+      await page.request.put(`${BASE}/api/companies/${companyId}/einvoicing/settings`, {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: { tradeLicenceNo: "TL-E2E-12345" },
       });
 
       const check = await (
@@ -976,7 +1043,7 @@ async function main() {
     const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
     const companyId = companies?.[0]?.id;
     const invoices = await (
-      await page.request.get(`${BASE}/api/companies/${companyId}/invoices`)
+      await page.request.get(`${BASE}/api/companies/${companyId}/invoices?all=true`)
     ).json();
     const targetInvoice = invoices?.[0];
     if (targetInvoice) {
@@ -987,8 +1054,7 @@ async function main() {
           data: {
             documentType: "invoice",
             documentId: targetInvoice.id,
-            changeDescription: "E2E snapshot before edits",
-            snapshotData: { total: targetInvoice.total },
+            changeDescription: "E2E snapshot before edits", // the server takes the snapshot
           },
         }
       );
@@ -1039,7 +1105,7 @@ async function main() {
     // API key lifecycle: create returns the raw key exactly once.
     const keyRes = await page.request.post(`${BASE}/api/companies/${companyId}/api-keys`, {
       headers: { "x-csrf-token": csrfToken ?? "" },
-      data: { name: "E2E key", scopes: "read" },
+      data: { name: "E2E key", scopes: ["read:invoices"] },
     });
     const created = await keyRes.json().catch(() => ({}));
     if (keyRes.status() !== 201 || !created?.key || created?.keyHash) {
@@ -1098,7 +1164,14 @@ async function main() {
   //     reports must render with no admin/firm assumptions leaking in.
   // (b) 'client_portal' userType: the separate portal layout.
   async function crawlAs(label, userType, matrixRoutes) {
-    const mCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const mCtx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      timezoneId: BROWSER_TIMEZONE,
+    });
+    await mCtx.addInitScript(() => {
+      // The client only probes the cookie session when this non-secret sign-in hint is set (R18-04).
+      localStorage.setItem("muhasib_auth_hint", "1");
+    });
     const mPage = await mCtx.newPage();
     let mErrors = [];
     let mApi = [];
@@ -1126,14 +1199,28 @@ async function main() {
       await mCtx.close();
       return;
     }
+    // W5-E: registration returns no session; sign in (sets the auth cookies).
+    await mPage.request.post(`${BASE}/api/auth/login`, {
+      data: { email: mEmail, password: "Password123!" },
+    });
     // Complete onboarding via express so the dashboard doesn't redirect.
     await mPage.goto(`${BASE}/dashboard`);
     await mPage.waitForTimeout(2500);
     if (mPage.url().includes("onboarding")) {
       const express = mPage.locator('[data-testid="onboarding-express"]');
+      // The redirect to /onboarding can land after a fixed wait on a cold build.
+      await express.waitFor({ timeout: 10000 }).catch(() => undefined);
       if (await express.count()) {
         await express.click();
         await mPage.waitForTimeout(3500);
+        // WP-B: onboarding is three screens; skip the starting point, then look around.
+        for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
+          const next = mPage.locator(`[data-testid="${id}"]`);
+          if (await next.count()) {
+            await next.click();
+            await mPage.waitForTimeout(1500);
+          }
+        }
       }
     }
     const mDb = new pg.Client({ connectionString: process.env.DATABASE_URL });
@@ -1211,8 +1298,7 @@ async function main() {
     "/document-vault",
     "/tax-return-archive",
     "/compliance-calendar",
-    "/task-center",
-    "/news-feed",
+    "/compliance-calendar?view=list",
     "/reports",
   ]);
   await crawlAs("portal", "client_portal", [
@@ -1222,6 +1308,54 @@ async function main() {
     "/client-portal/statements",
     "/client-portal/messages",
   ]);
+
+  // ── 10b. Time-zone probe (Fable N1): business dates are calendar days ─────
+  // A VAT period end is stored as 23:59:59.999Z; formatted as a browser-zone instant it read
+  // "1 Oct" for a 30 Sep quarter in UAE time. Generate the last completed quarter's return and
+  // require /vat-filing to show the same dates in this (UAE-time) browser as in a UTC one.
+  try {
+    const companies = await (await page.request.get(`${BASE}/api/companies`)).json();
+    const companyId = companies?.[0]?.id;
+    const now = new Date();
+    const qStartMonth = Math.floor(now.getUTCMonth() / 3) * 3 - 3;
+    const qStart = new Date(Date.UTC(now.getUTCFullYear(), qStartMonth, 1));
+    const qEnd = new Date(Date.UTC(qStart.getUTCFullYear(), qStart.getUTCMonth() + 3, 0));
+    const ymd = (d) => d.toISOString().slice(0, 10);
+    await page.request.post(`${BASE}/api/companies/${companyId}/vat-returns/generate`, {
+      headers: { "x-csrf-token": csrfToken ?? "" },
+      data: { periodStart: ymd(qStart), periodEnd: ymd(qEnd) },
+    });
+    const DATE_TEXT = /\b\d{1,2}(?:[–-]\d{1,2})? [A-Z][a-z]{2} \d{4}\b|\b[A-Z][a-z]{2} \d{4}\b/g;
+    const datesOn = async (p) => {
+      await p.goto(`${BASE}/vat-filing`, { timeout: 45000 });
+      await p.waitForTimeout(2500);
+      const text = await p
+        .locator("main")
+        .innerText()
+        .catch(() => "");
+      return [...new Set(text.match(DATE_TEXT) ?? [])].sort();
+    };
+    const utcCtx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      timezoneId: "UTC",
+      storageState: await ctx.storageState(),
+    });
+    const utcPage = await utcCtx.newPage();
+    const utcDates = await datesOn(utcPage);
+    await utcCtx.close();
+    const localDates = await datesOn(page);
+    const endLabel = `${qEnd.getUTCDate()} ${qEnd.toLocaleString("en-GB", { month: "short", timeZone: "UTC" }).slice(0, 3)} ${qEnd.getUTCFullYear()}`;
+    const shown = localDates.some((d) => d.includes(endLabel.split(" ").slice(1).join(" ")));
+    if (JSON.stringify(utcDates) !== JSON.stringify(localDates) || !shown) {
+      await fail(`timezone probe /vat-filing (${BROWSER_TIMEZONE})`, {
+        utc: utcDates.slice(0, 12),
+        local: localDates.slice(0, 12),
+        expectedPeriodEnd: endLabel,
+      });
+    }
+  } catch (e) {
+    await fail("timezone-probe", { crash: e.message.slice(0, 150) });
+  }
 
   // ── 11. Arabic / RTL smoke: the bilingual promise must hold ───────────────
   // Switch the persisted locale to Arabic, crawl key routes, and assert the
@@ -1241,11 +1375,22 @@ async function main() {
       apiFailures = [];
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
       await page.waitForTimeout(1700);
+      // The document direction flips once the locale store hydrates; wait for it (and for the
+      // route to render) instead of racing a fixed delay.
+      await page
+        .waitForFunction(() => document.documentElement.getAttribute("dir") === "rtl", null, {
+          timeout: 15000,
+        })
+        .catch(() => {});
       const dir = await page.evaluate(() => document.documentElement.getAttribute("dir"));
-      const mainText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
+      let mainText = "";
+      for (let i = 0; i < 30 && mainText.trim().length < 40; i++) {
+        mainText = await page
+          .locator("main")
+          .innerText()
+          .catch(() => "");
+        if (mainText.trim().length < 40) await page.waitForTimeout(500);
+      }
       const blank = mainText.trim().length < 40;
       if (dir !== "rtl" || routeErrors.length || blank) {
         await fail(`rtl route ${route}`, {

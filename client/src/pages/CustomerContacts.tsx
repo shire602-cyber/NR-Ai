@@ -1,3 +1,9 @@
+import { T } from "@/components/layout/T";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { isolateLtrText } from "@/lib/format-bidi";
+import { formatDate } from "@/lib/format-date";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { PORTAL_LINK_TTL_DAYS } from "@shared/validators/portal";
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -7,22 +13,29 @@ import {
   Plus,
   Search,
   Loader2,
-  Mail,
-  Phone,
   Building2,
-  MapPin,
   Edit,
   Trash2,
   CheckCircle2,
-  XCircle,
   AlertCircle,
   Link2,
   Copy,
   ExternalLink,
+  MoreHorizontal,
+  UserPlus,
+  Users,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { DataTableCard } from "@/components/ui/data-table";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -34,13 +47,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { VirtualTable, type VirtualTableColumn } from "@/components/VirtualTable";
+import { VirtualTable } from "@/components/VirtualTable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -55,15 +67,20 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Badge } from "@/components/ui/badge";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import type { CustomerContact } from "@shared/schema";
-import { EmptyState } from "@/components/ui/empty-state";
-import { TableSkeleton } from "@/components/ui/loading-skeletons";
+import { ContactForm } from "@/components/contacts/ContactForm";
+import { PortalAccessSheet, type PortalSheetContact } from "@/components/portal/PortalAccessSheet";
+import { portalSummaryKey } from "@/lib/portal-invite";
+import { PortalStatusChip, type PortalSummaryEntry } from "@/components/portal/PortalStatusChip";
+import { BulkPortalInviteDialog } from "@/components/portal/BulkPortalInviteDialog";
 
 interface ImportResult {
   message: string;
@@ -118,121 +135,25 @@ async function downloadContactTemplate(companyId: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-function ContactForm({
-  contact,
-  onSubmit,
-  onCancel,
-}: {
-  contact?: CustomerContact | null;
-  onSubmit: (data: any) => void;
-  onCancel: () => void;
-}) {
-  const [formData, setFormData] = useState({
-    name: contact?.name || "",
-    email: contact?.email || "",
-    phone: contact?.phone || "",
-    trnNumber: contact?.trnNumber || "",
-    address: contact?.address || "",
-    city: contact?.city || "",
-    country: contact?.country || "UAE",
-  });
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Name *</Label>
-          <Input
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            placeholder="Company or contact name"
-            data-testid="input-contact-name"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Email *</Label>
-          <Input
-            type="email"
-            value={formData.email}
-            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-            placeholder="email@example.com"
-            data-testid="input-contact-email"
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Phone</Label>
-          <Input
-            value={formData.phone}
-            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-            placeholder="+971-50-XXX-XXXX"
-            data-testid="input-contact-phone"
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>TRN Number</Label>
-          <Input
-            value={formData.trnNumber}
-            onChange={(e) => setFormData({ ...formData, trnNumber: e.target.value })}
-            placeholder="100XXXXXXXXX003"
-            data-testid="input-contact-trn"
-          />
-        </div>
-        <div />
-      </div>
-      <div className="space-y-2">
-        <Label>Address</Label>
-        <Input
-          value={formData.address}
-          onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-          placeholder="Street address"
-          data-testid="input-contact-address"
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>City</Label>
-          <Input
-            value={formData.city}
-            onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-            placeholder="Dubai"
-            data-testid="input-contact-city"
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Country</Label>
-          <Input
-            value={formData.country}
-            onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-            placeholder="UAE"
-            data-testid="input-contact-country"
-          />
-        </div>
-      </div>
-      <DialogFooter>
-        <Button variant="outline" onClick={onCancel} data-testid="button-cancel-contact">
-          Cancel
-        </Button>
-        <Button
-          onClick={() => onSubmit(formData)}
-          disabled={!formData.name || !formData.email}
-          data-testid="button-save-contact"
-        >
-          {contact ? "Update" : "Create"} Contact
-        </Button>
-      </DialogFooter>
-    </div>
-  );
+/** One row of GET /api/portal/contacts/:id/access (metadata only; the token is never returned). */
+interface PortalLinkRow {
+  id: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  lastUsedAt: string | null;
 }
 
 export default function CustomerContacts() {
   const { toast } = useToast();
-  const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  const { t, locale } = useTranslation();
+  const { company, companyId, isLoading: _isLoadingCompany } = useDefaultCompany();
 
-  const [searchTerm, setSearchTerm] = useState("");
+  // R3 (CTO 17): command-palette customer results link to /contacts?q=<name>.
+  const [searchTerm, setSearchTerm] = useState(() =>
+    typeof window === "undefined"
+      ? ""
+      : (new URLSearchParams(window.location.search).get("q") ?? "")
+  );
   const [activeTab, setActiveTab] = useState("list");
   const [file, setFile] = useState<File | null>(null);
   const [previewData, setPreviewData] = useState<any[] | null>(null);
@@ -244,7 +165,59 @@ export default function CustomerContacts() {
     open: boolean;
     url: string;
     contactName: string;
-  }>({ open: false, url: "", contactName: "" });
+    contactId: string;
+    /** ISO expiry from POST /portal/generate-access; empty when only managing existing links. */
+    expiresAt: string;
+    /** Whole days until `expiresAt`, computed when the link was issued. */
+    ttlDays: number;
+  }>({ open: false, url: "", contactName: "", contactId: "", expiresAt: "", ttlDays: 0 });
+  const closedPortalDialog = {
+    open: false,
+    url: "",
+    contactName: "",
+    contactId: "",
+    expiresAt: "",
+    ttlDays: 0,
+  };
+  const { can: canDo, gate } = useCompanyPermission();
+  const canManagePortal = canDo("documents.write");
+  const portalAccessKey = [`/api/portal/contacts/${portalLinkDialog.contactId}/access`] as const;
+  // The state (active / expired / revoked) is derived in `select`, not during render.
+  const { data: portalAccess } = useQuery<
+    { links: PortalLinkRow[] },
+    Error,
+    { links: Array<PortalLinkRow & { state: "active" | "expired" | "revoked" }> }
+  >({
+    queryKey: portalAccessKey,
+    enabled: portalLinkDialog.open && !!portalLinkDialog.contactId,
+    select: (data) => ({
+      links: data.links.map((l) => ({
+        ...l,
+        state: l.revokedAt
+          ? "revoked"
+          : new Date(l.expiresAt).getTime() > Date.now()
+            ? "active"
+            : "expired",
+      })),
+    }),
+  });
+  const activePortalLinks = (portalAccess?.links ?? []).filter((l) => l.state === "active");
+  // STEP5: the invitation sheet and the bulk invite dialog (the customer portal with a login).
+  const [inviteContact, setInviteContact] = useState<PortalSheetContact | null>(null);
+  const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
+  const { data: portalSummary = {} } = useQuery<Record<string, PortalSummaryEntry>>({
+    queryKey: portalSummaryKey(companyId ?? ""),
+    enabled: !!companyId,
+    staleTime: 30_000,
+  });
+  const openInvite = (c: CustomerContact) =>
+    setInviteContact({
+      id: c.id,
+      name: c.name,
+      email: c.email ?? null,
+      contactPerson: c.contactPerson ?? null,
+      preferredLanguage: c.preferredLanguage ?? null,
+    });
   const [contactToDelete, setContactToDelete] = useState<CustomerContact | null>(null);
   const [showClearAllDialog, setShowClearAllDialog] = useState(false);
   const [clearAllConfirmation, setClearAllConfirmation] = useState("");
@@ -266,12 +239,16 @@ export default function CustomerContacts() {
         queryKey: ["/api/companies", companyId, "customer-contacts"],
       });
       toast({
-        title: "Import completed!",
+        title: translateNow("toasts.importCompleted"),
         description: result.message,
       });
     },
     onError: (error: any) => {
-      toast({ variant: "destructive", title: "Import failed", description: error?.message });
+      toast({
+        variant: "destructive",
+        title: translateNow("toasts.importFailed2"),
+        description: error?.message,
+      });
     },
   });
 
@@ -284,12 +261,12 @@ export default function CustomerContacts() {
         queryKey: ["/api/companies", companyId, "customer-contacts"],
       });
       setShowAddDialog(false);
-      toast({ title: "Contact created successfully" });
+      toast({ title: t["customerContacts.contactCreatedSuccessfully"] });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to create contact",
+        title: translateNow("toasts.failedToCreateContact"),
         description: error?.message,
       });
     },
@@ -304,12 +281,12 @@ export default function CustomerContacts() {
         queryKey: ["/api/companies", companyId, "customer-contacts"],
       });
       setEditContact(null);
-      toast({ title: "Contact updated successfully" });
+      toast({ title: t["customerContacts.contactUpdatedSuccessfully"] });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to update contact",
+        title: translateNow("toasts.failedToUpdateContact"),
         description: error?.message,
       });
     },
@@ -323,12 +300,12 @@ export default function CustomerContacts() {
       queryClient.invalidateQueries({
         queryKey: ["/api/companies", companyId, "customer-contacts"],
       });
-      toast({ title: "Contact deleted successfully" });
+      toast({ title: t["customerContacts.contactDeletedSuccessfully"] });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to delete contact",
+        title: translateNow("toasts.failedToDeleteContact"),
         description: error?.message,
       });
     },
@@ -355,14 +332,14 @@ export default function CustomerContacts() {
       setShowClearAllDialog(false);
       setClearAllConfirmation("");
       toast({
-        title: "All contacts cleared",
+        title: translateNow("toasts.allContactsCleared"),
         description: result.message,
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to clear contacts",
+        title: translateNow("toasts.failedToClearContacts"),
         description: error?.message,
       });
     },
@@ -371,16 +348,47 @@ export default function CustomerContacts() {
   const portalLinkMutation = useMutation({
     mutationFn: async ({ contactId, contactName }: { contactId: string; contactName: string }) => {
       const result = await apiRequest("POST", "/api/portal/generate-access", { contactId });
-      return { ...result, contactName };
+      return { ...result, contactName, contactId };
     },
     onSuccess: (result: any) => {
       const fullUrl = `${window.location.origin}${result.portalUrl}`;
-      setPortalLinkDialog({ open: true, url: fullUrl, contactName: result.contactName });
+      setPortalLinkDialog({
+        open: true,
+        url: fullUrl,
+        contactName: result.contactName,
+        contactId: result.contactId,
+        expiresAt: result.expiresAt ?? "",
+        ttlDays: result.expiresAt
+          ? Math.max(
+              1,
+              Math.round((new Date(result.expiresAt).getTime() - Date.now()) / 86_400_000)
+            )
+          : PORTAL_LINK_TTL_DAYS,
+      });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/portal/contacts/${result.contactId}/access`],
+      });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Failed to generate portal link",
+        title: translateNow("toasts.failedToGeneratePortalLink"),
+        description: error?.message,
+      });
+    },
+  });
+
+  const revokePortalMutation = useMutation({
+    mutationFn: (contactId: string) =>
+      apiRequest("POST", "/api/portal/revoke-access", { contactId }),
+    onSuccess: (_result, contactId) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/portal/contacts/${contactId}/access`] });
+      toast({ title: t["customerContacts.accessRevoked"] });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: t["customerContacts.accessRevokeFailed"],
         description: error?.message,
       });
     },
@@ -391,8 +399,8 @@ export default function CustomerContacts() {
       if (!selectedFile.name.match(/\.(xlsx|csv)$/i)) {
         toast({
           variant: "destructive",
-          title: "Invalid file type",
-          description: "Please upload an Excel file (.xlsx) or CSV file",
+          title: translateNow("toasts.invalidFileType"),
+          description: translateNow("toasts.pleaseUploadAnExcelFileXlsxOr"),
         });
         return;
       }
@@ -415,11 +423,16 @@ export default function CustomerContacts() {
           const mappedData = preview.rows;
 
           setPreviewData(mappedData);
-          toast({ title: `Found ${mappedData.length} contacts in ${selectedFile.name}` });
+          toast({
+            title: formatMessage(translateNow("toasts.foundContactsIn"), {
+              count: mappedData.length,
+              name: selectedFile.name,
+            }),
+          });
         } catch (err: any) {
           toast({
             variant: "destructive",
-            title: "Failed to parse file",
+            title: translateNow("toasts.failedToParseFile"),
             description: err?.message,
           });
         }
@@ -464,16 +477,16 @@ export default function CustomerContacts() {
 
   const downloadTemplate = () => {
     if (!companyId) {
-      toast({ variant: "destructive", title: "Select a company first" });
+      toast({ variant: "destructive", title: t["customerContacts.selectACompanyFirst"] });
       return;
     }
 
     void downloadContactTemplate(companyId)
-      .then(() => toast({ title: "Template downloaded" }))
+      .then(() => toast({ title: t["customerContacts.templateDownloaded"] }))
       .catch((err: any) =>
         toast({
           variant: "destructive",
-          title: "Failed to create template",
+          title: translateNow("toasts.failedToCreateTemplate"),
           description: err?.message,
         })
       );
@@ -489,43 +502,70 @@ export default function CustomerContacts() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Sales"
-        title="Customer Contacts"
-        description="Manage your customers and business contacts for invoicing"
+        eyebrow={t["pages.contactsEyebrow"]}
+        title={t["pages.contactsTitle"]}
+        description={t["pages.contactsDescription"]}
         testId="text-contacts-title"
         actions={
           <>
-            <Button
-              variant="outline"
-              onClick={downloadTemplate}
-              data-testid="button-download-template"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Download Template
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                setClearAllConfirmation("");
-                setShowClearAllDialog(true);
-              }}
-              disabled={contacts.length === 0}
-              data-testid="button-clear-all-contacts"
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              Clear All
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={t["components.rowMoreActions"]}
+                  title={t["components.rowMoreActions"]}
+                  data-testid="button-contacts-more"
+                >
+                  <MoreHorizontal aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-48">
+                <DropdownMenuItem
+                  onSelect={() => setBulkInviteOpen(true)}
+                  data-testid="button-bulk-portal-invite"
+                  disabled={!canDo("documents.write")}
+                >
+                  <Users aria-hidden />
+                  {t["portal.bulk.title"]}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={downloadTemplate}
+                  data-testid="button-download-template"
+                >
+                  <Download aria-hidden />
+                  <T k="pageLabels.downloadTemplate" />
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={() => {
+                    setClearAllConfirmation("");
+                    setShowClearAllDialog(true);
+                  }}
+                  disabled={contacts.length === 0 || !canDo("settings.company")}
+                  data-testid="button-clear-all-contacts"
+                >
+                  <Trash2 aria-hidden />
+                  <T k="pageLabels.clearAll" />
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
               <DialogTrigger asChild>
-                <Button data-testid="button-add-contact">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Contact
+                <Button data-testid="button-add-contact" {...gate("documents.write")}>
+                  <Plus className="w-4 h-4" />
+                  <T k="pageLabels.addContact" />
                 </Button>
               </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px]">
+              <DialogContent size="md">
                 <DialogHeader>
-                  <DialogTitle>Add New Contact</DialogTitle>
-                  <DialogDescription>Add a new customer or business contact</DialogDescription>
+                  <DialogTitle>
+                    <T k="pageLabels.addNewContact" />
+                  </DialogTitle>
+                  <DialogDescription>
+                    <T k="pageLabels.addANewCustomerOrBusinessContact" />
+                  </DialogDescription>
                 </DialogHeader>
                 <ContactForm
                   onSubmit={(data) => createMutation.mutate(data)}
@@ -540,164 +580,286 @@ export default function CustomerContacts() {
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="list" data-testid="tab-contacts-list">
-            <Building2 className="w-4 h-4 mr-2" />
-            Contacts ({contacts.length})
+            <Building2 className="w-4 h-4" />
+            {formatMessage(t["pages.contactsTabCount"], { count: contacts.length })}
           </TabsTrigger>
-          <TabsTrigger value="import" data-testid="tab-contacts-import">
-            <Upload className="w-4 h-4 mr-2" />
-            Import from Excel
+          <TabsTrigger
+            value="import"
+            data-testid="tab-contacts-import"
+            {...gate("documents.write")}
+          >
+            <Upload className="w-4 h-4" />
+            <T k="pageLabels.importFromExcel" />
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="list" className="space-y-4">
           <div className="flex items-center gap-4">
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search contacts..."
+                placeholder={t["pages.contactsSearchPlaceholder"]}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="ps-10"
                 data-testid="input-search-contacts"
               />
             </div>
           </div>
 
-          <Card>
-            <CardContent className="p-0">
-              {isLoading ? (
-                <div className="p-4">
-                  <TableSkeleton rows={6} columns={6} />
+          <DataTableCard
+            status={isLoading ? "loading" : filteredContacts.length === 0 ? "empty" : "ready"}
+            columnLabels={[
+              t["pages.contactsColName"],
+              t["pages.contactsColEmail"],
+              t["pages.contactsColPhone"],
+            ]}
+            empty={{
+              icon: Building2,
+              title: searchTerm ? t["pages.contactsNoMatchTitle"] : t["pages.contactsEmptyTitle"],
+              description: searchTerm
+                ? t["pages.contactsNoMatchBody"]
+                : t["pages.contactsEmptyBody"],
+              action: searchTerm
+                ? undefined
+                : {
+                    label: t["pages.contactsAddContact"],
+                    onClick: () => setShowAddDialog(true),
+                    testId: "button-add-first-contact",
+                    permission: "documents.write",
+                  },
+              secondaryAction: searchTerm
+                ? { label: t["pages.contactsClearSearch"], onClick: () => setSearchTerm("") }
+                : {
+                    label: t["pageLabels.importFromExcel"],
+                    onClick: () => setActiveTab("import"),
+                    permission: "documents.write",
+                  },
+            }}
+          >
+            {/* Phones: one two-line row per contact (name + TRN, email · city), actions in ⋯. */}
+            <div className="divide-hairline md:hidden" data-testid="mobile-contact-list">
+              {filteredContacts.map((contact) => (
+                <div key={contact.id} className="flex items-start gap-2 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p dir="auto" className="truncate text-sm font-medium text-foreground">
+                        {locale === "ar" && contact.nameAr ? contact.nameAr : contact.name}
+                      </p>
+                      {contact.trnNumber ? (
+                        <span
+                          dir="ltr"
+                          className="shrink-0 text-caption text-muted-foreground [unicode-bidi:isolate]"
+                        >
+                          {contact.trnNumber}
+                        </span>
+                      ) : null}
+                    </div>
+                    {portalSummary[contact.id] ? (
+                      <div className="mt-1">
+                        <PortalStatusChip
+                          entry={portalSummary[contact.id]}
+                          contactId={contact.id}
+                        />
+                      </div>
+                    ) : null}
+                    <p className="mt-1 truncate text-caption text-muted-foreground">
+                      <span dir="ltr" className="[unicode-bidi:isolate]">
+                        {contact.email || contact.phone}
+                      </span>
+                      {contact.city ? ` · ${contact.city}` : ""}
+                    </p>
+                  </div>
+                  <RowActions
+                    className="-me-2 -mt-1"
+                    menu={
+                      <>
+                        <DropdownMenuItem onSelect={() => setEditContact(contact)}>
+                          <Edit aria-hidden />
+                          {t.edit}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() =>
+                            portalLinkMutation.mutate({
+                              contactId: contact.id,
+                              contactName: contact.name,
+                            })
+                          }
+                        >
+                          <Link2 aria-hidden />
+                          {t["screens.portalLink"]}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => openInvite(contact)}
+                          data-testid={`button-portal-access-${contact.id}`}
+                        >
+                          <UserPlus aria-hidden />
+                          {t["portal.invite.action"]}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onSelect={() => setContactToDelete(contact)}
+                        >
+                          <Trash2 aria-hidden />
+                          {t.delete}
+                        </DropdownMenuItem>
+                      </>
+                    }
+                  />
                 </div>
-              ) : filteredContacts.length === 0 ? (
-                <EmptyState
-                  icon={Building2}
-                  title={searchTerm ? "No matching contacts" : "No contacts yet"}
-                  description={
-                    searchTerm
-                      ? "Try a different search term or clear the search."
-                      : "Add your first contact, or import a list from an Excel/CSV file."
-                  }
-                  action={
-                    searchTerm
-                      ? undefined
-                      : {
-                          label: "Add contact",
-                          onClick: () => setShowAddDialog(true),
-                          testId: "button-add-first-contact",
-                        }
-                  }
-                  secondaryAction={
-                    searchTerm
-                      ? { label: "Clear search", onClick: () => setSearchTerm("") }
-                      : { label: "Import from Excel", onClick: () => setActiveTab("import") }
-                  }
-                />
-              ) : (
-                <VirtualTable<CustomerContact>
-                  rows={filteredContacts}
-                  height={500}
-                  estimateRowHeight={56}
-                  getRowId={(contact) => contact.id}
-                  rowTestId={(contact) => `row-contact-${contact.id}`}
-                  columns={[
-                    {
-                      key: "name",
-                      header: "Name",
-                      cell: (contact) => (
-                        <div className="flex items-center gap-2">
-                          <Building2 className="w-4 h-4 text-muted-foreground" />
-                          <span className="font-medium">{contact.name}</span>
-                        </div>
-                      ),
-                    },
-                    {
-                      key: "email",
-                      header: "Email",
-                      cell: (contact) => (
-                        <div className="flex items-center gap-2 truncate">
-                          <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
-                          <span className="truncate">{contact.email}</span>
-                        </div>
-                      ),
-                    },
-                    {
-                      key: "phone",
-                      header: "Phone",
-                      cell: (contact) =>
-                        contact.phone ? (
-                          <div className="flex items-center gap-2">
-                            <Phone className="w-4 h-4 text-muted-foreground" />
-                            {contact.phone}
-                          </div>
-                        ) : null,
-                    },
-                    {
-                      key: "trn",
-                      header: "TRN",
-                      cell: (contact) =>
-                        contact.trnNumber ? (
-                          <Badge variant="outline">{contact.trnNumber}</Badge>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">-</span>
-                        ),
-                    },
-                    {
-                      key: "location",
-                      header: "Location",
-                      cell: (contact) =>
-                        contact.city || contact.country ? (
-                          <div className="flex items-center gap-2">
-                            <MapPin className="w-4 h-4 text-muted-foreground" />
-                            {[contact.city, contact.country].filter(Boolean).join(", ")}
-                          </div>
-                        ) : null,
-                    },
-                    {
-                      key: "actions",
-                      header: "Actions",
-                      width: "170px",
-                      cell: (contact) => (
-                        <div className="flex items-center gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            title="Generate Portal Link"
-                            onClick={() =>
-                              portalLinkMutation.mutate({
-                                contactId: contact.id,
-                                contactName: contact.name,
-                              })
-                            }
-                            disabled={portalLinkMutation.isPending}
-                            data-testid={`button-portal-link-${contact.id}`}
+              ))}
+            </div>
+            <div className="hidden md:block">
+              <VirtualTable<CustomerContact>
+                rows={filteredContacts}
+                height={560}
+                estimateRowHeight={44}
+                getRowId={(contact) => contact.id}
+                rowTestId={(contact) => `row-contact-${contact.id}`}
+                columns={[
+                  {
+                    key: "name",
+                    header: t["pages.contactsColName"],
+                    width: "minmax(0, 1.4fr)",
+                    cell: (contact) => (
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span dir="auto" className="truncate font-medium text-foreground">
+                          {locale === "ar" && contact.nameAr ? contact.nameAr : contact.name}
+                        </span>
+                        {/* WQ5: one record, customer and/or supplier. */}
+                        {contact.isSupplier && (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0"
+                            data-testid="contact-role-badge"
                           >
-                            <Link2 className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => setEditContact(contact)}
-                            data-testid={`button-edit-contact-${contact.id}`}
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => setContactToDelete(contact)}
+                            {contact.isCustomer
+                              ? t["forms.contact.roleBoth"]
+                              : t["forms.contact.roleSupplier"]}
+                          </Badge>
+                        )}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "email",
+                    header: t["pages.contactsColEmail"],
+                    width: "minmax(0, 1.4fr)",
+                    cell: (contact) => (
+                      <span
+                        dir="ltr"
+                        className="block truncate text-muted-foreground [unicode-bidi:isolate]"
+                      >
+                        {contact.email}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "portal",
+                    header: t["portal.chip.column"],
+                    width: "minmax(0, 0.9fr)",
+                    cell: (contact) =>
+                      portalSummary[contact.id] ? (
+                        <PortalStatusChip
+                          entry={portalSummary[contact.id]}
+                          contactId={contact.id}
+                        />
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      ),
+                  },
+                  {
+                    key: "phone",
+                    header: t["pages.contactsColPhone"],
+                    cell: (contact) =>
+                      contact.phone ? (
+                        <span
+                          dir="ltr"
+                          className="whitespace-nowrap text-muted-foreground [unicode-bidi:isolate]"
+                        >
+                          {contact.phone}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      ),
+                  },
+                  {
+                    key: "trn",
+                    header: t["screens.trn"],
+                    cell: (contact) =>
+                      contact.trnNumber ? (
+                        <span
+                          dir="ltr"
+                          className="whitespace-nowrap tabular-nums [unicode-bidi:isolate]"
+                        >
+                          {contact.trnNumber}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      ),
+                  },
+                  {
+                    key: "location",
+                    header: t["pages.contactsColLocation"],
+                    cell: (contact) =>
+                      contact.city || contact.country ? (
+                        <span className="block truncate text-muted-foreground">
+                          {[contact.city, contact.country].filter(Boolean).join(", ")}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      ),
+                  },
+                  {
+                    key: "actions",
+                    header: <span className="sr-only">{t["pages.contactsColActions"]}</span>,
+                    width: "80px",
+                    cell: (contact) => (
+                      <RowActions
+                        maxInline={1}
+                        menu={
+                          <DropdownMenuItem
+                            className="text-destructive focus:text-destructive"
+                            onSelect={() => setContactToDelete(contact)}
                             data-testid={`button-delete-contact-${contact.id}`}
                           >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      ),
-                    },
-                  ]}
-                />
-              )}
-            </CardContent>
-          </Card>
+                            <Trash2 aria-hidden />
+                            {t.delete}
+                          </DropdownMenuItem>
+                        }
+                      >
+                        <RowActionButton
+                          label={t.edit}
+                          icon={Edit}
+                          onClick={() => setEditContact(contact)}
+                          data-testid={`button-edit-contact-${contact.id}`}
+                        />
+                        <RowActionButton
+                          label={t["screens.portalLink"]}
+                          icon={Link2}
+                          onClick={() =>
+                            portalLinkMutation.mutate({
+                              contactId: contact.id,
+                              contactName: contact.name,
+                            })
+                          }
+                          disabled={portalLinkMutation.isPending}
+                          data-testid={`button-portal-link-${contact.id}`}
+                        />
+                        <RowActionButton
+                          label={t["portal.invite.action"]}
+                          icon={UserPlus}
+                          onClick={() => openInvite(contact)}
+                          data-testid={`button-portal-access-${contact.id}`}
+                        />
+                      </RowActions>
+                    ),
+                  },
+                ]}
+              />
+            </div>
+          </DataTableCard>
         </TabsContent>
 
         <TabsContent value="import" className="space-y-4">
@@ -707,12 +869,9 @@ export default function CustomerContacts() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <FileSpreadsheet className="w-5 h-5" />
-                    Upload Excel File
+                    <T k="pageLabels.uploadExcelFile" />
                   </CardTitle>
-                  <CardDescription>
-                    Upload an Excel file (.xlsx) or CSV containing your customer contacts. We'll
-                    automatically map common column names like "Name", "Email", "Phone", "TRN", etc.
-                  </CardDescription>
+                  <CardDescription>{t["screens.contactsImportHelp"]}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div
@@ -731,15 +890,19 @@ export default function CustomerContacts() {
                         <FileSpreadsheet className="w-10 h-10 text-success" />
                         <p className="font-medium">{file.name}</p>
                         <Button variant="outline" size="sm" onClick={resetImport}>
-                          Choose Different File
+                          <T k="pageLabels.chooseDifferentFile" />
                         </Button>
                       </div>
                     ) : (
                       <div className="flex flex-col items-center gap-3">
                         <Upload className="w-10 h-10 text-muted-foreground" />
                         <div>
-                          <p className="font-medium">Drop your Excel file here</p>
-                          <p className="text-sm text-muted-foreground">or click to browse</p>
+                          <p className="font-medium">
+                            <T k="pageLabels.dropYourExcelFileHere" />
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {t["screens.orClickToBrowse"]}
+                          </p>
                         </div>
                         <input
                           type="file"
@@ -759,43 +922,75 @@ export default function CustomerContacts() {
               {previewData && previewData.length > 0 && (
                 <Card>
                   <CardHeader>
-                    <CardTitle>Preview ({previewData.length} contacts)</CardTitle>
-                    <CardDescription>
-                      Review the data before importing. Contacts with matching emails will be
-                      updated.
-                    </CardDescription>
+                    <CardTitle>
+                      {formatMessage(t["screens.contactsPreviewTitle"], {
+                        count: previewData.length,
+                      })}
+                    </CardTitle>
+                    <CardDescription>{t["screens.contactsPreviewHelp"]}</CardDescription>
                   </CardHeader>
                   <CardContent>
                     <ScrollArea className="h-[300px]">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Email</TableHead>
-                            <TableHead>Phone</TableHead>
-                            <TableHead>TRN</TableHead>
-                            <TableHead>City</TableHead>
+                            <TableHead>{t["pages.contactsColName"]}</TableHead>
+                            <TableHead>
+                              <T k="hr.field.email" />
+                            </TableHead>
+                            <TableHead>
+                              <T k="pages.phone" />
+                            </TableHead>
+                            <TableHead>{t["screens.trn"]}</TableHead>
+                            <TableHead>{t["screens.city"]}</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {previewData.slice(0, 20).map((row, idx) => (
                             <TableRow key={idx}>
                               <TableCell className={!row.name ? "text-destructive" : ""}>
-                                {row.name || "Missing"}
+                                {row.name ? (
+                                  <bdi translate="no">{row.name}</bdi>
+                                ) : (
+                                  t["screens.missing"]
+                                )}
                               </TableCell>
                               <TableCell className={!row.email ? "text-destructive" : ""}>
-                                {row.email || "Missing"}
+                                {row.email ? (
+                                  <bdi
+                                    dir="ltr"
+                                    translate="no"
+                                    title={row.email}
+                                    className="inline-block max-w-52 truncate align-bottom"
+                                  >
+                                    {row.email}
+                                  </bdi>
+                                ) : (
+                                  t["screens.missing"]
+                                )}
                               </TableCell>
-                              <TableCell>{row.phone || "-"}</TableCell>
-                              <TableCell>{row.trnNumber || "-"}</TableCell>
-                              <TableCell>{row.city || "-"}</TableCell>
+                              <TableCell>
+                                <bdi dir="ltr" translate="no">
+                                  {row.phone || "—"}
+                                </bdi>
+                              </TableCell>
+                              <TableCell>
+                                <bdi dir="ltr" translate="no">
+                                  {row.trnNumber || "—"}
+                                </bdi>
+                              </TableCell>
+                              <TableCell>
+                                <bdi translate="no">{row.city || "—"}</bdi>
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
                       {previewData.length > 20 && (
                         <p className="text-center text-sm text-muted-foreground py-2">
-                          ... and {previewData.length - 20} more contacts
+                          {formatMessage(t["screens.andMoreContacts"], {
+                            count: previewData.length - 20,
+                          })}
                         </p>
                       )}
                     </ScrollArea>
@@ -806,7 +1001,7 @@ export default function CustomerContacts() {
                         onClick={resetImport}
                         data-testid="button-cancel-import"
                       >
-                        Cancel
+                        <T k="pages.cancel" />
                       </Button>
                       <Button
                         onClick={handleImport}
@@ -815,13 +1010,15 @@ export default function CustomerContacts() {
                       >
                         {importMutation.isPending ? (
                           <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Importing...
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <T k="pageLabels.importing" />
                           </>
                         ) : (
                           <>
-                            <Upload className="w-4 h-4 mr-2" />
-                            Import {previewData.length} Contacts
+                            <Upload className="w-4 h-4" />
+                            {formatMessage(t["screens.importContactsCount"], {
+                              count: previewData.length,
+                            })}
                           </>
                         )}
                       </Button>
@@ -835,22 +1032,28 @@ export default function CustomerContacts() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CheckCircle2 className="w-5 h-5 text-success" />
-                  Import Complete
+                  <T k="pageLabels.importComplete" />
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-3 gap-4">
+                <div className="mobile-keep-cols grid grid-cols-3 gap-4">
                   <div className="text-center p-4 bg-success/10 rounded-lg">
                     <p className="text-2xl font-bold text-success">{importResults.created}</p>
-                    <p className="text-sm text-muted-foreground">Created</p>
+                    <p className="text-sm text-muted-foreground">
+                      <T k="pages.created" />
+                    </p>
                   </div>
                   <div className="text-center p-4 bg-info/10 rounded-lg">
                     <p className="text-2xl font-bold text-info">{importResults.updated}</p>
-                    <p className="text-sm text-muted-foreground">Updated</p>
+                    <p className="text-sm text-muted-foreground">
+                      <T k="pageLabels.updated" />
+                    </p>
                   </div>
                   <div className="text-center p-4 bg-warning/10 rounded-lg">
                     <p className="text-2xl font-bold text-warning">{importResults.skipped}</p>
-                    <p className="text-sm text-muted-foreground">Skipped</p>
+                    <p className="text-sm text-muted-foreground">
+                      <T k="pageLabels.skipped" />
+                    </p>
                   </div>
                 </div>
 
@@ -858,7 +1061,9 @@ export default function CustomerContacts() {
                   <div className="border border-destructive/50 rounded-lg p-4">
                     <p className="font-medium text-destructive flex items-center gap-2 mb-2">
                       <AlertCircle className="w-4 h-4" />
-                      {importResults.errors.length} Errors
+                      {formatMessage(t["screens.errorsCount"], {
+                        count: importResults.errors.length,
+                      })}
                     </p>
                     <ScrollArea className="h-[100px]">
                       <ul className="text-sm space-y-1">
@@ -881,10 +1086,10 @@ export default function CustomerContacts() {
                     }}
                     data-testid="button-view-contacts"
                   >
-                    View Contacts
+                    <T k="pageLabels.viewContacts" />
                   </Button>
                   <Button onClick={resetImport} data-testid="button-import-more">
-                    Import More
+                    <T k="pageLabels.importMore" />
                   </Button>
                 </div>
               </CardContent>
@@ -894,10 +1099,14 @@ export default function CustomerContacts() {
       </Tabs>
 
       <Dialog open={!!editContact} onOpenChange={(open) => !open && setEditContact(null)}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent size="md">
           <DialogHeader>
-            <DialogTitle>Edit Contact</DialogTitle>
-            <DialogDescription>Update customer contact information</DialogDescription>
+            <DialogTitle>
+              <T k="pageLabels.editContact" />
+            </DialogTitle>
+            <DialogDescription>
+              <T k="pageLabels.updateCustomerContactInformation" />
+            </DialogDescription>
           </DialogHeader>
           {editContact && (
             <ContactForm
@@ -909,59 +1118,186 @@ export default function CustomerContacts() {
         </DialogContent>
       </Dialog>
 
+      <PortalAccessSheet
+        open={!!inviteContact}
+        onOpenChange={(o) => !o && setInviteContact(null)}
+        companyId={companyId ?? ""}
+        supplierName={company?.name ?? ""}
+        contact={inviteContact}
+        onManageLinks={() => {
+          if (!inviteContact) return;
+          setPortalLinkDialog({
+            ...closedPortalDialog,
+            open: true,
+            contactId: inviteContact.id,
+            contactName: inviteContact.name,
+          });
+          setInviteContact(null);
+        }}
+      />
+      <BulkPortalInviteDialog
+        open={bulkInviteOpen}
+        onOpenChange={setBulkInviteOpen}
+        companyId={companyId ?? ""}
+        contacts={contacts
+          .filter((c) => c.isCustomer !== false)
+          .map((c) => ({
+            id: c.id,
+            name: c.name,
+            email: c.email ?? null,
+            contactPerson: c.contactPerson ?? null,
+            preferredLanguage: c.preferredLanguage ?? null,
+          }))}
+        summary={portalSummary}
+      />
+
       {/* Portal Link Dialog */}
       <Dialog
         open={portalLinkDialog.open}
-        onOpenChange={(open) =>
-          !open && setPortalLinkDialog({ open: false, url: "", contactName: "" })
-        }
+        onOpenChange={(open) => !open && setPortalLinkDialog(closedPortalDialog)}
       >
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent size="md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Link2 className="w-5 h-5" />
-              Client Portal Link
+              <T k="pageLabels.clientPortalLink" />
             </DialogTitle>
             <DialogDescription>
-              Share this link with {portalLinkDialog.contactName} to give them access to view their
-              invoices and download PDFs.
+              {portalLinkDialog.url
+                ? formatMessage(t["portal.access.shareLinkDialog"], {
+                    name: portalLinkDialog.contactName,
+                  })
+                : formatMessage(t["customerContacts.portalAccessFor"], {
+                    name: portalLinkDialog.contactName,
+                  })}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Input
-                readOnly
-                value={portalLinkDialog.url}
-                className="font-mono text-sm"
-                data-testid="input-portal-link"
-              />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => {
-                  navigator.clipboard.writeText(portalLinkDialog.url);
-                  toast({ title: "Link copied to clipboard" });
-                }}
-                data-testid="button-copy-portal-link"
-              >
-                <Copy className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => window.open(portalLinkDialog.url, "_blank")}
-                data-testid="button-open-portal"
-              >
-                <ExternalLink className="w-4 h-4 mr-2" />
-                Open Portal
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              This link is valid for 1 year. The client can view invoices and download PDFs without
-              needing to log in.
-            </p>
+            {portalLinkDialog.url && (
+              <div className="flex min-w-0 items-center gap-2">
+                <Input
+                  ltr
+                  readOnly
+                  value={portalLinkDialog.url}
+                  className="min-w-0 text-sm"
+                  data-testid="input-portal-link"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText(portalLinkDialog.url);
+                    toast({ title: t["customerContacts.linkCopiedToClipboard"] });
+                  }}
+                  data-testid="button-copy-portal-link"
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+            {portalLinkDialog.url && (
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => window.open(portalLinkDialog.url, "_blank")}
+                  data-testid="button-open-portal"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <T k="pageLabels.openPortal" />
+                </Button>
+              </div>
+            )}
+            {portalLinkDialog.url && (
+              <p className="text-xs text-muted-foreground" data-testid="text-portal-link-validity">
+                {formatMessage(t["customerContacts.linkValidUntil"], {
+                  days: portalLinkDialog.ttlDays || PORTAL_LINK_TTL_DAYS,
+                  date: portalLinkDialog.expiresAt
+                    ? formatDate(portalLinkDialog.expiresAt, locale)
+                    : "",
+                })}
+              </p>
+            )}
+            <section aria-labelledby="portal-access-heading" className="space-y-2 border-t pt-4">
+              <h4 id="portal-access-heading" className="text-sm font-medium">
+                {t["customerContacts.portalAccess"]}
+              </h4>
+              {(portalAccess?.links ?? []).length === 0 ? (
+                <p className="text-xs text-muted-foreground" data-testid="text-portal-links-empty">
+                  {t["customerContacts.portalLinksEmpty"]}
+                </p>
+              ) : (
+                <ul className="space-y-2" data-testid="list-portal-links">
+                  {(portalAccess?.links ?? []).map((link) => {
+                    const state = link.state;
+                    return (
+                      <li
+                        key={link.id}
+                        className="flex items-center justify-between gap-3 text-xs"
+                        data-testid={`row-portal-link-${link.id}`}
+                      >
+                        <span className="min-w-0">
+                          <Badge variant={state === "active" ? "default" : "secondary"}>
+                            {state === "active"
+                              ? t["customerContacts.portalLinkActive"]
+                              : state === "expired"
+                                ? t["customerContacts.portalLinkExpired"]
+                                : t["customerContacts.portalLinkRevoked"]}
+                          </Badge>
+                          <span className="ms-2 text-muted-foreground">
+                            {formatMessage(t["customerContacts.portalLinkExpires"], {
+                              date: formatDate(link.expiresAt, locale),
+                            })}
+                            {" · "}
+                            {link.lastUsedAt
+                              ? formatMessage(t["customerContacts.portalLinkLastUsed"], {
+                                  date: formatDate(link.lastUsedAt, locale),
+                                })
+                              : t["customerContacts.portalLinkNeverUsed"]}
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {activePortalLinks.length > 0 && (
+                // E3 (J4-r3): the app's confirm dialog, not the browser's native confirm().
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      disabled={revokePortalMutation.isPending}
+                      data-testid="button-revoke-portal-access"
+                      {...(canManagePortal ? {} : gate("documents.write"))}
+                    >
+                      {t["customerContacts.revokeAccess"]}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t["customerContacts.revokeAccess"]}</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {t["customerContacts.revokeAccessConfirm"]}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t["common.cancel"]}</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={() => revokePortalMutation.mutate(portalLinkDialog.contactId)}
+                        data-testid="button-confirm-revoke-portal-access"
+                      >
+                        {t["customerContacts.revokeAccess"]}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </section>
           </div>
         </DialogContent>
       </Dialog>
@@ -979,7 +1315,7 @@ export default function CustomerContacts() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2 text-destructive">
               <AlertCircle className="w-5 h-5" />
-              Delete ALL contacts?
+              <T k="pageLabels.deleteALLContacts" />
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-3 text-sm">
@@ -999,17 +1335,19 @@ export default function CustomerContacts() {
                       contacts.
                     </p>
                     <p className="text-muted-foreground mt-1">
-                      Invoices will be kept, but their customer link will be cleared. You may need
-                      to relink them after re-importing your client list.
+                      {t["customerContacts.invoicesWillBeKeptBut"]}
                     </p>
                   </div>
                 )}
                 <div className="space-y-2">
                   <Label htmlFor="clear-all-confirm">
-                    Type <strong>DELETE ALL</strong> to confirm:
+                    {formatMessage(t["customerContacts.clearAllConfirmLabel"], {
+                      phrase: locale === "ar" ? isolateLtrText("DELETE ALL") : "DELETE ALL",
+                    })}
                   </Label>
                   <Input
                     id="clear-all-confirm"
+                    ltr
                     value={clearAllConfirmation}
                     onChange={(e) => setClearAllConfirmation(e.target.value)}
                     placeholder="DELETE ALL"
@@ -1021,7 +1359,9 @@ export default function CustomerContacts() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-clear-all">Cancel</AlertDialogCancel>
+            <AlertDialogCancel data-testid="button-cancel-clear-all">
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
@@ -1033,8 +1373,8 @@ export default function CustomerContacts() {
             >
               {clearAllMutation.isPending ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Deleting...
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <T k="pageLabels.deleting" />
                 </>
               ) : (
                 "Delete all contacts"
@@ -1052,14 +1392,18 @@ export default function CustomerContacts() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Contact?</AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pageLabels.deleteContact" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete <strong>{contactToDelete?.name}</strong>? This action
-              cannot be undone.
+              <T k="pageLabels.areYouSureYouWantToDelete" />
+              <strong>{contactToDelete?.name}</strong>? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (contactToDelete) {
@@ -1069,7 +1413,7 @@ export default function CustomerContacts() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              <T k="hr.delete" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -15,22 +15,37 @@
  */
 
 import { db } from "../db";
-import { and, count, desc, eq, gte, inArray, isNull, lt, max, ne, or, sql, sum } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  max,
+  ne,
+  notInArray,
+  sql,
+  sum,
+} from "drizzle-orm";
+import { NON_RECEIVABLE_INVOICE_STATUSES } from "../reporting/settlement";
+import { firmReceivablesAed, sumReceivables } from "./firm/receivables.service";
 import {
   bankTransactions,
   companies,
   firmAlerts,
   firmMetricsCache,
-  firmStaffAssignments,
   invoices,
   receipts,
-  users,
   vatReturns,
   type FirmAlert,
   type FirmAlertSeverity,
   type FirmAlertType,
 } from "../../shared/schema";
-import { NotFoundError, ValidationError } from "../errors";
+import { listAccessibleClientIds, resolveFirmContext, type FirmContext } from "./firm/scope";
+import { assignStaff, staffWorkloadInput } from "./firm/staff.service";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -493,7 +508,7 @@ export function scopeBatchToAccessible(
  */
 export async function buildClientSnapshots(
   companyIds: string[],
-  now: Date = new Date()
+  _now: Date = new Date()
 ): Promise<ClientSnapshot[]> {
   if (companyIds.length === 0) return [];
 
@@ -506,24 +521,8 @@ export async function buildClientSnapshots(
     .from(companies)
     .where(inArray(companies.id, companyIds));
 
-  // Overdue invoices per company.
-  type OverdueRow = { companyId: string; balance: string | null; cnt: number };
-  const overdueRows = (await db
-    .select({
-      companyId: invoices.companyId,
-      balance: sum(invoices.total),
-      cnt: count(),
-    })
-    .from(invoices)
-    .where(
-      and(
-        inArray(invoices.companyId, companyIds),
-        or(eq(invoices.status, "sent"), eq(invoices.status, "partial")),
-        lt(invoices.dueDate, now)
-      )
-    )
-    .groupBy(invoices.companyId)) as OverdueRow[];
-  const overdueMap = new Map(overdueRows.map((r) => [r.companyId, r]));
+  // Overdue invoices per company: settlement rule, AED (partial payments, credit notes, FX).
+  const receivables = await firmReceivablesAed(companyIds);
 
   // Latest VAT return per company.
   const latestVatSub = db
@@ -599,7 +598,7 @@ export async function buildClientSnapshots(
   }
 
   return companyRows.map((c: { id: string; name: string; onboardingCompleted: boolean }) => {
-    const overdue = overdueMap.get(c.id);
+    const overdue = receivables.get(c.id);
     const vat = vatMap.get(c.id);
     return {
       companyId: c.id,
@@ -607,8 +606,8 @@ export async function buildClientSnapshots(
       onboardingCompleted: c.onboardingCompleted,
       vatStatus: (vat?.status as ClientSnapshot["vatStatus"]) ?? null,
       vatDueDate: vat?.dueDate ?? null,
-      overdueBalance: Number(overdue?.balance ?? 0),
-      overdueInvoiceCount: Number(overdue?.cnt ?? 0),
+      overdueBalance: overdue?.overdue ?? 0,
+      overdueInvoiceCount: overdue?.overdueCount ?? 0,
       // Phase 6 doesn't yet model "missing documents" as a first-class concept;
       // we approximate by checking onboardingCompleted (Phase 5 builds the doc
       // chase queue separately). 0 here = no signal; UI can layer in document
@@ -652,15 +651,7 @@ export async function buildDashboardSummary(
       .select({ total: sum(invoices.total) })
       .from(invoices)
       .where(and(inArray(invoices.companyId, companyIds), eq(invoices.status, "paid"))),
-    db
-      .select({ total: sum(invoices.total) })
-      .from(invoices)
-      .where(
-        and(
-          inArray(invoices.companyId, companyIds),
-          or(eq(invoices.status, "sent"), eq(invoices.status, "partial"))
-        )
-      ),
+    firmReceivablesAed(companyIds),
     db
       .select({ liability: sum(vatReturns.box14PayableTax) })
       .from(vatReturns)
@@ -678,14 +669,21 @@ export async function buildDashboardSummary(
     db
       .select({ cnt: count() })
       .from(invoices)
-      .where(and(inArray(invoices.companyId, companyIds), gte(invoices.createdAt, monthStart))),
+      .where(
+        and(
+          inArray(invoices.companyId, companyIds),
+          notInArray(invoices.status, [...NON_RECEIVABLE_INVOICE_STATUSES]),
+          sql`coalesce(${invoices.invoiceType}, 'invoice') <> 'credit_note'`,
+          gte(invoices.date, monthStart)
+        )
+      ),
   ]);
 
   return {
     totalClients: companyRows.length,
     activeClients: companyRows.filter((c: { isActive: boolean }) => c.isActive).length,
     totalRevenue: Number(revenueRow[0]?.total ?? 0),
-    totalOutstandingAr: Number(arRow[0]?.total ?? 0),
+    totalOutstandingAr: sumReceivables(arRow).open,
     totalVatLiability: Number(vatRow[0]?.liability ?? 0),
     receiptsProcessedThisMonth: Number(monthReceipts[0]?.cnt ?? 0),
     invoicesIssuedThisMonth: Number(monthInvoices[0]?.cnt ?? 0),
@@ -732,8 +730,10 @@ export async function fetchPeriodMetric(
       .where(
         and(
           inArray(invoices.companyId, companyIds),
-          gte(invoices.createdAt, range.start),
-          lt(invoices.createdAt, range.end)
+          notInArray(invoices.status, [...NON_RECEIVABLE_INVOICE_STATUSES]),
+          sql`coalesce(${invoices.invoiceType}, 'invoice') <> 'credit_note'`,
+          gte(invoices.date, range.start),
+          lt(invoices.date, range.end)
         )
       ),
   ]);
@@ -851,70 +851,25 @@ export async function resolveAlert(firmId: string, alertId: string): Promise<Fir
 
 // ─── DB-backed: staff workload ────────────────────────────────────────────────
 
-export async function fetchStaffWorkload(): Promise<StaffWorkloadRow[]> {
-  type Row = {
-    userId: string;
-    userName: string;
-    userEmail: string;
-    companyId: string | null;
-    role: string | null;
-  };
-  const rows = (await db
-    .select({
-      userId: users.id,
-      userName: users.name,
-      userEmail: users.email,
-      companyId: firmStaffAssignments.companyId,
-      role: firmStaffAssignments.role,
-    })
-    .from(users)
-    .leftJoin(firmStaffAssignments, eq(firmStaffAssignments.userId, users.id))
-    .where(eq(users.firmRole, "firm_admin"))) as Row[];
-
-  const grouped = new Map<string, StaffWorkloadInput>();
-  for (const r of rows) {
-    let entry = grouped.get(r.userId);
-    if (!entry) {
-      entry = {
-        userId: r.userId,
-        userName: r.userName,
-        userEmail: r.userEmail,
-        assignments: [],
-      };
-      grouped.set(r.userId, entry);
-    }
-    if (r.companyId && r.role) {
-      entry.assignments.push({ companyId: r.companyId, role: r.role });
-    }
-  }
-  return computeStaffWorkload(Array.from(grouped.values()));
+/**
+ * Staff workload (R15-03): the same staff definition as GET /firm/staff
+ * (users with a firm role in the caller's firm), counted over that firm's
+ * clients only.
+ */
+export async function fetchStaffWorkload(ctx: FirmContext): Promise<StaffWorkloadRow[]> {
+  return computeStaffWorkload(await staffWorkloadInput(ctx));
 }
 
+/**
+ * @deprecated Delegates to the one assignment service (server/services/firm/staff.service.ts).
+ */
 export async function assignStaffToCompany(
+  ctx: FirmContext,
   userId: string,
   companyId: string,
   role: string = "accountant"
 ): Promise<void> {
-  // Validate the user is firm_admin. firm_owner doesn't need explicit assignment.
-  const [u] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
-  if (!u) throw new NotFoundError("User");
-  if (u.firmRole !== "firm_admin") {
-    throw new ValidationError("Only firm_admin users can be assigned via this endpoint");
-  }
-  // Validate the target is a managed client company.
-  const [c] = await db.select().from(companies).where(eq(companies.id, companyId)).limit(1);
-  if (!c) throw new NotFoundError("Company");
-  if (c.companyType !== "client") {
-    throw new ValidationError("Only managed client companies can have staff assignments");
-  }
-
-  await db
-    .insert(firmStaffAssignments)
-    .values({ userId, companyId, role })
-    .onConflictDoUpdate({
-      target: [firmStaffAssignments.userId, firmStaffAssignments.companyId],
-      set: { role },
-    });
+  await assignStaff(ctx, { staffUserId: userId, companyId, role, action: "assign" });
 }
 
 // ─── DB-backed: cache ─────────────────────────────────────────────────────────
@@ -989,29 +944,17 @@ export async function writeMetricsCache<T>(
 // ─── Helpers re-exported from rbac ────────────────────────────────────────────
 
 /**
- * Resolve the companyIds the firm staff member can access. firm_owner gets all
- * client companies; firm_admin gets only assigned companies.
+ * Resolve the companyIds the firm staff member can access, scoped to the
+ * caller's firm (R15-12): firm_owner gets every client of the firm; other
+ * firm roles only assigned clients. Delegates to server/services/firm/scope.ts.
  */
 export async function resolveAccessibleClientIds(
   userId: string,
   firmRole: string | null
 ): Promise<string[]> {
-  if (firmRole === "firm_owner") {
-    const rows = await db
-      .select({ id: companies.id })
-      .from(companies)
-      .where(eq(companies.companyType, "client"));
-    return rows.map((r: { id: string }) => r.id);
-  }
-  if (firmRole === "firm_admin") {
-    const rows = await db
-      .select({ id: firmStaffAssignments.companyId })
-      .from(firmStaffAssignments)
-      .innerJoin(companies, eq(companies.id, firmStaffAssignments.companyId))
-      .where(and(eq(firmStaffAssignments.userId, userId), eq(companies.companyType, "client")));
-    return rows.map((r: { id: string }) => r.id);
-  }
-  return [];
+  const ctx = await resolveFirmContext({ id: userId, firmRole: firmRole ?? null, isAdmin: false });
+  if (!ctx) return [];
+  return listAccessibleClientIds(ctx);
 }
 
 // ─── Aggregate composer ───────────────────────────────────────────────────────
@@ -1085,3 +1028,12 @@ export async function buildFirmDashboard(
   }
   return result;
 }
+
+// ─── WQ5: e-invoicing state column ────────────────────────────────────────────
+
+/**
+ * One e-invoicing state per client for the console column (identity missing, partner not
+ * chosen, appoint the partner, awaiting approval, confirmed by the client, connected). With no
+ * provider configured "connected" never appears.
+ */
+export { firmEInvoicingStates as clientEInvoicingStates } from "./einvoice/identity";

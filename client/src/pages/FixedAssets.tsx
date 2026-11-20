@@ -1,7 +1,16 @@
+import { T } from "@/components/layout/T";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  FormActions,
+  FormErrorSummary,
+  FormGrid,
+  FormSection,
+  formSpanFull,
+} from "@/components/ui/form-layout";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
 import { format } from "date-fns";
 import {
@@ -15,10 +24,15 @@ import {
   TrendingDown,
   BarChart3,
   PlayCircle,
+  Search,
+  Download,
+  BookCheck,
 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -35,6 +49,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -62,13 +77,26 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { useTranslation } from "@/lib/i18n";
+import { formatMessage, useTranslation, translateNow } from "@/lib/i18n";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
+import { errorHeading } from "@/lib/error-heading";
+import { depreciationPeriodEnded, lastEndedMonth } from "@/lib/depreciation-period";
+import { PageHeader } from "@/components/ui/page-header";
+import { SectionCard } from "@/components/ui/section-card";
+import { StatCard } from "@/components/ui/stat-card";
+import { DataTableCard } from "@/components/ui/data-table";
+import { Money, MoneyCell } from "@/components/ui/money";
+import { RowActions, RowActionButton } from "@/components/ui/row-actions";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { accountDisplayName } from "@/lib/account-name";
+import { parseCalendarDate } from "@/lib/format-date";
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -82,7 +110,9 @@ interface FixedAsset {
   purchase_date: string;
   purchase_cost: string;
   salvage_value: string;
-  useful_life_years: number;
+  useful_life_years: number | null;
+  needs_capitalization_je?: boolean;
+  capitalization_entry_id?: string | null;
   depreciation_method: string;
   accumulated_depreciation: string;
   net_book_value: string;
@@ -121,35 +151,64 @@ const CATEGORIES = [
   "Other",
 ] as const;
 
-const assetFormSchema = z.object({
-  assetName: z.string().min(1, "Asset name is required"),
-  assetNameAr: z.string().optional().nullable(),
-  assetNumber: z.string().optional().nullable(),
-  category: z.string().min(1, "Category is required"),
-  purchaseDate: z.string().min(1, "Purchase date is required"),
-  purchaseCost: z.coerce.number().min(0, "Purchase cost must be >= 0"),
-  salvageValue: z.coerce.number().min(0, "Salvage value must be >= 0").optional().nullable(),
-  usefulLifeYears: z.coerce.number().int().min(1, "Useful life must be at least 1 year"),
-  depreciationMethod: z.string().optional().nullable(),
-  location: z.string().optional().nullable(),
-  serialNumber: z.string().optional().nullable(),
-  notes: z.string().optional().nullable(),
-});
+const assetFormSchema = z
+  .object({
+    assetName: z.string().min(1, "forms.errors.assetNameRequired"),
+    assetNameAr: z.string().optional().nullable(),
+    assetNumber: z.string().optional().nullable(),
+    category: z.string().min(1, "forms.errors.categoryRequired"),
+    purchaseDate: z.string().min(1, "forms.errors.purchaseDateRequired"),
+    purchaseCost: z.coerce.number().min(0, "forms.errors.purchaseCostNonNegative"),
+    salvageValue: z.coerce
+      .number()
+      .min(0, "forms.errors.salvageValueNonNegative")
+      .optional()
+      .nullable(),
+    // Land (IAS 16) has no useful life; every other category needs one.
+    usefulLifeYears: z.preprocess(
+      (v) => (v === "" || v === null || v === undefined ? null : v),
+      z.coerce.number().int().min(1, "forms.errors.usefulLifeMin1").nullable()
+    ),
+    depreciationMethod: z.enum(["straight_line", "declining_balance"]).optional().nullable(),
+    location: z.string().optional().nullable(),
+    serialNumber: z.string().optional().nullable(),
+    notes: z.string().optional().nullable(),
+    paymentAccountId: z.string().optional().nullable(),
+    /** X4 (J3): recoverable input VAT paid with the asset (Dr 1050, VAT 201 Box 9). */
+    inputVat: z.preprocess(
+      (v) => (v === "" || v === null || v === undefined ? null : v),
+      z.coerce.number().min(0, "forms.errors.vatAmountNonNegative").nullable()
+    ),
+  })
+  .refine((v) => v.category.trim().toLowerCase() === "land" || !!v.usefulLifeYears, {
+    message: "forms.errors.usefulLifeRequired",
+    path: ["usefulLifeYears"],
+  });
 
 type AssetFormData = z.infer<typeof assetFormSchema>;
 
 const disposeFormSchema = z.object({
-  disposalDate: z.string().min(1, "Disposal date is required"),
-  disposalAmount: z.coerce.number().min(0, "Disposal amount must be >= 0"),
+  disposalDate: z.string().min(1, "forms.errors.disposalDateRequired"),
+  disposalAmount: z.coerce.number().min(0, "forms.errors.disposalAmountNonNegative"),
+  proceedsAccountId: z.string().optional().nullable(),
+  onCredit: z.boolean().optional(),
+  buyerName: z.string().optional().nullable(),
+  vatTreatment: z.enum(["standard", "zero_rated", "exempt", "out_of_scope"]).optional(),
   notes: z.string().optional().nullable(),
 });
 
 type DisposeFormData = z.infer<typeof disposeFormSchema>;
 
-const depreciationRunSchema = z.object({
-  month: z.coerce.number().int().min(1).max(12),
-  year: z.coerce.number().int().min(2000).max(2100),
-});
+// E2 (J3-r2): a month is depreciated only after it has ended (the entry is dated at month end).
+const depreciationRunSchema = z
+  .object({
+    month: z.coerce.number().int().min(1).max(12),
+    year: z.coerce.number().int().min(2000).max(2100),
+  })
+  .refine((v) => depreciationPeriodEnded(v.year, v.month), {
+    path: ["month"],
+    message: "forms.errors.depreciationMonthNotEnded",
+  });
 
 type DepreciationRunData = z.infer<typeof depreciationRunSchema>;
 
@@ -157,14 +216,21 @@ type DepreciationRunData = z.infer<typeof depreciationRunSchema>;
 
 export default function FixedAssets() {
   const { t, locale } = useTranslation();
+  const fa = FA_COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
+  // E2 (J4-r2): a viewer is not offered writes the server refuses (403).
+  const { gate, can } = useCompanyPermission();
 
   const [assetDialogOpen, setAssetDialogOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<FixedAsset | null>(null);
   const [disposeDialogOpen, setDisposeDialogOpen] = useState(false);
   const [disposingAsset, setDisposingAsset] = useState<FixedAsset | null>(null);
   const [depRunDialogOpen, setDepRunDialogOpen] = useState(false);
+  // E3 (J3-r3): the row Capitalise action asks where it was paid from and the input VAT.
+  const [capitalizeTarget, setCapitalizeTarget] = useState<FixedAsset | null>(null);
+  const [capPaidFrom, setCapPaidFrom] = useState("");
+  const [capInputVat, setCapInputVat] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [assetToDelete, setAssetToDelete] = useState<string | null>(null);
 
@@ -209,54 +275,116 @@ export default function FixedAssets() {
     },
   });
 
+  const assetCategory = useWatch({ control: assetForm.control, name: "category" });
+  const disposeOnCredit = useWatch({ control: disposeForm.control, name: "onCredit" });
+
   const depRunForm = useForm<DepreciationRunData>({
     resolver: zodResolver(depreciationRunSchema),
-    defaultValues: {
-      month: new Date().getMonth() + 1,
-      year: new Date().getFullYear(),
-    },
+    defaultValues: lastEndedMonth(),
   });
+  // E2 (J3-r2): the row "Record depreciation" opens the same dialog for one asset.
+  const [depAsset, setDepAsset] = useState<FixedAsset | null>(null);
 
   // ─── Mutations ──────────────────────────────────────────
 
+  const { data: accountsList = [] } = useQuery<LedgerAccount[]>({
+    queryKey: [`/api/companies/${companyId}/accounts`],
+    enabled: !!companyId,
+  });
+  // E3 (J3-r3): a header account with sub-accounts (1020 Bank Accounts over 1021) is not offered.
+  const parentAccountIds = new Set(
+    accountsList.map((a) => (a as { parentId?: string | null }).parentId).filter(Boolean)
+  );
+  const cashAccounts = accountsList.filter(
+    (a) =>
+      a.type === "asset" &&
+      !parentAccountIds.has(a.id) &&
+      (a.code === "1010" || a.code === "1020" || /cash|bank/i.test(a.subType ?? ""))
+  );
+
+  const capitalizeMutation = useMutation({
+    mutationFn: ({
+      id,
+      paymentAccountId,
+      inputVat,
+    }: {
+      id: string;
+      paymentAccountId: string;
+      inputVat?: number;
+    }) =>
+      apiRequest("POST", `/api/fixed-assets/${id}/capitalize`, {
+        paymentAccountId,
+        ...(inputVat && inputVat > 0 ? { inputVat } : {}),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
+      setCapitalizeTarget(null);
+      toast({ title: fa.capitalized });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: errorHeading(error),
+        description: error?.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const createAssetMutation = useMutation({
     mutationFn: (data: AssetFormData) =>
-      apiRequest("POST", `/api/companies/${companyId}/fixed-assets`, data),
+      apiRequest("POST", `/api/companies/${companyId}/fixed-assets`, {
+        ...(({ inputVat: _vat, ...rest }) => rest)(data),
+        usefulLifeYears: data.usefulLifeYears || null,
+        paymentAccountId: data.paymentAccountId || null,
+        ...(data.paymentAccountId && data.inputVat && data.inputVat > 0
+          ? { inputVat: data.inputVat }
+          : {}),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
       toast({
-        title: "Asset Created",
-        description: "The fixed asset has been added successfully.",
+        title: translateNow("toasts.assetCreated"),
+        description: translateNow("toasts.theFixedAssetHasBeenAddedSuccessfully"),
       });
       setAssetDialogOpen(false);
       assetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: errorHeading(error),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
   const updateAssetMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<AssetFormData> }) =>
-      apiRequest("PATCH", `/api/fixed-assets/${id}`, data),
+    mutationFn: ({ id, data }: { id: string; data: Partial<AssetFormData> }) => {
+      const { paymentAccountId: _p, inputVat: _v, ...rest } = data;
+      return apiRequest("PATCH", `/api/fixed-assets/${id}`, rest);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
       toast({
-        title: "Asset Updated",
-        description: "The fixed asset has been updated successfully.",
+        title: translateNow("toasts.assetUpdated"),
+        description: translateNow("toasts.theFixedAssetHasBeenUpdatedSuccessfully"),
       });
       setAssetDialogOpen(false);
       setEditingAsset(null);
       assetForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: errorHeading(error),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -267,33 +395,57 @@ export default function FixedAssets() {
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
-      toast({ title: "Asset Deleted", description: "The fixed asset has been deleted." });
+      toast({
+        title: translateNow("toasts.assetDeleted"),
+        description: translateNow("toasts.theFixedAssetHasBeenDeleted"),
+      });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: errorHeading(error),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
   const depreciateMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/fixed-assets/${id}/depreciate`, {}),
+    mutationFn: ({ id, month, year }: { id: string } & DepreciationRunData) =>
+      apiRequest("POST", `/api/fixed-assets/${id}/depreciate`, { month, year }),
     onSuccess: (data: any) => {
+      setDepRunDialogOpen(false);
+      setDepAsset(null);
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
       queryClient.invalidateQueries({
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
       toast({
-        title: "Depreciation Recorded",
-        description: `Monthly depreciation of ${formatCurrency(data.monthlyDepreciation, "AED", locale)} recorded.`,
+        title: translateNow("toasts.depreciationRecorded"),
+        description: formatMessage(translateNow("toasts.monthlyDepreciationRecorded"), {
+          amount: formatCurrency(data.monthlyDepreciation, "AED", locale),
+        }),
       });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: errorHeading(error),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
   const disposeMutation = useMutation({
     mutationFn: ({ id, data }: { id: string; data: DisposeFormData }) =>
-      apiRequest("POST", `/api/fixed-assets/${id}/dispose`, data),
+      apiRequest("POST", `/api/fixed-assets/${id}/dispose`, {
+        disposalDate: data.disposalDate,
+        disposalAmount: data.disposalAmount,
+        proceedsAccountId: data.onCredit ? null : data.proceedsAccountId || null,
+        onCredit: data.onCredit === true,
+        buyerName: data.buyerName || null,
+        vatTreatment: data.vatTreatment ?? "standard",
+        notes: data.notes || null,
+      }),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: [`/api/companies/${companyId}/fixed-assets`] });
       queryClient.invalidateQueries({
@@ -301,15 +453,22 @@ export default function FixedAssets() {
       });
       const glType = data.gainLossType === "gain" ? "Gain" : "Loss";
       toast({
-        title: "Asset Disposed",
-        description: `${glType} on disposal: ${formatCurrency(Math.abs(data.gainLoss), "AED", locale)}`,
+        title: translateNow("toasts.assetDisposed"),
+        description: formatMessage(translateNow("toasts.glOnDisposal"), {
+          glType,
+          amount: formatCurrency(Math.abs(data.gainLoss), "AED", locale),
+        }),
       });
       setDisposeDialogOpen(false);
       setDisposingAsset(null);
       disposeForm.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: errorHeading(error),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -322,14 +481,22 @@ export default function FixedAssets() {
         queryKey: [`/api/companies/${companyId}/fixed-assets/summary`],
       });
       toast({
-        title: "Batch Depreciation Complete",
-        description: `Processed ${data.assetsProcessed} assets for ${data.month}/${data.year}.`,
+        title: translateNow("toasts.batchDepreciationComplete"),
+        description: formatMessage(translateNow("toasts.processedAssetsFor"), {
+          assetsProcessed: data.assetsProcessed,
+          month: data.month,
+          year: data.year,
+        }),
       });
       setDepRunDialogOpen(false);
-      depRunForm.reset({ month: new Date().getMonth() + 1, year: new Date().getFullYear() });
+      depRunForm.reset(lastEndedMonth());
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error?.message, variant: "destructive" });
+      toast({
+        title: errorHeading(error),
+        description: error?.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -361,11 +528,14 @@ export default function FixedAssets() {
       assetNameAr: asset.asset_name_ar || "",
       assetNumber: asset.asset_number || "",
       category: asset.category,
-      purchaseDate: asset.purchase_date ? format(new Date(asset.purchase_date), "yyyy-MM-dd") : "",
+      purchaseDate: asset.purchase_date
+        ? format(parseCalendarDate(asset.purchase_date), "yyyy-MM-dd")
+        : "",
       purchaseCost: parseFloat(asset.purchase_cost),
       salvageValue: parseFloat(asset.salvage_value || "0"),
       usefulLifeYears: asset.useful_life_years,
-      depreciationMethod: asset.depreciation_method || "straight_line",
+      depreciationMethod:
+        asset.depreciation_method === "declining_balance" ? "declining_balance" : "straight_line",
       location: asset.location || "",
       serialNumber: asset.serial_number || "",
       notes: asset.notes || "",
@@ -397,7 +567,13 @@ export default function FixedAssets() {
   };
 
   const handleDepRunSubmit = (data: DepreciationRunData) => {
-    runDepreciationMutation.mutate(data);
+    if (depAsset) depreciateMutation.mutate({ id: depAsset.id, ...data });
+    else runDepreciationMutation.mutate(data);
+  };
+  const openDepreciationDialog = (asset: FixedAsset | null) => {
+    setDepAsset(asset);
+    depRunForm.reset(lastEndedMonth());
+    setDepRunDialogOpen(true);
   };
 
   // ─── Helpers ────────────────────────────────────────────
@@ -405,11 +581,29 @@ export default function FixedAssets() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "active":
-        return <StatusBadge tone="success">Active</StatusBadge>;
+        return (
+          <StatusBadge tone="success">
+            <T k="pages.active" />
+          </StatusBadge>
+        );
       case "disposed":
-        return <StatusBadge tone="danger">Disposed</StatusBadge>;
+        return (
+          <StatusBadge tone="neutral">
+            <T k="pageLabels.disposed" />
+          </StatusBadge>
+        );
+      case "draft":
+        return (
+          <StatusBadge tone="warning">
+            <T k="pageLabels.assetDraftFromBill" />
+          </StatusBadge>
+        );
       case "fully_depreciated":
-        return <StatusBadge tone="warning">Fully Depreciated</StatusBadge>;
+        return (
+          <StatusBadge tone="neutral">
+            <T k="pageLabels.fullyDepreciated" />
+          </StatusBadge>
+        );
       default:
         return <Badge variant="secondary">{status}</Badge>;
     }
@@ -446,8 +640,8 @@ export default function FixedAssets() {
     return (
       <EmptyState
         icon={Building2}
-        title="No company selected"
-        description="Create or select a company before tracking fixed assets."
+        title={t["screens.noCompanySelected"]}
+        description={t["screens.noCompanyAssetsBody"]}
       />
     );
   }
@@ -456,456 +650,617 @@ export default function FixedAssets() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <Building2 className="w-8 h-8" />
-            Fixed Assets
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage fixed assets, depreciation, and disposals
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <PageHeader
+        eyebrow="Accounting"
+        title={t["pages.fixedAssets"]}
+        description={t["pageLabels.manageFixedAssetsDepreciationAndDisposals"]}
+        primaryAction={
           <Button
-            variant="outline"
-            onClick={() => setDepRunDialogOpen(true)}
-            className="flex items-center gap-2"
+            onClick={handleOpenCreateDialog}
+            data-testid="button-add-asset"
+            {...gate("documents.write")}
           >
-            <PlayCircle className="w-4 h-4" />
-            Run Depreciation
+            <Plus aria-hidden />
+            <T k="pageLabels.addAsset" />
           </Button>
-          <Button onClick={handleOpenCreateDialog} className="flex items-center gap-2">
-            <Plus className="w-4 h-4" />
-            Add Asset
-          </Button>
-        </div>
-      </div>
+        }
+        overflow={
+          <>
+            <DropdownMenuItem
+              onSelect={() => openDepreciationDialog(null)}
+              disabled={!can("ledger.post")}
+              data-testid="menu-run-depreciation"
+            >
+              <PlayCircle aria-hidden />
+              <T k="pageLabels.runDepreciation" />
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <a href={`/api/companies/${companyId}/fixed-assets/register?format=xlsx`}>
+                <Download aria-hidden />
+                {fa.exportRegister}
+              </a>
+            </DropdownMenuItem>
+          </>
+        }
+      />
 
-      {/* Summary Cards */}
-      {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Cost</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(summary.totalCost, "AED", locale)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {summary.totalAssets} active asset{summary.totalAssets !== 1 ? "s" : ""}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Accumulated Depreciation</CardTitle>
-              <TrendingDown className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(summary.totalAccumulatedDepreciation, "AED", locale)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {summary.totalCost > 0
-                  ? `${((summary.totalAccumulatedDepreciation / summary.totalCost) * 100).toFixed(1)}% depreciated`
-                  : "0% depreciated"}
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Net Book Value</CardTitle>
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(summary.totalNetBookValue, "AED", locale)}
-              </div>
-              <p className="text-xs text-muted-foreground">Current carrying value</p>
-            </CardContent>
-          </Card>
+      {/* Spec 2.6: no KPI row of zeros before the first asset exists. */}
+      {summary && assets.length > 0 && (
+        <div className="mobile-keep-cols grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <StatCard
+            label={t["pages.totalCost"]}
+            icon={DollarSign}
+            value={<Money amount={summary.totalCost} />}
+            hint={formatMessage(t["screens.activeAssetsCount"], { count: summary.totalAssets })}
+          />
+          <StatCard
+            label={t["pageLabels.accumulatedDepreciation"]}
+            icon={TrendingDown}
+            value={<Money amount={summary.totalAccumulatedDepreciation} />}
+            hint={formatMessage(t["screens.percentDepreciated"], {
+              pct:
+                summary.totalCost > 0
+                  ? // Isolated LTR "1.7%" so the sign stays after the digits in Arabic.
+                    `\u2066${((summary.totalAccumulatedDepreciation / summary.totalCost) * 100).toFixed(1)}%\u2069`
+                  : "\u20660%\u2069",
+            })}
+          />
+          <StatCard
+            label={t["pages.netBookValue"]}
+            icon={BarChart3}
+            value={<Money amount={summary.totalNetBookValue} />}
+            hint={t["pageLabels.currentCarryingValue"]}
+          />
         </div>
       )}
 
-      {/* Category Breakdown */}
-      {summary && summary.byCategory.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Asset Category Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Count</TableHead>
-                    <TableHead className="text-right">Total Cost</TableHead>
-                    <TableHead className="text-right">Accum. Depreciation</TableHead>
-                    <TableHead className="text-right">Net Book Value</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {summary.byCategory.map((cat) => (
-                    <TableRow key={cat.category}>
-                      <TableCell className="font-medium">{cat.category}</TableCell>
-                      <TableCell className="text-right">{cat.count}</TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(cat.totalCost, "AED", locale)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(cat.totalAccumulatedDepreciation, "AED", locale)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(cat.totalNetBookValue, "AED", locale)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Assets Table */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Fixed Assets</CardTitle>
-              <CardDescription>
-                {assets.length} asset{assets.length !== 1 ? "s" : ""} registered
-              </CardDescription>
-            </div>
-          </div>
-          <div className="mt-4">
-            <Input
-              placeholder="Search assets by name, category, number..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="max-w-sm"
-            />
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isLoadingAssets ? (
-            <TableSkeleton rows={5} columns={7} />
-          ) : filteredAssets.length === 0 ? (
-            searchQuery ? (
-              <EmptyState
-                icon={Building2}
-                title="No matching assets"
-                description={`No assets match "${searchQuery}". Try a different keyword or clear the search.`}
-                action={{
-                  label: "Clear search",
-                  onClick: () => setSearchQuery(""),
-                  variant: "outline",
-                }}
-                testId="empty-state-fixed-assets-search"
+      {/* Assets */}
+      <section className="space-y-3">
+        {(assets.length > 0 || searchQuery) && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="relative w-full sm:w-80">
+              <Search
+                className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
               />
-            ) : (
-              <EmptyState
-                icon={Building2}
-                title="No fixed assets yet"
-                description="Track equipment, vehicles, and other depreciable assets to keep your books accurate."
-                action={{ label: "Add Asset", icon: Plus, onClick: handleOpenCreateDialog }}
-                testId="empty-state-fixed-assets"
+              <Input
+                placeholder={t["screens.searchAssets"]}
+                aria-label={t["screens.searchAssets"]}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-9 ps-9"
               />
-            )
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Asset Name</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Purchase Date</TableHead>
-                    <TableHead className="text-right">Cost</TableHead>
-                    <TableHead className="text-right">Accum. Dep.</TableHead>
-                    <TableHead className="text-right">NBV</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">{t.actions || "Actions"}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAssets.map((asset) => (
-                    <TableRow key={asset.id}>
-                      <TableCell className="font-medium">
-                        <div>
-                          {asset.asset_name}
-                          {asset.asset_name_ar && (
-                            <div className="text-xs text-muted-foreground">
-                              {asset.asset_name_ar}
-                            </div>
-                          )}
-                          {asset.asset_number && (
-                            <div className="text-xs text-muted-foreground">
-                              #{asset.asset_number}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>{asset.category}</TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {asset.purchase_date
-                          ? format(new Date(asset.purchase_date), "MMM dd, yyyy")
-                          : "-"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(parseFloat(asset.purchase_cost), "AED", locale)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(
-                          parseFloat(asset.accumulated_depreciation || "0"),
-                          "AED",
-                          locale
+            </div>
+            <p className="text-small text-muted-foreground">
+              {formatMessage(t["screens.assetsRegistered"], { count: assets.length })}
+            </p>
+          </div>
+        )}
+        <DataTableCard
+          status={isLoadingAssets ? "loading" : filteredAssets.length === 0 ? "empty" : "ready"}
+          columnLabels={[t["pageLabels.assetName"], t["screens.cost"], t["screens.nbv"], t.status]}
+          empty={
+            searchQuery
+              ? {
+                  icon: Building2,
+                  title: t["screens.noMatchingAssets"],
+                  description: t["screens.noMatchingAssetsBody"],
+                  action: {
+                    label: t["screens.clearSearch"],
+                    onClick: () => setSearchQuery(""),
+                    variant: "outline",
+                  },
+                  testId: "empty-state-fixed-assets-search",
+                }
+              : {
+                  icon: Building2,
+                  title: t["screens.noFixedAssets"],
+                  description: t["screens.noFixedAssetsBody"],
+                  action: {
+                    label: t["pageLabels.addAsset"],
+                    icon: Plus,
+                    onClick: handleOpenCreateDialog,
+                  },
+                  testId: "empty-state-fixed-assets",
+                }
+          }
+        >
+          <Table className="row-cards">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-full">
+                  <T k="pageLabels.assetName" />
+                </TableHead>
+                <TableHead>
+                  <T k="pages.category" />
+                </TableHead>
+                <TableHead>
+                  <T k="pageLabels.purchaseDate" />
+                </TableHead>
+                <TableHead data-numeric="">{t["screens.cost"]}</TableHead>
+                <TableHead data-numeric="">
+                  <T k="pageLabels.accumDep" />
+                </TableHead>
+                <TableHead data-numeric="">{t["screens.nbv"]}</TableHead>
+                <TableHead>
+                  <T k="pages.status" />
+                </TableHead>
+                <TableHead>
+                  <span className="sr-only">{t.actions || "Actions"}</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredAssets.map((asset) => {
+                const canCapitalize =
+                  asset.status === "active" &&
+                  asset.needs_capitalization_je &&
+                  !asset.capitalization_entry_id &&
+                  !!cashAccounts[0];
+                return (
+                  <TableRow key={asset.id}>
+                    <TableCell data-truncate="" data-cell="title">
+                      <span dir="auto" className="font-medium">
+                        {locale === "ar" && asset.asset_name_ar
+                          ? asset.asset_name_ar
+                          : asset.asset_name}
+                      </span>
+                      {asset.asset_number && (
+                        <span
+                          dir="ltr"
+                          className="ms-2 hidden text-caption md:inline tabular-nums text-muted-foreground [unicode-bidi:isolate]"
+                        >
+                          {asset.asset_number}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                      {t[`forms.asset.cat.${asset.category}`] || asset.category}
+                    </TableCell>
+                    <TableCell data-nowrap="" data-cell="meta" className="text-muted-foreground">
+                      {asset.purchase_date ? formatDate(asset.purchase_date, locale) : "—"}
+                    </TableCell>
+                    <MoneyCell
+                      amount={parseFloat(asset.purchase_cost)}
+                      className="text-muted-foreground"
+                    />
+                    <MoneyCell
+                      amount={parseFloat(asset.accumulated_depreciation || "0")}
+                      className="text-muted-foreground"
+                    />
+                    <MoneyCell
+                      amount={parseFloat(asset.net_book_value || "0")}
+                      className="font-semibold"
+                      data-cell="amount"
+                    />
+                    <TableCell data-nowrap="" data-cell="status">
+                      {getStatusBadge(asset.status)}
+                    </TableCell>
+                    <TableCell data-cell="actions">
+                      <RowActions
+                        maxInline={1}
+                        collapseOnMobile
+                        menu={
+                          <>
+                            {canCapitalize && (
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  setCapPaidFrom(cashAccounts[0]?.id ?? "");
+                                  setCapInputVat("");
+                                  setCapitalizeTarget(asset);
+                                }}
+                                data-testid={`button-capitalize-${asset.id}`}
+                                disabled={capitalizeMutation.isPending || !can("ledger.post")}
+                                title={fa.capitalizeHint}
+                              >
+                                <BookCheck aria-hidden />
+                                {fa.capitalize}
+                              </DropdownMenuItem>
+                            )}
+                            {asset.status === "active" && (
+                              <DropdownMenuItem
+                                onSelect={() => handleOpenDisposeDialog(asset)}
+                                disabled={!can("ledger.post")}
+                              >
+                                <Ban aria-hidden />
+                                {t["screens.dispose"]}
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onSelect={() => setAssetToDelete(asset.id)}
+                              disabled={!can("documents.write")}
+                            >
+                              <Trash2 aria-hidden />
+                              {t.delete}
+                            </DropdownMenuItem>
+                          </>
+                        }
+                      >
+                        {asset.status === "draft" && (
+                          <RowActionButton
+                            label={t.edit}
+                            icon={Edit}
+                            onClick={() => handleOpenEditDialog(asset)}
+                            {...gate("documents.write")}
+                          />
                         )}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold">
-                        {formatCurrency(parseFloat(asset.net_book_value || "0"), "AED", locale)}
-                      </TableCell>
-                      <TableCell>{getStatusBadge(asset.status)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {asset.status === "active" && (
-                            <>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => depreciateMutation.mutate(asset.id)}
-                                title="Record Depreciation"
-                                disabled={depreciateMutation.isPending}
-                              >
-                                <Calculator className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenEditDialog(asset)}
-                                title="Edit"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenDisposeDialog(asset)}
-                                title="Dispose"
-                                className="text-[hsl(var(--chart-4))] hover:text-[hsl(var(--chart-4))]"
-                              >
-                                <Ban className="w-4 h-4" />
-                              </Button>
-                            </>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setAssetToDelete(asset.id)}
-                            title="Delete"
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                        {asset.status === "active" && (
+                          <>
+                            <RowActionButton
+                              label={t["screens.recordDepreciation"]}
+                              icon={Calculator}
+                              onClick={() => openDepreciationDialog(asset)}
+                              disabled={depreciateMutation.isPending}
+                              data-testid={`button-record-depreciation-${asset.id}`}
+                              {...gate("ledger.post")}
+                            />
+                            <RowActionButton
+                              label={t.edit}
+                              icon={Edit}
+                              onClick={() => handleOpenEditDialog(asset)}
+                              {...gate("documents.write")}
+                            />
+                          </>
+                        )}
+                      </RowActions>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </DataTableCard>
+      </section>
+
+      {/* Category breakdown */}
+      {summary && summary.byCategory.length > 0 && (
+        <SectionCard title={t["pageLabels.assetCategoryBreakdown"]} flush>
+          <Table className="mobile-fit">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-full">
+                  <T k="pages.category" />
+                </TableHead>
+                <TableHead data-numeric="">
+                  <T k="pageLabels.count" />
+                </TableHead>
+                <TableHead data-numeric="" className="hidden sm:table-cell">
+                  <T k="pages.totalCost" />
+                </TableHead>
+                <TableHead data-numeric="" className="hidden sm:table-cell">
+                  <T k="pageLabels.accumDepreciation" />
+                </TableHead>
+                <TableHead data-numeric="">
+                  <T k="pages.netBookValue" />
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {summary.byCategory.map((cat) => (
+                <TableRow key={cat.category}>
+                  <TableCell className="font-medium">
+                    {t[`forms.asset.cat.${cat.category}`] || cat.category}
+                  </TableCell>
+                  <TableCell data-numeric="">{cat.count}</TableCell>
+                  <MoneyCell amount={cat.totalCost} className="hidden sm:table-cell" />
+                  <MoneyCell
+                    amount={cat.totalAccumulatedDepreciation}
+                    className="hidden sm:table-cell"
+                  />
+                  <MoneyCell amount={cat.totalNetBookValue} className="font-medium" />
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </SectionCard>
+      )}
 
       {/* ─── Create/Edit Asset Dialog ──────────────────────── */}
       <Dialog open={assetDialogOpen} onOpenChange={setAssetDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent size="lg" data-testid="dialog-asset-form">
           <DialogHeader>
-            <DialogTitle>{editingAsset ? "Edit Fixed Asset" : "Add Fixed Asset"}</DialogTitle>
+            <DialogTitle>
+              {editingAsset ? t["screens.editFixedAsset"] : t["screens.addFixedAsset"]}
+            </DialogTitle>
             <DialogDescription>
-              {editingAsset ? "Update asset details." : "Register a new fixed asset."}
+              {editingAsset ? t["screens.updateAssetDetails"] : t["screens.registerNewAsset"]}
             </DialogDescription>
           </DialogHeader>
 
           <Form {...assetForm}>
-            <form onSubmit={assetForm.handleSubmit(handleAssetSubmit)} className="space-y-4">
-              <FormField
-                control={assetForm.control}
-                name="assetName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Asset Name *</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Toyota Hilux 2024" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={assetForm.control}
-                name="assetNameAr"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Asset Name (Arabic)</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="اسم الأصل"
-                        dir="rtl"
-                        {...field}
-                        value={field.value || ""}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={assetForm.control}
-                  name="assetNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Asset Number</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., FA-001" {...field} value={field.value || ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={assetForm.control}
-                  name="category"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Category *</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+            <form
+              onSubmit={assetForm.handleSubmit(handleAssetSubmit)}
+              noValidate
+              className="space-y-6"
+            >
+              <FormErrorSummary />
+              <FormSection title={t["forms.section.asset"]}>
+                <FormGrid>
+                  <FormField
+                    control={assetForm.control}
+                    name="assetName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["screens.faAssetName"]}</FormLabel>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select category" />
-                          </SelectTrigger>
+                          <Input
+                            dir="auto"
+                            placeholder={t["forms.asset.namePlaceholder"]}
+                            {...field}
+                          />
                         </FormControl>
-                        <SelectContent>
-                          {CATEGORIES.map((cat) => (
-                            <SelectItem key={cat} value={cat}>
-                              {cat}
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="assetNameAr"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["screens.faAssetNameArabic"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="اسم الأصل"
+                            dir="rtl"
+                            {...field}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="assetNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.assetNumber" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input ltr placeholder="FA-001" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="category"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["screens.faCategory"]}</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={t["screens.faSelectCategory"]} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {CATEGORIES.map((cat) => (
+                              <SelectItem key={cat} value={cat}>
+                                {t[`forms.asset.cat.${cat}`] || cat}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="location"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.location" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            dir="auto"
+                            placeholder={t["forms.asset.locationPlaceholder"]}
+                            {...field}
+                            value={field.value || ""}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="serialNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.serialNumber" />
+                        </FormLabel>
+                        <FormControl>
+                          <Input ltr placeholder="SN-12345" {...field} value={field.value || ""} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
+              <FormSection title={t["forms.section.acquisition"]}>
+                <FormGrid>
+                  <FormField
+                    control={assetForm.control}
+                    name="purchaseDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["screens.faPurchaseDate"]}</FormLabel>
+                        <FormControl>
+                          <DatePicker value={field.value} onChange={field.onChange} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="purchaseCost"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel required>{t["screens.faPurchaseCostAed"]}</FormLabel>
+                        <FormControl>
+                          <Input type="number" step="0.01" min="0" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  {!editingAsset && (
+                    <FormField
+                      control={assetForm.control}
+                      name="paymentAccountId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{fa.paidFrom}</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder={fa.notCapitalised} />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {cashAccounts.map((a) => (
+                                <SelectItem key={a.id} value={a.id}>
+                                  {a.code} — {accountDisplayName(a, locale)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormDescription>{t["forms.asset.paidFromHelp"]}</FormDescription>
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                  {!editingAsset && assetForm.watch("paymentAccountId") && (
+                    <FormField
+                      control={assetForm.control}
+                      name="inputVat"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t["forms.asset.inputVat"]}</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              inputMode="decimal"
+                              data-testid="input-asset-input-vat"
+                              name={field.name}
+                              ref={field.ref}
+                              onBlur={field.onBlur}
+                              value={field.value ?? ""}
+                              onChange={(e) => field.onChange(e.target.value)}
+                            />
+                          </FormControl>
+                          <FormDescription>{t["forms.asset.inputVatHelp"]}</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+                </FormGrid>
+              </FormSection>
+              <FormSection
+                title={t["forms.section.depreciation"]}
+                description={t["forms.section.depreciationDesc"]}
+              >
+                <FormGrid>
+                  <FormField
+                    control={assetForm.control}
+                    name="depreciationMethod"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          <T k="pageLabels.depreciationMethod" />
+                        </FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value || "straight_line"}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder={t["screens.faSelectMethod"]} />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="straight_line">
+                              <T k="pageLabels.straightLine" />
                             </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+                            <SelectItem value="declining_balance">
+                              <T k="pageLabels.decliningBalance" />
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="usefulLifeYears"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{fa.usefulLife}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="1"
+                            step="1"
+                            {...field}
+                            value={field.value ?? ""}
+                            disabled={assetCategory?.toLowerCase() === "land"}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={assetForm.control}
+                    name="salvageValue"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t["screens.faSalvageValueAed"]}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            {...field}
+                            value={field.value ?? 0}
+                          />
+                        </FormControl>
+                        <FormDescription>{t["forms.asset.salvageHelp"]}</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </FormGrid>
+              </FormSection>
+              <FormSection title={t["forms.section.notes"]}>
                 <FormField
                   control={assetForm.control}
-                  name="purchaseDate"
+                  name="notes"
                   render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Purchase Date *</FormLabel>
+                    <FormItem className={formSpanFull}>
+                      <FormLabel>
+                        <T k="pages.notes" />
+                      </FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={assetForm.control}
-                  name="purchaseCost"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Purchase Cost (AED) *</FormLabel>
-                      <FormControl>
-                        <Input type="number" step="0.01" min="0" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={assetForm.control}
-                  name="salvageValue"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Salvage Value (AED)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          {...field}
-                          value={field.value ?? 0}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={assetForm.control}
-                  name="usefulLifeYears"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Useful Life (Years) *</FormLabel>
-                      <FormControl>
-                        <Input type="number" min="1" step="1" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={assetForm.control}
-                name="depreciationMethod"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Depreciation Method</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value || "straight_line"}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select method" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="straight_line">Straight-Line</SelectItem>
-                        <SelectItem value="declining_balance">Declining Balance</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={assetForm.control}
-                  name="location"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Location</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="e.g., Dubai Office"
+                        <Textarea
+                          placeholder={t["screens.faOptionalNotesAboutThisAsset"]}
                           {...field}
                           value={field.value || ""}
                         />
@@ -914,55 +1269,24 @@ export default function FixedAssets() {
                     </FormItem>
                   )}
                 />
+              </FormSection>
 
-                <FormField
-                  control={assetForm.control}
-                  name="serialNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Serial Number</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., SN-12345" {...field} value={field.value || ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
-              <FormField
-                control={assetForm.control}
-                name="notes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Notes</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Optional notes about this asset"
-                        {...field}
-                        value={field.value || ""}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="flex justify-end gap-2 pt-4">
+              <FormActions sticky>
                 <Button type="button" variant="outline" onClick={() => setAssetDialogOpen(false)}>
-                  {t.cancel || "Cancel"}
+                  {t.cancel}
                 </Button>
                 <Button
                   type="submit"
+                  className="sm:min-w-32"
                   disabled={createAssetMutation.isPending || updateAssetMutation.isPending}
                 >
                   {createAssetMutation.isPending || updateAssetMutation.isPending
-                    ? t.loading || "Loading..."
+                    ? t["forms.saving"]
                     : editingAsset
-                      ? t.save || "Save"
-                      : "Add Asset"}
+                      ? t.save
+                      : t["pageLabels.addAsset"]}
                 </Button>
-              </div>
+              </FormActions>
             </form>
           </Form>
         </DialogContent>
@@ -970,13 +1294,15 @@ export default function FixedAssets() {
 
       {/* ─── Dispose Dialog ────────────────────────────────── */}
       <Dialog open={disposeDialogOpen} onOpenChange={setDisposeDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent size="md">
           <DialogHeader>
-            <DialogTitle>Dispose Asset</DialogTitle>
+            <DialogTitle>
+              <T k="pageLabels.disposeAsset" />
+            </DialogTitle>
             <DialogDescription>
               {disposingAsset
                 ? `Record disposal for "${disposingAsset.asset_name}" (NBV: ${formatCurrency(parseFloat(disposingAsset.net_book_value || "0"), "AED", locale)})`
-                : "Record asset disposal"}
+                : t["fixedAssets.recordAssetDisposal"]}
             </DialogDescription>
           </DialogHeader>
 
@@ -987,9 +1313,11 @@ export default function FixedAssets() {
                 name="disposalDate"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Disposal Date *</FormLabel>
+                    <FormLabel>
+                      {t["screens.faDisposalDate"]} <span className="text-danger">*</span>
+                    </FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <DatePicker value={field.value ?? ""} onChange={field.onChange} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -1001,7 +1329,7 @@ export default function FixedAssets() {
                 name="disposalAmount"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Disposal Amount (AED)</FormLabel>
+                    <FormLabel>{t["screens.faDisposalAmountAed"]}</FormLabel>
                     <FormControl>
                       <Input type="number" step="0.01" min="0" {...field} />
                     </FormControl>
@@ -1012,13 +1340,98 @@ export default function FixedAssets() {
 
               <FormField
                 control={disposeForm.control}
+                name="onCredit"
+                render={({ field }) => (
+                  <FormItem>
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={field.value === true}
+                        onCheckedChange={(v) => field.onChange(v === true)}
+                        data-testid="checkbox-dispose-on-credit"
+                      />
+                      {fa.onCredit}
+                    </label>
+                    {disposeOnCredit && (
+                      <p className="text-xs text-muted-foreground">{fa.onCreditHint}</p>
+                    )}
+                  </FormItem>
+                )}
+              />
+
+              {!disposeOnCredit && (
+                <FormField
+                  control={disposeForm.control}
+                  name="proceedsAccountId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{fa.proceedsAccount}</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? ""}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder={fa.cashDefault} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {cashAccounts.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.code} — {accountDisplayName(a, locale)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              <FormField
+                control={disposeForm.control}
+                name="buyerName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{fa.buyer}</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value ?? ""} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={disposeForm.control}
+                name="vatTreatment"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{fa.vat}</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value ?? "standard"}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="standard">{fa.vatStandard}</SelectItem>
+                        <SelectItem value="zero_rated">{fa.vatZero}</SelectItem>
+                        <SelectItem value="exempt">{fa.vatExempt}</SelectItem>
+                        <SelectItem value="out_of_scope">{fa.vatOutOfScope}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={disposeForm.control}
                 name="notes"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Notes</FormLabel>
+                    <FormLabel>
+                      <T k="pages.notes" />
+                    </FormLabel>
                     <FormControl>
                       <Textarea
-                        placeholder="Reason for disposal"
+                        placeholder={t["screens.faReasonForDisposal"]}
                         {...field}
                         value={field.value || ""}
                       />
@@ -1033,7 +1446,9 @@ export default function FixedAssets() {
                   {t.cancel || "Cancel"}
                 </Button>
                 <Button type="submit" variant="destructive" disabled={disposeMutation.isPending}>
-                  {disposeMutation.isPending ? t.loading || "Loading..." : "Dispose Asset"}
+                  {disposeMutation.isPending
+                    ? t.loading || "Loading..."
+                    : t["pageLabels.disposeAsset"]}
                 </Button>
               </div>
             </form>
@@ -1041,13 +1456,95 @@ export default function FixedAssets() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── Run Depreciation Dialog ───────────────────────── */}
-      <Dialog open={depRunDialogOpen} onOpenChange={setDepRunDialogOpen}>
-        <DialogContent className="max-w-md">
+      {/* ─── Capitalise Dialog (E3, J3-r3): paid-from account and input VAT ─── */}
+      <Dialog
+        open={!!capitalizeTarget}
+        onOpenChange={(open) => {
+          if (!open) setCapitalizeTarget(null);
+        }}
+      >
+        <DialogContent size="sm" data-testid="dialog-capitalize">
           <DialogHeader>
-            <DialogTitle>Run Monthly Depreciation</DialogTitle>
+            <DialogTitle>{fa.capitalize}</DialogTitle>
+            <DialogDescription>{fa.capitalizeHint}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="capitalize-paid-from">{fa.paidFrom}</Label>
+              <Select value={capPaidFrom} onValueChange={setCapPaidFrom}>
+                <SelectTrigger id="capitalize-paid-from" data-testid="select-capitalize-paid-from">
+                  <SelectValue placeholder={fa.paidFrom} />
+                </SelectTrigger>
+                <SelectContent>
+                  {cashAccounts.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.code} — {accountDisplayName(a, locale)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="capitalize-input-vat">{t["forms.asset.inputVat"]}</Label>
+              <Input
+                id="capitalize-input-vat"
+                type="number"
+                step="0.01"
+                min="0"
+                inputMode="decimal"
+                value={capInputVat}
+                onChange={(e) => setCapInputVat(e.target.value)}
+                data-testid="input-capitalize-input-vat"
+              />
+              <p className="text-xs text-muted-foreground">{t["forms.asset.inputVatHelp"]}</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCapitalizeTarget(null)}>
+              {t["common.cancel"]}
+            </Button>
+            <Button
+              onClick={() =>
+                capitalizeTarget &&
+                capitalizeMutation.mutate({
+                  id: capitalizeTarget.id,
+                  paymentAccountId: capPaidFrom,
+                  inputVat: Number(capInputVat) || 0,
+                })
+              }
+              disabled={!capPaidFrom || capitalizeMutation.isPending}
+              data-testid="button-confirm-capitalize"
+              {...gate("ledger.post")}
+            >
+              {fa.capitalize}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Run Depreciation Dialog ───────────────────────── */}
+      <Dialog
+        open={depRunDialogOpen}
+        onOpenChange={(open) => {
+          setDepRunDialogOpen(open);
+          if (!open) setDepAsset(null);
+        }}
+      >
+        <DialogContent size="sm" data-testid="dialog-depreciation">
+          <DialogHeader>
+            <DialogTitle>
+              {depAsset ? (
+                formatMessage(t["fixedAssets.recordDepreciationFor"], {
+                  name: depAsset.asset_name,
+                })
+              ) : (
+                <T k="pageLabels.runMonthlyDepreciation" />
+              )}
+            </DialogTitle>
             <DialogDescription>
-              Calculate and record depreciation for all active assets for the selected month.
+              {depAsset
+                ? t["fixedAssets.recordDepreciationHelp"]
+                : t["fixedAssets.calculateAndRecordDepreciationFor"]}
             </DialogDescription>
           </DialogHeader>
 
@@ -1059,29 +1556,49 @@ export default function FixedAssets() {
                   name="month"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Month *</FormLabel>
+                      <FormLabel>
+                        {t["screens.faMonth"]} <span className="text-danger">*</span>
+                      </FormLabel>
                       <Select
                         onValueChange={(v) => field.onChange(parseInt(v))}
                         value={String(field.value)}
                       >
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Select month" />
+                            <SelectValue placeholder={t["screens.faSelectMonth"]} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="1">January</SelectItem>
-                          <SelectItem value="2">February</SelectItem>
-                          <SelectItem value="3">March</SelectItem>
-                          <SelectItem value="4">April</SelectItem>
+                          <SelectItem value="1">
+                            <T k="pages.january" />
+                          </SelectItem>
+                          <SelectItem value="2">
+                            <T k="pages.february" />
+                          </SelectItem>
+                          <SelectItem value="3">
+                            <T k="pages.march" />
+                          </SelectItem>
+                          <SelectItem value="4">
+                            <T k="pages.april" />
+                          </SelectItem>
                           <SelectItem value="5">May</SelectItem>
                           <SelectItem value="6">June</SelectItem>
                           <SelectItem value="7">July</SelectItem>
-                          <SelectItem value="8">August</SelectItem>
-                          <SelectItem value="9">September</SelectItem>
-                          <SelectItem value="10">October</SelectItem>
-                          <SelectItem value="11">November</SelectItem>
-                          <SelectItem value="12">December</SelectItem>
+                          <SelectItem value="8">
+                            <T k="pages.august" />
+                          </SelectItem>
+                          <SelectItem value="9">
+                            <T k="pages.september" />
+                          </SelectItem>
+                          <SelectItem value="10">
+                            <T k="pages.october" />
+                          </SelectItem>
+                          <SelectItem value="11">
+                            <T k="pages.november" />
+                          </SelectItem>
+                          <SelectItem value="12">
+                            <T k="pages.december" />
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -1094,7 +1611,9 @@ export default function FixedAssets() {
                   name="year"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Year *</FormLabel>
+                      <FormLabel>
+                        {t["screens.faYear"]} <span className="text-danger">*</span>
+                      </FormLabel>
                       <FormControl>
                         <Input type="number" min="2000" max="2100" {...field} />
                       </FormControl>
@@ -1108,10 +1627,16 @@ export default function FixedAssets() {
                 <Button type="button" variant="outline" onClick={() => setDepRunDialogOpen(false)}>
                   {t.cancel || "Cancel"}
                 </Button>
-                <Button type="submit" disabled={runDepreciationMutation.isPending}>
-                  {runDepreciationMutation.isPending
+                <Button
+                  type="submit"
+                  disabled={runDepreciationMutation.isPending || depreciateMutation.isPending}
+                  data-testid="button-confirm-depreciation"
+                >
+                  {runDepreciationMutation.isPending || depreciateMutation.isPending
                     ? t.loading || "Loading..."
-                    : "Run Depreciation"}
+                    : depAsset
+                      ? t["screens.recordDepreciation"]
+                      : t["pageLabels.runDepreciation"]}
                 </Button>
               </div>
             </form>
@@ -1127,13 +1652,17 @@ export default function FixedAssets() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Fixed Asset?</AlertDialogTitle>
+            <AlertDialogTitle>
+              <T k="pageLabels.deleteFixedAsset" />
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete this asset record. This action cannot be undone.
+              {t["fixedAssets.thisWillPermanentlyDeleteThis"]}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>
+              <T k="pages.cancel" />
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (assetToDelete) {
@@ -1143,7 +1672,7 @@ export default function FixedAssets() {
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              <T k="pages.delete" />
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1151,3 +1680,56 @@ export default function FixedAssets() {
     </div>
   );
 }
+
+interface LedgerAccount {
+  id: string;
+  code: string;
+  nameEn: string;
+  nameAr: string | null;
+  type: string;
+  subType: string | null;
+}
+
+// W4-B copy (en + ar) for the register additions.
+const FA_COPY = {
+  en: {
+    usefulLife: "Useful life (years) — not needed for land",
+    paidFrom: "Paid from (posts the capitalisation)",
+    notCapitalised: "Not paid yet — capitalise later",
+    exportRegister: "Export register (xlsx)",
+    capitalize: "Capitalise",
+    capitalizeHint: "Post the purchase to the ledger so the asset can be depreciated",
+    capitalized: "Asset capitalised on the ledger",
+    onCredit: "Sold on credit",
+    onCreditHint:
+      "A tax invoice is issued to the buyer for the sale price plus VAT; the receivable is collected on that invoice.",
+    proceedsAccount: "Proceeds received into",
+    cashDefault: "Cash on hand (1010)",
+    buyer: "Buyer",
+    vat: "VAT on the sale",
+    vatStandard: "Standard rated 5%",
+    vatZero: "Zero rated",
+    vatExempt: "Exempt",
+    vatOutOfScope: "Out of scope",
+  },
+  ar: {
+    usefulLife: "العمر الإنتاجي (سنوات) — غير مطلوب للأراضي",
+    paidFrom: "مدفوع من (يرحّل قيد الرسملة)",
+    notCapitalised: "لم يُدفع بعد — رسملة لاحقاً",
+    exportRegister: "تصدير السجل (xlsx)",
+    capitalize: "رسملة",
+    capitalizeHint: "ترحيل الشراء إلى دفتر الأستاذ ليتسنى استهلاك الأصل",
+    capitalized: "تمت رسملة الأصل في دفتر الأستاذ",
+    onCredit: "بيع آجل",
+    onCreditHint:
+      "تصدر فاتورة ضريبية للمشتري بسعر البيع مع الضريبة، ويُحصَّل المبلغ المستحق على تلك الفاتورة.",
+    proceedsAccount: "استلام المتحصلات في",
+    cashDefault: "النقد في الصندوق (1010)",
+    buyer: "المشتري",
+    vat: "ضريبة القيمة المضافة على البيع",
+    vatStandard: "خاضع بنسبة 5%",
+    vatZero: "خاضع بنسبة الصفر",
+    vatExempt: "معفى",
+    vatOutOfScope: "خارج النطاق",
+  },
+} as const;

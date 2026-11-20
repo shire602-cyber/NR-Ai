@@ -8,6 +8,7 @@ const includeDevAudit = process.argv.includes('--include-dev-audit');
 const steps = [
   ['npm', ['run', 'check']],
   ['npm', ['run', 'check:api-contract']],
+  ['node', ['scripts/check-stale-docs.mjs']],
   ['npm', ['run', 'audit:inventory', '--', '--summary']],
   ['npm', ['run', 'audit:api-coverage']],
   ['npm', ['audit', '--omit=dev', '--audit-level=moderate']],

@@ -1,7 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowRight, FileSpreadsheet, Pin, RotateCcw, Search, Send, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  FileSpreadsheet,
+  MoreHorizontal,
+  Pin,
+  RotateCcw,
+  Search,
+  Send,
+  Sparkles,
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -54,6 +69,9 @@ import {
   type ReportWorkflowGapFilter,
 } from "@/lib/reportCatalog";
 import { cn } from "@/lib/utils";
+import { T } from "@/components/layout/T";
+import { formatMessage, useTranslation } from "@/lib/i18n";
+import { useCatalogText } from "@/lib/reportCatalogText";
 
 export interface ReportLaunchDeliveryPreview {
   status?: string;
@@ -97,6 +115,11 @@ interface ReportLaunchPickerProps {
   preferredDeliveryAutomationCommand?: ReportDeliveryAutomationCommand | null;
   loadDeliveryAutomationPreferences?: boolean;
   companyId?: string | null;
+  /**
+   * Dashboard embed (D2b, CTO 5): five report rows plus "View all in Reports", without the
+   * side column of suites / shortcuts / packs (those stay one click away in Reports).
+   */
+  compact?: boolean;
   className?: string;
 }
 
@@ -316,18 +339,25 @@ function suiteSearchValues(suite: LaunchReportSuite): ReportLaunchSearchValue[] 
   ];
 }
 
+// Translation keys (components namespace) for the pinned delivery command.
 const reportLaunchPinnedCommandLabels: Record<ReportDeliveryAutomationCommand, string> = {
-  retry: "Retry recovery",
-  review: "Review guardrails",
-  queue: "Queue next pack",
-  comparison: "Open comparison",
+  retry: "components.launchPinnedRetry",
+  review: "components.launchPinnedReview",
+  queue: "components.launchPinnedQueue",
+  comparison: "components.launchPinnedComparison",
 };
 
 const reportLaunchPinnedCommandDescriptions: Record<ReportDeliveryAutomationCommand, string> = {
-  retry: "Jump back to delivery recovery when a scheduled report pack fails.",
-  review: "Open the first delivery subscription that needs guardrail or setup review.",
-  queue: "Queue the next scheduled report pack from the launcher.",
-  comparison: "Open the persona comparison pack that explains current-vs-prior movement.",
+  retry: "components.launchPinnedRetryBody",
+  review: "components.launchPinnedReviewBody",
+  queue: "components.launchPinnedQueueBody",
+  comparison: "components.launchPinnedComparisonBody",
+};
+
+const reportLaunchGapFilterKeys: Record<ReportWorkflowGapFilter, string> = {
+  "report-gaps": "components.launchGapReport",
+  "rule-gaps": "components.launchGapRule",
+  "delivery-gaps": "components.launchGapDelivery",
 };
 
 export function ReportLaunchPicker({
@@ -343,6 +373,7 @@ export function ReportLaunchPicker({
   preferredDeliveryAutomationCommand,
   loadDeliveryAutomationPreferences = true,
   companyId = null,
+  compact = false,
   className,
 }: ReportLaunchPickerProps) {
   const [selectedPersona, setSelectedPersona] = useState<ReportPersona>(persona);
@@ -354,17 +385,22 @@ export function ReportLaunchPicker({
       getPreferredReportDeliveryAutomationCommand(persona)
     );
 
-  useEffect(() => {
+  // Follow the persona prop, then reload that persona's stored preferences
+  // (adjusting state during render instead of in effects).
+  const [propPersona, setPropPersona] = useState<ReportPersona>(persona);
+  if (propPersona !== persona) {
+    setPropPersona(persona);
     setSelectedPersona(persona);
-  }, [persona]);
-
-  useEffect(() => {
+  }
+  const [preferencePersona, setPreferencePersona] = useState<ReportPersona>(persona);
+  if (preferencePersona !== selectedPersona) {
+    setPreferencePersona(selectedPersona);
     setQuery(getPreferredReportWorkflowSearch(selectedPersona));
     setStoredWorkflowGapFilter(getPreferredReportWorkflowGapFilter(selectedPersona));
     setStoredDeliveryAutomationCommand(
       getPreferredReportDeliveryAutomationCommand(selectedPersona)
     );
-  }, [selectedPersona]);
+  }
 
   const updateLauncherQuery = useCallback(
     (value: string) => {
@@ -382,6 +418,8 @@ export function ReportLaunchPicker({
   });
 
   const syncedCatalog = catalogQuery.data;
+  const { t } = useTranslation();
+  const ct = useCatalogText();
   const automationPreferencesQuery = useQuery<{
     preferences: ReportDeliveryAutomationPreference[];
   }>({
@@ -539,12 +577,12 @@ export function ReportLaunchPicker({
         ? starterHref(visibleStarters[0])
         : reportSectionHref(workspace, "automation-starters");
   const matchingAutomationPackLabel = visibleSuites[0]
-    ? "Open matching suite"
+    ? t["components.launchOpenMatchingSuite"]
     : visiblePackTemplates[0]
-      ? "Open matching pack"
+      ? t["components.launchOpenMatchingPack"]
       : visibleStarters[0]
-        ? "Open matching automation"
-        : "Open automations";
+        ? t["components.launchOpenMatchingAutomation"]
+        : t["components.launchOpenAutomations"];
   const hasControlledDeliveryAutomationCommand =
     selectedPersona === persona && preferredDeliveryAutomationCommand !== undefined;
   const syncedDeliveryAutomationCommand = parseReportDeliveryAutomationCommand(
@@ -607,82 +645,115 @@ export function ReportLaunchPicker({
       <CardContent className="p-4 sm:p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-[11px] uppercase font-semibold text-muted-foreground">
-              {isDeliveryMode ? "Delivery setup" : "Report launcher"}
+            <div className="text-caption font-medium text-muted-foreground">
+              {isDeliveryMode ? t["components.launchDeliverySetup"] : t["components.launchTitle"]}
             </div>
-            <h3 className="mt-1 text-lg font-semibold tracking-tight text-foreground">
-              {workspace.navLabel}
+            <h3 className="mt-0.5 text-h3 text-foreground">
+              {ct("workspace", workspace.persona, "navLabel", workspace.navLabel)}
             </h3>
-            <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+            <p className="mt-1 max-w-2xl text-small text-muted-foreground">
               {isDeliveryMode
-                ? `Choose the reports, guardrails, and automation starters that should feed scheduled sends for ${workspace.navLabel.toLowerCase()}.`
-                : workspace.automationOutcome}
+                ? formatMessage(t["components.launchDeliveryIntro"], {
+                    workspace: ct("workspace", workspace.persona, "navLabel", workspace.navLabel),
+                  })
+                : ct(
+                    "workspace",
+                    workspace.persona,
+                    "automationOutcome",
+                    workspace.automationOutcome
+                  )}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {storedWorkflowGapFilter ? (
               <Badge variant="outline" data-testid="report-launch-gap-context">
-                {reportWorkflowGapFilterLabels[storedWorkflowGapFilter]}
+                {t[reportLaunchGapFilterKeys[storedWorkflowGapFilter]] ??
+                  reportWorkflowGapFilterLabels[storedWorkflowGapFilter]}
               </Badge>
             ) : null}
             {trimmedQuery ? (
               <Badge variant="outline" data-testid="report-launch-search-context">
-                <span className="max-w-[12rem] truncate">Search: {trimmedQuery}</span>
+                <span className="max-w-[12rem] truncate">
+                  {formatMessage(t["components.launchSearchContext"], { query: trimmedQuery })}
+                </span>
               </Badge>
             ) : null}
-            <Badge
-              variant={catalogQuery.isError ? "warning" : "info"}
+            {/* Sync state is plain caption text, not a pill (CTO 10). */}
+            <span
+              className={cn(
+                "text-caption",
+                catalogQuery.isError ? "text-warning-subtle-foreground" : "text-muted-foreground"
+              )}
               data-testid="report-launch-sync"
             >
               {catalogQuery.isLoading
-                ? "Syncing"
+                ? t["components.launchSyncing"]
                 : catalogQuery.isError
-                  ? "Local catalog"
-                  : `${syncedCatalog?.summary.liveReportCount ?? reports.length} synced reports`}
-            </Badge>
+                  ? t["components.launchLocalCatalog"]
+                  : formatMessage(t["components.launchSyncedReports"], {
+                      count: syncedCatalog?.summary.liveReportCount ?? reports.length,
+                    })}
+            </span>
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[168px_minmax(0,1fr)]">
-          <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
+        <div className="mt-4 space-y-3">
+          {/* Persona switch: one 36px segmented control (CTO 5). */}
+          <div
+            role="group"
+            aria-label={t["components.launchTitle"]}
+            className="mobile-keep-cols grid h-9 w-full grid-cols-3 items-center gap-0.5 rounded-lg bg-muted p-0.5 sm:inline-flex sm:w-auto"
+          >
             {reportPersonas.map((item) => (
               <button
                 key={item}
                 type="button"
+                aria-pressed={item === selectedPersona}
                 onClick={() => setSelectedPersona(item)}
                 className={cn(
-                  "w-full rounded-md border px-2.5 py-2 text-left text-xs font-medium transition-colors",
+                  "h-8 min-w-0 truncate rounded-md px-3 text-small font-medium transition-[color,background-color,box-shadow] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   item === selectedPersona
-                    ? "border-accent bg-accent/5 text-foreground"
-                    : "border-border/70 text-muted-foreground hover:border-accent hover:bg-accent/5"
+                    ? "bg-card text-foreground shadow-sm dark:bg-neutral-800"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
                 data-testid={`report-launch-persona-${item}`}
               >
-                {reportPersonaWorkspaces.find((workspaceItem) => workspaceItem.persona === item)
-                  ?.navLabel ?? item}
+                {ct(
+                  "workspace",
+                  item,
+                  "navLabel",
+                  reportPersonaWorkspaces.find((workspaceItem) => workspaceItem.persona === item)
+                    ?.navLabel ?? item
+                )}
               </button>
             ))}
           </div>
 
           <div className="min-w-0">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Search
+                className="pointer-events-none absolute start-3 top-2.5 h-4 w-4 text-muted-foreground"
+                aria-hidden
+              />
               <Input
                 value={query}
                 onChange={(event) => updateLauncherQuery(event.target.value)}
-                placeholder="Search reports, questions, and automations"
-                className="pl-9"
+                placeholder={t["components.launchSearchPlaceholder"]}
+                aria-label={t["components.launchSearchPlaceholder"]}
+                className="h-9 ps-9"
                 data-testid="report-launch-search"
               />
             </div>
             <div className="mt-2 flex flex-wrap gap-2" data-testid="report-launch-context-actions">
-              <Button asChild size="sm" variant="outline" className="h-8 px-2">
+              <Button asChild size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground">
                 <Link href={workflowFinderHref} data-testid="report-launch-open-workflow-finder">
                   <Search className="h-3.5 w-3.5" />
-                  {storedWorkflowGapFilter ? "Open gap" : "Open finder"}
+                  {storedWorkflowGapFilter
+                    ? t["components.launchOpenGap"]
+                    : t["components.launchOpenFinder"]}
                 </Link>
               </Button>
-              <Button asChild size="sm" variant="outline" className="h-8 px-2">
+              <Button asChild size="sm" variant="ghost" className="h-8 px-2 text-muted-foreground">
                 <Link
                   href={matchingAutomationPackHref}
                   data-testid="report-launch-open-matching-pack"
@@ -693,122 +764,166 @@ export function ReportLaunchPicker({
               </Button>
             </div>
 
-            <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_20rem]">
-              <div className="overflow-hidden rounded-md border border-border/70">
-                <div className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2">
-                  <div className="text-xs font-semibold uppercase text-muted-foreground">
-                    Reports
+            <div
+              className={cn(
+                "grid grid-cols-1 gap-6",
+                !compact && "xl:grid-cols-[minmax(0,1fr)_20rem]"
+              )}
+            >
+              <div className="min-w-0">
+                <div className="flex items-center justify-between gap-2 pb-1">
+                  <div className="text-caption font-medium text-muted-foreground">
+                    <T k="components.launchReports" />
                   </div>
-                  <Link href={workspaceHref(workspace)}>
-                    <Button variant="ghost" size="sm" className="h-7 gap-1 text-accent">
-                      Workspace <ArrowRight className="h-3.5 w-3.5" />
-                    </Button>
-                  </Link>
+                  <Button asChild variant="ghost" size="sm" className="h-7 gap-1 px-2 text-accent">
+                    <Link href={workspaceHref(workspace)}>
+                      {compact ? (
+                        <T k="components.launchViewAll" />
+                      ) : (
+                        <T k="components.launchWorkspace" />
+                      )}
+                      <ArrowRight className="h-3.5 w-3.5 rtl:-scale-x-100" aria-hidden />
+                    </Link>
+                  </Button>
                 </div>
-                <div className="max-h-[30rem] divide-y divide-border/50 overflow-y-auto">
-                  {reports.map((report) => {
+                <div
+                  className={cn(
+                    "divide-hairline border-y border-border",
+                    !compact && "max-h-[30rem] overflow-y-auto"
+                  )}
+                >
+                  {(compact ? reports.slice(0, 5) : reports).map((report) => {
                     const reportAutomationContext = reportAutomationContextById.get(report.id);
+                    const hasMoreActions = Boolean(
+                      reportAutomationContext?.starter ||
+                      reportAutomationContext?.delivery ||
+                      reportAutomationContext?.comparison ||
+                      reportAutomationContext?.suite
+                    );
                     return (
                       <div
                         key={report.id}
-                        className="grid cursor-pointer gap-3 px-3 py-3 transition-colors hover:bg-accent/5 sm:grid-cols-[minmax(0,1fr)_auto]"
+                        className="flex min-h-14 items-center gap-3 py-2 transition-colors duration-fast hover:bg-muted/40"
                         data-testid={`report-launch-report-${report.id}`}
                       >
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium text-foreground">{report.name}</div>
-                          <div className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-                            {report.decisionQuestion}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-sm font-medium text-foreground">
+                              {ct("report", report.id, "name", report.name)}
+                            </span>
+                            <Badge variant="neutral" className="hidden shrink-0 md:inline-flex">
+                              {ct("category", report.category, "label", report.category)}
+                            </Badge>
                           </div>
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            <Badge variant="outline">{report.category}</Badge>
-                            {reportAutomationContext?.starter ? (
-                              <Badge variant="info">Autopilot</Badge>
-                            ) : null}
+                          <div className="truncate text-caption text-muted-foreground">
+                            {ct("report", report.id, "decisionQuestion", report.decisionQuestion)}
                             {reportAutomationContext?.delivery ? (
-                              <Badge variant="success">Scheduled</Badge>
-                            ) : null}
-                            {reportAutomationContext?.comparison ? (
-                              <Badge variant="neutral">Comparison</Badge>
+                              <> · {t["components.launchScheduled"]}</>
                             ) : null}
                           </div>
                         </div>
-                        <div className="flex flex-wrap gap-2 sm:max-w-[11rem] sm:justify-end">
-                          <Button asChild size="sm" variant="outline" className="h-7 px-2">
-                            <Link
-                              href={
-                                reportAutomationContext?.syncedContext?.reportHref ??
-                                reportItemHref(report, selectedPersona)
-                              }
-                            >
-                              Open report <ArrowRight className="h-3.5 w-3.5" />
-                            </Link>
-                          </Button>
-                          {reportAutomationContext?.starter ? (
-                            <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                              <Link
-                                href={reportAutomationContext.starter.href}
-                                data-testid={`report-launch-report-automation-${report.id}`}
+                        <Button asChild size="sm" variant="outline" className="h-8 shrink-0 px-3">
+                          <Link
+                            aria-label={`${t["components.launchOpenReport"]}: ${ct("report", report.id, "name", report.name)}`}
+                            href={
+                              reportAutomationContext?.syncedContext?.reportHref ??
+                              reportItemHref(report, selectedPersona)
+                            }
+                          >
+                            <T k="components.launchOpen" />
+                          </Link>
+                        </Button>
+                        {hasMoreActions ? (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="shrink-0 text-muted-foreground hover:text-foreground"
+                                aria-label={formatMessage(t["components.launchReportActions"], {
+                                  report: ct("report", report.id, "name", report.name),
+                                })}
                               >
-                                Autopilot
-                              </Link>
-                            </Button>
-                          ) : null}
-                          {reportAutomationContext?.delivery ? (
-                            <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                              <Link
-                                href={reportAutomationContext.delivery.href}
-                                data-testid={`report-launch-report-delivery-${report.id}`}
-                              >
-                                Delivery
-                              </Link>
-                            </Button>
-                          ) : null}
-                          {reportAutomationContext?.comparison ? (
-                            <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                              <Link
-                                href={reportAutomationContext.comparison.href}
-                                data-testid={`report-launch-report-comparison-${report.id}`}
-                              >
-                                Compare
-                              </Link>
-                            </Button>
-                          ) : null}
-                          {reportAutomationContext?.suite ? (
-                            <Button asChild size="sm" variant="ghost" className="h-7 px-2">
-                              <Link
-                                href={reportAutomationContext.suite.href}
-                                data-testid={`report-launch-report-suite-${report.id}`}
-                              >
-                                Suite
-                              </Link>
-                            </Button>
-                          ) : null}
-                        </div>
+                                <MoreHorizontal aria-hidden />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="min-w-44">
+                              {reportAutomationContext?.starter ? (
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={reportAutomationContext.starter.href}
+                                    data-testid={`report-launch-report-automation-${report.id}`}
+                                  >
+                                    <Sparkles aria-hidden />
+                                    <T k="components.launchAutopilot" />
+                                  </Link>
+                                </DropdownMenuItem>
+                              ) : null}
+                              {reportAutomationContext?.delivery ? (
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={reportAutomationContext.delivery.href}
+                                    data-testid={`report-launch-report-delivery-${report.id}`}
+                                  >
+                                    <Send aria-hidden />
+                                    <T k="components.launchDelivery" />
+                                  </Link>
+                                </DropdownMenuItem>
+                              ) : null}
+                              {reportAutomationContext?.comparison ? (
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={reportAutomationContext.comparison.href}
+                                    data-testid={`report-launch-report-comparison-${report.id}`}
+                                  >
+                                    <FileSpreadsheet aria-hidden />
+                                    <T k="components.launchCompare" />
+                                  </Link>
+                                </DropdownMenuItem>
+                              ) : null}
+                              {reportAutomationContext?.suite ? (
+                                <DropdownMenuItem asChild>
+                                  <Link
+                                    href={reportAutomationContext.suite.href}
+                                    data-testid={`report-launch-report-suite-${report.id}`}
+                                  >
+                                    <FileSpreadsheet aria-hidden />
+                                    <T k="components.launchSuite" />
+                                  </Link>
+                                </DropdownMenuItem>
+                              ) : null}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : (
+                          <span className="w-8 shrink-0" aria-hidden />
+                        )}
                       </div>
                     );
                   })}
                 </div>
               </div>
 
-              <div className="max-h-[30rem] space-y-3 overflow-y-auto pr-1">
+              <div
+                className={cn("max-h-[30rem] space-y-4 overflow-y-auto pe-1", compact && "hidden")}
+              >
                 {pinnedDeliveryAutomationCommand ? (
                   <div
-                    className="rounded-md border border-accent/40 bg-accent/5 p-3"
+                    className="rounded-lg bg-surface-sunken p-3"
                     data-testid="report-launch-pinned-command"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                        <Pin className="h-3.5 w-3.5" /> Pinned automation
+                      <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
+                        <Pin className="h-3.5 w-3.5" /> <T k="components.launchPinnedAutomation" />
                       </div>
                       <Badge
                         variant="success"
                         data-testid={`report-launch-pinned-command-${pinnedDeliveryAutomationCommand}`}
                       >
-                        {reportLaunchPinnedCommandLabels[pinnedDeliveryAutomationCommand]}
+                        {t[reportLaunchPinnedCommandLabels[pinnedDeliveryAutomationCommand]]}
                       </Badge>
                     </div>
                     <div className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                      {reportLaunchPinnedCommandDescriptions[pinnedDeliveryAutomationCommand]}
+                      {t[reportLaunchPinnedCommandDescriptions[pinnedDeliveryAutomationCommand]]}
                     </div>
                     <div className="mt-3">
                       {pinnedDeliveryAutomationCommand === "queue" &&
@@ -827,10 +942,10 @@ export function ReportLaunchPicker({
                         >
                           <Send className="h-3.5 w-3.5" />
                           {queueingDeliverySubscriptionId === primaryDeliverySubscription.id
-                            ? "Queueing"
+                            ? t["components.launchQueueing"]
                             : primaryDeliveryRequiresHandoffAcknowledgement
-                              ? "Acknowledge handoff"
-                              : "Queue pinned pack"}
+                              ? t["components.launchAcknowledgeHandoff"]
+                              : t["components.launchQueuePinnedPack"]}
                         </Button>
                       ) : pinnedDeliveryAutomationCommand === "retry" &&
                         onRetryDeliveryRun &&
@@ -846,8 +961,8 @@ export function ReportLaunchPicker({
                         >
                           <RotateCcw className="h-3.5 w-3.5" />
                           {retryingDeliveryRunId === primaryDeliveryRetryRunId
-                            ? "Retrying"
-                            : "Retry pinned delivery"}
+                            ? t["components.launchRetrying"]
+                            : t["components.launchRetryPinnedDelivery"]}
                         </Button>
                       ) : (
                         <Button asChild size="sm" variant="outline" className="h-7 px-2">
@@ -855,7 +970,8 @@ export function ReportLaunchPicker({
                             href={pinnedDeliveryCommandHref}
                             data-testid="report-launch-pinned-command-open"
                           >
-                            Open command <ArrowRight className="h-3.5 w-3.5" />
+                            <T k="components.launchOpenCommand" />{" "}
+                            <ArrowRight className="h-3.5 w-3.5" />
                           </Link>
                         </Button>
                       )}
@@ -864,9 +980,10 @@ export function ReportLaunchPicker({
                 ) : null}
 
                 {isDeliveryMode ? (
-                  <div className="rounded-md border border-border/70 p-3">
-                    <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                      <FileSpreadsheet className="h-3.5 w-3.5" /> Delivery subscriptions
+                  <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+                    <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
+                      <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
+                      <T k="components.launchDeliverySubscriptions" />
                     </div>
                     <div className="mt-3 space-y-2">
                       {visibleDeliverySubscriptions.slice(0, 2).map((subscription) => {
@@ -899,7 +1016,7 @@ export function ReportLaunchPicker({
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div className="font-medium text-foreground">
-                                {subscription.title}
+                                {ct("delivery", subscription.id, "title", subscription.title)}
                               </div>
                               {deliveryPreview?.status ? (
                                 <Badge
@@ -907,13 +1024,13 @@ export function ReportLaunchPicker({
                                   dot
                                   className="shrink-0"
                                 >
-                                  {deliveryPreview.status}
+                                  {ct.cx(deliveryPreview.status)}
                                 </Badge>
                               ) : null}
                             </div>
                             {deliveryPreview?.summary ? (
                               <div className="mt-1 text-muted-foreground">
-                                {deliveryPreview.summary}
+                                {ct.cx(deliveryPreview.summary)}
                               </div>
                             ) : null}
                             <div
@@ -921,26 +1038,38 @@ export function ReportLaunchPicker({
                               data-testid={`report-launch-delivery-preview-${subscription.id}`}
                             >
                               <div>
-                                <span className="font-medium text-foreground">Next:</span>{" "}
-                                {deliveryPreview?.nextRunLabel || subscription.cadence}
+                                <span className="font-medium text-foreground">
+                                  {t["components.launchNextLabel"]}
+                                </span>{" "}
+                                {ct.cx(deliveryPreview?.nextRunLabel || subscription.cadence)}
                               </div>
                               <div>
-                                <span className="font-medium text-foreground">Channel:</span>{" "}
-                                {subscriptionChannel} · {subscriptionFormat}
+                                <span className="font-medium text-foreground">
+                                  {t["components.launchChannelLabel"]}
+                                </span>{" "}
+                                {ct.cx(subscriptionChannel)} · {ct.cx(subscriptionFormat)}
                               </div>
                               {deliveryPreview?.suiteTitles?.length ? (
                                 <div>
-                                  <span className="font-medium text-foreground">Suite:</span>{" "}
-                                  {deliveryPreview.suiteTitles.join(", ")}
+                                  <span className="font-medium text-foreground">
+                                    {t["components.launchSuiteLabel"]}
+                                  </span>{" "}
+                                  {deliveryPreview.suiteTitles
+                                    .map((title) => ct.cx(title))
+                                    .join(", ")}
                                 </div>
                               ) : null}
                               <div>
-                                <span className="font-medium text-foreground">To:</span>{" "}
-                                {subscriptionRecipients}
+                                <span className="font-medium text-foreground">
+                                  {t["components.launchToLabel"]}
+                                </span>{" "}
+                                {ct.cx(subscriptionRecipients)}
                               </div>
                               <div>
-                                <span className="font-medium text-foreground">Guardrail:</span>{" "}
-                                {subscriptionGuardrail}
+                                <span className="font-medium text-foreground">
+                                  {t["components.launchGuardrailLabel"]}
+                                </span>{" "}
+                                {ct.cx(subscriptionGuardrail)}
                               </div>
                             </div>
                             {deliveryPreview?.handoffRows?.length ? (
@@ -949,15 +1078,15 @@ export function ReportLaunchPicker({
                                 data-testid={`report-launch-delivery-handoff-${subscription.id}`}
                               >
                                 <div className="font-medium text-foreground">
-                                  Accountant handoff
+                                  <T k="components.launchAccountantHandoff" />
                                 </div>
                                 {deliveryPreview.handoffRows.slice(0, 3).map((row) => (
                                   <div key={row.label}>
                                     <span className="font-medium text-foreground">
-                                      {row.label}:
+                                      {ct.cx(row.label)}:
                                     </span>{" "}
-                                    {row.value}
-                                    {row.detail ? ` - ${row.detail}` : ""}
+                                    {ct.cx(row.value)}
+                                    {row.detail ? ` - ${ct.cx(row.detail)}` : ""}
                                   </div>
                                 ))}
                               </div>
@@ -972,20 +1101,24 @@ export function ReportLaunchPicker({
                                     variant={deliveryPreview.latestRunStatusVariant ?? "info"}
                                     dot
                                   >
-                                    {deliveryPreview.latestRunStatus}
+                                    {t[
+                                      `reportCenter.run${deliveryPreview.latestRunStatus.charAt(0).toUpperCase()}${deliveryPreview.latestRunStatus.slice(1)}`
+                                    ] ?? deliveryPreview.latestRunStatus}
                                   </Badge>
                                   {deliveryPreview.latestRunLabel ? (
                                     <span className="font-medium text-foreground">
-                                      {deliveryPreview.latestRunLabel}
+                                      {ct.cx(deliveryPreview.latestRunLabel)}
                                     </span>
                                   ) : null}
                                 </div>
                                 {deliveryPreview.latestRunDetail ? (
-                                  <div className="mt-1">{deliveryPreview.latestRunDetail}</div>
+                                  <div className="mt-1">
+                                    {ct.cx(deliveryPreview.latestRunDetail)}
+                                  </div>
                                 ) : null}
                                 {deliveryPreview.latestRunError ? (
                                   <div className="mt-1 text-destructive">
-                                    {deliveryPreview.latestRunError}
+                                    {ct.cx(deliveryPreview.latestRunError)}
                                   </div>
                                 ) : null}
                                 {retryLatestDeliveryRunId && onRetryDeliveryRun ? (
@@ -1000,8 +1133,8 @@ export function ReportLaunchPicker({
                                   >
                                     <RotateCcw className="h-3.5 w-3.5" />
                                     {retryingDeliveryRunId === retryLatestDeliveryRunId
-                                      ? "Retrying"
-                                      : "Retry delivery"}
+                                      ? t["components.launchRetrying"]
+                                      : t["components.launchRetryDelivery"]}
                                   </Button>
                                 ) : null}
                               </div>
@@ -1009,7 +1142,8 @@ export function ReportLaunchPicker({
                             <div className="mt-2 flex flex-wrap gap-2">
                               <Button asChild size="sm" variant="outline" className="h-7 px-2">
                                 <Link href={deliveryHref(subscription)}>
-                                  Open <ArrowRight className="h-3.5 w-3.5" />
+                                  <T k="components.launchOpen" />{" "}
+                                  <ArrowRight className="h-3.5 w-3.5" />
                                 </Link>
                               </Button>
                               {onQueueDeliverySubscription ? (
@@ -1024,10 +1158,10 @@ export function ReportLaunchPicker({
                                 >
                                   <Send className="h-3.5 w-3.5" />
                                   {queueingDeliverySubscriptionId === subscription.id
-                                    ? "Queueing"
+                                    ? t["components.launchQueueing"]
                                     : requiresHandoffAcknowledgement
-                                      ? "Acknowledge"
-                                      : "Queue"}
+                                      ? t["components.launchAcknowledge"]
+                                      : t["components.launchQueue"]}
                                 </Button>
                               ) : null}
                             </div>
@@ -1036,16 +1170,17 @@ export function ReportLaunchPicker({
                       })}
                       {visibleDeliverySubscriptions.length === 0 ? (
                         <div className="rounded-md bg-muted/30 p-2 text-xs text-muted-foreground">
-                          No delivery subscriptions match this role or search yet.
+                          <T k="components.launchNoSubscriptions" />
                         </div>
                       ) : null}
                     </div>
                   </div>
                 ) : null}
 
-                <div className="rounded-md border border-border/70 p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <FileSpreadsheet className="h-3.5 w-3.5" /> Report suites
+                <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+                  <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
+                    <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
+                    <T k="components.launchReportSuites" />
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleSuites.slice(0, 2).map((suite) => {
@@ -1063,24 +1198,35 @@ export function ReportLaunchPicker({
                       return (
                         <div
                           key={suite.id}
-                          className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5"
+                          className="rounded-md p-2 text-xs transition-colors hover:bg-muted/60"
                           data-testid={`report-launch-suite-${suite.id}`}
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <div className="font-medium text-foreground">{suite.title}</div>
+                            <div className="font-medium text-foreground">
+                              {ct("suite", suite.id, "title", suite.title)}
+                            </div>
                             <Badge variant="outline" className="shrink-0">
-                              {suite.reportIds.length} reports
+                              {formatMessage(t["components.launchReportCount"], {
+                                count: suite.reportIds.length,
+                              })}
                             </Badge>
                           </div>
-                          <div className="mt-1 text-muted-foreground">{suite.workflow}</div>
-                          <div className="mt-1 text-muted-foreground">{suite.outcome}</div>
                           <div className="mt-1 text-muted-foreground">
-                            {suite.triggerRuleIds.length} trigger rules · scheduled delivery linked
+                            {ct("suite", suite.id, "workflow", suite.workflow)}
+                          </div>
+                          <div className="mt-1 text-muted-foreground">
+                            {ct("suite", suite.id, "outcome", suite.outcome)}
+                          </div>
+                          <div className="mt-1 text-muted-foreground">
+                            {formatMessage(t["components.launchSuiteTriggerRules"], {
+                              count: suite.triggerRuleIds.length,
+                            })}
                           </div>
                           <div className="mt-2 flex flex-wrap gap-2">
                             <Button asChild size="sm" variant="outline" className="h-7 px-2">
                               <Link href={suiteHref(suite)}>
-                                Open <ArrowRight className="h-3.5 w-3.5" />
+                                <T k="components.launchOpen" />{" "}
+                                <ArrowRight className="h-3.5 w-3.5" />
                               </Link>
                             </Button>
                             {onQueueDeliverySubscription ? (
@@ -1097,10 +1243,10 @@ export function ReportLaunchPicker({
                               >
                                 <Send className="h-3.5 w-3.5" />
                                 {queueingDeliverySubscriptionId === suite.deliverySubscriptionId
-                                  ? "Queueing"
+                                  ? t["components.launchQueueing"]
                                   : requiresHandoffAcknowledgement
-                                    ? "Acknowledge"
-                                    : "Queue delivery"}
+                                    ? t["components.launchAcknowledge"]
+                                    : t["components.launchQueueDelivery"]}
                               </Button>
                             ) : null}
                           </div>
@@ -1109,43 +1255,54 @@ export function ReportLaunchPicker({
                     })}
                     {visibleSuites.length === 0 ? (
                       <div className="rounded-md bg-muted/30 p-2 text-xs text-muted-foreground">
-                        No report suites match this role or search yet.
+                        <T k="components.launchNoSuites" />
                       </div>
                     ) : null}
                   </div>
                 </div>
 
-                <div className="rounded-md border border-border/70 p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <FileSpreadsheet className="h-3.5 w-3.5" /> Decision shortcuts
+                <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+                  <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
+                    <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
+                    <T k="components.launchDecisionShortcuts" />
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleShortcuts.slice(0, 2).map((shortcut) => (
                       <Link key={shortcut.id} href={shortcutHref(shortcut)}>
-                        <div className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5">
-                          <div className="font-medium text-foreground">{shortcut.question}</div>
-                          <div className="mt-1 text-muted-foreground">{shortcut.answer}</div>
+                        <div className="rounded-md p-2 text-xs transition-colors hover:bg-muted/60">
+                          <div className="font-medium text-foreground">
+                            {ct("shortcut", shortcut.id, "question", shortcut.question)}
+                          </div>
+                          <div className="mt-1 text-muted-foreground">
+                            {ct("shortcut", shortcut.id, "answer", shortcut.answer)}
+                          </div>
                         </div>
                       </Link>
                     ))}
                   </div>
                 </div>
 
-                <div className="rounded-md border border-border/70 p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <FileSpreadsheet className="h-3.5 w-3.5" /> Comparison packs
+                <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+                  <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
+                    <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
+                    <T k="components.launchComparisonPacks" />
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleComparisonPresets.slice(0, 2).map((preset) => (
                       <Link key={preset.id} href={reportComparisonPresetHref(preset)}>
                         <div
-                          className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5"
+                          className="rounded-md p-2 text-xs transition-colors hover:bg-muted/60"
                           data-testid={`report-launch-comparison-preset-${preset.id}`}
                         >
-                          <div className="font-medium text-foreground">{preset.title}</div>
-                          <div className="mt-1 text-muted-foreground">{preset.question}</div>
+                          <div className="font-medium text-foreground">
+                            {ct("preset", preset.id, "title", preset.title)}
+                          </div>
                           <div className="mt-1 text-muted-foreground">
-                            {preset.baseline} · {preset.automationTrigger}
+                            {ct("preset", preset.id, "question", preset.question)}
+                          </div>
+                          <div className="mt-1 text-muted-foreground">
+                            {ct("preset", preset.id, "baseline", preset.baseline)} ·{" "}
+                            {ct("preset", preset.id, "automationTrigger", preset.automationTrigger)}
                           </div>
                         </div>
                       </Link>
@@ -1153,21 +1310,27 @@ export function ReportLaunchPicker({
                   </div>
                 </div>
 
-                <div className="rounded-md border border-border/70 p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <FileSpreadsheet className="h-3.5 w-3.5" /> Pack templates
+                <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+                  <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
+                    <FileSpreadsheet className="h-3.5 w-3.5" />{" "}
+                    <T k="components.launchPackTemplates" />
                   </div>
                   <div className="mt-3 space-y-2">
                     {visiblePackTemplates.slice(0, 2).map((template) => (
                       <Link key={template.id} href={packTemplateHref(template)}>
                         <div
-                          className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5"
+                          className="rounded-md p-2 text-xs transition-colors hover:bg-muted/60"
                           data-testid={`report-launch-pack-template-${template.id}`}
                         >
-                          <div className="font-medium text-foreground">{template.title}</div>
-                          <div className="mt-1 text-muted-foreground">{template.outcome}</div>
+                          <div className="font-medium text-foreground">
+                            {ct("pack", template.id, "title", template.title)}
+                          </div>
                           <div className="mt-1 text-muted-foreground">
-                            {template.cadence} · {template.delivery}
+                            {ct("pack", template.id, "outcome", template.outcome)}
+                          </div>
+                          <div className="mt-1 text-muted-foreground">
+                            {ct("pack", template.id, "cadence", template.cadence)} ·{" "}
+                            {ct("pack", template.id, "delivery", template.delivery)}
                           </div>
                         </div>
                       </Link>
@@ -1175,16 +1338,21 @@ export function ReportLaunchPicker({
                   </div>
                 </div>
 
-                <div className="rounded-md border border-border/70 p-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold uppercase text-muted-foreground">
-                    <Sparkles className="h-3.5 w-3.5" /> Automation starters
+                <div className="border-t border-border pt-3 first:border-t-0 first:pt-0">
+                  <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
+                    <Sparkles className="h-3.5 w-3.5" />{" "}
+                    <T k="components.launchAutomationStarters" />
                   </div>
                   <div className="mt-3 space-y-2">
                     {visibleStarters.slice(0, 2).map((starter) => (
                       <Link key={starter.id} href={starterHref(starter)}>
-                        <div className="rounded-md bg-muted/30 p-2 text-xs transition-colors hover:bg-accent/5">
-                          <div className="font-medium text-foreground">{starter.title}</div>
-                          <div className="mt-1 text-muted-foreground">{starter.outcome}</div>
+                        <div className="rounded-md p-2 text-xs transition-colors hover:bg-muted/60">
+                          <div className="font-medium text-foreground">
+                            {ct("starter", starter.id, "title", starter.title)}
+                          </div>
+                          <div className="mt-1 text-muted-foreground">
+                            {ct("starter", starter.id, "outcome", starter.outcome)}
+                          </div>
                         </div>
                       </Link>
                     ))}

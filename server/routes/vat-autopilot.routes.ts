@@ -12,6 +12,13 @@ import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { pool } from "../db";
+import { AppError, DomainError, errorMessage } from "../errors";
+import { strictBody } from "../http/strict-body";
+import { parsedBody } from "../http/parsed-body";
+import { recordAudit } from "../services/audit.service";
+import { vatAutopilotStatusBody } from "../../shared/validators/vat";
+import { assertAlignedPeriod, frequencyOf } from "../tax/vat-periods";
+import { loadVatCompany } from "../tax/vat-engine";
 import {
   calculateVatReturn,
   upsertCalculatedPeriod,
@@ -25,7 +32,7 @@ import {
 } from "../services/vat-autopilot.service";
 
 function userId(req: Request): string | undefined {
-  return (req as any).user?.id;
+  return req.user?.id;
 }
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
@@ -44,46 +51,46 @@ const calculateQuerySchema = z.object({
 // `amount` is bounded to ±1 trillion AED so a malicious or fat-fingered value
 // can't blow up downstream numeric columns. NaN/Infinity are rejected by the
 // `.finite()` clause.
-const adjustmentBodySchema = z.object({
-  companyId: z.string().uuid(),
-  periodId: z.string().uuid(),
+const adjustmentBodySchema = z.strictObject({
+  companyId: z.string().guid(),
+  periodId: z.string().guid(),
   box: z.string().refine(isValidVat201BoxKey, { message: "Unknown VAT 201 box key" }),
   amount: z.number().finite().min(-1e12).max(1e12),
   reason: z.string().min(1).max(2000),
 });
 
-const statusBodySchema = z.object({
-  companyId: z.string().uuid(),
-  status: z.enum(["draft", "ready", "submitted", "accepted"]),
-  ftaReferenceNumber: z.string().min(1).max(100).optional(),
-});
-
 const dueDatesQuerySchema = z.object({
-  companyId: z.string().uuid().optional(),
+  companyId: z.string().guid().optional(),
 });
 
-const companyIdParamSchema = z.object({ companyId: z.string().uuid() });
+const companyIdParamSchema = z.object({ companyId: z.string().guid() });
 
-function parsePeriod(parsed: z.infer<typeof calculateQuerySchema>): VatPeriod | undefined {
-  if (!parsed.periodStart || !parsed.periodEnd) return undefined;
-  const start = new Date(parsed.periodStart);
-  const end = new Date(parsed.periodEnd);
-  if (end <= start) return undefined;
-  return {
-    start,
-    end,
-    // FTA-mandated: due 28 days after period end (normalised to UTC midnight
-    // by computeDueDate so it matches what the service produces for
-    // auto-detected periods). Override is intentionally not accepted from the
-    // request body — the deadline is statutory, not user data.
-    dueDate: computeDueDate(end),
-    frequency: parsed.frequency === "monthly" ? "monthly" : "quarterly",
-  };
+/**
+ * An explicit period must be exactly one tax period of the company's stagger (R07-07): a
+ * misaligned range is 422 PERIOD_NOT_ALIGNED. The due date is statutory (period end + 28 days).
+ */
+async function parsePeriod(
+  companyId: string,
+  parsed: z.infer<typeof calculateQuerySchema>
+): Promise<VatPeriod | undefined> {
+  if (!parsed.periodStart && !parsed.periodEnd) return undefined;
+  const company = await loadVatCompany(companyId);
+  const frequency = parsed.frequency ?? company.frequency;
+  const aligned = assertAlignedPeriod({
+    from: parsed.periodStart,
+    to: parsed.periodEnd,
+    frequency: frequencyOf(frequency),
+    startMonth: company.startMonth,
+  });
+  const start = new Date(`${aligned.from}T00:00:00.000Z`);
+  const end = new Date(`${aligned.to}T23:59:59.999Z`);
+  return { start, end, dueDate: computeDueDate(end), frequency: aligned.frequency };
 }
 
 function badRequest(res: Response, err: z.ZodError) {
   return res.status(400).json({
     message: "Invalid request",
+    code: "VALIDATION_ERROR",
     issues: err.issues.map((i) => ({ path: i.path, message: i.message })),
   });
 }
@@ -94,6 +101,8 @@ function badRequest(res: Response, err: z.ZodError) {
  * it isn't silently masked as a generic "calculation failed" 400.
  */
 function mapCalculationError(err: unknown): { status: number; code: string; message: string } {
+  // Engine / period / TRN errors already carry their status and code.
+  if (err instanceof AppError) throw err;
   const message = (err as { message?: string })?.message || "Failed to calculate VAT return";
   if (/TRN/.test(message)) return { status: 400, code: "NO_TRN", message };
   if (/emirate/i.test(message)) return { status: 422, code: "EMIRATE_NOT_SET", message };
@@ -114,12 +123,13 @@ export function registerVATAutopilotRoutes(app: Express) {
 
       const { companyId } = params.data;
       const uid = userId(req);
-      if (!uid) return res.status(401).json({ message: "Unauthenticated" });
+      if (!uid) return res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
       const hasAccess = await storage.hasCompanyAccess(uid, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       // Optional period override via query string for historical calculations.
-      const period = parsePeriod(query.data);
+      const period = await parsePeriod(companyId, query.data);
 
       try {
         const calc = await calculateVatReturn(companyId, period);
@@ -147,9 +157,10 @@ export function registerVATAutopilotRoutes(app: Express) {
 
       const { companyId } = params.data;
       const uid = userId(req);
-      if (!uid) return res.status(401).json({ message: "Unauthenticated" });
+      if (!uid) return res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
       const hasAccess = await storage.hasCompanyAccess(uid, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
       const periods = await listPeriodsForCompany(companyId);
       res.json(periods);
     })
@@ -162,23 +173,25 @@ export function registerVATAutopilotRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const params = z
         .object({
-          companyId: z.string().uuid(),
-          periodId: z.string().uuid(),
+          companyId: z.string().guid(),
+          periodId: z.string().guid(),
         })
         .safeParse(req.params);
       if (!params.success) return badRequest(res, params.error);
 
       const { companyId, periodId } = params.data;
       const uid = userId(req);
-      if (!uid) return res.status(401).json({ message: "Unauthenticated" });
+      if (!uid) return res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
       const hasAccess = await storage.hasCompanyAccess(uid, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       const result = await pool.query(
         `SELECT * FROM vat_return_periods WHERE id = $1 AND company_id = $2`,
         [periodId, companyId]
       );
-      if (result.rows.length === 0) return res.status(404).json({ message: "Period not found" });
+      if (result.rows.length === 0)
+        return res.status(404).json({ message: "Period not found", code: "VAT_PERIOD_NOT_FOUND" });
       res.json(result.rows[0]);
     })
   );
@@ -187,15 +200,15 @@ export function registerVATAutopilotRoutes(app: Express) {
   app.post(
     "/api/vat/autopilot/adjustments",
     authMiddleware,
+    strictBody(adjustmentBodySchema, { allowServerOwned: ["companyId"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const body = adjustmentBodySchema.safeParse(req.body);
-      if (!body.success) return badRequest(res, body.error);
-
-      const { companyId, periodId, box, amount, reason } = body.data;
+      const { companyId, periodId, box, amount, reason } =
+        parsedBody<z.output<typeof adjustmentBodySchema>>(req);
       const uid = userId(req);
-      if (!uid) return res.status(401).json({ message: "Unauthenticated" });
+      if (!uid) return res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
       const hasAccess = await storage.hasCompanyAccess(uid, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
 
       // Service-layer also filters by company_id on the UPDATE — that's the
       // authoritative gate. The pre-check here only exists so we can surface a
@@ -210,8 +223,13 @@ export function registerVATAutopilotRoutes(app: Express) {
           userId: uid,
         });
         res.status(201).json(adjustment);
-      } catch (err: any) {
-        res.status(400).json({ message: err?.message || "Could not add adjustment" });
+      } catch (err: unknown) {
+        res
+          .status(400)
+          .json({
+            message: errorMessage(err) || "Could not add adjustment",
+            code: "VAT_ADJUSTMENT_FAILED",
+          });
       }
     })
   );
@@ -220,18 +238,28 @@ export function registerVATAutopilotRoutes(app: Express) {
   app.patch(
     "/api/vat/autopilot/periods/:periodId/status",
     authMiddleware,
+    strictBody(vatAutopilotStatusBody, { allowServerOwned: ["companyId", "status"] }),
     asyncHandler(async (req: Request, res: Response) => {
-      const params = z.object({ periodId: z.string().uuid() }).safeParse(req.params);
+      const params = z.object({ periodId: z.string().guid() }).safeParse(req.params);
       if (!params.success) return badRequest(res, params.error);
-      const body = statusBodySchema.safeParse(req.body);
-      if (!body.success) return badRequest(res, body.error);
 
       const { periodId } = params.data;
-      const { companyId, status, ftaReferenceNumber } = body.data;
+      const { companyId, status, ftaReferenceNumber, overrideReason } =
+        parsedBody<z.output<typeof vatAutopilotStatusBody>>(req);
       const uid = userId(req);
-      if (!uid) return res.status(401).json({ message: "Unauthenticated" });
+      if (!uid) return res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
       const hasAccess = await storage.hasCompanyAccess(uid, companyId);
-      if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+      if (!hasAccess)
+        return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
+      // E1 (J3-r2): one state machine. Submitting / filing a return goes through the VAT return
+      // flow (Returns tab), never a one-click flip of the period.
+      if (status === "submitted" || status === "accepted") {
+        return res.status(409).json({
+          message:
+            "Submit and file the VAT return from the Returns tab; a period cannot be marked submitted on its own.",
+          code: "USE_VAT_RETURN_FLOW",
+        });
+      }
 
       try {
         const summary = await updatePeriodStatus({
@@ -240,11 +268,28 @@ export function registerVATAutopilotRoutes(app: Express) {
           newStatus: status,
           userId: uid,
           ftaReferenceNumber,
+          overrideReason: overrideReason ?? null,
         });
-        if (!summary) return res.status(404).json({ message: "Period not found" });
+        if (!summary)
+          return res
+            .status(404)
+            .json({ message: "Period not found", code: "VAT_PERIOD_NOT_FOUND" });
+        await recordAudit({
+          userId: uid,
+          companyId,
+          action: `vat_period.status.${status}`,
+          entityType: "vat_return_period",
+          entityId: periodId,
+          after: { status, overrideReason: overrideReason ?? null },
+          req,
+        });
         res.json(summary);
-      } catch (err: any) {
-        res.status(400).json({ message: err?.message || "Could not update status" });
+      } catch (err: unknown) {
+        if (err instanceof DomainError) throw err;
+        res.status(400).json({
+          message: (err as Error)?.message || "Could not update status",
+          code: "INVALID_TRANSITION",
+        });
       }
     })
   );
@@ -255,12 +300,13 @@ export function registerVATAutopilotRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const uid = userId(req);
-      if (!uid) return res.status(401).json({ message: "Unauthenticated" });
+      if (!uid) return res.status(401).json({ message: "Unauthenticated", code: "AUTH_REQUIRED" });
       const query = dueDatesQuerySchema.safeParse(req.query);
       if (!query.success) return badRequest(res, query.error);
       if (query.data.companyId) {
         const hasAccess = await storage.hasCompanyAccess(uid, query.data.companyId);
-        if (!hasAccess) return res.status(403).json({ message: "Access denied" });
+        if (!hasAccess)
+          return res.status(403).json({ message: "Access denied", code: "COMPANY_ACCESS_DENIED" });
         const dueDates = await listDueDates([query.data.companyId]);
         return res.json(dueDates);
       }

@@ -20,13 +20,10 @@ export default tseslint.config(
       ".claire/**",
       // Vendored side projects and audit evidence — not product code.
       // They were contributing 361 lint errors that drowned real signal.
-      "najma-al-raeda-website/**",
-      "najma-raeda-site/**",
-      "najma-raeda-logo/**",
-      "teardown-evidence/**",
+      "sites/**",
+      "docs/archive/**",
       "node_modules.*/**",
       "brand/**",
-      "artifacts/**",
       "tools/**",
       "extensions/**",
       "tmp/**",
@@ -73,13 +70,44 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
-      // React Compiler rules from eslint-plugin-react-hooks v6+ are
-      // optimization hints, not correctness bugs. Keep them visible as
-      // warnings so the build/lint gate stays green on Railway.
+      "react-refresh/only-export-components": [
+        "warn",
+        {
+          allowConstantExport: true,
+          // Deliberate non-component exports that sit next to their component:
+          // shadcn/ui cva variants and context hooks, and framer-motion variants.
+          allowExportNames: [
+            "badgeVariants",
+            "buttonVariants",
+            "toggleVariants",
+            "useFormField",
+            "useSidebar",
+            "useActiveCompany",
+            "useRTL",
+            "fadeInUp",
+            "fadeInDown",
+            "fadeInLeft",
+            "fadeInRight",
+            "scaleIn",
+            "staggerContainer",
+            "staggerItem",
+            "hoverScale",
+            "hoverLift",
+          ],
+        },
+      ],
+      // React Compiler rules from eslint-plugin-react-hooks v6+. The lint gate
+      // runs with --max-warnings 0, so keep these at "warn" and fix (or
+      // justify with an inline disable) every hit.
       "react-hooks/set-state-in-effect": "warn",
       "react-hooks/static-components": "warn",
-      "react-hooks/preserve-manual-memoization": "warn",
+      // The React Compiler is not enabled (vite.config.ts uses plain
+      // @vitejs/plugin-react), so these two rules only explain why the
+      // compiler would skip a component (react-hook-form watch(),
+      // @tanstack/react-virtual, manual memoization); they report no bug in
+      // the code as it runs today. Re-enable them together with the compiler.
+      "react-hooks/preserve-manual-memoization": "off",
+      "react-hooks/incompatible-library": "off",
       "react-hooks/use-memo": "warn",
       "react-hooks/purity": "warn",
       "react-hooks/refs": "warn",
@@ -90,6 +118,15 @@ export default tseslint.config(
     files: ["server/**/*.ts", "shared/**/*.ts", "tests/**/*.ts", "drizzle.config.ts"],
     languageOptions: {
       globals: { ...globals.node },
+    },
+  },
+
+  {
+    // Server and shared code are fully typed: use real types, `unknown` plus
+    // narrowing, or a typed boundary helper instead of `any`.
+    files: ["server/**/*.ts", "shared/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "error",
     },
   },
 
