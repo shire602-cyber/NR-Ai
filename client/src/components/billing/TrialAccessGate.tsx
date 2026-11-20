@@ -61,7 +61,8 @@ export function TrialAccessGate({
       </div>
     );
   }
-  if (error || (companyId && !data)) {
+  // A missing billing endpoint resolves to null. An unresolved subscription has no data yet.
+  if (error || (companyId && data === undefined)) {
     return (
       <TrialRecoveryLayout>
         <div className="mx-auto max-w-md space-y-4 rounded-xl border bg-card p-6 text-start">

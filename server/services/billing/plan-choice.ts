@@ -491,23 +491,27 @@ export async function sendTrialReminders(now: Date = new Date()): Promise<Remind
       ? "انتهت الفترة التجريبية وأُقفلت مساحة عملك"
       : `تنتهي فترتك التجريبية في ${dateAr(end)}`;
     const bodyEn = ended
-      ? `Your free trial of ${r.company_name} ended on ${dateEn(end)}. Your workspace is locked until a paid plan is active. Your data is saved.`
+      ? `Your free trial of ${r.company_name} ended on ${dateEn(end)}. Your workspace is locked until a paid plan is active.`
       : `Your free trial of ${r.company_name} ends on ${dateEn(end)}.`;
     const bodyAr = ended
-      ? `انتهت فترتك التجريبية لشركة ${r.company_name} في ${dateAr(end)}. تبقى مساحة عملك مقفلة حتى تفعيل خطة مدفوعة. بياناتك محفوظة.`
+      ? `انتهت فترتك التجريبية لشركة ${r.company_name} في ${dateAr(end)}. تبقى مساحة عملك مقفلة حتى تفعيل خطة مدفوعة.`
       : `تنتهي فترتك التجريبية لشركة ${r.company_name} في ${dateAr(end)}.`;
     const text = [
       bodyEn,
       planEn,
       `Manage your plan: ${link}`,
-      "Your data stays safe and readable either way.",
+      ended
+        ? "Your data is kept safe. You can access it again once you choose and activate a paid plan."
+        : "Your data is kept safe and remains available through the end of your trial.",
       "",
       "---",
       "",
       bodyAr,
       planAr,
       `إدارة خطتك: ${link}`,
-      "تبقى بياناتك آمنة ومقروءة في الحالتين.",
+      ended
+        ? "تبقى بياناتك محفوظة بأمان. يمكنك الوصول إليها مجددًا بعد اختيار خطة مدفوعة وتفعيلها."
+        : "تبقى بياناتك محفوظة بأمان ومتاحة حتى نهاية فترتك التجريبية.",
     ].join("\n");
     const idempotencyKey = `${ended ? "trial-ended" : "trial-ending"}:${r.company_id}:${endDay}:${r.owner_email}`;
     const seen = await pq(`SELECT 1 FROM email_outbox WHERE idempotency_key = $1 LIMIT 1`, [

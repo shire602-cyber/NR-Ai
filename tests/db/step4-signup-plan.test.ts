@@ -541,6 +541,18 @@ describe("STEP4 trial reminders", () => {
     expect(await count(paid!.company.id, "trial-ending")).toBe(0);
     expect(await count(client.company.id, "trial-ending")).toBe(0);
 
+    const [expiryEmail] = await h.sql<{ text_body: string }>(
+      `SELECT text_body FROM email_outbox WHERE company_id = $1 AND idempotency_key LIKE 'trial-ended:%'`,
+      [ended!.company.id]
+    );
+    expect(expiryEmail.text_body).toContain(
+      "Your data is kept safe. You can access it again once you choose and activate a paid plan."
+    );
+    expect(expiryEmail.text_body).toContain(
+      "تبقى بياناتك محفوظة بأمان. يمكنك الوصول إليها مجددًا بعد اختيار خطة مدفوعة وتفعيلها."
+    );
+    expect(expiryEmail.text_body).not.toMatch(/safe and readable|آمنة ومقروءة/);
+
     await sendTrialReminders(new Date());
     expect(await count(ending!.company.id, "trial-ending")).toBe(1);
     expect(await count(ended!.company.id, "trial-ended")).toBe(1);
