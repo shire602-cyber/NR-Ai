@@ -14,6 +14,7 @@ export type PlanLimitCode = (typeof PLAN_LIMIT_CODES)[number];
 
 export interface PlanLimitDetail {
   code: PlanLimitCode;
+  companyId?: string;
   feature?: string;
   resource?: string;
   requiredPlan?: string;
@@ -31,6 +32,7 @@ export function planLimitDetail(body: Record<string, unknown>): PlanLimitDetail 
   const upgrade = (body.upgrade ?? {}) as { requiredPlan?: unknown };
   return {
     code: body.code as PlanLimitCode,
+    companyId: typeof body.companyId === "string" ? body.companyId : undefined,
     feature: typeof body.feature === "string" ? body.feature : undefined,
     resource: typeof body.resource === "string" ? body.resource : undefined,
     requiredPlan:

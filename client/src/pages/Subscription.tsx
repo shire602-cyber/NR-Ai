@@ -12,7 +12,7 @@ import {
 } from "@/components/marketing/plans";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { T } from "@/components/layout/T";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { usePlanChoiceActions, useSubscription, type ChosenPlan } from "@/hooks/useSubscription";
@@ -54,7 +54,7 @@ import {
 /*
  * Settings › Billing (WQ7). Plans, prices and limits come from shared/plans.ts through the
  * marketing plan list, so this page, /pricing, GET /api/billing/plans and the server gates agree.
- * Status card: trial (days left), active plan, or trial ended (read-only until a plan is chosen).
+ * Status card: trial (days left), active plan, or workspace locked pending plan activation.
  * While online checkout is not configured, choosing a plan writes to us and an NR admin sets it.
  */
 
@@ -302,6 +302,7 @@ export default function Subscription() {
     entitlement,
     planState,
     trial,
+    trialLocked,
     isLoading,
     checkoutAvailable,
     chosenPlan,
@@ -412,8 +413,9 @@ export default function Subscription() {
           ? t[planNameKey(paidPlan)]
           : t["pages.subscriptionFirmBilled"];
 
+  const Layout = trialLocked ? Fragment : SettingsLayout;
   return (
-    <SettingsLayout>
+    <Layout>
       <div className="space-y-6">
         <PageHeader
           eyebrow={t["pages.companyProfileEyebrow"]}
@@ -824,7 +826,7 @@ export default function Subscription() {
           </CardContent>
         </Card>
       </div>
-    </SettingsLayout>
+    </Layout>
   );
 }
 

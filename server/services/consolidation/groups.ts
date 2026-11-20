@@ -16,6 +16,12 @@ import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../../db";
 import { storage } from "../../storage";
 import { DomainError } from "../../errors";
+import { billingEnforced } from "../../middleware/featureGate";
+import {
+  assertTrialAccess,
+  bypassesTrialLock,
+  companyTrialLocked,
+} from "../../middleware/trialAccessPolicy";
 import {
   accounts,
   companies,
@@ -82,7 +88,11 @@ async function memberIds(groupId: string): Promise<string[]> {
 }
 
 /** 404 when the caller cannot see the parent; 403 when any member is inaccessible. */
-export async function assertCanViewGroup(userId: string, groupId: string): Promise<CompanyGroup> {
+export async function assertCanViewGroup(
+  user: Express.User,
+  groupId: string
+): Promise<CompanyGroup> {
+  const userId = user.id;
   const group = await loadGroup(groupId);
   if (!(await storage.hasCompanyAccess(userId, group.parentCompanyId))) {
     throw new DomainError("GROUP_NOT_FOUND", 404);
@@ -100,12 +110,18 @@ export async function assertCanViewGroup(userId: string, groupId: string): Promi
       "You need access to every company in the group to view it"
     );
   }
+  await Promise.all(
+    [...new Set([group.parentCompanyId, ...ids])].map((id) => assertTrialAccess(id, user))
+  );
   return group;
 }
 
-export async function assertCanManageGroup(userId: string, groupId: string): Promise<CompanyGroup> {
-  const group = await assertCanViewGroup(userId, groupId);
-  if (!(await hasCompanyPermission(userId, group.parentCompanyId, "settings.company"))) {
+export async function assertCanManageGroup(
+  user: Express.User,
+  groupId: string
+): Promise<CompanyGroup> {
+  const group = await assertCanViewGroup(user, groupId);
+  if (!(await hasCompanyPermission(user.id, group.parentCompanyId, "settings.company"))) {
     throw new DomainError(
       "PERMISSION_DENIED",
       403,
@@ -118,9 +134,20 @@ export async function assertCanManageGroup(userId: string, groupId: string): Pro
 
 // ─── Reads ─────────────────────────────────────────────────────────────────
 
-export async function listGroupsForUser(userId: string) {
+export async function listGroupsForUser(user: Express.User) {
+  const userId = user.id;
   const mine = await storage.getCompaniesByUserId(userId);
-  const companyIds = new Set<string>(mine.map((c) => c.id));
+  const lockedIds =
+    billingEnforced() && !bypassesTrialLock(user)
+      ? new Set(
+          (
+            await Promise.all(
+              mine.map(async ({ id }) => ((await companyTrialLocked(id)) ? id : null))
+            )
+          ).filter(Boolean)
+        )
+      : new Set();
+  const companyIds = new Set<string>(mine.map((c) => c.id).filter((id) => !lockedIds.has(id)));
   if (!companyIds.size) return [];
   const groups = await db
     .select()
@@ -129,6 +156,7 @@ export async function listGroupsForUser(userId: string) {
   const out = [];
   for (const g of groups) {
     const ids = await memberIds(g.id);
+    if (ids.some((id) => lockedIds.has(id))) continue;
     let canView = true;
     for (const id of ids) {
       if (!(await storage.hasCompanyAccess(userId, id))) {
@@ -263,14 +291,14 @@ function assertDates(from?: string | null, to?: string | null) {
 
 export async function addMember(args: {
   group: CompanyGroup;
-  userId: string;
+  user: Express.User;
   companyId: string;
   ownershipPercent: number;
   method: ConsolidationMethod;
   effectiveFrom?: string | null;
   effectiveTo?: string | null;
 }) {
-  if (!(await hasCompanyPermission(args.userId, args.companyId, "settings.company"))) {
+  if (!(await hasCompanyPermission(args.user.id, args.companyId, "settings.company"))) {
     throw new DomainError(
       "MEMBER_ACCESS_DENIED",
       403,
@@ -278,6 +306,7 @@ export async function addMember(args: {
       "Adding a company to a group needs the company settings permission on that company"
     );
   }
+  await assertTrialAccess(args.companyId, args.user);
   assertDates(args.effectiveFrom, args.effectiveTo);
   const existing = await db
     .select({ id: companyGroupMembers.id })

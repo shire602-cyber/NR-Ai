@@ -147,9 +147,7 @@ describe.each(["en", "ar"] as const)("Settings > Billing, chosen plan (%s)", (lo
     const block = q("subscription-chosen-plan")!;
     expect(block).not.toBeNull();
     const body = block.textContent!.replace(/[⁦-⁩]/g, "");
-    expect(body).toContain(
-      locale === "en" ? "You chose Professional." : "اخترت الخطة الاحترافية."
-    );
+    expect(body).toContain(locale === "en" ? "You chose Professional." : "اخترت الخطة الاحترافية.");
     expect(body).toContain(
       locale === "en"
         ? "Choosing it doesn't keep you working on its own. Activate it before your trial ends on"
@@ -237,7 +235,7 @@ describe.each(["en", "ar"] as const)("Settings > Billing, chosen plan (%s)", (lo
     expect(q("subscription-chosen-plan")).toBeNull();
   });
 
-  it("after the trial the chosen card offers Activate and the page says books are read-only", async () => {
+  it("after the trial the chosen card offers Activate and the page explains that access is locked", async () => {
     sub.state = trialState_({
       planState: "expired",
       entitlement: { state: "expired", planId: null, storedPlanId: "free", features: {} },

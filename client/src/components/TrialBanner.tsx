@@ -16,10 +16,10 @@ const WARN_DAYS = 3;
  *   running + no choice   days left, "choose a plan, then activate it"        -> See plans
  *   running + chosen      days left + "You chose X. Activate it before D"     -> See plan / Activate X (last days)
  *   running + requested   days left + "Activation requested on D. We'll confirm by email."  -> See plan
- *   ended   + no choice   read-only until a plan is chosen                     -> Choose a plan
- *   ended   + chosen      "Your trial ended on D. Read-only until X is activated"  -> Activate X
- *   ended   + requested   "Activation requested on D..." + still read-only    -> See plan
- * Data stays readable and nothing is deleted (shared/plans.ts). Pass `trial` / `chosen` /
+ *   ended   + no choice   locked until a plan is active                     -> Choose a plan
+ *   ended   + chosen      "Your trial ended on D. Locked until X is activated"  -> Activate X
+ *   ended   + requested   "Activation requested on D..." + still locked    -> See plan
+ * Data is kept (shared/plans.ts). Pass `trial` / `chosen` /
  * `activationRequestedAt` to render without the subscription query (tests).
  */
 export function TrialBanner({
@@ -33,7 +33,7 @@ export function TrialBanner({
   chosen?: ChosenPlan | null;
   activationRequestedAt?: string | null;
   className?: string;
-  /** Show only once the trial has ended (settings pages that are read-only after the trial). */
+  /** Show only once the trial has ended (settings pages that show the trial status). */
   endedOnly?: boolean;
 }) {
   const { t, locale } = useTranslation();

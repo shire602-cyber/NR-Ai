@@ -70,7 +70,7 @@
   "serverErrors.BANK_CONNECTION_NOT_FOUND": "The bank connection could not be found.",
   "serverErrors.BANK_FEED_ACCOUNT_NOT_LINKED": "Link this feed to a bank account before syncing.",
   "serverErrors.BANK_FEED_BALANCE_UNAVAILABLE": "The bank did not return a balance. Try again later.",
-  "serverErrors.BANK_FEED_NOT_CONFIGURED": "Live bank feeds are not set up yet. Import a statement file instead.",
+  "serverErrors.BANK_FEED_NOT_CONFIGURED": "Live bank feeds are coming later. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
   "serverErrors.BANK_FEED_NOT_SUPPORTED": "This connection is statement-only; live syncing is not available for it.",
   "serverErrors.BANK_FEED_NO_ACCOUNTS": "The bank returned no accounts for this connection.",
   "serverErrors.BANK_FEED_PROVIDER_ERROR": "The bank connection provider reported a problem. Try again in a few minutes.",
