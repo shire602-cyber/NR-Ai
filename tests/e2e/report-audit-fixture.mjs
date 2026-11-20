@@ -23,6 +23,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { BANK_STATEMENT_PROBE } from "./lib/bank-statement-evidence.mjs";
 
 const BASE = (process.env.BASE_URL || process.argv[2] || "").replace(/\/$/, "");
 if (!BASE) {
@@ -1344,16 +1345,18 @@ async function seedBank(companyId, account, dates, invoices, receipts) {
     `${dates.currentMid},Bank service fee,95,,320495,BANK-${runStamp}-003`,
     `${dates.today},Customer receipt Atlas Free Zone,,15000,335495,BANK-${runStamp}-004`,
   ];
-  await http("import bank statement", `/api/companies/${companyId}/bank-statements/import`, {
-    method: "POST",
-    body: { bankAccountId: bankAccount.id, csvContent: rows.join("\n") },
-  });
-  count("bankStatementImports");
-
-  const transactions = await http(
-    "bank transactions",
-    `/api/companies/${companyId}/bank-statements/transactions`
+  const imported = await http(
+    "import bank statement",
+    `/api/companies/${companyId}/bank-statements/import`,
+    {
+      method: "POST",
+      body: { bankAccountId: bankAccount.id, csvContent: rows.join("\n") },
+    }
   );
+  if (imported.imported > 0) count("bankStatementImports");
+
+  const transactionsPath = `/api/companies/${companyId}/bank-statements/transactions?bankAccountId=${bankAccount.id}`;
+  const transactions = await http("bank transactions", transactionsPath);
   const creditTxn = Array.isArray(transactions)
     ? transactions.find((txn) => safeNumber(txn.amount) > 0)
     : null;
@@ -1390,6 +1393,20 @@ async function seedBank(companyId, account, dates, invoices, receipts) {
       )
     ).then((matched) => matched && count("bankMatches"));
   }
+
+  const matched = await optional("verify reconciled statement rows", () =>
+    http("verify reconciled statement rows", transactionsPath)
+  );
+  const reconciledRows = Array.isArray(matched)
+    ? matched.filter(
+        (txn) => txn.reference?.startsWith(`BANK-${runStamp}-`) && txn.isReconciled === true
+      ).length
+    : 0;
+  summary.probes.push({
+    name: BANK_STATEMENT_PROBE,
+    passed: imported.imported > 0 && reconciledRows > 0,
+    detail: { imported: imported.imported, reconciledRows },
+  });
 }
 
 async function seedCommercialDocs(companyId, dates) {

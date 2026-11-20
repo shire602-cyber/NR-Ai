@@ -35,6 +35,33 @@ async function issued(t: Tenant) {
 }
 
 describe("W4-D email outbox", () => {
+  it("shows normalized subjects for legacy notification events while preserving delivery history", async () => {
+    const t = await h.createTenant();
+    const subject = "Bank feed sync failed";
+    const key = `notif:bank.sync_failed:fixture:${t.user.id}`;
+    const [legacy] = await h.sql<{ id: string }>(
+      `INSERT INTO email_outbox (company_id, to_address, subject, category, status, idempotency_key, sent_at)
+       VALUES ($1, $2, $3, 'notification', 'delivered', $4, now()) RETURNING id`,
+      [t.company.id, t.email, subject, key]
+    );
+    const [unrelated] = await h.sql<{ id: string }>(
+      `INSERT INTO email_outbox (company_id, to_address, subject, category, status, idempotency_key, sent_at)
+       VALUES ($1, $2, 'Task due tomorrow', 'notification', 'sent', $3, now()) RETURNING id`,
+      [t.company.id, t.email, `notif:task.due:fixture:${t.user.id}`]
+    );
+    const reply = await t.as.get(`/api/companies/${t.company.id}/email-outbox`);
+    expect(reply.status, reply.text).toBe(200);
+    const visible = reply.body.find((row: { id: string }) => row.id === legacy.id);
+    expect(visible).toMatchObject({ subject: "Review your bank statement", status: "delivered" });
+    expect(visible).not.toHaveProperty("idempotencyKey");
+    expect(reply.body.find((row: { id: string }) => row.id === unrelated.id)?.subject).toBe(
+      "Task due tomorrow"
+    );
+    expect(
+      await h.sql(`SELECT subject, status FROM email_outbox WHERE id = $1`, [legacy.id])
+    ).toEqual([{ subject, status: "delivered" }]);
+  });
+
   it("refreshes pre-upgrade notification and digest bodies on automatic and staff retries", async () => {
     const t = await h.createTenant();
     const { processOutbox, requeueOutboxMessage, setEmailTransportOverride } =
@@ -53,9 +80,13 @@ describe("W4-D email outbox", () => {
         paragraphs: {
           en: [
             renderDigestItem(old),
+            renderDigestItem({
+              title: "Bank statement imported",
+              message: "No new transactions from Emirates NBD (OFX/QFX format); 2 already imported",
+            }),
             renderDigestItem({ title: "Other update", message: "Keep this" }),
           ],
-          ar: ["لديك إشعاران."],
+          ar: ["لديك ثلاثة إشعارات."],
         },
       },
       "bilingual"
@@ -91,8 +122,9 @@ describe("W4-D email outbox", () => {
     const daily = deliveries.find((m) => m.outboxId === digest.id);
     expect(daily.html).toContain(bankStatementCopy.en);
     expect(daily.html).toContain("Other update</strong> — Keep this");
-    expect(daily.html).toContain("لديك إشعاران.");
-    expect(delivered.html + daily.html).not.toMatch(/bank feed|reconnect/i);
+    expect(daily.html).toContain("No new transactions from Emirates NBD; 2 already imported");
+    expect(daily.html).toContain("لديك ثلاثة إشعارات.");
+    expect(delivered.html + daily.html).not.toMatch(/bank feed|reconnect|OFX|QFX/i);
     const persisted = await h.sql(`SELECT html, status FROM email_outbox WHERE id IN ($1, $2)`, [
       immediate.id,
       digest.id,

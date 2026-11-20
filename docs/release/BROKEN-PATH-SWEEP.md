@@ -126,8 +126,8 @@ e-mail delivery), which stay behind their configured boundaries.
 | `/backup-restore (mobile)`                                  | trial, owner                                                | pass | pass | pass                                                 |
 | `/bank-accounts`                                            | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
 | `/bank-accounts (mobile)`                                   | trial, owner                                                | pass | pass | pass                                                 |
-| bank statement upload                                               | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
-| Bank statement upload (mobile)                                      | trial, owner                                                | pass | pass | pass                                                 |
+| [Historical route name redacted]                           | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
+| [Historical route name redacted] (mobile)                  | trial, owner                                                | pass | pass | pass                                                 |
 | [Historical callback route name redacted]                                      | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
 | [Historical callback route name redacted] (mobile)                             | trial, owner                                                | pass | pass | pass                                                 |
 | `/bank-reconciliation`                                      | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |

@@ -1,3 +1,5 @@
+export const BANK_AUTHORIZATION_RETURN_PATH = "/bank-feeds/callback";
+
 // Routes that ONLY SaaS customers (and admins) can access
 export const customerOnlyRoutes = [
   "/chart-of-accounts",

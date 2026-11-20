@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { StrictMode, act, createElement, type PropsWithChildren } from "react";
 import { createRoot } from "react-dom/client";
@@ -12,15 +13,20 @@ import BankFeeds from "../../client/src/pages/BankFeeds";
 import NotificationPreferences from "../../client/src/pages/NotificationPreferences";
 import { loadLocale, t, useI18n } from "../../client/src/lib/i18n";
 import * as queryApi from "../../client/src/lib/queryClient";
+import { BANK_AUTHORIZATION_RETURN_PATH } from "../../client/src/lib/route-config";
 import { bankStatementCopy, bankStatementTitle } from "../../shared/bank-statement-copy";
 import { withNotificationCopy } from "../../shared/server-copy";
+import { bankFeedCallbackBody } from "../../shared/validators/banking";
 
 vi.mock("@/components/layout/SettingsLayout", () => ({
   SettingsLayout: ({ children }: PropsWithChildren) => children,
 }));
-vi.mock("@/hooks/useDefaultCompany", () => ({
-  useDefaultCompany: () => ({ companyId: "fixture-company", isLoading: false }),
+const workspace = vi.hoisted(() => ({
+  companyId: "" as string | undefined,
+  isLoading: false,
+  error: null as Error | null,
 }));
+vi.mock("@/hooks/useDefaultCompany", () => ({ useDefaultCompany: () => workspace }));
 
 const prohibitedCopy =
   /\bbank[- ]feeds?\b|\blive (?:bank )?feeds?\b|\bopen[- ]banking\b|connect your bank|reconnect|الربط البنكي|مزامنة (?:الحساب|الخلاصة) البنكي/i;
@@ -30,6 +36,7 @@ describe("signed-in CSV statement wording", () => {
   let root: ReturnType<typeof createRoot>;
 
   beforeEach(() => {
+    Object.assign(workspace, { companyId: "fixture-company", isLoading: false, error: null });
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal(
       "ResizeObserver",
@@ -61,7 +68,7 @@ describe("signed-in CSV statement wording", () => {
     "shows CSV guidance on both legacy banking paths in %s",
     async (locale) => {
       await setLocale(locale);
-      for (const path of ["/bank-feeds", "/bank-feeds/callback?code=fixture&state=fixture"]) {
+      for (const path of ["/bank-feeds", "/bank-feeds/callback"]) {
         const { hook } = memoryLocation({ path });
         await act(async () =>
           root.render(createElement(Router, { hook }, createElement(BankFeeds)))
@@ -84,21 +91,101 @@ describe("signed-in CSV statement wording", () => {
       await setLocale(locale);
       const post = vi.spyOn(queryApi, "apiRequest").mockResolvedValue({ connections: [{}] });
       const codeField = locale === "ar" ? "entity_id" : "code";
+      const state = randomBytes(32).toString("base64url");
       window.history.replaceState(
         {},
         "",
-        `/bank-feeds/callback?${codeField}=fixture-code&state=fixture-state&provider=lean`
+        `/bank-feeds/callback?${codeField}=fixture-code&state=${state}&provider=lean`
       );
       await act(async () => root.render(createElement(StrictMode, null, createElement(BankFeeds))));
       expect(post).toHaveBeenCalledExactlyOnceWith(
         "POST",
         "/api/companies/fixture-company/bank-connections/callback",
-        { code: "fixture-code", state: "fixture-state" },
+        { code: "fixture-code", state },
         undefined,
         { queueWhenOffline: false }
       );
+      expect(bankFeedCallbackBody.parse(post.mock.calls[0][2])).toEqual({
+        code: "fixture-code",
+        state,
+      });
       expect(window.location.pathname + window.location.search).toBe("/bank-feeds");
       expect(container.textContent).toContain(bankStatementCopy[locale]);
+    }
+  );
+
+  it.each(["en", "ar"] as const)(
+    "keeps an unsubmitted return through a workspace retry in %s",
+    async (locale) => {
+      await setLocale(locale);
+      const post = vi.spyOn(queryApi, "apiRequest").mockResolvedValue({ connections: [{}] });
+      const render = () => root.render(createElement(StrictMode, null, createElement(BankFeeds)));
+      Object.assign(workspace, {
+        companyId: undefined,
+        isLoading: false,
+        error: new Error("temporary"),
+      });
+      const retry = vi
+        .spyOn(queryApi.queryClient, "refetchQueries")
+        .mockImplementation(async () => {
+          Object.assign(workspace, { companyId: "fixture-company", error: null });
+          render();
+        });
+      const state = randomBytes(32).toString("base64url");
+      window.history.replaceState({}, "", `/bank-feeds/callback?code=fixture-code&state=${state}`);
+      await act(async () => render());
+      expect(window.location.pathname + window.location.search).toBe("/bank-feeds/callback");
+      expect(post).not.toHaveBeenCalled();
+      expect(container.querySelector('[role="status"]')?.textContent).toBe(
+        t[locale]["banking.feeds.returnWorkspaceError"]
+      );
+      const button = container.querySelector("button");
+      expect(button?.textContent).toBe(t[locale]["banking.feeds.returnRetry"]);
+      await act(async () => button!.click());
+      expect(retry).toHaveBeenCalledOnce();
+      expect(post).toHaveBeenCalledOnce();
+      expect(bankFeedCallbackBody.parse(post.mock.calls[0][2])).toEqual({
+        code: "fixture-code",
+        state,
+      });
+      expect(window.location.pathname + window.location.search).toBe("/bank-feeds");
+    }
+  );
+
+  it.each(["en", "ar"] as const)(
+    "shows localized cancellation and cleans the URL in %s",
+    async (locale) => {
+      await setLocale(locale);
+      const post = vi.spyOn(queryApi, "apiRequest");
+      window.history.replaceState(
+        {},
+        "",
+        "/bank-feeds/callback?error=access_denied&error_description=fixture"
+      );
+      await act(async () => root.render(createElement(BankFeeds)));
+      expect(container.querySelector('[role="status"]')?.textContent).toBe(
+        t[locale]["banking.feeds.returnCancelled"]
+      );
+      expect(window.location.pathname + window.location.search).toBe("/bank-feeds/callback");
+      expect(container.textContent).toContain(bankStatementCopy[locale]);
+      expect(post).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(["en", "ar"] as const)(
+    "shows a localized failure after a rejected return in %s",
+    async (locale) => {
+      await setLocale(locale);
+      const post = vi.spyOn(queryApi, "apiRequest").mockRejectedValue(new Error("fixture denial"));
+      const state = randomBytes(32).toString("base64url");
+      window.history.replaceState({}, "", `/bank-feeds/callback?code=fixture-code&state=${state}`);
+      await act(async () => root.render(createElement(BankFeeds)));
+      expect(post).toHaveBeenCalledOnce();
+      expect(container.querySelector('[role="status"]')?.textContent).toBe(
+        t[locale]["banking.feeds.returnError"]
+      );
+      expect(container.textContent).not.toContain("fixture denial");
+      expect(window.location.pathname + window.location.search).toBe("/bank-feeds/callback");
     }
   );
 
@@ -141,6 +228,12 @@ describe("signed-in CSV statement wording", () => {
   );
 });
 
+it("keeps the configured example on the application's registered authorization path", () => {
+  const fixture = readFileSync(".env.example", "utf8").match(/^# BANK_FEED_REDIRECT_URIS=(\S+)/m);
+  expect(fixture).not.toBeNull();
+  expect(new URL(fixture![1]).pathname).toBe(BANK_AUTHORIZATION_RETURN_PATH);
+});
+
 it("replaces stored banking notification text before returning it to the client", () => {
   const notice = withNotificationCopy({
     eventKey: "bank.sync_failed:fixture",
@@ -156,11 +249,20 @@ it("keeps the audit, data map and both roadmap formats free of superseded wordin
   for (const file of [
     "docs/archive/2026-06/DEVELOPMENT_STATUS.md",
     "docs/archive/root/muhasibaisource20260611-audit.md",
+    "docs/archive/root/Digits-Platform-Research.md",
     "docs/archive/teardown-evidence/competitor-briefing.md",
     "docs/qa/2026-06-21-benchmark-audit/benchmark-run.json",
     "docs/security/data-map.md",
+    "docs/qa/2026-06-21-benchmark-audit/03-cfo-audit-report.md",
+    "tests/e2e/benchmark-audit.mjs",
+    "client/src/locales/en/onboarding.json",
+    "client/src/locales/ar/onboarding.json",
   ]) {
-    expect(readFileSync(file, "utf8"), file).not.toMatch(prohibitedCopy);
+    const text = readFileSync(file, "utf8");
+    expect(text, file).not.toMatch(prohibitedCopy);
+    expect(text, file).not.toMatch(
+      /bankConnectedDescription|bank account is already connected|حسابك البنكي مرتبط بالفعل|Named integrations: \*\*Chase/i
+    );
   }
   const benchmark = readFileSync("docs/qa/2026-06-21-benchmark-audit/benchmark-run.json", "utf8");
   expect(benchmark).toContain("[Historical copy redacted]");
@@ -173,9 +275,14 @@ it("keeps the audit, data map and both roadmap formats free of superseded wordin
     .toString("utf8")
     .replace(/<[^>]+>/g, " ");
   const pdf = execFileSync("pdftotext", [`${roadmap}.pdf`, "-"], { encoding: "utf8" });
+  const pageFour = execFileSync("pdftotext", ["-f", "4", "-l", "4", `${roadmap}.pdf`, "-"], {
+    encoding: "utf8",
+  });
+  expect(pageFour.replace(/\s+/g, " ")).toContain("financial-data authorization and processing");
   for (const contents of [source, pdf]) {
     const text = contents.replace(/\s+/g, " ");
     expect(text).toContain(bankStatementCopy.en);
     expect(text).not.toMatch(prohibitedCopy);
+    expect(text).not.toMatch(/bank connect\/sync/i);
   }
 });

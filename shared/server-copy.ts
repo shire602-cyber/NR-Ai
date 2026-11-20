@@ -115,16 +115,13 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   // Step 1 / F4: re-imports say what was skipped; the Arabic catalog entries use ICU plurals.
   T(
     "notification.bankStatementImportedSkipped.message",
-    "{count} transaction(s) imported from {bank} ({format} format); {skipped} already imported"
+    "{count} transaction(s) imported[ from {bank}]; {skipped} already imported"
   ),
   T(
     "notification.bankStatementNothingNew.message",
-    "No new transactions from {bank} ({format} format); {skipped} already imported"
+    "No new transactions[ from {bank}]; {skipped} already imported"
   ),
-  T(
-    "notification.bankStatementImported.message",
-    "{count} transaction(s) imported from {bank} ({format} format)"
-  ),
+  T("notification.bankStatementImported.message", "{count} transaction(s) imported[ from {bank}]"),
   T(
     "notification.receiptUploadedUnknown.message",
     "New receipt from unknown merchant[ for {amount}]"
@@ -343,6 +340,28 @@ export interface NotificationCopyDescriptor {
   messageParams: Record<string, string>;
 }
 
+const LEGACY_STATEMENT_IMPORT_MESSAGES = [
+  T(
+    "notification.bankStatementImportedSkipped.message",
+    "{count} transaction(s) imported from [{bank}] ({format} format); {skipped} already imported"
+  ),
+  T(
+    "notification.bankStatementNothingNew.message",
+    "No new transactions from [{bank}] ({format} format); {skipped} already imported"
+  ),
+  T(
+    "notification.bankStatementImported.message",
+    "{count} transaction(s) imported from [{bank}] ({format} format)"
+  ),
+];
+
+function legacyStatementImportCopy(n: { title: string; message: string }): CopyDescriptor | null {
+  if (!/^Bank statement imported$/i.test(n.title)) return null;
+  const copy = parseServerCopy(n.message, LEGACY_STATEMENT_IMPORT_MESSAGES);
+  if (copy) delete copy.params.format;
+  return copy;
+}
+
 /** Keys + params for a stored notification (old or new rows alike). */
 export function describeNotificationCopy(n: {
   title: string;
@@ -352,10 +371,12 @@ export function describeNotificationCopy(n: {
     ...NOTIFICATION_TITLE_TEMPLATES,
     ...LEGACY_NOTIFICATION_TITLE_TEMPLATES,
   ]);
-  const message = parseServerCopy(n.message, [
-    ...NOTIFICATION_MESSAGE_TEMPLATES,
-    ...LEGACY_NOTIFICATION_MESSAGE_TEMPLATES,
-  ]);
+  const message =
+    legacyStatementImportCopy(n) ??
+    parseServerCopy(n.message, [
+      ...NOTIFICATION_MESSAGE_TEMPLATES,
+      ...LEGACY_NOTIFICATION_MESSAGE_TEMPLATES,
+    ]);
   return {
     titleKey: title?.key ?? null,
     titleParams: title?.params ?? {},
@@ -1485,11 +1506,17 @@ export function isBankStatementReview(eventKey: string | null | undefined): bool
 export function normalizeNotificationCopy<
   T extends { title: string; message: string; eventKey?: string | null },
 >(n: T): T {
-  if (!isBankStatementReview(n.eventKey)) return n;
-  return {
-    ...n,
-    ...notificationCopy("notification.bankSyncFailed.title", "notification.bankSyncFailed.message"),
-  };
+  if (isBankStatementReview(n.eventKey)) {
+    return {
+      ...n,
+      ...notificationCopy(
+        "notification.bankSyncFailed.title",
+        "notification.bankSyncFailed.message"
+      ),
+    };
+  }
+  const legacy = legacyStatementImportCopy(n);
+  return legacy ? { ...n, message: renderServerCopy(legacy.key, legacy.params) } : n;
 }
 
 /** Attach `copy` (stable keys + params) to a notification for API/socket responses. */

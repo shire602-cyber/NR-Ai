@@ -14,6 +14,7 @@ import { isEnglishLine } from "../e2e/lib/latin-text.mjs";
 
 let container: HTMLDivElement;
 let root: Root;
+let validRows = 1;
 
 const json = (body: unknown) =>
   new Response(JSON.stringify(body), {
@@ -33,6 +34,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  validRows = 1;
   localStorage.setItem("muhasib_auth_hint", "1");
   window.history.pushState({}, "", "/bank-reconciliation?import=1");
   vi.stubGlobal(
@@ -48,8 +50,8 @@ beforeEach(() => {
           detectedFormatLabel: "CAMT.053",
           headers: [],
           totalRows: 1,
-          validRows: 1,
-          errorRows: 0,
+          validRows,
+          errorRows: 1 - validRows,
           warnings: [],
           sampleRows: [
             {
@@ -115,6 +117,17 @@ async function mountPage(locale: "en" | "ar") {
 
 const dialog = () => document.querySelector('[role="dialog"]') as HTMLElement | null;
 
+async function chooseStatement() {
+  const file = new File(["<Document/>"], "statement.xml");
+  Object.defineProperty(file, "arrayBuffer", {
+    value: async () => new Uint8Array([60, 62]).buffer,
+  });
+  const input = dialog()?.querySelector('[data-testid="input-bank-statement-file"]');
+  expect(input).not.toBeNull();
+  Object.defineProperty(input, "files", { value: [file] });
+  await act(async () => input!.dispatchEvent(new Event("change", { bubbles: true })));
+}
+
 describe("bank statement import dialog", () => {
   it("in Arabic: every line is Arabic, including the supported formats and the Import button", async () => {
     await mountPage("ar");
@@ -154,14 +167,7 @@ describe("bank statement import dialog", () => {
     "shows a localized label for a populated statement preview in %s",
     async (locale, label, dir) => {
       await mountPage(locale);
-      const file = new File(["<Document/>"], "statement.xml");
-      Object.defineProperty(file, "arrayBuffer", {
-        value: async () => new Uint8Array([60, 62]).buffer,
-      });
-      const input = dialog()?.querySelector('[data-testid="input-bank-statement-file"]');
-      expect(input).not.toBeNull();
-      Object.defineProperty(input, "files", { value: [file] });
-      await act(async () => input!.dispatchEvent(new Event("change", { bubbles: true })));
+      await chooseStatement();
       await vi.waitFor(() => {
         const mapper = dialog()?.querySelector('[data-testid="panel-statement-mapper"]');
         expect(mapper?.getAttribute("dir")).toBe(dir);
@@ -170,6 +176,20 @@ describe("bank statement import dialog", () => {
         );
         expect(mapper?.textContent).toContain("Sample transaction");
         expect(mapper?.textContent).not.toMatch(/MT940|CAMT\.053|OFX|QFX/);
+      });
+    }
+  );
+
+  it.each(["en", "ar"] as const)(
+    "shows row errors without a recognition badge in %s",
+    async (locale) => {
+      validRows = 0;
+      await mountPage(locale);
+      await chooseStatement();
+      await vi.waitFor(() => {
+        const mapper = dialog()?.querySelector('[data-testid="panel-statement-mapper"]');
+        expect(mapper).not.toBeNull();
+        expect(mapper?.querySelector('[data-testid="statement-recognized"]')).toBeNull();
       });
     }
   );

@@ -17,6 +17,7 @@ import { AppSidebar } from "@/components/layout/AppSidebar";
 import { PortalLayout } from "@/components/layout/PortalLayout";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { isAppSectionPath } from "@/components/layout/app-sections";
+import { BANK_AUTHORIZATION_RETURN_PATH } from "@/lib/route-config";
 import { ErrorBoundary, SectionBoundary } from "@/components/ErrorBoundary";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -566,6 +567,20 @@ function Router() {
     );
   }
 
+  // Authorization returns need to survive workspace lookup failures. The callback API applies
+  // the usual entitlement and permission checks before it accepts the return.
+  if (pathname === BANK_AUTHORIZATION_RETURN_PATH) {
+    return (
+      <ProtectedRoute>
+        <main className="mx-auto w-full max-w-3xl p-4 sm:p-8">
+          <Suspense fallback={<PageLoader variant="form" />}>
+            <Route path="/bank-feeds/callback" component={BankFeeds} />
+          </Suspense>
+        </main>
+      </ProtectedRoute>
+    );
+  }
+
   // Public routes (no sidebar)
   if (
     pathname === "/login" ||
@@ -763,7 +778,6 @@ function Router() {
             <Route path="/analytics" component={AnalyticsHub} />
             <Route path="/bank-reconciliation" component={BankReconciliation} />
             <Route path="/bank-accounts" component={BankAccounts} />
-            <Route path="/bank-feeds/callback" component={BankFeeds} />
             <Route path="/bank-feeds" component={BankFeeds} />
             <Route path="/evidence-center" component={EvidenceCenter} />
             <Route path="/vat-filing" component={VATFiling} />

@@ -21,7 +21,10 @@ import {
   type EmailOutboxStatus,
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
-import { refreshQueuedNotificationEmail } from "../services/notification-email-copy";
+import {
+  displayedOutboxSubject,
+  refreshQueuedNotificationEmail,
+} from "../services/notification-email-copy";
 import {
   EmailTransportError,
   activeProviderName,
@@ -351,11 +354,12 @@ export async function listOutboxForCompany(
 ) {
   const conds = [eq(emailOutbox.companyId, companyId)];
   if (opts.relatedEntityId) conds.push(eq(emailOutbox.relatedEntityId, opts.relatedEntityId));
-  return db
+  const rows = await db
     .select({
       id: emailOutbox.id,
       toAddress: emailOutbox.toAddress,
       subject: emailOutbox.subject,
+      idempotencyKey: emailOutbox.idempotencyKey,
       category: emailOutbox.category,
       relatedEntityType: emailOutbox.relatedEntityType,
       relatedEntityId: emailOutbox.relatedEntityId,
@@ -373,6 +377,10 @@ export async function listOutboxForCompany(
     .where(and(...conds))
     .orderBy(desc(emailOutbox.createdAt))
     .limit(Math.min(opts.limit ?? 100, 500));
+  return rows.map(({ idempotencyKey, ...row }: (typeof rows)[number]) => ({
+    ...row,
+    subject: displayedOutboxSubject({ ...row, idempotencyKey }),
+  }));
 }
 
 export type ProviderEventType = "delivered" | "bounced" | "complained" | "opened" | "failed";

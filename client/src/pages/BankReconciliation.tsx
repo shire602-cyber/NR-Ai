@@ -1393,9 +1393,11 @@ export default function BankReconciliation() {
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium text-sm">{strings.reviewTitle}</p>
-                  <Badge variant="secondary" data-testid="statement-recognized">
-                    {strings.recognized}
-                  </Badge>
+                  {statementPreview.validRows > 0 && (
+                    <Badge variant="secondary" data-testid="statement-recognized">
+                      {strings.recognized}
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {statementPreview.totalRows} {strings.rows} · {statementPreview.validRows}{" "}
