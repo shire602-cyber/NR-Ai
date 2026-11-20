@@ -9,6 +9,7 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { isPortalAppPath, namespacesForPath, setPublicBootScope } from "../../client/src/lib/i18n";
+import PortalApp from "../../client/src/PortalApp";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -74,25 +75,34 @@ function stub() {
   );
 }
 
-async function settle(rounds = 8) {
-  for (let i = 0; i < rounds; i++)
-    await act(async () => await new Promise((r) => setTimeout(r, 25)));
+async function waitForRender(assertRendered: () => void) {
+  await vi.waitFor(
+    async () => {
+      await act(async () => {});
+      assertRendered();
+    },
+    { timeout: 3000 }
+  );
 }
 
 async function mountAt(path: string) {
   window.history.replaceState(null, "", path);
-  const { default: PortalApp } = await import("../../client/src/PortalApp");
   await act(async () => {
     root.render(createElement(PortalApp));
   });
-  await settle();
 }
 
 const text = () => container.textContent ?? "";
 
 beforeAll(async () => {
   const { loadLocale } = await import("../../client/src/lib/i18n");
-  await Promise.all([loadLocale("en"), loadLocale("ar")]);
+  await Promise.all([
+    loadLocale("en"),
+    loadLocale("ar"),
+    import("../../client/src/pages/portal/PortalDashboard"),
+    import("../../client/src/pages/portal/PortalInvoices"),
+    import("../../client/src/pages/portal/PortalDocuments"),
+  ]);
 });
 
 beforeEach(async () => {
@@ -120,14 +130,10 @@ afterEach(() => {
 describe("client portal light root", () => {
   it("renders the dashboard with exactly one h1 and the stacked-card table", async () => {
     await mountAt("/client-portal/dashboard");
-    await vi.waitFor(
-      async () => {
-        await act(async () => {});
-        expect(container.querySelector("table.row-cards")?.textContent).toContain("INV-2026-00001");
-        expect(document.title).toBe("Dashboard · Al Noor Trading LLC");
-      },
-      { timeout: 10000 }
-    );
+    await waitForRender(() => {
+      expect(container.querySelector("table.row-cards")?.textContent).toContain("INV-2026-00001");
+      expect(document.title).toBe("Dashboard · Al Noor Trading LLC");
+    });
     expect(container.querySelectorAll("h1")).toHaveLength(1);
     expect(container.querySelector("h1")?.textContent).toBe("Overview");
     expect(container.querySelector('[data-testid="full-app"]')).toBeNull();
@@ -135,17 +141,19 @@ describe("client portal light root", () => {
 
   it("empty pages put their title under the page h1 as an h2 (no skipped level)", async () => {
     await mountAt("/client-portal/documents");
+    await waitForRender(() =>
+      expect(container.querySelector("h2")?.textContent).toMatch(/No documents/i)
+    );
     expect(container.querySelectorAll("h1")).toHaveLength(1);
     expect(container.querySelector("h3")).toBeNull();
-    expect(container.querySelector("h2")!.textContent).toMatch(/No documents/i);
   });
 
   it("mirrors in Arabic and keeps Arabic copy", async () => {
     const { useI18n } = await import("../../client/src/lib/i18n");
     act(() => useI18n.getState().setLocale("ar"));
     await mountAt("/client-portal/invoices");
+    await waitForRender(() => expect(text()).toContain("د.إ"));
     expect(document.documentElement.dir).toBe("rtl");
-    expect(text()).toContain("د.إ");
     expect(text()).not.toMatch(/Invoice number|Download PDF/);
   });
 
@@ -154,26 +162,29 @@ describe("client portal light root", () => {
     const { useI18n } = await import("../../client/src/lib/i18n");
     act(() => useI18n.getState().setLocale("ar"));
     await mountAt("/client-portal/invoices");
-    const buttons = [...container.querySelectorAll<HTMLButtonElement>("button")];
-    const dl = buttons.find((b) => /PDF/.test(b.getAttribute("aria-label") ?? b.textContent ?? ""));
-    expect(dl).toBeTruthy();
-    await act(async () => dl!.click());
-    await settle();
-    expect(document.body.textContent).toContain("تعذّر تنزيل ملف PDF");
+    const download = () =>
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+        /PDF/.test(button.getAttribute("aria-label") ?? button.textContent ?? "")
+      );
+    await waitForRender(() => expect(download()).toBeDefined());
+    await act(async () => download()!.click());
+    await waitForRender(() => expect(document.body.textContent).toContain("تعذّر تنزيل ملف PDF"));
   });
 
   it("hands the page to the full app for a signed-out visitor and for staff", async () => {
     me = { status: 401, body: {} };
     // refresh endpoint also refuses
     await mountAt("/client-portal/dashboard");
-    expect(container.querySelector('[data-testid="full-app"]')).not.toBeNull();
+    const fullAppIsRendered = () =>
+      expect(container.querySelector('[data-testid="full-app"]')).not.toBeNull();
+    await waitForRender(fullAppIsRendered);
     act(() => root.unmount());
     root = createRoot(container);
     me = { status: 200, body: { id: "u2", userType: "customer", isAdmin: false } };
     const { queryClient } = await import("../../client/src/lib/queryClient");
     queryClient.clear();
     await mountAt("/client-portal/dashboard");
-    expect(container.querySelector('[data-testid="full-app"]')).not.toBeNull();
+    await waitForRender(fullAppIsRendered);
   });
 });
 
