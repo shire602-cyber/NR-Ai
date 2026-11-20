@@ -22,7 +22,7 @@ import {
   vatReturnAdjustments,
   type BadDebtReliefClaim,
 } from "../../shared/schema";
-import { fromFils, toFils } from "../../shared/money";
+import { allocate, fromFils, toFils } from "../../shared/money";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { postJournal, reverseEntry, withLedgerTx } from "../ledger";
 import { recordAudit } from "../services/audit.service";
@@ -165,8 +165,8 @@ export async function createBadDebtReliefClaim(input: {
       totals.totalFils - (s.paidFils - writtenOffDoc) - s.creditedFils - s.appliedFils;
     const outstandingDoc = Math.min(unpaidDoc, writtenOffDoc);
     if (outstandingDoc <= 0) throw new DomainError("INVOICE_NOT_OUTSTANDING", 422);
-    // VAT element of the unpaid consideration: VAT x outstanding / total.
-    const vatDoc = Math.round((totals.vatFils * outstandingDoc) / totals.totalFils);
+    // Split the VAT in document currency, assigning a half-fil tie to the unpaid portion.
+    const [vatDoc] = allocate(totals.vatFils, [outstandingDoc, totals.totalFils - outstandingDoc]);
     const vatBase = toBaseFils(vatDoc, rate);
     const taxableBase = toBaseFils(outstandingDoc - vatDoc, rate);
     if (vatBase <= 0) throw new DomainError("INVOICE_HAS_NO_VAT", 422);

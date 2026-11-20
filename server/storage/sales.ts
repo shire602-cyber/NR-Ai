@@ -586,7 +586,7 @@ export class SalesStorage extends LedgerStorage {
         SELECT ${sql.raw(parts.paid)} AS paid,
                ${sql.raw(parts.credited)} AS credited,
                ${sql.raw(parts.applied)} AS applied
-          FROM (SELECT ${input.invoiceId}::uuid AS id) si
+          FROM (SELECT ${input.invoiceId}::uuid AS id, ${lockedInvoice.company_id}::uuid AS company_id) si
       `);
       const sumRows = rowsFromResult<{
         paid: number | string;

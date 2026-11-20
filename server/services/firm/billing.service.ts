@@ -20,6 +20,7 @@ import {
   engagements,
   firmEngagementLetters,
   firmEngagementTemplates,
+  firmTasks,
   firmTimeEntries,
   firms,
   serviceInvoiceLines,
@@ -29,7 +30,12 @@ import {
   type ServiceInvoice,
 } from "../../../shared/schema";
 import { normalizeCompanyRole } from "../../../shared/permissions";
-import type { FirmContext } from "./scope";
+import {
+  accessibleClientCondition,
+  accessibleClientsQuery,
+  canAccessFirmClient,
+  type FirmContext,
+} from "./scope";
 
 export const SERVICE_VAT_RATE = "0.05";
 
@@ -163,13 +169,19 @@ export async function listLettersForFirm(ctx: FirmContext, companyId: string) {
     .orderBy(desc(firmEngagementLetters.createdAt));
 }
 
+function firmLetterScope(ctx: FirmContext, letterId: string) {
+  return and(
+    eq(firmEngagementLetters.id, letterId),
+    eq(firmEngagementLetters.firmId, ctx.firmId),
+    inArray(firmEngagementLetters.companyId, accessibleClientsQuery(ctx))
+  );
+}
+
 async function letterForFirm(ctx: FirmContext, letterId: string) {
   const [row] = await db
     .select()
     .from(firmEngagementLetters)
-    .where(
-      and(eq(firmEngagementLetters.id, letterId), eq(firmEngagementLetters.firmId, ctx.firmId))
-    )
+    .where(firmLetterScope(ctx, letterId))
     .limit(1);
   if (!row) throw new DomainError("LETTER_NOT_FOUND", 404);
   return row;
@@ -183,8 +195,9 @@ export async function sendLetter(ctx: FirmContext, letterId: string) {
   const [row] = await db
     .update(firmEngagementLetters)
     .set({ status: "sent", sentAt: new Date(), esignStatus: esign.status, updatedAt: new Date() })
-    .where(eq(firmEngagementLetters.id, letterId))
+    .where(and(firmLetterScope(ctx, letterId), eq(firmEngagementLetters.status, "draft")))
     .returning();
+  if (!row) throw new DomainError("LETTER_NOT_DRAFT", 409);
   return { letter: row, delivery: "client_portal_only" as const, esign: esign.status };
 }
 
@@ -194,8 +207,9 @@ export async function withdrawLetter(ctx: FirmContext, letterId: string) {
   const [row] = await db
     .update(firmEngagementLetters)
     .set({ status: "withdrawn", updatedAt: new Date() })
-    .where(eq(firmEngagementLetters.id, letterId))
+    .where(and(firmLetterScope(ctx, letterId), eq(firmEngagementLetters.status, letter.status)))
     .returning();
+  if (!row) throw new DomainError("LETTER_STATE_CHANGED", 409);
   return row;
 }
 
@@ -336,95 +350,120 @@ export async function respondToLetter(
 
 // ─── Time tracking ───────────────────────────────────────────────────────────
 
-async function defaultRate(firmId: string, companyId: string): Promise<number> {
-  const [eng] = await db
-    .select({ rate: engagements.hourlyRate })
-    .from(engagements)
-    .where(
-      and(
-        eq(engagements.companyId, companyId),
-        eq(engagements.firmId, firmId),
-        eq(engagements.status, "active")
-      )
-    )
-    .limit(1);
-  return Number(eng?.rate ?? 0);
+type TimeEntryInput = {
+  companyId: string;
+  taskId?: string;
+  entryDate: string;
+  minutes: number;
+  description?: string;
+  billable?: boolean;
+  hourlyRate?: number;
+};
+
+function timeEntryTaskScope(ctx: FirmContext, companyId: string, taskId: string) {
+  return and(
+    eq(firmTasks.id, taskId),
+    eq(firmTasks.firmId, ctx.firmId),
+    eq(firmTasks.companyId, companyId)
+  );
 }
 
-export async function logTime(
+async function insertScopedTimeEntry(
   ctx: FirmContext,
-  input: {
-    companyId: string;
-    taskId?: string;
-    entryDate: string;
-    minutes: number;
-    description?: string;
-    billable?: boolean;
-    hourlyRate?: number;
+  input: TimeEntryInput,
+  startedAt: Date | null
+): Promise<FirmTimeEntry | undefined> {
+  const status = startedAt ? "running" : "logged";
+  return db.transaction(async (tx) => {
+    // Resolve client and task access in the write statement's snapshot. The task lock keeps
+    // a concurrent deletion from invalidating the foreign key before the insert.
+    const taskScope = input.taskId
+      ? sql`AND EXISTS (
+          SELECT 1 FROM ${firmTasks}
+           WHERE ${timeEntryTaskScope(ctx, input.companyId, input.taskId)} FOR KEY SHARE
+        )`
+      : sql``;
+    const { rows } = await tx.execute<{ id: string }>(sql`
+      INSERT INTO firm_time_entries
+        (firm_id, company_id, task_id, user_id, entry_date, minutes, description,
+         billable, hourly_rate, status, started_at)
+      SELECT ${ctx.firmId}, ${companies.id}, ${input.taskId ?? null}, ${ctx.userId},
+             ${input.entryDate}, ${input.minutes}, ${input.description ?? null},
+             ${input.billable ?? true}, COALESCE(${input.hourlyRate ?? null}::numeric, (
+               SELECT ${engagements.hourlyRate} FROM ${engagements}
+                WHERE ${engagements.firmId} = ${ctx.firmId}
+                  AND ${engagements.companyId} = ${companies.id}
+                  AND ${engagements.status} = 'active'
+                LIMIT 1
+             ), 0), ${status}, ${startedAt?.toISOString() ?? null}
+        FROM ${companies}
+       WHERE ${companies.id} = ${input.companyId} AND ${accessibleClientCondition(ctx)}
+             ${taskScope}
+      ON CONFLICT (user_id) WHERE status = 'running' DO NOTHING
+      RETURNING id
+    `);
+    if (!rows[0]) return undefined;
+    const [entry] = await tx
+      .select()
+      .from(firmTimeEntries)
+      .where(eq(firmTimeEntries.id, rows[0].id));
+    return entry;
+  });
+}
+
+async function throwIfTimeEntryTargetUnavailable(ctx: FirmContext, input: TimeEntryInput) {
+  if (!(await canAccessFirmClient(ctx, input.companyId))) {
+    throw new DomainError("CLIENT_NOT_FOUND", 404);
   }
-) {
-  const rate = input.hourlyRate ?? (await defaultRate(ctx.firmId, input.companyId));
-  const [row] = await db
-    .insert(firmTimeEntries)
-    .values({
-      firmId: ctx.firmId,
-      companyId: input.companyId,
-      taskId: input.taskId ?? null,
-      userId: ctx.userId,
-      entryDate: input.entryDate,
-      minutes: input.minutes,
-      description: input.description ?? null,
-      billable: input.billable ?? true,
-      hourlyRate: rate,
-      status: "logged",
-    })
-    .returning();
-  return row;
+  if (!input.taskId) return;
+  const [task] = await db
+    .select({ id: firmTasks.id })
+    .from(firmTasks)
+    .where(timeEntryTaskScope(ctx, input.companyId, input.taskId))
+    .limit(1);
+  if (!task) throw new DomainError("TASK_NOT_FOUND", 404);
+}
+
+export async function logTime(ctx: FirmContext, input: TimeEntryInput) {
+  const entry = await insertScopedTimeEntry(ctx, input, null);
+  if (entry) return entry;
+  await throwIfTimeEntryTargetUnavailable(ctx, input);
+  throw new DomainError("CONFLICT", 409);
 }
 
 export async function startTimer(
   ctx: FirmContext,
   input: { companyId: string; taskId?: string; description?: string; hourlyRate?: number }
 ) {
+  const now = new Date();
+  const entry = { ...input, entryDate: now.toISOString().slice(0, 10), minutes: 0 };
+  const row = await insertScopedTimeEntry(ctx, entry, now);
+  if (row) return row;
+
+  await throwIfTimeEntryTargetUnavailable(ctx, entry);
   const [running] = await db
     .select({ id: firmTimeEntries.id })
     .from(firmTimeEntries)
-    .where(and(eq(firmTimeEntries.userId, ctx.userId), eq(firmTimeEntries.status, "running")))
-    .limit(1);
-  if (running) throw new DomainError("TIMER_ALREADY_RUNNING", 409, { entryId: running.id });
-  const rate = input.hourlyRate ?? (await defaultRate(ctx.firmId, input.companyId));
-  const now = new Date();
-  const [row] = await db
-    .insert(firmTimeEntries)
-    .values({
-      firmId: ctx.firmId,
-      companyId: input.companyId,
-      taskId: input.taskId ?? null,
-      userId: ctx.userId,
-      entryDate: now.toISOString().slice(0, 10),
-      minutes: 0,
-      description: input.description ?? null,
-      billable: true,
-      hourlyRate: rate,
-      status: "running",
-      startedAt: now,
-    })
-    .returning();
-  return row;
-}
-
-export async function stopTimer(ctx: FirmContext, entryId: string, now: Date = new Date()) {
-  const [entry] = await db
-    .select()
-    .from(firmTimeEntries)
     .where(
       and(
-        eq(firmTimeEntries.id, entryId),
+        eq(firmTimeEntries.userId, ctx.userId),
         eq(firmTimeEntries.firmId, ctx.firmId),
-        eq(firmTimeEntries.userId, ctx.userId)
+        inArray(firmTimeEntries.companyId, accessibleClientsQuery(ctx)),
+        eq(firmTimeEntries.status, "running")
       )
     )
     .limit(1);
+  throw new DomainError("TIMER_ALREADY_RUNNING", 409, running && { entryId: running.id });
+}
+
+export async function stopTimer(ctx: FirmContext, entryId: string, now: Date = new Date()) {
+  const scope = and(
+    eq(firmTimeEntries.id, entryId),
+    eq(firmTimeEntries.firmId, ctx.firmId),
+    eq(firmTimeEntries.userId, ctx.userId),
+    inArray(firmTimeEntries.companyId, accessibleClientsQuery(ctx))
+  );
+  const [entry] = await db.select().from(firmTimeEntries).where(scope).limit(1);
   if (!entry) throw new DomainError("TIME_ENTRY_NOT_FOUND", 404);
   if (entry.status !== "running" || !entry.startedAt)
     throw new DomainError("TIMER_NOT_RUNNING", 409);
@@ -435,8 +474,9 @@ export async function stopTimer(ctx: FirmContext, entryId: string, now: Date = n
   const [row] = await db
     .update(firmTimeEntries)
     .set({ status: "logged", stoppedAt: now, minutes, updatedAt: now })
-    .where(eq(firmTimeEntries.id, entryId))
+    .where(and(scope, eq(firmTimeEntries.status, "running")))
     .returning();
+  if (!row) throw new DomainError("TIMER_NOT_RUNNING", 409);
   return row;
 }
 

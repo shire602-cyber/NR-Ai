@@ -287,7 +287,8 @@ const SKIP_PREFIXES = [
 ];
 
 function splitPath(path: string): string[] {
-  return path.split("?")[0].split("/").filter(Boolean);
+  // Express matches literal route segments case-insensitively.
+  return path.split("?")[0].toLowerCase().split("/").filter(Boolean);
 }
 
 function matchSegments(pattern: string[], segs: string[]): boolean {
@@ -335,6 +336,17 @@ export function resolvePermission(method: string, path: string): readonly Permis
 // ─── Company resolution ──────────────────────────────────────────────────
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function pathCompanyId(segment: string | undefined): string | null {
+  if (segment === undefined) return null;
+  let value: string;
+  try {
+    value = decodeURIComponent(segment);
+  } catch {
+    return null; // Express handles malformed path parameters.
+  }
+  return UUID_RE.test(value) ? value.toLowerCase() : null;
+}
 
 /** First path segment → SQL resolving the owning company of row $1. */
 const RESOURCES: Record<string, string> = {
@@ -398,14 +410,8 @@ const COMPANY_PARAM_PREFIXES: string[][] = [
 ];
 
 async function lookupCompany(sqlText: string, id: string): Promise<string | null> {
-  try {
-    const result = await pool.query(sqlText, [id]);
-    const row = result?.rows?.[0] as { company_id?: string | null } | undefined;
-    return row?.company_id ?? null;
-  } catch (err) {
-    log.warn({ err: (err as Error).message }, "company lookup failed");
-    return null;
-  }
+  const result = await pool.query<{ company_id: string | null }>(sqlText, [id]);
+  return result.rows[0]?.company_id ?? null;
 }
 
 function startsWith(segs: string[], prefix: string[]): boolean {
@@ -428,25 +434,25 @@ export async function resolveRequestCompanyWithSource(
   const row = (id: string | null) => (id ? { companyId: id, source: "row" as const } : null);
   const segs = splitPath(path);
   if (segs[0] === "companies" && segs[1]) {
-    return named(UUID_RE.test(segs[1]) ? segs[1].toLowerCase() : null);
+    return named(pathCompanyId(segs[1]));
   }
   for (const prefix of COMPANY_PARAM_PREFIXES) {
-    const id = segs[prefix.length];
-    if (startsWith(segs, prefix) && id && UUID_RE.test(id)) return named(id.toLowerCase());
+    if (!startsWith(segs, prefix)) continue;
+    const id = pathCompanyId(segs[prefix.length]);
+    if (id) return named(id);
   }
   // A period's status route addresses a row, while list/detail routes name the company first.
   if (startsWith(segs, ["vat", "autopilot", "periods"]) && segs[3] && segs[4] !== "status") {
     return named(UUID_RE.test(segs[3]) ? segs[3].toLowerCase() : null);
   }
   for (const [prefix, sqlText] of NESTED_RESOURCES) {
-    const id = segs[prefix.length];
-    if (startsWith(segs, prefix) && id && UUID_RE.test(id)) {
-      return row(await lookupCompany(sqlText, id));
-    }
+    if (!startsWith(segs, prefix)) continue;
+    const id = pathCompanyId(segs[prefix.length]);
+    if (id) return row(await lookupCompany(sqlText, id));
   }
-  const resource = RESOURCES[segs[0]];
-  if (resource && segs[1] && UUID_RE.test(segs[1])) {
-    return row(await lookupCompany(resource, segs[1]));
+  if (Object.hasOwn(RESOURCES, segs[0])) {
+    const id = pathCompanyId(segs[1]);
+    if (id) return row(await lookupCompany(RESOURCES[segs[0]], id));
   }
 
   const fromBody = (req.body as Record<string, unknown> | undefined)?.companyId;
@@ -518,7 +524,7 @@ export async function companyRolePolicy(
     // Defence in depth (STEP5): a portal customer never reaches company routes. The membership
     // lookup below already finds no role for them (storage.getUserRole ignores client_portal).
     if (user.userType === "client_portal") {
-      log.info({ userId: user.id, method: req.method, path: req.path }, "Portal user denied");
+      log.info({ requestId: req.id, method: req.method }, "Portal user denied");
       res.status(403).json({
         message: "Customer portal accounts cannot use the company app",
         code: "PORTAL_USER_APP_DENIED",
@@ -535,12 +541,12 @@ export async function companyRolePolicy(
     const details = { permission: permissions[0], permissions, role, companyId };
     if (mode === "report") {
       log.warn(
-        { userId: user.id, method: req.method, path: req.path, ...details },
+        { requestId: req.id, method: req.method, permissions, role },
         "RBAC (report mode): request would be denied"
       );
       return next();
     }
-    log.info({ userId: user.id, method: req.method, path: req.path, ...details }, "RBAC denied");
+    log.info({ requestId: req.id, method: req.method, permissions, role }, "RBAC denied");
     if (!role && resolved.source === "row") {
       // Another tenant's row id: answer like a missing row (tenant-scoped 404).
       res.status(404).json({ message: "Not found", code: "NOT_FOUND" });

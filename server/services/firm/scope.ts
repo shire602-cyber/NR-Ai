@@ -143,6 +143,11 @@ export function accessibleClientCondition(ctx: FirmContext): SQL {
   return and(base, assignedCondition(ctx.userId)) as SQL;
 }
 
+/** Reuse the client scope in row-id queries without loading every client ID. */
+export function accessibleClientsQuery(ctx: FirmContext) {
+  return db.select({ id: companies.id }).from(companies).where(accessibleClientCondition(ctx));
+}
+
 export async function listAccessibleClientIds(ctx: FirmContext): Promise<string[]> {
   const rows = (await db
     .select({ id: companies.id })

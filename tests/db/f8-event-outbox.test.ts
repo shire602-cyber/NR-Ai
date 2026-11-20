@@ -151,7 +151,7 @@ describe("F8 durable domain events", () => {
         "payroll.paid",
         () => {
           failing += 1;
-          throw new Error("downstream unavailable");
+          throw new Error("downstream unavailable for recipient@example.invalid");
         },
         { name: "f8.test.failing" }
       )
@@ -171,13 +171,13 @@ describe("F8 durable domain events", () => {
     await p.drainDomainEvents();
     let [row] = await outboxRows(entity);
     expect(row).toMatchObject({ id, status: "pending", attempts: 1 });
-    expect(row.last_error).toMatch(/downstream unavailable/);
+    expect(row.last_error).toBe("Handler failed: payroll.paid:f8.test.failing");
     const [{ delay }] = await h.sql<{ delay: number }>(
       `SELECT extract(epoch FROM next_attempt_at - updated_at)::int AS delay
          FROM domain_event_outbox WHERE id = $1`,
       [id]
     );
-    expect(delay).toBeGreaterThanOrEqual(25); // backoff, not an immediate hot loop
+    expect(delay).toBe(30);
     // Not due yet: the dispatcher leaves it alone.
     expect(await p.dispatchEventOutbox()).toEqual({});
 
@@ -239,6 +239,81 @@ describe("F8 durable domain events", () => {
     expect(calls).toBe(1);
     const [row] = await outboxRows(entity);
     expect(row.status).toBe("dispatched");
+  });
+
+  it("recovers an expired claim without letting the old worker overwrite a completed event", async () => {
+    const p = await platform();
+    const eventId = "10000000-0000-4000-8000-000000000001";
+    const entityId = "expired-lease-recovery";
+    await h.sql(
+      `INSERT INTO domain_event_outbox (id, event_type, entity_id, payload, max_attempts)
+       VALUES ($1, 'task.due', $2, $3, 3)`,
+      [eventId, entityId, JSON.stringify({ companyId: eventId, entityId, dueDate: today() })]
+    );
+
+    let signalEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      signalEntered = resolve;
+    });
+    let releaseOriginal!: () => void;
+    const release = new Promise<void>((resolve) => {
+      releaseOriginal = resolve;
+    });
+    let calls = 0;
+    offs.push(
+      p.onDomainEvent(
+        "task.due",
+        async () => {
+          if (++calls !== 1) return;
+          signalEntered();
+          await release;
+          throw new Error("The original worker completed after losing its lease");
+        },
+        { name: "f8.test.stale" }
+      )
+    );
+
+    const original = p.dispatchDomainEvent(eventId);
+    try {
+      const outcome = await Promise.race([entered, original]);
+      expect(outcome).toBeUndefined();
+      await h.sql("UPDATE domain_event_outbox SET locked_until = now() WHERE id = $1", [eventId]);
+      expect(await p.dispatchDomainEvent(eventId)).toBe("dispatched");
+    } finally {
+      releaseOriginal();
+      await original.catch(() => {});
+    }
+
+    expect(await original).toBeNull();
+    expect(calls).toBe(2);
+    const [row] = await outboxRows(entityId);
+    expect(row).toMatchObject({ status: "dispatched", attempts: 2, last_error: null });
+  });
+
+  it("dead-letters an expired last attempt without calling handlers again", async () => {
+    const p = await platform();
+    const eventId = "10000000-0000-4000-8000-000000000002";
+    const entityId = "expired-final-attempt";
+    let calls = 0;
+    offs.push(
+      p.onDomainEvent("task.due", () => void (calls += 1), { name: "f8.test.final-attempt" })
+    );
+    await h.sql(
+      `INSERT INTO domain_event_outbox
+         (id, event_type, entity_id, payload, status, attempts, max_attempts, locked_until)
+       VALUES ($1, 'task.due', $2, $3, 'dispatching', 1, 1, now() - interval '1 second')`,
+      [eventId, entityId, JSON.stringify({ companyId: eventId, entityId, dueDate: today() })]
+    );
+
+    expect(await p.dispatchEventOutbox()).toEqual({ dead: 1 });
+    expect(await p.dispatchDomainEvent(eventId)).toBeNull();
+    expect(calls).toBe(0);
+    const [row] = await outboxRows(entityId);
+    expect(row).toMatchObject({
+      status: "dead",
+      attempts: 1,
+      last_error: "Final delivery attempt expired",
+    });
   });
 
   it("[F8-02] the dispatcher is a registered job", async () => {

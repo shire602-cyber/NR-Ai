@@ -21,6 +21,7 @@ vi.mock("../../server/db", () => {
   };
 });
 
+import { pool } from "../../server/db";
 import { requireFirmRole, getAccessibleCompanyIds } from "../../server/middleware/rbac";
 import {
   COMPANY_ROLES,
@@ -35,6 +36,7 @@ import {
   assertDifferentActor,
   rbacMode,
   resolvePermission,
+  resolveRequestCompany,
 } from "../../server/middleware/companyRolePolicy";
 
 function makeRes(): Response {
@@ -272,4 +274,19 @@ describe("maker-checker helper", () => {
     expect(() => assertDifferentActor("u1", "u1")).toThrow(/cannot also approve/);
     expect(() => assertDifferentActor("u1", "u1", { allowSingleOwner: true })).not.toThrow();
   });
+});
+
+it("propagates resource ownership lookup errors before the authorization decision", async () => {
+  const missingDatabase = new Error("database unavailable");
+  vi.mocked(pool.query).mockRejectedValueOnce(missingDatabase);
+  await expect(
+    resolveRequestCompany({} as Request, "/invoices/11111111-1111-4111-8111-111111111111")
+  ).rejects.toBe(missingDatabase);
+});
+
+it("applies the same permissions to mixed-case literals and canonicalizes company identifiers", async () => {
+  const companyId = "a1111111-1111-4111-8111-111111111111";
+  const path = "/Companies/%411111111-1111-4111-8111-111111111111/BACKUPS";
+  expect(resolvePermission("GET", path)).toEqual(["backups.manage"]);
+  await expect(resolveRequestCompany({} as Request, path)).resolves.toBe(companyId);
 });

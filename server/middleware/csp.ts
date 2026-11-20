@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import { z } from "zod";
 import type { Request, Response, NextFunction } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import { isProduction } from "../config/env";
@@ -133,7 +132,26 @@ export function buildCspReportOnlyDirectives() {
   };
 }
 
-const cspReportBodySchema = z.record(z.string(), z.unknown());
+const cspReportDirectives = new Set([
+  "base-uri",
+  "connect-src",
+  "default-src",
+  "font-src",
+  "form-action",
+  "frame-ancestors",
+  "frame-src",
+  "img-src",
+  "manifest-src",
+  "media-src",
+  "object-src",
+  "script-src",
+  "script-src-attr",
+  "script-src-elem",
+  "style-src",
+  "style-src-attr",
+  "style-src-elem",
+  "worker-src",
+]);
 
 /**
  * CSP violation report endpoint. The browser POSTs JSON describing the
@@ -141,24 +159,11 @@ const cspReportBodySchema = z.record(z.string(), z.unknown());
  * and any downstream log aggregator without spamming at error level.
  */
 export function cspReportHandler(req: Request, res: Response): void {
-  // Browser-generated, unauthenticated and only logged: accept any JSON object, nothing is stored.
-  const parsed = cspReportBodySchema.safeParse(req.body);
-  const body = parsed.success ? parsed.data : {};
-  const nested = body["csp-report"];
-  const report: Record<string, unknown> =
-    nested && typeof nested === "object" ? (nested as Record<string, unknown>) : body;
-  log.warn(
-    {
-      blockedUri: report["blocked-uri"],
-      violatedDirective: report["violated-directive"],
-      effectiveDirective: report["effective-directive"],
-      documentUri: report["document-uri"],
-      sourceFile: report["source-file"],
-      lineNumber: report["line-number"],
-      ip: req.ip,
-      ua: req.headers["user-agent"],
-    },
-    "CSP violation reported"
-  );
+  // CSP reports may include full URLs and are also accepted from unauthenticated clients.
+  const report = req.body?.["csp-report"] ?? req.body;
+  const directive = report?.["effective-directive"];
+  if (typeof directive === "string" && cspReportDirectives.has(directive)) {
+    log.warn({ requestId: req.id, directive }, "CSP violation reported");
+  }
   res.status(204).end();
 }

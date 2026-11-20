@@ -28,6 +28,24 @@ describe("R01-10 per-user budgets after authentication", () => {
     expect((await cheapWrite(b)).status).not.toBe(429);
   });
 
+  it("shares one signed-in budget across company and query contexts", async () => {
+    const tenant = await h.createTenant({ name: "SharedRateBudget" });
+    const other = await h.createSecondTenant({ name: "OtherRateContext" });
+    await h.setRateLimits({ api: 2 });
+    const endpoint = `/api/companies/${tenant.company.id}/customer-contacts/import-preview`;
+
+    expect((await tenant.as.post(endpoint, {})).status).not.toBe(429);
+    expect((await tenant.as.post(`${endpoint}?companyId=${other.company.id}`, {})).status).not.toBe(
+      429
+    );
+    const response = await tenant.as.post(
+      `/api/companies/${other.company.id}/customer-contacts/import-preview`,
+      {}
+    );
+    expect(response.status).toBe(429);
+    expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
+
   it("R01-10: a refresh token or forged bearer does not buy a per-user bucket", async () => {
     const a = await h.createTenant({ name: "NatForge" });
     await h.setRateLimits({ api: 2 });

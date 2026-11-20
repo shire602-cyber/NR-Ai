@@ -100,6 +100,164 @@ describe("W5-D firm practice management", () => {
     expect(denied.status).toBe(403);
   });
 
+  it("scopes request reviews and engagement actions to a staff member's assigned clients", async () => {
+    const owner = await nrOwner();
+    const staff = await nrStaff("firm_admin", "ScopedAdmin");
+    const assigned = await createClient(owner, "Assigned Review Client");
+    const other = await createClient(owner, "Unassigned Review Client");
+    expect(
+      (
+        await owner.as.post(`/api/firm/clients/${assigned.id}/assign-staff`, {
+          staffUserId: staff.user.id,
+          action: "assign",
+        })
+      ).status
+    ).toBe(200);
+
+    const colleague = await nrStaff("viewer", "ScopedColleague");
+    expect(
+      (
+        await owner.as.post(`/api/firm/clients/${other.id}/assign-staff`, {
+          staffUserId: colleague.user.id,
+          action: "assign",
+        })
+      ).status
+    ).toBe(200);
+
+    const roster = await staff.as.get("/api/firm/staff");
+    expect(roster.status).toBe(200);
+    expect(roster.body.find((member: { id: string }) => member.id === staff.user.id)).toMatchObject(
+      { assignedClients: [{ companyId: assigned.id }] }
+    );
+    expect(
+      roster.body.find((member: { id: string }) => member.id === colleague.user.id)
+    ).toMatchObject({ assignedClients: [], assignedClientCount: 0 });
+    expect(roster.text).not.toContain(other.id);
+
+    for (const [client, allowed] of [
+      [assigned, true],
+      [other, false],
+    ] as const) {
+      const requests = await owner.as.post(`/api/firm/clients/${client.id}/requests`, {
+        items: [{ title: "Bank statements" }],
+      });
+      const letters = await owner.as.post(`/api/firm/clients/${client.id}/engagement-letters`, {
+        title: "Engagement",
+      });
+      expect(requests.status).toBe(201);
+      expect(letters.status).toBe(201);
+      const task = await owner.as.post("/api/firm/tasks", {
+        companyId: client.id,
+        title: "Review bank statements",
+        dueDate: "2026-11-20",
+      });
+      expect(task.status).toBe(201);
+      const taskId = task.body.task.id;
+      expect((await staff.as.patch(`/api/firm/tasks/${taskId}`, { status: "done" })).status).toBe(
+        allowed ? 200 : 404
+      );
+      expect(await h.sql("SELECT status FROM firm_tasks WHERE id = $1", [taskId])).toEqual([
+        { status: allowed ? "done" : "open" },
+      ]);
+      const requestId = requests.body.requests[0].id;
+      const letterId = letters.body.letter.id;
+      expect(
+        (
+          await staff.as.post(`/api/firm/requests/${requestId}/review`, {
+            decision: "cancel",
+          })
+        ).status
+      ).toBe(allowed ? 200 : 404);
+      const url = `/api/firm/engagement-letters/${letterId}`;
+      expect((await staff.as.post(`${url}/send`)).status).toBe(allowed ? 200 : 404);
+      expect((await staff.as.post(`${url}/withdraw`)).status).toBe(allowed ? 200 : 404);
+      expect(
+        await h.sql("SELECT status FROM firm_document_requests WHERE id = $1", [requestId])
+      ).toEqual([{ status: allowed ? "cancelled" : "requested" }]);
+      expect(
+        await h.sql("SELECT status FROM firm_engagement_letters WHERE id = $1", [letterId])
+      ).toEqual([{ status: allowed ? "withdrawn" : "draft" }]);
+    }
+  });
+
+  it("validates firm task and timer scopes before reading or writing", async () => {
+    const owner = await nrOwner();
+    const first = await createClient(owner, "Timer Scope One");
+    const second = await createClient(owner, "Timer Scope Two");
+    const date = "2026-11-20";
+    const task = await owner.as.post("/api/firm/tasks", {
+      companyId: first.id,
+      title: "Review task",
+      dueDate: date,
+    });
+    expect(task.status).toBe(201);
+    const taskId = task.body.task.id;
+
+    for (const url of [
+      "/api/firm/tasks?from=2026-02-30",
+      "/api/firm/tasks?from=2026-11-20&to=2026-11-19",
+      "/api/firm/tasks?status=unknown",
+      `/api/firm/time-entries?companyId=${first.id}&companyId=${second.id}`,
+    ]) {
+      const result = await owner.as.get(url);
+      expect(result.status).toBe(400);
+      expect(result.body.code).toBe("VALIDATION_ERROR");
+    }
+
+    const log = { taskId, companyId: second.id, entryDate: date, minutes: 15 };
+    expect((await owner.as.post("/api/firm/time-entries", log)).status).toBe(404);
+    expect(
+      (
+        await owner.as.post("/api/firm/time-entries/start", {
+          taskId,
+          companyId: second.id,
+        })
+      ).status
+    ).toBe(404);
+    expect(
+      await h.sql("SELECT id FROM firm_time_entries WHERE company_id = $1", [second.id])
+    ).toEqual([]);
+    expect(
+      (await owner.as.post("/api/firm/time-entries", { ...log, companyId: first.id })).status
+    ).toBe(201);
+
+    const staff = await nrStaff("preparer", "ScopedPreparer");
+    const { resolveFirmContext } = await import("../../server/services/firm/scope");
+    const { logTime, startTimer } = await import("../../server/services/firm/billing.service");
+    const ctx = await resolveFirmContext({ id: staff.user.id });
+    expect(ctx).not.toBeNull();
+    const assignments = `/api/firm/clients/${first.id}/assign-staff`;
+    const assignment = { staffUserId: staff.user.id, action: "assign" };
+    expect((await owner.as.post(assignments, assignment)).status).toBe(200);
+    const starts = await Promise.all(
+      Array.from({ length: 2 }, () =>
+        staff.as.post("/api/firm/time-entries/start", { companyId: first.id, taskId })
+      )
+    );
+    expect(starts.map(({ status }) => status).sort()).toEqual([201, 409]);
+    const timer = starts.find(({ status }) => status === 201)!;
+    expect(starts.find(({ status }) => status === 409)?.body.details).toEqual({
+      entryId: timer.body.entry.id,
+    });
+    expect((await owner.as.post(assignments, { ...assignment, action: "unassign" })).status).toBe(
+      200
+    );
+    // The write must recheck access even if the service has a previously resolved firm context.
+    await expect(logTime(ctx!, { ...log, companyId: first.id })).rejects.toMatchObject({
+      code: "CLIENT_NOT_FOUND",
+    });
+    await expect(startTimer(ctx!, { companyId: first.id, taskId })).rejects.toMatchObject({
+      code: "CLIENT_NOT_FOUND",
+    });
+    const stop = `/api/firm/time-entries/${timer.body.entry.id}/stop`;
+    expect((await staff.as.post(stop)).status).toBe(404);
+    expect(
+      await h.sql("SELECT status FROM firm_time_entries WHERE id = $1", [timer.body.entry.id])
+    ).toEqual([{ status: "running" }]);
+    expect((await owner.as.post(assignments, assignment)).status).toBe(200);
+    expect((await staff.as.post(stop)).status).toBe(200);
+  });
+
   it("[R15-04] a duplicate client differing only by case or spacing is 409", async () => {
     const owner = await nrOwner();
     await createClient(owner, "Agent15 Client One LLC");

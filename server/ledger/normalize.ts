@@ -12,7 +12,7 @@
  *   - dates must be real calendar dates in 1900..9999 and, unless allowed,
  *     not after today (UTC).
  */
-import { MoneyError, toFils, type Rounding } from "../../shared/money";
+import { MAX_FILS, MoneyError, roundHalfUp, toFils, type Rounding } from "../../shared/money";
 import { DomainError } from "../errors";
 import type {
   EntryKind,
@@ -113,7 +113,7 @@ function filsField(value: unknown, field: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value)) {
     fail("INVALID_AMOUNT", `${field} must be an integer number of fils`, { field });
   }
-  if (Math.abs(value) > 999_999_999_999_999) {
+  if (Math.abs(value) > MAX_FILS) {
     fail("INVALID_AMOUNT", `${field} exceeds the numeric(15,2) range`, {
       field,
       reason: "MONEY_OUT_OF_RANGE",
@@ -141,7 +141,7 @@ function legacyRate(value: unknown): string | null {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
-  const s = n.toFixed(6).replace(/\.?0+$/, "");
+  const s = roundHalfUp(n, 6).replace(/\.?0+$/, "");
   return Number(s) > 0 ? s : null;
 }
 
@@ -157,11 +157,15 @@ export function normalizeLine(
       line: index,
     });
   }
-  const debit =
-    amountToFils(line.debit, `${p}.debit`, rounding) + filsField(line.debitFils, `${p}.debitFils`);
-  const credit =
+  const debit = filsField(
+    amountToFils(line.debit, `${p}.debit`, rounding) + filsField(line.debitFils, `${p}.debitFils`),
+    `${p}.debit`
+  );
+  const credit = filsField(
     amountToFils(line.credit, `${p}.credit`, rounding) +
-    filsField(line.creditFils, `${p}.creditFils`);
+      filsField(line.creditFils, `${p}.creditFils`),
+    `${p}.credit`
+  );
   if (debit < 0 || credit < 0) {
     fail(
       "NEGATIVE_JOURNAL_AMOUNT",
@@ -295,14 +299,27 @@ export function assertLinesBalanced(
   lines: NormalizedLine[],
   opts: { allowSameAccount?: boolean } = {}
 ): { debitFils: number; creditFils: number } {
+  if (lines.length < 2) {
+    fail("TOO_FEW_LINES", "A journal entry needs at least one debit and one credit line");
+  }
   let debitFils = 0;
   let creditFils = 0;
-  for (const l of lines) {
+  for (const [index, l] of lines.entries()) {
+    if (l.debitFils < 0 || l.creditFils < 0) {
+      fail("NEGATIVE_JOURNAL_AMOUNT", "Journal line amounts cannot be negative", { line: index });
+    }
+    if (l.debitFils > 0 && l.creditFils > 0) {
+      fail("LINE_HAS_BOTH_SIDES", "A journal line can only have one positive side", {
+        line: index,
+      });
+    }
     debitFils += l.debitFils;
     creditFils += l.creditFils;
   }
-  if (lines.length < 2) {
-    fail("TOO_FEW_LINES", "A journal entry needs at least one debit and one credit line");
+  if (!Number.isSafeInteger(debitFils) || !Number.isSafeInteger(creditFils)) {
+    fail("INVALID_AMOUNT", "Journal totals exceed the supported range", {
+      reason: "MONEY_OUT_OF_RANGE",
+    });
   }
   if (debitFils !== creditFils) {
     fail(

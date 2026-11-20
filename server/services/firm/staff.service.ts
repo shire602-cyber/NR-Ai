@@ -20,6 +20,7 @@ import {
 } from "../../../shared/schema";
 import { firmRoleHasPermission, isFirmRole, type FirmRole } from "../../../shared/access";
 import {
+  accessibleClientCondition,
   grantCompanyAccess,
   isFirmClient,
   listFirmMembers,
@@ -71,21 +72,14 @@ export async function listFirmStaff(ctx: FirmContext): Promise<FirmStaffRow[]> {
       })
       .from(firmStaffAssignments)
       .innerJoin(companies, eq(companies.id, firmStaffAssignments.companyId))
-      .where(inArray(firmStaffAssignments.userId, ids)) as Promise<
-      Array<StaffAssignmentRow & { userId: string }>
-    >,
+      .where(
+        and(inArray(firmStaffAssignments.userId, ids), accessibleClientCondition(ctx))
+      ) as Promise<Array<StaffAssignmentRow & { userId: string }>>,
   ]);
   const profileById = new Map(profiles.map((p) => [p.id, p]));
-  // Only assignments on this firm's clients are reported.
-  const clientIds = new Set<string>();
-  for (const a of assignments) {
-    if (!clientIds.has(a.companyId) && (await isFirmClient(ctx, a.companyId))) {
-      clientIds.add(a.companyId);
-    }
-  }
   return members.map((m) => {
     const mine = assignments
-      .filter((a) => a.userId === m.userId && clientIds.has(a.companyId))
+      .filter((a) => a.userId === m.userId)
       .map(({ userId: _u, ...rest }) => rest);
     return {
       id: m.userId,

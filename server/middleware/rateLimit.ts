@@ -93,7 +93,7 @@ export class SlidingWindowStore {
 // ─── Request identity (R01-10) ──────────────────────────────────────────────
 
 export type RateLimitIdentity =
-  | { kind: "user"; userId: string; companyId: string | null; key: string }
+  | { kind: "user"; userId: string; key: string }
   | { kind: "ip"; ip: string; key: string };
 
 const IDENTITY = Symbol.for("muhasib.rateLimitIdentity");
@@ -102,19 +102,11 @@ export function clientIp(req: Request): string {
   return req.ip || req.socket?.remoteAddress || "unknown";
 }
 
-function companyIdFromRequest(req: Request): string | null {
-  const url = req.originalUrl || req.url || "";
-  const m = /^\/api\/companies\/([0-9a-fA-F-]{36})(?:[/?#]|$)/.exec(url);
-  if (m) return m[1].toLowerCase();
-  const q = (req.query as Record<string, unknown> | undefined)?.companyId;
-  return typeof q === "string" && q ? q : null;
-}
-
 /**
  * Who a request counts against. The general limiters run before body parsing
  * and before the route's authMiddleware, so the identity is derived here: a
  * request that carries a correctly signed ACCESS token counts against
- * `userId:companyId` (users behind one office NAT get independent budgets);
+ * its user (users behind one office NAT get independent budgets);
  * everything else (anonymous, forged, refresh-token-as-bearer) counts against
  * the client IP. Signature verification is a local HMAC check; revocation is
  * still enforced later by authMiddleware.
@@ -134,12 +126,10 @@ export function rateLimitIdentity(req: Request): RateLimitIdentity {
         type?: unknown;
       };
       if (decoded.type === "access" && typeof decoded.userId === "string") {
-        const companyId = companyIdFromRequest(req);
         identity = {
           kind: "user",
           userId: decoded.userId,
-          companyId,
-          key: `u:${decoded.userId}:${companyId ?? "-"}`,
+          key: `u:${decoded.userId}`,
         };
       }
     } catch {
@@ -154,7 +144,7 @@ export function rateLimitIdentity(req: Request): RateLimitIdentity {
   return identity;
 }
 
-/** Default limiter key: per user+company when authenticated, else per IP. */
+/** Default limiter key: per user when authenticated, else per IP. */
 export const compositeKey = (req: Request): string => rateLimitIdentity(req).key;
 
 interface RouteLimit {
@@ -204,9 +194,7 @@ export function buildLimiter(cfg: RouteLimit) {
         : Math.ceil((options.windowMs as number) / 1000);
       log.warn(
         {
-          ip: req.ip,
-          key: rateLimitIdentity(req).key,
-          path: req.path,
+          requestId: req.id,
           retryAfter,
           resetTime: resetTime?.toISOString(),
         },
@@ -268,7 +256,7 @@ export const limiterProfiles = {
   read: {
     // GET-heavy dashboards fire 8-15 requests per page view, so the ceiling
     // must sit well above real navigation and report review. The key is
-    // `userId:companyId` for authenticated traffic (rateLimitIdentity), so
+    // user ID for authenticated traffic (rateLimitIdentity), so
     // this budget is per user, not per office.
     windowMs: envInt("RL_READ_WINDOW_MS", 60_000),
     max: envInt("RL_READ_MAX", 600),

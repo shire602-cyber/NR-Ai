@@ -1,12 +1,19 @@
 import type { QueryResultRow } from "pg";
+import { sql } from "drizzle-orm";
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { pool } from "../db";
 import { DomainError } from "../errors";
 import { postJournal } from "../ledger";
+import { rowsOf, withLedgerTx } from "../ledger/tx";
 import { describeMonthEndText, type CopyDescriptor } from "@shared/server-copy";
 import { detectAnomalies } from "./anomaly-detection.service";
 import { AI_QUEUE_STILL_OPEN_SQL } from "./ai-gl-queue-sql";
-import { getEffectiveLock, type LockScope, type LockType } from "./period-lock.service";
+import {
+  getEffectiveLock,
+  lockPeriodPolicy,
+  type LockScope,
+  type LockType,
+} from "./period-lock.service";
 import { controlAccountTies, type ControlTie } from "./control-account-ties.service";
 import { computeFxExposure } from "./fx/exposure";
 import { pendingOpeningDocuments } from "./migration-import";
@@ -742,11 +749,16 @@ export async function lockPeriod(
   if (!end) {
     throw new DomainError("PERIOD_REQUIRED", 400, undefined, "periodEnd is required (YYYY-MM-DD)");
   }
-  const result = await pool.query(
-    `INSERT INTO month_end_close
+  return withLedgerTx(async (tx) => {
+    await lockPeriodPolicy(tx, companyId, "exclusive");
+    const result = await tx.execute(sql`
+     INSERT INTO month_end_close
        (company_id, period_start, period_end, status, closed_by, closed_at, closing_entry_id,
         lock_type, lock_scope, lock_reason, checklist_override, checklist_snapshot)
-     VALUES ($1, date_trunc('month', $2::date), $2::date, 'locked', $3, now(), $4, $5, $6, $7, $8, $9::jsonb)
+     VALUES (${companyId}, date_trunc('month', ${end}::date), ${end}::date, 'locked', ${userId},
+             now(), ${opts.closingEntryId || null}, ${opts.lockType ?? "hard"},
+             ${opts.lockScope ?? "through"}, ${opts.reason ?? null},
+             ${opts.checklistOverride === true}, ${JSON.stringify(opts.checklistSnapshot) ?? null}::jsonb)
      ON CONFLICT (company_id, period_end)
      DO UPDATE SET
        status = 'locked',
@@ -759,20 +771,9 @@ export async function lockPeriod(
        checklist_override = EXCLUDED.checklist_override,
        checklist_snapshot = EXCLUDED.checklist_snapshot,
        updated_at = now()
-     RETURNING *`,
-    [
-      companyId,
-      end,
-      userId,
-      opts.closingEntryId || null,
-      opts.lockType ?? "hard",
-      opts.lockScope ?? "through",
-      opts.reason ?? null,
-      opts.checklistOverride === true,
-      opts.checklistSnapshot === undefined ? null : JSON.stringify(opts.checklistSnapshot),
-    ]
-  );
-  return formatCloseRecord(result.rows[0]);
+     RETURNING *`);
+    return formatCloseRecord(rowsOf<QueryResultRow>(result)[0]);
+  });
 }
 
 /**
@@ -795,16 +796,17 @@ export async function unlockPeriod(
 ): Promise<MonthEndCloseRecord | null> {
   const end = parseReportDate(periodEnd, "periodEnd");
   if (!end) throw new DomainError("PERIOD_REQUIRED", 400);
-  const result = await pool.query(
-    `UPDATE month_end_close
-        SET status = 'open', updated_at = now(), unlocked_by = $3, unlocked_at = now(),
-            unlock_reason = $4
-      WHERE company_id = $1 AND period_end::date = $2::date AND status = 'locked'
-      RETURNING *`,
-    [companyId, end, opts.userId ?? null, opts.reason ?? null]
-  );
-  if (result.rowCount === 0) return null;
-  return formatCloseRecord(result.rows[0]);
+  return withLedgerTx(async (tx) => {
+    await lockPeriodPolicy(tx, companyId, "exclusive");
+    const result = await tx.execute(sql`
+      UPDATE month_end_close
+         SET status = 'open', updated_at = now(), unlocked_by = ${opts.userId ?? null},
+             unlocked_at = now(), unlock_reason = ${opts.reason ?? null}
+       WHERE company_id = ${companyId} AND period_end::date = ${end}::date AND status = 'locked'
+       RETURNING *`);
+    const [row] = rowsOf<QueryResultRow>(result);
+    return row ? formatCloseRecord(row) : null;
+  });
 }
 
 /** List all locked periods for a company. */
