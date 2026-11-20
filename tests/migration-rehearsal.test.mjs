@@ -35,10 +35,16 @@ test("rehearses the journal and rollback entirely on disposable PostgreSQL", () 
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /Clean ledger \d+ files in journal order/);
   assert.match(result.stdout, /Backup restore verified/);
+  assert.match(result.stdout, /0097 tenant guards verified before forward repair/);
   assert.match(result.stdout, /Timing pass and Drizzle Kit schemas match/);
   assert.match(result.stdout, /Transaction rollback verified at 0134/);
   assert.match(result.stdout, /Rollback restore verified/);
   assert.match(result.stdout, /Seeded preservation and backfills verified/);
   assert.match(result.stdout, /Ordered SQL replay \d+ files \d+ ms/);
+  assert.match(result.stdout, /Original 0097 hash and incorrect legacy GL link verified/);
+  assert.match(result.stdout, /Base-to-head ledger added 0138_repair_bank_gl_links/);
+  assert.match(result.stdout, /Forward GL repair and tenant mismatch findings verified/);
+  assert.match(result.stdout, /Tracked rerun historical_upgrade \d+ ms/);
+  assert.match(result.stdout, /Base-to-head direct SQL replay \d+ ms/);
   assert.match(result.stdout, /Migration rehearsal passed/);
 });

@@ -38,26 +38,19 @@ BEGIN
     RAISE EXCEPTION '0103 did not replace the plaintext portal token with its digest';
   END IF;
 
-  IF (SELECT count(*) FROM subscriptions WHERE company_id = ANY (company_ids) AND status = 'active' AND
-      ((company_id = company_ids[3] AND plan_id = 'starter') OR
-       (company_id <> company_ids[3] AND plan_id = 'free'))) <> 4 THEN
-    RAISE EXCEPTION '0113 did not backfill Free subscriptions while preserving the existing Starter subscription';
-  END IF;
-
-  IF (SELECT count(*) FROM bank_transactions bt JOIN bank_accounts ba ON ba.id = bt.bank_statement_account_id
-      WHERE bt.id IN (SELECT md5('nr-rehearsal:bank-line:' || n || ':2')::uuid FROM generate_series(1, 4) n)
-        AND NOT bt.is_reconciled AND bt.match_status = 'unmatched' AND bt.bank_account_id = ba.gl_account_id) <> 4 THEN
-    RAISE EXCEPTION '0097 did not clear stale bank reconciliation and relink fees to the managed GL accounts';
-  END IF;
-
-  IF (SELECT count(*) FROM bank_transaction_matches WHERE company_id = ANY (company_ids)) <> 4
-     OR (SELECT count(*) FROM bank_transaction_matches m
-         JOIN bank_transactions bt ON bt.id = m.bank_transaction_id AND bt.company_id = m.company_id
-         JOIN invoice_payments p ON p.id = m.payment_id AND p.journal_entry_id = bt.matched_journal_entry_id
-         WHERE m.company_id = ANY (company_ids) AND m.target_type = 'invoice' AND m.status = 'active'
-           AND m.target_id = bt.matched_invoice_id AND m.journal_entry_id = bt.matched_journal_entry_id
-           AND m.amount = bt.amount AND bt.is_reconciled AND bt.match_status = 'matched') <> 4 THEN
-    RAISE EXCEPTION '0097 did not preserve all four valid invoice allocations';
+  IF EXISTS (
+    WITH expected(company_id, plan_id) AS (
+      SELECT company_id, CASE WHEN company_id = company_ids[3] THEN 'starter' ELSE 'free' END
+      FROM unnest(company_ids) company_id
+    ), actual AS (
+      SELECT company_id, plan_id FROM subscriptions
+      WHERE company_id = ANY (company_ids) AND status = 'active'
+    )
+    (SELECT * FROM expected EXCEPT ALL SELECT * FROM actual)
+    UNION ALL
+    (SELECT * FROM actual EXCEPT ALL SELECT * FROM expected)
+  ) THEN
+    RAISE EXCEPTION '0113 did not leave exactly one active subscription per fixture company with the expected plan';
   END IF;
 
   IF NOT EXISTS (

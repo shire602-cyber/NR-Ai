@@ -18,7 +18,18 @@ const root = path.resolve(here, "../..");
 const migrationsFolder = path.join(root, "migrations");
 const journal = JSON.parse(readFileSync(path.join(migrationsFolder, "meta/_journal.json"), "utf8"));
 const baseline = "0088_emirate_no_default";
+const banking = "0097_w3c_banking";
+const historicalTail = "0137_combine_portal_invitations_and_settlement_indexes";
+// Preserve the exact versions from a5e75c2104c846ed5eae71dd0b247161413057b7 so an
+// already-applied database carries the original hashes even in a shallow checkout.
+const historicalHashes = {
+  "0089_platform_foundation": "3da08352369f0ec61e21f218165042af1e762b2092a56d60461623593ab2c011",
+  [banking]: "fc545f83c7470e6624251c1d4492a9f6f6a842d2fd20b4afb94fb28e0fbdc7be",
+  "0130_cash_sale_numbering": "e4b974423afc431ded0b306efec71f046109ff6dc57d1142f4d41047f8acd8ef",
+};
 const baselineCount = journal.entries.findIndex(({ tag }) => tag === baseline) + 1;
+const bankingCount = journal.entries.findIndex(({ tag }) => tag === banking) + 1;
+const historicalCount = journal.entries.findIndex(({ tag }) => tag === historicalTail) + 1;
 const files = readMigrationFiles({ migrationsFolder });
 const image = "postgres:16-bookworm";
 const name = "nr-migration-rehearsal-" + randomBytes(8).toString("hex");
@@ -165,8 +176,8 @@ async function startPostgres() {
   );
 }
 
-async function verifyLedger(database, count) {
-  const expected = files.slice(0, count).map(({ folderMillis, hash }) => ({
+async function verifyLedger(database, expectedFiles = files) {
+  const expected = expectedFiles.map(({ folderMillis, hash }) => ({
     created_at: String(folderMillis),
     hash,
   }));
@@ -242,18 +253,41 @@ function verifyState(actual, expected, label) {
   assert.deepEqual(changed, [], label + " changed these tables or sequences");
 }
 
-async function prepareBaseline() {
-  const folder = path.join(scratch, "baseline");
+function stageMigrations(name, count, historical = {}) {
+  const folder = path.join(scratch, name);
   mkdirSync(path.join(folder, "meta"), { recursive: true });
-  const entries = journal.entries.slice(0, baselineCount);
+  const entries = journal.entries.slice(0, count);
   writeFileSync(path.join(folder, "meta/_journal.json"), JSON.stringify({ ...journal, entries }));
   for (const { tag } of entries) {
     const file = tag + ".sql";
-    copyFileSync(path.join(migrationsFolder, file), path.join(folder, file));
+    const destination = path.join(folder, file);
+    if (historical[tag]) {
+      const sql = readFileSync(path.join(here, "historical", file), "utf8").replaceAll(
+        "\r\n",
+        "\n"
+      );
+      assert.equal(
+        createHash("sha256").update(sql).digest("hex"),
+        historical[tag],
+        "Historical SQL hash changed for " + tag
+      );
+      writeFileSync(destination, sql);
+    } else {
+      copyFileSync(path.join(migrationsFolder, file), destination);
+    }
   }
+  return folder;
+}
+
+async function applyStagedMigrations(database, folder) {
+  await withClient(database, (client) => migrate(drizzle(client), { migrationsFolder: folder }));
+}
+
+async function prepareBaseline() {
+  const folder = stageMigrations("baseline", baselineCount);
   createDatabase("seed");
-  await withClient("seed", (client) => migrate(drizzle(client), { migrationsFolder: folder }));
-  await verifyLedger("seed", baselineCount);
+  await applyStagedMigrations("seed", folder);
+  await verifyLedger("seed", files.slice(0, baselineCount));
   fixture("seed", "seed.sql");
 }
 
@@ -274,10 +308,10 @@ async function restore(database) {
   );
 }
 
-async function checkTrackedReplay(database) {
+async function checkTrackedReplay(database, expectedFiles = files) {
   const before = await databaseState(database);
   await timed("Tracked rerun " + database, () => applyRelease(database));
-  await verifyLedger(database, files.length);
+  await verifyLedger(database, expectedFiles);
   verifyState(await databaseState(database), before, database + " tracked rerun");
 }
 
@@ -292,7 +326,7 @@ async function verifyRollback() {
     assert.equal(result.status, 1, result.stdout + result.stderr);
     assert.match(result.stdout + result.stderr, /0134: subscription_plans holds 1 row/);
   });
-  await verifyLedger("upgrade", baselineCount);
+  await verifyLedger("upgrade", files.slice(0, baselineCount));
   const after = await databaseState("upgrade");
   // PostgreSQL nextval is nontransactional, even when all ledger inserts roll back.
   assert.ok(
@@ -319,7 +353,7 @@ async function timePendingFiles(expectedFixture) {
     report.results.map(({ tag }) => tag),
     journal.entries.slice(baselineCount).map(({ tag }) => tag)
   );
-  await verifyLedger("file_timing", files.length);
+  await verifyLedger("file_timing");
   assert.equal(
     fixture("file_timing", "snapshot.sql"),
     expectedFixture,
@@ -334,7 +368,7 @@ async function timePendingFiles(expectedFixture) {
       "Seeded Drizzle Kit migration"
     )
   );
-  await verifyLedger("drizzle_kit", files.length);
+  await verifyLedger("drizzle_kit");
   assert.equal(
     fixture("drizzle_kit", "snapshot.sql"),
     expectedFixture,
@@ -348,23 +382,79 @@ async function timePendingFiles(expectedFixture) {
   console.log("Timing pass and Drizzle Kit schemas match");
 }
 
+async function checkBankingGuards() {
+  createDatabase("banking_guard", "upgrade");
+  const folder = stageMigrations("banking-guard", bankingCount);
+  await timed("Banking migration through " + banking, () =>
+    applyStagedMigrations("banking_guard", folder)
+  );
+  await verifyLedger("banking_guard", files.slice(0, bankingCount));
+  fixture("banking_guard", "assert-0097.sql");
+  console.log("0097 tenant guards verified before forward repair");
+}
+
+async function checkHistoricalUpgrade() {
+  const database = "historical_upgrade";
+  await restore(database);
+  const folder = stageMigrations("historical", historicalCount, historicalHashes);
+  await timed("Apply original base through " + historicalTail, () =>
+    applyStagedMigrations(database, folder)
+  );
+  const originalFiles = readMigrationFiles({ migrationsFolder: folder });
+  await verifyLedger(database, originalFiles);
+  fixture(database, "assert-upgraded.sql");
+  fixture(database, "assert-historical-bank.sql");
+  console.log("Original 0097 hash and incorrect legacy GL link verified");
+  fixture(database, "seed-forward-bank.sql");
+  const preserved = fixture(database, "snapshot.sql");
+
+  await timed("Base-to-head release migration", () => applyRelease(database));
+  const expectedFiles = [...originalFiles, ...files.slice(historicalCount)];
+  await verifyLedger(database, expectedFiles);
+  assert.equal(
+    fixture(database, "snapshot.sql"),
+    preserved,
+    "Base-to-head upgrade changed preserved business data"
+  );
+  fixture(database, "assert-upgraded.sql");
+  fixture(database, "assert-0097.sql");
+  fixture(database, "assert-bank-findings.sql");
+  fixture(database, "assert-forward-bank.sql");
+  console.log(
+    "Base-to-head ledger added " +
+      journal.entries
+        .slice(historicalCount)
+        .map(({ tag }) => tag)
+        .join(", ")
+  );
+  console.log("Forward GL repair and tenant mismatch findings verified");
+  await checkTrackedReplay(database, expectedFiles);
+  const before = await databaseState(database);
+  await timed("Base-to-head direct SQL replay", () => replaySql(database, historicalCount));
+  verifyState(await databaseState(database), before, "Base-to-head direct SQL replay");
+}
+
+async function replaySql(database, start) {
+  await withClient(database, async (client) => {
+    await client.query("BEGIN");
+    for (let i = start; i < files.length; i++) {
+      try {
+        for (const statement of files[i].sql) {
+          if (statement.trim()) await client.query(statement);
+        }
+      } catch (error) {
+        throw new Error("SQL replay failed at " + journal.entries[i].tag, { cause: error });
+      }
+    }
+    await client.query("COMMIT");
+  });
+}
+
 async function checkRawReplay() {
   createDatabase("raw_replay", "upgrade");
   const before = await databaseState("raw_replay");
   await timed("Ordered SQL replay " + String(files.length - baselineCount) + " files", () =>
-    withClient("raw_replay", async (client) => {
-      await client.query("BEGIN");
-      for (let i = baselineCount; i < files.length; i++) {
-        try {
-          for (const statement of files[i].sql) {
-            if (statement.trim()) await client.query(statement);
-          }
-        } catch (error) {
-          throw new Error("SQL replay failed at " + journal.entries[i].tag, { cause: error });
-        }
-      }
-      await client.query("COMMIT");
-    })
+    replaySql("raw_replay", baselineCount)
   );
   verifyState(await databaseState("raw_replay"), before, "Ordered SQL replay");
   fixture("raw_replay", "assert-upgraded.sql");
@@ -385,8 +475,11 @@ async function rehearse() {
     if (key.startsWith("PG")) delete process.env[key];
   }
   assert.ok(
-    baselineCount > 0 && baselineCount < files.length,
-    "The migration baseline must be in the journal"
+    baselineCount > 0 &&
+      baselineCount < bankingCount &&
+      bankingCount < historicalCount &&
+      historicalCount < files.length,
+    "Expected ordered baseline, banking, and historical release entries in the journal"
   );
   output(
     capture(process.execPath, ["scripts/check-migration-journal.mjs"]),
@@ -402,7 +495,7 @@ async function rehearse() {
   await startPostgres();
   createDatabase("clean");
   await timed("Clean release migration", () => applyRelease("clean"));
-  await verifyLedger("clean", files.length);
+  await verifyLedger("clean");
   console.log("Clean ledger " + files.length + " files in journal order");
   await checkTrackedReplay("clean");
 
@@ -418,8 +511,8 @@ async function rehearse() {
     bills: 32,
     bill_lines: 64,
     vat_returns: 4,
-    bank_accounts: 4,
-    bank_transactions: 16,
+    bank_accounts: 5,
+    bank_transactions: 18,
   };
   for (const [table, count] of Object.entries(fixtureCounts)) {
     assert.equal(seeded[table]?.length, count, "Unexpected rehearsal fixture size for " + table);
@@ -439,30 +532,34 @@ async function rehearse() {
   console.log("Backup SHA-256 " + inPostgres(["sha256sum", archive]).split(" ")[0]);
 
   await restore("upgrade");
-  await verifyLedger("upgrade", baselineCount);
+  await verifyLedger("upgrade", files.slice(0, baselineCount));
   verifyState(await databaseState("upgrade"), seedState, "Backup restore");
   console.log("Backup restore verified");
+  await checkBankingGuards();
   await timePendingFiles(businessData);
 
   await verifyRollback();
   await restore("upgrade");
-  await verifyLedger("upgrade", baselineCount);
+  await verifyLedger("upgrade", files.slice(0, baselineCount));
   verifyState(await databaseState("upgrade"), seedState, "Rollback restore");
   console.log("Rollback restore verified");
 
   await timed("Seeded release migration", () => applyRelease("upgrade"));
-  await verifyLedger("upgrade", files.length);
+  await verifyLedger("upgrade");
   assert.equal(
     fixture("upgrade", "snapshot.sql"),
     businessData,
     "Upgrade changed preserved business data"
   );
   fixture("upgrade", "assert-upgraded.sql");
+  fixture("upgrade", "assert-0097.sql");
+  fixture("upgrade", "assert-bank-findings.sql");
   console.log("Seeded preservation and backfills verified");
   assert.ok(schema("upgrade") === schema("clean"), "Clean and upgraded release schemas differ");
   console.log("Clean and upgraded release schemas match");
   await checkTrackedReplay("upgrade");
   await checkRawReplay();
+  await checkHistoricalUpgrade();
   console.log("Migration rehearsal passed");
 }
 

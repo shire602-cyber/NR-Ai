@@ -68,12 +68,14 @@ UPDATE "bank_transactions" SET "match_status" = 'suggested'
 
 -- ── R06-01: GL link comes from the managed bank account ───────────────────────
 -- Clear stale matches above so their GL links are repaired on the first pass.
+-- A UUID foreign key alone does not guarantee company ownership.
 UPDATE "bank_transactions" bt
-   SET "bank_account_id" = ba."gl_account_id"
+   SET "bank_account_id" = gl."id"
   FROM "bank_accounts" ba
+  JOIN "accounts" gl ON gl."id" = ba."gl_account_id" AND gl."company_id" = ba."company_id"
  WHERE bt."bank_statement_account_id" = ba."id"
-   AND ba."gl_account_id" IS NOT NULL
-   AND bt."bank_account_id" IS DISTINCT FROM ba."gl_account_id"
+   AND bt."company_id" = ba."company_id"
+   AND bt."bank_account_id" IS DISTINCT FROM gl."id"
    AND (bt."bank_account_id" IS NULL OR bt."is_reconciled" = false);
 --> statement-breakpoint
 

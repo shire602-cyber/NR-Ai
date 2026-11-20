@@ -1,5 +1,5 @@
 -- One deterministic JSON object, using only columns that exist at 0088 and head.
--- The migrated values excluded here have explicit checks in assert-upgraded.sql.
+-- The excluded values have dedicated backfill and banking assertions.
 WITH fixture AS (
   SELECT md5('nr-rehearsal:company:' || n)::uuid AS company_id,
          md5('nr-rehearsal:owner:' || n)::uuid AS owner_id,
@@ -100,10 +100,16 @@ WITH fixture AS (
   UNION ALL SELECT 'bank_transactions', id, to_jsonb(row) FROM (
     SELECT b.id, b.company_id, b.bank_statement_account_id, b.transaction_date, b.description,
            b.amount, b.balance, b.reference, b.import_source, b.matched_invoice_id, b.matched_journal_entry_id,
-           CASE WHEN b.id <> f.legacy_fee_id THEN b.bank_account_id END AS bank_account_id,
-           CASE WHEN b.id <> f.legacy_fee_id THEN b.is_reconciled END AS is_reconciled,
-           CASE WHEN b.id <> f.legacy_fee_id THEN b.match_status END AS match_status
+           CASE WHEN b.id NOT IN (f.legacy_fee_id, md5('nr-rehearsal:bank-line:4:1')::uuid,
+                                  md5('nr-rehearsal:bank-line:1:3')::uuid)
+                THEN b.bank_account_id END AS bank_account_id,
+           CASE WHEN NOT repair.stale_match THEN b.is_reconciled END AS is_reconciled,
+           CASE WHEN NOT repair.stale_match THEN b.match_status END AS match_status
     FROM bank_transactions b JOIN fixture f USING (company_id)
+    CROSS JOIN LATERAL (
+      SELECT b.id IN (f.legacy_fee_id, md5('nr-rehearsal:bank-link:foreign-statement')::uuid,
+                      md5('nr-rehearsal:bank-link:foreign-target')::uuid)
+    ) repair(stale_match)
   ) row
 )
 SELECT jsonb_object_agg(kind, rows)

@@ -237,7 +237,9 @@ INSERT INTO bank_transactions (id, company_id, bank_statement_account_id, bank_a
                                import_source, is_reconciled, match_status, matched_invoice_id,
                                matched_journal_entry_id, created_at)
 SELECT md5('nr-rehearsal:bank-line:' || c.n || ':' || l.n)::uuid, c.id, c.bank_account_id,
-       md5('nr-rehearsal:account:' || c.id || CASE WHEN l.n = 2 THEN ':5000' ELSE ':1020' END)::uuid,
+       CASE WHEN c.n <> 4 OR l.n <> 1 THEN
+         md5('nr-rehearsal:account:' || c.id || CASE WHEN l.n = 2 THEN ':5000' ELSE ':1020' END)::uuid
+       END,
        i.issued_on + 4 + l.n, l.description, l.amount,
        2000 + sum(l.amount) OVER (PARTITION BY c.id ORDER BY l.n), 'BANK-' || c.n || '-' || l.n,
        CASE WHEN l.n <= 2 THEN 'csv:' ELSE 'pdf_ai:' END || md5('nr-rehearsal:statement:' || c.n || ':' || ((l.n - 1) / 2)),
@@ -251,5 +253,30 @@ CROSS JOIN LATERAL (VALUES (1, 'Customer bank transfer', i.subtotal * 1.05),
                           (2, 'Unposted bank fee', -15.75),
                           (3, 'Supplier transfer', -93.45),
                           (4, 'Card settlement', 142.65)) l(n, description, amount);
+
+-- Each imported row violates exactly one ownership join. An otherwise valid current GL
+-- account must survive the migration even after the stale reconciliation flags are cleared.
+INSERT INTO bank_accounts (id, company_id, name_en, bank_name, account_number, gl_account_id, created_at)
+SELECT md5('nr-rehearsal:bank-account:foreign-target')::uuid, tenant.id, 'Historical clearing account',
+       'Synthetic Bank', 'TEST-LEGACY',
+       md5('nr-rehearsal:account:' || foreign_company.id || ':1020')::uuid, '2025-12-01'
+FROM rehearsal_companies tenant
+CROSS JOIN rehearsal_companies foreign_company
+WHERE tenant.n = 1 AND foreign_company.n = 2;
+
+INSERT INTO bank_transactions (id, company_id, bank_statement_account_id, bank_account_id,
+                               transaction_date, description, amount, reference,
+                               import_source, is_reconciled, match_status, created_at)
+SELECT md5('nr-rehearsal:bank-link:' || defect.kind)::uuid, tenant.id, defect.statement_account_id,
+       md5('nr-rehearsal:account:' || tenant.id || ':5000')::uuid,
+       '2026-01-16', defect.description, -18.25, 'BANK-OWNERSHIP-' || defect.kind,
+       'csv:' || md5('nr-rehearsal:statement:1:0'), true, 'matched', '2026-01-18'
+FROM rehearsal_companies tenant
+CROSS JOIN rehearsal_companies foreign_company
+CROSS JOIN LATERAL (
+  VALUES ('foreign-statement', foreign_company.bank_account_id, 'Legacy statement ownership mismatch'),
+         ('foreign-target', md5('nr-rehearsal:bank-account:foreign-target')::uuid, 'Legacy GL target ownership mismatch')
+) defect(kind, statement_account_id, description)
+WHERE tenant.n = 1 AND foreign_company.n = 2;
 
 COMMIT;
