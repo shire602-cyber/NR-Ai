@@ -57,7 +57,7 @@ const request = (headers = s.headers, targetUri = s.targetUri) => ({
 describe("E1 A-Cube webhook signature", () => {
   const key = publicKeyFrom(s.publicKeyPem);
 
-  it("accepts the signed document.received fixture", () => {
+  it("accepts the legacy signed document.received fixture", () => {
     const v = verifyAcubeSignature({
       raw: Buffer.from(s.body),
       request: request(),
@@ -254,15 +254,24 @@ describe("E1 two-track status model", () => {
 
   it("normalises webhook and API event names and builds stable dedupe keys", () => {
     const p = fixture.payloads;
-    expect(canonicalEventType(p["document.received"])).toBe("document.received");
-    expect(canonicalEventType(p["document.delivered"])).toBe("document.delivered");
+    expect(canonicalEventType(p["invoice.inbound"])).toBe("document.received");
+    expect(canonicalEventType(p["invoice.outbound"])).toBe("document.delivered");
+    expect(canonicalEventType(p["credit_note.inbound"])).toBe("document.received");
+    expect(canonicalEventType(p["credit_note.outbound"])).toBe("document.delivered");
     expect(canonicalEventType(p["legal_entity.synchronized.LINK"])).toBe(
       "legal_entity.synchronized"
     );
     expect(canonicalEventType({}, "invoice.inbound")).toBe("document.received");
     expect(canonicalEventType({}, "credit_note.outbound")).toBe("document.delivered");
     expect(canonicalEventType({ hello: 1 })).toBeNull();
-    expect(providerEventKey("document.received", p["document.received"])).toBe(
+    const inbound = p["invoice.inbound"];
+    expect(
+      providerEventKey("document.received", { ...inbound, documentId: inbound.invoiceUuid })
+    ).toBe("doc:01a0c453-5398-728c-8b10-84dd471cd797:received");
+    expect(providerEventKey("document.delivered", p["invoice.outbound"])).toBe(
+      "01a0ab23-2611-7c3e-9d41-5b7e8f0a1c22"
+    );
+    expect(providerEventKey("document.received", JSON.parse(s.body))).toBe(
       "doc:01a0c453-5398-728c-8b10-84dd471cd797:received"
     );
     expect(providerEventKey("legal_entity.synchronized", p["legal_entity.synchronized.LINK"])).toBe(

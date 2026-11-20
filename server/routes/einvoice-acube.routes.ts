@@ -200,6 +200,36 @@ const emptyBody = z.object({}).strict();
 /** Any JSON object: A-Cube's payloads are small and are re-read from the API before use. */
 const webhookPayload = z.record(z.string(), z.unknown());
 
+function webhookIdentifier(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+/** Read A-Cube's native resource UUID fields alongside the canonical prose payloads. */
+function normaliseAcubeEvent(payload: Record<string, unknown>) {
+  const type = canonicalEventType(payload);
+  if (!type) return null;
+  if (type === "legal_entity.synchronized") {
+    const legalEntityId =
+      webhookIdentifier(payload.legalEntityUuid) ?? webhookIdentifier(payload.legalEntityId);
+    if (!legalEntityId && !webhookIdentifier(payload.tin)) return null;
+    return { type, payload: { ...payload, legalEntityId } };
+  }
+
+  const declared = String(payload.eventType ?? payload.event ?? "").toLowerCase();
+  const creditNote = declared.startsWith("credit_note.");
+  const nativeId = creditNote ? payload.creditNoteUuid : payload.invoiceUuid;
+  const documentId = webhookIdentifier(nativeId) ?? webhookIdentifier(payload.documentId);
+  if (!documentId) return null;
+  return {
+    type,
+    payload: {
+      ...payload,
+      documentId,
+      ...(creditNote ? { documentType: "credit-note" } : {}),
+    },
+  };
+}
+
 function tokenMatches(given: string | undefined, expected: string): boolean {
   if (!given) return false;
   const a = Buffer.from(given, "utf8");
@@ -447,11 +477,11 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
       if (!parsed.success) {
         return res.status(400).json({ code: "VALIDATION_ERROR", message: "Expected an object" });
       }
-      const payload = parsed.data;
-      const type = canonicalEventType(payload);
-      if (!type) {
+      const event = normaliseAcubeEvent(parsed.data);
+      if (!event) {
         return res.status(202).json({ received: true, ignored: true });
       }
+      const { type, payload } = event;
       const queued = await enqueueProviderEvent({
         provider: ACUBE_PROVIDER_NAME,
         environment,

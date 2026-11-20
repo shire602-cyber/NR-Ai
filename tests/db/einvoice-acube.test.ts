@@ -43,13 +43,37 @@ const SELLER_COLUMNS = {
 
 // ─── In-memory A-Cube (doc-derived shapes) ──────────────────────────────
 
-interface FakeDoc {
+type DocumentKind = "invoices" | "credit-notes";
+
+interface FakeDocument {
   id: string;
+  kind: DocumentKind;
   number: string;
   xml: string;
+}
+
+interface FakeDoc extends FakeDocument {
   status: string;
   tdd: boolean;
 }
+
+function documentUuid(): string {
+  const epochMs = Date.now().toString(16).padStart(12, "0");
+  const [, , random, variant, tail] = crypto.randomUUID().split("-");
+  return `${epochMs.slice(0, 8)}-${epochMs.slice(8)}-7${random.slice(1)}-${variant}-${tail}`;
+}
+
+function restDocument(d: FakeDocument, direction: "incoming" | "outgoing", status: string) {
+  return {
+    uuid: d.id,
+    direction,
+    status,
+    ...(d.kind === "invoices"
+      ? { invoiceNumber: d.number, documentTypeCode: 380 }
+      : { creditNoteNumber: d.number, documentTypeCode: 381 }),
+  };
+}
+
 const fake = {
   posts: 0,
   submitDelayMs: 0,
@@ -57,7 +81,7 @@ const fake = {
   docs: new Map<string, FakeDoc>(),
   legalEntityStatus: "Active",
   leId: crypto.randomUUID() as string,
-  incoming: [] as Array<{ id: string; number: string; xml: string }>,
+  incoming: [] as FakeDocument[],
   reset() {
     this.posts = 0;
     this.submitDelayMs = 0;
@@ -83,7 +107,7 @@ async function acube(url: URL, init: RequestInit): Promise<Response> {
   }
   if (method === "POST" && p === "/legal-entities") {
     return json(201, {
-      legalEntityId: fake.leId,
+      uuid: fake.leId,
       tin: TIN,
       status: "RESERVED",
       enabledCapabilities: [],
@@ -92,7 +116,7 @@ async function acube(url: URL, init: RequestInit): Promise<Response> {
   if (method === "GET" && p === `/legal-entities/${fake.leId}`) {
     const active = fake.legalEntityStatus === "Active";
     return json(200, {
-      legalEntityId: fake.leId,
+      uuid: fake.leId,
       tin: TIN,
       status: fake.legalEntityStatus,
       nameEn: "Pearl Trading L.L.C.",
@@ -106,7 +130,8 @@ async function acube(url: URL, init: RequestInit): Promise<Response> {
       registrySyncAt: active ? "2026-11-16T08:04:55+00:00" : null,
     });
   }
-  if (method === "POST" && (p === "/invoices/outgoing" || p === "/credit-notes/outgoing")) {
+  if (method === "POST" && (p === "/invoices" || p === "/credit-notes")) {
+    const kind = p === "/invoices" ? "invoices" : "credit-notes";
     fake.posts++;
     const xml = String(init.body);
     const number = /<cbc:ID>([^<]+)<\/cbc:ID>/.exec(xml)?.[1] ?? "?";
@@ -125,65 +150,56 @@ async function acube(url: URL, init: RequestInit): Promise<Response> {
         ],
       });
     }
-    const id = crypto.randomUUID();
-    fake.docs.set(id, { id, number, xml, status: "valid", tdd: false });
+    const id = documentUuid();
+    const document = { id, kind, number, xml, status: "valid", tdd: false } satisfies FakeDoc;
+    fake.docs.set(id, document);
     if (mode === "network") throw new TypeError("fetch failed: socket hang up");
-    return json(201, {
-      invoiceId: id,
-      status: "valid",
-      direction: "outgoing",
-      invoiceNumber: number,
-    });
+    return json(201, restDocument(document, "outgoing", document.status));
   }
   const list = /^\/(invoices|credit-notes)$/.exec(p);
   if (method === "GET" && list) {
+    const kind = list[1];
     if (url.searchParams.get("direction") === "incoming") {
       return json(
         200,
-        list[1] === "invoices"
-          ? fake.incoming.map((d) => ({
-              invoiceId: d.id,
-              direction: "incoming",
-              status: "received",
-              invoiceNumber: d.number,
-              legalEntityUuid: fake.leId,
-              ownerFiscalId: TIN,
-            }))
-          : []
+        fake.incoming
+          .filter((d) => d.kind === kind)
+          .map((d) => ({
+            ...restDocument(d, "incoming", "received"),
+            legalEntityUuid: fake.leId,
+            ownerFiscalId: TIN,
+          }))
       );
     }
     return json(
       200,
-      [...fake.docs.values()].map((d) => ({
-        invoiceId: d.id,
-        direction: "outgoing",
-        status: d.status,
-        invoiceNumber: d.number,
-      }))
+      [...fake.docs.values()]
+        .filter((d) => d.kind === kind)
+        .map((d) => restDocument(d, "outgoing", d.status))
     );
   }
-  const m = /^\/invoices\/([^/]+)(\/tdd|\/source)?$/.exec(p);
+
+  const m = /^\/(invoices|credit-notes)\/([^/]+)(\/tdd|\/source)?$/.exec(p);
   if (method === "GET" && m) {
-    const incoming = fake.incoming.find((d) => d.id === m[1]);
+    const [, kind, id, resource] = m;
+    const incoming = fake.incoming.find((d) => d.id === id && d.kind === kind);
     if (incoming) {
-      if (m[2] === "/source") return new Response(incoming.xml, { status: 200 });
+      if (resource === "/source") return new Response(incoming.xml, { status: 200 });
       return json(200, {
-        invoiceId: incoming.id,
-        direction: "incoming",
-        status: "received",
+        ...restDocument(incoming, "incoming", "received"),
         legalEntityUuid: fake.leId,
         ownerFiscalId: TIN,
       });
     }
-    const d = fake.docs.get(m[1]);
-    if (!d) return json(404, { detail: "Not found" });
-    if (m[2] === "/source") return new Response(d.xml, { status: 200 });
-    if (m[2] === "/tdd") {
-      return d.tdd
+    const document = fake.docs.get(id);
+    if (!document || document.kind !== kind) return json(404, { detail: "Not found" });
+    if (resource === "/source") return new Response(document.xml, { status: 200 });
+    if (resource === "/tdd") {
+      return document.tdd
         ? new Response("<TaxDataDocument/>", { status: 200 })
         : new Response(null, { status: 204 });
     }
-    return json(200, { invoiceId: d.id, status: d.status, invoiceNumber: d.number });
+    return json(200, restDocument(document, "outgoing", document.status));
   }
   return json(500, { detail: `fake A-Cube: no route ${method} ${p}` });
 }
@@ -514,6 +530,72 @@ describe("E1 legal entity onboarding gates sending", () => {
   });
 });
 
+describe("A-Cube native signed webhook payloads", () => {
+  it("uses the native legal entity UUID to confirm onboarding", async () => {
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "acube" },
+    });
+    await useAcube(t);
+    const reserved = await t.as.post(`/api/companies/${t.company.id}/einvoicing/acube/reserve`, {
+      approver: "me",
+    });
+    expect(reserved.body.legalEntity.status).toBe("reserved");
+    const payload = {
+      eventId: "019e91b7-f799-7df7-a469-4824b2656b0e",
+      eventType: "legal_entity.synchronized",
+      legalEntityUuid: fake.leId,
+      action: "LINK",
+    };
+    const received = await webhook(t, payload);
+    expect(received.status, received.text).toBe(200);
+    expect(received.body.duplicate).toBe(false);
+    expect((await webhook(t, payload)).body.duplicate).toBe(true);
+    expect(await runProviderEvents()).toMatchObject({ claimed: 1, processed: 1 });
+    const linked = await t.as.get(`/api/companies/${t.company.id}/einvoicing/acube`);
+    expect(linked.body.legalEntity).toMatchObject({ status: "active", legalEntityId: fake.leId });
+  });
+
+  it.each([
+    { kind: "invoices", eventType: "invoice.outbound", uuidField: "invoiceUuid" },
+    { kind: "credit-notes", eventType: "credit_note.outbound", uuidField: "creditNoteUuid" },
+  ] as const)(
+    "uses the native $uuidField to refresh an outbound document",
+    async ({ kind, eventType, uuidField }) => {
+      const t = await linkedTenant();
+      const invoice = await issuedInvoice(t);
+      let id = invoice.id;
+      if (kind === "credit-notes") {
+        const note = await t.as.post(
+          `/api/companies/${t.company.id}/invoices/${invoice.id}/credit-note`,
+          {
+            reason: "Service credit",
+          }
+        );
+        expect(note.status, note.text).toBe(201);
+        id = note.body.id;
+      }
+      const queued = await t.as.post(`/api/invoices/${id}/einvoice/submit`, {});
+      expect(queued.status, queued.text).toBe(202);
+      await runEInvoiceRetries();
+      const providerDocumentId = (await statusOf(t, id)).transmission.providerDocumentId;
+      const document = fake.docs.get(providerDocumentId);
+      expect(document?.kind).toBe(kind);
+      document!.status = "delivered";
+      const payload = {
+        eventId: "019e91b7-f799-7df7-a469-4824b2656b0f",
+        eventType,
+        [uuidField]: providerDocumentId,
+      };
+      const received = await webhook(t, payload);
+      expect(received.status, received.text).toBe(200);
+      expect(received.body.duplicate).toBe(false);
+      expect((await webhook(t, payload)).body.duplicate).toBe(true);
+      expect(await runProviderEvents()).toMatchObject({ claimed: 1, processed: 1 });
+      expect((await statusOf(t, id)).status).toBe("accepted");
+    }
+  );
+});
+
 describe("E1 submit, two tracks and history", () => {
   it("submits once (concurrent double submit sends one document), then delivered + reported", async () => {
     const t = await linkedTenant();
@@ -576,7 +658,9 @@ describe("E1 submit, two tracks and history", () => {
       ])
     );
     const rows = await h.sql(
-      `SELECT status, attempts FROM einvoice_provider_events WHERE provider = 'acube' AND event_type = 'document.delivered'`
+      `SELECT status, attempts FROM einvoice_provider_events
+        WHERE company_id = $1 AND provider = 'acube' AND event_type = 'document.delivered'`,
+      [t.company.id]
     );
     expect(rows).toEqual([{ status: "processed", attempts: 1 }]);
   });
@@ -682,47 +766,89 @@ describe("E1 webhook authentication", () => {
   });
 });
 
-describe("E1 inbound: document.received -> draft bill tagged e-invoice", () => {
-  it("fetches the source XML once and creates one draft bill, webhook and poll deduplicated", async () => {
-    const t = await linkedTenant();
-    const f = PINT_AE_FIXTURES[0] as PintAeFixture;
-    const supplier = {
-      ...fixtureCompany,
-      trnVatNumber: "100987654300003",
-      peppolParticipantId: "1009876543",
-      legalName: "Gulf Supplies L.L.C.",
-    } as typeof fixtureCompany;
-    const { xml } = generateEInvoiceXML(
-      { ...f.invoice, number: "AE-INV-005" } as PintAeFixture["invoice"],
-      f.lines,
-      supplier,
-      { ...f.customer, name: "Pearl Trading L.L.C.", trn: TRN, endpointId: TIN },
-      f.opts
-    );
-    const id = "01a0c453-5398-728c-8b10-84dd471cd797";
-    fake.incoming.push({ id, number: "AE-INV-005", xml });
-    const payload = {
-      documentId: id,
-      documentNumber: "AE-INV-005",
-      documentType: "invoice",
-      status: "received",
-    };
-    expect((await webhook(t, payload)).status).toBe(200);
-    await runProviderEvents();
-    expect((await runAcubePoll()).enqueued).toBe(0); // same key as the webhook
-    expect((await webhook(t, payload)).body.duplicate).toBe(true);
-    await runProviderEvents();
+function incomingXml(fixture: PintAeFixture, documentNumber = fixture.invoice.number): string {
+  const supplier = {
+    ...fixtureCompany,
+    trnVatNumber: "100987654300003",
+    peppolParticipantId: "1009876543",
+    legalName: "Gulf Supplies L.L.C.",
+  } as typeof fixtureCompany;
+  return generateEInvoiceXML(
+    { ...fixture.invoice, number: documentNumber },
+    fixture.lines,
+    supplier,
+    { ...fixture.customer, name: "Pearl Trading L.L.C.", trn: TRN, endpointId: TIN },
+    fixture.opts
+  ).xml;
+}
 
-    const bills = await h.sql(
-      `SELECT status, origin, bill_number FROM vendor_bills WHERE company_id = $1`,
-      [t.company.id]
-    );
-    expect(bills).toEqual([{ status: "draft", origin: "einvoice", bill_number: "AE-INV-005" }]);
-    const inbound = await t.as.get(`/api/companies/${t.company.id}/einvoicing/inbound`);
-    expect(inbound.body.items).toHaveLength(1);
-    expect(inbound.body.items[0]).toMatchObject({
-      status: "bill_created",
-      documentNumber: "AE-INV-005",
-    });
-  });
+describe("E1 inbound: document.received -> draft bill tagged e-invoice", () => {
+  it.each(["prose", "native"])(
+    "deduplicates the %s webhook and poll and creates one draft bill",
+    async (shape) => {
+      const t = await linkedTenant();
+      const id = "01a0c453-5398-728c-8b10-84dd471cd797";
+      const xml = incomingXml(PINT_AE_FIXTURES[0], "AE-INV-005");
+      fake.incoming.push({ id, kind: "invoices", number: "AE-INV-005", xml });
+      const payload =
+        shape === "native"
+          ? {
+              eventId: "019e91b7-f799-7df7-a469-4824b2656b10",
+              eventType: "invoice.inbound",
+              invoiceUuid: id,
+            }
+          : {
+              documentId: id,
+              documentNumber: "AE-INV-005",
+              documentType: "invoice",
+              status: "received",
+            };
+      expect((await webhook(t, payload)).status).toBe(200);
+      await runProviderEvents();
+      expect((await runAcubePoll()).enqueued).toBe(0); // same key as the webhook
+      expect((await webhook(t, payload)).body.duplicate).toBe(true);
+      await runProviderEvents();
+
+      const bills = await h.sql(
+        `SELECT status, origin, bill_number FROM vendor_bills WHERE company_id = $1`,
+        [t.company.id]
+      );
+      expect(bills).toEqual([{ status: "draft", origin: "einvoice", bill_number: "AE-INV-005" }]);
+      const inbound = await t.as.get(`/api/companies/${t.company.id}/einvoicing/inbound`);
+      expect(inbound.body.items).toHaveLength(1);
+      expect(inbound.body.items[0]).toMatchObject({
+        status: "bill_created",
+        documentNumber: "AE-INV-005",
+      });
+    }
+  );
+
+  it.each(["poll", "webhook"])(
+    "deduplicates a native inbound credit note with %s first",
+    async (first) => {
+      const t = await linkedTenant();
+      const f = PINT_AE_FIXTURES.find((item) => item.name === "credit note")!;
+      const id = "01a0aec8-7f31-7b17-9122-26ded8285826";
+      const xml = incomingXml(f);
+      fake.incoming.push({ id, kind: "credit-notes", number: f.invoice.number, xml });
+      if (first === "poll") expect((await runAcubePoll()).enqueued).toBe(1);
+      const received = await webhook(t, {
+        eventId: "019e91b7-f799-7df7-a469-4824b2656b11",
+        eventType: "credit_note.inbound",
+        creditNoteUuid: id,
+      });
+      expect(received.status, received.text).toBe(200);
+      expect(received.body.duplicate).toBe(first === "poll");
+      expect((await runAcubePoll()).enqueued).toBe(0);
+      expect(await runProviderEvents()).toMatchObject({ claimed: 1, processed: 1 });
+      const inbound = await t.as.get(`/api/companies/${t.company.id}/einvoicing/inbound`);
+      expect(inbound.body.items).toEqual([
+        expect.objectContaining({
+          status: "received",
+          documentNumber: f.invoice.number,
+          billId: null,
+        }),
+      ]);
+    }
+  );
 });

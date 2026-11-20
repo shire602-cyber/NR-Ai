@@ -20,12 +20,12 @@ company configuration check shows `not_configured` when the local credential bun
 | Need                 | Implementation                                                                                                                                                                                       |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Auth                 | `POST common.api.acubeapi.com/login {email,password,environment}` → JWT (24 h); cached, refreshed 1 h before `exp`; a 401 triggers one fresh login and one retry; credentials are never logged       |
-| Submit               | raw XML, `Content-Type: application/xml`; invoices `ACUBE_INVOICE_SUBMIT_PATH` (default `/invoices/outgoing`), credit notes (381) `ACUBE_CREDIT_NOTE_SUBMIT_PATH` (default `/credit-notes/outgoing`) |
+| Submit               | raw XML, `Content-Type: application/xml`; invoices `ACUBE_INVOICE_SUBMIT_PATH` (default `/invoices`), credit notes (81 and 381) `ACUBE_CREDIT_NOTE_SUBMIT_PATH` (default `/credit-notes`). The response `uuid` identifies the document for status and source lookups. |
 | Errors               | 422 `violations[]` → rejection reasons (field = `propertyPath`, rule = `code`); 400/404 → rejected; 5xx/408/429/transport → retryable                                                                |
 | Status               | `GET /{invoices\|credit-notes}/{id}`; both status vocabularies mapped (`tracks.ts`); unknown → `delivery_failed`, never success                                                                      |
 | FTA reporting        | `GET /{kind}/{id}/tdd`: 200 = reported, 204/404 = pending                                                                                                                                            |
 | Inbound              | `GET /{kind}?direction=incoming` then `/{kind}/{id}/source` → `processInboundEInvoice` → draft bill (`origin = einvoice`)                                                                            |
-| Legal entities       | `POST /legal-entities {tin}` (reserve), `GET /legal-entities/{id}`                                                                                                                                   |
+| Legal entities       | `POST /legal-entities {tin}` reserves the TIN. The response `uuid` identifies the entity in `GET /legal-entities/{uuid}`.                                                                                |
 | Webhook destinations | `POST /event-destinations` per event (`invoice.outbound`, `invoice.inbound`, `credit_note.*`, `legal_entity.synchronized`)                                                                           |
 | Cancel               | none: `capabilities.cancel = false`; a sent invoice is corrected with a credit note                                                                                                                  |
 
@@ -94,8 +94,8 @@ copy is changed. The UI labels the dates with their source and points to mof.gov
 
 ## To verify against the live A-Cube sandbox
 
-1. Submit path `/invoices/outgoing` vs `/invoices`; whether POST selects the legal entity from the
-   supplier EndpointID; whether our PINT AE fixtures pass A-Cube's validation unchanged.
+1. Confirm that `POST /invoices` and `POST /credit-notes` select the legal entity from the supplier
+   EndpointID and accept our PINT AE fixtures. [A-Cube UAE OpenAPI](https://docs.acubeapi.com/openapi/gov-ae-api.json)
 2. Real 422 body and status words; whether a re-post with the same UUID is refused.
 3. TDD semantics (built vs accepted by the FTA) and the MLS rejection flow → `report_failed`.
 4. Webhook event names actually delivered (`document.*` vs `invoice.outbound` etc.), the

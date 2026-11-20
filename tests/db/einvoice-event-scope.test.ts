@@ -3,6 +3,7 @@ import { useHarness, type Tenant } from "./harness";
 import type { EInvoiceProvider } from "../../server/services/einvoice-provider";
 
 const h = useHarness();
+const providerDocumentUuid = "01a0ab23-24d8-7787-bd01-883b1b089b00";
 
 async function submittedInvoice(tenant: Tenant, environment: "production" | "sandbox") {
   const created = await tenant.as.post(`/api/companies/${tenant.company.id}/invoices`, {
@@ -14,14 +15,19 @@ async function submittedInvoice(tenant: Tenant, environment: "production" | "san
   const { id } = created.body;
   await h.sql(
     `UPDATE invoices SET einvoice_status = 'submitted', einvoice_provider = 'acube',
-       einvoice_provider_message_id = 'shared-provider-id' WHERE id = $1`,
-    [id]
+       einvoice_provider_message_id = $2 WHERE id = $1`,
+    [id, providerDocumentUuid]
   );
   await h.sql(
     `INSERT INTO einvoice_documents
        (company_id, invoice_id, status, provider, provider_message_id, delivery_status, validation)
-     VALUES ($1, $2, 'submitted', 'acube', 'shared-provider-id', 'sending', $3::jsonb)`,
-    [tenant.company.id, id, JSON.stringify({ valid: true, submission: { environment } })]
+     VALUES ($1, $2, 'submitted', 'acube', $3, 'sending', $4::jsonb)`,
+    [
+      tenant.company.id,
+      id,
+      providerDocumentUuid,
+      JSON.stringify({ valid: true, submission: { environment } }),
+    ]
   );
   return id as string;
 }
@@ -61,7 +67,7 @@ it("scopes webhook deduplication and status re-reads to the verified company and
     environment: "sandbox",
     type: "document.delivered" as const,
     eventId: "same-event-id",
-    payload: { documentId: "shared-provider-id" },
+    payload: { documentId: providerDocumentUuid },
   };
   const first = await enqueueProviderEvent({ ...event, companyId: a.company.id });
   expect(first.duplicate).toBe(false);
@@ -74,7 +80,7 @@ it("scopes webhook deduplication and status re-reads to the verified company and
     claimed: 1,
     processed: 1,
   });
-  expect(getStatus).toHaveBeenCalledExactlyOnceWith("shared-provider-id", { documentType: null });
+  expect(getStatus).toHaveBeenCalledExactlyOnceWith(providerDocumentUuid, { documentType: null });
   expect(
     (await h.sql(`SELECT status FROM einvoice_documents WHERE invoice_id = $1`, [aInvoice]))[0]
       .status

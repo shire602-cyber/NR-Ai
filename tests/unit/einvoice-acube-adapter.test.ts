@@ -92,22 +92,51 @@ afterEach(() => {
 });
 
 describe("E1 A-Cube configuration and selection", () => {
+  it("keeps the fixture request paths and resource UUIDs aligned with the published UAE OpenAPI", () => {
+    const exchange = (name: string) => recording.find((item) => item.name === name);
+    expect([
+      exchange("submit-invoice-201")?.request.path,
+      exchange("submit-credit-note-201")?.request.path,
+      exchange("submit-invoice-201")?.response.body,
+      exchange("submit-credit-note-201")?.response.body,
+      exchange("status-delivered")?.response.body,
+      exchange("list-outgoing")?.response.body,
+      exchange("incoming-detail")?.response.body,
+      exchange("legal-entity-reserve-201")?.response.body,
+    ]).toEqual([
+      "/invoices",
+      "/credit-notes",
+      expect.objectContaining({ uuid: "01a0ab23-24d8-7787-bd01-883b1b089b00" }),
+      expect.objectContaining({ uuid: "01a0aec8-7f31-7b17-9122-26ded8285826" }),
+      expect.objectContaining({ uuid: "01a0ab23-24d8-7787-bd01-883b1b089b00" }),
+      [expect.objectContaining({ uuid: "01a0ab23-24d8-7787-bd01-883b1b089b00" })],
+      expect.objectContaining({ uuid: "01a0c453-5398-728c-8b10-84dd471cd797" }),
+      expect.objectContaining({ uuid: "64f50adc-1cd6-43e5-a627-437091a8a1d6" }),
+    ]);
+  });
+
   it("is selected by EINVOICE_PROVIDER=acube and defaults to the sandbox hosts and documented paths", () => {
     const cfg = readAcubeConfig(ENV);
     expect(cfg).toMatchObject({
       environment: "sandbox",
       baseUrl: BASE,
       loginUrl: "https://common.api.acubeapi.com/login",
-      invoiceSubmitPath: "/invoices/outgoing",
-      creditNoteSubmitPath: "/credit-notes/outgoing",
+      invoiceSubmitPath: "/invoices",
+      creditNoteSubmitPath: "/credit-notes",
     });
     expect(readAcubeConfig({ ...ENV, ACUBE_ENV: "production" }).baseUrl).toBe(
       "https://ae.api.acubeapi.com"
     );
-    // The docs disagree (/invoices vs /invoices/outgoing): the path is configuration.
     expect(
-      readAcubeConfig({ ...ENV, ACUBE_INVOICE_SUBMIT_PATH: "invoices" }).invoiceSubmitPath
-    ).toBe("/invoices");
+      readAcubeConfig({
+        ...ENV,
+        ACUBE_INVOICE_SUBMIT_PATH: "custom/invoices",
+        ACUBE_CREDIT_NOTE_SUBMIT_PATH: "/custom/credit-notes",
+      })
+    ).toMatchObject({
+      invoiceSubmitPath: "/custom/invoices",
+      creditNoteSubmitPath: "/custom/credit-notes",
+    });
     const p = getEInvoiceProvider(ENV);
     expect(p).toBeInstanceOf(AcubeEInvoiceProvider);
     expect(p.capabilities.cancel).toBe(false); // void = credit note
@@ -160,11 +189,12 @@ describe("E1 A-Cube JWT login, cache and refresh", () => {
   });
 
   it("retries once with a fresh login after a 401", async () => {
+    const uuid = "01a0ab23-24d8-7787-bd01-883b1b089b00";
     const queue: Array<{ status: number; body: unknown }> = [
       { status: 200, body: { token: "a.e30.x" } },
       { status: 401, body: { message: "Expired JWT Token" } },
       { status: 200, body: { token: "b.e30.y" } },
-      { status: 200, body: { invoiceId: "x", status: "delivered" } },
+      { status: 200, body: { invoiceId: uuid, status: "delivered" } },
     ];
     const auth: string[] = [];
     const fetchImpl = (async (_url: string, init: RequestInit) => {
@@ -173,7 +203,7 @@ describe("E1 A-Cube JWT login, cache and refresh", () => {
       return new Response(JSON.stringify(next.body), { status: next.status });
     }) as unknown as typeof fetch;
     const p = new AcubeEInvoiceProvider(ENV, { fetch: fetchImpl });
-    const res = await p.getStatus("x");
+    const res = await p.getStatus(uuid);
     expect(res.delivery).toBe("delivered");
     expect(auth).toEqual(["login", "Bearer a.e30.x", "login", "Bearer b.e30.y"]);
   });
@@ -188,7 +218,21 @@ describe("E1 A-Cube JWT login, cache and refresh", () => {
 });
 
 describe("E1 A-Cube submit", () => {
-  it("posts raw PINT AE XML to /invoices/outgoing and returns queued + reporting pending", async () => {
+  it("tracks the documented uuid in an A-Cube acceptance response", async () => {
+    const uuid = "019ffedf-0461-7dd2-b20c-a0df95b2bfff";
+    const provider = new AcubeEInvoiceProvider(ENV, {
+      fetch: async (input) =>
+        String(input).endsWith("/login")
+          ? Response.json({ token: "t.e30.s" })
+          : Response.json({ uuid, status: "valid" }, { status: 201 }),
+    });
+    expect(await provider.submit(submission())).toMatchObject({
+      providerMessageId: uuid,
+      status: "submitted",
+    });
+  });
+
+  it("posts raw PINT AE XML to /invoices and returns queued + reporting pending", async () => {
     const r = replay(["login", "submit-invoice-201"]);
     const p = new AcubeEInvoiceProvider(ENV, { fetch: r.fetchImpl });
     const res = await p.submit(submission());
@@ -203,7 +247,7 @@ describe("E1 A-Cube submit", () => {
     });
   });
 
-  it("sends a credit note (381) to /credit-notes/outgoing", async () => {
+  it("sends a credit note (381) to /credit-notes", async () => {
     const r = replay(["login", "submit-credit-note-201"]);
     const p = new AcubeEInvoiceProvider(ENV, { fetch: r.fetchImpl });
     const res = await p.submit(submission("381", "CN-2026-0001"));
@@ -324,7 +368,10 @@ describe("E1 A-Cube status, reporting and inbound", () => {
     const p = new AcubeEInvoiceProvider(ENV, { fetch: r.fetchImpl });
     const reserved = await p.reserveLegalEntity("1001234567");
     expect(JSON.parse(r.sent[1].body as string)).toEqual({ tin: "1001234567" });
-    expect(reserved.status).toBe("RESERVED");
+    expect(reserved).toMatchObject({
+      status: "RESERVED",
+      legalEntityId: "64f50adc-1cd6-43e5-a627-437091a8a1d6",
+    });
     const active = await p.getLegalEntity(reserved.legalEntityId);
     expect(active.status).toBe("Active");
     expect(active.enabledCapabilities?.map((c) => c.key)).toContain("billing.invoice");

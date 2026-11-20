@@ -32,7 +32,7 @@ dry run (below) for that ASP.
 | 5   | **Test buyer and Peppol IDs**      | A test buyer participant they accept: a 15-digit test TRN for `ASP_DRYRUN_BUYER_TRN`, giving EndpointID `0235:<10-digit TIN>`. Ask which scheme and ID to use for a buyer **without** a TRN (foreign or B2C); we refuse those today with `EINVOICE_BUYER_ENDPOINT_MISSING`.            | The same: a test buyer TRN or Peppol ID they route in sandbox, and the expected `peppolId` / scheme for a buyer without a TRN                                                                                                                                                                |
 | 6   | **Webhook (status callbacks)**     | Register `https://<public host>/api/webhooks/einvoice/acube/sandbox`; set `ACUBE_WEBHOOK_BASE_URL=https://<public host>`. Ask for their Ed25519 signing key format (optional pin `ACUBE_SIGNATURE_PUBLIC_KEY`) and, if they use token auth, the token (`ACUBE_WEBHOOK_TOKEN`, secret). | Register `https://<public host>/api/webhooks/einvoice/complyance/sandbox`; set `COMPLYANCE_WEBHOOK_BASE_URL=https://<public host>`. Ask for the HMAC signing secret, shown once (`COMPLYANCE_WEBHOOK_SECRET`, secret), and its algorithm (`COMPLYANCE_WEBHOOK_ALGORITHM`, sha256 or sha512). |
 | 7   | **Network**                        | Our host must reach `ae-sandbox.api.acubeapi.com` and `common.api.acubeapi.com` (login). Their callbacks must reach our public host.                                                                                                                                                   | Our host must reach `prod.gets.complyance.io` (both environments). Their callbacks must reach our public host.                                                                                                                                                                               |
-| 8   | **Confirm in writing**             | Submit path (`/invoices/outgoing` or `/invoices`), duplicate-UUID behaviour, the 422 body format                                                                                                                                                                                       | Whether GETS JSON (default) or Unify XML is preferred, the UAE credit cost per document, and rate limits                                                                                                                                                                                     |
+| 8   | **Confirm in writing**             | Submission on `/invoices` and `/credit-notes`, duplicate-UUID behaviour, the 422 body format                                                                                                                                                                                       | Whether GETS JSON (default) or Unify XML is preferred, the UAE credit cost per document, and rate limits                                                                                                                                                                                     |
 
 The webhooks are optional for the first submission: `--status` polls instead.
 
@@ -64,7 +64,7 @@ re-recording, status vocabulary, TDD).
 | `ACUBE_WEBHOOK_TOKEN_HEADER`                                  | no     | optional               | Header name for the token (default `X-Acube-Token`)                             |
 | `ACUBE_SIGNATURE_PUBLIC_KEY`                                  | no     | optional               | Pin A-Cube's Ed25519 key (PEM); default fetched and cached                      |
 | `ACUBE_WEBHOOK_MAX_AGE_SECONDS`                               | no     | optional               | Signature age window (default 43200)                                            |
-| `ACUBE_INVOICE_SUBMIT_PATH` / `ACUBE_CREDIT_NOTE_SUBMIT_PATH` | no     | optional               | Override submit paths (defaults `/invoices/outgoing`, `/credit-notes/outgoing`) |
+| `ACUBE_INVOICE_SUBMIT_PATH` / `ACUBE_CREDIT_NOTE_SUBMIT_PATH` | no     | optional               | Override submit paths (defaults `/invoices`, `/credit-notes`) |
 | `ACUBE_TIMEOUT_MS`                                            | no     | optional               | HTTP timeout                                                                    |
 | `ACUBE_BASE_URL` / `ACUBE_LOGIN_URL`                          | no     | optional               | Host overrides (normally unset)                                                 |
 
@@ -135,8 +135,8 @@ before switching any environment to production.
       for `ASP_DRYRUN_SELLER_TRN`.
 - [ ] Confirmation of the supplier EndpointID A-Cube routes on: we send `0235` + 10-digit TIN,
       as its Quick Start does (`tests/unit/einvoice-acube-endpoint-scheme.test.ts`).
-- [ ] Submit path: `/invoices/outgoing` or `/invoices`. Also whether a re-post with the same UUID is
-      refused.
+- [ ] Confirm submission on `/invoices` and `/credit-notes` and whether a re-post with the same
+      UUID is refused.
 - [ ] Real 422 validation body and status vocabulary. Then re-record
       `tests/fixtures/pint-ae/asp/acube/*.json`.
 - [ ] TDD (Tax Data Document) semantics and the MLS rejection flow, which maps to `report_failed`.

@@ -77,11 +77,9 @@ export function canonicalEventType(
   return null;
 }
 
-/**
- * Stable dedupe key. legal_entity events carry eventId; document events do not, so the
- * (document, status) pair identifies one notification.
- */
+/** Inbound webhooks and the poll discover the same immutable provider document. */
 export function providerEventKey(type: CanonicalEventType, payload: Record<string, unknown>) {
+  if (type === "document.received") return `doc:${String(payload.documentId)}:received`;
   if (typeof payload.eventId === "string" && payload.eventId) return payload.eventId;
   if (type === "legal_entity.synchronized") {
     return `le:${String(payload.legalEntityId)}:${String(payload.action)}:${String(payload.timestamp)}`;

@@ -169,13 +169,13 @@ describe("A-Cube over loopback HTTP", () => {
         ...outgoing,
         body: [
           {
-            invoiceId: otherId,
+            uuid: otherId,
             status: "delivered",
             invoiceNumber: submission.invoiceNumber,
             direction: "outgoing",
           },
           {
-            invoiceId: ACUBE_ID,
+            uuid: ACUBE_ID,
             status: "valid",
             invoiceNumber: submission.invoiceNumber,
             direction: "outgoing",
@@ -212,7 +212,9 @@ describe("A-Cube over loopback HTTP", () => {
       providerMessageId: ACUBE_ID,
       status: "submitted",
     });
-    expect(seen.filter(({ path }) => path === "/invoices/outgoing")).toHaveLength(1);
+    expect(
+      seen.filter(({ method, path }) => method === "POST" && path === "/invoices")
+    ).toHaveLength(1);
   });
 
   it("keeps A-Cube login sessions apart across companies and password rotations", async () => {
@@ -347,7 +349,7 @@ describe.each(["acube", "complyance"] as const)("%s outage and malformed respons
       ...(acubeMode ? [login] : []),
       { ...submit, status: 429, body: { detail: "Rate limit" } },
       { ...submit, status: 503, body: { description: `Echoed ${credential}` } },
-      { ...submit, body: acubeMode ? { invoiceId: {}, status: "valid" } : { documentId: {} } },
+      { ...submit, body: acubeMode ? { uuid: {}, status: "valid" } : { documentId: {} } },
       {
         ...submit,
         status: 422,

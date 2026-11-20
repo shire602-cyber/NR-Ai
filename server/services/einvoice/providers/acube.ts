@@ -13,9 +13,8 @@
  *   ACUBE_EMAIL, ACUBE_PASSWORD       A-Cube platform login (POST common.api.acubeapi.com/login)
  *   ACUBE_BASE_URL                    override; default ae-sandbox / ae.api.acubeapi.com
  *   ACUBE_LOGIN_URL                   override; default https://common.api.acubeapi.com/login
- *   ACUBE_INVOICE_SUBMIT_PATH         default /invoices/outgoing (API reference). The prose page
- *                                     says POST /invoices; confirm in sandbox.
- *   ACUBE_CREDIT_NOTE_SUBMIT_PATH     default /credit-notes/outgoing
+ *   ACUBE_INVOICE_SUBMIT_PATH         default /invoices
+ *   ACUBE_CREDIT_NOTE_SUBMIT_PATH     default /credit-notes
  *   ACUBE_TIMEOUT_MS                  default 20000
  */
 import { createHash } from "node:crypto";
@@ -92,8 +91,8 @@ export function readAcubeConfig(env: NodeJS.ProcessEnv = process.env): AcubeConf
     loginUrl: env.ACUBE_LOGIN_URL || "https://common.api.acubeapi.com/login",
     email: env.ACUBE_EMAIL as string,
     password: env.ACUBE_PASSWORD as string,
-    invoiceSubmitPath: withSlash(env.ACUBE_INVOICE_SUBMIT_PATH || "/invoices/outgoing"),
-    creditNoteSubmitPath: withSlash(env.ACUBE_CREDIT_NOTE_SUBMIT_PATH || "/credit-notes/outgoing"),
+    invoiceSubmitPath: withSlash(env.ACUBE_INVOICE_SUBMIT_PATH || "/invoices"),
+    creditNoteSubmitPath: withSlash(env.ACUBE_CREDIT_NOTE_SUBMIT_PATH || "/credit-notes"),
     timeoutMs: Number.isFinite(timeout) && timeout > 0 ? Math.min(timeout, 60_000) : 20_000,
   };
 }
@@ -548,9 +547,10 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
       const items = Array.isArray(r.json)
         ? r.json
         : (((r.json as Record<string, unknown>)?.["hydra:member"] as unknown[]) ?? []);
-      for (const raw of items as Array<Record<string, unknown>>) {
-        const id = str(raw.invoiceId) ?? str(raw.creditNoteId);
-        if (!id || (raw.direction && raw.direction !== "incoming")) continue;
+      for (const item of items) {
+        const raw = providerObject(item);
+        const id = this.documentId(raw, kind);
+        if (!raw || !id || (raw.direction && raw.direction !== "incoming")) continue;
         out.push({
           providerMessageId: id,
           documentType: str(raw.documentTypeCode) ?? (kind === "credit-notes" ? "381" : "380"),
@@ -573,7 +573,15 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     if (!r.ok) {
       throw new AcubeApiError(r.status, "ACUBE_UNAVAILABLE", `A-Cube ${kind} answered ${r.status}`);
     }
-    return (r.json ?? {}) as Record<string, unknown>;
+    const document = providerObject(r.json);
+    if (!document || this.documentId(document, kind) !== providerMessageId) {
+      throw new AcubeApiError(
+        502,
+        "ACUBE_UNAVAILABLE",
+        "A-Cube returned an invalid document resource."
+      );
+    }
+    return document;
   }
 
   async fetchSource(providerMessageId: string, ref: EInvoiceDocumentRef = {}): Promise<string> {
@@ -591,7 +599,10 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
   }
 
   private documentId(body: Record<string, unknown> | null, kind: Kind): string | null {
-    return providerString(body?.[kind === "credit-notes" ? "creditNoteId" : "invoiceId"]);
+    return (
+      providerString(body?.uuid) ??
+      providerString(body?.[kind === "credit-notes" ? "creditNoteId" : "invoiceId"])
+    );
   }
 
   /** Two-step receive: list incoming documents, then fetch each one's source XML. */
@@ -651,7 +662,7 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
   /** Reserve the TIN so the taxpayer can link it in EmaraTax (POST /legal-entities). */
   async reserveLegalEntity(tin: string): Promise<AcubeLegalEntity> {
     const r = await this.call("POST", "/legal-entities", { json: { tin } });
-    if (r.status === 201 || r.status === 200) return r.json as AcubeLegalEntity;
+    if (r.status === 201 || r.status === 200) return this.legalEntity(r.json);
     const reasons = acubeViolations(r.json);
     throw new AcubeApiError(
       r.status,
@@ -666,7 +677,22 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     if (!r.ok) {
       throw new AcubeApiError(r.status, "ACUBE_UNAVAILABLE", `A-Cube legal entity ${r.status}`);
     }
-    return r.json as AcubeLegalEntity;
+    return this.legalEntity(r.json, legalEntityId);
+  }
+
+  private legalEntity(value: unknown, expectedId?: string): AcubeLegalEntity {
+    const body = providerObject(value);
+    const legalEntityId = providerString(body?.uuid) ?? providerString(body?.legalEntityId);
+    const tin = providerString(body?.tin);
+    const status = providerString(body?.status);
+    if (!legalEntityId || !tin || !status || (expectedId && legalEntityId !== expectedId)) {
+      throw new AcubeApiError(
+        502,
+        "ACUBE_UNAVAILABLE",
+        "A-Cube returned an invalid legal entity resource."
+      );
+    }
+    return { ...body, legalEntityId, tin, status };
   }
 
   /** Register the account's webhook destinations (idempotent: existing targets are kept). */

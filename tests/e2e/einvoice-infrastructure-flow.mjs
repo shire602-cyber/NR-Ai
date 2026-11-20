@@ -74,6 +74,8 @@ const copies = {
 };
 const sellerTrn = "100123456700003";
 const sellerTin = sellerTrn.slice(0, 10);
+const acubeInvoiceUuid = "019ffedf-0461-7dd2-b20c-a0df95b2bfff";
+const acubeLegalEntityUuid = "019e91b7-0a3c-7b1e-9f2d-5c8a1b4e6d70";
 const runTag = randomUUID().slice(0, 8);
 const localeFixtures = [
   { lang: "en", width: 1440, providers: ["acube", "complyance"] },
@@ -110,14 +112,13 @@ const mock = createServer(async (req, res) => {
       assert.equal(login.environment, "sandbox");
       return json(res, 200, { token: mockToken });
     }
-    if (req.method === "POST" && pathname === "/invoices/outgoing") {
+    if (req.method === "POST" && pathname === "/invoices") {
       assert.ok(req.headers.authorization === `Bearer ${mockToken}`);
       assert.match(body, /<cbc:EndpointID schemeID="0235">1002003004<\/cbc:EndpointID>/);
-      const invoiceId = randomUUID();
       posts.push("acube");
-      mockDocuments.set(invoiceId, "acube");
+      mockDocuments.set(acubeInvoiceUuid, "acube");
       await delay(2_000);
-      return json(res, 201, { invoiceId, direction: "outgoing", status: "valid" });
+      return json(res, 201, { uuid: acubeInvoiceUuid, direction: "outgoing", status: "valid" });
     }
     if (req.method === "POST" && pathname === "/api/v3/unify") {
       assert.ok(req.headers.authorization === `Bearer ${credentials.complyance.apiKey}`);
@@ -141,7 +142,7 @@ const mock = createServer(async (req, res) => {
         return invoice[2]
           ? res.writeHead(200, { "Content-Type": "application/xml" }).end("<TaxDataDocument/>")
           : json(res, 200, {
-              invoiceId: invoice[1],
+              uuid: invoice[1],
               direction: "outgoing",
               status: acceptReady.has("acube") ? "delivered" : "valid",
             });
@@ -259,7 +260,7 @@ async function seedOutbound(persona) {
     [
       companyId,
       persona.providers[0],
-      randomUUID(),
+      persona.providers[0] === "acube" ? acubeLegalEntityUuid : randomUUID(),
       sellerTin,
       `0235:${sellerTin}`,
       {
@@ -455,6 +456,9 @@ async function sendInvoice(browser, persona) {
     await delivery.getByText(copies[lang].accepted, { exact: true }).waitFor();
     const result = await request(token, "GET", `/api/invoices/${invoiceId}/einvoice/status`);
     assert.equal(result.submissionState, "accepted");
+    if (persona.providers[0] === "acube") {
+      assert.equal(result.transmission.providerDocumentId, acubeInvoiceUuid);
+    }
     await sheet.getByTestId("einvoice-history-open").click();
     const history = page.getByTestId("einvoice-history");
     const { delivery: deliveryLabel, queued: queuedLabel, accepted: acceptedLabel } = copies[lang];
