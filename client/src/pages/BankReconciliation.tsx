@@ -891,7 +891,11 @@ export default function BankReconciliation() {
             visualOverlay
             visual={
               stats.total > 0 ? (
-                <Progress value={(stats.reconciled / stats.total) * 100} className="h-1" />
+                <Progress
+                  value={(stats.reconciled / stats.total) * 100}
+                  aria-label={t["pages.reconciled"]}
+                  className="h-1"
+                />
               ) : undefined
             }
           />
@@ -1358,7 +1362,11 @@ export default function BankReconciliation() {
                           </div>
                         </div>
                         <div className="mt-2">
-                          <Progress value={s.confidence} className="h-1" />
+                          <Progress
+                            value={s.confidence}
+                            aria-label={`${s.confidence}% ${confMeta.label}`}
+                            className="h-1"
+                          />
                         </div>
                         {s.matchedDate && (
                           <p className="text-xs text-muted-foreground mt-1">
@@ -1484,7 +1492,11 @@ export default function BankReconciliation() {
               )}
               {isImporting && pdfProgress > 0 && (
                 <div className="space-y-1">
-                  <Progress value={pdfProgress} className="h-2" />
+                  <Progress
+                    value={pdfProgress}
+                    aria-label={processingStatus || undefined}
+                    className="h-2"
+                  />
                   <p className="text-xs text-muted-foreground">{processingStatus}</p>
                 </div>
               )}
@@ -1809,7 +1821,11 @@ export default function BankReconciliation() {
                       </span>
                       <span className="font-medium">{reportData.summary.reconciledPct}%</span>
                     </div>
-                    <Progress value={reportData.summary.reconciledPct} className="h-2" />
+                    <Progress
+                      value={reportData.summary.reconciledPct}
+                      aria-label={t["pageLabels.completion"]}
+                      className="h-2"
+                    />
                   </div>
                 )}
               </div>

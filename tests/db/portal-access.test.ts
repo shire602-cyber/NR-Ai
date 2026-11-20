@@ -465,3 +465,35 @@ describe("J4 portal link management follows the company role", () => {
     expect((await h.anon.get(`/api/portal/${token}/invoices`)).status).toBe(410);
   });
 });
+
+describe("PR-62 client-portal users are confined to the portal API", () => {
+  it("PR-62: a bound client_portal member cannot read the company's books, dashboard or team", async () => {
+    const t = await h.createTenant();
+    const pu = await h.createSecondTenant({ userType: "client_portal" });
+    await h.sql(`INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'viewer')`, [
+      t.company.id,
+      pu.user.id,
+    ]);
+    for (const p of [
+      "reports/profit-loss",
+      "reports/balance-sheet",
+      "dashboard/stats",
+      "team",
+      "invoices",
+    ]) {
+      const r = await pu.as.get(`/api/companies/${t.company.id}/${p}`);
+      expect(r.status, p).toBe(403);
+      expect(["PORTAL_SCOPE", "PORTAL_USER_APP_DENIED"]).toContain(r.body?.code);
+    }
+    // The app shell's company list answers an empty list (no supplier row, no failed call).
+    const companies = await pu.as.get("/api/companies");
+    expect(companies.status).toBe(200);
+    expect(companies.body).toEqual([]);
+    expect((await pu.as.post("/api/companies", { name: "Nope LLC" })).status).toBe(403);
+    // The portal API and the session endpoints stay open.
+    expect((await pu.as.get("/api/auth/me")).status).toBe(200);
+    expect((await pu.as.get("/api/client-portal/invoices")).status).toBe(403); // unbound: own guard
+    // A staff member of the same company is unaffected.
+    expect((await t.as.get(`/api/companies/${t.company.id}/reports/profit-loss`)).status).toBe(200);
+  });
+});

@@ -953,6 +953,13 @@
    "when": 1781430510000,
    "tag": "0136_step5_portal_invitations",
    "breakpoints": false
+  },
+  {
+   "idx": 136,
+   "version": "7",
+   "when": 1781430520000,
+   "tag": "0137_combine_portal_invitations_and_settlement_indexes",
+   "breakpoints": false
   }
  ]
 }

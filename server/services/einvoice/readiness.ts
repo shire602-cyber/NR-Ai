@@ -128,9 +128,6 @@ function contactIssues(
   )
     .filter((i) => i.field === "customer.address" || i.field === "invoice.customerTrn")
     .map((i) => i.field);
-  // A B2B buyer must state its full address even when none has been entered yet (ibr-144-ae
-  // only fires once one part is present, so a fully blank address is checked here).
-  if (!contact.address && !contact.city && !contact.emirate) found.push("customer.address");
   return [...new Set(found)];
 }
 

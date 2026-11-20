@@ -29,6 +29,8 @@ export interface ContactFormState {
   country: string;
   emirate: string;
   paymentTerms: number;
+  /** The language this contact's e-mails and links open in; "" = the company default. */
+  preferredLanguage: "" | "en" | "ar";
   isCustomer: boolean;
   isSupplier: boolean;
   partyType: "business" | "individual";
@@ -79,6 +81,7 @@ export function contactBodyFromForm(f: ContactFormState) {
     country: f.country,
     emirate: f.emirate || null,
     paymentTerms: f.paymentTerms,
+    preferredLanguage: f.preferredLanguage || null,
     isCustomer: f.isCustomer,
     isSupplier: f.isSupplier,
     partyType: f.partyType,

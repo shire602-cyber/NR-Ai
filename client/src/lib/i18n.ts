@@ -1,8 +1,23 @@
 // Internationalization utilities for English/Arabic support
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { FIRM_FIRST_SCREEN_NAMESPACES, LOCALE_COOKIE, firmFirstScreen } from "@shared/firm-boot";
 
 export type Locale = "en" | "ar";
+
+/**
+ * Put the locale's direction and language on <html>. main.tsx calls it before the first render
+ * (and theme-init.js does the same from the stored preference before the first paint), so an
+ * Arabic page never starts left-to-right and flips after mount.
+ */
+export function applyDocumentLocale(locale: Locale): void {
+  if (typeof document === "undefined") return;
+  const html = document.documentElement;
+  html.lang = locale;
+  html.dir = locale === "ar" ? "rtl" : "ltr";
+  html.classList.toggle("rtl", locale === "ar");
+  html.classList.toggle("ltr", locale !== "ar");
+}
 
 interface I18nStore {
   locale: Locale;
@@ -15,8 +30,7 @@ export const useI18n = create<I18nStore>()(
       locale: "en",
       setLocale: (locale) => {
         set({ locale });
-        document.documentElement.lang = locale;
-        document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+        applyDocumentLocale(locale);
         // S5: namespace catalogs are code-split; fetch the new locale's chunks on switch
         // (D1b: only the namespaces the current route needs).
         void loadLocaleForCurrentRoute(locale);
@@ -1001,14 +1015,113 @@ function normalisePath(pathname: string): string {
   return path.length > 1 ? path.replace(/\/+$/, "") : path;
 }
 
-/** True for the signed-out marketing, auth, legal and help routes. */
+/**
+ * No-login links a customer or approver opens from an e-mail: the customer portal
+ * (`/portal/<token>`, `/portal/login`, `/portal/session`) and the EmaraTax approver page
+ * (`/portal/einvoicing-approve/<token>`). They get the light public root and only their own
+ * catalogs (a one-screen page should not download the signed-in app).
+ */
+const APPROVER_LINK_PATH = /^\/portal\/einvoicing-approve\/[^/]+$/;
+const PORTAL_LINK_PATH = /^\/portal\/(?!join$|einvoicing-approve\/)[^/]+$/;
+/** The shared-invoice page (`/view/invoice/<token>`) opened from an invoice or reminder e-mail. */
+const INVOICE_LINK_PATH = /^\/view\/invoice\/[^/]+$/;
+
+export function isCustomerLinkPath(pathname: string): boolean {
+  const path = normalisePath(pathname);
+  return (
+    APPROVER_LINK_PATH.test(path) || PORTAL_LINK_PATH.test(path) || INVOICE_LINK_PATH.test(path)
+  );
+}
+
+/**
+ * The signed-in client portal pages (`/client-portal/dashboard|invoices|documents|statements|
+ * messages`). They get their own light root (PortalApp) and only the catalogs they read, not
+ * the whole signed-in app.
+ */
+const PORTAL_APP_PATH = /^\/client-portal\/(dashboard|invoices|documents|statements|messages|account)$/;
+const PORTAL_APP_NAMESPACES = ["components", "portal", "shell", "toasts", "pages", "statements"];
+/** Sign-in and password recovery read only these catalogs (not the help/legal ones). */
+const AUTH_FORM_PATH = /^\/(login|forgot-password|reset-password|verify-email)$/;
+const AUTH_FORM_NAMESPACES = [...PUBLIC_CORE_NAMESPACES, "pageLabels", "pages", "security"];
+
+export function isPortalAppPath(pathname: string): boolean {
+  return PORTAL_APP_PATH.test(normalisePath(pathname));
+}
+
+/**
+ * The firm workspace (`/firm/*`, where NR staff land after sign-in) reads a fixed set of
+ * catalogs. Booting on it loads only those; the first path outside it (a client's books) ends
+ * the restricted scope and loads the rest, exactly like the public scope. Namespaces named
+ * here are the ones the firm pages, the shell chrome and the shared UI read; the command
+ * palette loads the full catalog the first time it opens.
+ */
+const FIRM_APP_PATH = /^\/firm(\/|$)/;
+const FIRM_APP_NAMESPACES = [
+  "common",
+  "components",
+  "shell",
+  "pageLabels",
+  "pages",
+  "toasts",
+  "forms",
+  "firm",
+  "firmOps",
+  "clientsFirm",
+  "marketing",
+  "invoices",
+  "banking",
+  "consolidation",
+  "reportCenter",
+  "einvoicing",
+  "aiAssistant",
+  "launchProof",
+  "screens",
+];
+
+export function isFirmAppPath(pathname: string): boolean {
+  return FIRM_APP_PATH.test(normalisePath(pathname));
+}
+
+/**
+ * Signed-in app users only: the chosen language rides along as a functional cookie so the server
+ * can preload the right catalogs in the document (server/vite.ts); the stored preference stays
+ * the source of truth.
+ */
+export function rememberLocaleCookie(value: Locale = useI18n.getState().locale): void {
+  try {
+    const secure = window.location.protocol === "https:" ? "; Secure" : "";
+    document.cookie = `${LOCALE_COOKIE}=${value}; path=/; max-age=31536000; SameSite=Lax${secure}`;
+  } catch {
+    /* cookies blocked: the document simply preloads no catalogs */
+  }
+}
+
+/** Load (once) the whole firm catalog set for `locale`; used after the first screen has painted. */
+export function loadFirmNamespaces(locale: Locale): Promise<void> {
+  return loadNamespaces(locale, FIRM_APP_NAMESPACES);
+}
+
+/** True for the signed-out marketing, auth, legal and help routes and the no-login links. */
 export function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.has(normalisePath(pathname));
+  const path = normalisePath(pathname);
+  return PUBLIC_PATHS.has(path) || isCustomerLinkPath(path);
 }
 
 /** Namespaces a public path needs, or `null` for "every namespace" (app routes). */
 export function namespacesForPath(pathname: string): string[] | null {
   const path = normalisePath(pathname);
+  if (path === "/portal/join") return [...AUTH_FORM_NAMESPACES, "portal", "serverErrors"];
+  if (APPROVER_LINK_PATH.test(path)) return ["components", "einvoicing", "customerLink"];
+  if (PORTAL_LINK_PATH.test(path) || INVOICE_LINK_PATH.test(path))
+    return ["components", "portal", "customerLink"];
+  if (path === "/client-portal/account") return [...PORTAL_APP_NAMESPACES, "security"];
+  if (PORTAL_APP_PATH.test(path)) return PORTAL_APP_NAMESPACES;
+  // The firm landing screens read only these catalogs (shared/firm-boot.ts), so booting on them
+  // downloads six instead of nineteen; the rest warm after the first screen has painted
+  // (`loadFirmNamespaces`), before staff can open another firm screen.
+  if (firmFirstScreen(path)) return [...FIRM_FIRST_SCREEN_NAMESPACES];
+  if (FIRM_APP_PATH.test(path)) return FIRM_APP_NAMESPACES;
+  if (AUTH_FORM_PATH.test(path)) return AUTH_FORM_NAMESPACES;
   if (!PUBLIC_PATHS.has(path)) return null;
   return PUBLIC_CORE_ONLY.has(path)
     ? PUBLIC_CORE_NAMESPACES
@@ -1019,7 +1132,7 @@ let publicScope = false;
 
 /** Called once by main.tsx: restrict loading to route namespaces while on public paths. */
 export function setPublicBootScope(pathname: string): void {
-  publicScope = isPublicPath(pathname);
+  publicScope = isPublicPath(pathname) || isPortalAppPath(pathname) || isFirmAppPath(pathname);
 }
 
 function currentPathname(): string {

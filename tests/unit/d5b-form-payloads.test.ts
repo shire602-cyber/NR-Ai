@@ -426,6 +426,7 @@ describe("[D5b] contact form payload unchanged", () => {
       addressBuilding: null,
       addressDistrict: null,
       postalCode: null,
+      preferredLanguage: null,
       isCustomer: true,
       isSupplier: false,
       partyType: "business",

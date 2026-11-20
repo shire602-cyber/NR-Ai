@@ -8,6 +8,8 @@
 export interface EInvoiceIssueItem {
   field: string;
   message: string;
+  /** Stable server code (e.g. EINVOICE_BUYER_ENDPOINT_MISSING), when the issue has one. */
+  code?: string;
 }
 
 type Finding = { id?: string; message?: string; location?: string };
@@ -17,14 +19,18 @@ type Layer = { errors?: Finding[] };
 export function einvoiceIssuesFromError(body: unknown): EInvoiceIssueItem[] {
   if (!body || typeof body !== "object") return [];
   const b = body as {
-    issues?: Array<{ field?: unknown; message?: unknown }>;
+    issues?: Array<{ field?: unknown; message?: unknown; code?: unknown }>;
     validation?: { xsd?: Layer; schematron?: Layer; rules?: Layer };
   };
   const out: EInvoiceIssueItem[] = [];
   if (Array.isArray(b.issues)) {
     for (const i of b.issues) {
       if (i && typeof i.message === "string") {
-        out.push({ field: typeof i.field === "string" ? i.field : "", message: i.message });
+        out.push({
+          field: typeof i.field === "string" ? i.field : "",
+          message: i.message,
+          ...(typeof i.code === "string" ? { code: i.code } : {}),
+        });
       }
     }
   }
@@ -56,6 +62,18 @@ export interface EInvoiceFieldHint {
   href: string | null;
   /** Rule / schema findings: the validator's own label (already readable). */
   ruleLabel: string | null;
+  /** Localised, actionable fix text for a coded issue (replaces the English message). */
+  textKey?: string | null;
+}
+
+/** Coded issues the invoice screens explain in the user's language. */
+const ISSUE_TEXT_KEYS: Record<string, string> = {
+  EINVOICE_BUYER_ENDPOINT_MISSING: "invoices.einvoiceIssue.buyerEndpointMissing",
+  EINVOICE_BUYER_ADDRESS_MISSING: "invoices.einvoiceIssue.buyerAddressMissing",
+};
+
+export function einvoiceIssueTextKey(code: string | undefined): string | null {
+  return code ? (ISSUE_TEXT_KEYS[code] ?? null) : null;
 }
 
 const COMPANY_FIELDS: Record<string, string> = {
@@ -90,8 +108,9 @@ export function einvoiceFieldHint(field: string): EInvoiceFieldHint {
   const none = { labelKey: null, whereKey: null, href: null, ruleLabel: null };
   if (!field) return none;
   if (/^(UBL schema|PINT AE)/.test(field)) {
-    // E1 (J1-r2): buyer-identity and buyer-address rules are fixed on the customer's contact.
-    if (/\bibr-(080|144)/i.test(field)) {
+    // E1 (J1-r2): buyer-identity and buyer-address rules are fixed on the customer's contact,
+    // and so is the buyer's electronic address (PINT-EndpointID).
+    if (/\bibr-(080|144)|\bPINT-EndpointID/i.test(field)) {
       return {
         ...none,
         ruleLabel: field,
@@ -112,7 +131,10 @@ export function einvoiceFieldHint(field: string): EInvoiceFieldHint {
   }
   if (scope === "customer") {
     return {
-      labelKey: "invoices.einvoiceField.customerAddress",
+      labelKey:
+        rest === "endpointId"
+          ? "invoices.einvoiceField.customerEndpoint"
+          : "invoices.einvoiceField.customerAddress",
       whereKey: "invoices.einvoiceWhere.customer",
       href: "/contacts",
       ruleLabel: null,

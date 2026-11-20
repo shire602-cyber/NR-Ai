@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ARTIFACT_DIR = path.join(__dirname, "..", ".artifacts");
 const CACHE = path.join(ARTIFACT_DIR, "sweep-personas.json");
-export const PASSWORD = "SweepPass123!";
+export const PASSWORD = "Fake-Sweep-Password-123";
 
 export function assertLocal(base) {
   if (!/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(base)) {

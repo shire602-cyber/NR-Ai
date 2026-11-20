@@ -197,6 +197,12 @@ export function registerCompanyRoutes(app: Express) {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const { id: userId, firmRole } = req.user!;
+      // A client_portal user sees its supplier only through /api/client-portal/company. The app
+      // shell still lists companies on every page, so answer that with nothing instead of a 403
+      // (no failed call, and no supplier company row leaks to the customer).
+      if (req.user!.userType === "client_portal" && !req.user!.isAdmin) {
+        return res.json([]);
+      }
       const companies = await storage.getAccessibleCompanies(
         userId,
         firmRole,
@@ -217,7 +223,7 @@ export function registerCompanyRoutes(app: Express) {
   app.post(
     "/api/companies",
     authMiddleware,
-    // H8: the free tier's caps (1 user, 20 invoices/month) were bypassable by
+    // H8: the old plan caps were bypassable by
     // simply creating another company. maxCompanies is now actually enforced.
     checkCompanyQuota(),
     strictBody(createCompanyBody),

@@ -1,8 +1,8 @@
 {
-  "source": "Audit report 20 section 4 (300 invoices, 200 requests per endpoint, concurrency 20, 4-core box); upper p95 of the observed range.",
+  "source": "Audit report 20 section 4 (300 invoices, 200 requests per endpoint, concurrency 20, 4-core box); upper p95 of the observed range. dashboard/stats re-baselined to 350 ms on 2026-11-18 (owner decision): observed p95 307-411 ms locally and 467-503 ms on the CI runner after #67's WQ1 merge; the old 247 ms left too little margin.",
   "p95Ms": {
     "/api/companies/:cid/invoices": 376,
-    "/api/companies/:cid/dashboard/stats": 247,
+    "/api/companies/:cid/dashboard/stats": 350,
     "/api/companies/:cid/dashboard/monthly-trends": 184,
     "/api/companies/:cid/reports/balance-sheet": 126,
     "/api/companies/:cid/reports/trial-balance": 124,

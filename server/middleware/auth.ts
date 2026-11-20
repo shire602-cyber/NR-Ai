@@ -21,7 +21,7 @@ export interface AuthUser {
   firmRole: "firm_owner" | "firm_admin" | null;
 }
 
-/** Subscription cached on a request: the company's row, or the implicit Free plan. */
+/** Subscription cached on a request: the company's row, or the implicit no-plan state (trial, then read-only). */
 export type RequestSubscription =
   | Subscription
   | { companyId: string; planId: string; implicit: true };
@@ -197,6 +197,19 @@ export function clearAuthenticationCache(req: Request): void {
  * Extract and verify JWT token from httpOnly cookie or Authorization header.
  * Fetches the actual user from DB to prevent JWT claim tampering.
  */
+/** API paths a client_portal user may call: the portal API and session endpoints. */
+const PORTAL_USER_ALLOWED_PREFIXES = ["/api/client-portal/", "/api/auth/"];
+
+export function isPortalUserAllowedPath(urlPath: string, method = "GET"): boolean {
+  const pathOnly = urlPath.split("?")[0].split("#")[0];
+  if (pathOnly.includes("..") || /%2e/i.test(pathOnly)) return false;
+  // The app shell lists companies on every page; for a portal user the handler answers [].
+  if (method === "GET" && pathOnly === "/api/companies") return true;
+  return PORTAL_USER_ALLOWED_PREFIXES.some(
+    (prefix) => pathOnly.startsWith(prefix) || pathOnly === prefix.slice(0, -1)
+  );
+}
+
 export async function authMiddleware(
   req: Request,
   res: Response,
@@ -209,6 +222,21 @@ export async function authMiddleware(
   }
   if (isFailure(result)) {
     res.status(result.status).json({ message: result.message, code: result.code });
+    return;
+  }
+  // PR-62 port: a client_portal user is a guest of one customer contact. Company
+  // membership (role viewer) exists only so the portal can resolve that contact; it must
+  // never open the accounting API. Refused centrally so a route that only checks
+  // membership (reports, dashboard, team) can never serve a portal user.
+  if (
+    result.user.userType === "client_portal" &&
+    !result.user.isAdmin &&
+    !isPortalUserAllowedPath(req.originalUrl || req.url, req.method)
+  ) {
+    res.status(403).json({
+      message: "Client portal accounts can only use the client portal",
+      code: "PORTAL_SCOPE",
+    });
     return;
   }
   // Use server-side data (prevents privilege escalation via JWT tampering)

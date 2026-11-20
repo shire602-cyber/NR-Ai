@@ -46,6 +46,17 @@ export const FIRM_PERMISSIONS = [
 ] as const;
 export type FirmPermission = (typeof FIRM_PERMISSIONS)[number];
 
+/**
+ * Named handles for the permissions the firm UI gates controls on, so client code reads these
+ * (typed, one source) instead of repeating the permission strings.
+ */
+export const FIRM_UI_PERMISSIONS = {
+  seesAllClients: "firm.clients.all",
+  createClient: "firm.clients.create",
+  linkClient: "firm.clients.link",
+  manageStaff: "firm.staff.manage",
+} as const satisfies Record<string, FirmPermission>;
+
 /** Role → permissions. A permission a role does not list is denied. */
 export const FIRM_ROLE_PERMISSIONS: Record<FirmRole, readonly FirmPermission[]> = {
   firm_owner: FIRM_PERMISSIONS,

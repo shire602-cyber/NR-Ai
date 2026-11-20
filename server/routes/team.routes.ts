@@ -24,12 +24,12 @@ import {
   grantableRoles,
   normalizeCompanyRole,
   permissionsForRole,
-  zCompanyRole,
   type CompanyRole,
 } from "../../shared/permissions";
 import { users, type CompanyInvitation } from "../../shared/schema";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
+import { zCompanyRole } from "../../shared/validators/company-role";
 
 const log = createLogger("team");
 

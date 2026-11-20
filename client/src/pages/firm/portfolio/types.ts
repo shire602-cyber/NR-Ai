@@ -7,6 +7,7 @@ export interface ClientStats {
   invoiceCount: number;
   invoiceTotal: number;
   outstandingAr: number;
+  overdueAr?: number;
   lastReceiptDate: string | null;
   lastBankActivityDate: string | null;
   vatStatus: {

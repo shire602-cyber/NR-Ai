@@ -1,6 +1,7 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { getAuthHeaders, hasAuthHint, refreshSession } from "./auth";
 import { apiUrl } from "./api";
+import { takeBootFetch } from "./bootFetch";
 import { withCsrfHeader, clearCsrfToken } from "./csrf";
 import { isOnline, queueForSync } from "./pwa";
 import {
@@ -223,10 +224,12 @@ export const getQueryFn: <T>(options: { on401: UnauthorizedBehavior }) => QueryF
       if (unauthorizedBehavior === "returnNull") return null as never;
       throw new ApiError("Not signed in", 401);
     }
-    let res = await fetch(url, {
-      credentials: "include",
-      headers: getAuthHeaders(),
-    });
+    let res =
+      (await takeBootFetch(url)) ??
+      (await fetch(url, {
+        credentials: "include",
+        headers: getAuthHeaders(),
+      }));
 
     if (res.status === 401) {
       const refreshed = await refreshSession();

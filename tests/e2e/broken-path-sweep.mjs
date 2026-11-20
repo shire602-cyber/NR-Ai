@@ -911,7 +911,7 @@ async function sweepPersona(browser, name, persona, ids, userStrings) {
 async function main() {
   const setup = await setupPersonas(BASE);
   const personas = setup.personas;
-  for (const p of Object.values(personas)) p.password = "SweepPass123!";
+  for (const p of Object.values(personas)) p.password = "Fake-Sweep-Password-123";
   const userStrings = await harvestUserStrings(personas.owner.token, personas.owner.companyId);
   for (const text of await harvestUserStrings(personas.admin.token, personas.admin.companyId))
     userStrings.add(text);

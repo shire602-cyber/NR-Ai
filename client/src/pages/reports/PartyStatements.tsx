@@ -123,7 +123,10 @@ export default function PartyStatements() {
                 setPartyId("");
               }}
             >
-              <SelectTrigger data-testid="select-statement-kind">
+              <SelectTrigger
+                aria-label={t["reportCenter.partyStatementKind"]}
+                data-testid="select-statement-kind"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -141,7 +144,14 @@ export default function PartyStatements() {
               />
             </Label>
             <Select value={partyId} onValueChange={setPartyId}>
-              <SelectTrigger data-testid="select-statement-party">
+              <SelectTrigger
+                aria-label={
+                  kind === "customer"
+                    ? t["reportCenter.partyCustomer"]
+                    : t["reportCenter.partySupplier"]
+                }
+                data-testid="select-statement-party"
+              >
                 <SelectValue placeholder={t["reportCenter.partySelect"]} />
               </SelectTrigger>
               <SelectContent>

@@ -337,8 +337,19 @@ export class IntegrationStorage extends ContactStorage {
     return event;
   }
 
-  async createStripeEvent(id: string, type: string): Promise<void> {
-    await db.insert(stripeEvents).values({ id, type }).onConflictDoNothing();
+  /** Claim a Stripe event id; false when another delivery already holds it. */
+  async createStripeEvent(id: string, type: string): Promise<boolean> {
+    const rows = await db
+      .insert(stripeEvents)
+      .values({ id, type })
+      .onConflictDoNothing()
+      .returning({ id: stripeEvents.id });
+    return rows.length > 0;
+  }
+
+  /** Release a claimed event whose processing failed, so Stripe's retry is processed. */
+  async releaseStripeEvent(id: string): Promise<void> {
+    await db.delete(stripeEvents).where(eq(stripeEvents.id, id));
   }
 
   // Document versions

@@ -260,6 +260,7 @@ describe("S4 client-side firm screens (invitation, engagement letter, request up
       { reason: "Changed accountant" }
     );
     expect(revoked.status, revoked.text).toBe(200);
-    expect((await b.as.get(`/api/firm/clients/${cid}/summary`)).status).toBe(403);
+    // The ended link puts the company outside the firm: another tenant, so 404 (not 403).
+    expect((await b.as.get(`/api/firm/clients/${cid}/summary`)).status).toBe(404);
   });
 });

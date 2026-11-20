@@ -110,10 +110,12 @@ export function PortalInvoiceList({
 
   const run = async (key: string, job: Job) => {
     setBusy(key);
+    const failureTitle =
+      t[key.startsWith("pdf:") ? "portal.doc.downloadFailed" : "portal.list.downloadFailed"];
     try {
-      if (!(await job())) toast({ title: t["portal.list.downloadFailed"], variant: "destructive" });
+      if (!(await job())) toast({ title: failureTitle, variant: "destructive" });
     } catch {
-      toast({ title: t["portal.list.downloadFailed"], variant: "destructive" });
+      toast({ title: failureTitle, variant: "destructive" });
     } finally {
       setBusy(null);
     }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
@@ -42,12 +42,10 @@ import {
   type PaletteRecent,
   type PaletteRecord,
 } from "@/lib/commandPaletteRecords";
-import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useToast } from "@/hooks/use-toast";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { useCatalogText, type CatalogTextKind } from "@/lib/reportCatalogText";
-import { OPEN_COMMAND_PALETTE_EVENT } from "@/lib/commandPalette";
 import { apiRequest } from "@/lib/queryClient";
 import {
   fetchReportCatalogDiscovery,
@@ -1609,30 +1607,4 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       </CommandList>
     </CommandDialog>
   );
-}
-
-export function CommandPaletteProvider() {
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    const handleOpen = () => setOpen(true);
-    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, handleOpen);
-    return () => window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, handleOpen);
-  }, []);
-
-  useKeyboardShortcuts([
-    {
-      combo: "mod+k",
-      handler: () => setOpen((prev) => !prev),
-      allowInInputs: true,
-      description: "Open command palette",
-    },
-    {
-      combo: "/",
-      handler: () => setOpen(true),
-      description: "Search / open command palette",
-    },
-  ]);
-
-  return <CommandPalette open={open} onOpenChange={setOpen} />;
 }

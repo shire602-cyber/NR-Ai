@@ -145,13 +145,32 @@ describe("e-invoicing validation gate", () => {
     expect(badShape.some((i) => i.message.includes("ibr-132-ae"))).toBe(true);
   });
 
-  it("rejects buyer TRNs with the wrong format but allows absent ones", () => {
+  it("rejects buyer TRNs with the wrong format; an absent TRN needs a recorded buyer endpoint", () => {
     expect(
       validateForEInvoicing(makeInvoice({ customerTrn: "ABC" }), lines, company).some(
         (i) => i.field === "invoice.customerTrn"
       )
     ).toBe(true);
-    expect(validateForEInvoicing(makeInvoice({ customerTrn: null }), lines, company)).toEqual([]);
+    // No TRN and no endpoint: the buyer EndpointID (IBT-049) cannot be built, so the data check
+    // names the fix instead of letting the document fail PINT-EndpointID later.
+    expect(validateForEInvoicing(makeInvoice({ customerTrn: null }), lines, company)).toEqual([
+      expect.objectContaining({
+        field: "customer.endpointId",
+        code: "EINVOICE_BUYER_ENDPOINT_MISSING",
+      }),
+    ]);
+    // A recorded Peppol endpoint (e.g. a foreign buyer) is enough without a TRN.
+    expect(
+      validateForEInvoicing(makeInvoice({ customerTrn: null }), lines, company, {
+        customer: {
+          endpointId: "DE123456789",
+          endpointScheme: "9930",
+          address: "Hauptstrasse 1",
+          city: "Berlin",
+          country: "DE",
+        },
+      })
+    ).toEqual([]);
   });
 
   it("catches totals that disagree with the lines", () => {

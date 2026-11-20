@@ -3,6 +3,21 @@
 Scope: this file applies to the whole repository. It is a concise index; detail lives in `docs/`
 (links below). Keep this file under 250 lines and move new detail into the linked docs.
 
+## Model roles (all agents, owner rule)
+
+Sonnet 5.5 (`claude-sonnet-5-5`) is the builder: it does all the hands-on work. The higher-tier
+models (Opus, Fable: the "council") only plan, audit, review and decide. Owner decision, to keep
+the week's token budget for the work that needs it.
+
+- Council: scope the task, write the plan and a self-contained brief, review the result (diff, test
+  output, evidence), make the final call, and talk to the owner. It does not do the work in between.
+- Builder: everything between plan and review. Code edits, tests, migrations, running gates and
+  fixing CI, merges and conflict resolution, data gathering, rehearsals, drafting docs.
+- Delegate with the `builder` agent (`.claude/agents/builder.md`, pinned to Sonnet) or the Agent
+  tool with `model: "sonnet"`. Brief it with the goal, files, rules from this file, and what done
+  looks like; the council then reviews what came back before anything is pushed or reported.
+- Small lookups a review needs (one file, one grep) may stay with the council.
+
 ## Project layout
 
 - `client/` React/Vite frontend (`@` aliases `client/src`). UI copy lives in namespaced catalogs
@@ -10,6 +25,10 @@ Scope: this file applies to the whole repository. It is a concise index; detail 
   Report catalog Arabic is the keyed overlay `client/src/locales/ar-catalog/reportCatalog.json`
   (`useCatalogText()`); `npm run e2e:arabic-runtime` must find 0 English text nodes on the 22
   launch routes in Arabic mode. The i18n ratchet also scans `client/src/lib` and `client/src/hooks`.
+- Two client bundles: `npm run build` runs `vite build` and `FIRM_BUILD=1 vite build` (`client/firm.html`;
+  the signed-in app and the two firm landing screens as one entry chunk). `server/vite.ts` serves it for
+  `/firm/*`; `shared/firm-boot.ts` is the shared route/catalog/API table. See
+  [docs/testing-runtime.md](docs/testing-runtime.md) ("Firm first load").
 - `server/` Express API: `routes/`, `services/`, `middleware/`, `ledger/`, `reporting/`, `tax/`,
   `tenancy/`, `platform/` (service registry, domain events, job registry), `outbox/`, `http/`.
   `server/routes/ai.routes.ts` and `firm.routes.ts` keep every registration (path, middleware
@@ -27,7 +46,7 @@ Scope: this file applies to the whole repository. It is a concise index; detail 
   exceeds 1,500 lines.
 - `migrations/` Drizzle migrations (`migrations/meta/` is generated; never edit by hand).
 - `tests/` Vitest unit tests (`tests/unit`), DB-backed tests (`tests/db`) and smoke/E2E scripts.
-- `docs/release/DEPLOY-RUNBOOK.md` deploy runbook: backup, migration 0089-0134 rehearsal, env,
+- `docs/release/DEPLOY-RUNBOOK.md` deploy runbook: backup, migration 0089-0136 rehearsal, env,
   smoke, rollback.
 - `docs/` engineering notes. Do not edit `dist/` or `node_modules/`; `.claude/` and `.claire/`
   worktrees are excluded from Vitest/ESLint and are not a source of truth.
@@ -71,6 +90,9 @@ Detail for each rule: [docs/platform-rules.md](docs/platform-rules.md).
 reversePayment` (service registry) and `bank-reconciliation.service.ts` (`applyMatch`,
   `unmatchTransaction`). Do not write `invoice_payments`/`bill_payments` or reconciliation state
   elsewhere. Inventory/COGS changes go through `inventory.on*` registry calls.
+- Firm screens: A/R comes from `server/reporting/firm-receivables.ts` (settlement rule, AED via
+  `fx.convert`), assigned staff from `firm_staff_assignments`, UI gating from `FIRM_UI_PERMISSIONS`
+  (`shared/access.ts`); `npm run e2e:firm-tools` covers the firm flows.
 - Tenancy: load tenant-owned rows with `server/tenancy` (`scopedGet`/`scopedUpdate`/`scopedDelete`/
   `requireOwned`); another tenant's row is a 404, never a 403. Portal users act only through
   `customer_portal_accounts` (never `company_users`); see platform-rules.
@@ -140,6 +162,9 @@ Detail: [docs/testing-runtime.md](docs/testing-runtime.md).
 - [docs/dev-commands.md](docs/dev-commands.md): QA fixtures, benchmark audit, audit generators.
 - [docs/database-migrations.md](docs/database-migrations.md), [docs/testing-runtime.md](docs/testing-runtime.md).
 - [docs/release/SELF-HOSTING.md](docs/release/SELF-HOSTING.md): on-prem production (compose prod profile, TLS, backups, monitoring).
+- [docs/release/MIGRATION-REHEARSAL.md](docs/release/MIGRATION-REHEARSAL.md) (scripted rehearsal in
+  `docs/release/rehearsal/`), [docs/release/PLATFORM-OWNER.md](docs/release/PLATFORM-OWNER.md)
+  (0054 neutralised; opt-in `scripts/ops/platform-owner.ts`), [docs/release/SUPERSEDED-PRS.md](docs/release/SUPERSEDED-PRS.md).
 - [docs/einvoicing-providers.md](docs/einvoicing-providers.md): the two accredited e-invoicing
   providers (A-Cube, Complyance), `EINVOICE_PROVIDER` switching and the files to delete for each.
 - Other: `docs/corporate-tax-rules.md`, `docs/faf-export.md`, `docs/payroll-legal-parameters.md`,

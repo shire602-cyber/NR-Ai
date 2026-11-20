@@ -5,13 +5,14 @@
 import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 import type { OutgoingEmail } from "../../server/outbox";
 
 const h = useHarness();
 const DAY = 86_400_000;
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const uniq = () => randomBytes(4).toString("hex");
-const PASSWORD = "Portal9Strong!x";
+const PASSWORD = FAKE_PASSWORD;
 const TOKEN_RE = /#t=([0-9a-f]{64})/;
 
 beforeEach(async () => {

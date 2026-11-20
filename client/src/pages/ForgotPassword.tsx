@@ -134,6 +134,12 @@ export default function ForgotPassword() {
                       {...field}
                       type="email"
                       autoComplete="email"
+                      inputMode="email"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      enterKeyHint="send"
+                      ltr
                       placeholder="you@example.com"
                       className={AUTH_INPUT}
                       disabled={isLoading}

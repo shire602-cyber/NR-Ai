@@ -401,5 +401,7 @@
   "portal.account.devices": "Devices",
   "portal.account.devicesHint": "Sign out of every phone and computer where you are signed in.",
   "portal.account.signOutAll": "Sign out everywhere",
-  "portal.chip.column": "Portal"
+  "portal.chip.column": "Portal",
+  "portal.switchLanguage": "العربية",
+  "portal.doc.downloadFailed": "The PDF could not be downloaded. Please try again."
 }

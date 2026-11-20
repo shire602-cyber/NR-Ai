@@ -1,8 +1,8 @@
-# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0136)
+# Deploy runbook: branch `claude/eloquent-maxwell-kjxxjc` (migrations 0089 to 0137)
 
 Hosting on your own server instead of Railway: see [SELF-HOSTING.md](SELF-HOSTING.md).
 
-Owner-run. The first deploy of this branch applies 30 migrations that rewrite some production data
+Owner-run. The first deploy of this branch applies 49 migrations (0089-0137) that rewrite some production data
 (users, roles, FX rates, reconciliation rules, portal tokens, audit chain, subscriptions). Do not
 merge or deploy until sections 1 to 3 are complete and signed off. Doc-derived or external items
 (A-Cube, email, Stripe, WPS, GPSSA, FAF) are listed in section 9 and stay off until proven.
@@ -29,7 +29,7 @@ Restore the dump from section 1 (or a Railway snapshot) into a scratch database,
 ```
 export DATABASE_URL=postgres://.../rehearsal   # the restored copy
 \timing on                                     # in psql; or time the command below
-time npm run db:migrate                         # applies 0089-0136; record total and slowest file
+time npm run db:migrate                         # applies 0089-0137; record total and slowest file
 npm run build && PORT=<free port> npm start     # boot check: /health/ready 200, /api/version
 ```
 
@@ -59,9 +59,10 @@ SELECT (SELECT count(*) FROM companies) AS companies,
        count(*) FILTER (WHERE source <> 'fta') AS non_fta_rates,
        count(*) FILTER (WHERE source = 'manual') AS manual_rates
   FROM exchange_rates;
--- 0097: reconciliation rules that will be switched off
+-- 0097: reconciliation rules that will be switched off. account_id does not exist before 0097, so
+-- on a main schema every active rule counts as "without account" and is deactivated.
 SELECT count(*) FILTER (WHERE match_type NOT IN ('exact','contains','starts_with','regex','equals','equal','is')) AS bad_match_type,
-       count(*) FILTER (WHERE account_id IS NULL AND is_active) AS active_without_account
+       count(*) FILTER (WHERE is_active) AS active_rules_all_deactivated_by_0097
   FROM reconciliation_rules;
 -- 0103: plaintext portal tokens that will be hashed (links then expire within 90 days)
 SELECT count(*) FROM customer_contacts WHERE portal_access_token IS NOT NULL;
@@ -118,8 +119,9 @@ records it again (same date, amount, rate, reference) on the primary bank accoun
 already matched to a bank line, or dated in a locked period, are skipped and reported. Run the
 repair only after the owner has reviewed the findings, with a fresh backup.
 
-Pre-deploy SQL check (read-only, run on production or the snapshot BEFORE the deploy): parent/child
-posting accounts. Any parent (header) account that already carries posted journal lines needs an
+Pre-deploy SQL check (read-only): parent/child posting accounts. `accounts.parent_id` is created by
+0093, so on a pre-0089 (main) schema this script errors; run it on the MIGRATED rehearsal copy before
+the deploy (rehearsal: [MIGRATION-REHEARSAL.md](MIGRATION-REHEARSAL.md), finding 4). Any parent (header) account that already carries posted journal lines needs an
 owner decision before a build that refuses posting to parent accounts goes live:
 
 ```
@@ -170,7 +172,11 @@ SELECT table_name FROM information_schema.tables
  WHERE table_schema = 'public' AND table_name IN ('subscription_plans', 'user_subscriptions');
 ```
 
-#### Customer portal invitations (0136)
+#### Customer portal invitations (0136) and settlement indexes (0137)
+
+Migration `0137_combine_portal_invitations_and_settlement_indexes.sql` applies the settlement
+indexes and replays the portal invitation migration for databases that previously applied the
+settlement-only version of 0136.
 
 Migration `0136_step5_portal_invitations.sql` creates `customer_portal_invitations`, adds
 `invitation_id`, `last_seen_at` and `revoked_by` to `customer_portal_accounts`, and DELETES every
@@ -221,18 +227,26 @@ and attach to the PR:
 The owner reviews and signs off the findings before the deploy. Findings are flagged, not repaired:
 historic unbalanced entries and duplicate reversals need accountant review per tenant afterwards.
 
+### 2e. Scripted rehearsal and the 2026-11-18 record
+
+`docs/release/rehearsal/rehearse.sh` runs sections 1, 2a-2d, the idempotency re-runs and the
+section 7 restore in one command against a restored snapshot (never production). The production-like
+rehearsal record, with its findings (two missing indexes on the settlement rule, 0097 deactivating
+every pre-existing rule, 0109 time per audit row), is in [MIGRATION-REHEARSAL.md](MIGRATION-REHEARSAL.md).
+
 ## 3. Environment to set on Railway BEFORE the deploy
 
-| Variable                                       | Value / reason                                                                                                                                                                                                                                                                                                                                                                                            |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TOKEN_ENCRYPTION_KEY`                         | Random 32+ byte secret, **separate from `SESSION_SECRET`**. The secret vault falls back to `SESSION_SECRET` when unset (`server/services/secret-vault.ts`); set it before any secrets are stored, because rotating it later makes stored secrets unreadable.                                                                                                                                              |
-| `TRUST_PROXY_HOPS`                             | Number of proxies in front of the app (Railway: normally `1`). Needed for `req.ip` and per-IP rate limits; the server warns in production when unset and refuses `true`.                                                                                                                                                                                                                                  |
-| `RBAC_ENFORCE`                                 | `enforce` (default). Do not start on `report`: it reopens the audited R01-02 role hole. Keep `report` only as the rollback in section 7.                                                                                                                                                                                                                                                                  |
-| Durable file storage                           | Either S3 (`S3_BUCKET` and its credentials) or Vercel Blob (`BLOB_READ_WRITE_TOKEN`), with `STORAGE_STRICT=true` so the server refuses to start without it, or a Railway volume mounted at the uploads path. Without it receipts and report artifacts do not survive a redeploy. A production boot on plain local disk is refused unless `ALLOW_LOCAL_STORAGE=true`; do not set that on the live service. |
-| `JWT_SECRET`, `SESSION_SECRET`, `DATABASE_URL` | Already required. `JWT_SECRET_ROTATED_AFTER_BACKDOOR=true` only after rotation.                                                                                                                                                                                                                                                                                                                           |
-| `AUTH_PUBLIC_URL`                              | Public base URL used in emails and webhooks.                                                                                                                                                                                                                                                                                                                                                              |
-| `AUTO_MIGRATE_ON_BOOT`                         | Leave `false`; migrate in the release phase (`npm run db:migrate`).                                                                                                                                                                                                                                                                                                                                       |
-| Commit SHA on `/api/version`                   | See below.                                                                                                                                                                                                                                                                                                                                                                                                |
+| Variable                                       | Value / reason                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TOKEN_ENCRYPTION_KEY`                         | Random 32+ byte secret, **separate from `SESSION_SECRET`**. The secret vault falls back to `SESSION_SECRET` when unset (`server/services/secret-vault.ts`); set it before any secrets are stored, because rotating it later makes stored secrets unreadable.                                                                                                                                                         |
+| `TRUST_PROXY_HOPS`                             | Number of proxies in front of the app (Railway: normally `1`). Needed for `req.ip` and per-IP rate limits; the server warns in production when unset and refuses `true`.                                                                                                                                                                                                                                             |
+| `RBAC_ENFORCE`                                 | `enforce` (default). Do not start on `report`: it reopens the audited R01-02 role hole. Keep `report` only as the rollback in section 7.                                                                                                                                                                                                                                                                             |
+| Durable file storage                           | Either S3 (`S3_BUCKET` and its credentials) or Vercel Blob (`BLOB_READ_WRITE_TOKEN`), with `STORAGE_STRICT=true` so the server refuses to start without it, or a Railway volume mounted at the uploads path. Without it receipts and report artifacts do not survive a redeploy. A production boot on plain local disk is refused unless `ALLOW_LOCAL_STORAGE=true`; do not set that on the live service.            |
+| `JWT_SECRET`, `SESSION_SECRET`, `DATABASE_URL` | Already required. `JWT_SECRET_ROTATED_AFTER_BACKDOOR=true` only after rotation.                                                                                                                                                                                                                                                                                                                                      |
+| `AUTH_PUBLIC_URL`                              | Public base URL used in emails and webhooks.                                                                                                                                                                                                                                                                                                                                                                         |
+| `FRONTEND_URL`                                 | The public origin of the app (for example `https://app.example.com`), comma-separated extras in `CORS_ORIGIN`. In production the server refuses any request whose `Origin` is not listed (403 `ORIGIN_NOT_ALLOWED`), and browsers send `Origin` for module scripts, so **unset means every page loads blank** (all JS/CSS assets 403). `curl`-based checks do not catch it; open the site in a browser after deploy. |
+| `AUTO_MIGRATE_ON_BOOT`                         | Leave `false`; migrate in the release phase (`npm run db:migrate`).                                                                                                                                                                                                                                                                                                                                                  |
+| Commit SHA on `/api/version`                   | See below.                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 **Time zone.** The server process always runs in `TZ=UTC` (the Dockerfile and both compose files set
 it, and `server/config/pin-timezone.ts` pins it at startup even when the host says otherwise).
@@ -279,7 +293,9 @@ network (SSH) once a key is registered.
 - **Invitations (0092):** placeholder users created by the old team invite became pending
   invitations with a new token that is never shown. Inviters must re-send pending invitations.
 - **Reconciliation rules (0097):** rules with an unknown match type or no GL account were
-  deactivated. Tenants review them in Banking and re-enable.
+  deactivated. Rules created before this release have no GL account, so on the first deploy that is
+  every active rule. Tenants choose an account for each in Banking and re-enable it. Customer notice (EN and AR, owner
+  sends; draft only): [CUSTOMER-NOTICE-0097.md](CUSTOMER-NOTICE-0097.md).
 - **Customer portal links (0103):** existing links keep working but expire within 90 days.
 - **Roles (0092):** free-text roles were mapped (`cfo`/`manager` to admin, read-only to viewer,
   anything else to employee). Tell owners to review team roles.
@@ -315,7 +331,7 @@ and FTA. The PR description must say so, so "394 fixed" is not read as "certifie
 Migration `0117_e2_einvoice_complyance.sql` (journal idx 116) adds the nullable column
 `einvoice_legal_entities.provider_details jsonb`. It is additive and idempotent (`IF NOT EXISTS`);
 safe to re-run, no data rewrite, no lock beyond a brief catalog change. Rehearse it with the rest of
-0089-0135, then run it a second time to confirm it is a no-op.
+0089-0137, then run it a second time to confirm it is a no-op.
 
 One provider is active at a time, selected by `EINVOICE_PROVIDER` (unset = e-invoicing off; a
 provider that is selected but not fully configured stays hidden/"Not connected"):

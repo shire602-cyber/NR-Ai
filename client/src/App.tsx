@@ -1,7 +1,7 @@
 // zod 3-compatible validation messages for forms (R17-27). Installed by the app root
 // (and by the public pages' providers) rather than main.tsx, so the landing page does
 // not download zod before its first paint (D1b).
-import { landingPathFor, skipsOnboardingRedirect } from "@/lib/app-landing";
+import { landingPathFor, onboardingRedirectTarget } from "@/lib/app-landing";
 import "@shared/zod-config";
 import { useCallback, useEffect, Suspense } from "react";
 import { lazyWithReload, clearChunkReloadGuards } from "@/lib/lazyWithReload";
@@ -23,7 +23,6 @@ import { useFirmAccess } from "@/components/FirmRouteAccess";
 import { Button } from "@/components/ui/button";
 import { Building2, ArrowLeft, Search } from "lucide-react";
 import { AccountMenu } from "@/components/layout/AccountMenu";
-import { motion, AnimatePresence } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { PageSkeleton } from "@/components/PageSkeleton";
 
@@ -199,7 +198,7 @@ function loginRedirectForCurrentPath(): string {
   return `/login?next=${encodeURIComponent(next)}`;
 }
 
-import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
+import { DeferredInstallPrompt } from "@/components/DeferredInstallPrompt";
 import { MobileNav } from "@/components/MobileNav";
 import { NotificationBell } from "@/components/NotificationBell";
 import { OfflineIndicator } from "@/components/OfflineIndicator";
@@ -215,7 +214,7 @@ import { canRunCompanyOnboarding } from "@/lib/companyRole";
 import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
 import { PlanLockBanner } from "@/components/billing/PlanLockBanner";
 import { ReadOnlyForms } from "@/components/billing/ReadOnlyForms";
-import { CommandPaletteProvider } from "@/components/CommandPalette";
+import { CommandPaletteProvider } from "@/components/CommandPaletteProvider";
 import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
 import { SkipLink } from "@/components/SkipLink";
 import { RedirectTo } from "@/components/layout/RedirectTo";
@@ -265,39 +264,28 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
   const { t } = useTranslation();
   const { company, hasNoCompanies, isLoading: companyLoading } = useDefaultCompany();
-  const { isFirmContext } = useActiveCompany();
+  const { isFirmContext, isSwitchingClient } = useActiveCompany();
   const companiesFetching = useIsFetching({ queryKey: ["/api/companies"] });
   const pathname = pathnameOnly(location);
 
   useEffect(() => {
-    // The wizard itself and the NR console (/admin, /firm: staff work with its own role checks)
-    // never bounce to onboarding (broken-path sweep).
-    if (companyLoading || skipsOnboardingRedirect(pathname)) return;
-
-    // Skip the customer-onboarding redirect when a firm staffer is operating
-    // inside a client workspace — the client's onboarding state is the firm's
-    // problem to manage, not a hard redirect for the staff member.
-    if (isFirmContext) return;
-
-    // R18-08: the redirect is deterministic per-user state, not a per-session
-    // flag. While the company has not finished onboarding the user is always
-    // sent to /onboarding; every exit from the wizard (express setup, "Save &
-    // continue later", finishing) marks the company complete server-side, so
-    // there is no loop. Wait for in-flight company refetches first so a
-    // just-completed wizard does not bounce back on stale data.
-    if (companiesFetching > 0) return;
-
-    // No company yet — send the user to onboarding so they can create one.
-    if (hasNoCompanies) {
-      navigate("/onboarding");
-      return;
-    }
-
-    // Only the owner runs the setup wizard; invited members use the app (read-only
-    // where their role says so) while the owner finishes (J4).
-    if (company && !company.onboardingCompleted && canRunCompanyOnboarding(company)) {
-      navigate("/onboarding");
-    }
+    // R18-08: the redirect is deterministic per-user state, not a per-session flag. While the
+    // company has not finished onboarding the user is sent to /onboarding; every exit from the
+    // wizard marks the company complete server-side, so there is no loop. The wizard, the NR
+    // console, a client workspace a firm staffer is operating in (or is just switching into:
+    // "Open books") and in-flight company refetches never redirect. Only the owner runs the
+    // wizard; invited members use the app while the owner finishes (J4).
+    const target = onboardingRedirectTarget({
+      pathname,
+      companyLoading,
+      isFirmContext,
+      switchingClient: isSwitchingClient,
+      companiesFetching: companiesFetching > 0,
+      hasNoCompanies,
+      company,
+      canRunOnboarding: canRunCompanyOnboarding(company),
+    });
+    if (target) navigate(target);
   }, [
     company,
     hasNoCompanies,
@@ -306,6 +294,7 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
     pathname,
     navigate,
     isFirmContext,
+    isSwitchingClient,
   ]);
 
   const style = {
@@ -380,19 +369,11 @@ function ProtectedLayout({ children }: { children: React.ReactNode }) {
           <main id="main-content" tabIndex={-1} className="flex-1 overflow-auto focus:outline-none">
             <div className="page-container">
               <RouteGuard>
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={location}
-                    // Spec 2.5: content fades in + 4 px once per route change (CSS, reduced-motion safe).
-                    className="page-enter"
-                    initial={false}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={{ duration: 0.16, ease: "easeOut" }}
-                  >
-                    <SectionBoundary name={routeName(location)}>{children}</SectionBoundary>
-                  </motion.div>
-                </AnimatePresence>
+                {/* Content fades in + 4 px once per route change: CSS only (`page-enter`, which
+                    reduced-motion neutralises), so the shell does not ship framer-motion. */}
+                <div key={location} className="page-enter">
+                  <SectionBoundary name={routeName(location)}>{children}</SectionBoundary>
+                </div>
               </RouteGuard>
             </div>
           </main>
@@ -527,19 +508,11 @@ function Router() {
   // a stalled or throttled animation must never leave the root at opacity:0.
   if (pathname === "/" && !user) {
     return (
-      <AnimatePresence mode="wait">
-        <motion.div
-          key="landing"
-          initial={false}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          <Suspense fallback={<MinimalPageLoader />}>
-            <LandingPage />
-          </Suspense>
-        </motion.div>
-      </AnimatePresence>
+      <div key="landing">
+        <Suspense fallback={<MinimalPageLoader />}>
+          <LandingPage />
+        </Suspense>
+      </div>
     );
   }
 
@@ -596,41 +569,32 @@ function Router() {
     pathname.startsWith("/portal/")
   ) {
     return (
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={location}
-          initial={false}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.95 }}
-          transition={{ duration: 0.3 }}
-        >
-          <Suspense fallback={<MinimalPageLoader />}>
-            <Switch>
-              <Route path="/login" component={Login} />
-              <Route path="/register" component={Register} />
-              <Route path="/auth/callback" component={AuthCallback} />
-              <Route path="/forgot-password" component={ForgotPassword} />
-              <Route path="/reset-password" component={ResetPassword} />
-              <Route path="/verify-email" component={Login} />
-              <Route path="/services" component={Services} />
-              <Route path="/view/invoice/:token" component={PublicInvoiceView} />
-              {/* WQ5: no-login e-invoicing approver page (before /portal/:token). */}
-              <Route path="/portal/einvoicing-approve/:token" component={EInvoicingApprove} />
-              {/* STEP5: customer invitation (token in the URL fragment), before /portal/:token. */}
-              <Route path="/portal/join" component={PortalJoin} />
-              <Route path="/portal/:token" component={CustomerPortal} />
-              <Route path="/pricing" component={Pricing} />
-              <Route path="/trust" component={TrustSecurity} />
-              <Route path="/help" component={HelpCenter} />
-              <Route path="/migration-guides" component={MigrationGuides} />
-              <Route path="/demo" component={DemoWorkspace} />
-              <Route path="/privacy" component={PrivacyPolicy} />
-              <Route path="/terms" component={TermsOfService} />
-              <Route path="/cookies" component={CookiePolicy} />
-            </Switch>
-          </Suspense>
-        </motion.div>
-      </AnimatePresence>
+      <div key={location}>
+        <Suspense fallback={<MinimalPageLoader />}>
+          <Switch>
+            <Route path="/login" component={Login} />
+            <Route path="/register" component={Register} />
+            <Route path="/auth/callback" component={AuthCallback} />
+            <Route path="/forgot-password" component={ForgotPassword} />
+            <Route path="/reset-password" component={ResetPassword} />
+            <Route path="/verify-email" component={Login} />
+            <Route path="/services" component={Services} />
+            <Route path="/view/invoice/:token" component={PublicInvoiceView} />
+            {/* WQ5: no-login e-invoicing approver page (before /portal/:token). */}
+            <Route path="/portal/einvoicing-approve/:token" component={EInvoicingApprove} />
+            <Route path="/portal/join" component={PortalJoin} />
+            <Route path="/portal/:token" component={CustomerPortal} />
+            <Route path="/pricing" component={Pricing} />
+            <Route path="/trust" component={TrustSecurity} />
+            <Route path="/help" component={HelpCenter} />
+            <Route path="/migration-guides" component={MigrationGuides} />
+            <Route path="/demo" component={DemoWorkspace} />
+            <Route path="/privacy" component={PrivacyPolicy} />
+            <Route path="/terms" component={TermsOfService} />
+            <Route path="/cookies" component={CookiePolicy} />
+          </Switch>
+        </Suspense>
+      </div>
     );
   }
 
@@ -927,7 +891,7 @@ export default function App() {
           <RTLProvider>
             <TooltipProvider>
               <Router />
-              <PWAInstallPrompt />
+              <DeferredInstallPrompt />
               <Toaster />
               <PeriodLockReasonDialog />
             </TooltipProvider>

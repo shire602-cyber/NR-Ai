@@ -28,7 +28,7 @@ function isHashedAsset(url) {
   // Vite emits content-hashed, immutable files under /assets/ (e.g.
   // Dashboard--a04q_Gb.js). These are safe to cache-first forever because a new
   // build produces new filenames.
-  return url.pathname.startsWith("/assets/");
+  return url.pathname.startsWith("/assets/") || url.pathname.startsWith("/firm-assets/");
 }
 
 function isNavigationRequest(request) {
@@ -60,7 +60,9 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response.ok) {
+          // The firm workspace document (/firm/*) is a different bundle (docs: defect 14); it must
+          // not become the offline shell for every other page.
+          if (response.ok && !(url.pathname === "/firm" || url.pathname.startsWith("/firm/"))) {
             const clone = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put("/", clone));
           }

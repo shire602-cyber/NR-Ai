@@ -1,6 +1,6 @@
+import { useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
   FileText,
@@ -87,6 +87,16 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
   const title =
     t[NAV_ITEMS.find((n) => location.startsWith(n.href))?.labelKey ?? "shell.portalFallbackTitle"];
   const companyName = company?.name ?? t["shell.myCompany"];
+  // The browser tab, history and screen readers name the page ("Invoices · Al Noor Trading").
+  const pageTitle = company?.name ? `${title} · ${company.name}` : title;
+  useEffect(() => {
+    if (!pageTitle) return;
+    const before = document.title;
+    document.title = pageTitle;
+    return () => {
+      document.title = before;
+    };
+  }, [pageTitle]);
   const companyMark = company?.logoUrl ? (
     <img
       src={company.logoUrl}
@@ -122,24 +132,24 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             const label = t[labelKey];
             const active = location === href || location.startsWith(href + "/");
             return (
-              <Link key={href} href={href}>
-                <a
-                  aria-current={active ? "page" : undefined}
-                  className={[
-                    "flex h-9 items-center gap-3 rounded-md px-3 text-small font-medium transition-colors duration-fast",
-                    active
-                      ? "bg-sidebar-accent text-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                  ].join(" ")}
-                >
-                  <Icon
-                    className={["h-4 w-4", active ? "text-accent" : "text-muted-foreground"].join(
-                      " "
-                    )}
-                    aria-hidden
-                  />
-                  {label}
-                </a>
+              <Link
+                key={href}
+                href={href}
+                aria-current={active ? "page" : undefined}
+                className={[
+                  "flex h-9 items-center gap-3 rounded-md px-3 text-small font-medium transition-colors duration-fast",
+                  active
+                    ? "bg-sidebar-accent text-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                ].join(" ")}
+              >
+                <Icon
+                  className={["h-4 w-4", active ? "text-accent" : "text-muted-foreground"].join(
+                    " "
+                  )}
+                  aria-hidden
+                />
+                {label}
               </Link>
             );
           })}
@@ -166,12 +176,13 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
         <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 md:px-8">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="md:hidden">{companyMark}</div>
-            <h1 className="truncate text-body font-semibold text-foreground">
+            {/* Not a heading: each page's PageHeader owns the single h1. */}
+            <p className="truncate text-body font-semibold text-foreground">
               <span className="block truncate md:hidden" dir="auto">
                 {companyName}
               </span>
               <span className="hidden md:inline">{title}</span>
-            </h1>
+            </p>
           </div>
           <div className="flex shrink-0 items-center gap-3">
             <span className="hidden max-w-[280px] truncate text-caption text-muted-foreground sm:inline">
@@ -263,69 +274,60 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
           {NAV_ITEMS.map(({ labelKey, href, icon: Icon }) => {
             const active = location === href || location.startsWith(href + "/");
             return (
-              <Link key={href} href={href}>
-                <a
-                  aria-current={active ? "page" : undefined}
-                  className={[
-                    "flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-small font-medium",
-                    active ? "bg-muted text-foreground" : "text-muted-foreground",
-                  ].join(" ")}
-                >
-                  <Icon className="h-4 w-4" aria-hidden />
-                  {t[labelKey]}
-                </a>
+              <Link
+                key={href}
+                href={href}
+                aria-current={active ? "page" : undefined}
+                className={[
+                  "flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-small font-medium",
+                  active ? "bg-muted text-foreground" : "text-muted-foreground",
+                ].join(" ")}
+              >
+                <Icon className="h-4 w-4" aria-hidden />
+                {t[labelKey]}
               </Link>
             );
           })}
         </nav>
 
         <main className="flex-1 overflow-auto">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={location}
-              className="page-container"
-              initial={false}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.18, ease: "easeOut" }}
-            >
-              {removed ? (
-                <div className="mx-auto max-w-md py-16" data-testid="portal-access-removed">
-                  <PortalStatePage
-                    icon={ShieldOff}
-                    tone="danger"
-                    title={t["portal.states.removedTitle"]}
-                    body={formatMessage(t["portal.states.removedBody"], {
-                      supplier: current?.company.name ?? t["portal.join.theSupplier"],
-                    })}
-                    actions={
-                      <>
-                        {accounts.length > 1 && accounts.find((a) => a.id !== current?.id) ? (
-                          <Button
-                            className="h-11"
-                            onClick={() =>
-                              switchSupplier(accounts.find((a) => a.id !== current?.id)!.id)
-                            }
-                          >
-                            {t["portal.states.useOther"]}
-                          </Button>
-                        ) : null}
+          <div className="page-container">
+            {removed ? (
+              <div className="mx-auto max-w-md py-16" data-testid="portal-access-removed">
+                <PortalStatePage
+                  icon={ShieldOff}
+                  tone="danger"
+                  title={t["portal.states.removedTitle"]}
+                  body={formatMessage(t["portal.states.removedBody"], {
+                    supplier: current?.company.name ?? t["portal.join.theSupplier"],
+                  })}
+                  actions={
+                    <>
+                      {accounts.length > 1 && accounts.find((a) => a.id !== current?.id) ? (
                         <Button
                           className="h-11"
-                          variant="outline"
-                          onClick={() => void handleLogout()}
+                          onClick={() =>
+                            switchSupplier(accounts.find((a) => a.id !== current?.id)!.id)
+                          }
                         >
-                          {t["portal.doc.signOut"]}
+                          {t["portal.states.useOther"]}
                         </Button>
-                      </>
-                    }
-                  />
-                </div>
-              ) : (
-                children
-              )}
-            </motion.div>
-          </AnimatePresence>
+                      ) : null}
+                      <Button
+                        className="h-11"
+                        variant="outline"
+                        onClick={() => void handleLogout()}
+                      >
+                        {t["portal.doc.signOut"]}
+                      </Button>
+                    </>
+                  }
+                />
+              </div>
+            ) : (
+              children
+            )}
+          </div>
         </main>
       </div>
     </div>

@@ -504,6 +504,7 @@
   "serverErrors.PORTAL_CONTACT_NOT_LINKED": "Your account is not linked to a client portal. Ask your accountant for access.",
   "serverErrors.PORTAL_LINK_INVALID": "This portal link is not valid or has expired.",
   "serverErrors.PORTAL_RATE_LIMITED": "Too many attempts. Wait a few minutes and try again.",
+  "serverErrors.PORTAL_SCOPE": "Client portal accounts can only use the client portal.",
   "serverErrors.PORTAL_USER_INVALID": "The user must be a client-portal member of this company.",
   "serverErrors.PO_HAS_ACTIVITY": "Goods were received or billed against this purchase order, so it cannot be changed this way.",
   "serverErrors.PO_HAS_BILLS": "This purchase order has bills against it.",

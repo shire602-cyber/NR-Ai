@@ -27,7 +27,8 @@ import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { recordAudit } from "../services/audit.service";
 import { enqueueEmail } from "../outbox";
-import { escapeHtml } from "../services/email.service";
+import { buildApproverDoneEmail, buildApproverRequestEmail } from "../services/email.service";
+import { resolveEmailLanguage } from "../services/email-layout";
 import { getEnv } from "../config/env";
 import { createLogger } from "../config/logger";
 import { portalGuard, notePortalFailure } from "./portal.public.routes";
@@ -218,11 +219,18 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
       let emailQueued = false;
       if (link.approverEmail) {
         try {
+          const built = buildApproverRequestEmail({
+            companyName: company.name,
+            approverName: link.approverName,
+            url,
+            language: resolveEmailLanguage(null, null),
+          });
           await enqueueEmail({
             to: link.approverEmail,
-            subject: `${company.name}: approve the e-invoicing partner in EmaraTax`,
-            html: `<p>${escapeHtml(company.name)} asked you to approve its e-invoicing partner in EmaraTax.</p><p><a href="${escapeHtml(url)}">Open the steps</a> (the link expires in 14 days).</p>`,
-            text: `${company.name} asked you to approve its e-invoicing partner in EmaraTax. Steps: ${url} (expires in 14 days).`,
+            subject: built.subject,
+            html: built.html,
+            text: built.text,
+            fromName: company.name,
             companyId: company.id,
             category: "einvoice_approver_link",
             relatedEntityType: "einvoice_approver_link",
@@ -313,14 +321,20 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
       const done = state === "completed" ? link : await completeApproverLink(link);
       if (state === "active") {
         const view = await publicApproverView(done);
-        const who = done.approverName || done.approverEmail || "Your approver";
         for (const to of await approverNotifyRecipients(done)) {
           try {
+            const built = buildApproverDoneEmail({
+              companyName: view.companyName,
+              who: done.approverName || done.approverEmail || null,
+              settingsUrl: `${appBaseUrl()}/settings/einvoicing`,
+              language: resolveEmailLanguage(null, null),
+            });
             await enqueueEmail({
               to,
-              subject: `${view.companyName}: the e-invoicing partner approval is marked done`,
-              html: `<p>${escapeHtml(who)} marked the EmaraTax approval step as done for ${escapeHtml(view.companyName)}.</p><p>Open Settings, E-invoicing to verify it with your partner.</p>`,
-              text: `${who} marked the EmaraTax approval step as done for ${view.companyName}. Open Settings, E-invoicing to verify it with your partner.`,
+              subject: built.subject,
+              html: built.html,
+              text: built.text,
+              fromName: view.companyName,
               companyId: done.companyId,
               category: "einvoice_approver_done",
               relatedEntityType: "einvoice_approver_link",

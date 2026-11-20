@@ -27,18 +27,21 @@ export function TrialBanner({
   chosen: givenChosen,
   activationRequestedAt: givenRequested,
   className = "",
+  endedOnly = false,
 }: {
   trial?: TrialState | null;
   chosen?: ChosenPlan | null;
   activationRequestedAt?: string | null;
   className?: string;
+  /** Show only once the trial has ended (settings pages that are read-only after the trial). */
+  endedOnly?: boolean;
 }) {
   const { t, locale } = useTranslation();
   const { trial: fetched, chosenPlan, activationRequestedAt } = useSubscription();
   const trial = given === undefined ? fetched : given;
   const chosen = givenChosen === undefined ? chosenPlan : givenChosen;
   const requestedAt = givenRequested === undefined ? activationRequestedAt : givenRequested;
-  if (!trial) return null;
+  if (!trial || (endedOnly && !trial.ended)) return null;
   const phase = planPhase({
     trialEnded: trial.ended,
     chosen: !!chosen,

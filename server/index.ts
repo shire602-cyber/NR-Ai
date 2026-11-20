@@ -13,7 +13,12 @@ import { fileURLToPath } from "url";
 import type { Server as HttpServer } from "http";
 import type { Server as IoServer } from "socket.io";
 import express from "express";
-import { LARGE_JSON_LIMIT, SMALL_JSON_LIMIT, usesLargeJson } from "./http/body-limits";
+import {
+  LARGE_JSON_LIMIT,
+  RAW_WEBHOOK_PREFIXES,
+  SMALL_JSON_LIMIT,
+  usesLargeJson,
+} from "./http/body-limits";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import passport from "passport";
@@ -79,13 +84,8 @@ const smallJson = express.json({ limit: SMALL_JSON_LIMIT });
 app.use("/api/webhooks/email-intake", express.raw({ type: "*/*", limit: "20mb" }));
 // W4-D: payment-gateway and email-delivery webhooks are verified over the raw bytes too.
 // E1: A-Cube webhooks are signed over the raw bytes (HTTP Message Signatures + content-digest).
-const RAW_WEBHOOK_PREFIXES = [
-  "/api/webhooks/invoice-payments",
-  "/api/webhooks/email-events",
-  "/api/webhooks/einvoice/acube",
-  "/api/webhooks/einvoice/complyance", // E2: HMAC over the raw body
-];
-app.use(RAW_WEBHOOK_PREFIXES, express.raw({ type: "*/*", limit: "1mb" }));
+// RAW_WEBHOOK_PREFIXES (server/http/body-limits.ts): W4-D gateways, A-Cube, Complyance, Stripe.
+app.use([...RAW_WEBHOOK_PREFIXES], express.raw({ type: "*/*", limit: "1mb" }));
 
 app.use((req, res, next) => {
   if (req.path === "/api/webhooks/email-intake") return next(); // raw body handled above

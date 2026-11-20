@@ -469,7 +469,9 @@ export default function CloseTab() {
                 >
                   {consolidatedStatementsReport.statusLabel}
                 </Badge>
-                <Badge variant="outline">{consolidatedStatementsReport.consolidationBasis}</Badge>
+                <Badge variant="outline" className="max-w-full whitespace-normal">
+                  {consolidatedStatementsReport.consolidationBasis}
+                </Badge>
               </div>
 
               {consolidatedStatementsReport.rows.length ? (

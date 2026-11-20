@@ -129,7 +129,10 @@ export default function PortalDashboard() {
             <T k="portal.doc.recentInvoices" />
           </CardTitle>
           {recentInvoices.length > 0 && (
-            <Link href="/client-portal/invoices" className="text-small font-medium text-accent">
+            <Link
+              href="/client-portal/invoices"
+              className="inline-flex min-h-11 items-center text-small font-medium text-accent"
+            >
               <T k="portal.doc.viewAll" />
             </Link>
           )}
@@ -137,6 +140,7 @@ export default function PortalDashboard() {
         <CardContent className="p-0">
           {!isLoading && recentInvoices.length === 0 ? (
             <EmptyState
+              headingLevel="h2"
               icon={FileText}
               title={t["portal.doc.noInvoicesTitle"]}
               description={t["portal.doc.noInvoicesBody"]}
@@ -193,7 +197,10 @@ export default function PortalDashboard() {
             <T k="portal.doc.recentDocuments" />
           </CardTitle>
           {documents.length > 0 && (
-            <Link href="/client-portal/documents" className="text-small font-medium text-accent">
+            <Link
+              href="/client-portal/documents"
+              className="inline-flex min-h-11 items-center text-small font-medium text-accent"
+            >
               <T k="portal.doc.viewAll" />
             </Link>
           )}
@@ -201,7 +208,8 @@ export default function PortalDashboard() {
         <CardContent className={documents.length ? "p-0" : undefined}>
           {documents.length === 0 ? (
             <EmptyState
-              size="sm"
+              compact
+              headingLevel="h2"
               icon={FolderOpen}
               title={t["portal.doc.noDocumentsTitle"]}
               description={t["portal.doc.documentsHint"]}

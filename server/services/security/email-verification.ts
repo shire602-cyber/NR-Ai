@@ -10,7 +10,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { sql } from "./sql";
 import { getEnv } from "../../config/env";
 import { createLogger } from "../../config/logger";
-import { escapeHtml, sendEmail } from "../email.service";
+import { buildEmailVerificationEmail, sendEmail } from "../email.service";
 
 const log = createLogger("email-verification");
 
@@ -38,12 +38,10 @@ export async function sendVerificationEmail(user: {
     [user.id, hashVerificationToken(raw), new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS)]
   );
   const link = `${appUrl()}/verify-email?token=${raw}`;
-  const greeting = user.name ? `Hello ${user.name},` : "Hello,";
-  const text = `${greeting}\n\nConfirm your email address for Muhasib.ai by opening this link (valid for 48 hours):\n${link}\n\nIf you did not create an account, you can ignore this message.`;
-  const html = `<p>${escapeHtml(greeting)}</p><p>Confirm your email address for Muhasib.ai (the link is valid for 48 hours):</p><p><a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p><p>If you did not create an account, you can ignore this message.</p>`;
+  const built = buildEmailVerificationEmail(link, user.name);
   try {
-    const result = await sendEmail(user.email, "Confirm your email address", text, {
-      html,
+    const result = await sendEmail(user.email, built.subject, built.text, {
+      html: built.html,
       category: "security",
       relatedEntityType: "user",
       relatedEntityId: user.id,

@@ -544,7 +544,7 @@ async function portalInviteJourney(h, { phone }) {
   const lang = h.lang;
   const owner = await newOwner(phone ? "pinvph" : "pinv", lang);
   const viewport = phone ? { width: 390, height: 844 } : { width: 1440, height: 900 };
-  const password = "Customer9Portal!x";
+  const password = "Fake-Customer9Portal!";
   let seed;
   let hash;
   let customer;

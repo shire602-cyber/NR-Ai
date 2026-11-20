@@ -15,7 +15,23 @@
  */
 
 import { db } from "../db";
-import { and, count, desc, eq, gte, inArray, isNull, lt, max, ne, or, sql, sum } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  max,
+  ne,
+  notInArray,
+  sql,
+  sum,
+} from "drizzle-orm";
+import { NON_RECEIVABLE_INVOICE_STATUSES } from "../reporting/settlement";
+import { firmReceivablesAed, sumReceivables } from "./firm/receivables.service";
 import {
   bankTransactions,
   companies,
@@ -492,7 +508,7 @@ export function scopeBatchToAccessible(
  */
 export async function buildClientSnapshots(
   companyIds: string[],
-  now: Date = new Date()
+  _now: Date = new Date()
 ): Promise<ClientSnapshot[]> {
   if (companyIds.length === 0) return [];
 
@@ -505,24 +521,8 @@ export async function buildClientSnapshots(
     .from(companies)
     .where(inArray(companies.id, companyIds));
 
-  // Overdue invoices per company.
-  type OverdueRow = { companyId: string; balance: string | null; cnt: number };
-  const overdueRows = (await db
-    .select({
-      companyId: invoices.companyId,
-      balance: sum(invoices.total),
-      cnt: count(),
-    })
-    .from(invoices)
-    .where(
-      and(
-        inArray(invoices.companyId, companyIds),
-        or(eq(invoices.status, "sent"), eq(invoices.status, "partial")),
-        lt(invoices.dueDate, now)
-      )
-    )
-    .groupBy(invoices.companyId)) as OverdueRow[];
-  const overdueMap = new Map(overdueRows.map((r) => [r.companyId, r]));
+  // Overdue invoices per company: settlement rule, AED (partial payments, credit notes, FX).
+  const receivables = await firmReceivablesAed(companyIds);
 
   // Latest VAT return per company.
   const latestVatSub = db
@@ -598,7 +598,7 @@ export async function buildClientSnapshots(
   }
 
   return companyRows.map((c: { id: string; name: string; onboardingCompleted: boolean }) => {
-    const overdue = overdueMap.get(c.id);
+    const overdue = receivables.get(c.id);
     const vat = vatMap.get(c.id);
     return {
       companyId: c.id,
@@ -606,8 +606,8 @@ export async function buildClientSnapshots(
       onboardingCompleted: c.onboardingCompleted,
       vatStatus: (vat?.status as ClientSnapshot["vatStatus"]) ?? null,
       vatDueDate: vat?.dueDate ?? null,
-      overdueBalance: Number(overdue?.balance ?? 0),
-      overdueInvoiceCount: Number(overdue?.cnt ?? 0),
+      overdueBalance: overdue?.overdue ?? 0,
+      overdueInvoiceCount: overdue?.overdueCount ?? 0,
       // Phase 6 doesn't yet model "missing documents" as a first-class concept;
       // we approximate by checking onboardingCompleted (Phase 5 builds the doc
       // chase queue separately). 0 here = no signal; UI can layer in document
@@ -651,15 +651,7 @@ export async function buildDashboardSummary(
       .select({ total: sum(invoices.total) })
       .from(invoices)
       .where(and(inArray(invoices.companyId, companyIds), eq(invoices.status, "paid"))),
-    db
-      .select({ total: sum(invoices.total) })
-      .from(invoices)
-      .where(
-        and(
-          inArray(invoices.companyId, companyIds),
-          or(eq(invoices.status, "sent"), eq(invoices.status, "partial"))
-        )
-      ),
+    firmReceivablesAed(companyIds),
     db
       .select({ liability: sum(vatReturns.box14PayableTax) })
       .from(vatReturns)
@@ -677,14 +669,21 @@ export async function buildDashboardSummary(
     db
       .select({ cnt: count() })
       .from(invoices)
-      .where(and(inArray(invoices.companyId, companyIds), gte(invoices.createdAt, monthStart))),
+      .where(
+        and(
+          inArray(invoices.companyId, companyIds),
+          notInArray(invoices.status, [...NON_RECEIVABLE_INVOICE_STATUSES]),
+          sql`coalesce(${invoices.invoiceType}, 'invoice') <> 'credit_note'`,
+          gte(invoices.date, monthStart)
+        )
+      ),
   ]);
 
   return {
     totalClients: companyRows.length,
     activeClients: companyRows.filter((c: { isActive: boolean }) => c.isActive).length,
     totalRevenue: Number(revenueRow[0]?.total ?? 0),
-    totalOutstandingAr: Number(arRow[0]?.total ?? 0),
+    totalOutstandingAr: sumReceivables(arRow).open,
     totalVatLiability: Number(vatRow[0]?.liability ?? 0),
     receiptsProcessedThisMonth: Number(monthReceipts[0]?.cnt ?? 0),
     invoicesIssuedThisMonth: Number(monthInvoices[0]?.cnt ?? 0),
@@ -731,8 +730,10 @@ export async function fetchPeriodMetric(
       .where(
         and(
           inArray(invoices.companyId, companyIds),
-          gte(invoices.createdAt, range.start),
-          lt(invoices.createdAt, range.end)
+          notInArray(invoices.status, [...NON_RECEIVABLE_INVOICE_STATUSES]),
+          sql`coalesce(${invoices.invoiceType}, 'invoice') <> 'credit_note'`,
+          gte(invoices.date, range.start),
+          lt(invoices.date, range.end)
         )
       ),
   ]);

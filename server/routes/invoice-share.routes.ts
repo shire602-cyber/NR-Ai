@@ -11,6 +11,7 @@ import {
   sendPaymentReminderEmail,
   type SendEmailResult,
 } from "../services/email.service";
+import { resolveEmailLanguage } from "../services/email-layout";
 import { findInvoiceForUser, invoicePdfOptions } from "./invoices.routes";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
@@ -187,6 +188,10 @@ export function registerInvoiceShareRoutes(app: Express) {
       const payments = paymentsAvailability();
       const openFils =
         invoice.invoiceType === "credit_note" ? 0 : await invoiceOpenFils(db, invoice);
+      // The page opens in the customer's own language, else the browser's, else the company's.
+      const contact = invoice.contactId
+        ? await storage.getCustomerContact(invoice.contactId)
+        : null;
       // Return sanitized data (no internal IDs exposed except what's needed)
       res.json({
         // R16-14: "Pay now" only when a gateway is live/sandbox and something is owed.
@@ -198,6 +203,8 @@ export function registerInvoiceShareRoutes(app: Express) {
         einvoice: invoice.einvoiceStatus
           ? { status: invoice.einvoiceStatus, uuid: invoice.einvoiceUuid ?? null }
           : null,
+        preferredLanguage: contact?.preferredLanguage ?? null,
+        companyLocale: company.locale === "ar" ? "ar" : "en",
         invoice: {
           number: invoice.number,
           customerName: invoice.customerName,
@@ -337,9 +344,13 @@ export function registerInvoiceShareRoutes(app: Express) {
         invoice.status === "draft" || invoice.status === "cancelled"
           ? null
           : await ensureShareUrl(invoice);
+      const customer = invoice.contactId
+        ? await storage.getCustomerContact(invoice.contactId)
+        : null;
       const result = await sendInvoiceEmail(to, invoice, company, pdfBuffer, subject, message, {
         throwOnFailure: false,
-        language: language ?? "bilingual",
+        language: resolveEmailLanguage(language, customer?.preferredLanguage),
+        customerNameAr: customer?.nameAr ?? null,
         portalUrl: shareUrl,
         payUrl: shareUrl && paymentsAvailability().available ? shareUrl : null,
       });
@@ -415,13 +426,24 @@ export function registerInvoiceShareRoutes(app: Express) {
       );
 
       const shareUrl = await ensureShareUrl(invoice);
+      const customer = invoice.contactId
+        ? await storage.getCustomerContact(invoice.contactId)
+        : null;
       const result = await sendPaymentReminderEmail(
         to,
         invoice,
         company,
         pdfBuffer,
         newReminderCount,
-        { openFils: await invoiceOpenFils(db, invoice), payUrl: shareUrl, throwOnFailure: false }
+        {
+          openFils: await invoiceOpenFils(db, invoice),
+          // "Pay now" only when online payment is actually available; else "View invoice".
+          payUrl: paymentsAvailability().available ? shareUrl : null,
+          portalUrl: shareUrl,
+          language: resolveEmailLanguage(null, customer?.preferredLanguage),
+          customerNameAr: customer?.nameAr ?? null,
+          throwOnFailure: false,
+        }
       );
 
       await storage.updateInvoice(invoiceId, companyId, {

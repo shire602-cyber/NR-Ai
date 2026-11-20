@@ -504,6 +504,7 @@
   "serverErrors.PORTAL_CONTACT_NOT_LINKED": "حسابك غير مرتبط ببوابة عملاء. اطلب الوصول من محاسبك.",
   "serverErrors.PORTAL_LINK_INVALID": "رابط البوابة هذا غير صالح أو منتهي.",
   "serverErrors.PORTAL_RATE_LIMITED": "محاولات كثيرة. انتظر بضع دقائق ثم حاول مرة أخرى.",
+  "serverErrors.PORTAL_SCOPE": "حسابات بوابة العملاء تستخدم بوابة العملاء فقط.",
   "serverErrors.PORTAL_USER_INVALID": "يجب أن يكون المستخدم عضواً في بوابة عملاء هذه الشركة.",
   "serverErrors.PO_HAS_ACTIVITY": "تم استلام بضاعة أو فوترتها على أمر الشراء هذا، لذلك لا يمكن تغييره بهذه الطريقة.",
   "serverErrors.PO_HAS_BILLS": "لأمر الشراء هذا فواتير موردين مرتبطة به.",
