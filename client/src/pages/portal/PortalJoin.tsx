@@ -98,8 +98,8 @@ function classify(error: unknown): { kind: StateKind; body?: Record<string, unkn
   return { kind: "error" };
 }
 
-/** A sentence template with `{terms}` / `{privacy}` slots rendered as links. */
-function withLinks(template: string, slots: Record<string, ReactNode>): ReactNode[] {
+/** Render names, identifiers and links in their translated sentence order. */
+function withSlots(template: string, slots: Record<string, ReactNode>): ReactNode[] {
   return template.split(/(\{\w+\})/g).map((part, i) => {
     const m = /^\{(\w+)\}$/.exec(part);
     return m && m[1] in slots ? <span key={i}>{slots[m[1]]}</span> : part;
@@ -130,7 +130,7 @@ function Shell({ children, supplier }: { children: ReactNode; supplier?: InviteI
               <Building2 className="h-4 w-4" aria-hidden="true" />
             </span>
           )}
-          <span className="truncate text-small font-semibold" dir="auto">
+          <span className="truncate text-small font-semibold" dir="auto" title={supplier?.name}>
             {supplier?.name ?? t["portal.customerPortal"]}
           </span>
         </div>
@@ -208,16 +208,22 @@ export default function PortalJoin() {
       name?: string;
       contactEmail?: string | null;
     } | null;
-    const supplierName = supplier?.name ?? t["portal.join.theSupplier"];
+    const supplierName = supplier?.name ? (
+      <bdi translate="no">{supplier.name}</bdi>
+    ) : (
+      t["portal.join.theSupplier"]
+    );
     const signIn = (
       <Button className="h-11" onClick={() => goSignIn()} data-testid="join-go-sign-in">
         {t["portal.join.goSignIn"]}
       </Button>
     );
     const contact = supplier?.contactEmail ? (
-      <Button asChild variant="outline" className="h-11">
+      <Button asChild variant="outline" className="min-h-11 whitespace-normal text-center">
         <a href={`mailto:${supplier.contactEmail}`} data-testid="join-contact-supplier">
-          {formatMessage(t["portal.join.emailSupplier"], { supplier: supplierName })}
+          <span className="[overflow-wrap:anywhere]">
+            {withSlots(t["portal.join.emailSupplier"], { supplier: supplierName })}
+          </span>
         </a>
       </Button>
     ) : null;
@@ -238,7 +244,7 @@ export default function PortalJoin() {
           icon={Clock}
           tone="warning"
           title={t["portal.join.expiredTitle"]}
-          body={formatMessage(t["portal.join.expiredBody"], { supplier: supplierName })}
+          body={withSlots(t["portal.join.expiredBody"], { supplier: supplierName })}
           actions={
             <>
               {contact}
@@ -253,7 +259,7 @@ export default function PortalJoin() {
           icon={AlertTriangle}
           tone="danger"
           title={t["portal.join.revokedTitle"]}
-          body={formatMessage(t["portal.join.revokedBody"], { supplier: supplierName })}
+          body={withSlots(t["portal.join.revokedBody"], { supplier: supplierName })}
           actions={contact}
           testId="join-state-revoked"
         />
@@ -364,8 +370,17 @@ function JoinPanel({
   const [error, setError] = useState<{ field?: "name" | "password"; message: string } | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
-  const supplier = info.supplier.name;
-  const customer = locale === "ar" && info.customerNameAr ? info.customerNameAr : info.customerName;
+  const supplier = <bdi translate="no">{info.supplier.name}</bdi>;
+  const customer = (
+    <bdi translate="no">
+      {locale === "ar" && info.customerNameAr ? info.customerNameAr : info.customerName}
+    </bdi>
+  );
+  const email = (
+    <bdi className="[overflow-wrap:anywhere]" dir="ltr" translate="no">
+      {info.email}
+    </bdi>
+  );
   const expires = new Intl.DateTimeFormat(
     locale === "ar" ? "ar-AE-u-nu-latn-ca-gregory" : "en-AE",
     {
@@ -424,12 +439,12 @@ function JoinPanel({
   };
 
   const header = (
-    <header className="mb-6 text-center">
+    <header className="mb-6 text-center [overflow-wrap:anywhere]">
       <h1 className="text-h2 text-balance" tabIndex={-1}>
-        {formatMessage(t["portal.join.title"], { supplier })}
+        {withSlots(t["portal.join.title"], { supplier })}
       </h1>
       <p className="mt-2 text-small text-muted-foreground text-pretty">
-        {formatMessage(t["portal.join.subtitle"], { supplier, customer })}
+        {withSlots(t["portal.join.subtitle"], { supplier, customer })}
       </p>
     </header>
   );
@@ -439,7 +454,7 @@ function JoinPanel({
       <div data-testid="join-existing">
         {header}
         <Alert tone="info" title={t["portal.join.existingTitle"]} className="mb-5">
-          {formatMessage(t["portal.join.existingBody"], { email: info.email, supplier })}
+          {withSlots(t["portal.join.existingBody"], { email, supplier })}
         </Alert>
         <Button className="h-11 w-full" onClick={onSignIn} data-testid="join-sign-in">
           {t["portal.join.signIn"]}
@@ -453,9 +468,13 @@ function JoinPanel({
       <div data-testid="join-other">
         {header}
         <Alert tone="danger" title={t["portal.join.otherTitle"]} className="mb-5">
-          {formatMessage(t["portal.join.otherBody"], {
-            email: info.email,
-            current: info.signedInAs ?? "",
+          {withSlots(t["portal.join.otherBody"], {
+            email,
+            current: (
+              <bdi className="[overflow-wrap:anywhere]" dir="ltr" translate="no">
+                {info.signedInAs}
+              </bdi>
+            ),
           })}
         </Alert>
         <Button
@@ -484,10 +503,10 @@ function JoinPanel({
         {header}
         <Alert
           tone="info"
-          title={formatMessage(t["portal.join.signedInTitle"], { supplier })}
+          title={withSlots(t["portal.join.signedInTitle"], { supplier })}
           className="mb-5"
         >
-          {formatMessage(t["portal.join.signedInBody"], { email: info.email, customer })}
+          {withSlots(t["portal.join.signedInBody"], { email, customer })}
         </Alert>
         {error ? (
           <Alert tone="danger" className="mb-4" role="alert">
@@ -495,13 +514,15 @@ function JoinPanel({
           </Alert>
         ) : null}
         <Button
-          className="h-11 w-full"
+          className="min-h-11 w-full whitespace-normal"
           disabled={busy}
           onClick={() => void accept({ acceptTerms: true })}
           data-testid="join-confirm-add"
         >
           {busy ? <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-          {formatMessage(t["portal.join.confirmAdd"], { supplier })}
+          <span className="[overflow-wrap:anywhere]">
+            {withSlots(t["portal.join.confirmAdd"], { supplier })}
+          </span>
         </Button>
       </div>
     );
@@ -517,15 +538,15 @@ function JoinPanel({
       ) : null}
 
       <div className="space-y-4">
-        <div>
-          <Label htmlFor="join-email">{t["portal.email"]}</Label>
-          <div className="mt-1.5 flex h-11 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-small">
+        <dl>
+          <dt className="text-small font-medium">{t["portal.email"]}</dt>
+          <dd className="mt-1.5 flex h-11 items-center gap-2 rounded-md border border-input bg-muted/40 px-3 text-small">
             <Mail className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-            <span id="join-email" dir="ltr" className="truncate [unicode-bidi:isolate]">
+            <bdi id="join-email" dir="ltr" translate="no" title={info.email} className="truncate">
               {info.email}
-            </span>
-          </div>
-        </div>
+            </bdi>
+          </dd>
+        </dl>
 
         <div>
           <Label htmlFor="join-name">{t["portal.join.nameLabel"]}</Label>
@@ -535,6 +556,7 @@ function JoinPanel({
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoComplete="name"
+            dir="auto"
             className="mt-1.5 h-11 text-base"
             aria-invalid={error?.field === "name"}
             aria-describedby={error?.field === "name" ? "join-name-error" : undefined}
@@ -558,7 +580,7 @@ function JoinPanel({
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
               dir="ltr"
-              className="h-11 pe-12 text-base"
+              className="h-11 pe-12 text-base rtl:pe-3 rtl:ps-12"
               aria-invalid={error?.field === "password"}
               aria-describedby={
                 error?.field === "password"
@@ -601,7 +623,7 @@ function JoinPanel({
             data-testid="join-terms"
           />
           <Label htmlFor="join-terms" className="text-small font-normal leading-snug">
-            {withLinks(t["portal.join.terms"], {
+            {withSlots(t["portal.join.terms"], {
               terms: (
                 <Link
                   href="/terms"

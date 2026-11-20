@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { formatMessage, translateNow, useTranslation } from "@/lib/i18n";
+import { isolateLtrText } from "@/lib/format-bidi";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 /*
@@ -54,7 +55,7 @@ function NumberingCard({
   companyId: string;
   disabled: boolean;
 }) {
-  const { t } = useTranslation();
+  const { locale, t } = useTranslation();
   const { toast } = useToast();
   const [prefix, setPrefix] = useState(row.prefix);
   const [padding, setPadding] = useState(row.padding);
@@ -63,6 +64,7 @@ function NumberingCard({
   const [error, setError] = useState<string | null>(null);
 
   const nextNum = Number(next);
+  const nextFormatted = preview(prefix.trim().toUpperCase(), padding, yearlyReset, nextNum || 1);
   const nextTooLow = Number.isFinite(nextNum) && nextNum <= row.lastIssued;
 
   const save = useMutation({
@@ -88,7 +90,7 @@ function NumberingCard({
         <CardTitle className="text-h4">{t[`settingsPages.numberingDoc_${row.docType}`]}</CardTitle>
         <CardDescription>
           {formatMessage(t["settingsPages.numberingNextIs"], {
-            number: preview(prefix.trim().toUpperCase(), padding, yearlyReset, nextNum || 1),
+            number: locale === "ar" ? isolateLtrText(nextFormatted) : nextFormatted,
           })}
         </CardDescription>
       </CardHeader>

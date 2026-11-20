@@ -14,10 +14,12 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type, ltr, dir, ...props }, ref) => {
     const numeric =
       ltr || type === "number" || props.inputMode === "numeric" || props.inputMode === "decimal";
+    const identifier = type === "email" || type === "tel" || type === "url";
+    const direction = ltr ? "ltr" : (dir ?? (numeric || identifier ? "ltr" : undefined));
     return (
       <input
         type={type}
-        dir={ltr ? "ltr" : dir}
+        dir={direction}
         data-ltr-num={ltr ? "" : undefined}
         className={cn(
           "flex h-9 w-full rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground",
