@@ -124,8 +124,10 @@ async function checkPage(onPage, locale, path) {
 
 async function checkMissingPage(locale) {
   const missing = `/${locale}/resources/missing-page`;
-  const response = await page.goto(new URL(missing, base).href);
-  assert.ok([200, 404].includes(response?.status()), `${missing} fallback document`);
+  const url = new URL(`${missing}/?source=crawl`, base).href;
+  const response = await page.goto(url);
+  assert.equal(response?.status(), 404, `${missing} localized HTML status`);
+  assert.equal((await page.request.head(url)).status(), 404, `${missing} HEAD status`);
   await checkHeading(page, missing, translated(["Page not found", "الصفحة غير موجودة"], locale));
   await assert.rejects(
     checkHeading(page, missing, translated(editorialHeadings["/resources"], locale)),
@@ -232,7 +234,7 @@ async function crawl(locale) {
   }
   await checkMissingPage(locale);
   console.log(
-    `${locale}: ${queue.size} localized routes, ${legacyLinks.size} shared destinations, ${Object.keys(editorialHeadings).length} axe checks and soft 404 detection passed`
+    `${locale}: ${queue.size} localized routes, ${legacyLinks.size} shared destinations, ${Object.keys(editorialHeadings).length} axe checks and localized 404s passed`
   );
 }
 

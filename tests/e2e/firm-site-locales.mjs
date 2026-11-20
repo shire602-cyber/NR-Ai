@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readdir } from "node:fs/promises";
+import AxeBuilder from "@axe-core/playwright";
 import { chromium } from "playwright-core";
 
 const base = new URL(process.env.FIRM_SITE_URL || "http://127.0.0.1:8080");
@@ -102,6 +103,17 @@ async function checkReliefGuide(page, locale) {
   for (const phrase of required) {
     checkReview(`${locale} relief guide includes ${phrase}`, conditions.includes(phrase), true);
   }
+}
+
+async function checkServicesContrast(page) {
+  const { violations } = await new AxeBuilder({ page }).withRules(["color-contrast"]).analyze();
+  assert.deepEqual(
+    violations.flatMap(({ nodes }) =>
+      nodes.map(({ target, failureSummary }) => ({ target, failureSummary }))
+    ),
+    [],
+    `${new URL(page.url()).pathname} services text contrast`
+  );
 }
 
 async function checkCalculators(page, locale) {
@@ -225,6 +237,8 @@ try {
     waitUntil: "commit",
   });
   await page.waitForURL(new URL("/ar/services/?source=browser#main", base).href);
+  await page.waitForLoadState("domcontentloaded");
+  await checkServicesContrast(page);
   await page.getByRole("button", { name: "القائمة" }).click();
   await page.locator(".nav-links").getByRole("link", { name: "القطاعات", exact: true }).click();
   await page.waitForURL(new URL("/ar/industries/", base).href);
@@ -257,6 +271,7 @@ try {
     await assertInternalLinks(englishPage, "en");
     await checkPublishedMetrics(englishPage);
     if (file === "insight-small-business-relief.html") await checkReliefGuide(englishPage, "en");
+    if (file === "services.html") await checkServicesContrast(englishPage);
   }
   await englishPage.goto(new URL("/tools.html", base).href);
   await checkCalculators(englishPage, "en");

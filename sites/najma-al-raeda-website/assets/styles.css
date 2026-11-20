@@ -10,7 +10,7 @@
   --paper-2: #efe9e0;
   --line: #e0d8cc;
   --gold: #6f9e3a;         /* Najma Al Raeda green (accent) */
-  --gold-deep: #557d27;    /* deep green for text accents */
+  --gold-deep: #476923;    /* deep green for text accents */
   --muted: #6f675f;
   --white: #ffffff;
   --max: 1200px;
@@ -365,10 +365,10 @@ form .row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 
 /* ---- Floating WhatsApp ---- */
 .fab { position: fixed; inset-inline-end: 22px; inset-block-end: 22px; z-index: 90; display: inline-flex; align-items: center; gap: 10px;
-  background: #25D366; color: #fff; padding: 13px 18px; border-radius: 40px; font-weight: 600; font-size: 0.9rem;
+  background: #25D366; color: var(--ink); padding: 13px 18px; border-radius: 40px; font-weight: 600; font-size: 0.9rem;
   box-shadow: 0 12px 30px -8px rgba(37,211,102,0.5); transition: transform 0.3s var(--ease); }
 .fab:hover { transform: translateY(-3px); }
-.fab svg { width: 20px; height: 20px; fill: #fff; }
+.fab svg { width: 20px; height: 20px; fill: currentColor; }
 
 @media (max-width: 980px) {
   .insight-grid, .key-figures, .steps, .svc-mini { grid-template-columns: 1fr 1fr; }

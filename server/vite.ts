@@ -5,6 +5,9 @@ import { type Server } from "http";
 import { fileURLToPath } from "url";
 import { LOCALE_COOKIE, SHELL_BOOT_API, firmFirstScreen } from "../shared/firm-boot";
 import { accessCookieName, refreshCookieName } from "./services/auth-cookies.service";
+import { features, tools } from "../client/src/components/marketing/phase/content";
+import { editorialPath } from "../client/src/components/marketing/phase/editorial/pages";
+import { siteLocale } from "../client/src/components/marketing/phase/routes";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
@@ -23,6 +26,24 @@ export function rejectUnpublishedFiles(req: Request, res: Response, next: NextFu
     return;
   }
   next();
+}
+
+const marketingPaths = new Set([
+  "",
+  "/book-a-demo",
+  "/pricing",
+  "/solutions/small-business",
+  "/solutions/accounting-firms",
+  ...features.map(({ slug }) => `/product/${slug}`),
+  ...tools.map(({ slug }) => `/tools/${slug}`),
+]);
+
+/** Keep the localized error page renderable while reporting its status to HTTP clients. */
+function documentStatus(url: string): 200 | 404 {
+  const pathname = url.split(/[?#]/, 1)[0];
+  if (!siteLocale(pathname)) return 200;
+  const localPath = pathname.slice(3).replace(/\/$/, "");
+  return marketingPaths.has(localPath) || editorialPath(localPath) ? 200 : 404;
 }
 
 /**
@@ -62,7 +83,7 @@ export async function setupVite(app: Express, server: Server) {
       let template = await fs.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(`src="/src/main.tsx"`, `src="/src/main.tsx?v=${nanoid()}"`);
       const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({ "Content-Type": "text/html" }).end(page);
+      res.status(documentStatus(url)).set({ "Content-Type": "text/html" }).end(page);
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);
@@ -270,7 +291,7 @@ export function serveStatic(app: Express) {
           html = html.replace("</head>", `    <link rel="preload" as="image" fetchpriority="high" imagesrcset="/product/dashboard-${locale}-small.webp 720w, /product/dashboard-${locale}.webp 1280w" imagesizes="(max-width: 760px) calc(100vw - 34px), 56vw">\n  </head>`);
         }
       }
-      res.set(NO_STORE_HEADERS).type("html").send(html);
+      res.status(documentStatus(req.originalUrl)).set(NO_STORE_HEADERS).type("html").send(html);
     });
   }
 
@@ -310,6 +331,6 @@ export function serveStatic(app: Express) {
         );
       return;
     }
-    res.sendFile(path.resolve(distPath, "index.html"));
+    res.status(documentStatus(req.originalUrl)).sendFile(path.resolve(distPath, "index.html"));
   });
 }
