@@ -131,7 +131,7 @@ export function useReportsExports({
     setIsExporting(true);
     const dateRangeTitle =
       dateRange.from && dateRange.to
-        ? ` (${formatDateRange(dateRange.from, dateRange.to, useI18n.getState().locale)})`
+        ? ` (${formatDateRange(dateRange.from, dateRange.to, useI18n.getState().locale, { plain: true })})`
         : "";
 
     const result = await exportToGoogleSheets(
@@ -287,7 +287,7 @@ export function useReportsExports({
     setIsExporting(true);
     const dateRangeStr =
       dateRange.from && dateRange.to
-        ? ` (${formatDateRange(dateRange.from, dateRange.to, useI18n.getState().locale)})`
+        ? ` (${formatDateRange(dateRange.from, dateRange.to, useI18n.getState().locale, { plain: true })})`
         : "";
 
     let result;
