@@ -6,6 +6,7 @@ import { AppError, RetentionError, ValidationError, AuthError } from "../errors"
 import { captureException } from "../services/monitoring";
 import { MoneyError } from "../../shared/money";
 import { flattenIssues, zodFieldErrors } from "../http/strict-body";
+import { portalInviteLogPath } from "../http/portal-invite-privacy";
 
 // Re-export AppError so existing imports of AppError from this module keep working.
 export { AppError };
@@ -198,6 +199,32 @@ export function globalErrorHandler(
     return;
   }
 
+  const invitePath = portalInviteLogPath(req.originalUrl || req.url);
+  if (invitePath && (!(err instanceof AppError) || !err.isOperational || err.statusCode >= 500)) {
+    captureException(new Error("Customer portal invitation request failed"), {
+      requestId: req.id,
+      method: req.method,
+      url: invitePath,
+      userId: req.user?.id,
+    });
+    const status = err instanceof AppError ? err.statusCode : 500;
+    const deliveryFailed = err instanceof AppError && err.code === "PORTAL_INVITE_DELIVERY_FAILED";
+    res
+      .status(status)
+      .json(
+        withRequestId(
+          deliveryFailed
+            ? {
+                message: "Could not queue the invitation email",
+                code: "PORTAL_INVITE_DELIVERY_FAILED",
+              }
+            : { message: "Could not process the invitation", code: "INTERNAL_ERROR" },
+          req
+        )
+      );
+    return;
+  }
+
   // Any AppError (or subclass, including DomainError).
   if (err instanceof AppError) {
     if (!err.isOperational || err.statusCode >= 500) {
@@ -247,7 +274,7 @@ export function notFoundHandler(req: Request, res: Response): void {
   res.status(404).json(
     withRequestId(
       {
-        message: `Route ${req.method} ${req.path} not found`,
+        message: `Route ${req.method} ${portalInviteLogPath(req.originalUrl || req.url) ?? req.path} not found`,
         code: "ROUTE_NOT_FOUND",
       },
       req

@@ -7,6 +7,7 @@ import { randomBytes, createHash, randomUUID } from "crypto";
 import { z } from "zod";
 
 import { storage } from "../storage";
+import { errorCode, errorProperty } from "../errors";
 import { getEnv, isProduction } from "../config/env";
 import { notificationCopy } from "../../shared/server-copy";
 import {
@@ -350,7 +351,7 @@ async function provisionCustomerCompany(
 }
 
 function isUniqueViolation(err: unknown): boolean {
-  return (err as { code?: string } | null)?.code === "23505";
+  return errorCode(err) === "23505" || errorCode(errorProperty(err, "cause")) === "23505";
 }
 
 // ─── Request schemas ──────────────────────────────────────────────────────
@@ -584,8 +585,8 @@ export function registerAuthRoutes(app: Express): void {
       let user;
       try {
         if (claimable && existingUser) {
-          await storage.updateUserPassword(existingUser.id, passwordHash);
-          user = await storage.updateUser(existingUser.id, { name: body.name });
+          user = await storage.claimUncredentialedUser(existingUser, body.name, passwordHash);
+          if (!user) return res.json(genericRegisterBody());
         } else {
           user = await storage.createUser({
             name: body.name,
@@ -597,7 +598,9 @@ export function registerAuthRoutes(app: Express): void {
           } as Parameters<typeof storage.createUser>[0]);
         }
       } catch (err) {
-        if (isUniqueViolation(err)) return res.json(genericRegisterBody());
+        if (isUniqueViolation(err) || errorCode(err) === "PORTAL_INVITE_EMAIL_RESERVED") {
+          return res.json(genericRegisterBody());
+        }
         throw err;
       }
 

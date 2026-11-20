@@ -35,9 +35,16 @@ describe("STEP5 portal invitation validators", () => {
     expect(portalBulkInviteBody.safeParse({ contactIds: ["nope"] }).success).toBe(false);
   });
 
-  it("accept body: the terms must be accepted (true), nothing else is required", () => {
-    expect(portalAcceptBody.safeParse({ acceptTerms: true }).success).toBe(true);
-    expect(portalAcceptBody.safeParse({ acceptTerms: false }).success).toBe(false);
+  it("requires the token, invited email and accepted terms", () => {
+    const credentials = { token: "a".repeat(64), email: "contact@example.test" };
+    expect(portalAcceptBody.safeParse({ ...credentials, acceptTerms: true }).success).toBe(true);
+    expect(portalAcceptBody.safeParse({ ...credentials, acceptTerms: false }).success).toBe(false);
+    expect(
+      portalAcceptBody.safeParse({ token: credentials.token, acceptTerms: true }).success
+    ).toBe(false);
+    expect(
+      portalAcceptBody.safeParse({ email: credentials.email, acceptTerms: true }).success
+    ).toBe(false);
     expect(portalAcceptBody.safeParse({}).success).toBe(false);
   });
 

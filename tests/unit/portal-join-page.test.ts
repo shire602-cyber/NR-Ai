@@ -160,9 +160,21 @@ for (const locale of ["en", "ar"] as const) {
       expect(window.location.href).not.toContain(TOKEN);
       expect(window.sessionStorage.getItem("muhasib.portalInvite")).toBe(TOKEN);
       expect(byId("join-form")).toBeTruthy();
-      expect(mocks.apiRequest).toHaveBeenCalledWith("GET", `/api/portal-invitations/${TOKEN}`);
+      expect(mocks.apiRequest).toHaveBeenCalledWith("POST", "/api/portal-invitations/lookup", {
+        token: TOKEN,
+      });
       expect((byId("join-name") as HTMLInputElement).value).toBe("Layla");
       expect(container.textContent).toContain("layla@alnoor.test");
+    });
+
+    it("rejects a malformed link without falling back to an earlier invitation", async () => {
+      window.sessionStorage.setItem("muhasib.portalInvite", TOKEN);
+      window.history.replaceState(null, "", `/portal/join#t=${TOKEN}extra`);
+      await mount();
+      expect(byId("join-state-invalid")).toBeTruthy();
+      expect(window.location.hash).toBe("");
+      expect(window.sessionStorage.getItem("muhasib.portalInvite")).toBeNull();
+      expect(mocks.apiRequest).not.toHaveBeenCalled();
     });
 
     it("the checklist updates and Submit needs the terms and a valid password", async () => {
@@ -186,8 +198,8 @@ for (const locale of ["en", "ar"] as const) {
     });
 
     it("submits name, password and the terms; a server password error is inline and focused", async () => {
-      respondWith((method) =>
-        method === "GET"
+      respondWith((_method, url) =>
+        url === "/api/portal-invitations/lookup"
           ? invite({ language: locale })
           : new mocks.ApiError("Too common", 400, {
               code: "VALIDATION_ERROR",
@@ -198,9 +210,13 @@ for (const locale of ["en", "ar"] as const) {
       await typeInto("join-password", FAKE_PASSWORD);
       await click(byId("join-terms"));
       await click(byId("join-submit"));
-      const post = mocks.apiRequest.mock.calls.find((c) => c[0] === "POST");
-      expect(post?.[1]).toBe(`/api/portal-invitations/${TOKEN}/accept`);
+      const post = mocks.apiRequest.mock.calls.find(
+        (c) => c[1] === "/api/portal-invitations/accept"
+      );
+      expect(post?.[0]).toBe("POST");
       expect(post?.[2]).toMatchObject({
+        token: TOKEN,
+        email: "layla@alnoor.test",
         name: "Layla",
         password: FAKE_PASSWORD,
         acceptTerms: true,
@@ -257,8 +273,10 @@ for (const locale of ["en", "ar"] as const) {
       await mount();
       expect(byId("join-signed-in")).toBeTruthy();
       await click(byId("join-confirm-add"));
-      const post = mocks.apiRequest.mock.calls.find((c) => c[0] === "POST");
-      expect(post?.[2]).toEqual({ acceptTerms: true });
+      const post = mocks.apiRequest.mock.calls.find(
+        (c) => c[1] === "/api/portal-invitations/accept"
+      );
+      expect(post?.[2]).toEqual({ token: TOKEN, email: "layla@alnoor.test", acceptTerms: true });
       await act(async () => root.unmount());
       container.remove();
 

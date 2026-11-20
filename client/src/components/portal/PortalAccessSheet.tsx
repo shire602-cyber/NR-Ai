@@ -1,16 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Check,
-  Copy,
-  Link2,
-  Loader2,
-  Mail,
-  RotateCw,
-  Send,
-  UserRoundX,
-  XCircle,
-} from "lucide-react";
+import { Link2, Loader2, Mail, RotateCw, Send, UserRoundX, XCircle } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -76,8 +66,7 @@ interface AccessData {
 }
 
 interface InviteResponse {
-  delivery: "email" | "queued" | "link";
-  inviteUrl?: string;
+  delivery: "email" | "queued";
   invitation: { id: string; email: string };
 }
 
@@ -316,8 +305,6 @@ export function PortalAccessSheet({
     staleTime: 0,
   });
 
-  const [shownLink, setShownLink] = useState<{ contactId: string; url: string } | null>(null);
-  const [copied, setCopied] = useState(false);
   const [confirm, setConfirm] = useState<Confirm>(null);
   // A clock for the Resend countdown: it ticks once a second only while a cooldown is running.
   const [now, setNow] = useState(() => Date.now());
@@ -330,8 +317,6 @@ export function PortalAccessSheet({
     return () => window.clearInterval(id);
   }, [cooling]);
 
-  const linkUrl = shownLink && shownLink.contactId === contactId ? shownLink.url : null;
-
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: portalAccessKey(companyId, contactId) });
     void queryClient.invalidateQueries({ queryKey: portalSummaryKey(companyId) });
@@ -343,11 +328,7 @@ export function PortalAccessSheet({
       variant: "destructive",
     });
   const reportDelivery = (res: InviteResponse) => {
-    if (res.delivery === "link" && res.inviteUrl) {
-      setShownLink({ contactId, url: res.inviteUrl });
-      setCopied(false);
-      toast({ title: t["portal.invite.linkCreated"] });
-    } else if (res.delivery === "email") {
+    if (res.delivery === "email") {
       toast({ title: formatMessage(t["portal.invite.sentTo"], { email: res.invitation.email }) });
     } else {
       toast({ title: t["portal.invite.queued"] });
@@ -378,17 +359,6 @@ export function PortalAccessSheet({
     },
     onError: fail,
   });
-
-  const copyLink = async () => {
-    if (!linkUrl) return;
-    try {
-      await navigator.clipboard.writeText(linkUrl);
-      setCopied(true);
-      toast({ title: t["customerContacts.linkCopiedToClipboard"] });
-    } catch {
-      /* the field is selectable */
-    }
-  };
 
   return (
     <>
@@ -543,37 +513,6 @@ export function PortalAccessSheet({
                 </ul>
               )}
             </section>
-
-            {linkUrl && (
-              <Alert tone="info" title={t["portal.invite.linkTitle"]} data-testid="pa-link-panel">
-                <p className="mb-2 text-small">{t["portal.invite.linkBody"]}</p>
-                <div className="flex items-center gap-2">
-                  <Input
-                    readOnly
-                    value={linkUrl}
-                    dir="ltr"
-                    className="h-11 text-sm"
-                    onFocus={(e) => e.currentTarget.select()}
-                    aria-label={t["portal.invite.linkTitle"]}
-                    data-testid="pa-link-input"
-                  />
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    className="h-11 w-11 shrink-0"
-                    onClick={() => void copyLink()}
-                    aria-label={t["portal.invite.copyLink"]}
-                    data-testid="pa-copy-link"
-                  >
-                    {copied ? (
-                      <Check className="h-4 w-4" aria-hidden />
-                    ) : (
-                      <Copy className="h-4 w-4" aria-hidden />
-                    )}
-                  </Button>
-                </div>
-              </Alert>
-            )}
 
             {/* Invite someone */}
             <section aria-labelledby="pa-invite">

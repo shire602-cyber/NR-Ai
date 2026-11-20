@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from "express";
 import { createLogger } from "../config/logger";
+import { portalInviteLogPath } from "../http/portal-invite-privacy";
 
 const log = createLogger("http");
 
@@ -17,7 +18,9 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
 
   res.on("finish", () => {
     const duration = Date.now() - start;
-    const path = req.originalUrl || req.url;
+    const url = req.originalUrl || req.url;
+    const invitePath = portalInviteLogPath(url);
+    const path = invitePath ?? url;
 
     // Only log API requests (skip static files)
     if (!path.startsWith("/api") && path !== "/health") return;
@@ -29,7 +32,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
       statusCode: res.statusCode,
       duration: `${duration}ms`,
       ip: req.ip,
-      userAgent: req.get("user-agent"),
+      userAgent: invitePath ? undefined : req.get("user-agent"),
       userId: req.user?.id,
     };
 

@@ -11,8 +11,8 @@
  *   DELETE /api/companies/:companyId/portal-accounts/:portalAccountId
  *
  * Customer (public, throttled, logged; CSRF-protected, not exempt):
- *   GET  /api/portal-invitations/:token           the invitation as the join page needs it
- *   POST /api/portal-invitations/:token/accept    consumes the invitation (never the GET)
+ *   POST /api/portal-invitations/lookup   the invitation as the join page needs it
+ *   POST /api/portal-invitations/accept   consumes the invitation
  */
 import type { Express, Request, RequestHandler, Response } from "express";
 import { storage } from "../storage";
@@ -28,6 +28,7 @@ import {
   portalAcceptBody,
   portalBulkInviteBody,
   portalInviteBody,
+  portalInviteLookupBody,
   type PortalAcceptBody,
   type PortalBulkInviteBody,
   type PortalInviteBody,
@@ -228,11 +229,19 @@ export function registerPortalInvitationRoutes(app: Express): void {
     message: "This link is not valid",
   };
 
-  app.get(
-    "/api/portal-invitations/:token",
+  // Credentials belong only in bodies, including on read-only lookup requests.
+  app.use("/api/portal-invitations", (_req, res, next) => {
+    res.set("Cache-Control", "no-store");
+    next();
+  });
+
+  app.post(
+    "/api/portal-invitations/lookup",
     portalGuard("invite"),
+    strictBody(portalInviteLookupBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const r = await resolveInvitation(req.params.token);
+      const { token } = parsedBody<{ token: string }>(req);
+      const r = await resolveInvitation(token);
       if (r.status === "invalid") {
         // Malformed and unknown tokens are answered identically and count against the IP.
         notePortalFailure(req);
@@ -257,7 +266,6 @@ export function registerPortalInvitationRoutes(app: Express): void {
         signedIn ? { id: signedIn.id, email: signedIn.email } : null
       );
       await logInviteEvent(req, "invite_view", r.invitation);
-      res.set("Cache-Control", "no-store");
       res.json({
         status: "pending",
         supplier: {
@@ -279,7 +287,7 @@ export function registerPortalInvitationRoutes(app: Express): void {
   );
 
   app.post(
-    "/api/portal-invitations/:token/accept",
+    "/api/portal-invitations/accept",
     portalGuard("invite"),
     strictBody(portalAcceptBody),
     asyncHandler(async (req: Request, res: Response) => {
@@ -288,15 +296,15 @@ export function registerPortalInvitationRoutes(app: Express): void {
       let outcome;
       try {
         outcome = await acceptInvitation({
-          rawToken: req.params.token,
+          rawToken: body.token,
+          email: body.email,
           signedIn: signedIn ? { id: signedIn.id, email: signedIn.email } : null,
           name: body.name,
           password: body.password,
           req,
-          res,
         });
       } catch (err) {
-        const code = (err as { code?: string }).code;
+        const code = err instanceof DomainError ? err.code : undefined;
         if (code === "PORTAL_INVITE_INVALID") notePortalFailure(req);
         await logInviteEvent(req, `invite_accept_${(code ?? "error").toLowerCase()}`);
         throw err;
@@ -317,7 +325,6 @@ export function registerPortalInvitationRoutes(app: Express): void {
           userType: user.userType,
         };
       }
-      res.set("Cache-Control", "no-store");
       res.json(payload);
     })
   );

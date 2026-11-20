@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -36,16 +36,20 @@ const TOKEN_RE = /^[0-9a-f]{64}$/i;
 
 function readToken(): string | null {
   if (typeof window === "undefined") return null;
-  const m = /[#&]t=([0-9a-f]{64})/i.exec(window.location.hash);
-  if (m) {
+  const token = new URLSearchParams(window.location.hash.slice(1)).get("t");
+  if (token !== null) {
+    // Drop the fragment before any requests or navigation.
+    window.history.replaceState(null, "", window.location.pathname);
+    if (!TOKEN_RE.test(token)) {
+      clearStoredToken();
+      return null;
+    }
     try {
-      window.sessionStorage.setItem(TOKEN_KEY, m[1]);
+      window.sessionStorage.setItem(TOKEN_KEY, token);
     } catch {
       /* storage blocked: the token stays only in memory for this page view */
     }
-    // The link is single-use and secret: drop it from the address bar and history.
-    window.history.replaceState(null, "", window.location.pathname);
-    return m[1];
+    return token;
   }
   try {
     return window.sessionStorage.getItem(TOKEN_KEY);
@@ -171,12 +175,13 @@ export default function PortalJoin() {
   const { setLocale } = useI18n();
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
-  const token = useMemo(() => readToken(), []);
+  const [token] = useState(readToken);
+  const lookupId = useId();
   const validToken = !!token && TOKEN_RE.test(token);
 
   const query = useQuery<InviteInfo>({
-    queryKey: ["portal-invite", token],
-    queryFn: () => apiRequest("GET", `/api/portal-invitations/${token}`),
+    queryKey: ["portal-invite", lookupId],
+    queryFn: () => apiRequest("POST", "/api/portal-invitations/lookup", { token }),
     enabled: validToken,
     retry: false,
     staleTime: 0,
@@ -381,11 +386,11 @@ function JoinPanel({
     setBusy(true);
     setError(null);
     try {
-      const res = (await apiRequest(
-        "POST",
-        `/api/portal-invitations/${token}/accept`,
-        body
-      )) as AcceptResult;
+      const res = (await apiRequest("POST", "/api/portal-invitations/accept", {
+        ...body,
+        token,
+        email: info.email,
+      })) as AcceptResult;
       await onDone(res);
     } catch (err) {
       const api = err instanceof ApiError ? err : null;

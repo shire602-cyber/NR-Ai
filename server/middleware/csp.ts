@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import type { IncomingMessage, ServerResponse } from "http";
 import { isProduction } from "../config/env";
 import { createLogger } from "../config/logger";
+import { portalInviteLogPath } from "../http/portal-invite-privacy";
 
 const log = createLogger("csp");
 
@@ -147,6 +148,14 @@ export function cspReportHandler(req: Request, res: Response): void {
   const nested = body["csp-report"];
   const report: Record<string, unknown> =
     nested && typeof nested === "object" ? (nested as Record<string, unknown>) : body;
+  const invitePath = ["document-uri", "blocked-uri", "source-file"]
+    .map((key) => report[key])
+    .find((value): value is string => typeof value === "string" && !!portalInviteLogPath(value));
+  if (invitePath) {
+    log.warn({ path: portalInviteLogPath(invitePath), ip: req.ip }, "CSP violation reported");
+    res.status(204).end();
+    return;
+  }
   log.warn(
     {
       blockedUri: report["blocked-uri"],

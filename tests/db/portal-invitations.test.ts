@@ -91,6 +91,14 @@ async function browser(jar = new Jar()) {
     jar,
     get: (u: string, hd?: Record<string, string>) => call("GET", u, undefined, hd),
     post: (u: string, b?: unknown, hd?: Record<string, string>) => call("POST", u, b ?? {}, hd),
+    lookup: (token: string, hd?: Record<string, string>) =>
+      call("POST", "/api/portal-invitations/lookup", { token }, hd),
+    accept: (
+      token: string,
+      email: string,
+      body: Record<string, unknown>,
+      hd?: Record<string, string>
+    ) => call("POST", "/api/portal-invitations/accept", { token, email, ...body }, hd),
   };
 }
 
@@ -133,15 +141,24 @@ async function invite(t: Tenant, cid: string, body: Record<string, unknown> = { 
   return r;
 }
 
-const tokenOf = (url: string) => TOKEN_RE.exec(url)![1];
+async function tokenOf(invitationId: string) {
+  const [mail] = await h.sql(
+    `SELECT html FROM email_outbox WHERE category = 'portal_invite' AND related_entity_id = $1
+     ORDER BY created_at DESC LIMIT 1`,
+    [invitationId]
+  );
+  const token = TOKEN_RE.exec(mail?.html ?? "")?.[1];
+  if (!token) throw new Error("Missing invitation email in test outbox");
+  return token;
+}
 
 /** Invite and accept as a brand-new customer. Returns the logged-in browser and ids. */
 async function onboard(t: Tenant, cid: string, email = `portal-${uniq()}@example.test`) {
   const r = await invite(t, cid, { email, language: "en" });
   expect(r.status, r.text).toBe(201);
-  const token = tokenOf(r.body.inviteUrl);
+  const token = await tokenOf(r.body.invitation.id);
   const b = await browser();
-  const acc = await b.post(`/api/portal-invitations/${token}/accept`, {
+  const acc = await b.accept(token, r.body.invitation.email, {
     name: "Portal Person",
     password: PASSWORD,
     acceptTerms: true,
@@ -167,9 +184,9 @@ describe("STEP5 portal invitations", () => {
     });
     const r = await invite(t, cid, { language: "ar", message: "Welcome <b>aboard</b>" });
     expect(r.status, r.text).toBe(201);
-    expect(r.body.delivery).toBe("link");
-    expect(r.body.inviteUrl).toMatch(/\/portal\/join#t=[0-9a-f]{64}$/);
-    const token = tokenOf(r.body.inviteUrl);
+    expect(r.body.delivery).toBe("queued");
+    expect(r.body).not.toHaveProperty("inviteUrl");
+    const token = await tokenOf(r.body.invitation.id);
     expect(JSON.stringify(r.body.invitation)).not.toContain(token);
 
     const rows = await h.sql(`SELECT * FROM customer_portal_invitations WHERE company_id = $1`, [
@@ -180,7 +197,8 @@ describe("STEP5 portal invitations", () => {
     expect(rows[0].token_hash).toMatch(/^[0-9a-f]{64}$/);
     expect(rows[0].token_hash).not.toBe(token);
     expect(rows[0].email).toBe("owner@desertrose.test");
-    const days = (new Date(rows[0].expires_at).getTime() - Date.now()) / DAY;
+    const days =
+      (new Date(rows[0].expires_at).getTime() - new Date(rows[0].created_at).getTime()) / DAY;
     expect(days).toBeGreaterThan(6.9);
     expect(days).toBeLessThan(7.1);
 
@@ -291,23 +309,23 @@ describe("STEP5 portal invitations", () => {
     const t = await h.createTenant();
     const cid = await contact(t, "Accepting LLC");
     const r = await invite(t, cid, { language: "en" });
-    const token = tokenOf(r.body.inviteUrl);
+    const token = await tokenOf(r.body.invitation.id);
 
     // Opening the page never consumes it.
     const b0 = await browser();
-    const view1 = await b0.get(`/api/portal-invitations/${token}`);
+    const view1 = await b0.lookup(token);
     expect(view1.status).toBe(200);
     expect(view1.body.account).toBe("new");
     expect(view1.body.supplier.name).toBe(t.company.name);
-    expect((await b0.get(`/api/portal-invitations/${token}`)).status).toBe(200);
+    expect((await b0.lookup(token)).status).toBe(200);
 
     // Terms are required.
-    const noTerms = await b0.post(`/api/portal-invitations/${token}/accept`, {
+    const noTerms = await b0.accept(token, r.body.invitation.email, {
       name: "X",
       password: PASSWORD,
     });
     expect(noTerms.status).toBe(400);
-    const weak = await b0.post(`/api/portal-invitations/${token}/accept`, {
+    const weak = await b0.accept(token, r.body.invitation.email, {
       name: "X",
       password: "short",
       acceptTerms: true,
@@ -319,7 +337,7 @@ describe("STEP5 portal invitations", () => {
     const [x, y] = await Promise.all(
       [0, 1].map(async () => {
         const b = await browser();
-        return b.post(`/api/portal-invitations/${token}/accept`, {
+        return b.accept(token, r.body.invitation.email, {
           name: "Racer",
           password: PASSWORD,
           acceptTerms: true,
@@ -354,33 +372,163 @@ describe("STEP5 portal invitations", () => {
     // Reuse: 410 accepted.
     const again = await (
       await browser()
-    ).post(`/api/portal-invitations/${token}/accept`, {
+    ).accept(token, r.body.invitation.email, {
       name: "X",
       password: PASSWORD,
       acceptTerms: true,
     });
     expect(again.status).toBe(410);
     expect(again.body.code).toBe("PORTAL_INVITE_ACCEPTED");
-    expect((await b0.get(`/api/portal-invitations/${token}`)).body.code).toBe(
-      "PORTAL_INVITE_ACCEPTED"
+    expect((await b0.lookup(token)).body.code).toBe("PORTAL_INVITE_ACCEPTED");
+  });
+
+  it("reserves the invited address against signup and only creates the login on acceptance", async () => {
+    const supplier = await h.createTenant();
+    const email = `reserved-${uniq()}@example.test`;
+    const cid = await contact(supplier, "New customer", { email });
+    const issued = await invite(supplier, cid);
+    expect(issued.status, issued.text).toBe(201);
+    const token = await tokenOf(issued.body.invitation.id);
+    const guest = await browser();
+    const otherPassword = "Fake-Unauthorized-PreRegistration7!";
+    const registration = await guest.post("/api/auth/register", {
+      email: email.toUpperCase(),
+      name: "Uninvited claimant",
+      password: otherPassword,
+    });
+    expect(registration.status).toBe(200);
+    expect(await h.sql("SELECT id FROM users WHERE lower(email) = $1", [email])).toHaveLength(0);
+    expect((await guest.post("/api/auth/login", { email, password: otherPassword })).status).toBe(
+      401
     );
+
+    const wrongEmail = await guest.accept(token, "wrong@example.test", {
+      password: PASSWORD,
+      acceptTerms: true,
+    });
+    expect(wrongEmail.body.code).toBe("INVITATION_EMAIL_MISMATCH");
+    expect(
+      (await guest.accept("f".repeat(64), email, { password: PASSWORD, acceptTerms: true })).status
+    ).toBe(404);
+    expect(await h.sql("SELECT id FROM users WHERE lower(email) = $1", [email])).toHaveLength(0);
+
+    const accepted = await guest.accept(token, email.toUpperCase(), {
+      password: PASSWORD,
+      acceptTerms: true,
+    });
+    expect(accepted.status, accepted.text).toBe(200);
+    expect(accepted.body.user.email).toBe(email);
+    expect(
+      (await (await browser()).post("/api/auth/login", { email, password: PASSWORD })).status
+    ).toBe(200);
+    expect(
+      (await (await browser()).post("/api/auth/login", { email, password: otherPassword })).status
+    ).toBe(401);
+  });
+
+  it("refuses a placeholder and an unverified account without overwriting their credentials", async () => {
+    const supplier = await h.createTenant();
+    const existing = await h.createTenant();
+    const admin = await h.createTenant({ isAdmin: true });
+    const cid = await contact(supplier, "Existing buyer", { email: existing.email });
+    const issued = await invite(supplier, cid);
+    const token = await tokenOf(issued.body.invitation.id);
+    const guest = await browser();
+    const [original] = await h.sql("SELECT password_hash FROM users WHERE id = $1", [
+      existing.user.id,
+    ]);
+
+    const unsigned = await guest.accept(token, existing.email, {
+      password: PASSWORD,
+      acceptTerms: true,
+    });
+    expect(unsigned.body.code).toBe("LOGIN_REQUIRED");
+    const unverified = await guest.accept(
+      token,
+      existing.email,
+      { acceptTerms: true },
+      { authorization: `Bearer ${existing.token}` }
+    );
+    expect(unverified.body.code).toBe("PORTAL_INVITE_EMAIL_UNVERIFIED");
+    expect(
+      await h.sql("SELECT password_hash FROM users WHERE id = $1", [existing.user.id])
+    ).toEqual([original]);
+    expect(
+      await h.sql("SELECT id FROM customer_portal_accounts WHERE invitation_id = $1", [
+        issued.body.invitation.id,
+      ])
+    ).toHaveLength(0);
+
+    await h.sql("UPDATE users SET password_hash = '$placeholder$' WHERE id = $1", [
+      existing.user.id,
+    ]);
+    await h.sql("DELETE FROM company_users WHERE user_id = $1", [existing.user.id]);
+    expect((await guest.lookup(token)).body.account).toBe("existing");
+    expect(
+      (await guest.accept(token, existing.email, { password: PASSWORD, acceptTerms: true })).body
+        .code
+    ).toBe("LOGIN_REQUIRED");
+    await guest.post("/api/auth/register", {
+      email: existing.email,
+      name: "Claim",
+      password: PASSWORD,
+    });
+    expect(
+      await h.sql("SELECT password_hash FROM users WHERE id = $1", [existing.user.id])
+    ).toEqual([{ password_hash: "$placeholder$" }]);
+
+    const reservedEmail = `edit-${uniq()}@example.test`;
+    const otherInvite = await invite(
+      supplier,
+      await contact(supplier, "Email edit", { email: reservedEmail })
+    );
+    const moved = await admin.as.patch(`/api/admin/users/${existing.user.id}`, {
+      email: reservedEmail,
+    });
+    expect(moved.body.code).toBe("PORTAL_INVITE_EMAIL_RESERVED");
+    expect((await guest.lookup(await tokenOf(otherInvite.body.invitation.id))).body.account).toBe(
+      "new"
+    );
+  });
+
+  it("refuses an old invite after the contact email changes and sends a new invite to the new address", async () => {
+    const supplier = await h.createTenant();
+    const oldEmail = `old-${uniq()}@example.test`;
+    const newEmail = `new-${uniq()}@example.test`;
+    const cid = await contact(supplier, "Changed email", { email: oldEmail });
+    const issued = await invite(supplier, cid);
+    const token = await tokenOf(issued.body.invitation.id);
+    await h.sql("UPDATE customer_contacts SET email = $2 WHERE id = $1", [cid, newEmail]);
+    const guest = await browser();
+    expect((await guest.lookup(token)).body.code).toBe("PORTAL_INVITE_REVOKED");
+    expect(
+      (await guest.accept(token, oldEmail, { password: PASSWORD, acceptTerms: true })).body.code
+    ).toBe("PORTAL_INVITE_REVOKED");
+
+    const replacement = await invite(supplier, cid);
+    expect(replacement.status, replacement.text).toBe(201);
+    const newToken = await tokenOf(replacement.body.invitation.id);
+    expect(
+      (await guest.accept(newToken, newEmail, { password: PASSWORD, acceptTerms: true })).status
+    ).toBe(200);
   });
 
   it("[S5-04] an expired invitation is 410, resend rotates the token and extends the expiry", async () => {
     const t = await h.createTenant();
     const cid = await contact(t, "Expiring LLC");
     const r = await invite(t, cid);
-    const oldToken = tokenOf(r.body.inviteUrl);
+    const oldToken = await tokenOf(r.body.invitation.id);
     await h.sql(
-      `UPDATE customer_portal_invitations SET expires_at = now() - interval '1 hour', last_sent_at = now() - interval '2 hours' WHERE id = $1`,
+      `UPDATE customer_portal_invitations SET expires_at = now() - interval '1 hour',
+         last_sent_at = now() - interval '2 hours', last_outbox_id = NULL WHERE id = $1`,
       [r.body.invitation.id]
     );
     const b = await browser();
-    const get = await b.get(`/api/portal-invitations/${oldToken}`);
+    const get = await b.lookup(oldToken);
     expect(get.status).toBe(410);
     expect(get.body.code).toBe("PORTAL_INVITE_EXPIRED");
     expect(get.body.supplier.name).toBe(t.company.name);
-    const post = await b.post(`/api/portal-invitations/${oldToken}/accept`, {
+    const post = await b.accept(oldToken, r.body.invitation.email, {
       name: "X",
       password: PASSWORD,
       acceptTerms: true,
@@ -399,29 +547,35 @@ describe("STEP5 portal invitations", () => {
       {}
     );
     expect(resend.status, resend.text).toBe(200);
-    const newToken = tokenOf(resend.body.inviteUrl);
+    const newToken = await tokenOf(resend.body.invitation.id);
     expect(newToken).not.toBe(oldToken);
-    expect((await b.get(`/api/portal-invitations/${oldToken}`)).status).toBe(404);
-    expect((await b.get(`/api/portal-invitations/${newToken}`)).status).toBe(200);
+    expect((await b.lookup(oldToken)).status).toBe(404);
+    expect(
+      (await b.accept(oldToken, r.body.invitation.email, { password: PASSWORD, acceptTerms: true }))
+        .status
+    ).toBe(404);
+    expect((await b.lookup(newToken)).status).toBe(200);
+    expect(
+      (await b.accept(newToken, r.body.invitation.email, { password: PASSWORD, acceptTerms: true }))
+        .status
+    ).toBe(200);
   });
 
   it("[S5-05] revoking an invitation or removing an account takes effect immediately", async () => {
     const t = await h.createTenant();
     const cid = await contact(t, "Revoked LLC");
     const r = await invite(t, cid);
-    const token = tokenOf(r.body.inviteUrl);
+    const token = await tokenOf(r.body.invitation.id);
     const rev = await t.as.post(
       `/api/companies/${t.company.id}/portal-invitations/${r.body.invitation.id}/revoke`,
       {}
     );
     expect(rev.status).toBe(200);
     const b = await browser();
-    expect((await b.get(`/api/portal-invitations/${token}`)).body.code).toBe(
-      "PORTAL_INVITE_REVOKED"
-    );
+    expect((await b.lookup(token)).body.code).toBe("PORTAL_INVITE_REVOKED");
     expect(
       (
-        await b.post(`/api/portal-invitations/${token}/accept`, {
+        await b.accept(token, r.body.invitation.email, {
           name: "X",
           password: PASSWORD,
           acceptTerms: true,
@@ -516,6 +670,7 @@ describe("STEP5 portal invitations", () => {
     const supplier1 = await h.createTenant({ name: "Supplier One" });
     const supplier2 = await h.createTenant({ name: "Supplier Two" });
     const saas = await h.createTenant({ name: "Saas Owner" }); // a real customer user with their own company
+    await h.sql("UPDATE users SET email_verified = true WHERE id = $1", [saas.user.id]);
     const c1 = await contact(supplier1, "Buyer 1");
     const c2 = await contact(supplier2, "Buyer 2");
     const inv1 = await invoice(supplier1, c1);
@@ -523,10 +678,10 @@ describe("STEP5 portal invitations", () => {
 
     const r1 = await invite(supplier1, c1, { email: saas.email, language: "en" });
     expect(r1.status, r1.text).toBe(201);
-    const t1 = tokenOf(r1.body.inviteUrl);
+    const t1 = await tokenOf(r1.body.invitation.id);
     const anon = await browser();
-    expect((await anon.get(`/api/portal-invitations/${t1}`)).body.account).toBe("existing");
-    const needLogin = await anon.post(`/api/portal-invitations/${t1}/accept`, {
+    expect((await anon.lookup(t1)).body.account).toBe("existing");
+    const needLogin = await anon.accept(t1, saas.email, {
       acceptTerms: true,
     });
     expect(needLogin.status).toBe(409);
@@ -536,27 +691,28 @@ describe("STEP5 portal invitations", () => {
     const stranger = await h.createTenant({ name: "Stranger" });
     const wrong = await (
       await browser()
-    ).post(
-      `/api/portal-invitations/${t1}/accept`,
-      { acceptTerms: true },
-      { authorization: `Bearer ${stranger.token}` }
-    );
+    ).accept(t1, saas.email, { acceptTerms: true }, { authorization: `Bearer ${stranger.token}` });
     expect(wrong.status).toBe(403);
     expect(wrong.body.code).toBe("INVITATION_EMAIL_MISMATCH");
 
     // Same email, signed in: binds, user type unchanged, own company untouched.
-    const viewGet = await (
-      await browser()
-    ).get(`/api/portal-invitations/${t1}`, { authorization: `Bearer ${saas.token}` });
+    const viewGet = await (await browser()).lookup(t1, { authorization: `Bearer ${saas.token}` });
     expect(viewGet.body.account).toBe("signed_in");
+    const originalCredential = await h.sql("SELECT password_hash FROM users WHERE id = $1", [
+      saas.user.id,
+    ]);
     const ok = await (
       await browser()
-    ).post(
-      `/api/portal-invitations/${t1}/accept`,
-      { acceptTerms: true },
+    ).accept(
+      t1,
+      saas.email,
+      { acceptTerms: true, password: PASSWORD },
       { authorization: `Bearer ${saas.token}` }
     );
     expect(ok.status, ok.text).toBe(200);
+    expect(await h.sql("SELECT password_hash FROM users WHERE id = $1", [saas.user.id])).toEqual(
+      originalCredential
+    );
     expect(
       (await h.sql(`SELECT user_type FROM users WHERE id = $1`, [saas.user.id]))[0].user_type
     ).toBe("customer");
@@ -565,19 +721,20 @@ describe("STEP5 portal invitations", () => {
       inv1.id,
     ]);
     expect((await saas.as.get("/api/auth/me")).body.portalAccounts).toBe(1);
+    const admin = await h.createTenant({ isAdmin: true });
+    const changed = await admin.as.patch(`/api/admin/users/${saas.user.id}`, {
+      email: `changed-${uniq()}@example.test`,
+    });
+    expect(changed.body.code).toBe("PORTAL_ACCOUNT_EMAIL_CHANGE_BLOCKED");
 
     // A second supplier: both are listed and the header switches the data.
     const r2 = await invite(supplier2, c2, { email: saas.email, language: "en" });
-    const t2 = tokenOf(r2.body.inviteUrl);
+    const t2 = await tokenOf(r2.body.invitation.id);
     expect(
       (
         await (
           await browser()
-        ).post(
-          `/api/portal-invitations/${t2}/accept`,
-          { acceptTerms: true },
-          { authorization: `Bearer ${saas.token}` }
-        )
+        ).accept(t2, saas.email, { acceptTerms: true }, { authorization: `Bearer ${saas.token}` })
       ).status
     ).toBe(200);
     const accounts = await saas.as.get("/api/client-portal/accounts");
@@ -637,12 +794,11 @@ describe("STEP5 portal invitations", () => {
     expect(active.status).toBe(409);
     expect(active.body.code).toBe("PORTAL_ALREADY_ACTIVE");
     // Unknown token body for accept is strict too.
-    const tok = tokenOf(
-      (await invite(t, await contact(t, "Strict"), { language: "en" })).body.inviteUrl
-    );
+    const strictInvite = await invite(t, await contact(t, "Strict"), { language: "en" });
+    const tok = await tokenOf(strictInvite.body.invitation.id);
     const strict = await (
       await browser()
-    ).post(`/api/portal-invitations/${tok}/accept`, {
+    ).accept(tok, strictInvite.body.invitation.email, {
       password: PASSWORD,
       acceptTerms: true,
       userType: "admin",
@@ -675,19 +831,17 @@ describe("STEP5 portal invitations", () => {
 
     // 21 bad tokens from one IP lock even a good token.
     const t2 = await h.createTenant();
-    const good = tokenOf(
-      (await invite(t2, await contact(t2, "Lock LLC"), { language: "en" })).body.inviteUrl
-    );
+    const validInvite = await invite(t2, await contact(t2, "Lock LLC"), { language: "en" });
+    const good = await tokenOf(validInvite.body.invitation.id);
     const b = await browser();
-    for (let i = 0; i < 21; i++)
-      await b.get(`/api/portal-invitations/${randomBytes(32).toString("hex")}`);
-    expect((await b.get(`/api/portal-invitations/${good}`)).status).toBe(429);
+    for (let i = 0; i < 21; i++) await b.lookup(randomBytes(32).toString("hex"));
+    expect((await b.lookup(good)).status).toBe(429);
   });
 
   it("[S5-10] malformed and unknown tokens return byte-identical 404 bodies", async () => {
     const b = await browser();
-    const malformed = await b.get("/api/portal-invitations/not-a-token");
-    const unknown = await b.get(`/api/portal-invitations/${randomBytes(32).toString("hex")}`);
+    const malformed = await b.lookup("not-a-token");
+    const unknown = await b.lookup(randomBytes(32).toString("hex"));
     expect(malformed.status).toBe(404);
     expect(unknown.status).toBe(404);
     expect(malformed.text).toBe(unknown.text);
@@ -697,9 +851,9 @@ describe("STEP5 portal invitations", () => {
     const t = await h.createTenant();
     const cid = await contact(t, "Audit LLC");
     const r = await invite(t, cid, { language: "en" });
-    const token = tokenOf(r.body.inviteUrl);
+    const token = await tokenOf(r.body.invitation.id);
     const b = await browser();
-    await b.get(`/api/portal-invitations/${token}`);
+    await b.lookup(token);
     await t.as.post(
       `/api/companies/${t.company.id}/portal-invitations/${r.body.invitation.id}/revoke`,
       {}
@@ -738,7 +892,8 @@ describe("STEP5 portal invitations", () => {
     const sent: OutgoingEmail[] = [];
     const t = await h.createTenant();
     const none = await invite(t, await contact(t, "No provider"), { language: "en" });
-    expect(none.body.delivery).toBe("link"); // honest: not "sent"
+    expect(none.body.delivery).toBe("queued");
+    expect(none.body).not.toHaveProperty("inviteUrl");
     const { setEmailTransportOverride } = await import("../../server/outbox");
     setEmailTransportOverride({
       name: "test",
@@ -757,6 +912,43 @@ describe("STEP5 portal invitations", () => {
     expect(mail!.html).toContain('lang="en"');
     expect(mail!.html).toContain('lang="ar"');
     expect(mail!.subject).toContain("|");
+  });
+
+  it("discards provider errors containing a token from the delivery history", async () => {
+    const supplier = await h.createTenant();
+    const { applyProviderEvent, setEmailTransportOverride } = await import("../../server/outbox");
+    let rejectedLink = "";
+    setEmailTransportOverride({
+      name: "test",
+      send: async (mail) => {
+        rejectedLink = TOKEN_RE.exec(mail.html)?.[1] ?? "";
+        throw new Error(`Provider echoed https://example.test/portal/join#t=${rejectedLink}`);
+      },
+    });
+    const issued = await invite(supplier, await contact(supplier, "Provider failure"));
+    expect(issued.status, issued.text).toBe(201);
+    expect(rejectedLink).toMatch(/^[0-9a-f]{64}$/);
+    expect(issued.text).not.toContain(rejectedLink);
+    const [outbox] = await h.sql(
+      "SELECT id, last_error FROM email_outbox WHERE related_entity_id = $1",
+      [issued.body.invitation.id]
+    );
+    expect(outbox.last_error).toBe("Sensitive email delivery failed");
+    await applyProviderEvent({
+      provider: "test",
+      outboxId: outbox.id,
+      type: "bounced",
+      detail: `Bounced: ${rejectedLink}`,
+    });
+    const errors = await h.sql("SELECT detail FROM email_delivery_events WHERE outbox_id = $1", [
+      outbox.id,
+    ]);
+    expect(JSON.stringify(errors)).not.toContain(rejectedLink);
+    const staffHistory = await supplier.as.get(
+      `/api/companies/${supplier.company.id}/email-outbox`
+    );
+    expect(staffHistory.status).toBe(200);
+    expect(staffHistory.text).not.toContain(rejectedLink);
   });
 
   it("[S5-13] bulk invite reports a per-contact outcome and caps at 100", async () => {
@@ -855,7 +1047,9 @@ describe("STEP5 portal invitations", () => {
     });
     expect(otp.status).not.toBe(403);
     // The public invitation accept is NOT exempt.
-    const accept = await h.anon.post(`/api/portal-invitations/${"a".repeat(64)}/accept`, {
+    const accept = await h.anon.post("/api/portal-invitations/accept", {
+      token: "a".repeat(64),
+      email: "example@example.test",
       acceptTerms: true,
     });
     expect(accept.status).toBe(403);

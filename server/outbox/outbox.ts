@@ -252,7 +252,9 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     log.info({ outboxId: row.id, provider: transport.name }, "Email delivered to provider");
     return toResult(sent as EmailOutboxRow);
   } catch (err) {
-    const message = (err as Error)?.message || "Email provider error";
+    const message = row.sensitive
+      ? "Sensitive email delivery failed"
+      : (err as Error)?.message || "Email provider error";
     const permanent = err instanceof EmailTransportError && err.permanent;
     const dead = permanent || attempts >= row.maxAttempts;
     const [failed] = await db
@@ -394,9 +396,10 @@ export async function applyProviderEvent(evt: {
     row = byMsg as EmailOutboxRow | undefined;
   }
   if (!row) {
-    await recordEvent(null, evt.type, evt.detail, evt.provider, evt.providerMessageId);
+    await recordEvent(null, evt.type, null, evt.provider, evt.providerMessageId);
     return null;
   }
+  const detail = row.sensitive ? null : evt.detail;
   const now = new Date();
   const patch: Partial<typeof emailOutbox.$inferInsert> = { updatedAt: now };
   if (evt.type === "delivered" && ["sent", "sending", "retrying"].includes(row.status)) {
@@ -405,16 +408,16 @@ export async function applyProviderEvent(evt: {
   } else if (evt.type === "bounced") {
     patch.status = "bounced";
     patch.bouncedAt = now;
-    patch.lastError = evt.detail ?? "Bounced";
+    patch.lastError = detail ?? "Bounced";
   } else if (evt.type === "complained") {
     patch.status = "complained";
     patch.complainedAt = now;
   } else if (evt.type === "failed" && row.status !== "delivered") {
     patch.status = "dead";
     patch.deadAt = now;
-    patch.lastError = evt.detail ?? "Delivery failed";
+    patch.lastError = detail ?? "Delivery failed";
   }
   await db.update(emailOutbox).set(patch).where(eq(emailOutbox.id, row.id));
-  await recordEvent(row.id, evt.type, evt.detail, evt.provider, evt.providerMessageId);
+  await recordEvent(row.id, evt.type, detail, evt.provider, evt.providerMessageId);
   return row.id;
 }
