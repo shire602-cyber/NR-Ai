@@ -48,7 +48,7 @@ export function einvoiceIssuesFromError(body: unknown): EInvoiceIssueItem[] {
         out.push({
           field: [label, f.id].filter(Boolean).join(" "),
           message: f.message,
-          ruleId: f.id,
+          ...(f.id ? { ruleId: f.id } : {}),
         });
       }
     }

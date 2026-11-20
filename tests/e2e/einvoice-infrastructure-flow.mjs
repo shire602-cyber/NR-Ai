@@ -285,6 +285,30 @@ async function inBrowser(browser, { email, lang, width }, flow) {
       localStorage.setItem("cookie-consent", "accepted");
     }, lang);
     const page = await ctx.newPage();
+    const pendingApi = new Set();
+    let lastApiActivity = Date.now();
+    page.on("request", (req) => {
+      if (!new URL(req.url()).pathname.startsWith("/api/")) return;
+      pendingApi.add(req);
+      lastApiActivity = Date.now();
+    });
+    const apiDone = (req) => {
+      if (pendingApi.delete(req)) lastApiActivity = Date.now();
+    };
+    page.on("requestfinished", apiDone);
+    page.on("requestfailed", apiDone);
+
+    async function settleApi() {
+      const started = Date.now();
+      while (Date.now() - started < 20_000) {
+        if (pendingApi.size === 0 && Date.now() - Math.max(started, lastApiActivity) >= 500) {
+          return;
+        }
+        await delay(100);
+      }
+      throw new Error(`${lang} app API requests did not settle before navigation`);
+    }
+
     await open(page, "/login");
     await page.getByTestId("input-email").fill(email);
     await page.getByTestId("input-password").fill(PASSWORD);
@@ -309,8 +333,11 @@ async function inBrowser(browser, { email, lang, width }, flow) {
     page.on("response", (res) => {
       if (res.status() >= 400) failures.push(`${res.status()} ${new URL(res.url()).pathname}`);
     });
-    await flow(page);
-    await page.waitForLoadState("networkidle");
+    await flow(page, async (path) => {
+      await settleApi();
+      await open(page, path);
+    });
+    await settleApi();
     assert.deepEqual(failures, [], `${lang} browser and API errors`);
   } finally {
     await ctx.close();
@@ -323,9 +350,9 @@ async function open(page, path) {
   assert.equal(new URL(page.url()).pathname, path);
 }
 
-async function openBooks(page, persona, index) {
+async function openBooks(page, navigate, persona, index) {
   const client = persona.clients[index];
-  await open(page, "/firm/clients");
+  await navigate("/firm/clients");
   const book =
     persona.width < 768
       ? page.getByTestId(`button-open-books-${client.id}`)
@@ -349,12 +376,12 @@ async function expectFrame(page, lang) {
 
 async function selectProviders(browser, persona) {
   const { lang, providers, token, clients } = persona;
-  await inBrowser(browser, persona, async (page) => {
+  await inBrowser(browser, persona, async (page, navigate) => {
     for (const [index, provider] of providers.entries()) {
-      await openBooks(page, persona, index);
+      await openBooks(page, navigate, persona, index);
       const statusPath = `/api/companies/${clients[index].id}/einvoicing/provider`;
       const status = page.waitForResponse((res) => new URL(res.url()).pathname === statusPath);
-      await open(page, "/settings/einvoicing");
+      await navigate("/settings/einvoicing");
       await page.getByRole("heading", { name: copies[lang].title, exact: true }).waitFor();
       assert.equal((await (await status).json()).status, "not_selected");
       await expectFrame(page, lang);
@@ -386,8 +413,8 @@ async function selectProviders(browser, persona) {
       assert.equal(health.provider, null);
       await page.waitForLoadState("networkidle");
     }
-    await openBooks(page, persona, 0);
-    await open(page, "/settings/einvoicing");
+    await openBooks(page, navigate, persona, 0);
+    await navigate("/settings/einvoicing");
     const selected = page.getByRole("radio", { checked: true });
     await selected.waitFor();
     assert.equal(
@@ -402,9 +429,9 @@ async function selectProviders(browser, persona) {
 
 async function sendInvoice(browser, persona) {
   const { invoiceId, lang, token } = persona;
-  await inBrowser(browser, persona, async (page) => {
-    await openBooks(page, persona, 0);
-    await open(page, "/invoices");
+  await inBrowser(browser, persona, async (page, navigate) => {
+    await openBooks(page, navigate, persona, 0);
+    await navigate("/invoices");
     await page.locator(`[data-testid="einvoice-cell-${invoiceId}"]:visible`).first().click();
     await expectFrame(page, lang);
     const sheet = page.getByTestId("einvoice-sheet");

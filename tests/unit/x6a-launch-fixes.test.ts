@@ -228,10 +228,9 @@ describe("[X6a e-invoicing 3] 'needs link' is its own delivery state", () => {
         expect(c[k], `${locale} ${k}`).toBeTruthy();
         if (locale === "ar") expect(c[k]).toMatch(/[؀-ۿ]/);
       }
+      expect(c["einvoicing.needsLinkBody"]).toContain("{provider}");
+      expect(c["einvoicing.needsLinkBody"]).toContain(locale === "en" ? "portal" : "بوابة");
     }
-    expect(catalog("en", "einvoicing")["einvoicing.needsLinkBody"]).toMatch(
-      /not shown as rejected/
-    );
   });
 });
 
