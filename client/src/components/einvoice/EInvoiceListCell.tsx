@@ -48,6 +48,7 @@ export function EInvoiceListCell({
   const delivery: DeliveryStatus =
     (doc?.deliveryStatus as DeliveryStatus | null) ??
     deliveryFromLegacyStatus(doc?.status ?? invoice.einvoiceStatus);
+  const queuedForSubmission = (doc?.status ?? invoice.einvoiceStatus) === "queued";
   const reporting: ReportingStatus =
     (doc?.reportingStatus as ReportingStatus | null) ??
     (doc?.status === "cleared" || invoice.einvoiceStatus === "cleared" ? "reported" : "pending");
@@ -84,11 +85,15 @@ export function EInvoiceListCell({
             >
               {pill.delivery === "validated"
                 ? t["einvoicing.delivery_validated_short"]
-                : t[deliveryLabelKey(pill.delivery)]}
+                : t[deliveryLabelKey(pill.delivery, queuedForSubmission)]}
             </StatusBadge>
           </span>
         ) : (
-          <EInvoiceTrackBadges delivery={delivery} reporting={reporting} />
+          <EInvoiceTrackBadges
+            delivery={delivery}
+            reporting={reporting}
+            queuedForSubmission={queuedForSubmission}
+          />
         )}
       </button>
       {open && (

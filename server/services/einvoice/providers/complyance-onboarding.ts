@@ -26,6 +26,7 @@ import { companyTin, getLegalEntity, upsertLegalEntity } from "../legal-entities
 import { db } from "../../../db";
 import { einvoiceLegalEntities } from "../../../../shared/schema";
 import { and, eq, inArray } from "drizzle-orm";
+import type { ProviderEnvironment } from "./types";
 import {
   COMPLYANCE_PROVIDER_NAME,
   ComplyanceApiError,
@@ -153,9 +154,7 @@ export async function connectComplyanceCompany(args: {
         err.code.startsWith("COMPLYANCE_") || err.code.startsWith("CONNECT_")
           ? err.code
           : `COMPLYANCE_${err.code}`,
-        err.status >= 500 ? 502 : 422,
-        undefined,
-        err.message
+        err.status >= 500 ? 502 : 422
       );
     }
   }
@@ -193,8 +192,9 @@ export async function syncComplyanceCompany(args: {
 
 /** Poll job: retry companies still waiting for EmaraTax or for mapping readiness. */
 export async function syncPendingComplyanceCompanies(
-  provider: ComplyanceEInvoiceProvider,
-  loadCompany: (id: string) => Promise<CompanyRow | undefined>
+  environment: ProviderEnvironment,
+  loadCompany: (id: string) => Promise<CompanyRow | undefined>,
+  providerFor: (company: CompanyRow) => Promise<ComplyanceEInvoiceProvider | null>
 ): Promise<{ checked: number; activated: number }> {
   const rows = await db
     .select()
@@ -202,7 +202,7 @@ export async function syncPendingComplyanceCompanies(
     .where(
       and(
         eq(einvoiceLegalEntities.provider, COMPLYANCE_PROVIDER_NAME),
-        eq(einvoiceLegalEntities.environment, provider.environment),
+        eq(einvoiceLegalEntities.environment, environment),
         inArray(einvoiceLegalEntities.status, ["reserved", "pending"])
       )
     )
@@ -212,10 +212,12 @@ export async function syncPendingComplyanceCompanies(
     const company = await loadCompany(row.companyId);
     if (!company) continue;
     try {
+      const provider = await providerFor(company);
+      if (!provider || provider.environment !== row.environment) continue;
       const out = await connectComplyanceCompany({ company, provider });
       if (out.status === "active") activated++;
-    } catch (err) {
-      log.warn({ companyId: row.companyId, err: (err as Error).message }, "Complyance sync failed");
+    } catch {
+      log.warn({ companyId: row.companyId }, "Complyance sync failed");
     }
   }
   return { checked: rows.length, activated };

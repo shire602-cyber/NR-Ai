@@ -88,6 +88,7 @@ import {
   einvoiceFieldHint,
   einvoiceIssueTextKey,
   einvoiceIssuesFromError,
+  einvoiceRuleTextKey,
   type EInvoiceIssueItem,
 } from "@/lib/einvoice-issues";
 import { EInvoiceListCell } from "@/components/einvoice/EInvoiceListCell";
@@ -290,7 +291,7 @@ const BLANK_HEADER = {
 /** An e-invoice validator answer (GET /api/invoices/:id/einvoice/validate). */
 interface EInvoiceValidation {
   valid: boolean;
-  issues: Array<{ field: string; message: string }>;
+  issues: EInvoiceIssueItem[];
 }
 
 const isoDay = (d: Date) => format(d, "yyyy-MM-dd");
@@ -2281,18 +2282,25 @@ export default function Invoices() {
             {(einvoiceIssues?.issues ?? []).map((issue, i) => {
               // X5 (J1 L3): a readable field name and where to fix it, never a raw data path.
               const hint = einvoiceFieldHint(issue.field);
-              const label = hint.labelKey ? t[hint.labelKey] : hint.ruleLabel;
-              const fixKey = einvoiceIssueTextKey(issue.code);
+              const label = hint.labelKey ? t[hint.labelKey] : null;
+              const fixKey = einvoiceIssueTextKey(issue.code) ?? einvoiceRuleTextKey(issue.ruleId);
+              const detail =
+                (fixKey && t[fixKey]) ||
+                (locale === "ar" ? t["einvoicing.validationFinding"] : issue.message);
               return (
                 <li key={`${issue.field}-${i}`} className="rounded-md border p-2">
                   {label && (
                     <span className="block text-xs font-medium text-muted-foreground">{label}</span>
                   )}
-                  {fixKey ? (
-                    <span data-testid={`einvoice-issue-${issue.code}`}>{t[fixKey]}</span>
-                  ) : (
-                    issue.message
+                  {issue.ruleId && (
+                    <p className="text-xs text-muted-foreground">
+                      {t["einvoicing.validationRule"]}{" "}
+                      <bdi dir="ltr" translate="no">{issue.ruleId}</bdi>
+                    </p>
                   )}
+                  <span data-testid={issue.code ? `einvoice-issue-${issue.code}` : undefined}>
+                    {detail}
+                  </span>
                   {hint.whereKey && (
                     <span className="mt-1 block text-xs">
                       {hint.href ? (

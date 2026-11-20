@@ -13,6 +13,10 @@
 import crypto from "node:crypto";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import {
+  companyCredentialVariable,
+  sealCompanyCredentials,
+} from "../../server/services/einvoice/providers/company-credentials";
 import { PINT_AE_FIXTURES, fixtureCompany, type PintAeFixture } from "../fixtures/pint-ae/fixtures";
 
 const h = useHarness();
@@ -173,6 +177,7 @@ async function acube(url: URL, init: RequestInit): Promise<Response> {
     }
     const d = fake.docs.get(m[1]);
     if (!d) return json(404, { detail: "Not found" });
+    if (m[2] === "/source") return new Response(d.xml, { status: 200 });
     if (m[2] === "/tdd") {
       return d.tdd
         ? new Response("<TaxDataDocument/>", { status: 200 })
@@ -197,12 +202,9 @@ beforeAll(() => {
 const keys = crypto.generateKeyPairSync("ed25519");
 const ENV_KEYS = [
   "EINVOICE_PROVIDER",
-  "ACUBE_EMAIL",
-  "ACUBE_PASSWORD",
   "ACUBE_ENV",
   "ACUBE_SIGNATURE_PUBLIC_KEY",
   "ACUBE_WEBHOOK_BASE_URL",
-  "ACUBE_WEBHOOK_TOKEN",
   "ACUBE_WEBHOOK_INLINE",
   "EINVOICE_ASP_BASE_URL",
   "EINVOICE_ASP_API_KEY",
@@ -210,10 +212,16 @@ const ENV_KEYS = [
 const saved: Record<string, string | undefined> = {};
 for (const k of ENV_KEYS) saved[k] = process.env[k];
 
-async function useAcube() {
-  process.env.EINVOICE_PROVIDER = "acube";
-  process.env.ACUBE_EMAIL = "sandbox@example.test";
-  process.env.ACUBE_PASSWORD = "sandbox-password";
+let credentialVariable: string | null = null;
+
+async function useAcube(t: Tenant, webhookToken?: string) {
+  const context = { companyId: t.company.id, provider: "acube", environment: "sandbox" } as const;
+  credentialVariable = companyCredentialVariable(context);
+  process.env[credentialVariable] = sealCompanyCredentials(context, {
+    email: "sandbox@example.test",
+    password: crypto.randomUUID(),
+    webhookToken,
+  });
   process.env.ACUBE_SIGNATURE_PUBLIC_KEY = keys.publicKey
     .export({ type: "spki", format: "pem" })
     .toString();
@@ -225,6 +233,8 @@ async function useAcube() {
 
 beforeEach(() => fake.reset());
 afterEach(() => {
+  if (credentialVariable) delete process.env[credentialVariable];
+  credentialVariable = null;
   for (const k of ENV_KEYS) {
     if (saved[k] === undefined) delete process.env[k];
     else process.env[k] = saved[k];
@@ -235,6 +245,7 @@ afterEach(() => {
 
 let signAcubeRequest: typeof import("../../server/services/einvoice/acube-signature").signAcubeRequest;
 let runProviderEvents: typeof import("../../server/services/einvoice/provider-events").runProviderEvents;
+let runEInvoiceRetries: typeof import("../../server/services/einvoice/workflow").runEInvoiceRetries;
 let runAcubePoll: typeof import("../../server/services/einvoice/provider-events").runAcubePoll;
 let generateEInvoiceXML: typeof import("../../server/services/einvoice.service").generateEInvoiceXML;
 beforeAll(async () => {
@@ -242,21 +253,24 @@ beforeAll(async () => {
   ({ runProviderEvents, runAcubePoll } =
     await import("../../server/services/einvoice/provider-events"));
   ({ generateEInvoiceXML } = await import("../../server/services/einvoice.service"));
+  ({ runEInvoiceRetries } = await import("../../server/services/einvoice/workflow"));
 });
 
 function webhook(
+  tenant: Tenant,
   payload: Record<string, unknown>,
   opts: { created?: number; key?: crypto.KeyObject; token?: string; body?: string } = {}
 ) {
   const body = JSON.stringify(payload);
+  const path = `${WEBHOOK}/${tenant.company.id}`;
   const headers = signAcubeRequest({
     privateKey: opts.key ?? keys.privateKey,
     method: "POST",
-    targetUri: `${PUBLIC_BASE}${WEBHOOK}`,
+    targetUri: `${PUBLIC_BASE}${path}`,
     body,
     created: opts.created,
   });
-  return h.anon.post(WEBHOOK, undefined, {
+  return h.anon.post(path, undefined, {
     raw: Buffer.from(opts.body ?? body, "utf8"),
     headers: {
       "Content-Type": "application/json",
@@ -302,13 +316,15 @@ async function issuedInvoice(t: Tenant, customerTrn = "100765432100003") {
 }
 
 async function linkedTenant() {
-  await useAcube();
-  const t = await h.createTenant({ companyColumns: SELLER_COLUMNS });
+  const t = await h.createTenant({
+    companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "acube" },
+  });
+  await useAcube(t);
   const r = await t.as.post(`/api/companies/${t.company.id}/einvoicing/acube/reserve`, {
     approver: "me",
   });
   expect(r.status, r.text).toBe(200);
-  const w = await webhook(linkEvent());
+  const w = await webhook(t, linkEvent());
   expect(w.status, w.text).toBe(200);
   await runProviderEvents();
   return t;
@@ -422,15 +438,17 @@ describe("E1 without a provider: generated and validated, honestly not sent", ()
       approver: "me",
     });
     expect(reserve.status).toBe(503);
-    const hook = await webhook(linkEvent());
+    const hook = await webhook(t, linkEvent());
     expect(hook.status).toBe(503);
   });
 });
 
 describe("E1 legal entity onboarding gates sending", () => {
   it("reserve -> LINK webhook -> active; DELINK -> 409; viewer cannot reserve", async () => {
-    await useAcube();
-    const t = await h.createTenant({ companyColumns: SELLER_COLUMNS });
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "acube" },
+    });
+    await useAcube(t);
     const inv = await issuedInvoice(t);
 
     const blocked = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
@@ -463,7 +481,7 @@ describe("E1 legal entity onboarding gates sending", () => {
     });
     expect(r.body.steps.map((s: any) => s.state)).toEqual(["done", "current", "todo"]);
 
-    const w = await webhook(linkEvent());
+    const w = await webhook(t, linkEvent());
     expect(w.body).toEqual({ received: true, duplicate: false });
     expect(await runProviderEvents()).toMatchObject({ claimed: 1, processed: 1 });
     const card = await t.as.get(`/api/companies/${t.company.id}/einvoicing/acube`);
@@ -477,7 +495,7 @@ describe("E1 legal entity onboarding gates sending", () => {
     expect(card.body.canSend).toBe(true);
 
     fake.legalEntityStatus = "Inactive";
-    await webhook(linkEvent("DELINK", "Inactive"));
+    await webhook(t, linkEvent("DELINK", "Inactive"));
     await runProviderEvents();
     const delinked = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
     expect(delinked.status).toBe(409);
@@ -505,8 +523,10 @@ describe("E1 submit, two tracks and history", () => {
       t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {}),
       t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {}),
     ]);
-    expect([a.status, b.status].sort()).toEqual([200, 409]);
-    expect([a.body.code, b.body.code]).toContain("EINVOICE_SUBMISSION_IN_PROGRESS");
+    expect([a.status, b.status]).toEqual([202, 202]);
+    expect([a.body.status, b.body.status]).toEqual(["queued", "queued"]);
+    expect(fake.posts).toBe(0);
+    await Promise.all([runEInvoiceRetries(), runEInvoiceRetries()]);
     expect(fake.posts).toBe(1);
     const again = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
     expect(again.status).toBe(409);
@@ -527,8 +547,8 @@ describe("E1 submit, two tracks and history", () => {
       documentType: "invoice",
       status: "delivered",
     };
-    expect((await webhook(payload)).body.duplicate).toBe(false);
-    expect((await webhook(payload)).body.duplicate).toBe(true); // A-Cube retry
+    expect((await webhook(t, payload)).body.duplicate).toBe(false);
+    expect((await webhook(t, payload)).body.duplicate).toBe(true); // A-Cube retry
     await runProviderEvents();
     s = await statusOf(t, inv.id);
     expect(s.status).toBe("accepted");
@@ -566,8 +586,8 @@ describe("E1 submit, two tracks and history", () => {
     const inv = await issuedInvoice(t);
     fake.nextSubmit = ["422"];
     const r = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
-    expect(r.status, r.text).toBe(200);
-    expect(r.body.status).toBe("rejected");
+    expect(r.status, r.text).toBe(202);
+    await runEInvoiceRetries();
     let s = await statusOf(t, inv.id);
     expect(s.tracks.delivery.status).toBe("rejected");
     expect(s.rejection).toMatchObject({ code: "ACUBE_VALIDATION", resubmittable: true });
@@ -583,9 +603,10 @@ describe("E1 submit, two tracks and history", () => {
       .einvoice_uuid;
 
     const re = await t.as.post(`/api/invoices/${inv.id}/einvoice/resubmit`, {});
-    expect(re.status, re.text).toBe(200);
+    expect(re.status, re.text).toBe(202);
     expect(re.body.tracks.delivery.status).toBe("queued");
     expect(re.body.rejection).toBeNull();
+    await runEInvoiceRetries();
     expect(fake.posts).toBe(2);
     const sentXml = [...fake.docs.values()][0].xml;
     expect(sentXml).toContain(`<cbc:UUID>${uuid}</cbc:UUID>`);
@@ -593,16 +614,16 @@ describe("E1 submit, two tracks and history", () => {
     expect(notAgain.status).toBe(409);
     expect(notAgain.body.code).toBe("EINVOICE_NOT_RESUBMITTABLE");
     s = await statusOf(t, inv.id);
-    expect(s.events.filter((e: any) => e.track === "delivery").map((e: any) => e.to)).toEqual([
-      "queued",
-      "rejected",
-    ]);
+    expect(s.events.filter((e: any) => e.track === "delivery").map((e: any) => e.to)).toEqual(
+      expect.arrayContaining(["queued", "sending", "rejected"])
+    );
   });
 
   it("a provider-reported delivery error is shown and not auto-retried", async () => {
     const t = await linkedTenant();
     const inv = await issuedInvoice(t);
     await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
+    await runEInvoiceRetries();
     const docId = (await statusOf(t, inv.id)).transmission.providerDocumentId as string;
     fake.docs.get(docId)!.status = "delivery_error";
     await runAcubePoll();
@@ -621,9 +642,10 @@ describe("E1 submit, two tracks and history", () => {
     const inv = await issuedInvoice(t);
     fake.nextSubmit = ["network"]; // A-Cube created it, the response was lost
     const first = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
-    expect(first.body.status).toBe("failed");
+    expect(first.body.status).toBe("queued");
+    await runEInvoiceRetries();
+    expect((await statusOf(t, inv.id)).status).toBe("failed");
     expect(fake.posts).toBe(1);
-    const { runEInvoiceRetries } = await import("../../server/services/einvoice/workflow");
     const retry = await runEInvoiceRetries(new Date(Date.now() + 2 * 60_000));
     expect(retry).toEqual({ attempted: 1, submitted: 1 });
     expect(fake.posts).toBe(1); // found by invoice number, not posted twice
@@ -635,27 +657,28 @@ describe("E1 submit, two tracks and history", () => {
 
 describe("E1 webhook authentication", () => {
   it("refuses a bad signature, a stale replay and a bad token", async () => {
-    await linkedTenant();
+    const t = await linkedTenant();
     const other = crypto.generateKeyPairSync("ed25519").privateKey;
-    const bad = await webhook(linkEvent(), { key: other });
+    const bad = await webhook(t, linkEvent(), { key: other });
     expect(bad.status).toBe(401);
     expect(bad.body).toMatchObject({
       code: "EINVOICE_WEBHOOK_BAD_SIGNATURE",
       reason: "bad_signature",
     });
-    const tampered = await webhook(linkEvent(), { body: JSON.stringify(linkEvent("DELINK")) });
+    const tampered = await webhook(t, linkEvent(), { body: JSON.stringify(linkEvent("DELINK")) });
     expect(tampered.body.reason).toBe("bad_content_digest");
-    const stale = await webhook(linkEvent(), {
+    const stale = await webhook(t, linkEvent(), {
       created: Math.floor(Date.now() / 1000) - 13 * 3600,
     });
     expect(stale.body.reason).toBe("stale");
 
-    process.env.ACUBE_WEBHOOK_TOKEN = "hook-token-0123456789";
-    expect((await webhook(linkEvent())).status).toBe(401);
-    expect((await webhook(linkEvent(), { token: "wrong" })).body.code).toBe(
+    const webhookToken = crypto.randomUUID();
+    await useAcube(t, webhookToken);
+    expect((await webhook(t, linkEvent())).status).toBe(401);
+    expect((await webhook(t, linkEvent(), { token: "wrong" })).body.code).toBe(
       "EINVOICE_WEBHOOK_BAD_TOKEN"
     );
-    expect((await webhook(linkEvent(), { token: "hook-token-0123456789" })).status).toBe(200);
+    expect((await webhook(t, linkEvent(), { token: webhookToken })).status).toBe(200);
   });
 });
 
@@ -684,10 +707,10 @@ describe("E1 inbound: document.received -> draft bill tagged e-invoice", () => {
       documentType: "invoice",
       status: "received",
     };
-    expect((await webhook(payload)).status).toBe(200);
+    expect((await webhook(t, payload)).status).toBe(200);
     await runProviderEvents();
     expect((await runAcubePoll()).enqueued).toBe(0); // same key as the webhook
-    expect((await webhook(payload)).body.duplicate).toBe(true);
+    expect((await webhook(t, payload)).body.duplicate).toBe(true);
     await runProviderEvents();
 
     const bills = await h.sql(

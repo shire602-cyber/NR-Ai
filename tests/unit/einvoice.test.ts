@@ -118,10 +118,13 @@ describe("PINT AE profile + document type", () => {
       vatAmount: -50,
       total: -1350,
     });
-    const { xml } = generateEInvoiceXML(cn, lines, company);
+    const { xml } = generateEInvoiceXML(cn, lines, company, undefined, {
+      originalInvoice: { number: "INV-2026-0001", date: "2026-01-01" },
+    });
     expect(xml).toContain("<cbc:CreditNoteTypeCode>381</cbc:CreditNoteTypeCode>");
     expect(xml).toContain("<cac:BillingReference>");
-    expect(xml).toContain("inv-original-1");
+    expect(xml).toContain("INV-2026-0001");
+    expect(xml).not.toContain("inv-original-1");
   });
 });
 

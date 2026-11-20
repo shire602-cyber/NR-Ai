@@ -60,6 +60,7 @@ export function deliveryFromLegacy(status: string | null | undefined): DeliveryS
   switch (status) {
     case "generated":
       return "validated";
+    case "queued":
     case "submitted":
       return "queued";
     case "accepted":
@@ -259,6 +260,7 @@ export const EINVOICE_ERROR_CODES = [
   "ACUBE_LEGAL_ENTITY_NOT_FOUND",
   "ACUBE_AUTH_FAILED",
   "ACUBE_UNAVAILABLE",
+  "ACUBE_RATE_LIMITED",
   "ACUBE_SENDING_FAILED",
   "ACUBE_DELIVERY_FAILED",
   "ACUBE_ACTION_REQUIRED",

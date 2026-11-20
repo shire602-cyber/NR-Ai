@@ -40,6 +40,11 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import {
+  einvoiceIssuesFromError,
+  einvoiceRuleTextKey,
+  type EInvoiceIssueItem,
+} from "@/lib/einvoice-issues";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { cn } from "@/lib/utils";
@@ -61,6 +66,7 @@ import {
   type ReportingStatus,
 } from "./einvoice-meta";
 import { einvoiceStatusKey, useEInvoiceStatus } from "./use-einvoice";
+import "./einvoice-theme.css";
 
 // ─── Compact list cell ─────────────────────────────────────────────────
 
@@ -70,11 +76,13 @@ export function EInvoiceTrackBadges({
   className,
   testId,
   showReportingLabel = false,
+  queuedForSubmission = false,
 }: {
   delivery: DeliveryStatus;
   reporting: ReportingStatus;
   className?: string;
   testId?: string;
+  queuedForSubmission?: boolean;
   /** Spell the FTA reporting state out ("FTA: Pending") instead of the icon-only mark. */
   showReportingLabel?: boolean;
 }) {
@@ -83,7 +91,7 @@ export function EInvoiceTrackBadges({
   const deliveryText =
     delivery === "validated"
       ? t["einvoicing.delivery_validated_short"]
-      : t[deliveryLabelKey(delivery)];
+      : t[deliveryLabelKey(delivery, queuedForSubmission)];
   const reportingText = t[reportingLabelKey(reporting)];
   return (
     <span
@@ -111,7 +119,8 @@ export function EInvoiceTrackBadges({
             <span>
               {
                 t[
-                  reporting === "pending" && (delivery === "draft" || delivery === "validated")
+                  reporting === "pending" &&
+                  (delivery === "draft" || delivery === "validated" || queuedForSubmission)
                     ? "einvoicing.ftaChip_not_sent"
                     : `einvoicing.ftaChip_${reporting}`
                 ]
@@ -205,7 +214,7 @@ function eventLabel(e: EInvoiceStatusView["events"][number], t: Record<string, s
   }
   const key =
     e.track === "delivery"
-      ? deliveryLabelKey(e.to as DeliveryStatus)
+      ? deliveryLabelKey(e.to as DeliveryStatus, e.to === "queued" && e.providerStatus === null)
       : reportingLabelKey(e.to as ReportingStatus);
   const track =
     e.track === "delivery" ? t["einvoicing.trackDelivery"] : t["einvoicing.trackReporting"];
@@ -230,7 +239,7 @@ export function EInvoiceHistory({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side={locale === "ar" ? "left" : "right"}
-        className="w-full overflow-y-auto sm:max-w-md"
+        className="einvoice-surface w-full overflow-y-auto sm:max-w-md"
         data-testid="einvoice-history"
       >
         <SheetHeader>
@@ -338,7 +347,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
   const [historyOpen, setHistoryOpen] = useState(false);
   const [downloading, setDownloading] = useState<"xml" | "pdf" | null>(null);
   const [downloadFailed, setDownloadFailed] = useState(false);
-  const status = useEInvoiceStatus(invoiceId);
+  const status = useEInvoiceStatus(invoiceId, true);
   // The generated e-invoice (UBL XML) and the invoice PDF, with a localized failure message.
   const download = async (kind: "xml" | "pdf") => {
     setDownloading(kind);
@@ -360,10 +369,17 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
   const key = einvoiceStatusKey(invoiceId);
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: key });
-    void queryClient.invalidateQueries({ queryKey: ["/api/companies"], exact: false });
+    if (handoffCompanyId) {
+      for (const query of ["einvoicing", "invoices"]) {
+        void queryClient.invalidateQueries({
+          queryKey: ["/api/companies", handoffCompanyId, query],
+        });
+      }
+    }
   };
   const recheck = useMutation({
-    mutationFn: () => apiRequest("GET", `/api/invoices/${invoiceId}/einvoice/validate`),
+    mutationFn: (): Promise<{ valid: boolean }> =>
+      apiRequest("GET", `/api/invoices/${invoiceId}/einvoice/validate`),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: key }),
   });
   const resubmit = useMutation({
@@ -402,12 +418,25 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
   const view = status.data;
   const { delivery, reporting } = view.tracks;
   const handedOver = !!view.transmission.providerDocumentId;
+  const queuedForSubmission = view.submissionState === "queued";
   const failedDelivery = delivery.status === "rejected" || delivery.status === "delivery_failed";
   const providerName = view.transmission.providerDisplayName ?? view.transmission.provider ?? "";
-  const actionError = (send.error ?? resubmit.error) as
+  const latestAction = send.submittedAt >= resubmit.submittedAt ? send : resubmit;
+  const latestCheck = recheck.submittedAt > latestAction.submittedAt ? recheck.data : undefined;
+  const actionError = (latestCheck?.valid ? null : latestAction.error) as
     | (Error & { body?: { code?: string } })
     | null;
   const actionErrorKey = errorKey(actionError?.body?.code);
+  const actionIssues = einvoiceIssuesFromError(actionError?.body);
+  const issues: EInvoiceIssueItem[] =
+    view.issues.length > 0
+      ? view.issues
+      : latestCheck
+        ? einvoiceIssuesFromError(latestCheck)
+        : actionIssues;
+  const validationPassed =
+    latestCheck?.valid ??
+    view.checklist.some((item) => item.key === "validated" && item.state === "done");
 
   const deliveryMeta =
     delivery.status === "delivered" && delivery.at
@@ -435,8 +464,11 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
           label={t["einvoicing.trackDelivery"]}
           meta={deliveryMeta}
           badge={
-            <StatusBadge tone={DELIVERY_TONE[delivery.status]}>
-              {t[deliveryLabelKey(delivery.status)]}
+            <StatusBadge
+              tone={DELIVERY_TONE[delivery.status]}
+              data-testid={queuedForSubmission ? "einvoice-queued" : undefined}
+            >
+              {t[deliveryLabelKey(delivery.status, queuedForSubmission)]}
             </StatusBadge>
           }
         />
@@ -472,7 +504,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
       )}
 
       {/* Validate-on-save: named missing fields with an in-place re-check. */}
-      {view.issues.length > 0 ? (
+      {issues.length > 0 ? (
         <div
           className="rounded-lg border border-warning/40 bg-warning-subtle p-4"
           data-testid="einvoice-issues"
@@ -482,38 +514,28 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
             <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <div className="min-w-0 flex-1">
               <p className="text-small font-medium text-warning-subtle-foreground">
-                {formatMessage(t["einvoicing.issuesTitle"], { count: view.issues.length })}
+                {formatMessage(t["einvoicing.issuesTitle"], { count: issues.length })}
               </p>
               <ul className="mt-2 space-y-1.5">
-                {view.issues.map((issue, i) => {
+                {issues.map((issue, i) => {
                   const label = fieldLabelKey(issue.field);
-                  const fixKey = issueTextKey(issue.code);
+                  const fixKey = issueTextKey(issue.code) ?? einvoiceRuleTextKey(issue.ruleId);
+                  const detail =
+                    (fixKey && t[fixKey]) ||
+                    (locale === "ar" ? t["einvoicing.validationFinding"] : issue.message);
                   return (
                     <li key={`${issue.field}-${i}`} className="text-small text-foreground">
-                      <span className="font-medium">{label ? t[label] : issue.field}</span>
-                      {/* A coded issue carries its own localised, actionable fix text. Otherwise
-                          the validator message is English source text: in Arabic show the
-                          localised field label plus the LTR rule code, never a mixed sentence. */}
-                      {fixKey ? (
-                        <span
-                          className="text-muted-foreground"
-                          data-testid={`einvoice-issue-${issue.code}`}
-                        >
-                          {" "}
-                          — {t[fixKey]}
-                        </span>
-                      ) : locale === "ar" && label ? (
-                        issue.message.match(/\(([a-z0-9-]+)\)\s*$/i) ? (
-                          <bdi
-                            dir="ltr"
-                            translate="no"
-                            className="ms-2 rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground"
-                          >
-                            {issue.message.match(/\(([a-z0-9-]+)\)\s*$/i)?.[1]}
-                          </bdi>
-                        ) : null
-                      ) : (
-                        <span className="text-muted-foreground"> — {issue.message}</span>
+                      {label && <span className="font-medium">{t[label]} </span>}
+                      <span
+                        className="text-muted-foreground"
+                        data-testid={issue.code ? `einvoice-issue-${issue.code}` : undefined}
+                      >
+                        {detail}
+                      </span>
+                      {issue.ruleId && (
+                        <bdi dir="ltr" translate="no" className="ms-2">
+                          {issue.ruleId}
+                        </bdi>
                       )}
                     </li>
                   );
@@ -546,11 +568,16 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
         !failedDelivery && (
           <div
             className="flex flex-wrap items-center justify-between gap-2 text-small"
-            data-testid="einvoice-ready"
+            data-testid={validationPassed ? "einvoice-ready" : undefined}
           >
-            <span className="inline-flex items-center gap-2 text-success-subtle-foreground">
-              <CheckCircle2 aria-hidden className="h-4 w-4 text-success" />
-              {t["einvoicing.readyLine"]}
+            <span
+              className={cn(
+                "inline-flex items-center gap-2",
+                validationPassed && "text-success-subtle-foreground"
+              )}
+            >
+              {validationPassed && <CheckCircle2 aria-hidden className="h-4 w-4 text-success" />}
+              {t[validationPassed ? "einvoicing.readyLine" : "einvoicing.runValidation"]}
             </span>
             <Button
               size="sm"
@@ -703,13 +730,17 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
         </div>
       )}
 
-      {actionError && (
+      {actionError && actionIssues.length === 0 && (
         <p
           className="text-small text-danger-subtle-foreground"
           role="alert"
           data-testid="einvoice-action-error"
         >
-          {actionErrorKey ? t[actionErrorKey] : actionError.message}
+          {actionErrorKey
+            ? t[actionErrorKey]
+            : locale === "ar"
+              ? t["einvoicing.submissionFailed"]
+              : actionError.message}
         </p>
       )}
 
@@ -726,11 +757,11 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
       )}
 
       <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-        {!view.transmission.block && !handedOver && !failedDelivery && (
+        {!view.transmission.block && !handedOver && !failedDelivery && !queuedForSubmission && (
           <Button
             size="sm"
             onClick={() => send.mutate()}
-            disabled={send.isPending || view.issues.length > 0}
+            disabled={send.isPending || issues.length > 0}
             data-testid="einvoice-send"
           >
             {send.isPending && (
@@ -824,7 +855,7 @@ export function EInvoiceSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side={locale === "ar" ? "left" : "right"}
-        className="w-full overflow-y-auto sm:max-w-lg"
+        className="einvoice-surface w-full overflow-y-auto sm:max-w-lg"
         data-testid="einvoice-sheet"
       >
         <SheetHeader className="mb-5">

@@ -10,11 +10,10 @@ against doc-derived fixtures and must be confirmed in the A-Cube sandbox (see th
 
 ## Configuration
 
-`EINVOICE_PROVIDER=acube` with `ACUBE_EMAIL` / `ACUBE_PASSWORD` (secret store only), `ACUBE_ENV`
-(`sandbox` default, `production`), `ACUBE_WEBHOOK_BASE_URL` (public https base), optional
-`ACUBE_WEBHOOK_TOKEN`. All variables are listed in `.env.example`. Without them every transmission
-call keeps answering 503 `EINVOICE_PROVIDER_NOT_CONFIGURED`, the invoice panel says "Generated and
-validated — not sent", and the settings card says A-Cube is not connected.
+Select A-Cube in the company's settings and provision its encrypted login bundle. `ACUBE_ENV`
+defaults to `sandbox`. Set `ACUBE_WEBHOOK_BASE_URL` for the callback URL shown in settings. The
+company configuration check shows `not_configured` when the local credential bundle is missing.
+[Company e-invoicing configuration](einvoicing-company-runtime.md)
 
 ## Adapter (`server/services/einvoice/providers/acube.ts`)
 
@@ -67,23 +66,22 @@ not the linked TIN (422 `EINVOICE_SUPPLIER_ENDPOINT_MISMATCH`). Tested in
 
 ## Webhooks and idempotency
 
-`POST /api/webhooks/einvoice/acube/:environment` (raw body; CSRF-exempt):
+`POST /api/webhooks/einvoice/acube/:environment/:companyId` accepts the raw, signed request:
 
-1. optional token header (`ACUBE_WEBHOOK_TOKEN`, header `ACUBE_WEBHOOK_TOKEN_HEADER`);
+1. Optional company webhook token in the `ACUBE_WEBHOOK_TOKEN_HEADER` header.
 2. RFC 9421 HTTP Message Signature, Ed25519, keyid `acube`, covering `@method @authority
 @target-uri date content-digest`; `content-digest` is checked against the raw body; the public key
    comes from `common.api.acubeapi.com/signature-public-key` (cached 6 h, re-fetched once on a bad
    signature) or `ACUBE_SIGNATURE_PUBLIC_KEY`; `created` must be within 12 h (A-Cube retries ~10 h);
-3. the event is stored in `einvoice_provider_events` (unique per provider event id; document events
-   are keyed `doc:<id>:<status>`) and answered 200 at once; the `einvoice.providerEvents` job
+3. The event is stored in `einvoice_provider_events`, deduplicated per company and environment, and
+   answered 200 at once. The `einvoice.providerEvents` job
    (every minute, lease + backoff, dead after 10 attempts) processes it, re-reading the resource
    from A-Cube rather than trusting the payload.
 
-Submissions are idempotent: the invoice's e-invoice UUID is kept across regenerations, a
-submission is claimed (`submit_claimed_at`, 2-minute lease) and the invoice re-read under the
-claim, and after an ambiguous transport failure the outgoing list is searched for the invoice
-number before posting again. `einvoice.acubePoll` (every 10 minutes) refreshes in-flight documents
-and enqueues incoming ones with the same keys as the webhooks.
+The worker claims the durable queue with a five-minute lease and sends the stored, validated XML.
+After a lost response, it searches for the outgoing document and verifies that the source XML
+matches. Unresolved deliveries require reconciliation after the retry budget expires. The
+`einvoice.acubePoll` job refreshes in-flight documents and enqueues incoming ones every ten minutes.
 
 ## Mandate timeline shown in product
 

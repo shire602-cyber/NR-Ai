@@ -4,7 +4,7 @@
  *   R07-13/R03-18 settings honesty, submit → cleared with the mock ASP, retries
  *   with backoff, cancellation, the immutable five-year archive and tenancy.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import type { EInvoiceProvider } from "../../server/services/einvoice-provider";
 
@@ -65,14 +65,6 @@ async function issuedInvoice(t: Tenant) {
   expect(sent.status, sent.text).toBe(200);
   return inv.body as { id: string; number: string };
 }
-
-const env = { ...process.env };
-afterEach(() => {
-  for (const k of ["EINVOICE_PROVIDER", "EINVOICE_ASP_BASE_URL", "EINVOICE_ASP_API_KEY"]) {
-    if (env[k] === undefined) delete process.env[k];
-    else process.env[k] = env[k];
-  }
-});
 
 describe("W4-C settings are honest about the ASP boundary", () => {
   it("[R07-13] shows 'requires external' / not connected, and stores participant ids with validation", async () => {
@@ -159,21 +151,26 @@ describe("W4-C generate → submit → cleared, archived immutably", () => {
   it("[R07-13][R03-18] submits through the mock ASP, refreshes to cleared and archives both copies immutably", async () => {
     const t = await readyTenant();
     const inv = await issuedInvoice(t);
-    const sub = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
-    expect(sub.status, sub.text).toBe(200);
-    expect(sub.body).toMatchObject({
-      status: "submitted",
-      provider: "mock",
-      environment: "mock",
-      attempts: 1,
+    const { MockEInvoiceProvider } = await import("../../server/services/einvoice-provider");
+    const { storage } = await import("../../server/storage");
+    const { enqueueEInvoiceSubmission, refreshAndPersist, runEInvoiceRetries } =
+      await import("../../server/services/einvoice/workflow");
+    const provider = new MockEInvoiceProvider();
+    const company = (await storage.getCompany(t.company.id))!;
+    const getInvoice = async () => (await storage.getInvoice(inv.id, company.id))!;
+    const opts = { company, provider };
+    const sub = await enqueueEInvoiceSubmission({ ...opts, invoice: await getInvoice() });
+    expect(sub).toMatchObject({
+      ok: true,
+      update: { einvoiceStatus: "queued" },
+      documentRow: { deliveryStatus: "queued", attempts: 0 },
     });
-    const again = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
-    expect(again.status).toBe(409);
-    expect(again.body.code).toBe("EINVOICE_ALREADY_SUBMITTED");
+    expect(await runEInvoiceRetries(new Date(), () => provider)).toMatchObject({ submitted: 1 });
+    const again = await enqueueEInvoiceSubmission({ ...opts, invoice: await getInvoice() });
+    expect(again).toMatchObject({ ok: false, status: 409, code: "EINVOICE_ALREADY_SUBMITTED" });
 
-    const ref = await t.as.post(`/api/invoices/${inv.id}/einvoice/refresh-status`, {});
-    expect(ref.status, ref.text).toBe(200);
-    expect(ref.body.status).toBe("cleared");
+    const ref = await refreshAndPersist({ ...opts, invoice: await getInvoice() });
+    expect(ref).toMatchObject({ ok: true, update: { einvoiceStatus: "cleared" } });
 
     const list = await t.as.get(`/api/companies/${t.company.id}/einvoicing/archive`);
     expect(list.status).toBe(200);
@@ -215,7 +212,6 @@ describe("W4-C generate → submit → cleared, archived immutably", () => {
   it("[R07-13] answers 503 EINVOICE_PROVIDER_NOT_CONFIGURED when no usable ASP is configured", async () => {
     const t = await readyTenant();
     const inv = await issuedInvoice(t);
-    process.env.EINVOICE_PROVIDER = "http"; // http without base URL / key
     const sub = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
     expect(sub.status).toBe(503);
     expect(sub.body.code).toBe("EINVOICE_PROVIDER_NOT_CONFIGURED");
@@ -259,16 +255,22 @@ describe("W4-C transport failures are retried with backoff", () => {
     };
     // Server modules are imported after the harness bound the database.
     const { storage } = await import("../../server/storage");
-    const { runEInvoiceRetries, submitAndPersist } =
+    const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
       await import("../../server/services/einvoice/workflow");
     const invoice = (await storage.getInvoice(inv.id, t.company.id))!;
     const company = (await storage.getCompany(t.company.id))!;
     const t0 = new Date();
-    const first = await submitAndPersist({ invoice, company, provider: flaky, now: t0 });
-    expect(first.ok).toBe(true);
+    const first = await enqueueEInvoiceSubmission({ invoice, company, provider: flaky, now: t0 });
+    expect(first).toMatchObject({
+      ok: true,
+      update: { einvoiceStatus: "queued" },
+      documentRow: { deliveryStatus: "queued", attempts: 0 },
+    });
+    expect(await runEInvoiceRetries(t0, () => flaky)).toEqual({ attempted: 1, submitted: 0 });
     let doc = (
       await h.sql(
-        `SELECT status, attempts, next_retry_at, last_error FROM einvoice_documents WHERE invoice_id = $1`,
+        `SELECT status, attempts, next_retry_at AT TIME ZONE 'UTC' AS next_retry_at, last_error
+           FROM einvoice_documents WHERE invoice_id = $1`,
         [inv.id]
       )
     )[0];

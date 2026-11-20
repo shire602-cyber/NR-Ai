@@ -20,8 +20,8 @@
  *      legal_entity.synchronized (action LINK) -> status active.
  * REVERIFY keeps it active; DELINK makes it inactive, which blocks sending (409).
  */
-import { and, eq } from "drizzle-orm";
-import { db } from "../../db";
+import { and, eq, isNull } from "drizzle-orm";
+import { db, type AppDatabase } from "../../db";
 import { einvoiceLegalEntities, type EInvoiceLegalEntity } from "../../../shared/schema";
 import { DomainError } from "../../errors";
 import { PEPPOL_SCHEME_UAE_TIN, isUaeTin, tinFromTrn } from "./pint-ae-codes";
@@ -56,9 +56,10 @@ export const peppolAddressFor = (tin: string) => `${PEPPOL_SCHEME_UAE_TIN}:${tin
 export async function getLegalEntity(
   companyId: string,
   provider: string,
-  environment: string
+  environment: string,
+  conn: Pick<AppDatabase, "select"> = db
 ): Promise<EInvoiceLegalEntity | undefined> {
-  const rows = await db
+  const rows = await conn
     .select()
     .from(einvoiceLegalEntities)
     .where(
@@ -81,12 +82,14 @@ export async function findLegalEntitiesByProviderId(
   provider: string,
   environment: string,
   legalEntityId: string | null | undefined,
-  tin?: string | null
+  tin?: string | null,
+  companyId?: string
 ): Promise<EInvoiceLegalEntity[]> {
   const scope = [
     eq(einvoiceLegalEntities.provider, provider),
     eq(einvoiceLegalEntities.environment, environment),
   ];
+  if (companyId) scope.push(eq(einvoiceLegalEntities.companyId, companyId));
   if (legalEntityId) {
     const rows = await db
       .select()
@@ -99,7 +102,13 @@ export async function findLegalEntitiesByProviderId(
     return db
       .select()
       .from(einvoiceLegalEntities)
-      .where(and(...scope, eq(einvoiceLegalEntities.tin, tin)))
+      .where(
+        and(
+          ...scope,
+          eq(einvoiceLegalEntities.tin, tin),
+          legalEntityId ? isNull(einvoiceLegalEntities.legalEntityId) : undefined
+        )
+      )
       .limit(20);
   }
   return [];

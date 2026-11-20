@@ -36,6 +36,7 @@
  *   COMPLYANCE_WEBHOOK_ALGORITHM     sha256 (default) | sha512
  *   COMPLYANCE_WEBHOOK_MAX_AGE_SECONDS  timestamp window (default 3600)
  */
+import { createHmac } from "node:crypto";
 import type {
   EInvoiceDocumentRef,
   EInvoiceProvider,
@@ -53,6 +54,7 @@ import { createLogger } from "../../../config/logger";
 import { legacyFromTracks, type DeliveryStatus, type ReportingStatus } from "../tracks";
 import type { EInvoiceProviderModule } from "./types";
 import { ublToGets, unifyXmlRequest } from "./complyance-gets";
+import { providerObject, providerString, readProviderResponse } from "./response";
 
 const log = createLogger("einvoice-complyance");
 
@@ -95,7 +97,7 @@ export function readComplyanceConfig(env: NodeJS.ProcessEnv = process.env): Comp
     sourcePrefix: (env.COMPLYANCE_SOURCE_PREFIX || "muhasib").replace(/[^A-Za-z0-9._-]/g, ""),
     sourceVersion: env.COMPLYANCE_SOURCE_VERSION || "v1",
     userAgent: env.COMPLYANCE_USER_AGENT || "Muhasib-EInvoicing/1.0",
-    timeoutMs: timeout > 0 ? timeout : 30_000,
+    timeoutMs: Number.isFinite(timeout) && timeout > 0 ? Math.min(timeout, 60_000) : 30_000,
     pollDays: Number.isInteger(days) && days > 0 && days <= 31 ? days : 3,
   };
 }
@@ -265,17 +267,18 @@ export function complyanceReasons(errors: unknown): EInvoiceRejectionReason[] {
  * Unknown states never read as success: delivery_failed with COMPLYANCE_UNKNOWN_STATE.
  */
 export function mapComplyanceStatus(data: Record<string, unknown>): ComplyanceTrackOutcome {
-  const state = String(data.state ?? "")
-    .trim()
-    .toLowerCase();
+  const state = providerString(data.state)?.toLowerCase();
   const terminal = data.isTerminal === true;
   const reasons = complyanceReasons(data.errors);
-  const compliance = (data.compliance ?? {}) as Record<string, unknown>;
-  const steps = (((data.validationResults ?? {}) as Record<string, unknown>).validationSteps ??
-    []) as Array<Record<string, unknown>>;
-  const delivered = steps.some(
-    (s) => /delivery success/i.test(String(s.name ?? "")) && String(s.status) === "Valid"
-  );
+  const steps = providerObject(data.validationResults)?.validationSteps;
+  const delivered =
+    Array.isArray(steps) &&
+    steps.some((step: unknown) => {
+      const entry = providerObject(step);
+      return (
+        /delivery success/i.test(providerString(entry?.name) ?? "") && entry?.status === "Valid"
+      );
+    });
   switch (state) {
     case "submitted":
       return { delivery: "queued", reporting: "pending", errorCode: null, reasons: [] };
@@ -323,9 +326,6 @@ export function mapComplyanceStatus(data: Record<string, unknown>): ComplyanceTr
         reasons,
       };
     default:
-      if (String(compliance.ftaApprovedStatus ?? "") === "APPROVED") {
-        return { delivery: "delivered", reporting: "reported", errorCode: null, reasons: [] };
-      }
       return {
         delivery: "delivery_failed",
         reporting: "pending",
@@ -450,23 +450,25 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         method,
         headers,
         body: opts.xml ?? (opts.json === undefined ? undefined : JSON.stringify(opts.json)),
+        redirect: "error",
         signal: controller.signal,
       });
-      const text = await res.text();
-      let json: unknown = null;
-      try {
-        json = text ? JSON.parse(text) : null;
-      } catch {
-        /* plain-text 401 ("Authentication required") or XML */
-      }
+      const parsed = await readProviderResponse(res, [this.cfg.apiKey]);
       const ra = Number(res.headers.get("retry-after"));
       return {
         ok: res.ok,
         status: res.status,
-        json,
-        text,
+        ...parsed,
         retryAfter: Number.isFinite(ra) && ra > 0 ? ra : null,
       };
+    } catch {
+      throw new ComplyanceApiError(
+        502,
+        "TRANSPORT_ERROR",
+        "Could not contact Complyance.",
+        undefined,
+        true
+      );
     } finally {
       clearTimeout(timer);
     }
@@ -480,10 +482,42 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     return { status: legacyFromTracks(delivery, reporting), delivery, reporting, ...extra };
   }
 
+  /** Bind a retry to the original workspace credential, source and environment. */
+  async getSubmissionScope(companyId: string): Promise<string | null> {
+    const source = await this.sourceFor(companyId, this.cfg.environment);
+    return source ? this.submissionScope(companyId, source) : null;
+  }
+
+  private submissionScope(companyId: string, source: ComplyanceSource): string {
+    return createHmac("sha256", this.cfg.apiKey)
+      .update(
+        JSON.stringify([
+          "einvoice-complyance-submission",
+          this.cfg.baseUrl,
+          this.cfg.environment,
+          companyId,
+          source.name,
+          source.version,
+        ])
+      )
+      .digest("hex");
+  }
+
   async submit(submission: EInvoiceSubmission): Promise<EInvoiceProviderResult> {
-    const source = submission.companyId
-      ? await this.sourceFor(submission.companyId, this.cfg.environment)
-      : null;
+    const companyId = submission.companyId;
+    const source = companyId ? await this.sourceFor(companyId, this.cfg.environment) : null;
+    if (
+      submission.scopeFingerprint &&
+      (!source ||
+        !companyId ||
+        this.submissionScope(companyId, source) !== submission.scopeFingerprint)
+    ) {
+      return this.outcome("delivery_failed", "pending", {
+        providerMessageId: "",
+        detail: "The Complyance submission source changed after this e-invoice was queued.",
+        errorCode: "COMPLYANCE_SOURCE_AMBIGUOUS",
+      });
+    }
     if (!source) {
       return this.outcome("rejected", "pending", {
         providerMessageId: "",
@@ -530,20 +564,18 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
                 payload: gets.payload,
               },
             });
-    } catch (err) {
+    } catch {
       // Ambiguous: Complyance may have stored it. A retry answers GETS-HEAD-010 if it did.
-      const msg = (err as Error)?.message ?? "unknown";
-      log.error({ err: msg, invoiceId: submission.invoiceId }, "Complyance submit transport error");
       return this.outcome("delivery_failed", "pending", {
         providerMessageId: "",
-        detail: `Transport error contacting Complyance: ${msg}`,
+        detail: "Could not contact Complyance.",
         errorCode: "TRANSPORT_ERROR",
       });
     }
 
-    const body = (r.json ?? {}) as Record<string, unknown>;
+    const body = providerObject(r.json) ?? {};
     if (r.status === 200 || r.status === 201) {
-      const id = str(body.documentId);
+      const id = providerString(body.documentId);
       if (!id) {
         return this.outcome("delivery_failed", "pending", {
           providerMessageId: "",
@@ -656,11 +688,11 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         "GET",
         `/api/v3/documents/${encodeURIComponent(providerMessageId)}?type=sales`
       );
-    } catch (err) {
+    } catch {
       return {
         providerMessageId,
         status: "failed",
-        detail: `Transport error polling Complyance: ${(err as Error)?.message ?? "unknown"}`,
+        detail: "Could not read the document status from Complyance.",
         errorCode: "TRANSPORT_ERROR",
       };
     }
@@ -678,11 +710,18 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
         raw: r.json ?? null,
       };
     }
-    const data = (((r.json ?? {}) as Record<string, unknown>).data ?? {}) as Record<
-      string,
-      unknown
-    >;
-    const providerStatus = str(data.state) ?? "";
+    const result = providerObject(r.json);
+    const data = providerObject(result?.data);
+    const providerStatus = providerString(data?.state);
+    const returnedId = providerString(data?.documentId);
+    if (!data || !providerStatus || result?.success === false || returnedId !== providerMessageId) {
+      return {
+        providerMessageId,
+        status: "failed",
+        detail: "Complyance returned an invalid document status response.",
+        errorCode: "COMPLYANCE_UNAVAILABLE",
+      };
+    }
     const m = mapComplyanceStatus(data);
     const failed = m.errorCode !== null;
     return this.outcome(m.delivery, m.reporting, {

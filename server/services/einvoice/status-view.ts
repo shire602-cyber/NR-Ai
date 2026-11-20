@@ -8,15 +8,21 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../../db";
 import { journalEntries, type Company, type Invoice } from "../../../shared/schema";
 import { storage } from "../../storage";
-import { getEInvoiceProvider, type EInvoiceProvider } from "../einvoice-provider";
 import { validateForEInvoicing } from "../einvoice.service";
 import { loadEInvoiceContext } from "./context";
-import { getEInvoiceDocument } from "./store";
+import {
+  documentProviderEnvironment,
+  documentValidation,
+  getEInvoiceDocument,
+  isQueuedEInvoiceDocument,
+} from "./store";
 import { listDocumentEvents } from "./history";
 import { getLegalEntity } from "./legal-entities";
 import { deriveInvoiceTracks, NEW_DOCUMENT_REQUIRED_CODES } from "./tracks";
 import { einvoiceMandateApplies } from "./scope";
-import { invoiceReportingRequired, providerRequiresLegalEntity } from "./workflow";
+import { invoiceReportingRequired } from "./workflow";
+import { companyProviderHealth } from "./providers/company-provider";
+import { providerModule } from "./providers/registry";
 
 export type ChecklistState =
   | "done"
@@ -43,14 +49,6 @@ export type TransmissionBlock =
 const iso = (d: Date | string | null | undefined) =>
   d ? (typeof d === "string" ? d : d.toISOString()) : null;
 
-function providerOrNull(): EInvoiceProvider | null {
-  try {
-    return getEInvoiceProvider();
-  } catch {
-    return null;
-  }
-}
-
 export async function einvoiceStatusView(invoice: Invoice, company: Company, now = new Date()) {
   const doc = await getEInvoiceDocument(company.id, invoice.id);
   const events = await listDocumentEvents(company.id, invoice.id, 100);
@@ -76,13 +74,13 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
   });
 
   // Transmission: who would send this, and is anything stopping it?
-  const provider = providerOrNull();
+  const health = await companyProviderHealth(company);
   let block: TransmissionBlock = null;
   let legalEntity = null;
-  if (!provider) block = "no_provider";
-  else if (provider.environment === "mock") block = "test_provider";
-  else if (providerRequiresLegalEntity(provider)) {
-    legalEntity = (await getLegalEntity(company.id, provider.name, provider.environment)) ?? null;
+  if (!health.provider) block = "no_provider";
+  else {
+    legalEntity =
+      (await getLegalEntity(company.id, health.provider.id, health.provider.environment)) ?? null;
     if (legalEntity?.status === "inactive") block = "legal_entity_delinked";
     else if (legalEntity?.status !== "active") block = "legal_entity_not_active";
   }
@@ -104,8 +102,25 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     )
     .limit(1);
 
-  const validation = doc?.validation as { valid?: boolean } | null | undefined;
+  const validation = documentValidation(doc) as { valid?: boolean } | null;
   const handedOver = !!invoice.einvoiceProviderMessageId;
+  const pinnedEnvironment = documentProviderEnvironment(doc);
+  const tracksProvider = pinnedEnvironment !== null || handedOver;
+  const providerId = tracksProvider ? (doc?.provider ?? null) : health.chosenProvider;
+  const submissionState =
+    delivery === "rejected" || reporting === "report_failed"
+      ? "rejected"
+      : delivery === "needs_link"
+        ? "needs_reconciliation"
+        : handedOver && delivery === "delivered"
+          ? "accepted"
+          : handedOver
+            ? "sent"
+            : legacy === "queued" || doc?.nextRetryAt
+              ? "queued"
+              : delivery === "delivery_failed"
+                ? "failed"
+                : "draft";
   const checklist: ChecklistItem[] = [
     {
       key: "posted",
@@ -168,8 +183,11 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
     delivery === "rejected" || delivery === "delivery_failed" || reporting === "report_failed";
   return {
     status: legacy,
+    submissionState,
     detail: invoice.einvoiceStatusDetail ?? null,
-    document: doc ?? null,
+    document: doc
+      ? { ...doc, status: isQueuedEInvoiceDocument(doc) ? "queued" : doc.status, validation }
+      : null,
     tracks: {
       delivery: { status: delivery, at: iso(doc?.deliveryStatusAt) },
       reporting: {
@@ -182,9 +200,9 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
       },
     },
     transmission: {
-      provider: provider?.name ?? null,
-      providerDisplayName: provider?.displayName ?? null,
-      environment: provider?.environment ?? null,
+      provider: providerId,
+      providerDisplayName: providerModule(providerId)?.displayName ?? null,
+      environment: tracksProvider ? pinnedEnvironment : health.environment,
       connected: block === null,
       block,
       providerDocumentId: invoice.einvoiceProviderMessageId ?? null,
@@ -200,7 +218,9 @@ export async function einvoiceStatusView(invoice: Invoice, company: Company, now
           // A rejected document needs a corrected one; a delivery failure can be resent as is.
           // E2: after a final rejection the number is used up at some providers.
           resubmittable:
-            issues.length === 0 && !NEW_DOCUMENT_REQUIRED_CODES.has(doc?.lastErrorCode ?? ""),
+            issues.length === 0 &&
+            !doc?.nextRetryAt &&
+            !NEW_DOCUMENT_REQUIRED_CODES.has(doc?.lastErrorCode ?? ""),
           newDocumentRequired: NEW_DOCUMENT_REQUIRED_CODES.has(doc?.lastErrorCode ?? ""),
         }
       : null,

@@ -29,13 +29,13 @@ import {
 import { useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { useToast } from "@/hooks/use-toast";
-import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useActiveCompany } from "@/components/ActiveCompanyProvider";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { apiUrl } from "@/lib/api";
 import { getAuthHeaders } from "@/lib/auth";
 import { EInvoiceProviderCard } from "@/components/einvoice/EInvoiceProviderCard";
 import { EInvoicePartnerCard } from "@/components/einvoice/EInvoicePartnerCard";
+import "@/components/einvoice/einvoice-theme.css";
 
 // UAE e-invoicing (PINT AE) settings: identity, scope, ASP status, per-invoice
 // validation, archive and inbound documents (W4-C, R07-04/R07-13/R03-18/R04-23).
@@ -117,6 +117,7 @@ const COPY = {
     problemReported:
       "The provider reported a problem. Open the invoice's e-invoice status for details.",
     st_generated: "Generated",
+    st_queued: "Queued",
     st_submitted: "Submitted",
     st_accepted: "Accepted",
     st_cleared: "Cleared",
@@ -204,6 +205,7 @@ const COPY = {
     retry: "إعادة المحاولة",
     problemReported: "أبلغ المزود عن مشكلة. افتح حالة الفاتورة الإلكترونية لمعرفة التفاصيل.",
     st_generated: "تم الإنشاء",
+    st_queued: "في قائمة الانتظار",
     st_submitted: "تم الإرسال",
     st_accepted: "مقبولة",
     st_cleared: "تم الاعتماد",
@@ -352,11 +354,22 @@ async function downloadArchive(companyId: string, row: ArchiveRow): Promise<bool
 }
 
 export default function EInvoicingSettings() {
+  const { company, companyId } = useActiveCompany();
+  return (
+    <CompanyEInvoicingSettings key={companyId} companyId={companyId} companyName={company?.name} />
+  );
+}
+
+function CompanyEInvoicingSettings({
+  companyId,
+  companyName,
+}: {
+  companyId: string | undefined;
+  companyName: string | undefined;
+}) {
   const { locale } = useTranslation();
   const s: Copy = COPY[locale === "ar" ? "ar" : "en"];
   const { toast } = useToast();
-  const { companyId } = useDefaultCompany();
-  const { company: activeCompany } = useActiveCompany();
 
   const settings = useQuery<SettingsView>({
     queryKey: ["/api/companies", companyId, "einvoicing", "settings"],
@@ -419,7 +432,10 @@ export default function EInvoicingSettings() {
 
   return (
     <SettingsLayout>
-      <div className="max-w-narrow space-y-6" dir={locale === "ar" ? "rtl" : "ltr"}>
+      <div
+        className="einvoice-surface max-w-narrow space-y-6 bg-background text-foreground"
+        dir={locale === "ar" ? "rtl" : "ltr"}
+      >
         <PageHeader
           eyebrow={s.eyebrow}
           title={s.title}
@@ -430,14 +446,21 @@ export default function EInvoicingSettings() {
         {/* After the trial the workspace is read-only (edits answer 402): say so up front. */}
         <TrialBanner endedOnly />
 
-        {!view ? (
+        {settings.isError ? (
+          <div className="flex flex-wrap items-center gap-2" role="alert">
+            <p className="text-muted-foreground">{s.loadFailed}</p>
+            <Button variant="link" className="min-h-11" onClick={() => void settings.refetch()}>
+              {s.retry}
+            </Button>
+          </div>
+        ) : !view ? (
           <p className="text-muted-foreground">{s.loading}</p>
         ) : (
           <>
             {/* WQ5: choose the accredited partner (no default), appoint it, verify it. It comes
                 first: it is the self-serve step, and the connection status below follows from it. */}
             {companyId && (
-              <EInvoicePartnerCard companyId={companyId} companyName={activeCompany?.name ?? ""} />
+              <EInvoicePartnerCard companyId={companyId} companyName={companyName ?? ""} />
             )}
 
             {/* E1/E2: the configured accredited provider's guided connection (or "Not connected"). */}

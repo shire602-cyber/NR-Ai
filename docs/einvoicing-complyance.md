@@ -11,16 +11,15 @@ doc-derived fixtures and must be confirmed in the Complyance sandbox (last secti
 
 ## Configuration
 
-`EINVOICE_PROVIDER=complyance` with `COMPLYANCE_API_KEY` (secret store only; a sandbox "mock" key or
-a production key with write access) and `COMPLYANCE_ENV` (`sandbox` default, `production`). The
-webhook needs `COMPLYANCE_WEBHOOK_SECRET` (the signing secret shown once when the webhook is created)
-and, for the URL shown in settings, `COMPLYANCE_WEBHOOK_BASE_URL`. Optional: `COMPLYANCE_BASE_URL`,
+Select Complyance in the company's settings and provision its encrypted API credential bundle.
+`COMPLYANCE_ENV` defaults to `sandbox`. Provide the company webhook signing secret in the same bundle
+and set `COMPLYANCE_WEBHOOK_BASE_URL` for the callback URL shown in settings. Optional: `COMPLYANCE_BASE_URL`,
 `COMPLYANCE_SUBMIT_FORMAT` (`gets` default | `xml`), `COMPLYANCE_SOURCE_PREFIX` (`muhasib`),
 `COMPLYANCE_SOURCE_VERSION` (`v1`), `COMPLYANCE_USER_AGENT` (required by Complyance's WAF; a default is
 sent), `COMPLYANCE_TIMEOUT_MS`, `COMPLYANCE_POLL_DAYS` (3), `COMPLYANCE_WEBHOOK_ALGORITHM` (`sha256` |
 `sha512`), `COMPLYANCE_WEBHOOK_MAX_AGE_SECONDS` (3600). All are listed in `.env.example`. Without them
-every transmission call answers 503 `EINVOICE_PROVIDER_NOT_CONFIGURED` and settings show the neutral
-"Not connected" card.
+every transmission call answers 503 `EINVOICE_PROVIDER_NOT_CONFIGURED` and settings show the selected
+provider as `not_configured`. [Company e-invoicing configuration](einvoicing-company-runtime.md)
 
 ## Adapter (`server/services/einvoice/providers/complyance.ts`)
 
@@ -88,11 +87,10 @@ A-Cube, and 422 `EINVOICE_SUPPLIER_ENDPOINT_MISMATCH` when our supplier endpoint
 
 ## Webhooks, polling and idempotency
 
-`POST /api/webhooks/einvoice/complyance/:environment` (raw body, CSRF-exempt): the
-`X-Webhook-Signature` HMAC (lowercase hex, sha256 or sha512) of the raw body with
-`COMPLYANCE_WEBHOOK_SECRET` is checked in constant time; an unset secret answers 503 (never accept
-unsigned events), a bad signature 401. The timestamp header is not signed, so replay protection is the
-inbox's unique event key; `X-Webhook-Timestamp` older than the window is still refused as a cheap filter.
+`POST /api/webhooks/einvoice/complyance/:environment/:companyId` checks the `X-Webhook-Signature`
+HMAC of the raw body using the company's signing secret. An unset secret answers 503 and an invalid
+signature answers 401. Replay protection uses the signed event identifier and a unique inbox key
+per company and environment. The timestamp header also provides an age check.
 Events are normalised (`complyance-events.ts`) into the shared durable inbox
 (`einvoice_provider_events`, job `einvoice.providerEvents`): purchases → `document.received` keyed
 `doc:<id>:received` (the same key as the poll), `invoice.passed`/`failed` → re-read the status,
@@ -102,11 +100,11 @@ Complyance retries (it treats 4xx as permanent).
 No Complyance webhook reports a document's final outcome, so `einvoice.complyancePoll` refreshes every
 in-flight document (and lists purchases for the last `COMPLYANCE_POLL_DAYS` days per active company).
 
-Complyance is idempotent by document number: a repeat after a lost response answers 422 GETS-HEAD-010
-**without the document id**, and there is no sales listing. Muhasib therefore never posts twice (claim +
-re-read as for A-Cube), records `COMPLYANCE_DUPLICATE_NUMBER`, does not retry it, and offers
-`POST /api/companies/:companyId/einvoicing/complyance/link {invoiceId, documentId}`: a person finds the
-id in the Complyance Invoice Portal, we check that document's number is this invoice's, then track it.
+Complyance deduplicates by document number. A retry after a lost response uses the same validated
+XML, credential scope, source and environment. A duplicate response without the document ID moves
+the invoice to reconciliation. Use the existing company-specific link action with the document ID
+from the Complyance Invoice Portal. The application checks both ownership and document number before
+tracking it.
 
 ## To verify against the live Complyance sandbox
 

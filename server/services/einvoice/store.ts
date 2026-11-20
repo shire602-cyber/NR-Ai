@@ -4,18 +4,21 @@
  * participant ids. Every query is scoped by company id.
  */
 import crypto from "node:crypto";
-import { and, desc, eq, lt, lte, sql } from "drizzle-orm";
-import { db } from "../../db";
+import { and, desc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
+import { db, type AppDatabase } from "../../db";
+import { DomainError } from "../../errors";
 import {
   einvoiceArchive,
   einvoiceBuyerEndpoints,
   einvoiceDocuments,
   einvoiceInboundDocuments,
+  invoices,
   type EInvoiceArchiveRow,
   type EInvoiceBuyerEndpoint,
   type EInvoiceDocument,
   type EInvoiceInboundDocument,
 } from "../../../shared/schema";
+import type { EInvoiceProviderEnvironment } from "../einvoice-provider";
 
 export const ARCHIVE_RETENTION_YEARS = 5;
 
@@ -30,11 +33,58 @@ export function retainUntil(now: Date): string {
 
 // ─── Documents ──────────────────────────────────────────────────────────
 
+export type EInvoiceDb = Pick<AppDatabase, "select" | "insert" | "update">;
+
+/** All submission writes lock the tenant's invoice before its document row. */
+export async function lockEInvoiceInvoice(companyId: string, invoiceId: string, tx: EInvoiceDb) {
+  const [invoice] = await tx
+    .select()
+    .from(invoices)
+    .where(and(eq(invoices.companyId, companyId), eq(invoices.id, invoiceId)))
+    .for("update");
+  return invoice;
+}
+
+// Kept in the validation JSON beside the validation of this exact XML. Older rows have no pin.
+export function documentSubmissionMetadata(
+  doc: Pick<EInvoiceDocument, "validation"> | null | undefined
+) {
+  const validation = doc?.validation;
+  if (!validation || typeof validation !== "object" || !("submission" in validation)) return;
+  const metadata = validation.submission as Record<string, unknown> | null;
+  const environment = metadata?.environment;
+  if (environment !== "sandbox" && environment !== "production" && environment !== "mock") return;
+  return {
+    environment: environment as EInvoiceProviderEnvironment,
+    invoiceNumber: typeof metadata?.invoiceNumber === "string" ? metadata.invoiceNumber : null,
+    supplierTin: typeof metadata?.supplierTin === "string" ? metadata.supplierTin : null,
+    scope: typeof metadata?.scope === "string" ? metadata.scope : null,
+  };
+}
+
+export function documentProviderEnvironment(
+  doc: Pick<EInvoiceDocument, "validation"> | null | undefined
+) {
+  return documentSubmissionMetadata(doc)?.environment ?? null;
+}
+
+/** Validation available to the UI, excluding transport metadata. */
+export function documentValidation(doc: Pick<EInvoiceDocument, "validation"> | null | undefined) {
+  const validation = doc?.validation;
+  if (!validation || typeof validation !== "object" || !("submission" in validation)) {
+    return validation ?? null;
+  }
+  const summary = { ...validation };
+  delete summary.submission;
+  return summary;
+}
+
 export async function getEInvoiceDocument(
   companyId: string,
-  invoiceId: string
+  invoiceId: string,
+  conn: EInvoiceDb = db
 ): Promise<EInvoiceDocument | undefined> {
-  const rows = await db
+  const rows = await conn
     .select()
     .from(einvoiceDocuments)
     .where(
@@ -44,6 +94,22 @@ export async function getEInvoiceDocument(
   return rows[0];
 }
 
+/** Called under the accounting document lock, which also orders submission claims. */
+export async function assertNoOutstandingEInvoiceHandoff(
+  companyId: string,
+  invoiceId: string,
+  tx: EInvoiceDb
+) {
+  const document = await getEInvoiceDocument(companyId, invoiceId, tx);
+  if (
+    document?.submitClaimedAt ||
+    document?.deliveryStatus === "needs_link" ||
+    (document?.status === "failed" && document.nextRetryAt && document.attempts > 0)
+  ) {
+    throw new DomainError("EINVOICE_SUBMISSION_IN_PROGRESS", 409);
+  }
+}
+
 export type EInvoiceDocumentPatch = Partial<
   Omit<EInvoiceDocument, "id" | "companyId" | "invoiceId" | "createdAt">
 >;
@@ -51,10 +117,11 @@ export type EInvoiceDocumentPatch = Partial<
 export async function upsertEInvoiceDocument(
   companyId: string,
   invoiceId: string,
-  patch: EInvoiceDocumentPatch
+  patch: EInvoiceDocumentPatch,
+  conn: EInvoiceDb = db
 ): Promise<EInvoiceDocument> {
   const now = new Date();
-  const [row] = await db
+  const [row] = await conn
     .insert(einvoiceDocuments)
     .values({ companyId, invoiceId, status: patch.status ?? "generated", ...patch, updatedAt: now })
     .onConflictDoUpdate({
@@ -79,12 +146,30 @@ export async function listEInvoiceDocuments(
     .limit(Math.min(Math.max(limit, 1), 500));
 }
 
-/** Failed submissions whose backoff has elapsed (all companies; the retry job). */
+export const SUBMISSION_LEASE_MS = 5 * 60_000;
+
+/** Local queue entries retain the existing generated status allowed by the database. */
+export function isQueuedEInvoiceDocument(
+  doc: Pick<EInvoiceDocument, "status" | "nextRetryAt"> | null | undefined
+) {
+  return doc?.status === "generated" && doc.nextRetryAt !== null;
+}
+
+/** Durable first attempts or retries whose backoff and any previous lease have elapsed. */
 export async function dueEInvoiceRetries(now: Date, limit = 50): Promise<EInvoiceDocument[]> {
   return db
     .select()
     .from(einvoiceDocuments)
-    .where(and(eq(einvoiceDocuments.status, "failed"), lte(einvoiceDocuments.nextRetryAt, now)))
+    .where(
+      and(
+        inArray(einvoiceDocuments.status, ["generated", "failed"]),
+        lte(einvoiceDocuments.nextRetryAt, now),
+        or(
+          isNull(einvoiceDocuments.submitClaimedAt),
+          lte(einvoiceDocuments.submitClaimedAt, new Date(now.getTime() - SUBMISSION_LEASE_MS))
+        )
+      )
+    )
     .orderBy(einvoiceDocuments.nextRetryAt)
     .limit(limit);
 }
@@ -109,10 +194,13 @@ export interface ArchiveInput {
  * Write-once: identical content (same company/direction/kind/hash) returns the
  * existing row; the table itself rejects UPDATE/DELETE (migration trigger).
  */
-export async function archiveEInvoiceXml(input: ArchiveInput): Promise<EInvoiceArchiveRow> {
+export async function archiveEInvoiceXml(
+  input: ArchiveInput,
+  conn: EInvoiceDb = db
+): Promise<EInvoiceArchiveRow> {
   const now = input.now ?? new Date();
   const sha256 = sha256Hex(input.xml);
-  const inserted = await db
+  const inserted = await conn
     .insert(einvoiceArchive)
     .values({
       companyId: input.companyId,
@@ -132,7 +220,7 @@ export async function archiveEInvoiceXml(input: ArchiveInput): Promise<EInvoiceA
     .onConflictDoNothing()
     .returning();
   if (inserted[0]) return inserted[0];
-  const existing = await db
+  const existing = await conn
     .select()
     .from(einvoiceArchive)
     .where(
@@ -283,10 +371,11 @@ export async function listInboundDocuments(
 
 export async function getBuyerEndpoint(
   companyId: string,
-  contactId: string | null | undefined
+  contactId: string | null | undefined,
+  conn: Pick<EInvoiceDb, "select"> = db
 ): Promise<EInvoiceBuyerEndpoint | undefined> {
   if (!contactId) return undefined;
-  const rows = await db
+  const rows = await conn
     .select()
     .from(einvoiceBuyerEndpoints)
     .where(

@@ -1,8 +1,7 @@
 # UAE e-invoicing providers: switching and discarding (E2)
 
-Muhasib is built against two MoF-accredited e-invoicing service providers and switches on the one it
-signs with. Both stay behind the same `EInvoiceProvider` interface (`server/services/einvoice-provider.ts`)
-and the same two-track status model, onboarding table, durable event inbox and settings card shell.
+Each company chooses from two MoF-accredited e-invoicing providers. Both use the same
+`EInvoiceProvider` interface, two-track status model, onboarding table and durable queues.
 
 | Provider   | Legal name (MoF register)       | Accreditation | Notes                                                |
 | ---------- | ------------------------------- | ------------- | ---------------------------------------------------- |
@@ -14,27 +13,18 @@ Register: https://mof.gov.ae/en/about-us/initiatives/einvoicing/einvoicing-accre
 
 ## Switching
 
-`EINVOICE_PROVIDER` selects exactly one provider (`acube` or `complyance`; `http` is the generic
-mapping-driven adapter, `mock` is dev/test only). The registry
-(`server/services/einvoice/providers/registry.ts`) only exposes the selected provider and only once its
-credentials are set (`configuredProviderModules`, tested in `tests/unit/einvoice-provider-registry.test.ts`):
-credentials of a provider that is not selected are never used. The settings card asks
-`GET /api/companies/:id/einvoicing/provider` which provider is live and shows that provider's card
-(name, accreditation number, its own onboarding steps) or a neutral "Not connected" card.
-
-Data is kept per provider and environment (`einvoice_legal_entities.provider`,
-`einvoice_documents.provider`, `einvoice_provider_events.provider`), so switching never mixes rows; a
-company must onboard again at the new provider (the taxpayer re-authorises in EmaraTax).
+Set up the company's encrypted credentials and provider environment using the
+[company runtime guide](einvoicing-company-runtime.md). The Settings card shows local configuration
+status. Changing providers requires a new EmaraTax appointment. Existing submission and status
+work stays pinned to the provider and environment that received it.
 
 ## Partner choice, identity and the approver link (WQ5)
 
 There is no default partner. Settings → E-invoicing lists every provider compiled into the build
 (from `registeredProviderIds()`, so the card names none in code) and the company stores its choice
-in `companies.einvoice_partner`. `EINVOICE_PROVIDER` still decides what this deployment can
-connect: a choice that is not the configured provider reads "Not connected", "Verify with partner"
-(the provider's own `…/einvoicing/<id>/sync` route) is offered only for the configured one, and
-nothing is transmitted otherwise. Without a check the company may record "Confirmed by you, not
-yet verified" (`einvoice_appointment_confirmed_at`).
+in `companies.einvoice_partner`. "Verify with partner" calls the selected provider's
+`…/einvoicing/<id>/sync` route once the company's credentials are configured. The company can also
+record its own unverified confirmation (`einvoice_appointment_confirmed_at`).
 
 - Seller identity (`PUT /api/companies/:id/einvoicing/identity`, Settings → Company card and the
   first-invoice prompt): stored TIN (`einvoice_tin`, 10 digits starting with 1, must match the
@@ -95,6 +85,9 @@ both providers may stay.
 ### Edit
 
 - `server/services/einvoice/providers/registry.ts`: the `ACUBE_PROVIDER_MODULE` import and list entry
+- `server/services/einvoice/providers/company-credentials.ts`: the A-Cube credential schema
+- `server/services/einvoice/providers/company-provider.ts`: scoped authentication configuration for the provider
+- `server/services/einvoice/workflow.ts`: provider-specific reconciliation rules and error codes
 - `server/routes.ts`: `registerEInvoiceAcubeRoutes` import and call
 - `scripts/ops/asp-sandbox-dryrun.ts`: the `acube` entry in `ASP_REQUIREMENTS` and its branch in `runProvider`
 - `server/http/body-limits.ts`: the `/api/webhooks/einvoice/acube` entry in `RAW_WEBHOOK_PREFIXES`
@@ -152,6 +145,9 @@ Env to unset: `ACUBE_*`.
 ### Edit
 
 - `server/services/einvoice/providers/registry.ts`: the `COMPLYANCE_PROVIDER_MODULE` import and list entry
+- `server/services/einvoice/providers/company-credentials.ts`: the Complyance credential schema
+- `server/services/einvoice/providers/company-provider.ts`: scoped authentication configuration for the provider
+- `server/services/einvoice/workflow.ts`: provider-specific reconciliation rules and error codes
 - `server/routes.ts`: `registerEInvoiceComplyanceRoutes` import and call
 - `scripts/ops/asp-sandbox-dryrun.ts`: the `complyance` entry in `ASP_REQUIREMENTS` and its branch in `runProvider`
 - `server/http/body-limits.ts`: the `/api/webhooks/einvoice/complyance` entry in `RAW_WEBHOOK_PREFIXES`

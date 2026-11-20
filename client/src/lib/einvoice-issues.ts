@@ -10,16 +10,17 @@ export interface EInvoiceIssueItem {
   message: string;
   /** Stable server code (e.g. EINVOICE_BUYER_ENDPOINT_MISSING), when the issue has one. */
   code?: string;
+  ruleId?: string;
 }
 
 type Finding = { id?: string; message?: string; location?: string };
-type Layer = { errors?: Finding[] };
+type Layer = { available?: boolean; errors?: Finding[] };
 
 /** Issues from a 422 error body; [] when the body carries none. */
 export function einvoiceIssuesFromError(body: unknown): EInvoiceIssueItem[] {
   if (!body || typeof body !== "object") return [];
   const b = body as {
-    issues?: Array<{ field?: unknown; message?: unknown; code?: unknown }>;
+    issues?: Array<{ field?: unknown; message?: unknown; code?: unknown; ruleId?: unknown }>;
     validation?: { xsd?: Layer; schematron?: Layer; rules?: Layer };
   };
   const out: EInvoiceIssueItem[] = [];
@@ -30,6 +31,7 @@ export function einvoiceIssuesFromError(body: unknown): EInvoiceIssueItem[] {
           field: typeof i.field === "string" ? i.field : "",
           message: i.message,
           ...(typeof i.code === "string" ? { code: i.code } : {}),
+          ...(typeof i.ruleId === "string" ? { ruleId: i.ruleId } : {}),
         });
       }
     }
@@ -41,10 +43,21 @@ export function einvoiceIssuesFromError(body: unknown): EInvoiceIssueItem[] {
       [v.schematron, "PINT AE schematron"],
       [v.rules, "PINT AE rule"],
     ] as const) {
-      for (const f of layer?.errors ?? []) {
+      for (const f of Array.isArray(layer?.errors) ? layer.errors : []) {
         if (!f?.message) continue;
-        out.push({ field: [label, f.id].filter(Boolean).join(" "), message: f.message });
+        out.push({
+          field: [label, f.id].filter(Boolean).join(" "),
+          message: f.message,
+          ruleId: f.id,
+        });
       }
+    }
+    if (out.length === 0 && (v.xsd?.available === false || v.schematron?.available === false)) {
+      out.push({
+        field: "document.validation",
+        message: "",
+        code: "EINVOICE_VALIDATION_UNAVAILABLE",
+      });
     }
   }
   return out;
@@ -73,7 +86,26 @@ const ISSUE_TEXT_KEYS: Record<string, string> = {
 };
 
 export function einvoiceIssueTextKey(code: string | undefined): string | null {
-  return code ? (ISSUE_TEXT_KEYS[code] ?? null) : null;
+  return code ? (ISSUE_TEXT_KEYS[code] ?? `einvoicing.issue_${code}`) : null;
+}
+
+export function einvoiceRuleTextKey(ruleId: string | undefined): string | null {
+  const codes: Record<string, string> = {
+    "ibr-127-ae": "EINVOICE_DUE_DATE_INVALID",
+    "ibr-134-ae": "EINVOICE_SUPPLIER_TRN_REQUIRED",
+    "ibr-144-ae": "EINVOICE_BUYER_ADDRESS_MISSING",
+    "ibr-150-ae": "EINVOICE_SUPPLIER_LEGAL_ID_REQUIRED",
+    "ibr-192-ae": "EINVOICE_PAYMENT_ACCOUNT_REQUIRED",
+    "ibr-174-ae": "EINVOICE_REVERSE_CHARGE_GTIN_REQUIRED",
+    "ibr-166-ae": "EINVOICE_REVERSE_CHARGE_GOODS_TYPE_REQUIRED",
+    "ibr-103-ae": "EINVOICE_REVERSE_CHARGE_TRN_REQUIRED",
+    "ibr-055-ae": "EINVOICE_ORIGINAL_INVOICE_REQUIRED",
+    "IBR-CO-13": "EINVOICE_SUBTOTAL_MISMATCH",
+    "BR-CO-13": "EINVOICE_SUBTOTAL_MISMATCH",
+    "IBR-CO-14": "EINVOICE_VAT_TOTAL_MISMATCH",
+    "BR-CO-14": "EINVOICE_VAT_TOTAL_MISMATCH",
+  };
+  return einvoiceIssueTextKey(ruleId ? codes[ruleId] : undefined);
 }
 
 const COMPANY_FIELDS: Record<string, string> = {
@@ -121,6 +153,23 @@ export function einvoiceFieldHint(field: string): EInvoiceFieldHint {
     return { ...none, ruleLabel: field };
   }
   const [scope, rest = ""] = field.split(".", 2);
+  if (
+    scope === "company" &&
+    (rest === "einvoiceTin" || rest === "einvoicePayeeIban" || rest === "sellerIdCountry")
+  ) {
+    const key =
+      rest === "einvoiceTin"
+        ? "supplierTin"
+        : rest === "einvoicePayeeIban"
+          ? "payeeIban"
+          : "passportCountry";
+    return {
+      ...none,
+      labelKey: `einvoicing.field_${key}`,
+      whereKey: "einvoicing.setUpLink",
+      href: "/settings/einvoicing",
+    };
+  }
   if (scope === "company" && COMPANY_FIELDS[rest]) {
     return {
       labelKey: `invoices.einvoiceField.${COMPANY_FIELDS[rest]}`,
@@ -134,20 +183,28 @@ export function einvoiceFieldHint(field: string): EInvoiceFieldHint {
       labelKey:
         rest === "endpointId"
           ? "invoices.einvoiceField.customerEndpoint"
-          : "invoices.einvoiceField.customerAddress",
+          : rest === "legalIdCountry"
+            ? "einvoicing.field_passportCountry"
+            : "invoices.einvoiceField.customerAddress",
       whereKey: "invoices.einvoiceWhere.customer",
       href: "/contacts",
       ruleLabel: null,
     };
   }
   if (scope === "invoice") {
+    const labelKey = ["exchangeRate", "supplyDate"].includes(rest)
+      ? `einvoicing.field_${rest}`
+      : INVOICE_FIELDS[rest]
+        ? `invoices.einvoiceField.${INVOICE_FIELDS[rest]}`
+        : null;
     return {
-      labelKey: INVOICE_FIELDS[rest] ? `invoices.einvoiceField.${INVOICE_FIELDS[rest]}` : null,
+      labelKey,
       whereKey: "invoices.einvoiceWhere.invoice",
       href: null,
       ruleLabel: null,
     };
   }
+  if (scope === "document") return { ...none, labelKey: "einvoicing.field_document" };
   const line = /^lines(?:\[(\d+)\])?(?:\.(\w+))?$/.exec(field);
   if (line) {
     const key = line[2] ? LINE_FIELDS[line[2]] : null;

@@ -6,13 +6,15 @@
  *   POST /api/companies/:companyId/einvoicing/complyance/sync      re-read / retry registration
  *   POST /api/companies/:companyId/einvoicing/complyance/link      attach a Complyance document id
  *                                                                  to an invoice (after GETS-HEAD-010)
- *   POST /api/webhooks/einvoice/complyance/:environment            Complyance events (HMAC-signed)
+ *   POST /api/webhooks/einvoice/complyance/:environment/:companyId  Complyance events (HMAC-signed)
  *
  * Without Complyance selected and configured every call answers 503
  * EINVOICE_PROVIDER_NOT_CONFIGURED; nothing claims a connection that does not exist.
  */
 import express, { type Express, type Request, type Response } from "express";
 import { z } from "zod";
+import { and, eq } from "drizzle-orm";
+import { db } from "../db";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
@@ -22,9 +24,9 @@ import { DomainError } from "../errors";
 import { createLogger } from "../config/logger";
 import { recordAudit } from "../services/audit.service";
 import { listJobs, registerJob } from "../platform/job-registry";
-import type { Company } from "../../shared/schema";
+import { invoices, type Company } from "../../shared/schema";
 import { MOF_ASP_REGISTER_URL } from "../services/einvoice/providers/types";
-import { providerIsActive } from "../services/einvoice/providers/registry";
+import { companyProviderConfiguration } from "../services/einvoice/providers/company-provider";
 import {
   COMPLYANCE_ACCREDITATION_NUMBER,
   COMPLYANCE_LEGAL_NAME,
@@ -57,7 +59,12 @@ import {
 } from "../services/einvoice/provider-events";
 import { companyTin, getLegalEntity } from "../services/einvoice/legal-entities";
 import { refreshAndPersist } from "../services/einvoice/workflow";
-import { getEInvoiceDocument, upsertEInvoiceDocument } from "../services/einvoice/store";
+import {
+  documentProviderEnvironment,
+  getEInvoiceDocument,
+  lockEInvoiceInvoice,
+  upsertEInvoiceDocument,
+} from "../services/einvoice/store";
 import { EINVOICE_TIMELINE, einvoicingScope } from "../services/einvoice/scope";
 import { reportWindowDays } from "../services/einvoice/tracks";
 
@@ -71,20 +78,16 @@ function validated<T>(req: Request): T {
   return req.body as T;
 }
 
-function complyanceActive(): boolean {
-  return providerIsActive(COMPLYANCE_PROVIDER_NAME);
+async function complyanceConfiguration(company: Company) {
+  return company.einvoicePartner === COMPLYANCE_PROVIDER_NAME
+    ? companyProviderConfiguration(company.id, COMPLYANCE_PROVIDER_NAME)
+    : null;
 }
 
-function complyanceProvider(): ComplyanceEInvoiceProvider {
-  if (!complyanceActive()) {
-    throw new DomainError(
-      "EINVOICE_PROVIDER_NOT_CONFIGURED",
-      503,
-      undefined,
-      "Complyance is not connected: set EINVOICE_PROVIDER=complyance with COMPLYANCE_API_KEY."
-    );
-  }
-  return new ComplyanceEInvoiceProvider();
+async function complyanceProvider(company: Company): Promise<ComplyanceEInvoiceProvider> {
+  const config = await complyanceConfiguration(company);
+  if (!config) throw new DomainError("EINVOICE_PROVIDER_NOT_CONFIGURED", 503);
+  return new ComplyanceEInvoiceProvider(config.env);
 }
 
 function webhookBaseUrl(): string | null {
@@ -92,13 +95,15 @@ function webhookBaseUrl(): string | null {
   return base ? base.replace(/\/+$/, "") : null;
 }
 
-const webhookPath = (environment: string) => `/api/webhooks/einvoice/complyance/${environment}`;
+const webhookPath = (environment: string, companyId: string) =>
+  `/api/webhooks/einvoice/complyance/${environment}/${companyId}`;
 
-export function complyanceConnectionView(
+export async function complyanceConnectionView(
   company: Company & Record<string, unknown>,
   le: Awaited<ReturnType<typeof getLegalEntity>>
 ) {
-  const configured = complyanceActive();
+  const config = await complyanceConfiguration(company);
+  const configured = !!config;
   const environment = complyanceEnvironment();
   const scope = einvoicingScope({
     einvoiceScope: (company.einvoiceScope as string | null) ?? null,
@@ -121,8 +126,8 @@ export function complyanceConnectionView(
     steps: complyanceSteps(configured, le),
     goLive: { ...scope, timeline: EINVOICE_TIMELINE, reportWindowDays: reportWindowDays() },
     webhook: {
-      url: base ? `${base}${webhookPath(environment)}` : null,
-      secretConfigured: !!process.env.COMPLYANCE_WEBHOOK_SECRET,
+      url: base ? `${base}${webhookPath(environment, company.id)}` : null,
+      secretConfigured: !!config?.webhookSecret,
     },
   };
 }
@@ -187,11 +192,16 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
       description:
         "Poll Complyance for in-flight e-invoice status, received purchases and pending onboarding",
       run: async () => {
-        if (!complyanceActive()) return;
-        const provider = new ComplyanceEInvoiceProvider();
-        await syncPendingComplyanceCompanies(provider, loadCompany);
-        await runProviderPoll(COMPLYANCE_PROVIDER_NAME, { provider });
-        await runProviderEvents({ provider });
+        await syncPendingComplyanceCompanies(
+          complyanceEnvironment(),
+          loadCompany,
+          async (company) => {
+            const config = await complyanceConfiguration(company);
+            return config ? new ComplyanceEInvoiceProvider(config.env) : null;
+          }
+        );
+        await runProviderPoll(COMPLYANCE_PROVIDER_NAME);
+        await runProviderEvents();
       },
     });
   }
@@ -209,7 +219,7 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
         complyanceEnvironment()
       );
       res.json({
-        ...complyanceConnectionView(company as Company & Record<string, unknown>, le),
+        ...(await complyanceConnectionView(company as Company & Record<string, unknown>, le)),
         events: await providerEventSummary(company.id),
       });
     })
@@ -223,7 +233,7 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const company = await loadCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
-      const provider = complyanceProvider();
+      const provider = await complyanceProvider(company);
       const body = validated<ConnectBody>(req);
       const le = await connectComplyanceCompany({
         company,
@@ -241,7 +251,7 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
         after: { tin: le.tin, status: le.status, environment: le.environment },
         req,
       });
-      res.json(complyanceConnectionView(company as Company & Record<string, unknown>, le));
+      res.json(await complyanceConnectionView(company as Company & Record<string, unknown>, le));
     })
   );
 
@@ -253,17 +263,17 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const company = await loadCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
-      const provider = complyanceProvider();
+      const provider = await complyanceProvider(company);
       const le = await syncComplyanceCompany({ company, provider });
-      res.json(complyanceConnectionView(company as Company & Record<string, unknown>, le));
+      res.json(await complyanceConnectionView(company as Company & Record<string, unknown>, le));
     })
   );
 
   // After an ambiguous transport failure Complyance answers GETS-HEAD-010 without the document
   // id and offers no sales listing: a person finds the id in the Complyance Invoice Portal and
   // links it here. We confirm it is this invoice (same number) AND this company's document (its
-  // source, Connect company or seller TIN: one platform key serves every tenant and invoice
-  // numbers repeat across tenants) before tracking it. Linking changes what the invoice reports
+  // source, Connect company or seller TIN) before tracking it, since invoice numbers can
+  // repeat across tenants. Linking changes what the invoice reports
   // to the FTA, so it needs the posting permission (POLICY_RULES has the same rule).
   app.post(
     "/api/companies/:companyId/einvoicing/complyance/link",
@@ -273,12 +283,15 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
-      const provider = complyanceProvider();
       const body = validated<LinkBody>(req);
       const invoice = await storage.getInvoice(body.invoiceId, company.id);
       if (!invoice) throw new DomainError("NOT_FOUND", 404, undefined, "Invoice not found");
       const doc = await getEInvoiceDocument(company.id, invoice.id);
-      if (!LINKABLE_CODES.has(doc?.lastErrorCode ?? "") || invoice.einvoiceProviderMessageId) {
+      if (
+        doc?.provider !== COMPLYANCE_PROVIDER_NAME ||
+        !LINKABLE_CODES.has(doc.lastErrorCode ?? "") ||
+        invoice.einvoiceProviderMessageId
+      ) {
         throw new DomainError(
           "EINVOICE_LINK_NOT_NEEDED",
           409,
@@ -286,6 +299,12 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
           "Only an invoice Complyance already holds without a tracked document id can be linked."
         );
       }
+      const environment = documentProviderEnvironment(doc);
+      const config = environment
+        ? await companyProviderConfiguration(company.id, COMPLYANCE_PROVIDER_NAME, { environment })
+        : null;
+      if (!config) throw new DomainError("EINVOICE_PROVIDER_NOT_CONFIGURED", 503);
+      const provider = new ComplyanceEInvoiceProvider(config.env);
       const r = await provider.call(
         "GET",
         `/api/v3/documents/${encodeURIComponent(body.documentId)}?type=sales`
@@ -302,11 +321,7 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
           "That Complyance document is not this invoice (its number differs or it was not found)."
         );
       }
-      const le = await getLegalEntity(
-        company.id,
-        COMPLYANCE_PROVIDER_NAME,
-        complyanceEnvironment()
-      );
+      const le = await getLegalEntity(company.id, COMPLYANCE_PROVIDER_NAME, provider.environment);
       const leDetails = (le?.providerDetails ?? {}) as Record<string, unknown>;
       const owner = complyanceDocumentBelongsTo(data, {
         tin: le?.tin ?? companyTin(company),
@@ -328,21 +343,44 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
             : "That Complyance document belongs to another seller."
         );
       }
-      await storage.updateInvoice(invoice.id, company.id, {
-        einvoiceProvider: COMPLYANCE_PROVIDER_NAME,
-        einvoiceProviderMessageId: body.documentId,
-        einvoiceStatus: "submitted",
-        einvoiceStatusDetail: null,
+      const fresh = await db.transaction(async (tx) => {
+        const current = await lockEInvoiceInvoice(company.id, invoice.id, tx);
+        if (!current) throw new DomainError("NOT_FOUND", 404);
+        const currentDoc = await getEInvoiceDocument(company.id, invoice.id, tx);
+        if (
+          current.einvoiceProviderMessageId ||
+          current.number !== invoice.number ||
+          currentDoc?.provider !== COMPLYANCE_PROVIDER_NAME ||
+          documentProviderEnvironment(currentDoc) !== environment ||
+          !LINKABLE_CODES.has(currentDoc.lastErrorCode ?? "")
+        ) {
+          throw new DomainError("EINVOICE_LINK_NOT_NEEDED", 409);
+        }
+        const [linked] = await tx
+          .update(invoices)
+          .set({
+            einvoiceProvider: COMPLYANCE_PROVIDER_NAME,
+            einvoiceProviderMessageId: body.documentId,
+            einvoiceStatus: "submitted",
+            einvoiceStatusDetail: null,
+          })
+          .where(and(eq(invoices.id, invoice.id), eq(invoices.companyId, company.id)))
+          .returning();
+        await upsertEInvoiceDocument(
+          company.id,
+          invoice.id,
+          {
+            status: "submitted",
+            provider: COMPLYANCE_PROVIDER_NAME,
+            providerMessageId: body.documentId,
+            rejectionReasons: null,
+            lastError: null,
+            nextRetryAt: null,
+          },
+          tx
+        );
+        return linked;
       });
-      await upsertEInvoiceDocument(company.id, invoice.id, {
-        status: "submitted",
-        provider: COMPLYANCE_PROVIDER_NAME,
-        providerMessageId: body.documentId,
-        rejectionReasons: null,
-        lastError: null,
-        nextRetryAt: null,
-      });
-      const fresh = (await storage.getInvoice(invoice.id, company.id)) ?? invoice;
       const out = await refreshAndPersist({ invoice: fresh, company, provider, source: "user" });
       await recordAudit({
         userId: userOf(req),
@@ -360,7 +398,7 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
   // ─── Webhook (Complyance → us) ─────────────────────────────────────
 
   app.post(
-    "/api/webhooks/einvoice/complyance/:environment",
+    "/api/webhooks/einvoice/complyance/:environment/:companyId?",
     express.raw({ type: "*/*", limit: "256kb" }),
     asyncHandler(async (req: Request, res: Response) => {
       const environment = req.params.environment;
@@ -368,18 +406,22 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
         return res.status(404).json({ code: "NOT_FOUND", message: "Unknown environment" });
       }
       // 5xx: Complyance retries (1, 5, 15, 15 min); a 4xx would be treated as permanent.
-      if (!complyanceActive() || complyanceEnvironment() !== environment) {
+      const companyId = req.params.companyId?.toLowerCase();
+      const config = companyId
+        ? await companyProviderConfiguration(companyId, COMPLYANCE_PROVIDER_NAME, { environment })
+        : null;
+      if (!config) {
         return res.status(503).json({
           code: "EINVOICE_PROVIDER_NOT_CONFIGURED",
           message: "Complyance is not connected for this environment.",
         });
       }
-      const secret = process.env.COMPLYANCE_WEBHOOK_SECRET;
+      const secret = config.webhookSecret;
       if (!secret) {
         // Never accept unsigned events.
         return res.status(503).json({
           code: "EINVOICE_WEBHOOK_SECRET_NOT_CONFIGURED",
-          message: "Set COMPLYANCE_WEBHOOK_SECRET to the webhook's signing secret.",
+          message: "Configure the signing secret for this company.",
         });
       }
       const raw: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
@@ -409,24 +451,21 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
       if (!parsed.success) {
         return res.status(400).json({ code: "VALIDATION_ERROR", message: "Expected an object" });
       }
-      const event = normaliseComplyanceEvent({
-        eventType: req.get("x-webhook-event"),
-        eventId: req.get("x-webhook-id"),
-        body: parsed.data,
-      });
+      const event = normaliseComplyanceEvent(parsed.data);
       if (!event) return res.status(200).json({ received: true, ignored: true });
       const queued = await enqueueProviderEvent({
         provider: COMPLYANCE_PROVIDER_NAME,
         environment,
         type: event.type,
         eventId: providerEventKey(event.type, event.payload),
+        companyId,
         payload: event.payload,
       });
       if (queued.id && process.env.COMPLYANCE_WEBHOOK_INLINE !== "false") {
         const id = queued.id;
         setImmediate(() => {
-          runProviderEvents({ id, limit: 1 }).catch((err) =>
-            log.warn({ err: (err as Error).message }, "immediate event processing failed")
+          runProviderEvents({ id, limit: 1 }).catch(() =>
+            log.warn("immediate event processing failed")
           );
         });
       }

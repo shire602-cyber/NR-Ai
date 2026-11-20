@@ -5,6 +5,7 @@
  * provider, amber needs action, red failed, neutral not started / not applicable).
  */
 import type { StatusTone } from "@/components/ui/status-badge";
+import { einvoiceIssueTextKey } from "@/lib/einvoice-issues";
 
 export type DeliveryStatus =
   | "draft"
@@ -45,7 +46,7 @@ const ISSUE_TEXT_KEYS: Record<string, string> = {
 };
 
 export function issueTextKey(code: string | undefined): string | null {
-  return code ? (ISSUE_TEXT_KEYS[code] ?? null) : null;
+  return code ? (ISSUE_TEXT_KEYS[code] ?? einvoiceIssueTextKey(code)) : null;
 }
 
 export interface EInvoiceEvent {
@@ -62,6 +63,14 @@ export interface EInvoiceEvent {
 
 export interface EInvoiceStatusView {
   status: string;
+  submissionState?:
+    | "draft"
+    | "queued"
+    | "sent"
+    | "accepted"
+    | "rejected"
+    | "failed"
+    | "needs_reconciliation";
   detail: string | null;
   tracks: {
     delivery: { status: DeliveryStatus; at: string | null };
@@ -170,7 +179,8 @@ export const REPORTING_TONE: Record<ReportingStatus, StatusTone> = {
   report_failed: "danger",
 };
 
-export const deliveryLabelKey = (s: DeliveryStatus) => `einvoicing.delivery_${s}`;
+export const deliveryLabelKey = (s: DeliveryStatus, queuedForSubmission = false) =>
+  queuedForSubmission ? "einvoicing.submissionQueued" : `einvoicing.delivery_${s}`;
 export const reportingLabelKey = (s: ReportingStatus) => `einvoicing.reporting_${s}`;
 export const checklistLabelKey = (k: string) => `einvoicing.check_${k}`;
 export const checklistStateKey = (s: ChecklistState) => `einvoicing.checkState_${s}`;
@@ -192,6 +202,7 @@ const KNOWN_ERRORS = new Set([
   "ACUBE_BAD_REQUEST",
   "ACUBE_LEGAL_ENTITY_NOT_FOUND",
   "ACUBE_AUTH_FAILED",
+  "ACUBE_RATE_LIMITED",
   "ACUBE_UNAVAILABLE",
   "ACUBE_SENDING_FAILED",
   "ACUBE_DELIVERY_FAILED",
@@ -231,6 +242,7 @@ export function deliveryFromLegacyStatus(status: string | null | undefined): Del
   switch (status) {
     case "generated":
       return "validated";
+    case "queued":
     case "submitted":
       return "queued";
     case "accepted":
@@ -263,12 +275,18 @@ export function fieldLabelKey(field: string): string | null {
     "company.emirate": "einvoicing.field_companyEmirate",
     "company.tradeLicenceNo": "einvoicing.field_companyTradeLicence",
     "company.name": "einvoicing.field_companyName",
+    "company.einvoiceTin": "einvoicing.field_supplierTin",
+    "company.einvoicePayeeIban": "einvoicing.field_payeeIban",
+    "company.sellerIdCountry": "einvoicing.field_passportCountry",
     "customer.address": "einvoicing.field_customerAddress",
+    "customer.legalIdCountry": "einvoicing.field_passportCountry",
     "invoice.customerName": "einvoicing.field_customerName",
     "invoice.customerTrn": "einvoicing.field_customerTrn",
     "customer.endpointId": "einvoicing.field_customerEndpoint",
     "invoice.currency": "einvoicing.field_currency",
+    "invoice.exchangeRate": "einvoicing.field_exchangeRate",
     "invoice.date": "einvoicing.field_date",
+    "invoice.supplyDate": "einvoicing.field_supplyDate",
     "invoice.dueDate": "einvoicing.field_dueDate",
     "invoice.number": "einvoicing.field_number",
     "invoice.originalInvoiceId": "einvoicing.field_originalInvoice",

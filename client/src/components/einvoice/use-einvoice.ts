@@ -10,12 +10,20 @@ import type {
 
 export const einvoiceStatusKey = (invoiceId: string) => ["einvoice-status", invoiceId];
 
-export function useEInvoiceStatus(invoiceId: string | null | undefined) {
+export function useEInvoiceStatus(invoiceId: string | null | undefined, watch = false) {
   return useQuery<EInvoiceStatusView>({
     queryKey: einvoiceStatusKey(invoiceId ?? ""),
     queryFn: () => apiRequest("GET", `/api/invoices/${invoiceId}/einvoice/status`),
     enabled: !!invoiceId,
     retry: false,
+    refetchInterval: ({ state }) => {
+      if (!watch) return false;
+      if (state.data?.submissionState === "queued") return 5_000;
+      if (state.data?.submissionState === "sent" && state.data.transmission.providerDocumentId) {
+        return 15_000;
+      }
+      return false;
+    },
   });
 }
 

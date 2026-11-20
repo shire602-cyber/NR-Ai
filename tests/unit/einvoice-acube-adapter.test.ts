@@ -258,9 +258,17 @@ describe("E1 A-Cube submit", () => {
 
     resetAcubeTokenCache();
     const r = replay(["login", "list-outgoing"]);
-    const found = await new AcubeEInvoiceProvider(ENV, { fetch: r.fetchImpl }).lookupSubmission(
+    const fetchWithSource: typeof fetch = (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/invoices/01a0ab23-24d8-7787-bd01-883b1b089b00/source") {
+        return Promise.resolve(new Response(submission().xml));
+      }
+      return r.fetchImpl(input, init);
+    };
+    const found = await new AcubeEInvoiceProvider(ENV, { fetch: fetchWithSource }).lookupSubmission(
       submission()
     );
+    expect(r.left()).toBe(0);
     expect(found).toMatchObject({
       providerMessageId: "01a0ab23-24d8-7787-bd01-883b1b089b00",
       delivery: "queued",

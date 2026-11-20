@@ -7,7 +7,12 @@
  * `field` is the react-hook-form path the check links to (focus on click); `href` is a screen
  * where the fix lives (company profile, contacts) when it is not on this form.
  */
-import { einvoiceFieldHint, type EInvoiceIssueItem } from "./einvoice-issues";
+import {
+  einvoiceFieldHint,
+  einvoiceIssueTextKey,
+  einvoiceRuleTextKey,
+  type EInvoiceIssueItem,
+} from "./einvoice-issues";
 
 export type InvoiceCheckSeverity = "error" | "warning";
 
@@ -20,6 +25,9 @@ export interface InvoiceCheck {
   values?: Record<string, string | number>;
   /** Raw message (e-invoice validator findings come with their own text). */
   message?: string;
+  /** Catalog key for the validator detail, on top of the field label. */
+  detailKey?: string | null;
+  ruleId?: string;
   /** Form field to focus, e.g. "customerName" or "lines.0.unitPrice". */
   field?: string;
   /** Screen where the fix lives, when not on this form. */
@@ -150,9 +158,10 @@ export function einvoiceChecks(issues: EInvoiceIssueItem[], active: boolean): In
     return {
       id: `einvoice-${i}`,
       severity: active ? ("error" as const) : ("warning" as const),
-      messageKey: hint.labelKey ?? "invoices.checks.einvoiceRule",
-      values: hint.ruleLabel ? { rule: hint.ruleLabel } : undefined,
+      messageKey: hint.labelKey ?? "einvoicing.field_document",
       message: issue.message,
+      detailKey: einvoiceIssueTextKey(issue.code) ?? einvoiceRuleTextKey(issue.ruleId),
+      ruleId: issue.ruleId,
       field: field ? `lines.${field[1]}.${field[2]}` : invoiceField ? invoiceField[1] : undefined,
       href: hint.href ?? undefined,
     };

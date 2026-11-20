@@ -82,6 +82,7 @@ export function EInvoiceHeaderStrip({
         <EInvoiceTrackBadges
           delivery={delivery.status}
           reporting={reporting.status}
+          queuedForSubmission={view.submissionState === "queued"}
           showReportingLabel
         />
         {reportMeta && (

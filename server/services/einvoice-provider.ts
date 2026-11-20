@@ -30,6 +30,8 @@ export interface EInvoiceSubmission {
   documentType?: string;
   /** E2: our company id, for providers that address each submission to a per-company source. */
   companyId?: string;
+  /** When set, verify that the routed request uses this exact provider deduplication scope. */
+  scopeFingerprint?: string;
 }
 
 export interface EInvoiceProviderResult {
@@ -112,6 +114,8 @@ export interface EInvoiceProvider {
   ): Promise<{ reporting: ReportingStatus; detail?: string | null }>;
   /** E1: find a document we may already have handed over (ambiguous transport failure). */
   lookupSubmission?(submission: EInvoiceSubmission): Promise<EInvoiceProviderResult | null>;
+  /** Opaque identity of a provider's deduplication scope, for safe retries only. */
+  getSubmissionScope?(companyId: string): Promise<string | null>;
   /**
    * E1: list incoming documents (two-step receive: list, then fetchSource). E2: providers whose
    * inbox is listed per company receive the provider legal-entity ids to list.

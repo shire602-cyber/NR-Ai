@@ -37,14 +37,11 @@ const ONBOARDING_EVENTS = new Set([
   "peppol.id.deleted",
 ]);
 
-export function normaliseComplyanceEvent(args: {
-  eventType: string | null | undefined;
-  eventId: string | null | undefined;
-  body: Record<string, unknown>;
-}): NormalisedEvent | null {
-  const envelope = (args.body.data ?? {}) as Record<string, unknown>;
-  const type = String(args.eventType ?? envelope.type ?? "").toLowerCase();
-  const eventId = str(args.eventId) ?? str(args.body.eventId) ?? str(envelope.id);
+export function normaliseComplyanceEvent(body: Record<string, unknown>): NormalisedEvent | null {
+  const envelope = (body.data ?? {}) as Record<string, unknown>;
+  // The routing and dedupe identifiers must come from the signed body.
+  const type = String(envelope.type ?? "").toLowerCase();
+  const eventId = str(body.eventId) ?? str(envelope.id);
   const data = (envelope.data ?? {}) as Record<string, unknown>;
   const timestamp = str(envelope.timestamp);
 

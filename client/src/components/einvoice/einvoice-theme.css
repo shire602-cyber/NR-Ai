@@ -1,0 +1,13 @@
+html:not(.dark) .einvoice-surface {
+  --einvoice-emerald: 159.7895 81.1966% 22.9412%; /* #0B6A4A */
+  --einvoice-ink: 157.5 28.5714% 10.9804%; /* #14241E */
+  --einvoice-off-white: 75 22.2222% 96.4706%; /* #F7F8F4 */
+  --background: var(--einvoice-off-white);
+  --foreground: var(--einvoice-ink);
+  --card-foreground: var(--einvoice-ink);
+  --brand-500: var(--einvoice-emerald);
+  --brand-600: var(--einvoice-emerald);
+  --accent: var(--einvoice-emerald);
+  --primary: var(--einvoice-emerald);
+  --ring: var(--einvoice-emerald);
+}

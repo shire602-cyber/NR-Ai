@@ -17,7 +17,8 @@
  *                        processInboundEInvoice (a DRAFT bill tagged origin "einvoice")
  *   legal_entity.synchronized                                    -> update the legal entity
  */
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { rowsOf } from "../../ledger/tx";
 import {
@@ -29,14 +30,16 @@ import {
 } from "../../../shared/schema";
 import { storage } from "../../storage";
 import { createLogger } from "../../config/logger";
-import { getEInvoiceProvider, type EInvoiceProvider } from "../einvoice-provider";
+import type { EInvoiceProvider } from "../einvoice-provider";
 import { processInboundEInvoice } from "./inbound";
 import { refreshAndPersist } from "./workflow";
 import {
   findLegalEntitiesByProviderId,
-  legalEntityPatchFrom,
+  peppolAddressFor,
   updateLegalEntityRow,
 } from "./legal-entities";
+import { getCompanyEInvoiceProvider } from "./providers/company-provider";
+import { providerModule } from "./providers/registry";
 
 const log = createLogger("einvoice-provider-events");
 
@@ -92,16 +95,16 @@ export async function enqueueProviderEvent(args: {
   type: CanonicalEventType;
   eventId: string;
   payload: Record<string, unknown>;
-  companyId?: string | null;
+  companyId: string;
 }): Promise<{ id: string | null; duplicate: boolean }> {
   const rows = await db
     .insert(einvoiceProviderEvents)
     .values({
       provider: args.provider,
       environment: args.environment,
-      eventId: args.eventId.slice(0, 255),
+      eventId: `${args.companyId}:${createHash("sha256").update(args.eventId).digest("hex")}`,
       eventType: args.type,
-      companyId: args.companyId ?? null,
+      companyId: args.companyId,
       payload: args.payload,
     })
     .onConflictDoNothing()
@@ -109,7 +112,12 @@ export async function enqueueProviderEvent(args: {
   return { id: rows[0]?.id ?? null, duplicate: rows.length === 0 };
 }
 
-async function claimEvents(opts: { id?: string; limit: number }): Promise<EInvoiceProviderEvent[]> {
+async function claimEvents(opts: {
+  id?: string;
+  companyId?: string;
+  provider?: EInvoiceProvider;
+  limit: number;
+}): Promise<EInvoiceProviderEvent[]> {
   const res = await db.execute(sql`
     UPDATE einvoice_provider_events e
        SET status = 'processing',
@@ -120,6 +128,8 @@ async function claimEvents(opts: { id?: string; limit: number }): Promise<EInvoi
         WHERE ((status = 'pending' AND next_attempt_at <= now())
                OR (status = 'processing' AND locked_until < now()))
           ${opts.id ? sql`AND id = ${opts.id}` : sql``}
+          ${opts.companyId ? sql`AND company_id = ${opts.companyId}` : sql``}
+          ${opts.provider ? sql`AND provider = ${opts.provider.name} AND environment = ${opts.provider.environment}` : sql``}
         ORDER BY received_at
         LIMIT ${opts.limit}
         FOR UPDATE SKIP LOCKED)
@@ -132,11 +142,9 @@ async function claimEvents(opts: { id?: string; limit: number }): Promise<EInvoi
 }
 
 type Outcome = { status: "processed" | "ignored"; companyId?: string | null; note?: string };
+type CompanyEvent = EInvoiceProviderEvent & { companyId: string };
 
-async function handleDelivered(
-  row: EInvoiceProviderEvent,
-  provider: EInvoiceProvider
-): Promise<Outcome> {
+async function handleDelivered(row: CompanyEvent, provider: EInvoiceProvider): Promise<Outcome> {
   const payload = row.payload as Record<string, unknown>;
   const documentId = String(payload.documentId ?? "");
   const docs = await db
@@ -144,13 +152,22 @@ async function handleDelivered(
     .from(einvoiceDocuments)
     .where(
       and(
+        eq(einvoiceDocuments.companyId, row.companyId),
         eq(einvoiceDocuments.provider, row.provider),
-        eq(einvoiceDocuments.providerMessageId, documentId)
+        eq(einvoiceDocuments.providerMessageId, documentId),
+        sql`${einvoiceDocuments.validation}->'submission'->>'environment' = ${row.environment}`
       )
     )
-    .limit(1);
-  const doc = docs[0];
-  if (!doc) return { status: "ignored", note: "no document with this provider id" };
+    .limit(2);
+  const [doc] = docs;
+  if (!doc) {
+    // The callback can arrive before the sender commits the provider message ID.
+    if (row.attempts < 3) throw new Error("Provider document is not attached yet");
+    return { status: "ignored", note: "no document in this company and environment" };
+  }
+  if (docs.length > 1) {
+    return { status: "ignored", note: "provider document id is ambiguous" };
+  }
   const invoice = await storage.getInvoice(doc.invoiceId, doc.companyId);
   const company = await storage.getCompany(doc.companyId);
   if (!invoice || !company) return { status: "ignored", note: "invoice or company gone" };
@@ -164,30 +181,30 @@ async function handleDelivered(
     source: "webhook",
     providerEventId: row.eventId,
   });
-  if (!r.ok && r.status >= 500) throw new Error(r.message);
+  if (!r.ok && r.status >= 500) throw new Error("Provider status could not be refreshed");
   return { status: "processed", companyId: company.id };
 }
 
-async function handleReceived(
-  row: EInvoiceProviderEvent,
-  provider: EInvoiceProvider
-): Promise<Outcome> {
+async function handleReceived(row: CompanyEvent, provider: EInvoiceProvider): Promise<Outcome> {
   if (!provider.inboundOwner || !provider.fetchSource) {
     return { status: "ignored", note: "provider has no document API" };
   }
   const payload = row.payload as Record<string, unknown>;
   const documentId = String(payload.documentId ?? "");
+  const code = String(payload.documentTypeCode ?? "");
   const documentType =
-    String(payload.documentType ?? "") === "credit-note" ||
-    String(payload.documentTypeCode ?? "") === "381"
-      ? "381"
-      : "380";
+    code === "81" || code === "480" || code === "381"
+      ? code
+      : payload.documentType === "credit-note"
+        ? "381"
+        : "380";
   const owner = await provider.inboundOwner(documentId, { documentType }, payload);
   const matches = await findLegalEntitiesByProviderId(
     row.provider,
     row.environment,
     owner.legalEntityId,
-    owner.tin
+    owner.tin,
+    row.companyId
   );
   if (matches.length === 0) {
     return { status: "ignored", note: "document belongs to no company of ours" };
@@ -197,6 +214,7 @@ async function handleReceived(
     return { status: "ignored", note: "legal entity is linked to more than one company" };
   }
   const le = matches[0];
+  if (le.status !== "active") return { status: "ignored", note: "legal entity is not active" };
   const company = await storage.getCompany(le.companyId);
   if (!company) return { status: "ignored", note: "company gone" };
   const xml = await provider.fetchSource(documentId, { documentType });
@@ -211,15 +229,16 @@ async function handleReceived(
     // are final; only infrastructure errors (5xx) are retried.
     const status = (err as { statusCode?: number }).statusCode ?? 500;
     if (status >= 500) throw err;
-    return { status: "processed", companyId: company.id, note: (err as Error).message };
+    return {
+      status: "processed",
+      companyId: company.id,
+      note: "inbound document failed validation",
+    };
   }
   return { status: "processed", companyId: company.id };
 }
 
-async function handleLegalEntity(
-  row: EInvoiceProviderEvent,
-  provider: EInvoiceProvider
-): Promise<Outcome> {
+async function handleLegalEntity(row: CompanyEvent, provider: EInvoiceProvider): Promise<Outcome> {
   const payload = row.payload as Record<string, unknown>;
   const legalEntityId = String(payload.legalEntityId ?? "");
   const tin = typeof payload.tin === "string" ? payload.tin : null;
@@ -227,32 +246,30 @@ async function handleLegalEntity(
     row.provider,
     row.environment,
     legalEntityId,
-    tin
+    tin,
+    row.companyId
   );
   if (rows.length === 0) return { status: "ignored", note: "legal entity not reserved by us" };
+  const [entity] = rows;
+  const confirmedId = entity.legalEntityId ?? legalEntityId;
   // The event says something changed; the resource says what is true now.
   const current =
-    provider.legalEntityPatch && legalEntityId
-      ? await provider.legalEntityPatch(legalEntityId, payload)
+    provider.legalEntityPatch && confirmedId
+      ? await provider.legalEntityPatch(confirmedId, payload)
       : null;
-  for (const le of rows) {
-    const patch = current
-      ? { ...current }
-      : legalEntityPatchFrom({
-          legalEntityId,
-          tin: tin ?? le.tin,
-          status: String(payload.status ?? ""),
-          nameEn: (payload.name as string | undefined) ?? undefined,
-          action: typeof payload.action === "string" ? payload.action : null,
-        });
-    if (patch.status === "active" && le.status !== "active") patch.activatedAt = new Date();
-    patch.lastError = null;
-    await updateLegalEntityRow(le.id, patch);
+  if (!current) throw new Error("Legal entity status could not be confirmed");
+  if (
+    (current.legalEntityId && current.legalEntityId !== confirmedId) ||
+    (current.peppolAddress && current.peppolAddress !== peppolAddressFor(entity.tin))
+  ) {
+    return { status: "ignored", note: "provider returned a different legal entity" };
   }
-  return { status: "processed", companyId: rows.length === 1 ? rows[0].companyId : null };
+  if (current.status === "active" && entity.status !== "active") current.activatedAt = new Date();
+  await updateLegalEntityRow(entity.id, { ...current, lastError: null });
+  return { status: "processed", companyId: entity.companyId };
 }
 
-async function processRow(row: EInvoiceProviderEvent, provider: EInvoiceProvider) {
+async function processRow(row: CompanyEvent, provider: EInvoiceProvider) {
   switch (row.eventType as CanonicalEventType) {
     case "document.delivered":
       return handleDelivered(row, provider);
@@ -269,9 +286,24 @@ export function eventBackoffMs(attempts: number): number {
   return Math.min(60 * 60 * 1000, BASE_BACKOFF_MS * 2 ** Math.max(0, attempts - 1));
 }
 
-async function settle(row: EInvoiceProviderEvent, provider: EInvoiceProvider) {
+async function settle(row: EInvoiceProviderEvent, provider?: EInvoiceProvider) {
+  const claim = and(
+    eq(einvoiceProviderEvents.id, row.id),
+    eq(einvoiceProviderEvents.attempts, row.attempts),
+    eq(einvoiceProviderEvents.status, "processing")
+  );
   try {
-    const out = await processRow(row, provider);
+    const { companyId } = row;
+    const out: Outcome = companyId
+      ? await processRow(
+          { ...row, companyId },
+          provider ??
+            (await getCompanyEInvoiceProvider(companyId, {
+              provider: row.provider,
+              environment: row.environment,
+            }))
+        )
+      : { status: "ignored", note: "event had no verified company scope" };
     await db
       .update(einvoiceProviderEvents)
       .set({
@@ -281,20 +313,19 @@ async function settle(row: EInvoiceProviderEvent, provider: EInvoiceProvider) {
         lastError: out.note ?? null,
         companyId: out.companyId ?? row.companyId ?? null,
       })
-      .where(eq(einvoiceProviderEvents.id, row.id));
+      .where(claim);
     return out.status;
-  } catch (err) {
-    const message = ((err as Error)?.message ?? String(err)).slice(0, 1000);
+  } catch {
     const dead = row.attempts >= MAX_ATTEMPTS;
     await db
       .update(einvoiceProviderEvents)
       .set({
         status: dead ? "dead" : "pending",
         lockedUntil: null,
-        lastError: message,
+        lastError: "Provider event could not be processed",
         nextAttemptAt: new Date(Date.now() + eventBackoffMs(row.attempts)),
       })
-      .where(eq(einvoiceProviderEvents.id, row.id));
+      .where(claim);
     log.warn({ id: row.id, eventType: row.eventType, attempts: row.attempts }, "event retry");
     return dead ? "dead" : "retrying";
   }
@@ -302,15 +333,10 @@ async function settle(row: EInvoiceProviderEvent, provider: EInvoiceProvider) {
 
 /** Process due inbox rows (or one row by id). */
 export async function runProviderEvents(
-  opts: { id?: string; limit?: number; provider?: EInvoiceProvider } = {}
+  opts: { id?: string; companyId?: string; limit?: number; provider?: EInvoiceProvider } = {}
 ): Promise<{ claimed: number; processed: number; failed: number }> {
-  let provider: EInvoiceProvider;
-  try {
-    provider = opts.provider ?? getEInvoiceProvider();
-  } catch {
-    return { claimed: 0, processed: 0, failed: 0 };
-  }
-  const rows = await claimEvents({ id: opts.id, limit: opts.limit ?? 25 });
+  const provider = opts.companyId || opts.id ? opts.provider : undefined;
+  const rows = await claimEvents({ ...opts, limit: opts.limit ?? 25, provider });
   let processed = 0;
   let failed = 0;
   for (const row of rows) {
@@ -328,29 +354,26 @@ export async function runProviderEvents(
  */
 export async function runProviderPoll(
   providerName: string,
-  opts: { provider?: EInvoiceProvider; now?: Date } = {}
+  opts: { provider?: EInvoiceProvider; companyId?: string; now?: Date } = {}
 ): Promise<{ refreshed: number; enqueued: number }> {
-  let provider: EInvoiceProvider;
-  try {
-    provider = opts.provider ?? getEInvoiceProvider();
-  } catch {
+  const module = providerModule(providerName);
+  if (!module || (opts.provider && opts.provider.name !== providerName)) {
     return { refreshed: 0, enqueued: 0 };
   }
-  if (provider.name !== providerName || !provider.listInbound) {
-    return { refreshed: 0, enqueued: 0 };
+  const environment = opts.provider?.environment ?? module.environment(process.env);
+  const providers = new Map<string, Promise<EInvoiceProvider | null>>();
+  function resolve(companyId: string): Promise<EInvoiceProvider | null> {
+    const existing = providers.get(companyId);
+    if (existing) return existing;
+    const provider =
+      opts.provider && opts.companyId === companyId
+        ? Promise.resolve(opts.provider)
+        : getCompanyEInvoiceProvider(companyId, { provider: providerName, environment }).catch(
+            () => null
+          );
+    providers.set(companyId, provider);
+    return provider;
   }
-  const linked = await db
-    .select({ legalEntityId: einvoiceLegalEntities.legalEntityId })
-    .from(einvoiceLegalEntities)
-    .where(
-      and(
-        eq(einvoiceLegalEntities.provider, providerName),
-        eq(einvoiceLegalEntities.environment, provider.environment),
-        eq(einvoiceLegalEntities.status, "active")
-      )
-    )
-    .limit(500);
-  if (linked.length === 0) return { refreshed: 0, enqueued: 0 };
 
   const inFlight = await db
     .select()
@@ -358,53 +381,88 @@ export async function runProviderPoll(
     .where(
       and(
         eq(einvoiceDocuments.provider, providerName),
+        opts.companyId ? eq(einvoiceDocuments.companyId, opts.companyId) : undefined,
+        sql`${einvoiceDocuments.validation}->'submission'->>'environment' = ${environment}`,
         sql`${einvoiceDocuments.providerMessageId} IS NOT NULL`,
         sql`(${einvoiceDocuments.deliveryStatus} IN ('queued', 'sending')
              OR (${einvoiceDocuments.deliveryStatus} = 'delivered'
                  AND ${einvoiceDocuments.reportingStatus} = 'pending'))`
       )
     )
-    .limit(100);
+    .orderBy(asc(einvoiceDocuments.updatedAt), asc(einvoiceDocuments.id));
   let refreshed = 0;
   for (const doc of inFlight) {
-    const invoice = await storage.getInvoice(doc.invoiceId, doc.companyId);
-    const company = await storage.getCompany(doc.companyId);
-    if (!invoice || !company) continue;
+    const provider = await resolve(doc.companyId);
+    if (!provider?.capabilities.getStatus) continue;
     try {
+      const invoice = await storage.getInvoice(doc.invoiceId, doc.companyId);
+      const company = await storage.getCompany(doc.companyId);
+      if (!invoice || !company) continue;
       const r = await refreshAndPersist({ invoice, company, provider, source: "poll" });
       if (r.ok) refreshed++;
-    } catch (err) {
-      log.warn({ invoiceId: doc.invoiceId, err: (err as Error).message }, "poll refresh failed");
+    } catch {
+      log.warn({ invoiceId: doc.invoiceId }, "poll refresh failed");
     }
   }
 
+  const linked = await db
+    .select({
+      companyId: einvoiceLegalEntities.companyId,
+      legalEntityId: einvoiceLegalEntities.legalEntityId,
+      tin: einvoiceLegalEntities.tin,
+    })
+    .from(einvoiceLegalEntities)
+    .where(
+      and(
+        eq(einvoiceLegalEntities.provider, providerName),
+        eq(einvoiceLegalEntities.environment, environment),
+        eq(einvoiceLegalEntities.status, "active"),
+        opts.companyId ? eq(einvoiceLegalEntities.companyId, opts.companyId) : undefined
+      )
+    );
   let enqueued = 0;
-  const legalEntityIds = linked.map((l) => l.legalEntityId).filter((id): id is string => !!id);
-  for (const item of await provider.listInbound({ legalEntityIds })) {
-    const payload: Record<string, unknown> = {
-      documentId: item.providerMessageId,
-      documentNumber: item.documentNumber ?? null,
-      documentType: item.documentType === "381" ? "credit-note" : "invoice",
-      status: "received",
-      source: "poll",
-    };
-    if (item.legalEntityId) payload.ownerLegalEntityId = item.legalEntityId;
-    // Same key as the webhook, so a document seen by both is processed once.
-    const res = await enqueueProviderEvent({
-      provider: providerName,
-      environment: provider.environment,
-      type: "document.received",
-      eventId: providerEventKey("document.received", payload),
-      payload,
-    });
-    if (!res.duplicate) enqueued++;
+  for (const entity of linked) {
+    if (!entity.legalEntityId) continue;
+    const provider = await resolve(entity.companyId);
+    if (!provider?.listInbound) continue;
+    try {
+      for (const item of await provider.listInbound({ legalEntityIds: [entity.legalEntityId] })) {
+        if (item.legalEntityId && item.legalEntityId !== entity.legalEntityId) continue;
+        if (!item.legalEntityId && item.ownerFiscalId && item.ownerFiscalId !== entity.tin)
+          continue;
+        const payload: Record<string, unknown> = {
+          documentId: item.providerMessageId,
+          documentNumber: item.documentNumber ?? null,
+          documentType:
+            item.documentType === "381" || item.documentType === "81" ? "credit-note" : "invoice",
+          documentTypeCode: item.documentType,
+          status: "received",
+          source: "poll",
+        };
+        if (item.legalEntityId) payload.ownerLegalEntityId = item.legalEntityId;
+        const res = await enqueueProviderEvent({
+          provider: providerName,
+          environment,
+          companyId: entity.companyId,
+          type: "document.received",
+          eventId: providerEventKey("document.received", payload),
+          payload,
+        });
+        if (!res.duplicate) enqueued++;
+      }
+    } catch {
+      log.warn(
+        { companyId: entity.companyId, provider: providerName },
+        "provider inbox poll failed"
+      );
+    }
   }
   return { refreshed, enqueued };
 }
 
 /** E1: the A-Cube poll job (einvoice.acubePoll); see runProviderPoll. */
 export function runAcubePoll(
-  opts: { provider?: EInvoiceProvider; now?: Date } = {}
+  opts: { provider?: EInvoiceProvider; companyId?: string; now?: Date } = {}
 ): Promise<{ refreshed: number; enqueued: number }> {
   return runProviderPoll("acube", opts);
 }

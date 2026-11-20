@@ -18,12 +18,17 @@
 import crypto from "node:crypto";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
+import {
+  companyCredentialVariable,
+  sealCompanyCredentials,
+} from "../../server/services/einvoice/providers/company-credentials";
 import { PINT_AE_FIXTURES, fixtureCompany, type PintAeFixture } from "../fixtures/pint-ae/fixtures";
 
 const h = useHarness();
 const TRN = "100123456700003";
 const TIN = "1001234567";
-const SECRET = "whsec_db_test_0123456789abcdef";
+const SECRET = crypto.randomUUID();
+const API_KEY = crypto.randomUUID();
 const WEBHOOK = "/api/webhooks/einvoice/complyance/sandbox";
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -111,9 +116,9 @@ async function complyance(url: URL, init: RequestInit): Promise<Response> {
   const headers = init.headers as Record<string, string>;
   if (!headers["User-Agent"]) return new Response("Forbidden", { status: 403 });
   if (p.startsWith("/v3/connect/")) {
-    if (headers["X-API-Key"] !== "cmp-sandbox-key")
+    if (headers["X-API-Key"] !== API_KEY)
       return json(401, { code: "invalid_api_key", message: "Invalid API key" });
-  } else if (headers.Authorization !== "Bearer cmp-sandbox-key") {
+  } else if (headers.Authorization !== `Bearer ${API_KEY}`) {
     return json(401, { error: "Unauthorized" });
   }
   if (method === "POST" && p === "/v3/connect/companies") {
@@ -306,9 +311,7 @@ beforeAll(() => {
 
 const ENV_KEYS = [
   "EINVOICE_PROVIDER",
-  "COMPLYANCE_API_KEY",
   "COMPLYANCE_ENV",
-  "COMPLYANCE_WEBHOOK_SECRET",
   "COMPLYANCE_WEBHOOK_INLINE",
   "EINVOICE_ASP_BASE_URL",
   "EINVOICE_ASP_API_KEY",
@@ -318,15 +321,26 @@ const ENV_KEYS = [
 const saved: Record<string, string | undefined> = {};
 for (const k of ENV_KEYS) saved[k] = process.env[k];
 
-function useComplyance() {
-  process.env.EINVOICE_PROVIDER = "complyance";
-  process.env.COMPLYANCE_API_KEY = "cmp-sandbox-key";
-  process.env.COMPLYANCE_WEBHOOK_SECRET = SECRET;
+let credentialVariable: string | null = null;
+
+function useComplyance(t: Tenant, webhookSecret: string | null = SECRET) {
+  const context = {
+    companyId: t.company.id,
+    provider: "complyance",
+    environment: "sandbox",
+  } as const;
+  credentialVariable = companyCredentialVariable(context);
+  process.env[credentialVariable] = sealCompanyCredentials(context, {
+    apiKey: API_KEY,
+    webhookSecret: webhookSecret ?? undefined,
+  });
   process.env.COMPLYANCE_WEBHOOK_INLINE = "false";
 }
 
 beforeEach(() => fake.reset());
 afterEach(() => {
+  if (credentialVariable) delete process.env[credentialVariable];
+  credentialVariable = null;
   for (const k of ENV_KEYS) {
     if (saved[k] === undefined) delete process.env[k];
     else process.env[k] = saved[k];
@@ -340,6 +354,8 @@ type Onboarding = typeof import("../../server/services/einvoice/providers/comply
 let events: Events;
 let onboarding: Onboarding;
 let Provider: typeof import("../../server/services/einvoice/providers/complyance").ComplyanceEInvoiceProvider;
+let companyProviderConfiguration: typeof import("../../server/services/einvoice/providers/company-provider").companyProviderConfiguration;
+let runEInvoiceRetries: typeof import("../../server/services/einvoice/workflow").runEInvoiceRetries;
 let generateEInvoiceXML: typeof import("../../server/services/einvoice.service").generateEInvoiceXML;
 let storage: typeof import("../../server/storage").storage;
 beforeAll(async () => {
@@ -349,16 +365,24 @@ beforeAll(async () => {
     await import("../../server/services/einvoice/providers/complyance"));
   ({ generateEInvoiceXML } = await import("../../server/services/einvoice.service"));
   ({ storage } = await import("../../server/storage"));
+  ({ companyProviderConfiguration } =
+    await import("../../server/services/einvoice/providers/company-provider"));
+  ({ runEInvoiceRetries } = await import("../../server/services/einvoice/workflow"));
 });
 
 const poll = () => events.runProviderPoll("complyance");
 const syncPending = () =>
   onboarding.syncPendingComplyanceCompanies(
-    new Provider(),
-    (id) => storage.getCompany(id) as never
+    "sandbox",
+    (id) => storage.getCompany(id),
+    async (company) => {
+      const config = await companyProviderConfiguration(company.id, company.einvoicePartner);
+      return config ? new Provider(config.env) : null;
+    }
   );
 
 function webhook(
+  tenant: Tenant,
   type: string,
   data: Record<string, unknown>,
   opts: { eventId?: string; secret?: string; body?: string; timestamp?: string } = {}
@@ -378,7 +402,7 @@ function webhook(
     .createHmac("sha256", opts.secret ?? SECRET)
     .update(body)
     .digest("hex");
-  return h.anon.post(WEBHOOK, undefined, {
+  return h.anon.post(`${WEBHOOK}/${tenant.company.id}`, undefined, {
     raw: Buffer.from(opts.body ?? body, "utf8"),
     headers: {
       "Content-Type": "application/json",
@@ -418,8 +442,10 @@ const connect = (t: Tenant, adminEmail = "owner@pearl.example") =>
   t.as.post(`/api/companies/${t.company.id}/einvoicing/complyance/connect`, { adminEmail });
 
 async function readyTenant(columns: Record<string, unknown> = SELLER_COLUMNS) {
-  useComplyance();
-  const t = await h.createTenant({ companyColumns: columns });
+  const t = await h.createTenant({
+    companyColumns: { ...columns, einvoice_partner: "complyance" },
+  });
+  useComplyance(t);
   fake.authorised = true;
   fake.ready = true;
   const r = await connect(t);
@@ -441,10 +467,18 @@ describe("E2 without Complyance configured: nothing named, nothing sent", () => 
     expect(prov.status).toBe(200);
     expect(prov.body).toMatchObject({ provider: null, tin: TIN });
     expect(prov.body.goLive.timeline.large).toBeTruthy();
-    process.env.EINVOICE_PROVIDER = "complyance"; // selected but no key
-    expect(
-      (await t.as.get(`/api/companies/${t.company.id}/einvoicing/provider`)).body.provider
-    ).toBeNull();
+    expect(prov.body.status).toBe("not_selected");
+    const choice = await t.as.put(`/api/companies/${t.company.id}/einvoicing/partner`, {
+      partner: "complyance",
+    });
+    expect(choice.status, choice.text).toBe(200);
+    const selected = await t.as.get(`/api/companies/${t.company.id}/einvoicing/provider`);
+    expect(selected.body).toMatchObject({
+      provider: null,
+      chosenProvider: "complyance",
+      environment: "sandbox",
+      status: "not_configured",
+    });
     const card = await t.as.get(`/api/companies/${t.company.id}/einvoicing/complyance`);
     expect(card.body).toMatchObject({
       configured: false,
@@ -457,15 +491,17 @@ describe("E2 without Complyance configured: nothing named, nothing sent", () => 
     const sub = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
     expect(sub.status).toBe(503);
     expect(sub.body.code).toBe("EINVOICE_PROVIDER_NOT_CONFIGURED");
-    expect((await webhook("invoice.passed", { documentId: "x" })).status).toBe(503);
+    expect((await webhook(t, "invoice.passed", { documentId: "x" })).status).toBe(503);
     expect(fake.posts + fake.creates).toBe(0);
   });
 });
 
 describe("E2 onboarding gates sending", () => {
   it("before EmaraTax -> reserved; registered -> pending; ready -> active; inactive -> 409", async () => {
-    useComplyance();
-    const t = await h.createTenant({ companyColumns: SELLER_COLUMNS });
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
+    });
+    useComplyance(t);
     const prov = await t.as.get(`/api/companies/${t.company.id}/einvoicing/provider`);
     expect(prov.body.provider).toMatchObject({
       id: "complyance",
@@ -533,7 +569,7 @@ describe("E2 onboarding gates sending", () => {
 
     // The source is archived at Complyance; an onboarding event re-reads it -> sending blocked.
     fake.companyStatus = "inactive";
-    const w = await webhook("company.data.modified", { companyId: fake.companyId });
+    const w = await webhook(t, "company.data.modified", { companyId: fake.companyId });
     expect(w.status, w.text).toBe(200);
     await events.runProviderEvents();
     const delinked = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
@@ -552,7 +588,9 @@ describe("E2 submit, two tracks and history", () => {
       t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {}),
       t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {}),
     ]);
-    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    expect([a.status, b.status]).toEqual([202, 202]);
+    expect(fake.posts).toBe(0);
+    await Promise.all([runEInvoiceRetries(), runEInvoiceRetries()]);
     expect(fake.posts).toBe(1);
     expect((await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {})).status).toBe(409);
     expect(fake.posts).toBe(1);
@@ -571,10 +609,12 @@ describe("E2 submit, two tracks and history", () => {
     // invoice.passed says only "validated"; the re-read decides. Retries are absorbed.
     sent.state = "delivery_success";
     expect(
-      (await webhook("invoice.passed", { documentId: sent.id }, { eventId: "e1" })).body.duplicate
+      (await webhook(t, "invoice.passed", { documentId: sent.id }, { eventId: "e1" })).body
+        .duplicate
     ).toBe(false);
     expect(
-      (await webhook("invoice.passed", { documentId: sent.id }, { eventId: "e1" })).body.duplicate
+      (await webhook(t, "invoice.passed", { documentId: sent.id }, { eventId: "e1" })).body
+        .duplicate
     ).toBe(true);
     await events.runProviderEvents();
     s = await statusOf(t, inv.id);
@@ -609,7 +649,8 @@ describe("E2 submit, two tracks and history", () => {
     const inv = await issuedInvoice(t);
     fake.nextSubmit = ["422"];
     const r = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
-    expect(r.body.status).toBe("rejected");
+    expect(r.body.status).toBe("queued");
+    await runEInvoiceRetries();
     let s = await statusOf(t, inv.id);
     expect(s.rejection).toMatchObject({ code: "COMPLYANCE_VALIDATION", resubmittable: true });
     expect(s.rejection.reasons[0]).toMatchObject({
@@ -617,8 +658,9 @@ describe("E2 submit, two tracks and history", () => {
       field: "parties.buyer.taxIds",
     });
     const re = await t.as.post(`/api/invoices/${inv.id}/einvoice/resubmit`, {});
-    expect(re.status, re.text).toBe(200);
+    expect(re.status, re.text).toBe(202);
     expect(re.body.tracks.delivery.status).toBe("queued");
+    await runEInvoiceRetries();
     expect(fake.posts).toBe(2);
     expect(fake.docs.size).toBe(1); // Complyance updated the stored document, same id
     s = await statusOf(t, inv.id);
@@ -629,6 +671,7 @@ describe("E2 submit, two tracks and history", () => {
     const t = await readyTenant();
     const inv = await issuedInvoice(t);
     await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
+    await runEInvoiceRetries();
     const d = docOf(t, inv.number)!;
     d.state = "final_invalid";
     d.isTerminal = true;
@@ -651,6 +694,7 @@ describe("E2 submit, two tracks and history", () => {
 
     const inv2 = await issuedInvoice(t);
     await t.as.post(`/api/invoices/${inv2.id}/einvoice/submit`, {});
+    await runEInvoiceRetries();
     const d2 = docOf(t, inv2.number)!;
     d2.state = "final_invalid";
     d2.isTerminal = true;
@@ -676,8 +720,9 @@ describe("E2 submit, two tracks and history", () => {
     const inv = await issuedInvoice(t);
     fake.nextSubmit = ["network"];
     const first = await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
-    expect(first.body.status).toBe("failed");
-    const { runEInvoiceRetries } = await import("../../server/services/einvoice/workflow");
+    expect(first.body.status).toBe("queued");
+    await runEInvoiceRetries();
+    expect((await statusOf(t, inv.id)).status).toBe("failed");
     await runEInvoiceRetries(new Date(Date.now() + 2 * 60_000));
     expect(fake.docs.size).toBe(1); // the retry was refused as a duplicate, nothing new stored
     let s = await statusOf(t, inv.id);
@@ -749,31 +794,33 @@ describe("E2 submit, two tracks and history", () => {
 
 describe("E2 webhook authentication", () => {
   it("refuses a bad signature, a tampered body, a stale stamp and an unset secret", async () => {
-    await readyTenant();
-    const bad = await webhook("invoice.passed", { documentId: "x" }, { secret: "other" });
+    const t = await readyTenant();
+    const bad = await webhook(t, "invoice.passed", { documentId: "x" }, { secret: "other" });
     expect(bad.status).toBe(401);
     expect(bad.body).toMatchObject({
       code: "EINVOICE_WEBHOOK_BAD_SIGNATURE",
       reason: "bad_signature",
     });
     const tampered = await webhook(
+      t,
       "invoice.passed",
       { documentId: "x" },
       { body: '{"eventId":"forged"}' }
     );
     expect(tampered.body.reason).toBe("bad_signature");
     const stale = await webhook(
+      t,
       "invoice.passed",
       { documentId: "x" },
       { timestamp: new Date(Date.now() - 2 * 3600_000).toISOString() }
     );
     expect(stale.body.reason).toBe("stale");
-    expect((await webhook("isv.credits.pool.low", {})).body).toEqual({
+    expect((await webhook(t, "isv.credits.pool.low", {})).body).toEqual({
       received: true,
       ignored: true,
     });
-    delete process.env.COMPLYANCE_WEBHOOK_SECRET;
-    expect((await webhook("invoice.passed", { documentId: "x" })).status).toBe(503);
+    useComplyance(t, null);
+    expect((await webhook(t, "invoice.passed", { documentId: "x" })).status).toBe(503);
   });
 });
 
@@ -796,7 +843,7 @@ describe("E2 inbound: purchase.invoice.stored -> draft bill tagged e-invoice", (
     );
     const id = "01JPURCHASE000000000000142";
     fake.purchases.push({ id, number: "AE-INV-005", xml, companyId: fake.companyId });
-    const w = await webhook("purchase.invoice.stored", {
+    const w = await webhook(t, "purchase.invoice.stored", {
       documentId: id,
       documentNumber: "AE-INV-005",
       documentType: "tax_invoice",
@@ -828,6 +875,7 @@ describe("E2 + F16: no FTA reporting before the mandate applies", () => {
     );
     const inv = await issuedInvoice(t);
     await t.as.post(`/api/invoices/${inv.id}/einvoice/submit`, {});
+    await runEInvoiceRetries();
     const d = docOf(t, inv.number)!;
     d.state = "final_valid";
     d.isTerminal = true;
