@@ -16,11 +16,14 @@ import { defineMachine, withLedgerTx, type LedgerTx } from "../ledger";
 import { todayIso } from "../ledger/normalize";
 import { lockVatGroupMembership, lockVatReturnCompanies } from "../ledger/vat-lock";
 import {
+  assertVerifiedVatGroup,
   getFilingVatGroup,
   loadVatGroupForRepresentative,
   resolveFilingVatGroup,
+  UNVERIFIED_VAT_GROUP,
   withFilingVatGroup,
-  type VatGroupInfo,
+  type ResolvedVatGroup,
+  type VerifiedVatGroup,
 } from "../ledger/vat-group-scope";
 import { getVatReturnSettlement } from "./vat-settlement.service";
 import { computeVat201, loadVatCompany, type VatComputation } from "./vat-engine";
@@ -159,15 +162,26 @@ export async function findReturnForPeriod(
   return row;
 }
 
-async function lockVatReturnScope(tx: LedgerTx, companyId: string, existing?: VatReturn) {
+async function lockVatReturnScope(
+  tx: LedgerTx,
+  companyId: string,
+  existing?: VatReturn
+): Promise<ResolvedVatGroup> {
   const current = await loadVatGroupForRepresentative(companyId, tx);
-  const group = existing ? await resolveFilingVatGroup(tx, existing, current) : current;
+  const group = await resolveFilingVatGroup(tx, existing, current);
   // Each member's shared journal lock conflicts with the exclusive lock held here.
-  await lockVatReturnCompanies(tx, [companyId, ...(group?.memberIds ?? [])]);
+  await lockVatReturnCompanies(tx, [
+    companyId,
+    ...(group === UNVERIFIED_VAT_GROUP ? [] : (group?.memberIds ?? [])),
+  ]);
   return group;
 }
 
-async function loadVatReturnForUpdate(tx: LedgerTx, companyId: string, id: string) {
+async function loadVatReturnForUpdate(
+  tx: LedgerTx,
+  companyId: string,
+  id: string
+): Promise<{ row: VatReturn; group: ResolvedVatGroup }> {
   // Keep the return's scope stable while finding the companies to lock, then
   // take those locks before the row lock, including on an amendment chain.
   await lockVatGroupMembership(tx, companyId);
@@ -239,6 +253,7 @@ export async function generateVatReturn(input: {
     const existing = await findReturnForPeriod(tx, input.companyId, from, to);
     assertReturnIsEditable(existing);
     const group = await lockVatReturnScope(tx, input.companyId, existing);
+    assertVerifiedVatGroup(group);
     await assertPeriodNotLocked(input.companyId, to, tx);
     const computation = await computeVat201({ companyId: input.companyId, from, to }, tx, group);
     const snapshot = reconciliationSnapshot(computation);
@@ -302,7 +317,7 @@ export async function generateVatReturn(input: {
 async function prepareReturnForFinalization(
   tx: LedgerTx,
   vatReturn: VatReturn,
-  group: VatGroupInfo | null,
+  group: VerifiedVatGroup | null,
   input: { userId: string; overrideReason?: string | null; req?: Request }
 ) {
   const from = dateOf(vatReturn.periodStart);
@@ -459,6 +474,7 @@ export async function markVatReturnReady(input: {
       throw new DomainError("INVALID_TRANSITION", 409, { from: existing.status, to: "ready" });
     }
     await assertNoOtherFinalReturn(tx, existing);
+    assertVerifiedVatGroup(group);
     const reconciliation = await prepareReturnForFinalization(tx, existing, group, input);
     return transitionReturn(
       tx,
@@ -538,6 +554,7 @@ export async function submitVatReturn(input: {
     if (!vatReturnMachine.can(existing.status, target)) {
       throw new DomainError("INVALID_TRANSITION", 409, { from: existing.status, to: target });
     }
+    assertVerifiedVatGroup(group);
     await assertNoOtherFinalReturn(tx, existing);
     await assertPeriodNotLocked(existing.companyId, existing.periodEnd, tx);
     if (filedOn && existing.status === "submitted") {
@@ -556,10 +573,7 @@ export async function submitVatReturn(input: {
         ? {}
         : await prepareReturnForFinalization(tx, existing, group, input);
     const snapshot = reconciliation.reconciliationSnapshot ?? existing.reconciliationSnapshot;
-    const filingSnapshot =
-      group && getFilingVatGroup(snapshot) === undefined
-        ? withFilingVatGroup(snapshot, group)
-        : snapshot;
+    const filingSnapshot = group ? withFilingVatGroup(snapshot, group) : snapshot;
     const declaration = filedOn ? new Date(`${filedOn}T08:00:00Z`) : null;
     return transitionReturn(
       tx,
@@ -604,6 +618,7 @@ export async function amendVatReturn(input: {
         "Only a submitted or filed return can be amended; regenerate the draft instead."
       );
     }
+    assertVerifiedVatGroup(group);
     const from = new Date(original.periodStart).toISOString().slice(0, 10);
     const to = new Date(original.periodEnd).toISOString().slice(0, 10);
     const computation = await computeVat201({ companyId: original.companyId, from, to }, tx, group);

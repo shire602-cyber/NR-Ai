@@ -1,5 +1,7 @@
 import { and, eq, or, sql } from "drizzle-orm";
 import { vatReturns, type VatReturn } from "../../shared/schema";
+import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
+import { DomainError } from "../errors";
 import { isUuid } from "./normalize";
 import { ledgerQueryable, rowsOf } from "./tx";
 import type { LedgerTx } from "./types";
@@ -9,6 +11,28 @@ export interface VatGroupInfo {
   name: string;
   groupTrn: string;
   memberIds: string[];
+}
+
+export interface VerifiedVatGroup extends VatGroupInfo {
+  provenance: "recorded" | "audit";
+}
+
+export const UNVERIFIED_VAT_GROUP = Symbol("unverified VAT group membership");
+export type ResolvedVatGroup = VerifiedVatGroup | null | typeof UNVERIFIED_VAT_GROUP;
+
+export function vatGroupVerificationRequiredError(): DomainError {
+  return new DomainError(
+    "VAT_GROUP_MEMBERSHIP_VERIFICATION_REQUIRED",
+    409,
+    undefined,
+    "VAT group membership for this period must be verified before VAT changes can be recorded."
+  );
+}
+
+export function assertVerifiedVatGroup(
+  group: ResolvedVatGroup
+): asserts group is VerifiedVatGroup | null {
+  if (group === UNVERIFIED_VAT_GROUP) throw vatGroupVerificationRequiredError();
 }
 
 type ReturnScope = Pick<
@@ -21,16 +45,17 @@ function memberIds(value: unknown): string[] | undefined {
   return [...new Set(value.map((id: string) => id.toLowerCase()))].sort();
 }
 
-/** Undefined identifies an older return whose filing scope was not captured. */
-export function getFilingVatGroup(snapshot: unknown): VatGroupInfo | null | undefined {
-  const group = (snapshot as { filingVatGroup?: Partial<VatGroupInfo> | null } | null)
+/** An unlabelled legacy snapshot may contain a guess. Recover it from audit evidence. */
+export function getFilingVatGroup(snapshot: unknown): VerifiedVatGroup | undefined {
+  const group = (snapshot as { filingVatGroup?: Partial<VerifiedVatGroup> | null } | null)
     ?.filingVatGroup;
-  if (group === null) return null;
   if (
     !group ||
+    (group.provenance !== "recorded" && group.provenance !== "audit") ||
     !isUuid(group.groupId) ||
     typeof group.name !== "string" ||
-    typeof group.groupTrn !== "string"
+    typeof group.groupTrn !== "string" ||
+    !validateUaeTrn(group.groupTrn).valid
   )
     return undefined;
   const members = memberIds(group.memberIds);
@@ -40,12 +65,13 @@ export function getFilingVatGroup(snapshot: unknown): VatGroupInfo | null | unde
       name: group.name,
       groupTrn: group.groupTrn,
       memberIds: members,
+      provenance: group.provenance,
     };
   }
 }
 
 /** The filing scope is independent of the reconciliation evidence in the rest of this object. */
-export function withFilingVatGroup(snapshot: unknown, group: VatGroupInfo | null) {
+export function withFilingVatGroup(snapshot: unknown, group: VerifiedVatGroup | null) {
   return { ...(snapshot as Record<string, unknown> | null), filingVatGroup: group };
 }
 
@@ -80,12 +106,16 @@ export async function loadVatGroupForRepresentative(
 async function recoverFilingVatGroup(
   tx: LedgerTx,
   vatReturn: ReturnScope,
-  current: VatGroupInfo
-): Promise<VatGroupInfo> {
-  const [event] = rowsOf<{ details: string | null }>(
+  groupId: string
+): Promise<VerifiedVatGroup | typeof UNVERIFIED_VAT_GROUP> {
+  const [event] = rowsOf<{
+    action: string;
+    closingDetails: string | null;
+    membershipDetails: string | null;
+  }>(
     await tx.execute(sql`
     WITH first_close AS (
-      SELECT created_at, chain_key, seq
+      SELECT action, details, created_at, chain_key, seq
         FROM audit_logs
        WHERE company_id = ${vatReturn.companyId}
          AND resource_type = 'vat_return' AND resource_id = ${vatReturn.id}
@@ -93,41 +123,65 @@ async function recoverFilingVatGroup(
        ORDER BY (action = 'vat_return.submitted') DESC, seq NULLS LAST, created_at
        LIMIT 1
     )
-    SELECT change.details
+    SELECT c.action, c.details AS "closingDetails", change.details AS "membershipDetails"
       FROM first_close c
       CROSS JOIN LATERAL (
-        SELECT details FROM audit_logs
-         WHERE company_id = ${vatReturn.companyId}
-           AND resource_type = 'vat_group' AND resource_id = ${current.groupId}
-           AND action = 'vat.group.upsert'
-           AND CASE WHEN chain_key = c.chain_key AND seq IS NOT NULL AND c.seq IS NOT NULL
-                 THEN seq < c.seq ELSE created_at <= c.created_at END
-         ORDER BY CASE WHEN c.seq IS NOT NULL THEN seq END DESC NULLS LAST, created_at DESC
+        SELECT candidate.details, candidate.created_at,
+               bool_and(candidate.comparable) OVER () AS all_comparable,
+               bool_or(candidate.comparable) OVER () AS any_comparable,
+               count(*) OVER (PARTITION BY candidate.created_at) AS same_time_count
+          FROM (
+            SELECT details, seq, created_at,
+                   COALESCE(chain_key = c.chain_key AND seq IS NOT NULL AND c.seq IS NOT NULL, false) AS comparable
+              FROM audit_logs
+             WHERE company_id = ${vatReturn.companyId}
+               AND resource_type = 'vat_group' AND resource_id = ${groupId}
+               AND action = 'vat.group.upsert'
+          ) candidate
+         WHERE CASE WHEN candidate.comparable THEN candidate.seq < c.seq
+                    ELSE candidate.created_at <= c.created_at END
+         ORDER BY CASE WHEN candidate.comparable THEN candidate.seq END DESC NULLS LAST,
+                  candidate.created_at DESC
          LIMIT 1
       ) change
+     WHERE change.all_comparable
+        OR (NOT change.any_comparable AND change.same_time_count = 1 AND change.created_at < c.created_at)
   `)
   );
-  if (event?.details) {
+  if (event?.membershipDetails) {
     try {
-      const { after } = JSON.parse(event.details) as {
+      if (event.action === "vat_return.filed") {
+        // Without a submission event, a later administrative filing cannot prove the first closure.
+        const closing = JSON.parse(event.closingDetails ?? "null") as {
+          before?: { status?: string };
+        } | null;
+        if (!["draft", "pending_review", "ready"].includes(closing?.before?.status ?? "")) {
+          return UNVERIFIED_VAT_GROUP;
+        }
+      }
+      const { after } = JSON.parse(event.membershipDetails) as {
         after?: { name?: unknown; groupTrn?: unknown; members?: unknown };
       };
       const members = memberIds(after?.members);
-      if (members?.includes(vatReturn.companyId)) {
+      if (
+        members?.includes(vatReturn.companyId) &&
+        typeof after?.name === "string" &&
+        typeof after.groupTrn === "string" &&
+        validateUaeTrn(after.groupTrn).valid
+      ) {
         return {
-          groupId: current.groupId,
-          name: typeof after?.name === "string" ? after.name : current.name,
-          groupTrn: typeof after?.groupTrn === "string" ? after.groupTrn : current.groupTrn,
+          groupId,
+          name: after.name,
+          groupTrn: after.groupTrn,
           memberIds: members,
+          provenance: "audit",
         };
       }
     } catch {
       // Some older audit rows lack readable evidence.
     }
   }
-  // The original membership cannot be inferred without evidence. Use currently associated
-  // members, and snapshot this fallback before the next edit so it cannot drift further.
-  return current;
+  return UNVERIFIED_VAT_GROUP;
 }
 
 function wasClosed(vatReturn: ReturnScope) {
@@ -137,33 +191,42 @@ function wasClosed(vatReturn: ReturnScope) {
 /** Older amendments could omit group membership and the group ID. Follow their original return. */
 export async function resolveFilingVatGroup(
   tx: LedgerTx,
-  vatReturn: ReturnScope,
+  vatReturn: ReturnScope | undefined,
   current: VatGroupInfo | null
-): Promise<VatGroupInfo | null> {
+): Promise<ResolvedVatGroup> {
+  const configured = current ? { ...current, provenance: "recorded" as const } : null;
+  if (!vatReturn) return configured;
   const seen = new Set<string>();
   let row: ReturnScope | undefined = vatReturn;
   while (row && !seen.has(row.id)) {
     seen.add(row.id);
     const frozen = getFilingVatGroup(row.reconciliationSnapshot);
-    if (frozen !== undefined) return frozen;
-    if (wasClosed(row) && current?.groupId === row.vatGroupId && current) {
-      return recoverFilingVatGroup(tx, row, current);
+    if (
+      frozen?.memberIds.includes(row.companyId) &&
+      (!row.vatGroupId || frozen.groupId === row.vatGroupId)
+    ) {
+      return frozen;
     }
-    if (!row.amendsReturnId) return wasClosed(row) ? null : current;
+    if (!row.amendsReturnId) {
+      if (wasClosed(row)) {
+        return row.vatGroupId ? recoverFilingVatGroup(tx, row, row.vatGroupId) : null;
+      }
+      return row.id === vatReturn.id ? configured : UNVERIFIED_VAT_GROUP;
+    }
     const [original]: VatReturn[] = await tx
       .select()
       .from(vatReturns)
       .where(and(eq(vatReturns.id, row.amendsReturnId), eq(vatReturns.companyId, row.companyId)));
     row = original;
   }
-  return null;
+  return UNVERIFIED_VAT_GROUP;
 }
 
-/** Resolve older scopes while membership is frozen, then persist them before its next edit. */
+/** Recover older scopes from evidence before a group edit. Unverified returns remain unresolved. */
 export async function legacyFilingVatGroups(
   tx: LedgerTx,
   representativeId: string,
-  current: VatGroupInfo
+  groupId: string
 ) {
   const rows: VatReturn[] = await tx
     .select()
@@ -172,17 +235,17 @@ export async function legacyFilingVatGroups(
       and(
         eq(vatReturns.companyId, representativeId),
         sql`${vatReturns.status} IN ('submitted', 'filed', 'amended')`,
-        sql`NOT COALESCE(${vatReturns.reconciliationSnapshot} ? 'filingVatGroup', false)`,
+        sql`NOT COALESCE(${vatReturns.reconciliationSnapshot} #>> '{filingVatGroup,provenance}' IN ('recorded', 'audit'), false)`,
         or(
-          eq(vatReturns.vatGroupId, current.groupId),
+          eq(vatReturns.vatGroupId, groupId),
           sql`${vatReturns.vatGroupId} IS NULL AND ${vatReturns.amendsReturnId} IS NOT NULL`
         )
       )
     );
   const scopes = [];
   for (const row of rows) {
-    const group = await resolveFilingVatGroup(tx, row, current);
-    if (group?.groupId === current.groupId) scopes.push({ row, group });
+    const group = await resolveFilingVatGroup(tx, row, null);
+    if (group !== UNVERIFIED_VAT_GROUP && group?.groupId === groupId) scopes.push({ row, group });
   }
   return scopes;
 }

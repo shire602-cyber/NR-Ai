@@ -688,6 +688,7 @@
   "serverErrors.VAT_RECOVERY_RULE_NOT_FOUND": "The VAT recovery rule could not be found.",
   "serverErrors.VAT_RETURN_EXISTS": "A VAT return for this period already exists.",
   "serverErrors.VAT_RETURN_FINAL": "That period has a final VAT return. Use a VAT amendment instead.",
+  "serverErrors.VAT_GROUP_MEMBERSHIP_VERIFICATION_REQUIRED": "VAT group membership for this period must be verified before VAT changes can be recorded.",
   "serverErrors.VAT_RETURN_NOT_FINAL": "Only a final VAT return can be amended.",
   "serverErrors.VAT_RETURN_NOT_FOUND": "The VAT return could not be found.",
   "serverErrors.VAT_RETURN_NOT_SETTLED": "This VAT return has no recorded payment or refund.",

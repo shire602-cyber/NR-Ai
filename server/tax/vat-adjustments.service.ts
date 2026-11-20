@@ -29,6 +29,8 @@ import { postJournal, reverseEntry, withLedgerTx } from "../ledger";
 import {
   legacyFilingVatGroups,
   loadVatGroupForRepresentative,
+  UNVERIFIED_VAT_GROUP,
+  vatGroupVerificationRequiredError,
   withFilingVatGroup,
 } from "../ledger/vat-group-scope";
 import {
@@ -463,7 +465,9 @@ export async function addReturnAdjustment(input: {
   });
   return withLedgerTx(async (tx) => {
     await lockVatReturns(tx, input.companyId, "shared");
-    if (await findFiledVatPeriod(tx, input.companyId, period.from, period.to)) {
+    const closure = await findFiledVatPeriod(tx, input.companyId, period.from, period.to);
+    if (closure === UNVERIFIED_VAT_GROUP) throw vatGroupVerificationRequiredError();
+    if (closure) {
       throw new DomainError(
         "VAT_RETURN_FINAL",
         409,
@@ -529,7 +533,9 @@ export async function deleteReturnAdjustment(
       .where(and(eq(vatReturnAdjustments.id, id), eq(vatReturnAdjustments.companyId, companyId)))
       .for("update");
     if (!row) throw new DomainError("VAT_ADJUSTMENT_NOT_FOUND", 404);
-    if (await findFiledVatPeriod(tx, companyId, row.periodStart, row.periodEnd)) {
+    const closure = await findFiledVatPeriod(tx, companyId, row.periodStart, row.periodEnd);
+    if (closure === UNVERIFIED_VAT_GROUP) throw vatGroupVerificationRequiredError();
+    if (closure) {
       throw new DomainError("VAT_RETURN_FINAL", 409);
     }
     await tx.delete(vatReturnAdjustments).where(eq(vatReturnAdjustments.id, id));
@@ -568,7 +574,7 @@ export async function upsertVatGroup(input: {
     await lockVatGroupMembership(tx, input.representativeCompanyId);
     const existing = await loadVatGroupForRepresentative(input.representativeCompanyId, tx);
     const legacy = existing
-      ? await legacyFilingVatGroups(tx, input.representativeCompanyId, existing)
+      ? await legacyFilingVatGroups(tx, input.representativeCompanyId, existing.groupId)
       : [];
     const members = new Set([input.representativeCompanyId, ...input.memberCompanyIds]);
     // The posting guard reads membership while holding the company's shared lock.

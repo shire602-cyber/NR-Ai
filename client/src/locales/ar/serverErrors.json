@@ -688,6 +688,7 @@
   "serverErrors.VAT_RECOVERY_RULE_NOT_FOUND": "تعذّر العثور على قاعدة استرداد الضريبة.",
   "serverErrors.VAT_RETURN_EXISTS": "يوجد إقرار ضريبة قيمة مضافة لهذه الفترة بالفعل.",
   "serverErrors.VAT_RETURN_FINAL": "لهذه الفترة إقرار نهائي. استخدم تعديلًا للإقرار بدلًا من ذلك.",
+  "serverErrors.VAT_GROUP_MEMBERSHIP_VERIFICATION_REQUIRED": "يجب التحقق من عضوية المجموعة الضريبية لهذه الفترة قبل تسجيل تغييرات ضريبة القيمة المضافة.",
   "serverErrors.VAT_RETURN_NOT_FINAL": "لا يمكن تعديل إلا إقرار ضريبة القيمة المضافة النهائي.",
   "serverErrors.VAT_RETURN_NOT_FOUND": "تعذّر العثور على إقرار ضريبة القيمة المضافة.",
   "serverErrors.VAT_RETURN_NOT_SETTLED": "لا توجد دفعة أو استرداد مسجّل لإقرار الضريبة هذا.",

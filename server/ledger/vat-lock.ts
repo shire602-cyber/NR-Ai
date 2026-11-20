@@ -29,9 +29,9 @@ import { DomainError } from "../errors";
 import { rowsOf } from "./tx";
 import type { LedgerTx } from "./types";
 import {
-  getFilingVatGroup,
-  loadVatGroupForRepresentative,
   resolveFilingVatGroup,
+  UNVERIFIED_VAT_GROUP,
+  vatGroupVerificationRequiredError,
 } from "./vat-group-scope";
 
 /** Journal sources whose documents the VAT engine reports, whatever their lines. */
@@ -102,6 +102,8 @@ export interface FiledVatPeriod {
   periodEnd: string;
 }
 
+type VatPeriodClosure = FiledVatPeriod | typeof UNVERIFIED_VAT_GROUP;
+
 function nextDay(iso: string): string {
   const d = new Date(`${iso}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + 1);
@@ -148,7 +150,7 @@ export async function findFiledVatPeriod(
   companyId: string,
   from: string,
   to = from
-): Promise<FiledVatPeriod | null> {
+): Promise<VatPeriodClosure | null> {
   const memberId = companyId.toLowerCase();
   // Start at the relatively small group table. OFFSET 0 retains the per-representative
   // LATERAL lookup, which can use the company/status/period index before checking member IDs.
@@ -162,7 +164,8 @@ export async function findFiledVatPeriod(
        ORDER BY period_end DESC LIMIT 1
     )
     SELECT id, status, company_id AS "companyId", amends_return_id AS "amendsReturnId",
-           vat_group_id AS "vatGroupId", reconciliation_snapshot AS "reconciliationSnapshot",
+           vat_group_id AS "vatGroupId",
+           jsonb_build_object('filingVatGroup', reconciliation_snapshot -> 'filingVatGroup') AS "reconciliationSnapshot",
            period_start::date::text AS ps, period_end::date::text AS pe
       FROM (
         SELECT id, status, company_id, amends_return_id, vat_group_id, reconciliation_snapshot,
@@ -179,11 +182,6 @@ export async function findFiledVatPeriod(
                AND r.status IN ('submitted', 'filed')
                AND r.period_end >= ${from}::date
                AND r.period_start < ${to}::date + interval '1 day'
-               AND CASE
-                 WHEN jsonb_typeof(r.reconciliation_snapshot #> '{filingVatGroup,memberIds}') = 'array'
-                 THEN (r.reconciliation_snapshot #> '{filingVatGroup,memberIds}') ? ${companyId}::uuid::text
-                 ELSE true
-               END
              OFFSET 0
           ) r
          WHERE NOT EXISTS (SELECT 1 FROM own_return) AND g.representative_company_id <> ${companyId}
@@ -200,17 +198,26 @@ export async function findFiledVatPeriod(
     ps: string;
     pe: string;
   }>(res);
+  let unresolved = false;
   for (const r of candidates) {
-    const period = { vatReturnId: r.id, status: r.status, periodStart: r.ps, periodEnd: r.pe };
-    if (r.companyId === memberId) return period;
-    const saved = getFilingVatGroup(r.reconciliationSnapshot);
-    const group =
-      saved !== undefined
-        ? saved
-        : await resolveFilingVatGroup(tx, r, await loadVatGroupForRepresentative(r.companyId, tx));
-    if (group?.memberIds.includes(memberId)) return period;
+    const group = await resolveFilingVatGroup(tx, r, null);
+    if (group === UNVERIFIED_VAT_GROUP) {
+      unresolved = true;
+      continue;
+    }
+    const ownReturn = r.companyId === memberId;
+    if (ownReturn || group?.memberIds.includes(memberId)) {
+      return {
+        vatReturnId: r.id,
+        status: r.status,
+        periodStart: r.ps,
+        periodEnd: r.pe,
+      };
+    }
   }
-  return null;
+  // Without historical evidence any company could have been a member. Block VAT
+  // changes only for the overlapping period so old books cannot drift in the meantime.
+  return unresolved ? UNVERIFIED_VAT_GROUP : null;
 }
 
 async function touchesVatAccount(
@@ -234,7 +241,8 @@ async function touchesVatAccount(
 }
 
 /** The 409 refusal, with the correction paths the user can take. */
-export function vatPeriodFiledError(period: FiledVatPeriod, postingDate: string): DomainError {
+export function vatPeriodFiledError(period: VatPeriodClosure, postingDate: string): DomainError {
+  if (period === UNVERIFIED_VAT_GROUP) return vatGroupVerificationRequiredError();
   const nextOpen = nextDay(period.periodEnd);
   return new DomainError(
     "VAT_PERIOD_FILED",
@@ -300,18 +308,17 @@ export async function assertVatPeriodOpen(
       dates.push(original.d);
     }
   }
+  const affectsVat =
+    VAT_DOCUMENT_SOURCES.has(input.source ?? "") ||
+    VAT_DOCUMENT_SOURCES.has(originalSource ?? "") ||
+    input.reportsVat === true ||
+    (await touchesVatAccount(tx, input.companyId, input.accountIds)) ||
+    (!!input.reversedEntryId &&
+      (await reportedByVatEngine(tx, input.companyId, input.reversedEntryId))) ||
+    (!!input.entryId && (await reportedByVatEngine(tx, input.companyId, input.entryId)));
+  if (!affectsVat) return;
   for (const date of new Set(dates)) {
     const period = await findFiledVatPeriod(tx, input.companyId, date);
-    if (!period) continue;
-    const affectsVat =
-      VAT_DOCUMENT_SOURCES.has(input.source ?? "") ||
-      VAT_DOCUMENT_SOURCES.has(originalSource ?? "") ||
-      input.reportsVat === true ||
-      (await touchesVatAccount(tx, input.companyId, input.accountIds)) ||
-      (!!input.reversedEntryId &&
-        (await reportedByVatEngine(tx, input.companyId, input.reversedEntryId))) ||
-      (!!input.entryId && (await reportedByVatEngine(tx, input.companyId, input.entryId)));
-    if (affectsVat) throw vatPeriodFiledError(period, date);
-    return;
+    if (period) throw vatPeriodFiledError(period, date);
   }
 }
