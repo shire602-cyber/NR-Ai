@@ -25,6 +25,8 @@ import {
 import { fromFils, toFils } from "../../shared/money";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { postJournal, reverseEntry, withLedgerTx } from "../ledger";
+import { ledgerQueryable } from "../ledger/tx";
+import { lockVatReturns } from "../ledger/vat-lock";
 import { recordAudit } from "../services/audit.service";
 import { invoiceSettlement, totalsForStoredDocument } from "../services/invoice-posting.service";
 import { invoiceWrittenOffFils } from "../services/invoice-payment.service";
@@ -449,47 +451,51 @@ export async function addReturnAdjustment(input: {
   await assertNotPreGoLiveCorrection(input.companyId, input.kind, period.from, {
     start: input.correctsPeriodStart ?? null,
   });
-  const locked = await pool.query(
-    `SELECT status FROM vat_returns
+  return withLedgerTx(async (tx) => {
+    await lockVatReturns(tx, input.companyId, "shared");
+    const locked = await ledgerQueryable(tx).query(
+      `SELECT status FROM vat_returns
       WHERE company_id = $1 AND period_start::date = $2::date AND period_end::date = $3::date
         AND status IN ('submitted','filed')`,
-    [input.companyId, period.from, period.to]
-  );
-  if (locked.rows.length) {
-    throw new DomainError(
-      "VAT_RETURN_FINAL",
-      409,
-      undefined,
-      "That period's return is submitted; record the correction in the current period or amend the return."
+      [input.companyId, period.from, period.to]
     );
-  }
-  const [row] = await db
-    .insert(vatReturnAdjustments)
-    .values({
+    if (locked.rows.length) {
+      throw new DomainError(
+        "VAT_RETURN_FINAL",
+        409,
+        undefined,
+        "That period's return is submitted; record the correction in the current period or amend the return."
+      );
+    }
+    const [row] = await tx
+      .insert(vatReturnAdjustments)
+      .values({
+        companyId: input.companyId,
+        periodStart: period.from,
+        periodEnd: period.to,
+        kind: input.kind,
+        emirate,
+        amount: input.amount,
+        vatAmount: input.vatAmount,
+        reason: input.reason,
+        reference: input.reference ?? null,
+        correctsPeriodStart: input.correctsPeriodStart ?? null,
+        correctsPeriodEnd: input.correctsPeriodEnd ?? null,
+        createdBy: input.userId,
+      })
+      .returning();
+    await recordAudit({
+      userId: input.userId,
       companyId: input.companyId,
-      periodStart: period.from,
-      periodEnd: period.to,
-      kind: input.kind,
-      emirate,
-      amount: input.amount,
-      vatAmount: input.vatAmount,
-      reason: input.reason,
-      reference: input.reference ?? null,
-      correctsPeriodStart: input.correctsPeriodStart ?? null,
-      correctsPeriodEnd: input.correctsPeriodEnd ?? null,
-      createdBy: input.userId,
-    })
-    .returning();
-  await recordAudit({
-    userId: input.userId,
-    companyId: input.companyId,
-    action: "vat.return_adjustment.add",
-    entityType: "vat_return_adjustment",
-    entityId: row.id,
-    after: row,
-    req: input.req,
+      action: "vat.return_adjustment.add",
+      entityType: "vat_return_adjustment",
+      entityId: row.id,
+      after: row,
+      req: input.req,
+      tx,
+    });
+    return row;
   });
-  return row;
 }
 
 export async function listReturnAdjustments(companyId: string, from: string, to: string) {
@@ -511,28 +517,33 @@ export async function deleteReturnAdjustment(
   userId: string,
   req?: Request
 ) {
-  const [row] = await db
-    .select()
-    .from(vatReturnAdjustments)
-    .where(and(eq(vatReturnAdjustments.id, id), eq(vatReturnAdjustments.companyId, companyId)));
-  if (!row) throw new DomainError("VAT_ADJUSTMENT_NOT_FOUND", 404);
-  const locked = await pool.query(
-    `SELECT 1 FROM vat_returns WHERE company_id = $1 AND period_start::date = $2::date
+  return withLedgerTx(async (tx) => {
+    await lockVatReturns(tx, companyId, "shared");
+    const [row] = await tx
+      .select()
+      .from(vatReturnAdjustments)
+      .where(and(eq(vatReturnAdjustments.id, id), eq(vatReturnAdjustments.companyId, companyId)))
+      .for("update");
+    if (!row) throw new DomainError("VAT_ADJUSTMENT_NOT_FOUND", 404);
+    const locked = await ledgerQueryable(tx).query(
+      `SELECT 1 FROM vat_returns WHERE company_id = $1 AND period_start::date = $2::date
         AND period_end::date = $3::date AND status IN ('submitted','filed')`,
-    [companyId, row.periodStart, row.periodEnd]
-  );
-  if (locked.rows.length) throw new DomainError("VAT_RETURN_FINAL", 409);
-  await db.delete(vatReturnAdjustments).where(eq(vatReturnAdjustments.id, id));
-  await recordAudit({
-    userId,
-    companyId,
-    action: "vat.return_adjustment.delete",
-    entityType: "vat_return_adjustment",
-    entityId: id,
-    before: row,
-    req,
+      [companyId, row.periodStart, row.periodEnd]
+    );
+    if (locked.rows.length) throw new DomainError("VAT_RETURN_FINAL", 409);
+    await tx.delete(vatReturnAdjustments).where(eq(vatReturnAdjustments.id, id));
+    await recordAudit({
+      userId,
+      companyId,
+      action: "vat.return_adjustment.delete",
+      entityType: "vat_return_adjustment",
+      entityId: id,
+      before: row,
+      req,
+      tx,
+    });
+    return { id };
   });
-  return { id };
 }
 
 // ─── VAT groups ──────────────────────────────────────────────────────────

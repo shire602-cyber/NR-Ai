@@ -10,6 +10,8 @@ import { createDraftInvoice } from "./connectors/draft-documents";
 import { issueInvoice } from "./invoice-posting.service";
 import { recordAudit } from "./audit.service";
 import { assertDifferentActor } from "../middleware/companyRolePolicy";
+import { lockVatReturns } from "../ledger/vat-lock";
+import { assertReturnIsEditable, findReturnForPeriod } from "../tax/vat-returns.service";
 import { defineMachine, reverseBySource, transitionRow, withLedgerTx } from "../ledger";
 import { mulRate, toFils } from "../../shared/money";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
@@ -1625,7 +1627,6 @@ export async function generateVatReturnFromWorkpaper(workpaperId: string, actorU
       "Generate the return from a prepared or reviewed workpaper"
     );
   }
-  await assertPeriodNotLocked(workpaper.companyId, workpaper.periodEnd);
   const unmapped = detail.rows.filter((r: VatWorkpaperRow) => {
     if (r.status !== "approved" || r.rowCategory === "manual_adjustment") return false;
     try {
@@ -1722,30 +1723,68 @@ export async function generateVatReturnFromWorkpaper(workpaperId: string, actorU
     updatedAt: new Date(),
   };
 
-  let vatReturnId = workpaper.generatedVatReturnId;
-  let vatReturn;
-  if (vatReturnId) {
-    [vatReturn] = await db
-      .update(vatReturns)
-      .set(vatReturnPayload)
-      .where(eq(vatReturns.id, vatReturnId))
+  return withLedgerTx(async (tx) => {
+    await lockVatReturns(tx, workpaper.companyId);
+    await assertPeriodNotLocked(workpaper.companyId, workpaper.periodEnd, tx);
+    const [current] = await tx
+      .select()
+      .from(vatWorkpapers)
+      .where(eq(vatWorkpapers.id, workpaperId))
+      .for("update");
+    if (!current) throw new DomainError("VAT_WORKPAPER_NOT_FOUND", 404);
+    if (current.status !== workpaper.status) {
+      throw new DomainError("VAT_WORKPAPER_STATUS_CHANGED", 409);
+    }
+    if (current.generatedVatReturnId) {
+      const [linked] = await tx
+        .select()
+        .from(vatReturns)
+        .where(
+          and(
+            eq(vatReturns.id, current.generatedVatReturnId),
+            eq(vatReturns.companyId, workpaper.companyId)
+          )
+        );
+      assertReturnIsEditable(linked);
+      if (!linked) throw new DomainError("VAT_RETURN_NOT_FOUND", 404);
+    }
+    assertReturnIsEditable(
+      await findReturnForPeriod(
+        tx,
+        workpaper.companyId,
+        workpaper.periodStart.toISOString().slice(0, 10),
+        workpaper.periodEnd.toISOString().slice(0, 10)
+      )
+    );
+
+    const [vatReturn] = current.generatedVatReturnId
+      ? await tx
+          .update(vatReturns)
+          .set({
+            ...vatReturnPayload,
+            readyAt: null,
+            readyBy: null,
+            reconciliationOverrideReason: null,
+            reconciliationOverrideBy: null,
+            reconciliationOverrideAt: null,
+            reconciliationSnapshot: null,
+            engineVersion: null,
+          })
+          .where(eq(vatReturns.id, current.generatedVatReturnId))
+          .returning()
+      : await tx.insert(vatReturns).values(vatReturnPayload).returning();
+
+    const [updatedWorkpaper] = await tx
+      .update(vatWorkpapers)
+      .set({
+        returnGeneratedAt: new Date(),
+        generatedVatReturnId: vatReturn.id,
+        totalsSnapshot: totals,
+        updatedAt: new Date(),
+      })
+      .where(eq(vatWorkpapers.id, workpaperId))
       .returning();
-  } else {
-    [vatReturn] = await db.insert(vatReturns).values(vatReturnPayload).returning();
-    vatReturnId = vatReturn.id;
-  }
 
-  const [updatedWorkpaper] = await db
-    .update(vatWorkpapers)
-    .set({
-      // The workpaper keeps its review status; generating a return is recorded separately.
-      returnGeneratedAt: new Date(),
-      generatedVatReturnId: vatReturnId,
-      totalsSnapshot: totals,
-      updatedAt: new Date(),
-    })
-    .where(eq(vatWorkpapers.id, workpaperId))
-    .returning();
-
-  return { workpaper: updatedWorkpaper, vatReturn, totals };
+    return { workpaper: updatedWorkpaper, vatReturn, totals };
+  });
 }
