@@ -25,8 +25,13 @@ import {
 import { fromFils, toFils } from "../../shared/money";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { postJournal, reverseEntry, withLedgerTx } from "../ledger";
-import { ledgerQueryable } from "../ledger/tx";
-import { lockVatReturns } from "../ledger/vat-lock";
+import { rowsOf } from "../ledger/tx";
+import {
+  findFiledVatPeriod,
+  lockVatGroupMembership,
+  lockVatReturnCompanies,
+  lockVatReturns,
+} from "../ledger/vat-lock";
 import { recordAudit } from "../services/audit.service";
 import { invoiceSettlement, totalsForStoredDocument } from "../services/invoice-posting.service";
 import { invoiceWrittenOffFils } from "../services/invoice-payment.service";
@@ -453,13 +458,7 @@ export async function addReturnAdjustment(input: {
   });
   return withLedgerTx(async (tx) => {
     await lockVatReturns(tx, input.companyId, "shared");
-    const locked = await ledgerQueryable(tx).query(
-      `SELECT status FROM vat_returns
-      WHERE company_id = $1 AND period_start::date = $2::date AND period_end::date = $3::date
-        AND status IN ('submitted','filed')`,
-      [input.companyId, period.from, period.to]
-    );
-    if (locked.rows.length) {
+    if (await findFiledVatPeriod(tx, input.companyId, period.from, period.to)) {
       throw new DomainError(
         "VAT_RETURN_FINAL",
         409,
@@ -525,12 +524,9 @@ export async function deleteReturnAdjustment(
       .where(and(eq(vatReturnAdjustments.id, id), eq(vatReturnAdjustments.companyId, companyId)))
       .for("update");
     if (!row) throw new DomainError("VAT_ADJUSTMENT_NOT_FOUND", 404);
-    const locked = await ledgerQueryable(tx).query(
-      `SELECT 1 FROM vat_returns WHERE company_id = $1 AND period_start::date = $2::date
-        AND period_end::date = $3::date AND status IN ('submitted','filed')`,
-      [companyId, row.periodStart, row.periodEnd]
-    );
-    if (locked.rows.length) throw new DomainError("VAT_RETURN_FINAL", 409);
+    if (await findFiledVatPeriod(tx, companyId, row.periodStart, row.periodEnd)) {
+      throw new DomainError("VAT_RETURN_FINAL", 409);
+    }
     await tx.delete(vatReturnAdjustments).where(eq(vatReturnAdjustments.id, id));
     await recordAudit({
       userId,
@@ -564,16 +560,21 @@ export async function upsertVatGroup(input: {
     }
   }
   return withLedgerTx(async (tx) => {
-    const existing = await tx.execute(
-      sql`SELECT id FROM vat_groups WHERE representative_company_id = ${input.representativeCompanyId}`
+    await lockVatGroupMembership(tx, input.representativeCompanyId, "exclusive");
+    const [existing] = rowsOf<{ id: string; member_ids: string[] }>(
+      await tx.execute(sql`
+      SELECT g.id, ARRAY(
+        SELECT company_id FROM vat_group_members WHERE group_id = g.id
+      ) AS member_ids
+      FROM vat_groups g WHERE g.representative_company_id = ${input.representativeCompanyId}
+    `)
     );
-    const rows = ((existing as unknown as { rows?: Array<{ id: string }> }).rows ??
-      existing) as Array<{
-      id: string;
-    }>;
+    const members = new Set([input.representativeCompanyId, ...input.memberCompanyIds]);
+    // The posting guard reads membership while holding the company's shared lock.
+    await lockVatReturnCompanies(tx, [...members, ...(existing?.member_ids ?? [])]);
     let groupId: string;
-    if (rows[0]) {
-      groupId = rows[0].id;
+    if (existing) {
+      groupId = existing.id;
       await tx.execute(
         sql`UPDATE vat_groups SET name = ${input.name}, group_trn = ${trn.trn} WHERE id = ${groupId}`
       );
@@ -587,7 +588,6 @@ export async function upsertVatGroup(input: {
         ((ins as unknown as { rows?: Array<{ id: string }> }).rows ?? ins) as Array<{ id: string }>
       )[0].id;
     }
-    const members = new Set([input.representativeCompanyId, ...input.memberCompanyIds]);
     for (const m of members) {
       const clash = await tx.execute(
         sql`SELECT group_id FROM vat_group_members WHERE company_id = ${m} AND group_id <> ${groupId}`
@@ -606,6 +606,7 @@ export async function upsertVatGroup(input: {
       entityId: groupId,
       after: { name: input.name, groupTrn: trn.trn, members: [...members] },
       req: input.req,
+      tx,
     });
     return { id: groupId, name: input.name, groupTrn: trn.trn, memberCompanyIds: [...members] };
   });

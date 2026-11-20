@@ -14,9 +14,14 @@ import { assertPeriodNotLocked } from "../services/period-lock.service";
 import { recordAudit } from "../services/audit.service";
 import { defineMachine, withLedgerTx, type LedgerTx } from "../ledger";
 import { todayIso } from "../ledger/normalize";
-import { lockVatReturns } from "../ledger/vat-lock";
+import { lockVatGroupMembership, lockVatReturnCompanies } from "../ledger/vat-lock";
 import { getVatReturnSettlement } from "./vat-settlement.service";
-import { computeVat201, loadVatCompany, type VatComputation } from "./vat-engine";
+import {
+  computeVat201,
+  loadVatCompany,
+  loadVatGroupForRepresentative,
+  type VatComputation,
+} from "./vat-engine";
 import { assertAlignedPeriod } from "./vat-periods";
 import {
   DERIVED_BOX_KEYS,
@@ -132,7 +137,8 @@ export async function findReturnForPeriod(
   tx: LedgerTx,
   companyId: string,
   from: string,
-  to: string
+  to: string,
+  excludingId?: string | null
 ): Promise<VatReturn | undefined> {
   const [row] = await tx
     .select()
@@ -142,7 +148,8 @@ export async function findReturnForPeriod(
         eq(vatReturns.companyId, companyId),
         sql`${vatReturns.periodStart}::date = ${from}::date`,
         sql`${vatReturns.periodEnd}::date = ${to}::date`,
-        ne(vatReturns.status, "amended")
+        ne(vatReturns.status, "amended"),
+        excludingId ? ne(vatReturns.id, excludingId) : undefined
       )
     )
     .orderBy(sql`(${vatReturns.status} IN ('submitted', 'filed')) DESC`, desc(vatReturns.createdAt))
@@ -150,13 +157,21 @@ export async function findReturnForPeriod(
   return row;
 }
 
-export async function loadVatReturnForUpdate(
+async function lockVatReturnScope(tx: LedgerTx, companyId: string): Promise<void> {
+  // Keep membership stable through the computation and commit. Each member's shared
+  // journal lock conflicts with the exclusive lock held here.
+  await lockVatGroupMembership(tx, companyId, "shared");
+  const group = await loadVatGroupForRepresentative(companyId, tx);
+  await lockVatReturnCompanies(tx, group?.memberIds ?? [companyId]);
+}
+
+async function loadVatReturnForUpdate(
   tx: LedgerTx,
   companyId: string,
   id: string
 ): Promise<VatReturn> {
   // Acquire the same lock before taking any return row lock, including on an amendment chain.
-  await lockVatReturns(tx, companyId);
+  await lockVatReturnScope(tx, companyId);
   const [row] = await tx
     .select()
     .from(vatReturns)
@@ -221,7 +236,7 @@ export async function generateVatReturn(input: {
   periodEnd: unknown;
 }): Promise<GenerateResult> {
   return withLedgerTx(async (tx) => {
-    await lockVatReturns(tx, input.companyId);
+    await lockVatReturnScope(tx, input.companyId);
     const computation = await computeForReturn(input, tx);
     const { from, to, dueDate } = computation.period;
     await assertPeriodNotLocked(input.companyId, to, tx);
@@ -318,12 +333,31 @@ async function prepareReturnForFinalization(
       "The VAT figures changed after this return was generated. Regenerate the return before filing."
     );
   }
-  const snapshot = reconciliationSnapshot(computation);
+  const current = {
+    vatGroupId: computation.group?.groupId ?? null,
+    reconciliationSnapshot: reconciliationSnapshot(computation),
+  };
   const r = computation.reconciliation;
-  if (!r.hasUnexplainedDifference) return { reconciliationSnapshot: snapshot };
+  if (!r.hasUnexplainedDifference) {
+    return {
+      ...current,
+      reconciliationOverrideReason: null,
+      reconciliationOverrideBy: null,
+      reconciliationOverrideAt: null,
+    };
+  }
   const reason = input.overrideReason?.trim();
-  if (!reason && vatReturn.status === "ready" && vatReturn.reconciliationOverrideReason) {
-    return { reconciliationSnapshot: snapshot };
+  const approved = vatReturn.reconciliationSnapshot as Partial<typeof r> | null;
+  if (
+    !reason &&
+    vatReturn.status === "ready" &&
+    vatReturn.reconciliationOverrideReason &&
+    approved?.hasUnexplainedDifference === true &&
+    approved.unexplainedOutputFils === r.unexplainedOutputFils &&
+    approved.unexplainedInputFils === r.unexplainedInputFils
+  ) {
+    // Retain the snapshot that supports the recorded approval.
+    return { vatGroupId: current.vatGroupId };
   }
   if (!reason) {
     throw new DomainError(
@@ -350,10 +384,10 @@ async function prepareReturnForFinalization(
     tx,
   });
   return {
+    ...current,
     reconciliationOverrideReason: reason,
     reconciliationOverrideBy: input.userId,
     reconciliationOverrideAt: new Date(),
-    reconciliationSnapshot: snapshot,
   };
 }
 
@@ -581,6 +615,7 @@ export async function amendVatReturn(input: {
         },
         reconciliationSnapshot: reconciliationSnapshot(computation),
         engineVersion: computation.engineVersion,
+        vatGroupId: computation.group?.groupId ?? null,
         partialExemptionRatio: computation.company.exemptSupplyRatio,
         notes: `Amendment of return ${original.id}: ${input.reason}`,
         createdBy: input.userId,

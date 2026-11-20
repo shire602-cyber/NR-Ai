@@ -127,6 +127,9 @@ describe("W4-E firm VAT workpaper", () => {
     expect(gen.status, gen.text).toBe(200);
     expect(gen.body.workpaper.status).toBe("reviewed");
     expect(gen.body.vatReturn.box1bDubaiVat).toBe(50);
+    const replay = await t.as.post(`${base}/generate-return`, {});
+    expect(replay.status, replay.text).toBe(200);
+    expect(replay.body.vatReturn.id).toBe(gen.body.vatReturn.id);
     const filed = await rv.as.patch(`${base}/status`, { status: "filed" });
     expect(filed.status, filed.text).toBe(200);
     expect(filed.body.filedBy).toBe(rv.user.id);
@@ -139,6 +142,28 @@ describe("W4-E firm VAT workpaper", () => {
       "vat_workpaper.status.reviewed",
       "vat_workpaper.status.filed",
     ]);
+  });
+
+  it("refuses workpaper generation when a separate return draft already exists for the period", async () => {
+    const { t, base } = await setup();
+    const returns = `/api/companies/${t.company.id}/vat-returns`;
+    const draft = await t.as.post(`${returns}/generate`, {
+      periodStart: "2026-07-01",
+      periodEnd: "2026-09-30",
+    });
+    expect(draft.status, draft.text).toBe(201);
+    const prepared = await t.as.patch(`${base}/status`, { status: "prepared" });
+    expect(prepared.status, prepared.text).toBe(200);
+    const generated = await t.as.post(`${base}/generate-return`, {});
+    expect(generated.status, generated.text).toBe(409);
+    expect(generated.body).toMatchObject({
+      code: "VAT_RETURN_EXISTS",
+      details: { vatReturnId: draft.body.id, status: "draft" },
+    });
+    const workpaper = await t.as.get(base);
+    expect(workpaper.body.workpaper.generatedVatReturnId).toBeNull();
+    const existing = await t.as.get(returns);
+    expect(existing.body.map((r: { id: string }) => r.id)).toEqual([draft.body.id]);
   });
 
   it("[R07-03] pull-from-books reads the VAT engine: out-of-scope lines produce no row, rows carry the invoice emirate", async () => {

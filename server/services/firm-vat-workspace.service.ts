@@ -1748,14 +1748,22 @@ export async function generateVatReturnFromWorkpaper(workpaperId: string, actorU
       assertReturnIsEditable(linked);
       if (!linked) throw new DomainError("VAT_RETURN_NOT_FOUND", 404);
     }
-    assertReturnIsEditable(
-      await findReturnForPeriod(
-        tx,
-        workpaper.companyId,
-        workpaper.periodStart.toISOString().slice(0, 10),
-        workpaper.periodEnd.toISOString().slice(0, 10)
-      )
+    const existing = await findReturnForPeriod(
+      tx,
+      workpaper.companyId,
+      workpaper.periodStart.toISOString().slice(0, 10),
+      workpaper.periodEnd.toISOString().slice(0, 10),
+      current.generatedVatReturnId
     );
+    assertReturnIsEditable(existing);
+    if (existing) {
+      throw new DomainError(
+        "VAT_RETURN_EXISTS",
+        409,
+        { vatReturnId: existing.id, status: existing.status },
+        "A VAT return for this period is already being prepared."
+      );
+    }
 
     const [vatReturn] = current.generatedVatReturnId
       ? await tx
