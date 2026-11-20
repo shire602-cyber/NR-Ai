@@ -20,12 +20,17 @@ import {
   invoiceLines,
   invoices,
   vatReturnAdjustments,
+  vatReturns,
   type BadDebtReliefClaim,
 } from "../../shared/schema";
 import { fromFils, toFils } from "../../shared/money";
 import { validateUaeTrn } from "../../shared/receipt-ocr-parser";
 import { postJournal, reverseEntry, withLedgerTx } from "../ledger";
-import { rowsOf } from "../ledger/tx";
+import {
+  legacyFilingVatGroups,
+  loadVatGroupForRepresentative,
+  withFilingVatGroup,
+} from "../ledger/vat-group-scope";
 import {
   findFiledVatPeriod,
   lockVatGroupMembership,
@@ -560,21 +565,30 @@ export async function upsertVatGroup(input: {
     }
   }
   return withLedgerTx(async (tx) => {
-    await lockVatGroupMembership(tx, input.representativeCompanyId, "exclusive");
-    const [existing] = rowsOf<{ id: string; member_ids: string[] }>(
-      await tx.execute(sql`
-      SELECT g.id, ARRAY(
-        SELECT company_id FROM vat_group_members WHERE group_id = g.id
-      ) AS member_ids
-      FROM vat_groups g WHERE g.representative_company_id = ${input.representativeCompanyId}
-    `)
-    );
+    await lockVatGroupMembership(tx, input.representativeCompanyId);
+    const existing = await loadVatGroupForRepresentative(input.representativeCompanyId, tx);
+    const legacy = existing
+      ? await legacyFilingVatGroups(tx, input.representativeCompanyId, existing)
+      : [];
     const members = new Set([input.representativeCompanyId, ...input.memberCompanyIds]);
     // The posting guard reads membership while holding the company's shared lock.
-    await lockVatReturnCompanies(tx, [...members, ...(existing?.member_ids ?? [])]);
+    await lockVatReturnCompanies(tx, [
+      ...members,
+      ...(existing?.memberIds ?? []),
+      ...legacy.flatMap(({ group }) => group.memberIds),
+    ]);
+    for (const { row, group } of legacy) {
+      await tx
+        .update(vatReturns)
+        .set({
+          vatGroupId: group.groupId,
+          reconciliationSnapshot: withFilingVatGroup(row.reconciliationSnapshot, group),
+        })
+        .where(and(eq(vatReturns.id, row.id), eq(vatReturns.companyId, row.companyId)));
+    }
     let groupId: string;
     if (existing) {
-      groupId = existing.id;
+      groupId = existing.groupId;
       await tx.execute(
         sql`UPDATE vat_groups SET name = ${input.name}, group_trn = ${trn.trn} WHERE id = ${groupId}`
       );
