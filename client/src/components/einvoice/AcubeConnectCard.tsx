@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
 import { cn } from "@/lib/utils";
@@ -77,6 +78,8 @@ function AcubeFiveCorners() {
 
 export function AcubeConnectCard({ companyId }: { companyId: string }) {
   const { t, locale } = useTranslation();
+  const { gate } = useCompanyPermission();
+  const setupGate = gate("settings.company");
   const key = ["/api/companies", companyId, "einvoicing", "acube"];
   const view = useQuery<AcubeConnectionView>({
     queryKey: key,
@@ -246,7 +249,9 @@ export function AcubeConnectCard({ companyId }: { companyId: string }) {
                           </fieldset>
                           <Button
                             onClick={() => reserve.mutate()}
+                            {...setupGate}
                             disabled={
+                              setupGate.disabled ||
                               reserve.isPending ||
                               !v.tin ||
                               (approver === "someone_else" && !approverEmail.includes("@"))
@@ -297,7 +302,8 @@ export function AcubeConnectCard({ companyId }: { companyId: string }) {
                             variant="outline"
                             size="sm"
                             onClick={() => sync.mutate()}
-                            disabled={sync.isPending}
+                            {...setupGate}
+                            disabled={setupGate.disabled || sync.isPending}
                             data-testid="acube-sync"
                           >
                             <RefreshCw

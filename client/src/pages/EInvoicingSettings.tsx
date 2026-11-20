@@ -1,5 +1,5 @@
 import { TrialBanner } from "@/components/TrialBanner";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -389,6 +389,13 @@ function CompanyEInvoicingSettings({
   });
 
   const view = settings.data;
+  const settingsReady = !!view;
+  useEffect(() => {
+    const target = window.location.hash.slice(1);
+    if (settingsReady && (target === "iban" || target === "trade-licence")) {
+      document.getElementById(target)?.scrollIntoView({ block: "center" });
+    }
+  }, [settingsReady]);
   // Saved values come from the server; the form only holds the user's edits.
   const [edits, setEdits] = useState<Partial<FormState>>({});
   const form: FormState = { ...formFromView(view), ...edits };
@@ -555,9 +562,9 @@ function CompanyEInvoicingSettings({
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="tl">{s.tradeLicence}</Label>
+                  <Label htmlFor="trade-licence">{s.tradeLicence}</Label>
                   <Input
-                    id="tl"
+                    id="trade-licence"
                     value={form.tradeLicenceNo}
                     onChange={(e) => set("tradeLicenceNo")(e.target.value)}
                   />

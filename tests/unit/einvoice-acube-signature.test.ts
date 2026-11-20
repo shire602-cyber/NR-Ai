@@ -19,6 +19,7 @@ import {
 import {
   acubeStatusErrorCode,
   deliveryFromLegacy,
+  legacyFromProviderTracks,
   legacyFromTracks,
   mapAcubeDeliveryStatus,
   reportByDate,
@@ -211,7 +212,7 @@ describe("E1 two-track status model", () => {
       ["valid", "new", "sending_queued", "sending_started", "delivered", "processed"].map(
         mapAcubeDeliveryStatus
       )
-    ).toEqual(["queued", "queued", "queued", "sending", "delivered", "delivered"]);
+    ).toEqual(["queued", "queued", "queued", "sending", "delivered", "sending"]);
     expect(
       [
         "sending_error",
@@ -220,11 +221,24 @@ describe("E1 two-track status model", () => {
         "delivery_failed",
         "action_required",
       ].map(mapAcubeDeliveryStatus)
-    ).toEqual(Array(5).fill("delivery_failed"));
+    ).toEqual(["delivery_failed", "sending", "delivery_failed", "sending", "delivery_failed"]);
     expect(mapAcubeDeliveryStatus("rejected")).toBe("rejected");
     expect(mapAcubeDeliveryStatus("something_new")).toBe("delivery_failed");
     expect(acubeStatusErrorCode("delivery_error")).toBe("ACUBE_DELIVERY_FAILED");
     expect(acubeStatusErrorCode("delivered")).toBeNull();
+  });
+
+  it("preserves A-Cube receipt as in flight until positive MLS", () => {
+    expect(legacyFromProviderTracks("acube", "processed", "sending", "pending")).toBe("submitted");
+    expect(legacyFromProviderTracks("acube", "delivered", "delivered", "not_required")).toBe(
+      "submitted"
+    );
+    expect(legacyFromProviderTracks("acube", "accepted", "delivered", "not_required")).toBe(
+      "accepted"
+    );
+    expect(
+      legacyFromProviderTracks("complyance", "delivery_success", "delivered", "not_required")
+    ).toBe("cleared");
   });
 
   it("derives the legacy status: delivered stays 'accepted' until the FTA report is in", () => {

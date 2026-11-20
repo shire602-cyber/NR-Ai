@@ -116,36 +116,157 @@ const ACUBE_ID = "01a0ab23-24d8-7787-bd01-883b1b089b00";
 const COMPLYANCE_ID = "01K5EXAMPLE00000000000142";
 
 describe("A-Cube over loopback HTTP", () => {
-  it("submits UBL, reads delivery and reporting, and keeps business rejection separate", async () => {
+  it("submits UBL, confirms recipient receipt and acceptance separately, and records rejection", async () => {
     const loginToken = randomUUID();
     const { url, seen } = await loopback([
       { method: "POST", path: "/login", status: 200, body: { token: loginToken } },
       fixture("acube", "submit-invoice-201"),
       fixture("acube", "status-delivered"),
-      { ...fixture("acube", "tdd-reported"), text: "<html><body>Outage</body></html>" },
-      fixture("acube", "tdd-reported"),
+      fixture("acube", "status-accepted"),
       fixture("acube", "submit-invoice-422"),
     ]);
     const provider = acube(url);
-    const accepted = await provider.submit(submission);
-    expect(accepted).toMatchObject({ status: "submitted", providerMessageId: ACUBE_ID });
+    const handedOver = await provider.submit(submission);
+    expect(handedOver).toMatchObject({
+      status: "submitted",
+      delivery: "sending",
+      providerMessageId: ACUBE_ID,
+    });
+    expect(await provider.getStatus(ACUBE_ID)).toMatchObject({
+      status: "submitted",
+      delivery: "delivered",
+    });
     expect(await provider.getStatus(ACUBE_ID)).toMatchObject({
       status: "accepted",
       delivery: "delivered",
+      reporting: "pending",
     });
-    await expect(provider.getReportingStatus(ACUBE_ID)).rejects.toMatchObject({
-      code: "ACUBE_UNAVAILABLE",
-    });
-    expect(await provider.getReportingStatus(ACUBE_ID)).toEqual({ reporting: "reported" });
     expect(await provider.submit(submission)).toMatchObject({
       status: "rejected",
       errorCode: "ACUBE_VALIDATION",
       reasons: [expect.objectContaining({ code: "ibr-138-ae" })],
     });
-    expect(seen).toHaveLength(6);
+    expect(seen).toHaveLength(5);
     expect(seen[1].headers.authorization === `Bearer ${loginToken}`).toBe(true);
     expect(seen[1].headers["content-type"]).toBe("application/xml");
     expect(seen[1].body).toBe(submission.xml);
+  });
+
+  it("reconciles across Hydra pages using exact UTF-8 XML including BOM, spaces and email text", async () => {
+    const alternate = randomUUID();
+    const email = "loopback@example.test";
+    const xml = `\uFEFF<?xml version="1.0" encoding="UTF-8"?>\r\n<Invoice><Contact>${email}</Contact></Invoice>\r\n`;
+    const outgoing = fixture("acube", "list-outgoing");
+    const pageTwo = outgoing.path.replace("page=1", "page=2");
+    const record = (uuid: string) => ({
+      uuid,
+      status: "processed",
+      invoiceNumber: submission.invoiceNumber,
+      direction: "outgoing",
+    });
+    const { url, seen } = await loopback([
+      { method: "POST", path: "/login", status: 200, body: { token: randomUUID() } },
+      { ...outgoing, body: { member: [record(alternate)], view: { next: pageTwo } } },
+      {
+        method: "GET",
+        path: `/invoices/${alternate}/source`,
+        status: 200,
+        text: `${xml} `,
+        contentType: "application/xml",
+      },
+      {
+        ...outgoing,
+        path: pageTwo,
+        body: { "hydra:member": [record(ACUBE_ID)], "hydra:view": {} },
+      },
+      {
+        method: "GET",
+        path: `/invoices/${ACUBE_ID}/source`,
+        status: 200,
+        text: xml,
+        contentType: "application/xml",
+      },
+      {
+        method: "GET",
+        path: `/invoices/${ACUBE_ID}/source`,
+        status: 200,
+        text: xml,
+        contentType: "application/xml",
+      },
+    ]);
+    const provider = acube(url, { ACUBE_EMAIL: email });
+    expect(await provider.lookupSubmission({ ...submission, xml })).toMatchObject({
+      providerMessageId: ACUBE_ID,
+      status: "submitted",
+    });
+    expect(await provider.fetchSource(ACUBE_ID)).toBe(xml);
+    expect(seen[1].headers.accept).toBe("application/ld+json");
+    expect(seen.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "POST /login",
+      `GET ${outgoing.path}`,
+      `GET /invoices/${alternate}/source`,
+      `GET ${pageTwo}`,
+      `GET /invoices/${ACUBE_ID}/source`,
+      `GET /invoices/${ACUBE_ID}/source`,
+    ]);
+  });
+
+  it("reads plain inbound pages and retains the credit-note resource from a Hydra collection", async () => {
+    const first = Array.from({ length: 30 }, () => ({ uuid: randomUUID(), direction: "incoming" }));
+    const later = randomUUID();
+    const credit = randomUUID();
+    const invoices = fixture("acube", "list-incoming-invoices");
+    const creditNotes = fixture("acube", "list-incoming-credit-notes");
+    const { url } = await loopback([
+      { method: "POST", path: "/login", status: 200, body: { token: randomUUID() } },
+      { ...invoices, body: first },
+      {
+        ...invoices,
+        path: invoices.path.replace("page=1", "page=2"),
+        body: [first[29], { uuid: later, direction: "incoming" }],
+      },
+      {
+        ...creditNotes,
+        body: { member: [{ uuid: credit, direction: "incoming", documentTypeCode: 261 }] },
+      },
+      {
+        method: "GET",
+        path: `/credit-notes/${credit}/source`,
+        status: 200,
+        text: "<CreditNote/>",
+        contentType: "application/xml",
+      },
+    ]);
+    const provider = acube(url);
+    const rows = await provider.listInbound();
+    expect(rows).toHaveLength(32);
+    expect(rows[30]).toMatchObject({ providerMessageId: later, documentCollection: "invoice" });
+    expect(rows[31]).toMatchObject({
+      providerMessageId: credit,
+      documentCollection: "credit-note",
+      documentType: "261",
+    });
+    expect(await provider.fetchSource(credit, rows[31])).toBe("<CreditNote/>");
+  });
+
+  it("fails closed if an outgoing collection repeats a page during reconciliation", async () => {
+    const outgoing = fixture("acube", "list-outgoing");
+    const next = outgoing.path.replace("page=1", "page=2");
+    const item = {
+      uuid: ACUBE_ID,
+      status: "processed",
+      direction: "outgoing",
+      invoiceNumber: submission.invoiceNumber,
+    };
+    const { url } = await loopback([
+      { method: "POST", path: "/login", status: 200, body: { token: randomUUID() } },
+      { ...outgoing, body: { member: [item], view: { next } } },
+      { method: "GET", path: `/invoices/${ACUBE_ID}/source`, status: 200, text: submission.xml },
+      { ...outgoing, path: next, body: { member: [item], view: {} } },
+    ]);
+    await expect(acube(url).lookupSubmission(submission)).rejects.toMatchObject({
+      code: "ACUBE_UNAVAILABLE",
+    });
   });
 
   it("bounds a stalled login body and does not send an invoice without authenticating", async () => {
@@ -237,6 +358,25 @@ describe("A-Cube over loopback HTTP", () => {
     expect(await rotated.token()).toBe(tokens[2]);
     expect(seen).toHaveLength(3);
   });
+
+  it("pins scope to the A-Cube account, environment and configured routing", async () => {
+    const url = "http://127.0.0.1";
+    const auth = { ACUBE_PASSWORD: randomUUID() };
+    const company = submission.companyId;
+    const scope = await acube(url, auth).getSubmissionScope(company);
+    expect(scope).toMatch(/^[0-9a-f]{64}$/);
+    expect(await acube(url, auth).getSubmissionScope(company)).toBe(scope);
+    expect(await acube(url, auth).getSubmissionScope("another-company")).not.toBe(scope);
+    expect(
+      await acube(url, { ...auth, ACUBE_ENV: "production" }).getSubmissionScope(company)
+    ).not.toBe(scope);
+    expect(
+      await acube(url, { ...auth, ACUBE_INVOICE_SUBMIT_PATH: "/custom" }).getSubmissionScope(
+        company
+      )
+    ).not.toBe(scope);
+    expect(await acube(url).getSubmissionScope(company)).not.toBe(scope);
+  });
 });
 
 describe("Complyance over loopback HTTP", () => {
@@ -306,12 +446,73 @@ describe("Complyance over loopback HTTP", () => {
     );
     expect(await original.getSubmissionScope("another-company")).not.toBe(scope);
     expect(
+      await complyance(url, { ...config, COMPLYANCE_SUBMIT_FORMAT: "xml" }).getSubmissionScope(
+        submission.companyId
+      )
+    ).not.toBe(scope);
+    expect(
       await complyance(url, config, "v2").submit({
         ...submission,
         scopeFingerprint: scope ?? undefined,
       })
     ).toMatchObject({ status: "failed", errorCode: "COMPLYANCE_SOURCE_AMBIGUOUS" });
     expect(seen).toHaveLength(0);
+  });
+
+  it("uses the Complyance source read under the handoff lock", async () => {
+    const { url, seen } = await loopback([fixture("complyance", "submit_ok")]);
+    const provider = new ComplyanceEInvoiceProvider(
+      { COMPLYANCE_API_KEY: randomUUID(), COMPLYANCE_BASE_URL: url },
+      {
+        sourceFor: async () => {
+          throw new Error("unexpected source lookup outside the handoff lock");
+        },
+      }
+    );
+    const context = {
+      legalEntity: { providerDetails: { sourceName: "locked-company", sourceVersion: "v2" } },
+    };
+    const scope = await provider.getSubmissionScope(submission.companyId, context);
+    expect(scope).toMatch(/^[0-9a-f]{64}$/);
+    expect(
+      await provider.submit({ ...submission, context, scopeFingerprint: scope ?? undefined })
+    ).toMatchObject({ status: "submitted" });
+    expect(JSON.parse(seen[0].body).source).toBe("locked-company:v2");
+  });
+
+  it("proves legacy tracked Complyance documents with the exact document ID, number and seller", async () => {
+    const status = fixture("complyance", "status_final_valid");
+    const data = {
+      documentId: COMPLYANCE_ID,
+      documentNumber: submission.invoiceNumber,
+      environment: "sandbox",
+      source: "loopback-company:v1",
+      seller: { tin: "1001234567" },
+    };
+    const reply = (overrides: Record<string, unknown> = {}) => ({
+      ...status,
+      body: { success: true, data: { ...data, ...overrides } },
+    });
+    const { url, seen } = await loopback([
+      reply(),
+      reply({ documentId: "another-document" }),
+      reply({ documentNumber: "other-invoice" }),
+      reply({ source: "other-company:v1" }),
+      reply({ environment: "production" }),
+    ]);
+    const provider = complyance(url);
+    const identity = {
+      documentNumber: submission.invoiceNumber,
+      supplierTin: "1001234567",
+      supplierTrn: null,
+      legalEntityId: null,
+      sourceName: "loopback-company",
+    };
+    expect(await provider.verifyOutboundDocument(COMPLYANCE_ID, identity)).toBe(true);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      expect(await provider.verifyOutboundDocument(COMPLYANCE_ID, identity)).toBe(false);
+    }
+    expect(seen.map(({ method }) => method)).toEqual(Array(5).fill("GET"));
   });
 });
 

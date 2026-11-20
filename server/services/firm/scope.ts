@@ -151,9 +151,38 @@ export async function listAccessibleClientIds(ctx: FirmContext): Promise<string[
   return rows.map((r) => r.id);
 }
 
-export async function canAccessFirmClient(ctx: FirmContext, companyId: string): Promise<boolean> {
+export async function canAccessFirmClient(
+  ctx: FirmContext,
+  companyId: string,
+  conn: Pick<typeof db, "select"> = db,
+  lock?: "share"
+): Promise<boolean> {
   if (!isUuid(companyId)) return false;
-  const [row] = await db
+  if (lock) {
+    await conn
+      .select({ companyId: firmClientLinks.companyId })
+      .from(firmClientLinks)
+      .where(eq(firmClientLinks.companyId, companyId))
+      .for(lock);
+    if (!firmRoleSeesAllClients(ctx.role)) {
+      await conn
+        .select({ userId: firmStaffAssignments.userId })
+        .from(firmStaffAssignments)
+        .where(
+          and(
+            eq(firmStaffAssignments.companyId, companyId),
+            eq(firmStaffAssignments.userId, ctx.userId)
+          )
+        )
+        .for(lock);
+      await conn
+        .select({ userId: companyUsers.userId })
+        .from(companyUsers)
+        .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, ctx.userId)))
+        .for(lock);
+    }
+  }
+  const [row] = await conn
     .select({ id: companies.id })
     .from(companies)
     .where(and(eq(companies.id, companyId), accessibleClientCondition(ctx)))

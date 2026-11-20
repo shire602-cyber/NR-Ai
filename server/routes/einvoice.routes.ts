@@ -5,7 +5,10 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { requirePermission } from "../middleware/companyRolePolicy";
+import {
+  assertScopedCompanyPermission,
+  requireScopedCompanyPermission,
+} from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { DomainError } from "../errors";
 import { companies, invoiceLines, invoices, type Company, type Invoice } from "../../shared/schema";
@@ -37,6 +40,7 @@ import {
   listEInvoiceDocuments,
   listInboundDocuments,
   lockEInvoiceInvoice,
+  submissionProviderPin,
   upsertBuyerEndpoint,
   upsertEInvoiceDocument,
 } from "../services/einvoice/store";
@@ -447,6 +451,7 @@ export function registerEInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { invoice, company } = await loadInvoiceAndCompany(req);
+      await assertScopedCompanyPermission(req.user, company.id, "tax.submit");
       const doc = await getEInvoiceDocument(company.id, invoice.id);
       const legacy = invoice.einvoiceStatus ?? "not_generated";
       const delivery = doc?.deliveryStatus ?? null;
@@ -469,7 +474,7 @@ export function registerEInvoiceRoutes(app: Express) {
           "This invoice number cannot be sent again. Issue a credit note and a new invoice."
         );
       }
-      const provider = await activeProvider(company.id, doc?.nextRetryAt ? doc : undefined);
+      const provider = await activeProvider(company.id, submissionProviderPin(invoice, doc));
       const result = await enqueueEInvoiceSubmission({
         invoice,
         company,
@@ -500,8 +505,9 @@ export function registerEInvoiceRoutes(app: Express) {
     requireCustomer,
     asyncHandler(async (req: Request, res: Response) => {
       const { invoice, company } = await loadInvoiceAndCompany(req);
+      await assertScopedCompanyPermission(req.user, company.id, "tax.submit");
       const prior = await getEInvoiceDocument(company.id, invoice.id);
-      const provider = await activeProvider(company.id, prior?.nextRetryAt ? prior : undefined);
+      const provider = await activeProvider(company.id, submissionProviderPin(invoice, prior));
       const result = await enqueueEInvoiceSubmission({
         invoice,
         company,
@@ -596,7 +602,7 @@ export function registerEInvoiceRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/settings",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
@@ -607,7 +613,7 @@ export function registerEInvoiceRoutes(app: Express) {
   app.put(
     "/api/companies/:companyId/einvoicing/settings",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(settingsBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId } = req.params;
@@ -636,7 +642,7 @@ export function registerEInvoiceRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/documents",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const rows = await listEInvoiceDocuments(req.params.companyId);
       const invoices = await Promise.all(
@@ -658,7 +664,7 @@ export function registerEInvoiceRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/readiness",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
@@ -671,7 +677,7 @@ export function registerEInvoiceRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/compliance",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
@@ -682,7 +688,7 @@ export function registerEInvoiceRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/archive",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const before =
         typeof req.query.before === "string" && !Number.isNaN(Date.parse(req.query.before))
@@ -696,7 +702,7 @@ export function registerEInvoiceRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/archive/:archiveId",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const row = await getArchiveEntry(req.params.companyId, req.params.archiveId);
       if (!row) throw new DomainError("NOT_FOUND", 404, undefined, "Archive entry not found");
@@ -713,7 +719,7 @@ export function registerEInvoiceRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/inbound",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       res.json({ items: await listInboundDocuments(req.params.companyId) });
     })
@@ -723,7 +729,7 @@ export function registerEInvoiceRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/einvoicing/inbound/poll",
     authMiddleware,
-    requirePermission("documents.write"),
+    requireScopedCompanyPermission("documents.write"),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
@@ -762,7 +768,7 @@ export function registerEInvoiceRoutes(app: Express) {
   app.put(
     "/api/companies/:companyId/einvoicing/buyer-endpoints/:contactId",
     authMiddleware,
-    requirePermission("documents.write"),
+    requireScopedCompanyPermission("documents.write"),
     strictBody(buyerEndpointBody),
     asyncHandler(async (req: Request, res: Response) => {
       const { companyId, contactId } = req.params;

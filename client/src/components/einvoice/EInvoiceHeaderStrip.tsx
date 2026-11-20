@@ -5,10 +5,12 @@
  * link. "Details" opens the full status sheet (checklist, history, resubmit).
  */
 import { useState } from "react";
+import { Link } from "wouter";
 import { AlertTriangle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { formatDate } from "@/lib/format-date";
+import { einvoiceFieldHint } from "@/lib/einvoice-issues";
 import { EInvoiceSheet, EInvoiceTrackBadges } from "./EInvoiceStatus";
 import { errorKey, fieldLabelKey, rejectionSummary } from "./einvoice-meta";
 import { useEInvoiceStatus } from "./use-einvoice";
@@ -44,7 +46,10 @@ export function EInvoiceHeaderStrip({
   const firstLabelKey = first ? fieldLabelKey(first.field) : null;
   const firstLabel = first ? (firstLabelKey ? t[firstLabelKey] : first.field) : "";
   const reportMeta =
-    reporting.required && reporting.status !== "reported" && reporting.reportBy
+    reporting.required &&
+    !reporting.confirmationUnavailable &&
+    reporting.status !== "reported" &&
+    reporting.reportBy
       ? formatMessage(
           reporting.overdue ? t["einvoicing.reportByPassed"] : t["einvoicing.reportBy"],
           {
@@ -60,6 +65,7 @@ export function EInvoiceHeaderStrip({
         : t["einvoicing.err_unknown"])
     : null;
   const target = first ? focusTargetFor(first.field) : null;
+  const fixHref = first ? einvoiceFieldHint(first.field, { contactId: view.contactId }).href : null;
 
   const fix = () => {
     const el = target
@@ -83,6 +89,8 @@ export function EInvoiceHeaderStrip({
           delivery={delivery.status}
           reporting={reporting.status}
           queuedForSubmission={view.submissionState === "queued"}
+          acknowledgement={view.transmission.recipientAcknowledgement}
+          confirmationUnavailable={reporting.confirmationUnavailable}
           showReportingLabel
         />
         {reportMeta && (
@@ -142,7 +150,7 @@ export function EInvoiceHeaderStrip({
             onClick={() => setOpen(true)}
             data-testid="einvoice-header-resubmit"
           >
-            {t["einvoicing.resubmit"]}
+            {t[view.rejection?.resubmittable ? "einvoicing.resubmit" : "einvoicing.headerDetails"]}
           </Button>
         </div>
       )}
@@ -161,15 +169,23 @@ export function EInvoiceHeaderStrip({
                   count: view.issues.length - 1,
                 })}
           </p>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={fix}
-            data-testid="einvoice-header-fix"
-          >
-            {t["einvoicing.headerFix"]}
-          </Button>
+          {fixHref ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={fixHref} data-testid="einvoice-header-fix">
+                {t["einvoicing.headerFix"]}
+              </Link>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={fix}
+              data-testid="einvoice-header-fix"
+            >
+              {t["einvoicing.headerFix"]}
+            </Button>
+          )}
         </div>
       )}
       {open && (

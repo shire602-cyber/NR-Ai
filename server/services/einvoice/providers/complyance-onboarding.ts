@@ -22,7 +22,14 @@
 import type { Company, EInvoiceLegalEntity } from "../../../../shared/schema";
 import { DomainError } from "../../../errors";
 import { createLogger } from "../../../config/logger";
-import { companyTin, getLegalEntity, upsertLegalEntity } from "../legal-entities";
+import {
+  assertProviderTin,
+  getLegalEntity,
+  requireCompanyTin,
+  upsertLegalEntity,
+} from "../legal-entities";
+import { isUaeTin, PEPPOL_SCHEME_UAE_TIN } from "../pint-ae-codes";
+import { tinFromTaxNumber } from "../../../../shared/validators/einvoice-identity";
 import { db } from "../../../db";
 import { einvoiceLegalEntities } from "../../../../shared/schema";
 import { and, eq, inArray } from "drizzle-orm";
@@ -65,16 +72,11 @@ export async function connectComplyanceCompany(args: {
   branchName?: string | null;
 }): Promise<EInvoiceLegalEntity> {
   const { company, provider } = args;
-  const tin = companyTin(company);
-  if (!tin) {
-    throw new DomainError(
-      "EINVOICE_TIN_MISSING",
-      422,
-      { field: "company.trnVatNumber" },
-      "Add the company's 15-digit TRN (its first 10 digits are the TIN) before connecting."
-    );
-  }
+  const tin = requireCompanyTin(company);
   const existing = await getLegalEntity(company.id, COMPLYANCE_PROVIDER_NAME, provider.environment);
+  if (existing && existing.tin !== tin) {
+    throw new DomainError("EINVOICE_SUPPLIER_ENDPOINT_MISMATCH", 422);
+  }
   const prev = details(existing);
   const source = {
     name:
@@ -159,6 +161,17 @@ export async function connectComplyanceCompany(args: {
     }
   }
   if (!created) return row;
+  const endpoint = created.peppolParticipantId ?? created.peppolId;
+  const schemePrefix = `${PEPPOL_SCHEME_UAE_TIN}:`;
+  const participantTin = endpoint?.startsWith(schemePrefix)
+    ? endpoint.slice(schemePrefix.length)
+    : endpoint;
+  const vatTin = tinFromTaxNumber(created.vatTrn);
+  assertProviderTin(tin, created.tin ?? (isUaeTin(participantTin) ? participantTin : vatTin));
+  if (participantTin && (endpoint?.startsWith(schemePrefix) || isUaeTin(participantTin))) {
+    assertProviderTin(tin, participantTin);
+  }
+  if (vatTin) assertProviderTin(tin, vatTin);
   const patch = patchFromComplyance(created, details(row));
   if (patch.status === "active" && row.status !== "active") patch.activatedAt = new Date();
   row = await upsertLegalEntity(company.id, COMPLYANCE_PROVIDER_NAME, provider.environment, tin, {

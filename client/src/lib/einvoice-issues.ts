@@ -136,8 +136,17 @@ const LINE_FIELDS: Record<string, string> = {
   unitPrice: "linePrice",
 };
 
-export function einvoiceFieldHint(field: string): EInvoiceFieldHint {
+export function einvoiceFieldHint(
+  field: string,
+  source: { contactId?: string | null; invoiceId?: string | null } = {}
+): EInvoiceFieldHint {
   const none = { labelKey: null, whereKey: null, href: null, ruleLabel: null };
+  const contactHref = source.contactId
+    ? `/contacts?open=${encodeURIComponent(source.contactId)}`
+    : "/contacts";
+  const invoiceHref = source.invoiceId
+    ? `/invoices?open=${encodeURIComponent(source.invoiceId)}`
+    : null;
   if (!field) return none;
   if (/^(UBL schema|PINT AE)/.test(field)) {
     // E1 (J1-r2): buyer-identity and buyer-address rules are fixed on the customer's contact,
@@ -147,7 +156,7 @@ export function einvoiceFieldHint(field: string): EInvoiceFieldHint {
         ...none,
         ruleLabel: field,
         whereKey: "invoices.einvoiceWhere.customer",
-        href: "/contacts",
+        href: contactHref,
       };
     }
     return { ...none, ruleLabel: field };
@@ -166,15 +175,26 @@ export function einvoiceFieldHint(field: string): EInvoiceFieldHint {
     return {
       ...none,
       labelKey: `einvoicing.field_${key}`,
-      whereKey: "einvoicing.setUpLink",
-      href: "/settings/einvoicing",
+      whereKey:
+        rest === "einvoicePayeeIban"
+          ? "einvoicing.setUpLink"
+          : "invoices.einvoiceWhere.companyProfile",
+      href:
+        rest === "einvoicePayeeIban"
+          ? "/settings/einvoicing#iban"
+          : rest === "einvoiceTin"
+            ? "/settings/company#company-tax-id-tin"
+            : "/settings/company#company-tax-id-seller-id-country",
     };
   }
   if (scope === "company" && COMPANY_FIELDS[rest]) {
     return {
       labelKey: `invoices.einvoiceField.${COMPANY_FIELDS[rest]}`,
-      whereKey: "invoices.einvoiceWhere.companyProfile",
-      href: "/company-profile",
+      whereKey:
+        rest === "tradeLicenceNo"
+          ? "einvoicing.setUpLink"
+          : "invoices.einvoiceWhere.companyProfile",
+      href: rest === "tradeLicenceNo" ? "/settings/einvoicing#trade-licence" : "/settings/company",
       ruleLabel: null,
     };
   }
@@ -187,7 +207,7 @@ export function einvoiceFieldHint(field: string): EInvoiceFieldHint {
             ? "einvoicing.field_passportCountry"
             : "invoices.einvoiceField.customerAddress",
       whereKey: "invoices.einvoiceWhere.customer",
-      href: "/contacts",
+      href: contactHref,
       ruleLabel: null,
     };
   }
@@ -200,7 +220,7 @@ export function einvoiceFieldHint(field: string): EInvoiceFieldHint {
     return {
       labelKey,
       whereKey: "invoices.einvoiceWhere.invoice",
-      href: null,
+      href: invoiceHref,
       ruleLabel: null,
     };
   }
@@ -211,7 +231,7 @@ export function einvoiceFieldHint(field: string): EInvoiceFieldHint {
     return {
       labelKey: key ? `invoices.einvoiceField.${key}` : "invoices.einvoiceField.lines",
       whereKey: "invoices.einvoiceWhere.invoice",
-      href: null,
+      href: invoiceHref,
       ruleLabel: null,
     };
   }

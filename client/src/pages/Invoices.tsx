@@ -438,6 +438,8 @@ export default function Invoices() {
   const [addPaymentDialogOpen, setAddPaymentDialogOpen] = useState(false);
   const [einvoiceIssues, setEinvoiceIssues] = useState<{
     number: string;
+    invoiceId: string;
+    contactId: string | null;
     issues: EInvoiceIssueItem[];
   } | null>(null);
   const [viewPaymentsDialogOpen, setViewPaymentsDialogOpen] = useState(false);
@@ -968,7 +970,12 @@ export default function Invoices() {
           ? einvoiceIssuesFromError(error.body)
           : [];
       if (issues.length > 0) {
-        setEinvoiceIssues({ number: invoice.number, issues });
+        setEinvoiceIssues({
+          number: invoice.number,
+          invoiceId: invoice.id,
+          contactId: invoice.contactId ?? null,
+          issues,
+        });
         return;
       }
       toast({
@@ -2285,7 +2292,7 @@ export default function Invoices() {
           <ul className="max-h-80 space-y-2 overflow-y-auto text-sm">
             {(einvoiceIssues?.issues ?? []).map((issue, i) => {
               // X5 (J1 L3): a readable field name and where to fix it, never a raw data path.
-              const hint = einvoiceFieldHint(issue.field);
+              const hint = einvoiceFieldHint(issue.field, einvoiceIssues ?? undefined);
               const label = hint.labelKey ? t[hint.labelKey] : null;
               const fixKey = einvoiceIssueTextKey(issue.code) ?? einvoiceRuleTextKey(issue.ruleId);
               const detail =
@@ -2299,7 +2306,9 @@ export default function Invoices() {
                   {issue.ruleId && (
                     <p className="text-xs text-muted-foreground">
                       {t["einvoicing.validationRule"]}{" "}
-                      <bdi dir="ltr" translate="no">{issue.ruleId}</bdi>
+                      <bdi dir="ltr" translate="no">
+                        {issue.ruleId}
+                      </bdi>
                     </p>
                   )}
                   <span data-testid={issue.code ? `einvoice-issue-${issue.code}` : undefined}>
@@ -2310,6 +2319,7 @@ export default function Invoices() {
                       {hint.href ? (
                         <Link
                           href={hint.href}
+                          onClick={() => setEinvoiceIssues(null)}
                           className="inline-flex min-h-11 items-center text-accent hover:underline sm:min-h-0"
                           data-testid={`link-einvoice-fix-${i}`}
                         >

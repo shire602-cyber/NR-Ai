@@ -16,7 +16,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { requirePermission } from "../middleware/companyRolePolicy";
+import { requireScopedCompanyPermission } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { DomainError } from "../errors";
 import { createLogger } from "../config/logger";
@@ -50,6 +50,7 @@ import {
   companyTin,
   getLegalEntity,
   patchFromAcube,
+  requireCompanyTin,
   upsertLegalEntity,
 } from "../services/einvoice/legal-entities";
 import { companyProviderConfiguration } from "../services/einvoice/providers/company-provider";
@@ -263,7 +264,7 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/acube",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
@@ -278,22 +279,14 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/einvoicing/acube/reserve",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(reserveBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
       const { provider } = await acubeProvider(company);
       const body = validated<ReserveBody>(req);
-      const tin = companyTin(company as Company & { peppolParticipantId?: string | null });
-      if (!tin) {
-        throw new DomainError(
-          "EINVOICE_TIN_MISSING",
-          422,
-          { field: "company.trnVatNumber" },
-          "Add the company's 15-digit TRN (its first 10 digits are the TIN) before connecting."
-        );
-      }
+      const tin = requireCompanyTin(company);
       let reserved;
       try {
         reserved = await provider.reserveLegalEntity(tin);
@@ -303,13 +296,20 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
         }
         throw err;
       }
+      const patch = patchFromAcube(reserved);
+      if (patch.status === "active") {
+        const prior = await getLegalEntity(company.id, ACUBE_PROVIDER_NAME, provider.environment);
+        if (prior?.status !== "active" || prior.legalEntityId !== reserved.legalEntityId) {
+          patch.activatedAt = new Date();
+        }
+      }
       const le = await upsertLegalEntity(
         company.id,
         ACUBE_PROVIDER_NAME,
         provider.environment,
         tin,
         {
-          ...patchFromAcube(reserved),
+          ...patch,
           approver: body.approver,
           approverEmail: body.approver === "someone_else" ? (body.approverEmail ?? null) : null,
           lastError: null,
@@ -331,7 +331,7 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/einvoicing/acube/sync",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(emptyBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
@@ -346,9 +346,11 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
           "Reserve the TIN first."
         );
       }
+      const tin = requireCompanyTin(company);
+      if (tin !== le.tin) throw new DomainError("EINVOICE_SUPPLIER_ENDPOINT_MISMATCH", 422);
       let current;
       try {
-        current = await provider.getLegalEntity(le.legalEntityId);
+        current = await provider.getLegalEntity(le.legalEntityId, tin);
       } catch (err) {
         if (err instanceof AcubeApiError) throw new DomainError(err.code, 502);
         throw err;
@@ -369,7 +371,7 @@ export function registerEInvoiceAcubeRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/einvoicing/acube/webhooks",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(emptyBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);

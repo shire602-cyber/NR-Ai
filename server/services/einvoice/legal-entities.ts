@@ -24,8 +24,12 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db, type AppDatabase } from "../../db";
 import { einvoiceLegalEntities, type EInvoiceLegalEntity } from "../../../shared/schema";
 import { DomainError } from "../../errors";
-import { PEPPOL_SCHEME_UAE_TIN, isUaeTin, tinFromTrn } from "./pint-ae-codes";
-import { effectiveTin } from "../../../shared/validators/einvoice-identity";
+import { PEPPOL_SCHEME_UAE_TIN, isUaeTin } from "./pint-ae-codes";
+import {
+  effectiveTin,
+  tinProblem,
+  type TinSource,
+} from "../../../shared/validators/einvoice-identity";
 
 /** Provider legal-entity fields we keep (A-Cube's resource shape; other providers map onto it). */
 export interface LegalEntityFields {
@@ -57,9 +61,10 @@ export async function getLegalEntity(
   companyId: string,
   provider: string,
   environment: string,
-  conn: Pick<AppDatabase, "select"> = db
+  conn: Pick<AppDatabase, "select"> = db,
+  lock?: "share"
 ): Promise<EInvoiceLegalEntity | undefined> {
-  const rows = await conn
+  const query = conn
     .select()
     .from(einvoiceLegalEntities)
     .where(
@@ -70,6 +75,7 @@ export async function getLegalEntity(
       )
     )
     .limit(1);
+  const rows = await (lock ? query.for(lock) : query);
   return rows[0];
 }
 
@@ -183,23 +189,58 @@ export async function updateLegalEntityRow(
   return row;
 }
 
-/**
- * The company's 10-digit TIN: explicit Peppol participant id, else the stored TIN (WQ5), else
- * the first 10 digits of the CT TRN, else of the VAT TRN.
- */
-export function companyTin(company: {
-  trnVatNumber?: string | null;
+interface CompanyTinSource extends TinSource {
   peppolParticipantId?: string | null;
-  einvoiceTin?: string | null;
-  corporateTaxId?: string | null;
-}): string | null {
-  if (company.peppolParticipantId && isUaeTin(company.peppolParticipantId)) {
-    return company.peppolParticipantId;
+  peppolScheme?: string | null;
+}
+
+/** Prefer the statutory identity. Legacy 0235 endpoints can supply a missing TIN. */
+export function companyTin(company: CompanyTinSource): string | null {
+  const statutory = effectiveTin(company);
+  if (statutory) return statutory;
+  const scheme = company.peppolScheme?.trim() || PEPPOL_SCHEME_UAE_TIN;
+  const endpoint = company.peppolParticipantId?.trim();
+  return scheme === PEPPOL_SCHEME_UAE_TIN && isUaeTin(endpoint) ? endpoint! : null;
+}
+
+/** Resolve the taxpayer to register and send as, refusing conflicting company identity fields. */
+export function requireCompanyTin(company: CompanyTinSource): string {
+  const tin = companyTin(company);
+  if (!tin) {
+    throw new DomainError(
+      "EINVOICE_TIN_MISSING",
+      422,
+      { field: "company.trnVatNumber" },
+      "Enter the company's 10-digit TIN or 15-digit TRN before connecting."
+    );
   }
-  const stored = effectiveTin(company);
-  if (stored) return stored;
-  const tin = tinFromTrn(company.trnVatNumber ?? null);
-  return tin && isUaeTin(tin) ? tin : null;
+  const scheme = company.peppolScheme?.trim() || PEPPOL_SCHEME_UAE_TIN;
+  const endpoint = company.peppolParticipantId?.trim();
+  if (
+    tinProblem(tin, company) ||
+    (company.einvoiceTin && company.einvoiceTin !== tin) ||
+    (scheme === PEPPOL_SCHEME_UAE_TIN && endpoint && endpoint !== tin)
+  ) {
+    throw new DomainError(
+      "EINVOICE_SUPPLIER_ENDPOINT_MISMATCH",
+      422,
+      undefined,
+      "The company's tax registration and e-invoicing address must use the same TIN."
+    );
+  }
+  return tin;
+}
+
+/** Require identity evidence from the provider before saving a reservation or connection. */
+export function assertProviderTin(expected: string, actual: string | null | undefined): void {
+  if (actual !== expected) {
+    throw new DomainError(
+      "EINVOICE_PROVIDER_TIN_MISMATCH",
+      502,
+      undefined,
+      "The e-invoicing provider did not confirm this company's TIN."
+    );
+  }
 }
 
 /**

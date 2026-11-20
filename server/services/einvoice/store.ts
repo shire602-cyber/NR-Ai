@@ -16,6 +16,7 @@ import {
   type EInvoiceArchiveRow,
   type EInvoiceBuyerEndpoint,
   type EInvoiceDocument,
+  type Invoice,
   type EInvoiceInboundDocument,
 } from "../../../shared/schema";
 import type { EInvoiceProviderEnvironment } from "../einvoice-provider";
@@ -56,8 +57,11 @@ export function documentSubmissionMetadata(
   if (environment !== "sandbox" && environment !== "production" && environment !== "mock") return;
   return {
     environment: environment as EInvoiceProviderEnvironment,
+    operationId: typeof metadata?.operationId === "string" ? metadata.operationId : null,
+    actorId: typeof metadata?.actorId === "string" ? metadata.actorId : null,
     invoiceNumber: typeof metadata?.invoiceNumber === "string" ? metadata.invoiceNumber : null,
     supplierTin: typeof metadata?.supplierTin === "string" ? metadata.supplierTin : null,
+    legalEntityId: typeof metadata?.legalEntityId === "string" ? metadata.legalEntityId : null,
     scope: typeof metadata?.scope === "string" ? metadata.scope : null,
   };
 }
@@ -66,6 +70,19 @@ export function documentProviderEnvironment(
   doc: Pick<EInvoiceDocument, "validation"> | null | undefined
 ) {
   return documentSubmissionMetadata(doc)?.environment ?? null;
+}
+
+/** Unsettled and handed-over documents keep their recorded provider. */
+export function submissionProviderPin(
+  invoice: Pick<Invoice, "einvoiceProviderMessageId">,
+  doc: EInvoiceDocument | undefined
+) {
+  return invoice.einvoiceProviderMessageId ||
+    doc?.providerMessageId ||
+    doc?.nextRetryAt ||
+    doc?.deliveryStatus === "needs_link"
+    ? (doc ?? null)
+    : undefined;
 }
 
 /** Validation available to the UI, excluding transport metadata. */
@@ -82,15 +99,19 @@ export function documentValidation(doc: Pick<EInvoiceDocument, "validation"> | n
 export async function getEInvoiceDocument(
   companyId: string,
   invoiceId: string,
-  conn: EInvoiceDb = db
+  conn: EInvoiceDb = db,
+  lock?: "update" | "skip-locked"
 ): Promise<EInvoiceDocument | undefined> {
-  const rows = await conn
+  const query = conn
     .select()
     .from(einvoiceDocuments)
     .where(
       and(eq(einvoiceDocuments.companyId, companyId), eq(einvoiceDocuments.invoiceId, invoiceId))
     )
     .limit(1);
+  const rows = await (lock
+    ? query.for("update", lock === "skip-locked" ? { skipLocked: true } : undefined)
+    : query);
   return rows[0];
 }
 

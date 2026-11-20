@@ -17,7 +17,7 @@
  *   ACUBE_CREDIT_NOTE_SUBMIT_PATH     default /credit-notes
  *   ACUBE_TIMEOUT_MS                  default 20000
  */
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import type {
   EInvoiceDocumentRef,
   EInvoiceProvider,
@@ -35,10 +35,10 @@ import { MOF_ASP_REGISTER_URL as REGISTER_URL } from "./types";
 import { providerObject, providerString, readProviderResponse } from "./response";
 import type { EInvoiceRejectionReason, EInvoiceStatus } from "../../einvoice-status";
 import { createLogger } from "../../../config/logger";
-import { parseXml } from "../dom";
+import { isCreditNoteDocumentType } from "../pint-ae-codes";
 import {
   acubeStatusErrorCode,
-  legacyFromTracks,
+  legacyFromProviderTracks,
   mapAcubeDeliveryStatus,
   type DeliveryStatus,
   type ReportingStatus,
@@ -159,16 +159,21 @@ export interface AcubeLegalEntity {
 }
 
 type Kind = "invoices" | "credit-notes";
-const kindOf = (documentType?: string | null): Kind =>
-  documentType === "381" || documentType === "81" || documentType === "credit-note"
-    ? "credit-notes"
-    : "invoices";
+const kindOf = (ref: EInvoiceDocumentRef = {}): Kind => {
+  const credit = ref.documentCollection
+    ? ref.documentCollection === "credit-note"
+    : isCreditNoteDocumentType(ref.documentType);
+  return credit ? "credit-notes" : "invoices";
+};
+const COLLECTION_PAGE_SIZE = 30;
+const COLLECTION_TIMEOUT_MS = 120_000;
 
 interface RawResponse {
   ok: boolean;
   status: number;
   json: unknown;
   text: string;
+  originalText?: string;
 }
 
 function str(v: unknown): string | null {
@@ -291,12 +296,17 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     method: "GET" | "POST" | "PUT",
     path: string,
     body?: { xml?: string; json?: unknown },
-    accept = "application/json"
+    accept = "application/json",
+    options: { signal?: AbortSignal; preserveOriginalText?: boolean } = {}
   ): Promise<RawResponse> {
     const send = async (token: string): Promise<RawResponse> => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.cfg.timeoutMs);
       try {
+        const signal = options.signal
+          ? AbortSignal.any([options.signal, controller.signal])
+          : controller.signal;
+        signal.throwIfAborted();
         const headers: Record<string, string> = {
           Accept: accept,
           Authorization: `Bearer ${token}`,
@@ -308,9 +318,13 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
           headers,
           body: body?.xml ?? (body?.json === undefined ? undefined : JSON.stringify(body.json)),
           redirect: "error",
-          signal: controller.signal,
+          signal,
         });
-        const parsed = await readProviderResponse(res, [this.cfg.email, this.cfg.password, token]);
+        const parsed = await readProviderResponse(
+          res,
+          [this.cfg.email, this.cfg.password, token],
+          res.ok && options.preserveOriginalText === true
+        );
         return { ok: res.ok, status: res.status, ...parsed };
       } catch {
         throw new AcubeApiError(502, "TRANSPORT_ERROR", "Could not contact A-Cube.");
@@ -320,13 +334,34 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     };
     const first = await send(await this.token());
     if (first.status !== 401) return first;
+    options.signal?.throwIfAborted();
     return send(await this.token({ force: true }));
   }
 
-  private submitPath(documentType?: string | null): string {
-    return kindOf(documentType) === "credit-notes"
+  private submitPath(ref: EInvoiceDocumentRef): string {
+    return kindOf(ref) === "credit-notes"
       ? this.cfg.creditNoteSubmitPath
       : this.cfg.invoiceSubmitPath;
+  }
+
+  /** Bind a queued submission to its company, A-Cube account and endpoint configuration. */
+  async getSubmissionScope(companyId: string): Promise<string> {
+    const { environment, email, baseUrl, loginUrl, invoiceSubmitPath, creditNoteSubmitPath } =
+      this.cfg;
+    return createHmac("sha256", this.cfg.password)
+      .update(
+        JSON.stringify([
+          "einvoice-acube-submission",
+          companyId,
+          environment,
+          email,
+          baseUrl,
+          loginUrl,
+          invoiceSubmitPath,
+          creditNoteSubmitPath,
+        ])
+      )
+      .digest("hex");
   }
 
   private outcome(
@@ -334,14 +369,19 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     reporting: ReportingStatus,
     extra: Partial<EInvoiceProviderResult> & { providerMessageId: string }
   ): EInvoiceProviderResult {
-    const status: EInvoiceStatus = legacyFromTracks(delivery, reporting);
+    const status: EInvoiceStatus = legacyFromProviderTracks(
+      this.name,
+      extra.providerStatus,
+      delivery,
+      reporting
+    );
     return { status, delivery, reporting, ...extra };
   }
 
   async submit(submission: EInvoiceSubmission): Promise<EInvoiceProviderResult> {
     let r: RawResponse;
     try {
-      r = await this.call("POST", this.submitPath(submission.documentType), {
+      r = await this.call("POST", this.submitPath(submission), {
         xml: submission.xml,
       });
     } catch (err) {
@@ -352,8 +392,7 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
           errorCode: err.code,
         });
       }
-      // Transport failure: ambiguous (A-Cube may have created the document). Retried with backoff;
-      // the workflow looks the document up before re-posting (lookupSubmission).
+      // A-Cube may already hold the document. The worker reconciles by source XML.
       return this.outcome("delivery_failed", "pending", {
         providerMessageId: "",
         detail: "Could not contact A-Cube.",
@@ -363,7 +402,7 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
 
     if (r.status === 201 || r.status === 200) {
       const body = providerObject(r.json) ?? {};
-      const id = this.documentId(body, kindOf(submission.documentType));
+      const id = this.documentId(body, kindOf(submission));
       if (!id) {
         return this.outcome("delivery_failed", "pending", {
           providerMessageId: "",
@@ -374,10 +413,14 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
       }
       const providerStatus = providerString(body.status) ?? "";
       const errorCode = acubeStatusErrorCode(providerStatus);
-      return this.outcome(mapAcubeDeliveryStatus(providerStatus), "pending", {
+      const delivery = mapAcubeDeliveryStatus(providerStatus);
+      return this.outcome(delivery, "pending", {
         providerMessageId: id,
         providerStatus,
-        detail: errorCode ? "A-Cube returned an unsuccessful document status." : null,
+        detail:
+          delivery === "delivery_failed" || delivery === "rejected"
+            ? "A-Cube returned an unsuccessful document status."
+            : null,
         errorCode,
         raw: r.json,
       });
@@ -422,7 +465,7 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     providerMessageId: string,
     ref: EInvoiceDocumentRef = {}
   ): Promise<EInvoiceProviderResult> {
-    const kind = kindOf(ref.documentType);
+    const kind = kindOf(ref);
     let r: RawResponse;
     try {
       r = await this.call("GET", `/${kind}/${encodeURIComponent(providerMessageId)}`);
@@ -464,103 +507,124 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     });
   }
 
-  /**
-   * FTA reporting track. A-Cube builds and transmits the Tax Data Document (TDD) to the FTA;
-   * GET /{kind}/{id}/tdd answers 200 with the TDD once it exists and 204/404 before that.
-   * ASSUMPTION to confirm in sandbox: TDD present = reported. FTA rejections arrive as Message
-   * Level Status (MLS) documents, which the public docs do not enumerate yet.
-   */
-  async getReportingStatus(
-    providerMessageId: string,
-    ref: EInvoiceDocumentRef = {}
-  ): Promise<{ reporting: ReportingStatus; detail?: string | null }> {
-    const kind = kindOf(ref.documentType);
-    const r = await this.call(
-      "GET",
-      `/${kind}/${encodeURIComponent(providerMessageId)}/tdd`,
-      undefined,
-      "application/xml"
-    );
-    if (r.status === 200) {
-      // The source must be a TDD, not an HTML or generic XML error returned with HTTP 200.
-      try {
-        if (parseXml(r.text).documentElement?.localName === "TaxDataDocument")
-          return { reporting: "reported" };
-      } catch {
-        // An invalid response leaves the reporting status pending.
+  // The TDD download only confirms that an artifact is available. The A-Cube contract does
+  // not expose an FTA acknowledgement through that endpoint, so reporting remains pending.
+
+  private async *documentPages(
+    kind: Kind,
+    direction: "incoming" | "outgoing",
+    signal: AbortSignal
+  ): AsyncGenerator<unknown[]> {
+    const visited = new Set<string>();
+    for (let page = 1; ; page++) {
+      signal.throwIfAborted();
+      const r = await this.call(
+        "GET",
+        `/${kind}?direction=${direction}&itemsPerPage=${COLLECTION_PAGE_SIZE}&page=${page}`,
+        undefined,
+        "application/ld+json",
+        { signal }
+      );
+      const body = providerObject(r.json);
+      const items = Array.isArray(r.json) ? r.json : (body?.member ?? body?.["hydra:member"]);
+      if (!r.ok || !Array.isArray(items)) {
+        throw new AcubeApiError(
+          r.ok ? 502 : r.status,
+          "ACUBE_UNAVAILABLE",
+          `Could not read the A-Cube ${direction} collection.`
+        );
       }
+      const view = providerObject(body?.view ?? body?.["hydra:view"]);
+      const total = body?.totalItems ?? body?.["hydra:totalItems"];
+      // Rebuild the numbered page on the configured host, retaining our resource and filters.
+      const more =
+        !!providerString(view?.next ?? view?.["hydra:next"]) ||
+        (typeof total === "number"
+          ? total > page * COLLECTION_PAGE_SIZE
+          : !view && items.length >= COLLECTION_PAGE_SIZE);
+      const ids = items.map((item: unknown) => this.documentId(providerObject(item), kind) ?? "");
+      const pageKey = JSON.stringify(ids.sort());
+      if ((more && !items.length) || (items.length && visited.has(pageKey))) {
+        throw new AcubeApiError(
+          502,
+          "ACUBE_UNAVAILABLE",
+          `A-Cube returned inconsistent ${direction} pagination.`
+        );
+      }
+      visited.add(pageKey);
+      yield items;
+      if (!more) return;
     }
-    if (r.status === 204 || r.status === 404) return { reporting: "pending" };
-    throw new AcubeApiError(r.status, "ACUBE_UNAVAILABLE", `A-Cube TDD answered HTTP ${r.status}`);
   }
 
   /** A number can repeat across companies. Link only the original outbound XML we handed over. */
   async lookupSubmission(submission: EInvoiceSubmission): Promise<EInvoiceProviderResult | null> {
-    const kind = kindOf(submission.documentType);
-    const r = await this.call("GET", `/${kind}?direction=outgoing&itemsPerPage=30&page=1`);
-    const items = Array.isArray(r.json) ? r.json : providerObject(r.json)?.["hydra:member"];
-    if (!r.ok || !Array.isArray(items)) {
-      throw new AcubeApiError(
-        502,
-        "ACUBE_UNAVAILABLE",
-        "Could not read the A-Cube outgoing collection."
-      );
-    }
+    const kind = kindOf(submission);
     const numberKey = kind === "credit-notes" ? "creditNoteNumber" : "invoiceNumber";
-    const matches: EInvoiceProviderResult[] = [];
-    for (const item of items) {
-      const candidate = providerObject(item);
-      if (
-        !candidate ||
-        candidate[numberKey] !== submission.invoiceNumber ||
-        candidate.direction !== "outgoing"
-      )
-        continue;
-      const id = this.documentId(candidate, kind);
-      if (!id) continue;
-      const source = await this.fetchSource(id, { documentType: submission.documentType });
-      if (source.trim() !== submission.xml.trim()) continue;
-      const providerStatus = providerString(candidate.status);
-      if (!providerStatus || acubeStatusErrorCode(providerStatus) === "ACUBE_UNKNOWN_STATUS") {
-        throw new AcubeApiError(
-          502,
-          "ACUBE_UNAVAILABLE",
-          "Could not confirm the matched A-Cube document status."
-        );
-      }
-      matches.push(
-        this.outcome(mapAcubeDeliveryStatus(providerStatus), "pending", {
+    const signal = AbortSignal.timeout(COLLECTION_TIMEOUT_MS);
+    const checked = new Set<string>();
+    let matched: EInvoiceProviderResult | null = null;
+    for await (const items of this.documentPages(kind, "outgoing", signal)) {
+      for (const item of items) {
+        const candidate = providerObject(item);
+        if (
+          candidate?.[numberKey] !== submission.invoiceNumber ||
+          candidate.direction !== "outgoing"
+        )
+          continue;
+        const id = this.documentId(candidate, kind);
+        if (!id || checked.has(id)) continue;
+        checked.add(id);
+        const source = await this.fetchSource(id, submission, signal);
+        if (source !== submission.xml) continue;
+        if (matched) return null;
+        const providerStatus = providerString(candidate.status);
+        if (!providerStatus || acubeStatusErrorCode(providerStatus) === "ACUBE_UNKNOWN_STATUS") {
+          throw new AcubeApiError(
+            502,
+            "ACUBE_UNAVAILABLE",
+            "Could not confirm the matched A-Cube document status."
+          );
+        }
+        matched = this.outcome(mapAcubeDeliveryStatus(providerStatus), "pending", {
           providerMessageId: id,
           providerStatus,
           errorCode: acubeStatusErrorCode(providerStatus),
-        })
-      );
-    }
-    return matches.length === 1 ? matches[0] : null;
-  }
-
-  async listInbound(): Promise<InboundListing[]> {
-    const out: InboundListing[] = [];
-    for (const kind of ["invoices", "credit-notes"] as const) {
-      const r = await this.call("GET", `/${kind}?direction=incoming&itemsPerPage=30&page=1`);
-      if (!r.ok) throw new AcubeApiError(r.status, "ACUBE_UNAVAILABLE", `A-Cube list ${kind}`);
-      const items = Array.isArray(r.json)
-        ? r.json
-        : (((r.json as Record<string, unknown>)?.["hydra:member"] as unknown[]) ?? []);
-      for (const item of items) {
-        const raw = providerObject(item);
-        const id = this.documentId(raw, kind);
-        if (!raw || !id || (raw.direction && raw.direction !== "incoming")) continue;
-        out.push({
-          providerMessageId: id,
-          documentType: str(raw.documentTypeCode) ?? (kind === "credit-notes" ? "381" : "380"),
-          documentNumber: str(raw.invoiceNumber) ?? str(raw.creditNoteNumber),
-          legalEntityId: str(raw.legalEntityUuid),
-          ownerFiscalId: str(raw.ownerFiscalId),
         });
       }
     }
-    return out;
+    return matched;
+  }
+
+  async listInbound(): Promise<InboundListing[]> {
+    const out = new Map<string, InboundListing>();
+    const signal = AbortSignal.timeout(COLLECTION_TIMEOUT_MS);
+    for (const kind of ["invoices", "credit-notes"] as const) {
+      for await (const items of this.documentPages(kind, "incoming", signal)) {
+        for (const item of items) {
+          const raw = providerObject(item);
+          const id = this.documentId(raw, kind);
+          if (!raw || !id || (raw.direction && raw.direction !== "incoming")) continue;
+          const documentCollection = kind === "credit-notes" ? "credit-note" : "invoice";
+          const key = `${documentCollection}:${id}`;
+          if (out.has(key)) continue;
+          const code = raw.documentTypeCode;
+          const documentType =
+            typeof code === "number" && Number.isInteger(code)
+              ? String(code)
+              : providerString(code);
+          out.set(key, {
+            providerMessageId: id,
+            documentCollection,
+            documentType: documentType ?? (kind === "credit-notes" ? "381" : "380"),
+            documentNumber: str(raw.invoiceNumber) ?? str(raw.creditNoteNumber),
+            legalEntityId: str(raw.legalEntityUuid),
+            ownerFiscalId: str(raw.ownerFiscalId),
+          });
+        }
+      }
+    }
+    return [...out.values()];
   }
 
   /** Document metadata (legal entity, number) for an id from a webhook. */
@@ -568,7 +632,7 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     providerMessageId: string,
     ref: EInvoiceDocumentRef = {}
   ): Promise<Record<string, unknown>> {
-    const kind = kindOf(ref.documentType);
+    const kind = kindOf(ref);
     const r = await this.call("GET", `/${kind}/${encodeURIComponent(providerMessageId)}`);
     if (!r.ok) {
       throw new AcubeApiError(r.status, "ACUBE_UNAVAILABLE", `A-Cube ${kind} answered ${r.status}`);
@@ -584,18 +648,23 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     return document;
   }
 
-  async fetchSource(providerMessageId: string, ref: EInvoiceDocumentRef = {}): Promise<string> {
-    const kind = kindOf(ref.documentType);
+  async fetchSource(
+    providerMessageId: string,
+    ref: EInvoiceDocumentRef = {},
+    signal?: AbortSignal
+  ): Promise<string> {
+    const kind = kindOf(ref);
     const r = await this.call(
       "GET",
       `/${kind}/${encodeURIComponent(providerMessageId)}/source`,
       undefined,
-      "application/xml"
+      "application/xml",
+      { signal, preserveOriginalText: true }
     );
-    if (!r.ok || !r.text.trim().startsWith("<")) {
+    if (!r.ok || !r.originalText?.trimStart().startsWith("<")) {
       throw new AcubeApiError(r.status, "ACUBE_UNAVAILABLE", `A-Cube source answered ${r.status}`);
     }
-    return r.text;
+    return r.originalText;
   }
 
   private documentId(body: Record<string, unknown> | null, kind: Kind): string | null {
@@ -612,7 +681,7 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
       try {
         out.push({
           providerMessageId: item.providerMessageId,
-          xml: await this.fetchSource(item.providerMessageId, { documentType: item.documentType }),
+          xml: await this.fetchSource(item.providerMessageId, item),
           receivedAt: null,
         });
       } catch {
@@ -662,7 +731,7 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
   /** Reserve the TIN so the taxpayer can link it in EmaraTax (POST /legal-entities). */
   async reserveLegalEntity(tin: string): Promise<AcubeLegalEntity> {
     const r = await this.call("POST", "/legal-entities", { json: { tin } });
-    if (r.status === 201 || r.status === 200) return this.legalEntity(r.json);
+    if (r.status === 201 || r.status === 200) return this.legalEntity(r.json, { tin });
     const reasons = acubeViolations(r.json);
     throw new AcubeApiError(
       r.status,
@@ -672,24 +741,31 @@ export class AcubeEInvoiceProvider implements EInvoiceProvider {
     );
   }
 
-  async getLegalEntity(legalEntityId: string): Promise<AcubeLegalEntity> {
+  async getLegalEntity(legalEntityId: string, tin?: string): Promise<AcubeLegalEntity> {
     const r = await this.call("GET", `/legal-entities/${encodeURIComponent(legalEntityId)}`);
     if (!r.ok) {
       throw new AcubeApiError(r.status, "ACUBE_UNAVAILABLE", `A-Cube legal entity ${r.status}`);
     }
-    return this.legalEntity(r.json, legalEntityId);
+    return this.legalEntity(r.json, { id: legalEntityId, tin });
   }
 
-  private legalEntity(value: unknown, expectedId?: string): AcubeLegalEntity {
+  private legalEntity(value: unknown, expected: { id?: string; tin?: string }): AcubeLegalEntity {
     const body = providerObject(value);
     const legalEntityId = providerString(body?.uuid) ?? providerString(body?.legalEntityId);
     const tin = providerString(body?.tin);
     const status = providerString(body?.status);
-    if (!legalEntityId || !tin || !status || (expectedId && legalEntityId !== expectedId)) {
+    if (!legalEntityId || !tin || !status || (expected.id && legalEntityId !== expected.id)) {
       throw new AcubeApiError(
         502,
         "ACUBE_UNAVAILABLE",
         "A-Cube returned an invalid legal entity resource."
+      );
+    }
+    if (expected.tin && tin !== expected.tin) {
+      throw new AcubeApiError(
+        502,
+        "EINVOICE_PROVIDER_TIN_MISMATCH",
+        "A-Cube returned a different taxpayer."
       );
     }
     return { ...body, legalEntityId, tin, status };

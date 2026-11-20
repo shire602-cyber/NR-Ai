@@ -31,9 +31,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { AskNajmaButton } from "@/components/firm/AskNajmaButton";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
+import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -41,6 +43,7 @@ import {
 } from "@/components/ui/sheet";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
+  einvoiceFieldHint,
   einvoiceIssuesFromError,
   einvoiceRuleTextKey,
   type EInvoiceIssueItem,
@@ -58,11 +61,13 @@ import {
   errorKey,
   fieldLabelKey,
   issueTextKey,
+  recipientAcknowledgement,
   reportingLabelKey,
   sourceKey,
   type ChecklistState,
   type DeliveryStatus,
   type EInvoiceStatusView,
+  type RecipientAcknowledgement,
   type ReportingStatus,
 } from "./einvoice-meta";
 import { einvoiceStatusKey, useEInvoiceStatus } from "./use-einvoice";
@@ -77,12 +82,16 @@ export function EInvoiceTrackBadges({
   testId,
   showReportingLabel = false,
   queuedForSubmission = false,
+  acknowledgement = null,
+  confirmationUnavailable = false,
 }: {
   delivery: DeliveryStatus;
   reporting: ReportingStatus;
   className?: string;
   testId?: string;
   queuedForSubmission?: boolean;
+  acknowledgement?: RecipientAcknowledgement;
+  confirmationUnavailable?: boolean;
   /** Spell the FTA reporting state out ("FTA: Pending") instead of the icon-only mark. */
   showReportingLabel?: boolean;
 }) {
@@ -91,15 +100,15 @@ export function EInvoiceTrackBadges({
   const deliveryText =
     delivery === "validated"
       ? t["einvoicing.delivery_validated_short"]
-      : t[deliveryLabelKey(delivery, queuedForSubmission)];
-  const reportingText = t[reportingLabelKey(reporting)];
+      : t[deliveryLabelKey(delivery, queuedForSubmission, acknowledgement)];
+  const reportingText = t[reportingLabelKey(reporting, confirmationUnavailable)];
   return (
     <span
       className={cn("inline-flex flex-wrap items-center gap-1", className)}
       data-testid={testId}
     >
       <StatusBadge
-        tone={DELIVERY_TONE[delivery]}
+        tone={acknowledgement === "received" ? "info" : DELIVERY_TONE[delivery]}
         title={`${t["einvoicing.trackDelivery"]}: ${deliveryText}`}
       >
         <span className="sr-only">{t["einvoicing.trackDelivery"]}: </span>
@@ -122,7 +131,9 @@ export function EInvoiceTrackBadges({
                   reporting === "pending" &&
                   (delivery === "draft" || delivery === "validated" || queuedForSubmission)
                     ? "einvoicing.ftaChip_not_sent"
-                    : `einvoicing.ftaChip_${reporting}`
+                    : confirmationUnavailable
+                      ? "einvoicing.reportingUnconfirmed"
+                      : `einvoicing.ftaChip_${reporting}`
                 ]
               }
             </span>
@@ -214,8 +225,12 @@ function eventLabel(e: EInvoiceStatusView["events"][number], t: Record<string, s
   }
   const key =
     e.track === "delivery"
-      ? deliveryLabelKey(e.to as DeliveryStatus, e.to === "queued" && e.providerStatus === null)
-      : reportingLabelKey(e.to as ReportingStatus);
+      ? deliveryLabelKey(
+          e.to as DeliveryStatus,
+          e.to === "queued" && e.providerStatus === null,
+          e.to === "delivered" ? recipientAcknowledgement(e.provider, e.providerStatus) : null
+        )
+      : reportingLabelKey(e.to as ReportingStatus, e.provider === "acube" && e.to === "reported");
   const track =
     e.track === "delivery" ? t["einvoicing.trackDelivery"] : t["einvoicing.trackReporting"];
   return `${track}: ${t[key] ?? e.to}`;
@@ -343,6 +358,8 @@ export interface EInvoicePanelProps {
 
 export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoicePanelProps) {
   const { companyId: handoffCompanyId } = useDefaultCompany();
+  const permission = useCompanyPermission();
+  const submitAccess = permission.gate("tax.submit");
   const { t, locale } = useTranslation();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [downloading, setDownloading] = useState<"xml" | "pdf" | null>(null);
@@ -420,6 +437,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
   const handedOver = !!view.transmission.providerDocumentId;
   const queuedForSubmission = view.submissionState === "queued";
   const failedDelivery = delivery.status === "rejected" || delivery.status === "delivery_failed";
+  const acknowledgement = view.transmission.recipientAcknowledgement;
   const providerName = view.transmission.providerDisplayName ?? view.transmission.provider ?? "";
   const latestAction = send.submittedAt >= resubmit.submittedAt ? send : resubmit;
   const latestCheck = recheck.submittedAt > latestAction.submittedAt ? recheck.data : undefined;
@@ -439,21 +457,23 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
     view.checklist.some((item) => item.key === "validated" && item.state === "done");
 
   const deliveryMeta =
-    delivery.status === "delivered" && delivery.at
+    delivery.status === "delivered" && acknowledgement !== "received" && delivery.at
       ? formatMessage(t["einvoicing.deliveredOn"], { date: formatDate(delivery.at, locale) })
       : handedOver
         ? formatMessage(t["einvoicing.viaProvider"], { provider: providerName })
         : t["einvoicing.notSentYet"];
   const reportingMeta = !reporting.required
     ? t["einvoicing.reportingNotRequiredHint"]
-    : reporting.status === "reported" && reporting.at
-      ? formatMessage(t["einvoicing.reportedOn"], { date: formatDate(reporting.at, locale) })
-      : reporting.reportBy
-        ? formatMessage(
-            reporting.overdue ? t["einvoicing.reportByPassed"] : t["einvoicing.reportBy"],
-            { date: formatDate(reporting.reportBy, locale) }
-          )
-        : null;
+    : reporting.confirmationUnavailable
+      ? t["einvoicing.reportingUnconfirmedHint"]
+      : reporting.status === "reported" && reporting.at
+        ? formatMessage(t["einvoicing.reportedOn"], { date: formatDate(reporting.at, locale) })
+        : reporting.reportBy
+          ? formatMessage(
+              reporting.overdue ? t["einvoicing.reportByPassed"] : t["einvoicing.reportBy"],
+              { date: formatDate(reporting.reportBy, locale) }
+            )
+          : null;
 
   return (
     <div className={cn("space-y-5", className)} data-testid="einvoice-panel">
@@ -465,10 +485,10 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
           meta={deliveryMeta}
           badge={
             <StatusBadge
-              tone={DELIVERY_TONE[delivery.status]}
+              tone={acknowledgement === "received" ? "info" : DELIVERY_TONE[delivery.status]}
               data-testid={queuedForSubmission ? "einvoice-queued" : undefined}
             >
-              {t[deliveryLabelKey(delivery.status, queuedForSubmission)]}
+              {t[deliveryLabelKey(delivery.status, queuedForSubmission, acknowledgement)]}
             </StatusBadge>
           }
         />
@@ -479,28 +499,35 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
           metaTone={reporting.overdue ? "warning" : undefined}
           badge={
             <StatusBadge tone={REPORTING_TONE[reporting.status]}>
-              {t[reportingLabelKey(reporting.status)]}
+              {t[reportingLabelKey(reporting.status, reporting.confirmationUnavailable)]}
             </StatusBadge>
           }
         />
       </div>
 
       {/* Honest boundary: nothing is sent without a connected provider. */}
-      {view.transmission.block && !handedOver && (
-        <div
-          className="rounded-lg bg-surface-sunken p-4 text-small"
-          data-testid="einvoice-not-sent"
-          role="note"
-        >
-          <p className="font-medium text-foreground">{t["einvoicing.notSentTitle"]}</p>
-          <p className="mt-1 text-muted-foreground">{t[blockKey(view.transmission.block)]}</p>
-          <Link
-            href="/settings/einvoicing"
-            className="mt-2 inline-block font-medium text-accent underline-offset-4 hover:underline"
+      {view.transmission.block &&
+        !handedOver &&
+        view.submissionState !== "needs_reconciliation" && (
+          <div
+            className="rounded-lg bg-surface-sunken p-4 text-small"
+            data-testid="einvoice-not-sent"
+            role="note"
           >
-            {t["einvoicing.setUpLink"]}
-          </Link>
-        </div>
+            <p className="font-medium text-foreground">{t["einvoicing.notSentTitle"]}</p>
+            <p className="mt-1 text-muted-foreground">{t[blockKey(view.transmission.block)]}</p>
+            <Link
+              href="/settings/einvoicing"
+              className="mt-2 inline-block font-medium text-accent underline-offset-4 hover:underline"
+            >
+              {t["einvoicing.setUpLink"]}
+            </Link>
+          </div>
+        )}
+      {handedOver && !view.transmission.canRefresh && view.transmission.block === "no_provider" && (
+        <p className="rounded-lg bg-surface-sunken p-4 text-small" role="status">
+          {t["einvoicing.trackingCredentialsUnavailable"]}
+        </p>
       )}
 
       {/* Validate-on-save: named missing fields with an in-place re-check. */}
@@ -518,6 +545,10 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
               </p>
               <ul className="mt-2 space-y-1.5">
                 {issues.map((issue, i) => {
+                  const hint = einvoiceFieldHint(issue.field, {
+                    contactId: view.contactId,
+                    invoiceId,
+                  });
                   const label = fieldLabelKey(issue.field);
                   const fixKey = issueTextKey(issue.code) ?? einvoiceRuleTextKey(issue.ruleId);
                   const detail =
@@ -536,6 +567,17 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
                         <bdi dir="ltr" translate="no" className="ms-2">
                           {issue.ruleId}
                         </bdi>
+                      )}
+                      {hint.href && hint.whereKey && (
+                        <SheetClose asChild>
+                          <Link
+                            href={hint.href}
+                            className="ms-2 inline-flex min-h-11 items-center text-accent hover:underline"
+                            data-testid={`link-einvoice-fix-${i}`}
+                          >
+                            {t[hint.whereKey]}
+                          </Link>
+                        </SheetClose>
                       )}
                     </li>
                   );
@@ -625,7 +667,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
               <p className="text-small font-semibold text-danger-subtle-foreground">
                 {delivery.status === "rejected"
                   ? formatMessage(t["einvoicing.rejectedTitle"], {
-                      provider: providerName || "ASP",
+                      provider: view.rejection.providerDisplayName ?? (providerName || "ASP"),
                     })
                   : t["einvoicing.deliveryFailedTitle"]}
               </p>
@@ -693,7 +735,13 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
                 <Button
                   size="sm"
                   onClick={() => resubmit.mutate()}
-                  disabled={resubmit.isPending || !view.rejection.resubmittable}
+                  {...submitAccess}
+                  disabled={
+                    !permission.known ||
+                    submitAccess.disabled ||
+                    resubmit.isPending ||
+                    !view.rejection.resubmittable
+                  }
                   data-testid="einvoice-resubmit"
                 >
                   {resubmit.isPending && (
@@ -722,7 +770,9 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
                 <p className="mt-2 text-caption text-muted-foreground">
                   {view.rejection.newDocumentRequired
                     ? t["einvoicing.resubmitNewDocument"]
-                    : t["einvoicing.resubmitBlocked"]}
+                    : view.rejection.providerHoldsDocument
+                      ? t["einvoicing.resubmitHeld"]
+                      : t["einvoicing.resubmitBlocked"]}
                 </p>
               )}
             </div>
@@ -757,11 +807,14 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
       )}
 
       <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-        {!view.transmission.block && !handedOver && !failedDelivery && !queuedForSubmission && (
+        {view.transmission.canSubmit && (
           <Button
             size="sm"
             onClick={() => send.mutate()}
-            disabled={send.isPending || issues.length > 0}
+            {...submitAccess}
+            disabled={
+              !permission.known || submitAccess.disabled || send.isPending || issues.length > 0
+            }
             data-testid="einvoice-send"
           >
             {send.isPending && (
@@ -770,7 +823,7 @@ export function EInvoicePanel({ invoiceId, onEdit, compact, className }: EInvoic
             {formatMessage(t["einvoicing.sendVia"], { provider: providerName })}
           </Button>
         )}
-        {handedOver && !view.transmission.block && view.status !== "cleared" && (
+        {view.transmission.canRefresh && (
           <Button
             size="sm"
             variant="outline"

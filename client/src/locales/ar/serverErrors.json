@@ -225,6 +225,8 @@
   "serverErrors.EINVOICE_PROVIDER_UNAVAILABLE": "خدمة الفوترة الإلكترونية غير متاحة حاليًا. حاول مرة أخرى لاحقًا.",
   "serverErrors.EINVOICE_SCHEMA_INVALID": "فشل التحقق من صيغة الفاتورة الإلكترونية المُنشأة. راجع بيانات الفاتورة وحاول مرة أخرى.",
   "serverErrors.EINVOICE_SUBMISSION_IN_PROGRESS": "يجري إرسال هذه الفاتورة الإلكترونية الآن. انتظر قليلًا ثم حدّث الصفحة.",
+  "serverErrors.EINVOICE_PROVIDER_TIN_MISMATCH": "لم يؤكد مزوّد الفوترة الإلكترونية الرقم الضريبي لهذه الشركة. تحقّق من بيانات المكلّف المرتبط لدى المزوّد.",
+  "serverErrors.EINVOICE_TIN_MISSING": "أدخل رقم التعريف الضريبي للشركة المكوّن من ١٠ أرقام أو رقم التسجيل الضريبي الإماراتي المكوّن من ١٥ رقمًا في إعدادات الشركة أولًا.",
   "serverErrors.EINVOICE_SUPPLIER_ENDPOINT_MISMATCH": "عنوان الفوترة الإلكترونية للمورّد على الفاتورة لا يطابق رقمك الضريبي المسجّل.",
   "serverErrors.EINVOICE_VALIDATION_FAILED": "الفاتورة غير جاهزة للفوترة الإلكترونية. أصلح المشكلات المذكورة وحاول مرة أخرى.",
   "serverErrors.EINVOICE_VALIDATION_UNAVAILABLE": "التحقق من الفواتير الإلكترونية غير متاح. يمكن إرسال الفاتورة بعد اجتياز التحقق فقط.",

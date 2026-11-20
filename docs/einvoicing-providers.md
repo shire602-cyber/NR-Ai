@@ -96,11 +96,15 @@ both providers may stay.
 - `server/http/body-limits.ts`: the `/api/webhooks/einvoice/acube` entry in `RAW_WEBHOOK_PREFIXES`
   (shared by `server/index.ts` and `tests/db/harness.ts`)
 - `server/middleware/csrf.ts`: the A-Cube webhook exemption
+- `server/middleware/companyRolePolicy.ts` sets the permission for A-Cube settings writes.
 - `client/src/components/einvoice/EInvoiceProviderCard.tsx`: the `acube` entry in `PROVIDER_CARDS`
 - `server/services/einvoice/provider-events.ts`: `runAcubePoll` / `ACUBE_POLL_JOB` (the A-Cube job alias)
 - `server/services/einvoice/legal-entities.ts`: the `patchFromAcube` alias
 - `server/services/einvoice/tracks.ts`: `mapAcubeDeliveryStatus`, `acubeStatusErrorCode` and the
   `ACUBE_*` entries of `EINVOICE_ERROR_CODES`
+- `server/services/einvoice/status-view.ts` maps A-Cube receipt and reporting states for display.
+- `client/src/components/einvoice/EInvoiceListCell.tsx` shows the A-Cube recipient receipt badge.
+- `client/src/components/einvoice/EInvoiceStatus.tsx` shows the A-Cube recipient receipt in history.
 - `client/src/components/einvoice/einvoice-meta.ts`: the `ACUBE_*` entries of `KNOWN_ERRORS`
 - `server/services/einvoice-submit.service.ts`: the `ACUBE_*` entries of `TRANSIENT_POLL_CODES`
 - `shared/capabilities.ts`: the `ACUBE_*` env vars and detection branch

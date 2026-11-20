@@ -46,6 +46,8 @@ const appEnv = {
   AUTH_COOKIE_SAMESITE: "lax",
   ALLOW_LOCAL_STORAGE: "true",
   AUTO_MIGRATE_ON_BOOT: "false",
+  DOTENV_CONFIG_PATH: "/nonexistent/einvoice-browser.env",
+  DOTENV_CONFIG_QUIET: "true",
   RL_AUTH_MAX: "500",
   LOG_LEVEL: "fatal",
 };
@@ -56,8 +58,9 @@ const copies = {
     delivery: "Delivery to customer",
     notConfigured: "Not configured",
     queued: "Queued for submission",
-    sent: "With provider",
-    accepted: "Delivered",
+    sent: "Sending",
+    recipientReceived: "Received by the buyer’s provider",
+    accepted: "Accepted by the buyer’s provider",
     firm: "Fixture firm",
     clients: ["Fixture bakery", "Fixture supplier"],
   },
@@ -91,6 +94,7 @@ const credentials = {
 const mockToken = randomUUID();
 const mockDocuments = new Map();
 const acceptReady = new Set();
+let acubeStatus = "processed";
 const posts = [];
 const unexpected = [];
 
@@ -118,7 +122,7 @@ const mock = createServer(async (req, res) => {
       posts.push("acube");
       mockDocuments.set(acubeInvoiceUuid, "acube");
       await delay(2_000);
-      return json(res, 201, { uuid: acubeInvoiceUuid, direction: "outgoing", status: "valid" });
+      return json(res, 201, { uuid: acubeInvoiceUuid, direction: "outgoing", status: "processed" });
     }
     if (req.method === "POST" && pathname === "/api/v3/unify") {
       assert.ok(req.headers.authorization === `Bearer ${credentials.complyance.apiKey}`);
@@ -137,15 +141,9 @@ const mock = createServer(async (req, res) => {
       if (pathname === "/api/v3/documents" && searchParams.get("type") === "purchases") {
         return json(res, 200, { data: [], meta: { hasMore: false } });
       }
-      const invoice = /^\/invoices\/([^/]+)(\/tdd)?$/.exec(pathname);
+      const invoice = /^\/invoices\/([^/]+)$/.exec(pathname);
       if (invoice && mockDocuments.get(invoice[1]) === "acube") {
-        return invoice[2]
-          ? res.writeHead(200, { "Content-Type": "application/xml" }).end("<TaxDataDocument/>")
-          : json(res, 200, {
-              uuid: invoice[1],
-              direction: "outgoing",
-              status: acceptReady.has("acube") ? "delivered" : "valid",
-            });
+        return json(res, 200, { uuid: invoice[1], direction: "outgoing", status: acubeStatus });
       }
       const documentId = /^\/api\/v3\/documents\/([^/]+)$/.exec(pathname)?.[1];
       if (mockDocuments.get(documentId) === "complyance") {
@@ -269,7 +267,7 @@ async function seedOutbound(persona) {
       },
     ]
   );
-  return invoice.id;
+  return { invoiceId: invoice.id, contactId: buyer.id };
 }
 
 async function inBrowser(browser, { email, lang, width }, flow) {
@@ -348,7 +346,7 @@ async function inBrowser(browser, { email, lang, width }, flow) {
 async function open(page, path) {
   const response = await page.goto(`${base}${path}`);
   assert.ok(response?.ok(), `${path}: HTTP ${response?.status()}`);
-  assert.equal(new URL(page.url()).pathname, path);
+  assert.equal(new URL(page.url()).pathname, new URL(path, base).pathname);
 }
 
 async function openBooks(page, navigate, persona, index) {
@@ -429,11 +427,20 @@ async function selectProviders(browser, persona) {
 }
 
 async function sendInvoice(browser, persona) {
-  const { invoiceId, lang, token } = persona;
+  const { invoiceId, contactId, lang, token } = persona;
+  const originalProvider = persona.providers[0];
+  const statusPath = `/api/invoices/${invoiceId}/einvoice/status`;
   await inBrowser(browser, persona, async (page, navigate) => {
     await openBooks(page, navigate, persona, 0);
-    await navigate("/invoices");
-    await page.locator(`[data-testid="einvoice-cell-${invoiceId}"]:visible`).first().click();
+    await navigate(`/contacts?open=${contactId}`);
+    const buyer = page.getByTestId("edit-customer-contact");
+    await buyer.waitFor();
+    assert.equal(await buyer.getByTestId("input-contact-name").inputValue(), "Fixture buyer LLC");
+    const openInvoice = async () => {
+      await navigate("/invoices");
+      await page.locator(`[data-testid="einvoice-cell-${invoiceId}"]:visible`).first().click();
+    };
+    await openInvoice();
     await expectFrame(page, lang);
     const sheet = page.getByTestId("einvoice-sheet");
     const send = sheet.getByTestId("einvoice-send");
@@ -451,18 +458,45 @@ async function sendInvoice(browser, persona) {
     assert.equal(await send.count(), 0);
     const delivery = sheet.getByTestId("einvoice-track-delivery");
     await delivery.getByText(copies[lang].sent, { exact: true }).waitFor({ timeout: 85_000 });
-    acceptReady.add(persona.providers[0]);
+    assert.equal((await request(token, "GET", statusPath)).submissionState, "sent");
+    if (originalProvider === "acube") {
+      await request(token, "PUT", `/api/companies/${persona.clients[0].id}/einvoicing/partner`, {
+        partner: "complyance",
+      });
+      await openInvoice();
+      const pinned = await request(token, "GET", statusPath);
+      assert.equal(pinned.transmission.provider, "acube");
+      assert.equal(pinned.transmission.environment, "sandbox");
+      assert.equal(pinned.transmission.canRefresh, true);
+      assert.equal(pinned.transmission.block, null);
+      await delivery.getByText("Handed to A-Cube", { exact: true }).waitFor();
+      acubeStatus = "delivered";
+      await sheet.getByTestId("einvoice-refresh").click();
+      await delivery.getByText(copies[lang].recipientReceived, { exact: true }).waitFor();
+      const receipt = await request(token, "GET", statusPath);
+      assert.equal(receipt.submissionState, "sent");
+      assert.equal(receipt.transmission.recipientAcknowledgement, "received");
+      assert.equal(receipt.transmission.canRefresh, true);
+      acubeStatus = "accepted";
+    } else {
+      acceptReady.add(originalProvider);
+    }
     await sheet.getByTestId("einvoice-refresh").click();
     await delivery.getByText(copies[lang].accepted, { exact: true }).waitFor();
-    const result = await request(token, "GET", `/api/invoices/${invoiceId}/einvoice/status`);
+    const result = await request(token, "GET", statusPath);
     assert.equal(result.submissionState, "accepted");
-    if (persona.providers[0] === "acube") {
+    if (originalProvider === "acube") {
       assert.equal(result.transmission.providerDocumentId, acubeInvoiceUuid);
     }
     await sheet.getByTestId("einvoice-history-open").click();
     const history = page.getByTestId("einvoice-history");
     const { delivery: deliveryLabel, queued: queuedLabel, accepted: acceptedLabel } = copies[lang];
     await history.getByText(`${deliveryLabel}: ${queuedLabel}`, { exact: true }).waitFor();
+    if (originalProvider === "acube") {
+      await history
+        .getByText(`${deliveryLabel}: ${copies[lang].recipientReceived}`, { exact: true })
+        .waitFor();
+    }
     await history.getByText(`${deliveryLabel}: ${acceptedLabel}`, { exact: true }).waitFor();
   });
   console.log(`${lang}: queued, sent and accepted invoice status through the loopback provider`);
@@ -478,7 +512,7 @@ try {
   for (const fixture of localeFixtures) {
     const persona = await seed(fixture);
     await selectProviders(browser, persona);
-    personas.push({ ...persona, invoiceId: await seedOutbound(persona) });
+    personas.push({ ...persona, ...(await seedOutbound(persona)) });
   }
   assert.deepEqual(posts, []);
   await stopApp();

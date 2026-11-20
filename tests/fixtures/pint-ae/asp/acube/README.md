@@ -8,7 +8,7 @@ credit-note and legal-entity resources. The webhook examples identify resources 
 
 | File                  | What it holds                                                                                                                                                                                             |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `acube-sandbox.json`  | login, submit invoice / credit note (201), 422 validation error, 404 / 503, status (queued, delivered, delivery_error), TDD (204 pending, 200 reported), lists, legal entity (reserved, active, inactive) |
+| `acube-sandbox.json`  | Login, invoice and credit-note handover (201), 422 validation, 404 and 503, recipient receipt and MLS acceptance, legacy delivery errors, TDD availability, collections and legal entities. |
 | `acube-webhooks.json` | Native inbound and outbound invoice and credit-note webhooks, plus legal-entity LINK and DELINK. The separate, historical signed sample exercises the legacy `document.received` shape. |
 
 Used by `tests/unit/einvoice-acube-adapter.test.ts`, `tests/unit/einvoice-acube-signature.test.ts`
@@ -24,8 +24,8 @@ with the real exchange (redact the password and token) and check in particular:
 3. The status words actually returned (lifecycle page: `sending_error` / `delivery_error`; OpenAPI
    enum: `sending_failed` / `delivery_failed`, plus `processed`, `accepted`, `rejected`,
    `withdrawn`, `action_required`).
-4. TDD semantics: whether `GET /invoices/{id}/tdd` returning 200 means "reported to the FTA" or
-   only "built", and what MLS documents look like when the FTA rejects the tax data.
+4. The provider's separate FTA acknowledgment and rejection signal. The published TDD endpoint
+   describes 200 as an available download. [UAE OpenAPI](https://docs.acubeapi.com/openapi/gov-ae-api.json)
 5. The payload of a delivery failure and whether retries are re-signed with a new `created`
    timestamp.
 6. The signature public-key format (`public_key` PEM or raw base64) and a real signed delivery to

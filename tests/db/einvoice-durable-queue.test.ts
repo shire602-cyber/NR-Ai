@@ -70,6 +70,14 @@ async function storedDocument(invoiceId: string) {
   return row;
 }
 
+async function selectComplyance(companyId: string) {
+  await h.sql("UPDATE companies SET einvoice_partner = 'complyance' WHERE id = $1", [companyId]);
+  await h.sql(
+    "INSERT INTO einvoice_legal_entities (company_id, provider, environment, tin, status) VALUES ($1, 'complyance', 'sandbox', '1001234567', 'active')",
+    [companyId]
+  );
+}
+
 describe("Durable UAE e-invoice submission queue", () => {
   it("queues a single audited snapshot and sends it once through parallel workers", async () => {
     const args = await readyInvoice();
@@ -251,15 +259,56 @@ describe("Durable UAE e-invoice submission queue", () => {
     });
   });
 
+  it("reads a historical A-Cube receipt only after proving its frozen provider source", async () => {
+    const args = await readyInvoice();
+    const { submitAndPersist, refreshAndPersist } =
+      await import("../../server/services/einvoice/workflow");
+    const { storage } = await import("../../server/storage");
+    const inheritedProvider = fakeProvider({ name: "acube", environment: "sandbox" });
+    expect((await submitAndPersist({ ...args, provider: inheritedProvider })).ok).toBe(true);
+    // Pre-fix A-Cube recorded the recipient receipt as cleared and did not pin a credential scope.
+    await h.sql("UPDATE invoices SET einvoice_status = 'cleared' WHERE id = $1", [args.invoice.id]);
+    await h.sql(
+      "UPDATE einvoice_documents SET status = 'cleared', delivery_status = 'delivered', reporting_status = 'reported', reported_at = now(), provider_status = 'delivered' WHERE invoice_id = $1",
+      [args.invoice.id]
+    );
+    const invoice = (await storage.getInvoice(args.invoice.id, args.company.id))!;
+    let source = "<OtherCompanyInvoice/>";
+    let reads = 0;
+    const provider = fakeProvider({
+      ...inheritedProvider,
+      getSubmissionScope: async () => "fixture-current-provider-scope",
+      fetchSource: async () => source,
+      getStatus: async (id) => {
+        reads++;
+        return {
+          providerMessageId: id,
+          status: "accepted",
+          delivery: "delivered",
+          providerStatus: "accepted",
+        };
+      },
+    });
+    const refused = await refreshAndPersist({ ...args, invoice, provider });
+    expect(refused).toMatchObject({ ok: false, code: "EINVOICE_PROVIDER_NOT_CONFIGURED" });
+    expect(reads).toBe(0);
+    source = invoice.einvoiceXml!;
+    const refreshed = await refreshAndPersist({ ...args, invoice, provider });
+    expect(refreshed).toMatchObject({
+      ok: true,
+      documentRow: { status: "accepted", reportingStatus: "pending", reportedAt: null },
+    });
+    const events = await h.sql(
+      "SELECT provider_status FROM einvoice_document_events WHERE invoice_id = $1 AND track = 'delivery' AND provider_status = 'accepted'",
+      [args.invoice.id]
+    );
+    expect(events).toHaveLength(1);
+    expect(reads).toBe(1);
+  });
+
   it("keeps a Complyance replay scoped to the first attempt after an intervening rate limit", async () => {
     const args = await readyInvoice();
-    await h.sql("UPDATE companies SET einvoice_partner = 'complyance' WHERE id = $1", [
-      args.company.id,
-    ]);
-    await h.sql(
-      "INSERT INTO einvoice_legal_entities (company_id, provider, environment, tin, status) VALUES ($1, 'complyance', 'sandbox', '1001234567', 'active')",
-      [args.company.id]
-    );
+    await selectComplyance(args.company.id);
     const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
       await import("../../server/services/einvoice/workflow");
     const { documentValidation, getEInvoiceDocument } =
@@ -292,6 +341,150 @@ describe("Durable UAE e-invoice submission queue", () => {
     scope = "fixture-workspace-two";
     await runEInvoiceRetries(doc!.nextRetryAt!, () => provider);
     expect(posted).toBe(2);
+    expect(await storedDocument(args.invoice.id)).toMatchObject({
+      delivery_status: "needs_link",
+      next_retry_at: null,
+      provider_message_id: null,
+    });
+  });
+
+  it("prevents replacing a rejected document that already has a provider reference", async () => {
+    const args = await readyInvoice();
+    const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
+      await import("../../server/services/einvoice/workflow");
+    let posts = 0;
+    const provider = fakeProvider({
+      submit: async () => {
+        posts++;
+        return { providerMessageId: "already-recorded", status: "rejected" };
+      },
+    });
+    const now = new Date();
+    expect((await enqueueEInvoiceSubmission({ ...args, provider, now })).ok).toBe(true);
+    await runEInvoiceRetries(now, () => provider);
+    const retry = await enqueueEInvoiceSubmission({ ...args, provider, regenerate: true });
+    expect(retry).toMatchObject({ ok: false, status: 409, code: "EINVOICE_ALREADY_SUBMITTED" });
+    expect(posts).toBe(1);
+    expect(await storedDocument(args.invoice.id)).toMatchObject({
+      status: "rejected",
+      provider_message_id: "already-recorded",
+      next_retry_at: null,
+    });
+  });
+
+  it("rejects a queued submission when the initiating actor loses tax permission", async () => {
+    const args = await readyInvoice();
+    await selectComplyance(args.company.id);
+    const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
+      await import("../../server/services/einvoice/workflow");
+    let posts = 0;
+    const provider = fakeProvider({
+      name: "complyance",
+      environment: "sandbox",
+      requiresLegalEntity: true,
+      getSubmissionScope: async () => "fixture-workspace",
+      submit: async () => {
+        posts++;
+        return { providerMessageId: "unexpected", status: "submitted" };
+      },
+    });
+    const now = new Date();
+    expect((await enqueueEInvoiceSubmission({ ...args, provider, now })).ok).toBe(true);
+    await h.sql(
+      "UPDATE company_users SET role = 'bookkeeper' WHERE company_id = $1 AND user_id = $2",
+      [args.company.id, args.actorId]
+    );
+    expect(await runEInvoiceRetries(now, () => provider)).toMatchObject({ submitted: 0 });
+    expect(posts).toBe(0);
+    expect(await storedDocument(args.invoice.id)).toMatchObject({
+      status: "failed",
+      next_retry_at: null,
+      last_error_code: "PERMISSION_DENIED",
+    });
+  });
+
+  it("refuses changed workspace credentials before the first provider handoff", async () => {
+    const args = await readyInvoice();
+    await selectComplyance(args.company.id);
+    const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
+      await import("../../server/services/einvoice/workflow");
+    let scope = "fixture-original-workspace";
+    let posts = 0;
+    const provider = fakeProvider({
+      name: "complyance",
+      environment: "sandbox",
+      requiresLegalEntity: true,
+      getSubmissionScope: async () => scope,
+      submit: async () => {
+        posts++;
+        return { providerMessageId: "unexpected", status: "submitted" };
+      },
+    });
+    const now = new Date();
+    expect((await enqueueEInvoiceSubmission({ ...args, provider, now })).ok).toBe(true);
+    scope = "fixture-replacement-workspace";
+    expect(await runEInvoiceRetries(now, () => provider)).toMatchObject({ submitted: 0 });
+    expect(posts).toBe(0);
+    expect(await storedDocument(args.invoice.id)).toMatchObject({
+      status: "failed",
+      next_retry_at: null,
+      last_error_code: "EINVOICE_PROVIDER_NOT_CONFIGURED",
+    });
+  });
+
+  it("releases an unused queue item when its provider is replaced and no longer configured", async () => {
+    const args = await readyInvoice();
+    await selectComplyance(args.company.id);
+    const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
+      await import("../../server/services/einvoice/workflow");
+    const provider = fakeProvider({
+      name: "complyance",
+      environment: "sandbox",
+      requiresLegalEntity: true,
+      getSubmissionScope: async () => "fixture-former-workspace",
+    });
+    const now = new Date();
+    expect((await enqueueEInvoiceSubmission({ ...args, provider, now })).ok).toBe(true);
+    await h.sql("UPDATE companies SET einvoice_partner = 'acube' WHERE id = $1", [args.company.id]);
+    const result = await runEInvoiceRetries(now, () => {
+      throw new Error("Fixture provider is no longer configured");
+    });
+    expect(result).toEqual({ attempted: 0, submitted: 0 });
+    expect(await storedDocument(args.invoice.id)).toMatchObject({
+      status: "failed",
+      attempts: 0,
+      next_retry_at: null,
+      last_error_code: "EINVOICE_PROVIDER_NOT_CONFIGURED",
+    });
+  });
+
+  it("does not replay a lost Complyance response after the legal entity is delinked", async () => {
+    const args = await readyInvoice();
+    await selectComplyance(args.company.id);
+    const { enqueueEInvoiceSubmission, runEInvoiceRetries } =
+      await import("../../server/services/einvoice/workflow");
+    let posts = 0;
+    const provider = fakeProvider({
+      name: "complyance",
+      environment: "sandbox",
+      requiresLegalEntity: true,
+      getSubmissionScope: async () => "fixture-workspace",
+      submit: async () => {
+        posts++;
+        return { providerMessageId: "", status: "failed", errorCode: "TRANSPORT_ERROR" };
+      },
+    });
+    const now = new Date();
+    expect((await enqueueEInvoiceSubmission({ ...args, provider, now })).ok).toBe(true);
+    await runEInvoiceRetries(now, () => provider);
+    const failed = await storedDocument(args.invoice.id);
+    await h.sql("UPDATE einvoice_legal_entities SET status = 'inactive' WHERE company_id = $1", [
+      args.company.id,
+    ]);
+    expect(await runEInvoiceRetries(new Date(failed.next_retry_at), () => provider)).toMatchObject({
+      submitted: 0,
+    });
+    expect(posts).toBe(1);
     expect(await storedDocument(args.invoice.id)).toMatchObject({
       delivery_status: "needs_link",
       next_retry_at: null,
@@ -340,7 +533,10 @@ describe("Durable UAE e-invoice submission queue", () => {
       release = resolve;
     });
     const provider = fakeProvider({
-      submit: async ({ uuid }) => {
+      submit: async ({ invoiceId, uuid }) => {
+        if (invoiceId !== args.invoice.id) {
+          return { providerMessageId: uuid, status: "submitted" };
+        }
         markStarted();
         await wait;
         return { providerMessageId: uuid, status: "submitted" };
@@ -351,6 +547,12 @@ describe("Durable UAE e-invoice submission queue", () => {
     const worker = runEInvoiceRetries(now, () => provider);
     await started;
     try {
+      const { SUBMISSION_LEASE_MS } = await import("../../server/services/einvoice/store");
+      const concurrent = await runEInvoiceRetries(
+        new Date(now.getTime() + SUBMISSION_LEASE_MS + 1),
+        () => provider
+      );
+      expect(concurrent).toEqual({ attempted: 0, submitted: 0 });
       const voided = await args.tenant.as.patch(`/api/invoices/${args.invoice.id}/status`, {
         status: "void",
         reason: "Attempt to void during e-invoice handoff",

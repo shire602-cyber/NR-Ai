@@ -18,7 +18,7 @@ import { db } from "../db";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { requirePermission } from "../middleware/companyRolePolicy";
+import { requireScopedCompanyPermission } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { DomainError } from "../errors";
 import { createLogger } from "../config/logger";
@@ -58,9 +58,10 @@ import {
   runProviderPoll,
 } from "../services/einvoice/provider-events";
 import { companyTin, getLegalEntity } from "../services/einvoice/legal-entities";
-import { refreshAndPersist } from "../services/einvoice/workflow";
+import { refreshAndPersist, trackedEInvoiceProviderMatches } from "../services/einvoice/workflow";
 import {
   documentProviderEnvironment,
+  documentSubmissionMetadata,
   getEInvoiceDocument,
   lockEInvoiceInvoice,
   upsertEInvoiceDocument,
@@ -209,7 +210,7 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/complyance",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
       if (!company) throw new DomainError("COMPANY_NOT_FOUND", 404);
@@ -228,7 +229,7 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/einvoicing/complyance/connect",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(connectBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await loadCompany(req.params.companyId);
@@ -258,7 +259,7 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/einvoicing/complyance/sync",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(emptyBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await loadCompany(req.params.companyId);
@@ -278,7 +279,7 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/einvoicing/complyance/link",
     authMiddleware,
-    requirePermission("ledger.post"),
+    requireScopedCompanyPermission("ledger.post"),
     strictBody(linkBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await storage.getCompany(req.params.companyId);
@@ -305,6 +306,10 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
         : null;
       if (!config) throw new DomainError("EINVOICE_PROVIDER_NOT_CONFIGURED", 503);
       const provider = new ComplyanceEInvoiceProvider(config.env);
+      if (!(await trackedEInvoiceProviderMatches(doc, provider))) {
+        throw new DomainError("EINVOICE_PROVIDER_NOT_CONFIGURED", 503);
+      }
+      const pin = documentSubmissionMetadata(doc);
       const r = await provider.call(
         "GET",
         `/api/v3/documents/${encodeURIComponent(body.documentId)}?type=sales`
@@ -347,11 +352,14 @@ export function registerEInvoiceComplyanceRoutes(app: Express) {
         const current = await lockEInvoiceInvoice(company.id, invoice.id, tx);
         if (!current) throw new DomainError("NOT_FOUND", 404);
         const currentDoc = await getEInvoiceDocument(company.id, invoice.id, tx);
+        const currentPin = documentSubmissionMetadata(currentDoc);
         if (
           current.einvoiceProviderMessageId ||
           current.number !== invoice.number ||
           currentDoc?.provider !== COMPLYANCE_PROVIDER_NAME ||
           documentProviderEnvironment(currentDoc) !== environment ||
+          currentPin?.operationId !== pin?.operationId ||
+          currentPin?.scope !== pin?.scope ||
           !LINKABLE_CODES.has(currentDoc.lastErrorCode ?? "")
         ) {
           throw new DomainError("EINVOICE_LINK_NOT_NEEDED", 409);

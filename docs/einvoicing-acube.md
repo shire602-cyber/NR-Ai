@@ -20,11 +20,11 @@ company configuration check shows `not_configured` when the local credential bun
 | Need                 | Implementation                                                                                                                                                                                       |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Auth                 | `POST common.api.acubeapi.com/login {email,password,environment}` → JWT (24 h); cached, refreshed 1 h before `exp`; a 401 triggers one fresh login and one retry; credentials are never logged       |
-| Submit               | raw XML, `Content-Type: application/xml`; invoices `ACUBE_INVOICE_SUBMIT_PATH` (default `/invoices`), credit notes (81 and 381) `ACUBE_CREDIT_NOTE_SUBMIT_PATH` (default `/credit-notes`). The response `uuid` identifies the document for status and source lookups. |
+| Submit               | Raw XML with `Content-Type: application/xml`. Invoices use `ACUBE_INVOICE_SUBMIT_PATH` (default `/invoices`). Credit note codes 81, 261 and 381 use `ACUBE_CREDIT_NOTE_SUBMIT_PATH` (default `/credit-notes`). The response `uuid` identifies the document for status and source lookups. |
 | Errors               | 422 `violations[]` → rejection reasons (field = `propertyPath`, rule = `code`); 400/404 → rejected; 5xx/408/429/transport → retryable                                                                |
-| Status               | `GET /{invoices\|credit-notes}/{id}`; both status vocabularies mapped (`tracks.ts`); unknown → `delivery_failed`, never success                                                                      |
-| FTA reporting        | `GET /{kind}/{id}/tdd`: 200 = reported, 204/404 = pending                                                                                                                                            |
-| Inbound              | `GET /{kind}?direction=incoming` then `/{kind}/{id}/source` → `processInboundEInvoice` → draft bill (`origin = einvoice`)                                                                            |
+| Status               | `GET /{invoices\|credit-notes}/{id}` distinguishes Peppol handover, recipient receipt and the final Message Level Status (MLS) decision. |
+| FTA reporting        | Required reports remain pending. `GET /{kind}/{id}/tdd` documents retrieval of the tax-data file. Confirmation requires a separate FTA acknowledgment. |
+| Inbound              | Page through both incoming collections, then fetch `/{kind}/{id}/source` using the document's collection and preserve the original UTF-8 XML before importing a draft bill. |
 | Legal entities       | `POST /legal-entities {tin}` reserves the TIN. The response `uuid` identifies the entity in `GET /legal-entities/{uuid}`.                                                                                |
 | Webhook destinations | `POST /event-destinations` per event (`invoice.outbound`, `invoice.inbound`, `credit_note.*`, `legal_entity.synchronized`)                                                                           |
 | Cancel               | none: `capabilities.cancel = false`; a sent invoice is corrected with a credit note                                                                                                                  |
@@ -34,15 +34,17 @@ company configuration check shows `not_configured` when the local credential bun
 `einvoice_documents` (migration 0116) carries `delivery_status` (draft, validated, queued, sending,
 delivered, delivery_failed, rejected) and `reporting_status` (not_required, pending, reported,
 report_failed) with their timestamps, `report_by`, `provider_status`, `last_error_code` and the
-full history in `einvoice_document_events`. The legacy single `einvoice_status` is derived with
-`legacyFromTracks` (delivered + pending → `accepted`; delivered + reported → `cleared`).
+full history in `einvoice_document_events`. A-Cube reports `processed` at Peppol handover and
+`delivered` when the recipient's provider confirms receipt. Both stages remain in flight. The
+recipient's MLS yields `accepted` or `rejected` and can arrive before the receipt notification.
+[A-Cube invoice lifecycle](https://docs.acubeapi.com/documentation/gov-ae/documents/lifecycle)
 
 - Reporting is required for B2B/B2G invoices (buyer TRN present) unless the company scope is
   `none`; B2C invoices are `not_required`.
 - **Report-by date** = invoice date + `EINVOICE_REPORT_WINDOW_DAYS` (default 14). ASSUMPTION: the
   14-day window must be confirmed against the FTA's published procedure before it is relied on.
-- A provider-reported delivery failure is shown, not auto-retried (it needs a corrected document
-  or buyer address); only transport failures before hand-over are retried with backoff.
+- A-Cube retries its `sending_failed` and `delivery_failed` attempts. The app keeps polling the
+  existing document. An uncertain submission is reconciled using the original source XML.
 
 ## Onboarding and gating
 
@@ -79,9 +81,11 @@ not the linked TIN (422 `EINVOICE_SUPPLIER_ENDPOINT_MISMATCH`). Tested in
    from A-Cube rather than trusting the payload.
 
 The worker claims the durable queue with a five-minute lease and sends the stored, validated XML.
-After a lost response, it searches for the outgoing document and verifies that the source XML
-matches. Unresolved deliveries require reconciliation after the retry budget expires. The
-`einvoice.acubePoll` job refreshes in-flight documents and enqueues incoming ones every ten minutes.
+After a lost response, it searches numbered pages of the outgoing collection and compares the
+complete original UTF-8 source, including any BOM or trailing whitespace. Unresolved deliveries
+require reconciliation after the retry budget expires. The `einvoice.acubePoll` job refreshes
+in-flight documents and enqueues incoming ones every ten minutes.
+[A-Cube document pagination](https://docs.acubeapi.com/documentation/gov-ae/documents/search-for-documents)
 
 ## Mandate timeline shown in product
 
@@ -97,7 +101,7 @@ copy is changed. The UI labels the dates with their source and points to mof.gov
 1. Confirm that `POST /invoices` and `POST /credit-notes` select the legal entity from the supplier
    EndpointID and accept our PINT AE fixtures. [A-Cube UAE OpenAPI](https://docs.acubeapi.com/openapi/gov-ae-api.json)
 2. Real 422 body and status words; whether a re-post with the same UUID is refused.
-3. TDD semantics (built vs accepted by the FTA) and the MLS rejection flow → `report_failed`.
+3. The separate FTA acknowledgment and rejection events for the reporting track.
 4. Webhook event names actually delivered (`document.*` vs `invoice.outbound` etc.), the
    delivery-error payload, retry re-signing, the public-key format, and `@target-uri` behind our
    proxy (set `ACUBE_WEBHOOK_BASE_URL`).

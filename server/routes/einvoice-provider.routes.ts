@@ -3,7 +3,7 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { requirePermission } from "../middleware/companyRolePolicy";
+import { requireScopedCompanyPermission } from "../middleware/companyRolePolicy";
 import { DomainError } from "../errors";
 import type { Company } from "../../shared/schema";
 import { companyProviderHealth } from "../services/einvoice/providers/company-provider";
@@ -16,7 +16,7 @@ export function registerEInvoiceProviderRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/provider",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       const company = (await storage.getCompany(req.params.companyId)) as
         | (Company & Record<string, unknown>)

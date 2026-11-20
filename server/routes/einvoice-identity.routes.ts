@@ -21,7 +21,7 @@ import { z } from "zod";
 import { storage } from "../storage";
 import { authMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { requirePermission } from "../middleware/companyRolePolicy";
+import { requireScopedCompanyPermission } from "../middleware/companyRolePolicy";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
@@ -86,7 +86,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/identity",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       res.json(taxIdentityView(await loadCompany(req.params.companyId)));
     })
@@ -95,7 +95,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
   app.put(
     "/api/companies/:companyId/einvoicing/identity",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(companyTaxIdentityBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await loadCompany(req.params.companyId);
@@ -118,7 +118,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/tax-ready",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       res.json(taxReadyState(await loadCompany(req.params.companyId)));
     })
@@ -127,7 +127,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/einvoicing/tax-ready/shown",
     authMiddleware,
-    requirePermission("documents.write"),
+    requireScopedCompanyPermission("documents.write"),
     strictBody(emptyBody),
     asyncHandler(async (req: Request, res: Response) => {
       await markTaxReadyPrompted(req.params.companyId);
@@ -139,7 +139,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/partner",
     authMiddleware,
-    requirePermission("reports.read"),
+    requireScopedCompanyPermission("reports.read"),
     asyncHandler(async (req: Request, res: Response) => {
       res.json(await partnerView(await loadCompany(req.params.companyId)));
     })
@@ -148,7 +148,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
   app.put(
     "/api/companies/:companyId/einvoicing/partner",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(partnerChoiceBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await loadCompany(req.params.companyId);
@@ -171,7 +171,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/einvoicing/partner/self-confirm",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(selfConfirmBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await loadCompany(req.params.companyId);
@@ -194,7 +194,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
   app.get(
     "/api/companies/:companyId/einvoicing/approver-links",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     asyncHandler(async (req: Request, res: Response) => {
       const rows = await listApproverLinks(req.params.companyId);
       res.json(rows.map(approverLinkView));
@@ -204,7 +204,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/einvoicing/approver-links",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(approverLinkCreateBody),
     asyncHandler(async (req: Request, res: Response) => {
       const company = await loadCompany(req.params.companyId);
@@ -260,7 +260,7 @@ export function registerEInvoiceIdentityRoutes(app: Express) {
   app.post(
     "/api/companies/:companyId/einvoicing/approver-links/:linkId/revoke",
     authMiddleware,
-    requirePermission("settings.company"),
+    requireScopedCompanyPermission("settings.company"),
     strictBody(emptyBody),
     asyncHandler(async (req: Request, res: Response) => {
       const linkId = z.string().uuid().safeParse(req.params.linkId);

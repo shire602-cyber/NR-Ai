@@ -39,8 +39,10 @@
 import { createHmac } from "node:crypto";
 import type {
   EInvoiceDocumentRef,
+  EInvoiceOutboundIdentity,
   EInvoiceProvider,
   EInvoiceProviderCapabilities,
+  EInvoiceProviderContext,
   EInvoiceProviderEnvironment,
   EInvoiceProviderResult,
   EInvoiceSubmission,
@@ -386,13 +388,20 @@ type SourceResolver = (
   environment: ComplyanceEnvironment
 ) => Promise<ComplyanceSource | null>;
 
+function sourceFromLegalEntity(
+  legalEntity: EInvoiceProviderContext["legalEntity"]
+): ComplyanceSource | null {
+  const details = providerObject(legalEntity?.providerDetails);
+  const name = providerString(details?.sourceName);
+  return name ? { name, version: providerString(details?.sourceVersion) ?? "v1" } : null;
+}
+
 /** Default: the source recorded at onboarding (einvoice_legal_entities.provider_details). */
 const dbSourceResolver: SourceResolver = async (companyId, environment) => {
   const { getLegalEntity } = await import("../legal-entities");
-  const le = await getLegalEntity(companyId, COMPLYANCE_PROVIDER_NAME, environment);
-  const d = (le?.providerDetails ?? null) as Record<string, unknown> | null;
-  const name = str(d?.sourceName);
-  return name ? { name, version: str(d?.sourceVersion) ?? "v1" } : null;
+  return sourceFromLegalEntity(
+    (await getLegalEntity(companyId, COMPLYANCE_PROVIDER_NAME, environment)) ?? null
+  );
 };
 
 export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
@@ -483,9 +492,20 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
   }
 
   /** Bind a retry to the original workspace credential, source and environment. */
-  async getSubmissionScope(companyId: string): Promise<string | null> {
-    const source = await this.sourceFor(companyId, this.cfg.environment);
+  async getSubmissionScope(
+    companyId: string,
+    context?: EInvoiceProviderContext
+  ): Promise<string | null> {
+    const source = await this.resolveSource(companyId, context);
     return source ? this.submissionScope(companyId, source) : null;
+  }
+
+  private async resolveSource(
+    companyId: string,
+    context?: EInvoiceProviderContext
+  ): Promise<ComplyanceSource | null> {
+    if (context) return sourceFromLegalEntity(context.legalEntity);
+    return this.sourceFor(companyId, this.cfg.environment);
   }
 
   private submissionScope(companyId: string, source: ComplyanceSource): string {
@@ -495,6 +515,7 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
           "einvoice-complyance-submission",
           this.cfg.baseUrl,
           this.cfg.environment,
+          this.cfg.submitFormat,
           companyId,
           source.name,
           source.version,
@@ -505,7 +526,7 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
 
   async submit(submission: EInvoiceSubmission): Promise<EInvoiceProviderResult> {
     const companyId = submission.companyId;
-    const source = companyId ? await this.sourceFor(companyId, this.cfg.environment) : null;
+    const source = companyId ? await this.resolveSource(companyId, submission.context) : null;
     if (
       submission.scopeFingerprint &&
       (!source ||
@@ -681,13 +702,42 @@ export class ComplyanceEInvoiceProvider implements EInvoiceProvider {
     });
   }
 
+  private salesDocumentPath(providerMessageId: string): string {
+    return `/api/v3/documents/${encodeURIComponent(providerMessageId)}?type=sales`;
+  }
+
+  async verifyOutboundDocument(
+    providerMessageId: string,
+    identity: EInvoiceOutboundIdentity
+  ): Promise<boolean> {
+    try {
+      const response = await this.call("GET", this.salesDocumentPath(providerMessageId));
+      const envelope = providerObject(response.json);
+      const data = providerObject(envelope?.data);
+      if (
+        !response.ok ||
+        !data ||
+        envelope?.success === false ||
+        data.documentId !== providerMessageId ||
+        data.documentNumber !== identity.documentNumber ||
+        (data.environment != null && data.environment !== this.environment)
+      )
+        return false;
+      return complyanceDocumentBelongsTo(data, {
+        tin: identity.supplierTin,
+        trn: identity.supplierTrn,
+        connectCompanyId: identity.legalEntityId,
+        sourceName: identity.sourceName,
+      }).ok;
+    } catch {
+      return false;
+    }
+  }
+
   async getStatus(providerMessageId: string): Promise<EInvoiceProviderResult> {
     let r: RawResponse;
     try {
-      r = await this.call(
-        "GET",
-        `/api/v3/documents/${encodeURIComponent(providerMessageId)}?type=sales`
-      );
+      r = await this.call("GET", this.salesDocumentPath(providerMessageId));
     } catch {
       return {
         providerMessageId,

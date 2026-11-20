@@ -160,10 +160,10 @@ describe("E1 A-Cube configuration and selection", () => {
 
 describe("E1 A-Cube JWT login, cache and refresh", () => {
   it("logs in once, reuses the 24 h token, and sends it as Bearer", async () => {
-    const r = replay(["login", "status-delivered", "tdd-reported"]);
+    const r = replay(["login", "status-delivered", "status-accepted"]);
     const p = new AcubeEInvoiceProvider(ENV, { fetch: r.fetchImpl });
     await p.getStatus("01a0ab23-24d8-7787-bd01-883b1b089b00");
-    await p.getReportingStatus("01a0ab23-24d8-7787-bd01-883b1b089b00");
+    await p.getStatus("01a0ab23-24d8-7787-bd01-883b1b089b00");
     expect(r.left()).toBe(0);
     expect(JSON.parse(r.sent[0].body as string)).toEqual({
       email: "sandbox@example.test",
@@ -232,7 +232,7 @@ describe("E1 A-Cube submit", () => {
     });
   });
 
-  it("posts raw PINT AE XML to /invoices and returns queued + reporting pending", async () => {
+  it("posts raw PINT AE XML to /invoices and returns handover with reporting pending", async () => {
     const r = replay(["login", "submit-invoice-201"]);
     const p = new AcubeEInvoiceProvider(ENV, { fetch: r.fetchImpl });
     const res = await p.submit(submission());
@@ -241,9 +241,9 @@ describe("E1 A-Cube submit", () => {
     expect(res).toMatchObject({
       providerMessageId: "01a0ab23-24d8-7787-bd01-883b1b089b00",
       status: "submitted",
-      delivery: "queued",
+      delivery: "sending",
       reporting: "pending",
-      providerStatus: "valid",
+      providerStatus: "processed",
     });
   });
 
@@ -321,17 +321,23 @@ describe("E1 A-Cube submit", () => {
 });
 
 describe("E1 A-Cube status, reporting and inbound", () => {
-  it("maps sending_queued, delivered and delivery_error onto the delivery track", async () => {
+  it("distinguishes C3 delivery receipt, MLS acceptance and the legacy delivery_error", async () => {
     const r = replay([
       "login",
       "status-sending-queued",
       "status-delivered",
+      "status-accepted",
       "status-delivery-error",
     ]);
     const p = new AcubeEInvoiceProvider(ENV, { fetch: r.fetchImpl });
     const id = "01a0ab23-24d8-7787-bd01-883b1b089b00";
     expect(await p.getStatus(id)).toMatchObject({ delivery: "queued", status: "submitted" });
-    expect(await p.getStatus(id)).toMatchObject({ delivery: "delivered", status: "accepted" });
+    expect(await p.getStatus(id)).toMatchObject({ delivery: "delivered", status: "submitted" });
+    expect(await p.getStatus(id)).toMatchObject({
+      delivery: "delivered",
+      status: "accepted",
+      reporting: "pending",
+    });
     expect(await p.getStatus(id)).toMatchObject({
       delivery: "delivery_failed",
       status: "failed",
@@ -340,13 +346,21 @@ describe("E1 A-Cube status, reporting and inbound", () => {
     });
   });
 
-  it("reads the FTA reporting track from the Tax Data Document", async () => {
-    const r = replay(["login", "tdd-pending", "tdd-reported"]);
+  it("tracks direct MLS acceptance without claiming FTA reporting from the TDD artifact", async () => {
+    const r = replay(["login", "submit-invoice-201", "status-accepted"]);
     const p = new AcubeEInvoiceProvider(ENV, { fetch: r.fetchImpl });
     const id = "01a0ab23-24d8-7787-bd01-883b1b089b00";
-    expect(await p.getReportingStatus(id)).toEqual({ reporting: "pending" });
-    expect(await p.getReportingStatus(id)).toEqual({ reporting: "reported" });
-    expect(r.sent[1].headers.Accept).toBe("application/xml");
+    expect(await p.submit(submission())).toMatchObject({
+      delivery: "sending",
+      status: "submitted",
+    });
+    expect(await p.getStatus(id)).toMatchObject({
+      delivery: "delivered",
+      status: "accepted",
+      reporting: "pending",
+    });
+    expect("getReportingStatus" in p).toBe(false);
+    expect(r.left()).toBe(0);
   });
 
   it("lists incoming documents and fetches each one's source XML (two-step receive)", async () => {
@@ -355,6 +369,7 @@ describe("E1 A-Cube status, reporting and inbound", () => {
     expect(await p.listInbound()).toEqual([
       {
         providerMessageId: "01a0c453-5398-728c-8b10-84dd471cd797",
+        documentCollection: "invoice",
         documentType: "380",
         documentNumber: "AE-INV-005",
         legalEntityId: "64f50adc-1cd6-43e5-a627-437091a8a1d6",

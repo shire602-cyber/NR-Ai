@@ -5,7 +5,7 @@
  *   - without configuration everything works up to the boundary and says "not sent";
  *   - onboarding: reserve TIN -> signed legal_entity.synchronized LINK -> active; DELINK blocks;
  *   - submit is gated on the legal entity, claimed once (no double submit), two-track statuses
- *     with history; delivered + TDD -> reported; 422 rejection -> fix and resubmit (same UUID);
+ *     with history; Peppol receipt and MLS acceptance are distinct; 422 rejection allows a fix;
  *   - webhooks: valid / bad signature / bad token / stale, duplicate deliveries absorbed;
  *   - inbound: document.received -> source XML -> draft bill tagged e-invoice, once;
  *   - an ambiguous transport failure is looked up before re-posting.
@@ -76,18 +76,24 @@ function restDocument(d: FakeDocument, direction: "incoming" | "outgoing", statu
 
 const fake = {
   posts: 0,
+  tddReads: 0,
   submitDelayMs: 0,
   nextSubmit: [] as Array<"201" | "422" | "network">,
   docs: new Map<string, FakeDoc>(),
   legalEntityStatus: "Active",
+  legalEntityTin: TIN,
+  reservations: 0,
   leId: crypto.randomUUID() as string,
   incoming: [] as FakeDocument[],
   reset() {
     this.posts = 0;
+    this.tddReads = 0;
     this.submitDelayMs = 0;
     this.nextSubmit = [];
     this.docs.clear();
     this.legalEntityStatus = "Active";
+    this.legalEntityTin = TIN;
+    this.reservations = 0;
     this.leId = crypto.randomUUID();
     this.incoming = [];
   },
@@ -106,9 +112,10 @@ async function acube(url: URL, init: RequestInit): Promise<Response> {
     return json(200, { token: "e30.eyJleHAiOjQxMDI0NDQ4MDB9.c2ln" });
   }
   if (method === "POST" && p === "/legal-entities") {
+    fake.reservations++;
     return json(201, {
       uuid: fake.leId,
-      tin: TIN,
+      tin: fake.legalEntityTin,
       status: "RESERVED",
       enabledCapabilities: [],
     });
@@ -117,7 +124,7 @@ async function acube(url: URL, init: RequestInit): Promise<Response> {
     const active = fake.legalEntityStatus === "Active";
     return json(200, {
       uuid: fake.leId,
-      tin: TIN,
+      tin: fake.legalEntityTin,
       status: fake.legalEntityStatus,
       nameEn: "Pearl Trading L.L.C.",
       nameAr: "بيرل للتجارة ش.ذ.م.م",
@@ -151,7 +158,7 @@ async function acube(url: URL, init: RequestInit): Promise<Response> {
       });
     }
     const id = documentUuid();
-    const document = { id, kind, number, xml, status: "valid", tdd: false } satisfies FakeDoc;
+    const document = { id, kind, number, xml, status: "processed", tdd: false } satisfies FakeDoc;
     fake.docs.set(id, document);
     if (mode === "network") throw new TypeError("fetch failed: socket hang up");
     return json(201, restDocument(document, "outgoing", document.status));
@@ -195,6 +202,7 @@ async function acube(url: URL, init: RequestInit): Promise<Response> {
     if (!document || document.kind !== kind) return json(404, { detail: "Not found" });
     if (resource === "/source") return new Response(document.xml, { status: 200 });
     if (resource === "/tdd") {
+      fake.tddReads++;
       return document.tdd
         ? new Response("<TaxDataDocument/>", { status: 200 })
         : new Response(null, { status: 204 });
@@ -530,6 +538,53 @@ describe("E1 legal entity onboarding gates sending", () => {
   });
 });
 
+describe("A-Cube taxpayer verification", () => {
+  it("refuses a 0235 endpoint different from the statutory TIN before reserving", async () => {
+    const t = await h.createTenant({
+      companyColumns: {
+        ...SELLER_COLUMNS,
+        einvoice_partner: "acube",
+        peppol_scheme: "0235",
+        peppol_participant_id: "1005555555",
+      },
+    });
+    await useAcube(t);
+    const response = await t.as.post(`/api/companies/${t.company.id}/einvoicing/acube/reserve`, {
+      approver: "me",
+    });
+    expect(response.status, response.text).toBe(422);
+    expect(response.body.code).toBe("EINVOICE_SUPPLIER_ENDPOINT_MISMATCH");
+    expect(fake.reservations).toBe(0);
+  });
+
+  it("refuses provider TIN mismatches on reservation and manual sync", async () => {
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "acube" },
+    });
+    await useAcube(t);
+    const route = `/api/companies/${t.company.id}/einvoicing/acube`;
+    fake.legalEntityTin = "1005555555";
+    const reserve = () => t.as.post(`${route}/reserve`, { approver: "me" });
+    const rejected = await reserve();
+    expect(rejected.status, rejected.text).toBe(502);
+    expect(rejected.body.code).toBe("EINVOICE_PROVIDER_TIN_MISMATCH");
+    expect((await t.as.get(route)).body.legalEntity).toBeNull();
+
+    fake.legalEntityTin = TIN;
+    expect((await reserve()).body.legalEntity.status).toBe("reserved");
+    fake.legalEntityTin = "1005555555";
+    const synced = await t.as.post(`${route}/sync`, {});
+    expect(synced.status, synced.text).toBe(502);
+    expect(synced.body.code).toBe("EINVOICE_PROVIDER_TIN_MISMATCH");
+    expect((await t.as.get(route)).body.legalEntity).toMatchObject({ status: "reserved", tin: TIN });
+
+    fake.legalEntityTin = TIN;
+    const confirmed = await t.as.post(`${route}/sync`, {});
+    expect(confirmed.status, confirmed.text).toBe(200);
+    expect(confirmed.body.legalEntity.status).toBe("active");
+  });
+});
+
 describe("A-Cube native signed webhook payloads", () => {
   it("uses the native legal entity UUID to confirm onboarding", async () => {
     const t = await h.createTenant({
@@ -580,7 +635,7 @@ describe("A-Cube native signed webhook payloads", () => {
       const providerDocumentId = (await statusOf(t, id)).transmission.providerDocumentId;
       const document = fake.docs.get(providerDocumentId);
       expect(document?.kind).toBe(kind);
-      document!.status = "delivered";
+      document!.status = "accepted";
       const payload = {
         eventId: "019e91b7-f799-7df7-a469-4824b2656b0f",
         eventType,
@@ -597,7 +652,7 @@ describe("A-Cube native signed webhook payloads", () => {
 });
 
 describe("E1 submit, two tracks and history", () => {
-  it("submits once (concurrent double submit sends one document), then delivered + reported", async () => {
+  it("sends once, waits for MLS after receipt, and leaves reporting pending with a downloadable TDD", async () => {
     const t = await linkedTenant();
     const inv = await issuedInvoice(t);
     fake.submitDelayMs = 150;
@@ -615,7 +670,8 @@ describe("E1 submit, two tracks and history", () => {
     expect(fake.posts).toBe(1);
 
     let s = await statusOf(t, inv.id);
-    expect(s.tracks.delivery.status).toBe("queued");
+    expect(s).toMatchObject({ status: "submitted", submissionState: "sent" });
+    expect(s.tracks.delivery.status).toBe("sending");
     expect(s.tracks.reporting.status).toBe("pending");
     expect(s.transmission).toMatchObject({ provider: "acube", connected: true });
     const docId = s.transmission.providerDocumentId as string;
@@ -633,28 +689,31 @@ describe("E1 submit, two tracks and history", () => {
     expect((await webhook(t, payload)).body.duplicate).toBe(true); // A-Cube retry
     await runProviderEvents();
     s = await statusOf(t, inv.id);
-    expect(s.status).toBe("accepted");
+    expect(s).toMatchObject({ status: "submitted", submissionState: "sent" });
     expect(s.tracks.delivery.status).toBe("delivered");
     expect(s.tracks.reporting.status).toBe("pending");
 
-    // The TDD appears: the poll fallback moves reporting to reported.
+    // A TDD is already downloadable when the recipient's MLS arrives.
     fake.docs.get(docId)!.tdd = true;
+    fake.docs.get(docId)!.status = "accepted";
     expect((await runAcubePoll()).refreshed).toBe(1);
     s = await statusOf(t, inv.id);
-    expect(s.status).toBe("cleared");
-    expect(s.tracks.reporting.status).toBe("reported");
+    expect(s).toMatchObject({ status: "accepted", submissionState: "accepted" });
+    expect(s.tracks.reporting.status).toBe("pending");
+    expect(fake.tddReads).toBe(0);
+    expect((await runAcubePoll()).refreshed).toBe(0);
     expect(Object.fromEntries(s.checklist.map((c: any) => [c.key, c.state]))).toEqual({
       posted: "done",
       validated: "done",
       sent: "done",
-      reported: "done",
+      reported: "in_progress",
     });
     const history = s.events.map((e: any) => `${e.source}:${e.track}:${e.to}`);
     expect(history).toEqual(
       expect.arrayContaining([
         "user:delivery:queued",
         "webhook:delivery:delivered",
-        "poll:reporting:reported",
+        "job:delivery:sending",
       ])
     );
     const rows = await h.sql(
@@ -734,7 +793,7 @@ describe("E1 submit, two tracks and history", () => {
     expect(retry).toEqual({ attempted: 1, submitted: 1 });
     expect(fake.posts).toBe(1); // found by invoice number, not posted twice
     const s = await statusOf(t, inv.id);
-    expect(s.tracks.delivery.status).toBe("queued");
+    expect(s.tracks.delivery.status).toBe("sending");
     expect(fake.docs.has(s.transmission.providerDocumentId)).toBe(true);
   });
 });

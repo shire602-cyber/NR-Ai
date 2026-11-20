@@ -157,12 +157,25 @@ export function legacyFromTracks(
   }
 }
 
+/** A-Cube reports recipient receipt before the recipient's final MLS decision. */
+export function legacyFromProviderTracks(
+  provider: string,
+  providerStatus: string | null | undefined,
+  delivery: DeliveryStatus,
+  reporting: ReportingStatus
+): EInvoiceStatus {
+  if (provider === "acube" && delivery === "delivered") {
+    const status = providerStatus?.trim().toLowerCase();
+    if (status === "delivered") return "submitted";
+    if (status === "accepted" && reporting !== "reported") return "accepted";
+  }
+  return legacyFromTracks(delivery, reporting);
+}
+
 /**
- * A-Cube document status -> delivery track. Both vocabularies are handled: the lifecycle page
- * (valid, sending_started, sending_queued, sending_error, delivered, delivery_error, received)
- * and the OpenAPI enum (new, valid, sending_*, sending_failed, processed, delivered,
- * delivery_failed, accepted, rejected, withdrawn, action_required). Unknown values never read
- * as success: they become delivery_failed so the document is visible and re-checked.
+ * A-Cube's lifecycle treats Peppol handover and provider-managed retries as in flight.
+ * `delivered` identifies recipient receipt. The subsequent `accepted` or `rejected` is the MLS.
+ * https://docs.acubeapi.com/documentation/gov-ae/documents/lifecycle
  */
 export function mapAcubeDeliveryStatus(raw: unknown): DeliveryStatus {
   const s = String(raw ?? "")
@@ -174,18 +187,18 @@ export function mapAcubeDeliveryStatus(raw: unknown): DeliveryStatus {
     case "sending_queued":
       return "queued";
     case "sending_started":
+    case "processed":
+    case "sending_failed":
+    case "delivery_failed":
       return "sending";
     case "delivered":
-    case "processed":
     case "accepted":
       return "delivered";
     case "rejected":
     case "withdrawn":
       return "rejected";
     case "sending_error":
-    case "sending_failed":
     case "delivery_error":
-    case "delivery_failed":
     case "action_required":
       return "delivery_failed";
     default:

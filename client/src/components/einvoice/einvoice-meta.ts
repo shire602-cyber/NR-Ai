@@ -18,6 +18,7 @@ export type DeliveryStatus =
   /** X6a: the provider may hold it after a lost response; a person links it (never resent). */
   | "needs_link";
 export type ReportingStatus = "not_required" | "pending" | "reported" | "report_failed";
+export type RecipientAcknowledgement = "received" | "accepted" | null;
 export type ChecklistState =
   | "done"
   | "in_progress"
@@ -28,6 +29,7 @@ export type ChecklistState =
 export type TransmissionBlock =
   | "no_provider"
   | "test_provider"
+  | "provider_selection_changed"
   | "legal_entity_not_active"
   | "legal_entity_delinked"
   | null;
@@ -57,6 +59,7 @@ export interface EInvoiceEvent {
   code: string | null;
   message: string | null;
   source: "user" | "webhook" | "poll" | "job" | "system";
+  provider: string | null;
   providerStatus: string | null;
   at: string | null;
 }
@@ -72,12 +75,14 @@ export interface EInvoiceStatusView {
     | "failed"
     | "needs_reconciliation";
   detail: string | null;
+  contactId: string | null;
   tracks: {
     delivery: { status: DeliveryStatus; at: string | null };
     reporting: {
       status: ReportingStatus;
       at: string | null;
       required: boolean;
+      confirmationUnavailable?: boolean;
       mandateApplies?: boolean;
       reportBy: string | null;
       overdue: boolean;
@@ -92,6 +97,9 @@ export interface EInvoiceStatusView {
     block: TransmissionBlock;
     providerDocumentId: string | null;
     legalEntityStatus: string | null;
+    recipientAcknowledgement: RecipientAcknowledgement;
+    canSubmit: boolean;
+    canRefresh: boolean;
   };
   issues: EInvoiceIssue[];
   rejection: {
@@ -100,6 +108,8 @@ export interface EInvoiceStatusView {
     reasons: Array<{ code?: string; message?: string; field?: string | null }>;
     retryScheduledAt: string | null;
     resubmittable: boolean;
+    providerHoldsDocument?: boolean;
+    providerDisplayName?: string | null;
     /** E2: the number is used up at the provider: credit note + new invoice. */
     newDocumentRequired?: boolean;
   } | null;
@@ -116,6 +126,9 @@ export interface EInvoiceStatusView {
 export interface EInvoiceDocumentRow {
   invoiceId: string;
   status: string;
+  provider: string | null;
+  providerStatus: string | null;
+  providerMessageId: string | null;
   deliveryStatus: DeliveryStatus | null;
   reportingStatus: ReportingStatus | null;
   reportBy: string | null;
@@ -179,9 +192,29 @@ export const REPORTING_TONE: Record<ReportingStatus, StatusTone> = {
   report_failed: "danger",
 };
 
-export const deliveryLabelKey = (s: DeliveryStatus, queuedForSubmission = false) =>
-  queuedForSubmission ? "einvoicing.submissionQueued" : `einvoicing.delivery_${s}`;
-export const reportingLabelKey = (s: ReportingStatus) => `einvoicing.reporting_${s}`;
+export const deliveryLabelKey = (
+  s: DeliveryStatus,
+  queuedForSubmission = false,
+  acknowledgement: RecipientAcknowledgement = null
+) =>
+  acknowledgement === "accepted"
+    ? "einvoicing.recipientAccepted"
+    : acknowledgement === "received"
+      ? "einvoicing.recipientReceived"
+      : queuedForSubmission
+        ? "einvoicing.submissionQueued"
+        : `einvoicing.delivery_${s}`;
+
+export function recipientAcknowledgement(
+  provider: string | null | undefined,
+  status: string | null | undefined
+): RecipientAcknowledgement {
+  if (provider !== "acube") return null;
+  const rawStatus = status?.trim().toLowerCase();
+  return rawStatus === "accepted" ? "accepted" : rawStatus === "delivered" ? "received" : null;
+}
+export const reportingLabelKey = (s: ReportingStatus, confirmationUnavailable = false) =>
+  confirmationUnavailable ? "einvoicing.reportingUnconfirmed" : `einvoicing.reporting_${s}`;
 export const checklistLabelKey = (k: string) => `einvoicing.check_${k}`;
 export const checklistStateKey = (s: ChecklistState) => `einvoicing.checkState_${s}`;
 export const blockKey = (b: Exclude<TransmissionBlock, null>) => `einvoicing.block_${b}`;

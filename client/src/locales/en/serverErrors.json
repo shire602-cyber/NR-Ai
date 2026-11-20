@@ -225,6 +225,8 @@
   "serverErrors.EINVOICE_PROVIDER_UNAVAILABLE": "The e-invoicing service is not available right now. Try again later.",
   "serverErrors.EINVOICE_SCHEMA_INVALID": "The generated e-invoice failed format validation. Review the invoice details and try again.",
   "serverErrors.EINVOICE_SUBMISSION_IN_PROGRESS": "This e-invoice is being sent right now. Wait a moment and refresh.",
+  "serverErrors.EINVOICE_PROVIDER_TIN_MISMATCH": "The e-invoicing provider did not confirm this company’s TIN. Check the taxpayer linked with your provider.",
+  "serverErrors.EINVOICE_TIN_MISSING": "Enter the company’s 10-digit TIN or 15-digit UAE TRN in company settings first.",
   "serverErrors.EINVOICE_SUPPLIER_ENDPOINT_MISMATCH": "The supplier e-invoicing address on the invoice does not match your registered TIN.",
   "serverErrors.EINVOICE_VALIDATION_FAILED": "The invoice is not ready for e-invoicing. Fix the listed problems and try again.",
   "serverErrors.EINVOICE_VALIDATION_UNAVAILABLE": "E-invoicing validation is unavailable. The invoice can only be sent after it passes validation.",

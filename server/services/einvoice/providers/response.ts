@@ -9,8 +9,17 @@ export function providerObject(value: unknown): Record<string, unknown> | null {
 }
 
 /** Read and redact a provider response before it can become an audit entry or diagnostic. */
-export async function readProviderResponse(response: Response, credentials: string[]) {
-  const raw = await response.text();
+export async function readProviderResponse(
+  response: Response,
+  credentials: string[],
+  preserveOriginalText = false
+) {
+  // Response.text() removes a UTF-8 BOM. Source downloads retain it for exact comparison.
+  const raw = preserveOriginalText
+    ? new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+        await response.arrayBuffer()
+      )
+    : await response.text();
   const values = [...new Set(credentials.filter(Boolean))].sort((a, b) => b.length - a.length);
   const redact = (value: string) =>
     values.reduce((safe, credential) => safe.replaceAll(credential, "[REDACTED]"), value);
@@ -31,5 +40,9 @@ export async function readProviderResponse(response: Response, credentials: stri
   } catch {
     // Some responses are XML or plain text.
   }
-  return { json, text: json === null ? redact(raw) : JSON.stringify(json) };
+  return {
+    json,
+    text: json === null ? redact(raw) : JSON.stringify(json),
+    originalText: preserveOriginalText ? raw : undefined,
+  };
 }

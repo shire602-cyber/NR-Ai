@@ -30,16 +30,18 @@ import {
 } from "../../../shared/schema";
 import { storage } from "../../storage";
 import { createLogger } from "../../config/logger";
-import type { EInvoiceProvider } from "../einvoice-provider";
+import type { EInvoiceDocumentRef, EInvoiceProvider } from "../einvoice-provider";
 import { processInboundEInvoice } from "./inbound";
 import { refreshAndPersist } from "./workflow";
 import {
   findLegalEntitiesByProviderId,
+  getLegalEntity,
   peppolAddressFor,
   updateLegalEntityRow,
 } from "./legal-entities";
 import { getCompanyEInvoiceProvider } from "./providers/company-provider";
 import { providerModule } from "./providers/registry";
+import { isCreditNoteDocumentType } from "./pint-ae-codes";
 
 const log = createLogger("einvoice-provider-events");
 
@@ -116,21 +118,35 @@ async function claimEvents(opts: {
   provider?: EInvoiceProvider;
   limit: number;
 }): Promise<EInvoiceProviderEvent[]> {
+  // A later activation can recover legacy onboarding ignores. Routine syncs only update the
+  // entity's sync timestamps and do not make a previously ignored event eligible.
   const res = await db.execute(sql`
     UPDATE einvoice_provider_events e
        SET status = 'processing',
            attempts = e.attempts + 1,
            locked_until = now() + (${LEASE_MS}::int * interval '1 millisecond')
      WHERE e.id IN (
-       SELECT id FROM einvoice_provider_events
-        WHERE ((status = 'pending' AND next_attempt_at <= now())
-               OR (status = 'processing' AND locked_until < now()))
-          ${opts.id ? sql`AND id = ${opts.id}` : sql``}
-          ${opts.companyId ? sql`AND company_id = ${opts.companyId}` : sql``}
-          ${opts.provider ? sql`AND provider = ${opts.provider.name} AND environment = ${opts.provider.environment}` : sql``}
-        ORDER BY received_at
+       SELECT candidate.id
+         FROM einvoice_provider_events candidate
+         LEFT JOIN einvoice_legal_entities entity
+           ON entity.company_id = candidate.company_id
+          AND entity.provider = candidate.provider
+          AND entity.environment = candidate.environment
+        WHERE ((candidate.status = 'pending' AND candidate.next_attempt_at <= now())
+               OR (candidate.status = 'processing' AND candidate.locked_until < now())
+               OR (candidate.event_type = 'document.received'
+                   AND candidate.status = 'ignored'
+                   AND candidate.last_error IN ('document belongs to no company of ours',
+                                                'legal entity is not active')
+                   AND COALESCE(entity.activated_at, entity.created_at) > candidate.processed_at))
+          AND (candidate.event_type <> 'document.received' OR candidate.company_id IS NULL
+               OR entity.status = 'active')
+          ${opts.id ? sql`AND candidate.id = ${opts.id}` : sql``}
+          ${opts.companyId ? sql`AND candidate.company_id = ${opts.companyId}` : sql``}
+          ${opts.provider ? sql`AND candidate.provider = ${opts.provider.name} AND candidate.environment = ${opts.provider.environment}` : sql``}
+        ORDER BY candidate.received_at
         LIMIT ${opts.limit}
-        FOR UPDATE SKIP LOCKED)
+        FOR UPDATE OF candidate SKIP LOCKED)
     RETURNING e.id, e.provider, e.environment, e.event_id AS "eventId",
               e.event_type AS "eventType", e.company_id AS "companyId", e.payload,
               e.status, e.attempts, e.next_attempt_at AS "nextAttemptAt",
@@ -139,7 +155,9 @@ async function claimEvents(opts: {
   return rowsOf<EInvoiceProviderEvent>(res);
 }
 
-type Outcome = { status: "processed" | "ignored"; companyId?: string | null; note?: string };
+type Outcome =
+  | { status: "processed" | "ignored"; companyId?: string | null; note?: string }
+  | { status: "awaiting-onboarding" };
 type CompanyEvent = EInvoiceProviderEvent & { companyId: string };
 
 async function handleDelivered(row: CompanyEvent, provider: EInvoiceProvider): Promise<Outcome> {
@@ -169,7 +187,10 @@ async function handleDelivered(row: CompanyEvent, provider: EInvoiceProvider): P
   const invoice = await storage.getInvoice(doc.invoiceId, doc.companyId);
   const company = await storage.getCompany(doc.companyId);
   if (!invoice || !company) return { status: "ignored", note: "invoice or company gone" };
-  if (invoice.einvoiceStatus === "cleared") {
+  const legacyHandoff =
+    provider.name === "acube" &&
+    ["processed", "delivered"].includes(doc.providerStatus?.trim().toLowerCase() ?? "");
+  if (invoice.einvoiceStatus === "cleared" && !legacyHandoff) {
     return { status: "ignored", companyId: company.id, note: "already delivered and reported" };
   }
   const r = await refreshAndPersist({
@@ -189,14 +210,22 @@ async function handleReceived(row: CompanyEvent, provider: EInvoiceProvider): Pr
   }
   const payload = row.payload as Record<string, unknown>;
   const documentId = String(payload.documentId ?? "");
-  const code = String(payload.documentTypeCode ?? "");
-  const documentType =
-    code === "81" || code === "480" || code === "381"
-      ? code
-      : payload.documentType === "credit-note"
+  const rawCode = String(payload.documentTypeCode ?? "");
+  const documentCollection =
+    payload.documentCollection === "invoice" || payload.documentCollection === "credit-note"
+      ? payload.documentCollection
+      : payload.documentType === "credit-note" || isCreditNoteDocumentType(rawCode)
+        ? "credit-note"
+        : "invoice";
+  const ref: EInvoiceDocumentRef = {
+    documentCollection,
+    documentType: /^\d{2,3}$/.test(rawCode)
+      ? rawCode
+      : documentCollection === "credit-note"
         ? "381"
-        : "380";
-  const owner = await provider.inboundOwner(documentId, { documentType }, payload);
+        : "380",
+  };
+  const owner = await provider.inboundOwner(documentId, ref, payload);
   const matches = await findLegalEntitiesByProviderId(
     row.provider,
     row.environment,
@@ -205,17 +234,20 @@ async function handleReceived(row: CompanyEvent, provider: EInvoiceProvider): Pr
     row.companyId
   );
   if (matches.length === 0) {
-    return { status: "ignored", note: "document belongs to no company of ours" };
+    // Onboarding can change while the provider read is in flight.
+    const current = await getLegalEntity(row.companyId, row.provider, row.environment);
+    if (current?.status !== "active") return { status: "awaiting-onboarding" };
+    return { status: "ignored", note: "document does not match the linked legal entity" };
   }
   if (matches.length > 1) {
     // Never post a supplier's invoice into a guessed company.
     return { status: "ignored", note: "legal entity is linked to more than one company" };
   }
   const le = matches[0];
-  if (le.status !== "active") return { status: "ignored", note: "legal entity is not active" };
+  if (le.status !== "active") return { status: "awaiting-onboarding" };
   const company = await storage.getCompany(le.companyId);
   if (!company) return { status: "ignored", note: "company gone" };
-  const xml = await provider.fetchSource(documentId, { documentType });
+  const xml = await provider.fetchSource(documentId, ref);
   try {
     await processInboundEInvoice({
       company: company as Company & { peppolParticipantId?: string | null },
@@ -302,6 +334,13 @@ async function settle(row: EInvoiceProviderEvent, provider?: EInvoiceProvider) {
             }))
         )
       : { status: "ignored", note: "event had no verified company scope" };
+    if (out.status === "awaiting-onboarding") {
+      await db
+        .update(einvoiceProviderEvents)
+        .set({ status: "pending", processedAt: null, lockedUntil: null, lastError: null })
+        .where(claim);
+      return "deferred";
+    }
     await db
       .update(einvoiceProviderEvents)
       .set({
@@ -340,15 +379,15 @@ export async function runProviderEvents(
   for (const row of rows) {
     const out = await settle(row, provider);
     if (out === "processed" || out === "ignored") processed++;
-    else failed++;
+    else if (out !== "deferred") failed++;
   }
   return { claimed: rows.length, processed, failed };
 }
 
 /**
  * Polling fallback (E1; provider-neutral since E2): refresh the provider's documents still in
- * flight (delivery queued/sending, or delivered but not yet reported) and enqueue incoming
- * documents not seen before. Runs only for `providerName` (each provider has its own job).
+ * flight (delivery, recipient decision or reporting) and enqueue incoming documents not seen before.
+ * Runs only for `providerName` (each provider has its own job).
  */
 export async function runProviderPoll(
   providerName: string,
@@ -373,6 +412,14 @@ export async function runProviderPoll(
     return provider;
   }
 
+  // An A-Cube recipient-ASP receipt can precede the buyer's MLS decision. A final
+  // MLS no longer needs polling because the available TDD cannot confirm FTA reporting.
+  const awaitingFollowUp =
+    providerName === "acube"
+      ? sql`(${einvoiceDocuments.status} = 'submitted'
+             OR (${einvoiceDocuments.status} IN ('accepted', 'cleared')
+                 AND lower(btrim(${einvoiceDocuments.providerStatus})) IN ('processed', 'delivered')))`
+      : sql`${einvoiceDocuments.reportingStatus} = 'pending'`;
   const inFlight = await db
     .select()
     .from(einvoiceDocuments)
@@ -384,7 +431,7 @@ export async function runProviderPoll(
         sql`${einvoiceDocuments.providerMessageId} IS NOT NULL`,
         sql`(${einvoiceDocuments.deliveryStatus} IN ('queued', 'sending')
              OR (${einvoiceDocuments.deliveryStatus} = 'delivered'
-                 AND ${einvoiceDocuments.reportingStatus} = 'pending'))`
+                 AND ${awaitingFollowUp}))`
       )
     )
     .orderBy(asc(einvoiceDocuments.updatedAt), asc(einvoiceDocuments.id));
@@ -428,11 +475,14 @@ export async function runProviderPoll(
         if (item.legalEntityId && item.legalEntityId !== entity.legalEntityId) continue;
         if (!item.legalEntityId && item.ownerFiscalId && item.ownerFiscalId !== entity.tin)
           continue;
+        const documentCollection =
+          item.documentCollection ??
+          (isCreditNoteDocumentType(item.documentType) ? "credit-note" : "invoice");
         const payload: Record<string, unknown> = {
           documentId: item.providerMessageId,
           documentNumber: item.documentNumber ?? null,
-          documentType:
-            item.documentType === "381" || item.documentType === "81" ? "credit-note" : "invoice",
+          documentType: documentCollection,
+          documentCollection,
           documentTypeCode: item.documentType,
           status: "received",
           source: "poll",

@@ -6,9 +6,9 @@ lists what each needs, how to run the sandbox dry run, and what to ask each ASP 
 
 **Ground rules**
 
-- **One ASP at a time.** Choose it with `EINVOICE_PROVIDER` (`acube` or `complyance`). There is
-  **no default**: unset means e-invoicing is off and hidden. A selected provider without its
-  credentials stays "Not connected" (`tests/unit/einvoice-provider-registry.test.ts`).
+- **One company and one ASP at a time.** Choose the ASP in the company’s e-invoicing settings
+  and provision its encrypted runtime credential bundle. The standalone dry run selects an ASP
+  with `--provider`. [Company e-invoicing configuration](../einvoicing-company-runtime.md)
 - **ZATCA stays hidden.** It is off unless `ZATCA_ENABLED=true` (`server/services/zatca/flag.ts`):
   the endpoints answer 503, `/api/features` reports `zatca: false`, and a Saudi company is treated
   as UAE. Leave `ZATCA_ENABLED` unset.
@@ -30,16 +30,18 @@ dry run (below) for that ASP.
 | 3   | **Test seller (our side)**         | A sandbox legal entity onboarded with "Simulate onboarding" for one test TRN. A-Cube routes on the supplier EndpointID `0235:<first 10 digits of that TRN>`.                                                                                                                           | A sandbox company onboarded with a **real authorised TIN** (their sandbox requires one), plus an **invoice source** created for the dry run                                                                                                                                                  |
 | 4   | **Values to record (not secrets)** | `ASP_DRYRUN_SELLER_TRN` = that legal entity's 15-digit TRN                                                                                                                                                                                                                             | `ASP_DRYRUN_SELLER_TRN` = that TIN's 15-digit TRN; `COMPLYANCE_DRYRUN_SOURCE` = the source name (optional `COMPLYANCE_SOURCE_VERSION`, default `v1`)                                                                                                                                         |
 | 5   | **Test buyer and Peppol IDs**      | A test buyer participant they accept: a 15-digit test TRN for `ASP_DRYRUN_BUYER_TRN`, giving EndpointID `0235:<10-digit TIN>`. Ask which scheme and ID to use for a buyer **without** a TRN (foreign or B2C); we refuse those today with `EINVOICE_BUYER_ENDPOINT_MISSING`.            | The same: a test buyer TRN or Peppol ID they route in sandbox, and the expected `peppolId` / scheme for a buyer without a TRN                                                                                                                                                                |
-| 6   | **Webhook (status callbacks)**     | Register `https://<public host>/api/webhooks/einvoice/acube/sandbox`; set `ACUBE_WEBHOOK_BASE_URL=https://<public host>`. Ask for their Ed25519 signing key format (optional pin `ACUBE_SIGNATURE_PUBLIC_KEY`) and, if they use token auth, the token (`ACUBE_WEBHOOK_TOKEN`, secret). | Register `https://<public host>/api/webhooks/einvoice/complyance/sandbox`; set `COMPLYANCE_WEBHOOK_BASE_URL=https://<public host>`. Ask for the HMAC signing secret, shown once (`COMPLYANCE_WEBHOOK_SECRET`, secret), and its algorithm (`COMPLYANCE_WEBHOOK_ALGORITHM`, sha256 or sha512). |
+| 6   | **Webhook (status callbacks)** | Copy the company’s callback URL from settings, `https://<public-host>/api/webhooks/einvoice/acube/sandbox/<company-uuid>`. Set `ACUBE_WEBHOOK_BASE_URL` to the HTTPS origin. Ask for the Ed25519 signing key format and put the optional callback token in the company bundle as `webhookToken`. | Copy the company’s callback URL from settings, `https://<public-host>/api/webhooks/einvoice/complyance/sandbox/<company-uuid>`. Set `COMPLYANCE_WEBHOOK_BASE_URL` to the HTTPS origin. Put the HMAC signing secret in the company bundle as `webhookSecret` and configure `COMPLYANCE_WEBHOOK_ALGORITHM` to match. |
 | 7   | **Network**                        | Our host must reach `ae-sandbox.api.acubeapi.com` and `common.api.acubeapi.com` (login). Their callbacks must reach our public host.                                                                                                                                                   | Our host must reach `prod.gets.complyance.io` (both environments). Their callbacks must reach our public host.                                                                                                                                                                               |
 | 8   | **Confirm in writing**             | Submission on `/invoices` and `/credit-notes`, duplicate-UUID behaviour, the 422 body format                                                                                                                                                                                       | Whether GETS JSON (default) or Unify XML is preferred, the UAE credit cost per document, and rate limits                                                                                                                                                                                     |
 
-The webhooks are optional for the first submission: `--status` polls instead.
+The company UUID in each callback URL binds the request to the correct credentials. Use the full URL
+shown in settings when registering the callback and when verifying its signature. The standalone
+dry run can poll status with `--status`.
 
 Activation order for the first submission, one ASP at a time:
 
 1. Store the secrets from row 2.
-2. Set `EINVOICE_PROVIDER` to that ASP only. There is no default ASP.
+2. Select the company and ASP in e-invoicing settings if testing callbacks through the application.
 3. Set the row 4 values.
 4. Run:
    ```bash
@@ -60,7 +62,7 @@ re-recording, status vocabulary, TDD).
 | `ACUBE_PASSWORD`                                              | yes    | yes                    | Sandbox account password                                                        |
 | `ACUBE_ENV`                                                   | no     | no (default `sandbox`) | `sandbox` (`ae-sandbox.api.acubeapi.com`) or `production`                       |
 | `ACUBE_WEBHOOK_BASE_URL`                                      | no     | for webhooks           | Public https base A-Cube calls back                                             |
-| `ACUBE_WEBHOOK_TOKEN`                                         | yes    | optional               | Shared token header (authType=header)                                           |
+| `webhookToken`                                               | yes    | optional               | Shared token in the company’s encrypted A-Cube bundle                           |
 | `ACUBE_WEBHOOK_TOKEN_HEADER`                                  | no     | optional               | Header name for the token (default `X-Acube-Token`)                             |
 | `ACUBE_SIGNATURE_PUBLIC_KEY`                                  | no     | optional               | Pin A-Cube's Ed25519 key (PEM); default fetched and cached                      |
 | `ACUBE_WEBHOOK_MAX_AGE_SECONDS`                               | no     | optional               | Signature age window (default 43200)                                            |
@@ -74,7 +76,7 @@ re-recording, status vocabulary, TDD).
 | -------------------------------------------------------- | ------ | ---------------------- | ------------------------------------------------------------------------------------------ |
 | `COMPLYANCE_API_KEY`                                     | yes    | yes                    | Sandbox ("mock") key; a production key with write access later                             |
 | `COMPLYANCE_ENV`                                         | no     | no (default `sandbox`) | `sandbox` or `production`                                                                  |
-| `COMPLYANCE_WEBHOOK_SECRET`                              | yes    | for webhooks           | HMAC signing secret shown once at webhook creation (unset: webhook answers 503, poll only) |
+| `webhookSecret`                                        | yes    | for webhooks           | HMAC signing secret in the company’s encrypted Complyance bundle                           |
 | `COMPLYANCE_WEBHOOK_BASE_URL`                            | no     | for webhooks           | Public https base                                                                          |
 | `COMPLYANCE_WEBHOOK_ALGORITHM`                           | no     | optional               | `sha256` or `sha512`, as chosen at creation                                                |
 | `COMPLYANCE_WEBHOOK_MAX_AGE_SECONDS`                     | no     | optional               | Signature age window                                                                       |
@@ -139,9 +141,10 @@ before switching any environment to production.
       UUID is refused.
 - [ ] Real 422 validation body and status vocabulary. Then re-record
       `tests/fixtures/pint-ae/asp/acube/*.json`.
-- [ ] TDD (Tax Data Document) semantics and the MLS rejection flow, which maps to `report_failed`.
+- [ ] TDD (Tax Data Document) availability and the separate recipient MLS acceptance or rejection.
+      A TDD download leaves the FTA reporting outcome unconfirmed.
 - [ ] Webhooks: delivered event names, delivery-error payload, retry re-signing, Ed25519 public key
-      format. Their callback must reach `ACUBE_WEBHOOK_BASE_URL` through our proxy.
+      format. Verify that the complete company callback URL from row 6 reaches the app through the proxy.
 - [ ] Legal-entity status casing (`RESERVED` / `Active`) and reservation expiry.
 - [ ] Buyer without a TRN (foreign or unregistered): which endpoint scheme and ID A-Cube expects.
       We refuse such a document with `EINVOICE_BUYER_ENDPOINT_MISSING` until one is recorded.
@@ -162,7 +165,7 @@ before switching any environment to production.
       engine from our sample.
 - [ ] Real 422 bodies (GETS-HEAD-010), 401/403 bodies, `final_invalid` `errors[].source` values. Then
       re-record `tests/fixtures/pint-ae/asp/complyance/*.json`.
-- [ ] Webhook signing secret (`COMPLYANCE_WEBHOOK_SECRET`) and algorithm. Also the payloads of
+- [ ] Company webhook signing secret (`webhookSecret`) and algorithm. Also the payloads of
       `invoice.passed` / `invoice.failed` and onboarding events.
 - [ ] Purchase GET `data.xml` encoding and `attribution.companyId` on purchase webhooks.
 - [ ] Buyer without a TRN: expected peppolId scheme and value (see A-Cube item above).

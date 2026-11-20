@@ -13,6 +13,7 @@ import {
   REPORTING_TONE,
   deliveryFromLegacyStatus,
   deliveryLabelKey,
+  recipientAcknowledgement,
   reportingLabelKey,
   type DeliveryStatus,
   type ReportingStatus,
@@ -45,13 +46,25 @@ export function EInvoiceListCell({
   // the reporting/delivery state; outside scope nothing is shown beyond an existing document.
   const showPills = !!compliance.data?.mandateApplies && !!pill?.reportingRequired;
   if (!doc && !invoice.einvoiceStatus && !showPills) return null;
-  const delivery: DeliveryStatus =
-    (doc?.deliveryStatus as DeliveryStatus | null) ??
+  const storedDelivery: DeliveryStatus =
+    (showPills ? pill?.delivery : undefined) ??
+    doc?.deliveryStatus ??
     deliveryFromLegacyStatus(doc?.status ?? invoice.einvoiceStatus);
   const queuedForSubmission = (doc?.status ?? invoice.einvoiceStatus) === "queued";
-  const reporting: ReportingStatus =
+  const acknowledgement = recipientAcknowledgement(doc?.provider, doc?.providerStatus);
+  const delivery =
+    doc?.provider === "acube" && storedDelivery === "delivered" && !acknowledgement
+      ? "queued"
+      : storedDelivery;
+  const storedReporting: ReportingStatus =
+    (showPills ? pill?.reporting : undefined) ??
     (doc?.reportingStatus as ReportingStatus | null) ??
     (doc?.status === "cleared" || invoice.einvoiceStatus === "cleared" ? "reported" : "pending");
+  const confirmationUnavailable =
+    doc?.provider === "acube" &&
+    !!doc.providerMessageId &&
+    (storedReporting === "pending" || storedReporting === "reported");
+  const reporting = confirmationUnavailable ? "pending" : storedReporting;
   return (
     <>
       <button
@@ -67,25 +80,25 @@ export function EInvoiceListCell({
             data-testid={`einvoice-compliance-${invoice.id}`}
           >
             <StatusBadge
-              tone={pill.overdue ? "danger" : REPORTING_TONE[pill.reporting]}
+              tone={pill.overdue && !confirmationUnavailable ? "danger" : REPORTING_TONE[reporting]}
               data-testid={`einvoice-reportby-${invoice.id}`}
             >
-              {pill.reporting === "reported" || pill.reporting === "report_failed"
-                ? t[reportingLabelKey(pill.reporting)]
+              {confirmationUnavailable || reporting === "reported" || reporting === "report_failed"
+                ? t[reportingLabelKey(reporting, confirmationUnavailable)]
                 : pill.reportBy
                   ? formatMessage(
                       pill.overdue ? t["launchProof.reportOverdueShort"] : t["einvoicing.reportBy"],
                       { date: formatDate(pill.reportBy, locale) }
                     )
-                  : t[reportingLabelKey(pill.reporting)]}
+                  : t[reportingLabelKey(reporting)]}
             </StatusBadge>
             <StatusBadge
-              tone={DELIVERY_TONE[pill.delivery]}
+              tone={acknowledgement === "received" ? "info" : DELIVERY_TONE[delivery]}
               data-testid={`einvoice-delivery-${invoice.id}`}
             >
-              {pill.delivery === "validated"
+              {delivery === "validated"
                 ? t["einvoicing.delivery_validated_short"]
-                : t[deliveryLabelKey(pill.delivery, queuedForSubmission)]}
+                : t[deliveryLabelKey(delivery, queuedForSubmission, acknowledgement)]}
             </StatusBadge>
           </span>
         ) : (
@@ -93,6 +106,8 @@ export function EInvoiceListCell({
             delivery={delivery}
             reporting={reporting}
             queuedForSubmission={queuedForSubmission}
+            acknowledgement={acknowledgement}
+            confirmationUnavailable={confirmationUnavailable}
           />
         )}
       </button>

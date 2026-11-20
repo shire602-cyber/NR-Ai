@@ -33,12 +33,15 @@
  * maker-checker approvals.
  */
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import { pool } from "../db";
+import { and, eq } from "drizzle-orm";
+import { db, pool, type AppDatabase } from "../db";
+import { companyUsers } from "../../shared/schema";
+import { canAccessFirmClient, resolveFirmContext } from "../services/firm/scope";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
 import { DomainError } from "../errors";
 import { authenticateRequest } from "./auth";
-import { isNraFirmRole } from "../../shared/access";
+import { isFirmRole, isNraFirmRole } from "../../shared/access";
 import {
   normalizeCompanyRole,
   roleHasAnyPermission,
@@ -114,7 +117,11 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   // WQ5: e-invoicing tax identity, partner choice and approver links (links carry an email and a
   // no-login URL, so even listing them is an admin action). The first-invoice prompt's "shown"
   // marker is written by whoever drafts the invoice.
+  r("MUT", "companies/*/einvoicing/settings", "settings.company"),
   r("MUT", "companies/*/einvoicing/identity", "settings.company"),
+  r("MUT", "companies/*/einvoicing/acube/**", "settings.company"),
+  r("POST", "companies/*/einvoicing/complyance/connect", "settings.company"),
+  r("POST", "companies/*/einvoicing/complyance/sync", "settings.company"),
   r("MUT", "companies/*/einvoicing/partner/**", "settings.company"),
   r("*", "companies/*/einvoicing/approver-links/**", "settings.company"),
   r("POST", "companies/*/einvoicing/tax-ready/shown", "documents.write"),
@@ -158,6 +165,9 @@ export const POLICY_RULES: readonly PolicyRule[] = [
   r("MUT", "companies/*/journal/**", "ledger.post"),
   r("MUT", "journal/**", "ledger.post"),
   r("POST", "invoices/*/post", "ledger.post"),
+  // Sending an e-invoice through an ASP is an external tax transmission.
+  r("POST", "invoices/*/einvoice/submit", "tax.submit"),
+  r("POST", "invoices/*/einvoice/resubmit", "tax.submit"),
   // X6a: linking an e-invoice the provider already holds changes what the invoice reports to the
   // FTA (Complyance manual link after GETS-HEAD-010).
   r("POST", "companies/*/einvoicing/complyance/link", "ledger.post"),
@@ -581,6 +591,65 @@ export function requirePermission(...permissions: [Permission, ...Permission[]])
       req.companyRole = role;
       next();
     })().catch(next);
+  };
+}
+
+type ScopedCompanyActor = Pick<Express.User, "id" | "isAdmin" | "userType" | "firmRole">;
+
+type ScopedPermissionFailure =
+  | { code: "PORTAL_USER_APP_DENIED" }
+  | { code: "COMPANY_ACCESS_DENIED" }
+  | { code: "PERMISSION_DENIED"; role: CompanyRole };
+
+/** Permission check for actions that also require an active firm or direct company scope. */
+export async function scopedCompanyPermissionFailure(
+  user: ScopedCompanyActor,
+  companyId: string,
+  permission: Permission,
+  conn: Pick<AppDatabase, "select"> = db,
+  lock?: "share"
+): Promise<ScopedPermissionFailure | null> {
+  if (user.userType === "client_portal") return { code: "PORTAL_USER_APP_DENIED" };
+  if (isNraFirmRole(user.firmRole)) {
+    const firm = await resolveFirmContext(user);
+    return firm && (await canAccessFirmClient(firm, companyId, conn, lock))
+      ? null
+      : { code: "COMPANY_ACCESS_DENIED" };
+  }
+  if (user.isAdmin && !isFirmRole(user.firmRole)) return null;
+
+  const query = conn
+    .select({ role: companyUsers.role })
+    .from(companyUsers)
+    .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, user.id)))
+    .limit(1);
+  const [membership] = await (lock ? query.for(lock) : query);
+  const role = membership ? normalizeCompanyRole(membership.role) : null;
+  if (roleHasAnyPermission(role, [permission])) return null;
+
+  return role ? { code: "PERMISSION_DENIED", role } : { code: "COMPANY_ACCESS_DENIED" };
+}
+
+export async function assertScopedCompanyPermission(
+  user: ScopedCompanyActor | undefined,
+  companyId: string | undefined,
+  permission: Permission
+): Promise<void> {
+  if (!user) throw new DomainError("AUTH_REQUIRED", 401);
+  if (!companyId || !UUID_RE.test(companyId)) throw new DomainError("COMPANY_REQUIRED", 400);
+  const failure = await scopedCompanyPermissionFailure(user, companyId, permission);
+  if (!failure) return;
+  const details = { companyId, permission, role: "role" in failure ? failure.role : null };
+  throw new DomainError(failure.code, 403, details);
+}
+
+/** Always enforce the named company's permission, including assignment for legacy firm staff. */
+export function requireScopedCompanyPermission(permission: Permission): RequestHandler {
+  return (req, _res, next) => {
+    void assertScopedCompanyPermission(req.user, req.params.companyId, permission).then(
+      () => next(),
+      next
+    );
   };
 }
 

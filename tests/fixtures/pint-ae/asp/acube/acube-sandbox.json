@@ -53,7 +53,7 @@
           "documentType": "invoice",
           "documentTypeCode": 380,
           "direction": "outgoing",
-          "status": "valid",
+          "status": "processed",
           "senderName": "Pearl Trading L.L.C.",
           "senderIdentifier": "0235:1001234567",
           "recipientName": "Acme Gulf FZ-LLC",
@@ -84,7 +84,7 @@
           "documentType": "credit-note",
           "documentTypeCode": 381,
           "direction": "outgoing",
-          "status": "valid",
+          "status": "processed",
           "senderIdentifier": "0235:1001234567",
           "recipientIdentifier": "0235:1007654321",
           "creditNoteNumber": "CN-2026-0001",
@@ -164,6 +164,20 @@
       }
     },
     {
+      "name": "status-accepted",
+      "request": { "method": "GET", "path": "/invoices/01a0ab23-24d8-7787-bd01-883b1b089b00" },
+      "response": {
+        "status": 200,
+        "body": {
+          "uuid": "01a0ab23-24d8-7787-bd01-883b1b089b00",
+          "direction": "outgoing",
+          "documentTypeCode": 380,
+          "status": "accepted",
+          "invoiceNumber": "INV-2026-0001"
+        }
+      }
+    },
+    {
       "name": "status-delivery-error",
       "request": { "method": "GET", "path": "/invoices/01a0ab23-24d8-7787-bd01-883b1b089b00" },
       "response": {
@@ -183,7 +197,7 @@
       "response": { "status": 204, "body": null }
     },
     {
-      "name": "tdd-reported",
+      "name": "tdd-available",
       "request": { "method": "GET", "path": "/invoices/01a0ab23-24d8-7787-bd01-883b1b089b00/tdd" },
       "response": {
         "status": 200,

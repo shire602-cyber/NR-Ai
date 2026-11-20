@@ -60,6 +60,7 @@ const fake = {
   authorised: false,
   ready: false,
   companyStatus: "active",
+  companyTin: TIN,
   companyId: "66b9f0a1c2d3e4f567890123",
   sourceName: null as string | null,
   creates: 0,
@@ -72,6 +73,7 @@ const fake = {
     this.authorised = false;
     this.ready = false;
     this.companyStatus = "active";
+    this.companyTin = TIN;
     this.companyId = crypto.randomBytes(12).toString("hex");
     this.sourceName = null;
     this.creates = 0;
@@ -94,7 +96,7 @@ function companyItem() {
     peppolParticipantId: `0235:${TIN}`,
     peppolId: `0235:${TIN}`,
     legalName: "Pearl Trading L.L.C.",
-    tin: TIN,
+    tin: fake.companyTin,
     vatTrn: TRN,
     sourceName: fake.sourceName,
     sourceVersion: "v1",
@@ -576,6 +578,40 @@ describe("E2 onboarding gates sending", () => {
     expect(delinked.status).toBe(409);
     expect(delinked.body.code).toBe("EINVOICE_LEGAL_ENTITY_DELINKED");
     expect(fake.posts).toBe(0);
+  });
+});
+
+describe("Complyance taxpayer verification", () => {
+  it("preserves the unlinked state when the provider responds with a different TIN", async () => {
+    const t = await h.createTenant({
+      companyColumns: { ...SELLER_COLUMNS, einvoice_partner: "complyance" },
+    });
+    useComplyance(t);
+    fake.authorised = true;
+    fake.ready = true;
+    fake.companyTin = "1005555555";
+    const route = `/api/companies/${t.company.id}/einvoicing/complyance`;
+    const rejected = await connect(t);
+    expect(rejected.status, rejected.text).toBe(502);
+    expect(rejected.body.code).toBe("EINVOICE_PROVIDER_TIN_MISMATCH");
+    expect((await t.as.get(route)).body.legalEntity).toMatchObject({
+      status: "reserved",
+      legalEntityId: null,
+      tin: TIN,
+    });
+
+    fake.companyTin = TIN;
+    const connected = await t.as.post(`${route}/sync`, {});
+    expect(connected.status, connected.text).toBe(200);
+    expect(connected.body.legalEntity.status).toBe("active");
+    fake.companyTin = "1005555555";
+    const synced = await t.as.post(`${route}/sync`, {});
+    expect(synced.status, synced.text).toBe(502);
+    expect(synced.body.code).toBe("EINVOICE_PROVIDER_TIN_MISMATCH");
+    expect((await t.as.get(route)).body.legalEntity).toMatchObject({
+      status: "active",
+      tin: TIN,
+    });
   });
 });
 
