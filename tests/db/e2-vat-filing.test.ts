@@ -6,7 +6,7 @@
  */
 import pg from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { accountByCode, useHarness, type Tenant } from "./harness";
+import { accountByCode, useHarness, type ApiResponse, type Tenant } from "./harness";
 
 const h = useHarness();
 
@@ -48,11 +48,11 @@ async function activity(t: Tenant, sales: number, purchases: number) {
   expect(ap.status, ap.text).toBe(200);
 }
 
-async function draftReturn(t: Tenant) {
-  const gen = await t.as.post(`${base(t)}/vat-returns/generate`, {
-    periodStart: "2026-01-01",
-    periodEnd: "2026-03-31",
-  });
+async function draftReturn(
+  t: Tenant,
+  period = { periodStart: "2026-01-01", periodEnd: "2026-03-31" }
+) {
+  const gen = await t.as.post(`${base(t)}/vat-returns/generate`, period);
   expect(gen.status, gen.text).toBe(201);
   return gen.body.id as string;
 }
@@ -312,15 +312,20 @@ describe("VAT filing and settlement transaction boundaries", () => {
     return group.body.id as string;
   }
 
-  async function prepareBackdatedSale(company: Tenant, unitPrice: number) {
+  async function draftSale(company: Tenant, unitPrice: number, date = "2026-03-25") {
     const invoice = await company.as.post(`${base(company)}/invoices`, {
       customerName: "Late customer",
-      date: "2026-03-25",
+      date,
       placeOfSupplyEmirate: "dubai",
       lines: [{ description: "Backdated sale", quantity: 1, unitPrice, vatRate: 5 }],
     });
     expect(invoice.status, invoice.text).toBe(200);
-    return () => company.as.patch(`/api/invoices/${invoice.body.id}/status`, { status: "sent" });
+    return invoice.body.id as string;
+  }
+
+  async function prepareBackdatedSale(company: Tenant, unitPrice: number, date?: string) {
+    const id = await draftSale(company, unitPrice, date);
+    return () => company.as.patch(`/api/invoices/${id}/status`, { status: "sent" });
   }
 
   const groupFiling = { ftaReferenceNumber: "ET-HISTORICAL-GROUP", filedOn: "2026-04-20" };
@@ -341,6 +346,7 @@ describe("VAT filing and settlement transaction boundaries", () => {
       expect(snapshot.filingVatGroup).toMatchObject({
         groupId,
         memberIds: [representative.company.id, removed.company.id].sort(),
+        provenance: "recorded",
       });
 
       await changeGroup(representative, [added]);
@@ -384,20 +390,22 @@ describe("VAT filing and settlement transaction boundaries", () => {
         expect(Number(refiled.body.box14PayableTax)).toBe(50);
         expect(refiled.body.reconciliationSnapshot.filingVatGroup).toEqual(snapshot.filingVatGroup);
 
-        // Some older amendments omitted vat_group_id. Their ancestor still identifies the members.
-        await h.sql(
-          `UPDATE vat_returns SET vat_group_id = NULL,
-                  reconciliation_snapshot = reconciliation_snapshot - 'filingVatGroup'
-           WHERE id = $1`,
-          [regenerated]
-        );
-        const anotherRemoved = await prepareBackdatedSale(removed, 100);
-        const lockedByAmendment = await anotherRemoved();
-        expect(lockedByAmendment.status, lockedByAmendment.text).toBe(409);
-        expect(lockedByAmendment.body.code).toBe("VAT_PERIOD_FILED");
-        const anotherAdded = await prepareBackdatedSale(added, 100);
-        const untouchedByAmendment = await anotherAdded();
-        expect(untouchedByAmendment.status, untouchedByAmendment.text).toBe(200);
+        // Legacy amendments inherit the original scope even when their own group ID is present.
+        for (const legacyGroupId of [null, groupId]) {
+          await h.sql(
+            `UPDATE vat_returns SET vat_group_id = $2,
+                    reconciliation_snapshot = reconciliation_snapshot - 'filingVatGroup'
+             WHERE id = $1`,
+            [regenerated, legacyGroupId]
+          );
+          const anotherRemoved = await prepareBackdatedSale(removed, 100);
+          const lockedByAmendment = await anotherRemoved();
+          expect(lockedByAmendment.status, lockedByAmendment.text).toBe(409);
+          expect(lockedByAmendment.body.code).toBe("VAT_PERIOD_FILED");
+          const anotherAdded = await prepareBackdatedSale(added, 100);
+          const untouchedByAmendment = await anotherAdded();
+          expect(untouchedByAmendment.status, untouchedByAmendment.text).toBe(200);
+        }
       }
     }
   );
@@ -450,30 +458,213 @@ describe("VAT filing and settlement transaction boundaries", () => {
     expect(open.status, open.text).toBe(200);
     await changeGroup(representative, [added]);
     const recovered = await returnRow(representative, id);
-    expect(recovered.reconciliationSnapshot).toEqual(closed.body.reconciliationSnapshot);
+    expect(recovered.reconciliationSnapshot).toEqual({
+      ...closed.body.reconciliationSnapshot,
+      filingVatGroup: { ...closed.body.reconciliationSnapshot.filingVatGroup, provenance: "audit" },
+    });
   });
 
-  it("freezes current members for a legacy group return with no closing audit", async () => {
+  it("requires historical evidence for legacy group VAT changes and never persists a membership guess", async () => {
     const representative = await vatTenant();
     const oldMember = await vatTenant({ trn_vat_number: "100000000000011" });
     const added = await vatTenant({ trn_vat_number: "100000000000037" });
+    const unrelated = await vatTenant();
+    const issuedId = await draftSale(unrelated, 1000);
+    const issuedUrl = `/api/invoices/${issuedId}/status`;
+    const issued = await unrelated.as.patch(issuedUrl, { status: "sent" });
+    expect(issued.status, issued.text).toBe(200);
+    const bank = await accountByCode(unrelated, "1020");
+    const equity = await accountByCode(unrelated, "3010");
+    const deposit = await unrelated.as.post(`${base(unrelated)}/customer-deposits`, {
+      customerName: "Late customer",
+      date: "2026-02-05",
+      amount: 100,
+      vatTreatment: "zero_rated",
+      paymentAccountId: bank.id,
+    });
+    expect(deposit.status, deposit.text).toBe(201);
+
     const groupId = await changeGroup(representative, [oldMember]);
     const id = await readyReturn(representative);
-    await h.sql("UPDATE vat_returns SET status = 'filed' WHERE id = $1", [id]);
-
+    await h.sql("UPDATE vat_returns SET status = 'submitted' WHERE id = $1", [id]);
     await changeGroup(representative, [added]);
-    const recovered = await returnRow(representative, id);
-    expect(recovered.reconciliationSnapshot.filingVatGroup).toMatchObject({
+    const legacy = await returnRow(representative, id);
+    expect(legacy.reconciliationSnapshot.filingVatGroup).toBeUndefined();
+
+    // A previous release could already have written a guess based on current membership.
+    const guess = {
       groupId,
-      memberIds: [representative.company.id, oldMember.company.id].sort(),
+      name: "VAT Group",
+      groupTrn: "100000000000029",
+      memberIds: [representative.company.id, added.company.id].sort(),
+    };
+    await h.sql(
+      `UPDATE vat_returns SET reconciliation_snapshot = reconciliation_snapshot || $2::jsonb
+        WHERE id = $1`,
+      [id, JSON.stringify({ filingVatGroup: guess })]
+    );
+    await changeGroup(representative, [added]);
+    expect((await returnRow(representative, id)).reconciliationSnapshot).toEqual({
+      ...legacy.reconciliationSnapshot,
+      filingVatGroup: guess,
     });
+
+    function expectVerificationRequired(response: ApiResponse) {
+      expect(response.status, response.text).toBe(409);
+      expect(response.body.code).toBe("VAT_GROUP_MEMBERSHIP_VERIFICATION_REQUIRED");
+      expect(response.body.details).toBeUndefined();
+      for (const privateId of [representative.company.id, oldMember.company.id, groupId, id]) {
+        expect(response.text).not.toContain(privateId);
+      }
+    }
+
     const postOld = await prepareBackdatedSale(oldMember, 1000);
     const postAdded = await prepareBackdatedSale(added, 1000);
-    const blocked = await postOld();
-    expect(blocked.status, blocked.text).toBe(409);
-    expect(blocked.body.code).toBe("VAT_PERIOD_FILED");
-    const open = await postAdded();
-    expect(open.status, open.text).toBe(200);
+    const postUnrelated = await prepareBackdatedSale(unrelated, 1000);
+    for (const post of [postOld, postAdded, postUnrelated])
+      expectVerificationRequired(await post());
+    expectVerificationRequired(await unrelated.as.patch(issuedUrl, { status: "void" }));
+    expectVerificationRequired(
+      await unrelated.as.post(`${base(unrelated)}/vat/adjustments`, {
+        periodStart: "2026-01-01",
+        periodEnd: "2026-03-31",
+        kind: "tourist_refund",
+        amount: 200,
+        vatAmount: 10,
+        reason: "Tourist refunds for Q1",
+      })
+    );
+    expectVerificationRequired(
+      await unrelated.as.post(
+        `${base(unrelated)}/customer-credits/${deposit.body.creditId}/apply`,
+        {
+          invoiceId: issuedId,
+          amount: 100,
+          date: "2026-03-28",
+        }
+      )
+    );
+
+    expectVerificationRequired(
+      await unrelated.as.post(
+        `${base(unrelated)}/customer-credits/${deposit.body.creditId}/refund`,
+        {
+          amount: 100,
+          date: "2026-03-28",
+          paymentAccountId: bank.id,
+        }
+      )
+    );
+
+    const submitUrl = `/api/vat-returns/${id}/submit`;
+    const replay = await representative.as.post(submitUrl, {});
+    expect(replay.status, replay.text).toBe(200);
+    expect(replay.body.status).toBe("submitted");
+    expectVerificationRequired(await representative.as.post(submitUrl, groupFiling));
+    expectVerificationRequired(
+      await representative.as.post(`/api/vat-returns/${id}/amend`, {
+        reason: "Correct a historical filing",
+      })
+    );
+    const unrelatedJournal = await unrelated.as.post(`${base(unrelated)}/journal`, {
+      date: "2026-03-27",
+      status: "posted",
+      lines: [
+        { accountId: bank.id, debit: 100 },
+        { accountId: equity.id, credit: 100 },
+      ],
+    });
+    expect(unrelatedJournal.status, unrelatedJournal.text).toBe(200);
+    const postNextPeriod = await prepareBackdatedSale(unrelated, 100, "2026-04-02");
+    const nextPeriod = await postNextPeriod();
+    expect(nextPeriod.status, nextPeriod.text).toBe(200);
+
+    // Simulate restoring authoritative historical audit records before retrying the operations.
+    const historical = {
+      ...guess,
+      memberIds: [representative.company.id, oldMember.company.id].sort(),
+    };
+    await h.sql(
+      `INSERT INTO audit_logs (company_id, user_id, action, resource_type, resource_id, details)
+       VALUES ($1, $2, 'vat.group.upsert', 'vat_group', $3, $4)`,
+      [
+        representative.company.id,
+        representative.user.id,
+        groupId,
+        JSON.stringify({
+          after: {
+            name: historical.name,
+            groupTrn: historical.groupTrn,
+            members: historical.memberIds,
+          },
+        }),
+      ]
+    );
+    await h.sql(
+      `INSERT INTO audit_logs (company_id, user_id, action, resource_type, resource_id)
+       VALUES ($1, $2, 'vat_return.submitted', 'vat_return', $3)`,
+      [representative.company.id, representative.user.id, id]
+    );
+    await changeGroup(representative, [added]);
+    const recovered = await returnRow(representative, id);
+    expect(recovered.reconciliationSnapshot).toEqual({
+      ...legacy.reconciliationSnapshot,
+      filingVatGroup: { ...historical, provenance: "audit" },
+    });
+    const formerMember = await postOld();
+    expect(formerMember.status, formerMember.text).toBe(409);
+    expect(formerMember.body).toMatchObject({
+      code: "VAT_PERIOD_FILED",
+      details: { vatReturnId: id },
+    });
+    for (const post of [postAdded, postUnrelated]) {
+      const open = await post();
+      expect(open.status, open.text).toBe(200);
+    }
+    const filed = await representative.as.post(submitUrl, groupFiling);
+    expect(filed.status, filed.text).toBe(200);
+    expect(filed.body).toMatchObject({
+      status: "filed",
+      reconciliationSnapshot: recovered.reconciliationSnapshot,
+    });
+  });
+
+  it("does not infer the group from a filed audit that followed an unrecorded submission", async () => {
+    const representative = await vatTenant();
+    const oldMember = await vatTenant({ trn_vat_number: "100000000000011" });
+    const added = await vatTenant({ trn_vat_number: "100000000000037" });
+    await changeGroup(representative, [oldMember]);
+    const id = await draftReturn(representative, {
+      periodStart: "2025-10-01",
+      periodEnd: "2025-12-31",
+    });
+    // The group changed in older software between the first closure and administrative filing.
+    await h.sql("UPDATE vat_returns SET status = 'submitted' WHERE id = $1", [id]);
+    await changeGroup(representative, [added]);
+    await h.sql("UPDATE vat_returns SET status = 'filed' WHERE id = $1", [id]);
+    await h.sql(
+      `INSERT INTO audit_logs (company_id, user_id, action, resource_type, resource_id, details)
+       VALUES ($1, $2, 'vat_return.filed', 'vat_return', $3, $4)`,
+      [
+        representative.company.id,
+        representative.user.id,
+        id,
+        JSON.stringify({
+          before: { status: "submitted" },
+          after: { status: "filed" },
+        }),
+      ]
+    );
+    await changeGroup(representative, [added]);
+    expect(
+      (await returnRow(representative, id)).reconciliationSnapshot.filingVatGroup
+    ).toBeUndefined();
+    for (const company of [oldMember, added]) {
+      const post = await prepareBackdatedSale(company, 100, "2025-12-15");
+      const blocked = await post();
+      expect(blocked.status, blocked.text).toBe(409);
+      expect(blocked.body.code).toBe("VAT_GROUP_MEMBERSHIP_VERIFICATION_REQUIRED");
+    }
   });
 
   it("requires a new reason when a ledger-only posting changes an approved VAT difference", async () => {
