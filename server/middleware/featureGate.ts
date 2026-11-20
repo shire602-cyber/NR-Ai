@@ -31,9 +31,8 @@ const log = createLogger("feature-gate");
 // gates. A company's entitlement (shared/plans.ts resolveEntitlement) is one of:
 //   trial   — no paid plan, inside the 14-day trial: the top plan's features (TRIAL_LIMITS caps);
 //   active  — a paid plan: its features and limits;
-//   expired — trial over without a plan: read-only (writes refused with 402 PLAN_REQUIRED).
-// Feature gates refuse WRITES only: a module the plan does not include stays readable, so data is
-// never hidden or lost when a plan changes (owner decision 2026-11-18).
+//   expired — trial over without a paid plan: workspace access is locked by trialAccessPolicy.
+// Feature gates refuse writes to modules outside an active plan.
 
 /** Plan id stored for a company with no paid plan (legacy name; it is not a plan). */
 export const FREE_PLAN_ID = NO_PLAN_ID;
@@ -72,7 +71,7 @@ export interface CompanyEntitlement extends Entitlement {
  * 404) or is NR-managed client books (company_type = 'client', firm-billed: explicit exemption,
  * keyed on a field only platform admins / NR staff can set). Fails closed: a company without a
  * subscription row has no paid plan, so it is on its trial (from the company's creation) and then
- * read-only — never an implicit upgrade.
+ * locked — never an implicit upgrade.
  */
 export async function companyEntitlement(
   companyId: string,
@@ -242,13 +241,29 @@ export function logBillingEnforcementStatus(): void {
 
 export const UPGRADE_URL = "/subscription";
 
+export const TRIAL_LOCK_MESSAGE =
+  "Your free trial has ended. Choose and activate a paid plan to regain access. Your data is saved.";
+
+export function refuseExpiredTrial(res: Response, companyId?: string): void {
+  res
+    .set("Cache-Control", "private, no-store")
+    .status(402)
+    .json({
+      message: TRIAL_LOCK_MESSAGE,
+      code: "PLAN_REQUIRED",
+      messageKey: "forms.serverErrors.PLAN_REQUIRED",
+      currentTier: null,
+      ...(companyId && { companyId }),
+      upgrade: { url: UPGRADE_URL },
+    });
+}
+
 /** 402 PLAN_REQUIRED (trial over, no plan) or 403 TIER_LOCKED (the plan lacks the module). */
 function refuseFeature(res: Response, ent: Entitlement, feature: PlanFeature): void {
   const requiredTier = requiredPlanFor(feature);
   if (ent.state === "expired") {
     res.status(402).json({
-      message:
-        "Your free trial has ended. Choose a plan and activate it to add or change records; your data stays readable.",
+      message: TRIAL_LOCK_MESSAGE,
       code: "PLAN_REQUIRED",
       messageKey: "forms.serverErrors.PLAN_REQUIRED",
       feature,
@@ -678,7 +693,7 @@ function usageRefusal(
   res.status(402).json({
     message:
       ent?.state === "expired"
-        ? "Your free trial has ended. Choose a plan to add new records; your data stays readable."
+        ? TRIAL_LOCK_MESSAGE
         : `Monthly ${metric.replace("_", " ")} limit reached on your plan. Upgrade for more.`,
     code: ent?.state === "expired" ? "PLAN_REQUIRED" : "USAGE_LIMIT_REACHED",
     messageKey:

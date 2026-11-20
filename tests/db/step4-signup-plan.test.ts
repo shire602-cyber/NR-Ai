@@ -250,7 +250,7 @@ describe("STEP4 gates ignore the choice", () => {
     expect([402, 403]).not.toContain(hooks.status);
   });
 
-  it("[STEP4-gates-after-trial] after the trial, writes are 402, reads stay open, and the choice is still reported", async () => {
+  it("[STEP4-gates-after-trial] after the trial, reads and writes are 402 and the choice is still reported", async () => {
     setEnforcement("true");
     const { tenant: t } = await signUp("S4after", {
       plan: "professional",
@@ -265,7 +265,7 @@ describe("STEP4 gates ignore the choice", () => {
     expect(inv.status).toBe(402);
     expect(inv.body.code).toBe("PLAN_REQUIRED");
     const list = await t!.as.get(`/api/companies/${t!.company.id}/invoices`);
-    expect(list.status).toBe(200);
+    expect(list.status).toBe(402);
     const sub = await t!.as.get(subUrl(t!));
     expect(sub.body.entitlement.state).toBe("expired");
     expect(sub.body.entitlement.chosenPlan).toMatchObject({ planId: "professional" });
@@ -593,7 +593,7 @@ describe("STEP4 finisher: the plan emails, the admin queue and the day key", () 
       [companyId, like]
     );
 
-  it("[STEP4-fix-email-ended] after the trial the customer email says read-only, never 'stays open until <past date>' (en + ar)", async () => {
+  it("[STEP4-fix-email-ended] after the trial the customer email says the workspace is locked, never 'stays open until <past date>' (en + ar)", async () => {
     const { tenant: t } = await signUp("S4fixend", {
       plan: "professional",
       billingCycle: "monthly",
@@ -602,9 +602,9 @@ describe("STEP4 finisher: the plan emails, the admin queue and the day key", () 
     const res = await t!.as.post(activateUrl(t!), {});
     expect(res.status, res.text).toBe(202);
     const customer = (await mailText(t!.company.id, "plan-activation:%:customer"))[0];
-    expect(customer.text_body).toContain("Your books are read-only until we activate it.");
+    expect(customer.text_body).toContain("Your workspace is locked until we activate your plan.");
     expect(customer.text_body).not.toContain("stay fully open until");
-    expect(customer.text_body).toContain("دفاترك للقراءة فقط حتى نفعّلها");
+    expect(customer.text_body).toContain("تبقى مساحة عملك مقفلة حتى نفعّل خطتك");
     expect(customer.text_body).not.toContain("تبقى دفاترك مفتوحة بالكامل");
     // The Arabic plan phrase agrees with the noun (the email said "الخطة المبتدئ" before).
     expect(customer.text_body).toContain("استلمنا طلب تفعيل الخطة الاحترافية");

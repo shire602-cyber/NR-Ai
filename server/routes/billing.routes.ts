@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { bypassesTrialLock } from "../middleware/trialAccessPolicy";
 import { billingCheckoutBody } from "../../shared/validators/route-bodies";
 import { parsedBody } from "../http/parsed-body";
 import { adminMiddleware, authMiddleware, requireCustomer } from "../middleware/auth";
@@ -91,7 +92,7 @@ export function registerBillingRoutes(app: Express) {
         receiptsCreatedThisMonth: 0,
         aiCreditsUsedThisMonth: 0,
       };
-      res.json({
+      res.set("Cache-Control", "private, no-store").json({
         subscription,
         limits: ent?.limits ?? getTierLimits(subscription.planId),
         entitlement: ent
@@ -110,6 +111,7 @@ export function registerBillingRoutes(app: Express) {
         // Plan gates follow server/middleware/featureGate.ts billingEnforced(): the client locks
         // exactly what the API refuses, and nothing while enforcement is off.
         enforcement: billingEnforced() && ent !== null,
+        trialLocked: billingEnforced() && ent?.state === "expired" && !bypassesTrialLock(req.user!),
         trialDays: trialDays(),
         // The Upgrade button becomes "Contact us" while checkout cannot work.
         checkoutAvailable: isStripeConfigured(),
@@ -160,7 +162,7 @@ export function registerBillingRoutes(app: Express) {
   );
 
   // NR admin: set a company's plan while online checkout is not configured (the "contact us"
-  // path), or remove it ("none": trial if it has not ended, else read-only). Audited.
+  // path), or remove it ("none": trial if it has not ended, else locked). Audited.
   app.put(
     "/api/admin/companies/:companyId/plan",
     authMiddleware,

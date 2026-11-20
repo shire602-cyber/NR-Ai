@@ -214,6 +214,7 @@ import { canRunCompanyOnboarding } from "@/lib/companyRole";
 import { PlanLimitDialog } from "@/components/billing/PlanLimitDialog";
 import { PlanLockBanner } from "@/components/billing/PlanLockBanner";
 import { ReadOnlyForms } from "@/components/billing/ReadOnlyForms";
+import { TrialAccessGate } from "@/components/billing/TrialAccessGate";
 import { CommandPaletteProvider } from "@/components/CommandPaletteProvider";
 import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
 import { SkipLink } from "@/components/SkipLink";
@@ -257,6 +258,20 @@ function FirmContextBanner() {
         {t["shell.backToFirm"]}
       </Button>
     </div>
+  );
+}
+
+function WorkspaceLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <TrialAccessGate
+      billing={
+        <Suspense fallback={<PageLoader variant="form" />}>
+          <Subscription />
+        </Suspense>
+      }
+    >
+      <ProtectedLayout>{children}</ProtectedLayout>
+    </TrialAccessGate>
   );
 }
 
@@ -541,9 +556,11 @@ function Router() {
   if (pathname === "/onboarding") {
     return (
       <ProtectedRoute>
-        <Suspense fallback={<PageLoader variant="form" />}>
-          <Onboarding />
-        </Suspense>
+        <TrialAccessGate>
+          <Suspense fallback={<PageLoader variant="form" />}>
+            <Onboarding />
+          </Suspense>
+        </TrialAccessGate>
       </ProtectedRoute>
     );
   }
@@ -611,7 +628,7 @@ function Router() {
   // Protected routes (with sidebar)
   return (
     <ProtectedRoute>
-      <ProtectedLayout>
+      <WorkspaceLayout>
         <Suspense fallback={<PageLoader variant="list" />}>
           <Switch>
             <Route path="/dashboard" component={Dashboard} />
@@ -865,7 +882,7 @@ function Router() {
             <Route component={NotFound} />
           </Switch>
         </Suspense>
-      </ProtectedLayout>
+      </WorkspaceLayout>
     </ProtectedRoute>
   );
 }

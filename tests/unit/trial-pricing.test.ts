@@ -3,7 +3,7 @@
  * X6b / WQ7: the free trial (TRIAL_DAYS of the top plan, no card), the pricing page (monthly /
  * yearly = 10 × monthly, Most popular, comparison grid), the subscription page (trial status,
  * Contact us while checkout is not configured, viewer cannot upgrade, limits from the server) and
- * the trial banner (read-only once the trial ends). Renders the real pages and reads back
+ * the trial banner (locked once the trial ends). Renders the real pages and reads back
  * what a visitor sees; replaces the old source-text check of advertised limits.
  */
 import { createElement, act } from "react";
@@ -232,10 +232,12 @@ describe("trial banner", () => {
     expect(container.querySelector("[data-testid=trial-contact-us]")).toBeNull();
   });
 
-  it("says the books are read-only once the trial has ended and links to choosing a plan", async () => {
+  it("explains that access is locked once the trial has ended and links to choosing a plan", async () => {
     const el = await banner(trialState(new Date(Date.now() - 30 * 86400_000)));
     expect(el?.getAttribute("data-trial-state")).toBe("ended");
-    expect(el?.textContent).toContain("Your books are read-only until you choose a plan");
+    expect(el?.textContent).toContain(
+      "Your workspace is locked until you choose and activate a paid plan"
+    );
     expect(container.querySelector("[data-testid=trial-contact-us]")?.getAttribute("href")).toBe(
       "/subscription"
     );
@@ -284,7 +286,7 @@ describe("/subscription", () => {
     expect(payroll?.querySelectorAll("td")[2]?.textContent).toContain("Included");
   });
 
-  it("after the trial: says the books are read-only and asks to choose a plan", async () => {
+  it("after the trial: explains the lock and offers plan selection", async () => {
     sub.state = {
       ...freshState(),
       planState: "expired",
@@ -293,7 +295,7 @@ describe("/subscription", () => {
     };
     await renderSubscription();
     expect(container.querySelector("[data-testid=text-current-plan]")?.textContent).toBe("No plan");
-    expect(text()).toContain("Your trial has ended: your books are read-only");
+    expect(text()).toContain("Your 14-day trial has ended");
     // One state, one CTA: without checkout the plan block holds the only "choose" button.
     expect(container.querySelector("[data-testid=button-see-plans-choice]")).not.toBeNull();
     expect(container.querySelector("[data-testid=button-choose-plan]")).toBeNull();
