@@ -50,7 +50,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
-import Tesseract from "tesseract.js";
 import {
   Upload,
   FileText,
@@ -105,19 +104,6 @@ interface BankAccount {
   currency: string;
   glAccountId: string | null;
   isActive: boolean;
-}
-
-let pdfJsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
-
-function loadPdfJs(): Promise<typeof import("pdfjs-dist")> {
-  pdfJsPromise ??= Promise.all([
-    import("pdfjs-dist"),
-    import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-  ]).then(([pdfjsLib, worker]) => {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = worker.default;
-    return pdfjsLib;
-  });
-  return pdfJsPromise;
 }
 
 interface MatchSuggestion {
@@ -327,8 +313,6 @@ export default function BankReconciliation() {
   const [statementOverrides, setStatementOverrides] = useState<StatementOverrides>({});
   const [acknowledgeAmbiguity, setAcknowledgeAmbiguity] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [pdfProgress, setPdfProgress] = useState(0);
-  const [processingStatus, setProcessingStatus] = useState("");
 
   // ─── Queries ──────────────────────────────────────────────────────────────
 
@@ -449,8 +433,6 @@ export default function BankReconciliation() {
       });
       setImportDialogOpen(false);
       resetStatementPreview();
-      setPdfProgress(0);
-      setProcessingStatus("");
     },
     onError: (error: any) => {
       toast({
@@ -603,7 +585,6 @@ export default function BankReconciliation() {
     formatCsv: t["banking.import.formatCsv"],
     formatDelimiters: t["banking.import.formatDelimiters"],
     formatDrCr: t["banking.import.formatDrCr"],
-    formatPdf: t["banking.import.formatPdf"],
     importAction: t["banking.import.importAction"],
     fields: {
       date: t["banking.import.field.date"],
@@ -624,9 +605,6 @@ export default function BankReconciliation() {
     setStatementOverrides({});
     setAcknowledgeAmbiguity(false);
   };
-
-  const isPdfFile = (file: File) =>
-    file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
 
   const runStatementPreview = async (
     file: File,
@@ -672,34 +650,17 @@ export default function BankReconciliation() {
   };
 
   const handleStatementFile = (file: File | undefined) => {
+    if (file && /\.pdf$/i.test(file.name)) {
+      resetStatementPreview();
+      setPreviewError(t["banking.import.csvRequired"]);
+      return;
+    }
     if (file) {
       setImportFile(file);
       setStatementPreview(null);
       setStatementOverrides({});
       setAcknowledgeAmbiguity(false);
-      setPdfProgress(0);
-      setProcessingStatus("");
-      if (!isPdfFile(file)) void runStatementPreview(file, {});
-    }
-  };
-
-  const convertPdfPageToImage = async (page: any): Promise<Blob> => {
-    const scale = 2;
-    const viewport = page.getViewport({ scale });
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d")!;
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
-    await page.render({ canvasContext: context, viewport, canvas } as any).promise;
-    return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob!), "image/png"));
-  };
-
-  const extractTransactionsFromText = async (text: string): Promise<any[]> => {
-    try {
-      const response = await apiRequest("POST", "/api/ai/parse-bank-statement", { text });
-      return response.transactions || [];
-    } catch {
-      return [];
+      void runStatementPreview(file, {});
     }
   };
 
@@ -716,74 +677,17 @@ export default function BankReconciliation() {
     setIsImporting(true);
 
     try {
-      if (isPdfFile(importFile)) {
-        // PDF → text → AI parse → import as JSON
-        setProcessingStatus("Converting PDF pages...");
-        const pdfjsLib = await loadPdfJs();
-        const arrayBuffer = await importFile.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        const totalPages = Math.min(pdf.numPages, 10);
-        let allText = "";
-
-        for (let p = 1; p <= totalPages; p++) {
-          setProcessingStatus(`Processing page ${p} of ${totalPages}...`);
-          setPdfProgress((p / totalPages) * 50);
-          const page = await pdf.getPage(p);
-          const textContent = await page.getTextContent();
-          const pageText = textContent.items.map((i: any) => i.str).join(" ");
-          if (pageText.trim().length > 50) {
-            allText += pageText + "\n";
-          } else {
-            setProcessingStatus(`Running OCR on page ${p}...`);
-            const imageBlob = await convertPdfPageToImage(page);
-            const result = await Tesseract.recognize(imageBlob, "eng");
-            allText += result.data.text + "\n";
-          }
-        }
-
-        setProcessingStatus("Extracting transactions...");
-        setPdfProgress(75);
-        const txns = await extractTransactionsFromText(allText);
-        setPdfProgress(100);
-
-        if (txns.length === 0) {
-          toast({
-            variant: "destructive",
-            title: translateNow("toasts.noTransactionsFound"),
-            description: translateNow("toasts.tryADifferentFormat"),
-          });
-          return;
-        }
-
-        // For PDFs, fall back to old JSON import endpoint
-        await apiRequest("POST", `/api/companies/${companyId}/bank-transactions/import`, {
-          transactions: txns,
-          bankAccountId: selectedBankAccount,
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["/api/companies", companyId, "bank-statements"],
-        });
-        toast({
-          title: translateNow("toasts.importSuccessful"),
-          description: formatMessage(translateNow("toasts.importedTransactions"), {
-            count: txns.length,
-          }),
-        });
-        setImportDialogOpen(false);
-        resetStatementPreview();
-      } else {
-        // CSV / XLSX / MT940 / CAMT.053 / OFX — send the file bytes plus the user's choices.
-        await importMutation.mutateAsync({
-          bankAccountId: selectedBankAccount,
-          fileBase64: await fileToBase64(importFile),
-          fileName: importFile.name,
-          ...statementOverrides,
-          ...(statementOverrides.mapping && statementPreview?.headerRow
-            ? { headerRow: statementPreview.headerRow }
-            : {}),
-          acknowledgeAmbiguity,
-        });
-      }
+      // CSV / XLSX / MT940 / CAMT.053 / OFX — send the file bytes plus the user's choices.
+      await importMutation.mutateAsync({
+        bankAccountId: selectedBankAccount,
+        fileBase64: await fileToBase64(importFile),
+        fileName: importFile.name,
+        ...statementOverrides,
+        ...(statementOverrides.mapping && statementPreview?.headerRow
+          ? { headerRow: statementPreview.headerRow }
+          : {}),
+        acknowledgeAmbiguity,
+      });
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -792,8 +696,6 @@ export default function BankReconciliation() {
       });
     } finally {
       setIsImporting(false);
-      setProcessingStatus("");
-      setPdfProgress(0);
     }
   };
 
@@ -1461,7 +1363,7 @@ export default function BankReconciliation() {
                 <T k="pageLabels.statementFile" />
               </Label>
               <FileDrop
-                accept=".csv,.txt,.xlsx,.sta,.mt940,.xml,.ofx,.qfx,.pdf,application/pdf"
+                accept=".csv,.txt,.xlsx,.sta,.mt940,.xml,.ofx,.qfx"
                 onFiles={(files) => handleStatementFile(files[0])}
                 disabled={isImporting}
                 value={importFile?.name ?? null}
@@ -1469,11 +1371,7 @@ export default function BankReconciliation() {
               />
               {importFile && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  {isPdfFile(importFile) ? (
-                    <FileText className="w-4 h-4 text-destructive" />
-                  ) : (
-                    <FileSpreadsheet className="w-4 h-4 text-success" />
-                  )}
+                  <FileSpreadsheet className="w-4 h-4 text-success" />
                   <span>
                     {importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)
                   </span>
@@ -1490,18 +1388,8 @@ export default function BankReconciliation() {
                   {previewError}
                 </p>
               )}
-              {isImporting && pdfProgress > 0 && (
-                <div className="space-y-1">
-                  <Progress
-                    value={pdfProgress}
-                    aria-label={processingStatus || undefined}
-                    className="h-2"
-                  />
-                  <p className="text-xs text-muted-foreground">{processingStatus}</p>
-                </div>
-              )}
             </div>
-            {statementPreview && importFile && !isPdfFile(importFile) && (
+            {statementPreview && importFile && (
               <div
                 className="border rounded-md p-3 space-y-3"
                 dir={locale === "ar" ? "rtl" : "ltr"}
@@ -1708,10 +1596,6 @@ export default function BankReconciliation() {
                     <CheckCircle2 className="w-3.5 h-3.5 text-success" />
                     <span>{strings.formatDrCr}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <FileText className="w-3.5 h-3.5 text-destructive" />
-                    <span>{strings.formatPdf}</span>
-                  </div>
                   <p className="text-xs text-muted-foreground">
                     {t["bankReconciliation.liveBankFeedsAreNot"]}
                   </p>
@@ -1748,7 +1632,6 @@ export default function BankReconciliation() {
                 !selectedBankAccount ||
                 previewLoading ||
                 (!!statementPreview &&
-                  !isPdfFile(importFile) &&
                   (statementPreview.validRows === 0 ||
                     (statementPreview.requiresChoice && !acknowledgeAmbiguity)))
               }

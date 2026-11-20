@@ -107,7 +107,8 @@ describe("bank statement import dialog", () => {
     const text = d!.textContent ?? "";
     expect(text).toContain("استيراد");
     expect(text).toContain("الصيغ المدعومة");
-    expect(text).toContain("PDF");
+    expect(text).toContain("CSV");
+    expect(text).not.toContain("PDF");
     expect(d!.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "استيراد"
     );
