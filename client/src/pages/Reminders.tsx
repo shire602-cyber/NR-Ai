@@ -2,6 +2,7 @@ import { useMemo, useState, type ChangeEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Bell, Mail, MailCheck, MessageSquare, Plus } from "lucide-react";
 import type { ReminderLog, ReminderSetting } from "@shared/schema";
+import type { ReminderLanguage } from "@shared/validators/reminders";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -83,7 +84,7 @@ const BLANK_RULE = {
   sendInApp: true,
   emailSubject: "",
   emailTemplate: "",
-  language: "bilingual" as "en" | "ar" | "bilingual",
+  language: "contact" as ReminderLanguage,
 };
 
 export function AutomaticEmailRules({ companyId }: { companyId?: string }) {
@@ -359,6 +360,7 @@ function CreateRuleDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="contact">{tt["invoices.reminders.langContact"]}</SelectItem>
                 <SelectItem value="bilingual">{tt["invoices.reminders.langBoth"]}</SelectItem>
                 <SelectItem value="en">{tt["invoices.reminders.langEn"]}</SelectItem>
                 <SelectItem value="ar">{tt["invoices.reminders.langAr"]}</SelectItem>

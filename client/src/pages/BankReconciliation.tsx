@@ -286,7 +286,7 @@ export default function BankReconciliation() {
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
   const [selectedBankAccount, setSelectedBankAccount] = useState<string>("");
-  // `?import=1` (e.g. from Bank feeds) opens the statement import straight away.
+  // `?import=1` opens the statement import straight away.
   const [importDialogOpen, setImportDialogOpen] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -581,7 +581,6 @@ export default function BankReconciliation() {
     colDescription: t["banking.import.colDescription"],
     colDebit: t["banking.import.colDebit"],
     colCredit: t["banking.import.colCredit"],
-    formats: t["banking.import.formats"],
     formatCsv: t["banking.import.formatCsv"],
     formatDelimiters: t["banking.import.formatDelimiters"],
     formatDrCr: t["banking.import.formatDrCr"],
@@ -1583,10 +1582,6 @@ export default function BankReconciliation() {
                   <div className="flex items-center gap-2 text-xs">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-success" />
                     <span>{strings.formatCsv}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-success" />
-                    <span>{strings.formats}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <CheckCircle2 className="w-3.5 h-3.5 text-success" />

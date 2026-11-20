@@ -34,7 +34,7 @@ hand off to a certified ASP via API.
    (S/Z/E/O map to our `vatSupplyType`), rounding rules, mandatory buyer
    fields — surfaced as fix-it errors on the invoice before submission.
 4. **ASP integration layer**: an adapter interface (like
-   `open-banking.service.ts`) so the first ASP choice isn't load-bearing.
+   existing integration adapters) so the first ASP choice isn't load-bearing.
    Candidate ASPs to evaluate once the official register is live (e.g.
    Pagero, Sovos, EDICOM and regional entrants — verify accreditation).
 5. **Status lifecycle**: generated → submitted → accepted/rejected with

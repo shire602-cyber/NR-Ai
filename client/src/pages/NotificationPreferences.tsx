@@ -2,7 +2,7 @@ import { T } from "@/components/layout/T";
 import { SettingsLayout } from "@/components/layout/SettingsLayout";
 import { useTranslation, translateNow } from "@/lib/i18n";
 import { PageHeader } from "@/components/ui/page-header";
-import { useState, useEffect } from "react";
+import { useId, useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -59,6 +59,7 @@ interface NotificationPrefs {
 
 export default function NotificationPreferences() {
   const { t } = useTranslation();
+  const channelLabels = useId();
   const { toast } = useToast();
   const [pushActive, setPushActive] = useState(false);
   const [typePrefsDraft, setTypePrefs] = useState<Record<string, ChannelPrefs> | null>(null);
@@ -423,25 +424,25 @@ export default function NotificationPreferences() {
                 <div className="divide-y rounded-lg border">
                   <div className="grid grid-cols-3 gap-2 p-3 text-sm font-medium">
                     <span />
-                    <span>
+                    <span id={`${channelLabels}-in-app`}>
                       <T k="portal.channelInApp" />
                     </span>
-                    <span>
+                    <span id={`${channelLabels}-email`}>
                       <T k="portal.channelEmail" />
                     </span>
                   </div>
                   {(preferences?.eventTypes ?? []).map((type) => (
                     <div key={type} className="grid grid-cols-3 gap-2 p-3 items-center text-sm">
-                      <span>
+                      <span id={`${channelLabels}-${type}`}>
                         <T k={`portal.eventType.${type}`} />
                       </span>
                       <Switch
-                        aria-label={`${type} in-app`}
+                        aria-labelledby={`${channelLabels}-${type} ${channelLabels}-in-app`}
                         checked={typePrefs[type]?.inApp !== false}
                         onCheckedChange={(v) => setTypePref(type, "inApp", v)}
                       />
                       <Switch
-                        aria-label={`${type} email`}
+                        aria-labelledby={`${channelLabels}-${type} ${channelLabels}-email`}
                         checked={typePrefs[type]?.email ?? false}
                         onCheckedChange={(v) => setTypePref(type, "email", v)}
                       />

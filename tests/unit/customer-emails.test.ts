@@ -48,6 +48,22 @@ const invoice = {
 const PAY = "https://app.muhasib.example/view/invoice/abc123";
 const LANGS: EmailLanguage[] = ["en", "ar", "bilingual"];
 
+it("isolates an escaped numeric-prefix invoice identifier inside the RTL heading", () => {
+  const numeric = buildInvoiceEmail({ ...invoice, number: "12-2026-00001" }, company, undefined, {
+    language: "ar",
+  });
+  expect(numeric.html).toMatch(
+    /<h2 dir="rtl"[^>]*>فاتورة رقم <span dir="ltr"[^>]*>12-2026-00001<\/span><\/h2>/
+  );
+  expect(numeric.text).toContain("فاتورة رقم 12-2026-00001");
+  const escaped = buildInvoiceEmail({ ...invoice, number: "12-<123>" }, company, undefined, {
+    language: "ar",
+  });
+  expect(escaped.html).toMatch(
+    /<h2 dir="rtl"[^>]*>فاتورة رقم <span dir="ltr"[^>]*>12-&lt;123&gt;<\/span><\/h2>/
+  );
+});
+
 /** The Arabic section's visible text (HTML tags and entities removed). */
 function arabicText(html: string): string {
   const start = html.indexOf('<div dir="rtl" lang="ar"');
@@ -438,6 +454,14 @@ describe("password reset", () => {
 });
 
 describe("footers are consistent", () => {
+  it("keeps long billing addresses breakable in the body and footer", () => {
+    const contactEmail = `${"billing".repeat(8)}@example.test`;
+    const businessAddress = "LongAddress".repeat(20);
+    const { html } = buildInvoiceEmail(invoice, { ...company, contactEmail, businessAddress });
+    for (const value of [contactEmail, businessAddress]) {
+      expect(html).toMatch(new RegExp(`<p [^>]*overflow-wrap:anywhere[^>]*>[^\\n]*${value}`));
+    }
+  });
   it("every customer template carries the automated note and the Muhasib.ai line", () => {
     const all = [
       buildInvoiceEmail(invoice, company, undefined, { language: "en" }),

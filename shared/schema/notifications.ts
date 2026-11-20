@@ -129,7 +129,7 @@ export const reminderSettings = pgTable(
     emailTemplate: text("email_template"),
     smsTemplate: text("sms_template"),
     whatsappTemplate: text("whatsapp_template"),
-    // W4-D (0103): customer email language (en | ar | bilingual), invoice PDF + pay link.
+    // API defaults new rules to "contact". The column retains the legacy database default.
     language: text("language").notNull().default("bilingual"),
     attachPdf: boolean("attach_pdf").notNull().default(true),
     includePayLink: boolean("include_pay_link").notNull().default(true),

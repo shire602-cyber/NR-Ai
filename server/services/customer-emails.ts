@@ -35,6 +35,31 @@ export interface BuiltEmail {
 
 /** Plain strings (subject, text part) carry no bidi isolates: some clients show them as boxes. */
 const stripBidi = (value: string) => value.replace(/[\u2066-\u2069]/g, "");
+const SUBJECT_LIMIT = 300;
+
+function subjectLine(value: string): string {
+  return stripBidi(value).replace(/[\r\n]+/g, " ");
+}
+
+/** Reserve space for each selected clause before interpolating a supplier name. */
+export function supplierEmailSubject(
+  supplier: string,
+  language: EmailLanguage,
+  clauses: (name: string) => BilingualBlock
+): BilingualBlock {
+  const name = subjectLine(supplier);
+  const available = Math.floor(
+    (SUBJECT_LIMIT - pickText(clauses(""), language).length) / (language === "bilingual" ? 2 : 1)
+  );
+  const shortened =
+    name.length > available
+      ? `${name
+          .slice(0, Math.max(0, available - 1))
+          .replace(/[\uD800-\uDBFF]$/, "")
+          .trimEnd()}…`
+      : name;
+  return clauses(shortened);
+}
 
 export function buildCustomerEmail(
   content: BilingualEmailContent,
@@ -42,9 +67,7 @@ export function buildCustomerEmail(
   subject: BilingualBlock
 ): BuiltEmail {
   return {
-    subject: stripBidi(pickText(subject, language))
-      .replace(/[\r\n]+/g, " ")
-      .slice(0, 300),
+    subject: subjectLine(pickText(subject, language)).slice(0, SUBJECT_LIMIT),
     html: renderBilingualEmail(content, language),
     text: stripBidi(renderEmailText(content, language)),
   };
@@ -142,7 +165,8 @@ export function buildInvoiceEmail(
   const url = opts.payUrl || opts.portalUrl || null;
   const content: BilingualEmailContent = {
     ...brandFields(company),
-    heading: { en: `Invoice ${invoice.number}`, ar: `فاتورة رقم ${invoice.number}` },
+    heading: { en: "Invoice", ar: "فاتورة رقم" },
+    headingIdentifier: invoice.number,
     preheader: {
       en: `${company.name} sent you invoice ${invoice.number} for ${total.en}`,
       ar: `أرسلت لكم ${company.name} الفاتورة رقم ${invoice.number} بمبلغ ${total.ar}`,
@@ -179,10 +203,14 @@ export function buildInvoiceEmail(
         ? { button: { url, label: { en: "View invoice", ar: "عرض الفاتورة" } } }
         : {}),
   };
-  return buildCustomerEmail(content, language, {
-    en: `Invoice ${invoice.number} from ${company.name}`,
-    ar: `فاتورة رقم ${invoice.number} من ${company.name}`,
-  });
+  return buildCustomerEmail(
+    content,
+    language,
+    supplierEmailSubject(company.name, language, (name) => ({
+      en: `Invoice ${invoice.number} from ${name}`,
+      ar: `فاتورة رقم ${invoice.number} من ${name}`,
+    }))
+  );
 }
 
 // ─── Payment reminder ────────────────────────────────────────────

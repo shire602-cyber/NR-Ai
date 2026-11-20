@@ -104,6 +104,23 @@ export function paymentsAvailability(): PaymentsAvailability {
   };
 }
 
+export function sharedInvoicePayment(
+  invoice: Pick<Invoice, "status" | "invoiceType">,
+  openFils: number
+) {
+  const payments = paymentsAvailability();
+  return {
+    available:
+      payments.available &&
+      openFils > 0 &&
+      invoice.status !== "void" &&
+      invoice.status !== "paid" &&
+      invoice.invoiceType !== "credit_note",
+    status: payments.status,
+    provider: payments.available ? payments.provider : null,
+  };
+}
+
 export function publicBaseUrl(): string {
   return (
     process.env.FRONTEND_URL ||

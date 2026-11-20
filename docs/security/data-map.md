@@ -29,7 +29,7 @@ capability report (`shared/capabilities.ts`, `/api/integrations/status`) shows w
 | AI providers (OpenAI, Anthropic)              | receipt images/text, transaction descriptions for classification and assistants | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`       |
 | Email (Resend or SMTP provider)               | recipient address, message body, attachments                                    | `RESEND_API_KEY`, `SMTP_*`                  |
 | Payments (Stripe)                             | billing contact, invoice amount, payer details                                  | `STRIPE_*`                                  |
-| Bank feeds (Lean, Tarabut, Wio)               | bank account and transaction data (inbound)                                     | provider env vars                           |
+| Bank statement import (in app)                | bank transactions from the uploaded statement                                   | CSV upload                                  |
 | E-invoicing ASP                               | e-invoice XML (buyer/seller identifiers)                                        | `EINVOICE_ASP_*`, `ACUBE_*`, `COMPLYANCE_*` |
 | SMS / WhatsApp (Twilio, Meta)                 | phone numbers, message text                                                     | `TWILIO_*`, `WHATSAPP_*`                    |
 | Error monitoring (Sentry)                     | stack traces, request metadata                                                  | `SENTRY_DSN`                                |

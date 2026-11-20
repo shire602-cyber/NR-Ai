@@ -117,7 +117,8 @@ describe("bank statement import dialog", () => {
   it("in English: the same lines come from the catalog", async () => {
     await mountPage("en");
     const text = dialog()?.textContent ?? "";
-    expect(text).toContain("Comma, semicolon, and tab-delimited Excel exports are supported");
+    expect(text).toContain("CSV supports comma, semicolon, and tab delimiters");
+    expect(text).not.toMatch(/\b(?:XLSX|MT940|CAMT\.053|OFX)\b/);
     expect(dialog()?.querySelector('[data-testid="button-confirm-import"]')?.textContent).toContain(
       "Import"
     );

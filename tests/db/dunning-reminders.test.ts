@@ -12,10 +12,16 @@ const h = useHarness();
 const DAY = 86_400_000;
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
-async function contact(t: Tenant, name: string, email: string | null = "ap@customer.example") {
+async function contact(
+  t: Tenant,
+  name: string,
+  email: string | null = "ap@customer.example",
+  preferredLanguage?: "en" | "ar"
+) {
   const r = await t.as.post(`/api/companies/${t.company.id}/customer-contacts`, {
     name,
     ...(email ? { email } : {}),
+    preferredLanguage,
     phone: "0501234567",
   });
   expect(r.status, r.text).toBeLessThan(300);
@@ -77,6 +83,26 @@ const outboxFor = (invoiceId: string) =>
   );
 
 describe("W4-D dunning engine", () => {
+  it.each([
+    { language: "bilingual", english: true },
+    { language: "contact", english: false },
+    { language: undefined, english: false },
+  ])(
+    "uses the $language language setting for an Arabic-preferring contact",
+    async ({ language, english }) => {
+      const t = await h.createTenant();
+      const cid = await contact(t, "Arabic Payer", "arabic@example.test", "ar");
+      const inv = await invoice(t, cid);
+      await setting(t, language ? { language } : {});
+      await dun();
+      const mails = await outboxFor(inv);
+      expect(mails).toHaveLength(1);
+      expect(mails[0].html).toContain('<div dir="rtl" lang="ar"');
+      expect(mails[0].html.includes('<div dir="ltr" lang="en"')).toBe(english);
+      expect(mails[0].subject.includes(" | ")).toBe(english);
+    }
+  );
+
   it("[R16-02] enabled settings queue a level-1 customer email for an overdue issued invoice exactly once across three runs", async () => {
     const t = await h.createTenant();
     const cid = await contact(t, "Late Payer LLC");

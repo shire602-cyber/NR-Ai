@@ -43,7 +43,7 @@ Quotes · Credit Notes (auto reversing journal entries via
 `createJournalEntryWithLines`) · Purchase Orders · Cost Centers (journal-line
 allocation) · Financial Statements · Reconciliation Rules · Invoice
 Templates · Bank Import (connections, CSV/OFX statements, Lean-ready
-open-banking connect/callback/sync endpoints). Employee management lives in
+CSV reconciliation). Employee management lives in
 **Payroll** (the old duplicate module/page was deleted).
 
 Premium UI system (Geist/Instrument Serif, editorial PageHeader on ~65 pages,

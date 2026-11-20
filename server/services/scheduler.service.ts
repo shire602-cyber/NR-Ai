@@ -7,6 +7,7 @@ import {
   invoiceLines as invoiceLinesTable,
   recurringInvoices as recurringInvoicesTable,
   type Company,
+  type Invoice,
   type ReminderSetting,
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
@@ -238,20 +239,8 @@ async function settleLog(
 }
 
 /** A view/pay link for the customer: the invoice share link (it shows Pay now when live). */
-async function customerInvoiceLink(invoice: {
-  id: string;
-  shareToken: string | null;
-  shareTokenExpiresAt: Date | null;
-}) {
-  let token = invoice.shareToken;
-  if (
-    !token ||
-    (invoice.shareTokenExpiresAt && new Date(invoice.shareTokenExpiresAt) < new Date())
-  ) {
-    const crypto = await import("crypto");
-    token = crypto.randomBytes(16).toString("hex");
-    await storage.setInvoiceShareToken(invoice.id, token, new Date(Date.now() + 90 * DAY_MS));
-  }
+async function customerInvoiceLink(invoice: Invoice) {
+  const token = await storage.ensureInvoiceShareToken(invoice);
   const { publicBaseUrl } = await import("./payments");
   return `${publicBaseUrl()}/view/invoice/${token}`;
 }
@@ -396,20 +385,19 @@ async function dunOne(args: {
       summary.failed++;
       return;
     }
-    const language = resolveEmailLanguage(
-      setting.language === "bilingual" ? null : setting.language,
-      contact.preferredLanguage
-    );
-    const { paymentsAvailability } = await import("./payments");
+    const language = resolveEmailLanguage(setting.language, contact.preferredLanguage);
+    const { sharedInvoicePayment } = await import("./payments");
+    const openFils = Number(inv.open_fils);
     const { subject, html, text } = buildReminderEmail({
       invoice,
       company,
       customerName: contact.name,
       customerNameAr: contact.nameAr ?? null,
-      openFils: Number(inv.open_fils),
+      openFils,
       level,
       daysOverdue,
-      payUrl: setting.includePayLink && paymentsAvailability().available ? link : null,
+      payUrl:
+        setting.includePayLink && sharedInvoicePayment(invoice, openFils).available ? link : null,
       portalUrl: link,
       language,
       customSubject: setting.emailSubject,

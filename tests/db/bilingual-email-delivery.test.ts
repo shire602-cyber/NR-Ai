@@ -45,6 +45,14 @@ describe("customer email delivery for an Arabic company", () => {
     });
 
     const invoiceBase = `${base}/invoices/${invoice.body.id}`;
+    const sharePath = `/api/invoices/${invoice.body.id}/share`;
+    const [firstShare, concurrentShare] = await Promise.all([
+      t.as.post(sharePath),
+      t.as.post(sharePath),
+    ]);
+    expect(firstShare.status, firstShare.text).toBe(200);
+    expect(concurrentShare.status, concurrentShare.text).toBe(200);
+    expect(concurrentShare.body).toEqual(firstShare.body);
     const sent = await t.as.post(`${invoiceBase}/send-email`, { to });
     expect(sent.status, sent.text).toBe(200);
     expect(sent.body.sent).toBe(true);
@@ -77,10 +85,16 @@ describe("customer email delivery for an Arabic company", () => {
       expect(mail.attachments[0].contentType).toBe("application/pdf");
       const token = mail.text!.match(/\/view\/invoice\/([0-9a-f]{32})/)?.[1];
       expect(token).toBeDefined();
+      expect(token).toBe(firstShare.body.token);
       const publicInvoice = await h.anon.get(`/api/public/invoices/${token}`);
       expect(publicInvoice.status, publicInvoice.text).toBe(200);
       expect(publicInvoice.body.invoice.number).toBe(invoice.body.number);
     }
+    const reopened = await t.as.post(sharePath);
+    expect(reopened.status, reopened.text).toBe(200);
+    expect(reopened.body).toEqual(firstShare.body);
+    const originalLink = await h.anon.get(`/api/public/invoices/${firstShare.body.token}`);
+    expect(originalLink.status, originalLink.text).toBe(200);
     const inviteToken = inviteMail.text!.match(/\/portal\/join#t=([0-9a-f]{64})/)?.[1];
     expect(inviteToken).toBeDefined();
     const publicInvite = await h.anon.get(`/api/portal-invitations/${inviteToken}`);

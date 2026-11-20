@@ -80,7 +80,7 @@ both languages, each on its own new owner (table at the end).
 Viewports: desktop 1440 px unless marked (mobile = 390 px, mobile-more = the phone More sheet,
 palette = command palette entry, file = file link checked for a download).
 Out of scope: none. Saudi ZATCA was removed in STEP2 (`/settings/zatca` is the not-found page).
-Not run: live provider calls (e-invoicing transmission, Stripe checkout, bank feeds,
+Not run: live provider calls (e-invoicing transmission, Stripe checkout,
 e-mail delivery), which stay behind their configured boundaries.
 
 | Route                                                       | Persona(s)                                                  | en   | ar   | Result                                               |
@@ -126,10 +126,10 @@ e-mail delivery), which stay behind their configured boundaries.
 | `/backup-restore (mobile)`                                  | trial, owner                                                | pass | pass | pass                                                 |
 | `/bank-accounts`                                            | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
 | `/bank-accounts (mobile)`                                   | trial, owner                                                | pass | pass | pass                                                 |
-| `/bank-feeds`                                               | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
-| `/bank-feeds (mobile)`                                      | trial, owner                                                | pass | pass | pass                                                 |
-| `/bank-feeds/callback`                                      | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
-| `/bank-feeds/callback (mobile)`                             | trial, owner                                                | pass | pass | pass                                                 |
+| bank statement upload                                               | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
+| Bank statement upload (mobile)                                      | trial, owner                                                | pass | pass | pass                                                 |
+| Bank statement upload callback                                      | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
+| Bank statement upload callback (mobile)                             | trial, owner                                                | pass | pass | pass                                                 |
 | `/bank-reconciliation`                                      | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
 | `/bank-reconciliation (mobile)`                             | trial, owner                                                | pass | pass | pass                                                 |
 | `/bank-reconciliation?import=1`                             | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
@@ -492,7 +492,7 @@ Each item: what the sweep or a flow saw, the root cause, the fix, and the regres
    the plan dialog. Tests: unit (dialog), flow `second-company` (en, ar).
 3. **Notification links opened the 404 page**: `/invoices/<id>`, `/banking`, `/compliance`,
    `/settings`, `/journal-entries?status=draft`. The server now writes real routes
-   (`shared/app-links.ts` `invoiceHref`, `/bank-feeds`, `/compliance-calendar`, `/task-center`,
+   (`shared/app-links.ts` `invoiceHref`, bank statement upload, `/compliance-calendar`, `/task-center`,
    `/settings/security`, `/journal`); App.tsx redirects the old links already stored. Test:
    `tests/unit/app-links-routes.test.ts` (every stored literal link, incl. raw SQL `action_url`,
    is a non-redirect client route).

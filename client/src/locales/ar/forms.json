@@ -421,7 +421,7 @@
   "forms.contact.expenseAccount": "حساب المصروفات",
   "forms.contact.costCentre": "مركز التكلفة",
   "forms.contact.preferredLanguage": "اللغة المفضلة للرسائل والروابط",
-  "forms.contact.preferredLanguageHelp": "تصل الفواتير والتذكيرات وكشوف الحساب والبوابة بهذه اللغة. الخيار الافتراضي للشركة يتبع لغة الشركة (العربية للشركة العربية، وإلا فالإنجليزية والعربية معًا).",
+  "forms.contact.preferredLanguageHelp": "تصل رسائل الفواتير والتذكيرات وكشوف الحساب ودعوات البوابة بهذه اللغة. إذا لم تحدد لغة مفضلة، تُرسل الرسائل الافتراضية بالعربية والإنجليزية معًا.",
   "forms.contact.languageDefault": "الافتراضي للشركة",
   "forms.preview.status.sent": "صادرة",
   "forms.preview.status.paid": "مدفوعة",

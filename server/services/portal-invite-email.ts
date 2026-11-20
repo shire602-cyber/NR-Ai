@@ -10,6 +10,7 @@ import {
   arabicGreeting,
   buildCustomerEmail,
   companyFooter,
+  supplierEmailSubject,
   type BuiltEmail,
 } from "./customer-emails";
 import { escapeHtml, isolateInline, type EmailLanguage } from "./email-layout";
@@ -44,8 +45,8 @@ export function renderPortalInviteEmail(input: PortalInviteEmailInput): BuiltEma
   const greetName = (invitation.name || contact.name).trim();
   const note = invitation.message?.trim();
   const quotedNote = note
-    ? [`<span dir="auto">${escapeHtml(note).replace(/\n/g, "<br>")}</span>`]
-    : [];
+    ? `<span dir="auto">${escapeHtml(note).replace(/\n/g, "<br>")}</span>`
+    : null;
 
   return buildCustomerEmail(
     {
@@ -59,7 +60,7 @@ export function renderPortalInviteEmail(input: PortalInviteEmailInput): BuiltEma
           `Hi ${isolateInline(greetName)},`,
           `${supplier} uses ${product} to share your invoices. Set up your account to view invoices and credit notes, download PDFs, and access your statement of account.`,
           ...(onlinePayment ? ["You can also pay online when payment is available."] : []),
-          ...quotedNote,
+          ...(quotedNote ? [`<strong>Message from ${supplier}</strong><br>${quotedNote}`] : []),
           `This invitation expires on ${formatInviteDate(invitation.expiresAt, "en")}.`,
           "If you didn't expect this email, you can safely ignore it.",
         ],
@@ -71,7 +72,7 @@ export function renderPortalInviteEmail(input: PortalInviteEmailInput): BuiltEma
           }),
           `تستخدم ${supplier} منصة ${product} لمشاركة فواتيرك. أنشئ حسابك للاطلاع على الفواتير والإشعارات الدائنة وتنزيل ملفات PDF وعرض كشف حسابك.`,
           ...(onlinePayment ? ["يمكنك أيضًا السداد عبر الإنترنت عند توفر خيار الدفع."] : []),
-          ...quotedNote,
+          ...(quotedNote ? [`<strong>رسالة من ${supplier}</strong><br>${quotedNote}`] : []),
           `تنتهي صلاحية هذه الدعوة في ${formatInviteDate(invitation.expiresAt, "ar")}.`,
           "إذا لم تكن تتوقع هذه الرسالة، يمكنك تجاهلها بأمان.",
         ],
@@ -82,9 +83,9 @@ export function renderPortalInviteEmail(input: PortalInviteEmailInput): BuiltEma
       contactEmail: company.contactEmail,
     },
     language,
-    {
-      en: `${company.name} invited you to view your invoices`,
-      ar: `دعتك ${company.name} للاطلاع على فواتيرك`,
-    }
+    supplierEmailSubject(company.name, language, (name) => ({
+      en: `${name} invited you to view your invoices`,
+      ar: `دعتك ${name} للاطلاع على فواتيرك`,
+    }))
   );
 }

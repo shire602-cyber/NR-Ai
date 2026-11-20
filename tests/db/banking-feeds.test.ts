@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import type { FetchLike } from "../../server/services/bank-feeds/types";
-import { bankStatementCopy } from "../../shared/bank-statement-copy";
+import { bankStatementCopy, bankStatementTitle } from "../../shared/bank-statement-copy";
 
 const h = useHarness();
 const REDIRECT = "https://app.example.test/bank-feeds/callback";
@@ -101,10 +101,30 @@ describe("W3-C bank feeds", () => {
     }
     const status = await t.as.get(`/api/bank/providers`);
     expect(status.body.isConfigured).toBe(false);
+    expect(status.body.csvImport).toEqual({ available: true, message: bankStatementCopy });
     for (const s of status.body.statuses) {
-      expect(s).toMatchObject({ configured: false, status: "requires_external" });
-      expect(s.message.en).toBe("Not connected — requires provider contract");
+      expect(s).toMatchObject({
+        configured: false,
+        status: "requires_external",
+        label: bankStatementTitle.en,
+        message: bankStatementCopy,
+        externalAction: bankStatementCopy,
+      });
     }
+    for (const c of status.body.capabilities) {
+      expect(c).toMatchObject({ label: bankStatementTitle, externalAction: bankStatementCopy });
+    }
+    const admin = await h.createTenant({ isAdmin: true });
+    const integrations = await admin.as.get("/api/admin/integration-status");
+    expect(integrations.status, integrations.text).toBe(200);
+    expect(integrations.body.integrations).toContainEqual({
+      key: "bankStatementImport",
+      name: bankStatementTitle.en,
+      configured: true,
+      detail: bankStatementCopy.en,
+      requiredEnv: [],
+      unlocks: "",
+    });
   });
 
   it("[R06-14] the redirect URI must be allow-listed and the callback state must match", async () => {
@@ -179,6 +199,18 @@ describe("W3-C bank feeds", () => {
     const conn = cb.body.connections[0];
     expect(conn.accessToken).toBeUndefined();
     expect(conn.bankAccountId).toBe(ba.body.id);
+    const balance = await t.as.get(`/api/bank-connections/${conn.id}/balance`);
+    expect(balance.status, balance.text).toBe(503);
+    expect(balance.body).toMatchObject({
+      code: "BANK_FEED_BALANCE_UNAVAILABLE",
+      message: bankStatementCopy.en,
+    });
+    const status = await t.as.get("/api/bank/providers");
+    expect(status.body.isConfigured).toBe(true);
+    expect(status.body.csvImport).toEqual({ available: true, message: bankStatementCopy });
+    expect(status.body.statuses).toContainEqual(
+      expect.objectContaining({ id: "lean", configured: true, message: bankStatementCopy })
+    );
 
     const raw = await h.sql<{ access_token: string }>(
       `SELECT access_token FROM bank_connections WHERE id = $1`,
@@ -258,6 +290,7 @@ describe("W3-C bank feeds", () => {
     const r = await t.as.post(`/api/bank-connections/${id}/sync`, {});
     expect(r.status).toBe(502);
     expect(r.body.code).toBe("BANK_FEED_PROVIDER_ERROR");
+    expect(r.body.message).toBe(bankStatementCopy.en);
     await new Promise((res) => setTimeout(res, 50));
     expect(seen).toContain(id);
     if (typeof off === "function") off();
@@ -266,5 +299,14 @@ describe("W3-C bank feeds", () => {
       [id]
     );
     expect(row[0].status).toBe("error");
+    await h.sql("UPDATE bank_connections SET last_error = $2 WHERE id = $1", [
+      id,
+      "Legacy instructions",
+    ]);
+    const connections = await t.as.get(`/api/companies/${t.company.id}/bank-connections`);
+    expect(connections.status, connections.text).toBe(200);
+    expect(connections.body).toContainEqual(
+      expect.objectContaining({ id, lastError: bankStatementCopy.en })
+    );
   });
 });

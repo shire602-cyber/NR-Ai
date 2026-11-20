@@ -30,6 +30,8 @@ export interface BilingualBlock {
 
 export interface BilingualEmailContent {
   heading: BilingualBlock;
+  /** Optional identifier appended to the heading, always displayed left to right. */
+  headingIdentifier?: string;
   /** Already-escaped HTML paragraphs per language. */
   paragraphs: { en: string[]; ar: string[] };
   summary?: Array<{ label: BilingualBlock; value: string | BilingualBlock; strong?: boolean }>;
@@ -128,6 +130,10 @@ function valueOf(v: string | BilingualBlock, lang: "en" | "ar"): string {
   return typeof v === "string" ? v : v[lang];
 }
 
+function headingText(c: BilingualEmailContent, lang: "en" | "ar"): string {
+  return [c.heading[lang], c.headingIdentifier].filter(Boolean).join(" ");
+}
+
 function section(dir: "ltr" | "rtl", lang: "en" | "ar", c: BilingualEmailContent): string {
   const align = dir === "rtl" ? "right" : "left";
   const opposite = dir === "rtl" ? "left" : "right";
@@ -135,7 +141,7 @@ function section(dir: "ltr" | "rtl", lang: "en" | "ar", c: BilingualEmailContent
   const paragraphs = c.paragraphs[lang]
     .map(
       (p) =>
-        `<p dir="${dir}" style="${face}color:${INK};font-size:15px;line-height:1.75;margin:0 0 14px;text-align:${align};">${p}</p>`
+        `<p dir="${dir}" style="${face}color:${INK};font-size:15px;line-height:1.75;margin:0 0 14px;text-align:${align};word-wrap:break-word;overflow-wrap:anywhere;">${p}</p>`
     )
     .join("");
   const summary = c.summary?.length
@@ -160,7 +166,7 @@ function section(dir: "ltr" | "rtl", lang: "en" | "ar", c: BilingualEmailContent
       )}" style="color:${MUTED};">${escapeHtml(c.button.url)}</a></td></tr></table>`
     : "";
   const heading = c.heading[lang]
-    ? `<h2 dir="${dir}" style="${face}margin:0 0 14px;color:${escapeHtml(c.accent ?? INK)};font-size:22px;line-height:1.45;text-align:${align};">${escapeHtml(c.heading[lang])}</h2>`
+    ? `<h2 dir="${dir}" style="${face}margin:0 0 14px;color:${escapeHtml(c.accent ?? INK)};font-size:22px;line-height:1.45;text-align:${align};">${escapeHtml(c.heading[lang])}${c.headingIdentifier ? ` ${isolateInline(c.headingIdentifier, "ltr")}` : ""}</h2>`
     : "";
   const note = c.note
     ? `<p dir="${dir}" style="${face}color:${MUTED};font-size:13px;line-height:1.7;margin:0 0 6px;text-align:${align};">${escapeHtml(c.note[lang])}</p>`
@@ -213,9 +219,9 @@ export function renderBilingualEmail(c: BilingualEmailContent, language: EmailLa
     language === "bilingual" ? (["en", "ar"] as const) : ([rootLang] as const)
   ).map(
     (lang) =>
-      `<p dir="${lang === "ar" ? "rtl" : "ltr"}" lang="${lang}" style="font-family:${FONT[lang]};color:${MUTED};font-size:12px;line-height:1.7;margin:0 0 6px;text-align:center;">${footerLines(c, lang, true).join(" ")}</p>`
+      `<p dir="${lang === "ar" ? "rtl" : "ltr"}" lang="${lang}" style="font-family:${FONT[lang]};color:${MUTED};font-size:12px;line-height:1.7;margin:0 0 6px;text-align:center;word-wrap:break-word;overflow-wrap:anywhere;">${footerLines(c, lang, true).join(" ")}</p>`
   );
-  const title = c.heading[rootLang] || c.brandName;
+  const title = headingText(c, rootLang) || c.brandName;
   const pre = escapeHtml(preheaderOf(c, language));
   return `<!DOCTYPE html>
 <html lang="${rootLang}" dir="${rootDir}" xmlns="http://www.w3.org/1999/xhtml">
@@ -244,7 +250,7 @@ export function renderBilingualEmail(c: BilingualEmailContent, language: EmailLa
         </td></tr>
         <tr><td class="em-pad" style="padding:28px 32px;">${parts.join("\n")}</td></tr>
         <tr><td class="em-pad" style="background:${OFF_WHITE};padding:18px 32px;border-top:1px solid ${BORDER};">
-          ${c.footer ? `<p style="font-family:${FONT[rootLang]};color:${MUTED};font-size:12px;line-height:1.7;margin:0 0 6px;text-align:center;">${isolateInline(c.footer)}</p>` : ""}
+          ${c.footer ? `<p style="font-family:${FONT[rootLang]};color:${MUTED};font-size:12px;line-height:1.7;margin:0 0 6px;text-align:center;word-wrap:break-word;overflow-wrap:anywhere;">${isolateInline(c.footer)}</p>` : ""}
           ${footerBlocks.join("\n")}
         </td></tr>
       </table>
@@ -279,7 +285,7 @@ export function htmlToText(html: string): string {
 
 function textSection(lang: "en" | "ar", c: BilingualEmailContent): string {
   const out: string[] = [];
-  if (c.heading[lang]) out.push(c.heading[lang], "");
+  if (c.heading[lang]) out.push(headingText(c, lang), "");
   for (const p of c.paragraphs[lang]) out.push(htmlToText(p), "");
   if (c.summary?.length) {
     for (const row of c.summary) out.push(`${row.label[lang]}: ${valueOf(row.value, lang)}`);

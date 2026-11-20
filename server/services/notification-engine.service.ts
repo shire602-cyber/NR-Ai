@@ -385,12 +385,11 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
         type: "bank.sync_failed",
         ...notificationCopy(
           "notification.bankSyncFailed.title",
-          "notification.bankSyncFailed.message",
-          { provider: p.provider as string | undefined, reason: p.reason as string | undefined }
+          "notification.bankSyncFailed.message"
         ),
         priority: "high",
         relatedEntityType: "bank_connection",
-        actionUrl: "/bank-feeds",
+        actionUrl: "/bank-reconciliation?import=1",
         // One notification per failure day, not per retry.
         eventKey: `${p.entityId}:${String(p.occurredAt).slice(0, 10)}`,
       };
