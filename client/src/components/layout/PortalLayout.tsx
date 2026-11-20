@@ -78,7 +78,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
     isFetchedAfterMount: accountsChecked,
   } = useQuery<PortalAccountRow[]>({
     ...portalQuery("/api/client-portal/accounts", selection),
-    staleTime: 5 * 60 * 1000,
+    staleTime: selectionRequired ? 0 : 5 * 60 * 1000,
     refetchOnMount: "always",
     refetchOnWindowFocus: "always",
   });
