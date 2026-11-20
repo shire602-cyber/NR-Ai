@@ -27,8 +27,7 @@ async function requestCallback(phone: string) {
         requestId: randomUUID(),
       }),
     });
-    await response.json();
-    return response.status;
+    return { status: response.status, body: await response.json() };
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
@@ -40,7 +39,7 @@ describe("Demo callback phone numbers", () => {
   it.each(["+٩٧١ ٥٠ ١٢٣ ٤٥٦٧", "+۹۷۱ ۵۰ ۱۲۳ ۴۵۶۷", "+971 50 123 4567"])(
     "sends normalized ASCII digits for %s",
     async (phone) => {
-      expect(await requestCallback(phone)).toBe(202);
+      expect(await requestCallback(phone)).toMatchObject({ status: 202 });
       expect(sendEmail).toHaveBeenCalledWith(
         expect.any(String),
         expect.any(String),
@@ -51,7 +50,10 @@ describe("Demo callback phone numbers", () => {
   );
 
   it("rejects a phone number with too few digits", async () => {
-    expect(await requestCallback("+٩٧١ ٥٠")).toBe(400);
+    expect(await requestCallback("+٩٧١ ٥٠")).toMatchObject({
+      status: 400,
+      body: { field: "phone" },
+    });
     expect(sendEmail).not.toHaveBeenCalled();
   });
 });

@@ -668,3 +668,9 @@
 .phase-plan-grid .plan-card:not([data-featured="true"]) .text-accent {
   color: var(--phase-green);
 }
+.phase-form #callback-phone-error {
+  color: #a12620;
+}
+.phase-form input[aria-invalid="true"] {
+  border-color: #a12620;
+}

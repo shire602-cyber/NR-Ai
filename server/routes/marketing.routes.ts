@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { buildLimiter, clientIp } from "../middleware/rateLimit";
 import { z } from "zod";
-import { toAsciiDigits } from "../../shared/arabic-text";
+import { normalizeCallbackPhone } from "../../shared/demo-callback";
 import { supportEmail } from "../../shared/marketing-brand";
 import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, sendEmail } from "../services/email.service";
@@ -10,12 +10,12 @@ const callbackRequest = z.object({
   requestId: z.string().uuid(),
   name: z.string().trim().min(1).max(100),
   email: z.string().trim().email().max(254),
-  phone: z
-    .string()
-    .trim()
-    .transform(toAsciiDigits)
-    .pipe(z.string().regex(/^\+?[0-9 ().-]{7,32}$/))
-    .refine((phone) => phone.replace(/\D/g, "").length >= 7),
+  phone: z.string().transform((input, ctx) => {
+    const phone = normalizeCallbackPhone(input);
+    if (phone !== null) return phone;
+    ctx.addIssue({ code: "custom", message: "Invalid phone number" });
+    return z.NEVER;
+  }),
   availability: z.string().trim().max(160).optional(),
 });
 
@@ -30,7 +30,13 @@ export function registerMarketingRoutes(app: Express) {
     }),
     asyncHandler(async (req, res) => {
       const parsed = callbackRequest.safeParse(req.body);
-      if (!parsed.success) return res.status(400).json({ message: "Invalid callback request" });
+      if (!parsed.success) {
+        const invalidPhone = parsed.error.issues.some((issue) => issue.path[0] === "phone");
+        return res.status(400).json({
+          message: "Invalid callback request",
+          ...(invalidPhone ? { field: "phone" } : {}),
+        });
+      }
       if (!hasEmailProvider())
         return res.status(503).json({ message: "Callback requests unavailable" });
       const { name, email, phone, availability, requestId } = parsed.data;

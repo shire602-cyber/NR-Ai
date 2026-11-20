@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent } from "react";
+import { normalizeCallbackPhone } from "@shared/demo-callback";
 import { supportEmail } from "@shared/marketing-brand";
 import type { Bilingual, SiteLocale } from "./content";
 
@@ -185,12 +186,24 @@ export function FreeTool({
 }
 
 export function DemoRequest({ tr }: { tr: Translate }) {
-  const [status, setStatus] = useState<"idle" | "sending" | "accepted" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "sending" | "accepted" | "invalid" | "error">(
+    "idle"
+  );
+  const [invalidPhone, setInvalidPhone] = useState(false);
+  const phoneInput = useRef<HTMLInputElement>(null);
   const submission = useRef<{ payload: string; id: string }>();
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (status === "sending" || status === "accepted") return;
     const data = Object.fromEntries(new FormData(e.currentTarget));
+    const phone = normalizeCallbackPhone(String(data.phone ?? ""));
+    setInvalidPhone(phone === null);
+    if (phone === null) {
+      setStatus("idle");
+      phoneInput.current?.focus();
+      return;
+    }
+    data.phone = phone;
     const payload = JSON.stringify(data);
     if (submission.current?.payload !== payload) {
       submission.current = { payload, id: crypto.randomUUID() };
@@ -205,7 +218,13 @@ export function DemoRequest({ tr }: { tr: Translate }) {
         headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken },
         body: JSON.stringify({ ...data, requestId: submission.current.id }),
       });
-      setStatus(response.status === 202 ? "accepted" : "error");
+      if (response.status === 400) {
+        const invalid = await response.json();
+        setInvalidPhone(invalid.field === "phone");
+        setStatus(invalid.field === "phone" ? "idle" : "invalid");
+      } else {
+        setStatus(response.status === 202 ? "accepted" : "error");
+      }
     } catch {
       setStatus("error");
     }
@@ -238,15 +257,26 @@ export function DemoRequest({ tr }: { tr: Translate }) {
           <label>
             {tr(["Phone number", "رقم الهاتف"])}
             <input
+              ref={phoneInput}
               name="phone"
               type="tel"
               autoComplete="tel"
               dir="ltr"
               required
               maxLength={32}
-              minLength={7}
+              aria-invalid={invalidPhone || undefined}
+              aria-describedby={invalidPhone ? "callback-phone-error" : undefined}
+              onChange={() => setInvalidPhone(false)}
             />
           </label>
+          {invalidPhone && (
+            <p id="callback-phone-error" role="alert">
+              {tr([
+                "Enter a valid phone number with at least 7 digits.",
+                "أدخل رقم هاتف صالحًا يتكوّن من ٧ أرقام على الأقل.",
+              ])}
+            </p>
+          )}
           <label>
             {tr(["Preferred time in Dubai (optional)", "الوقت المفضل بتوقيت دبي (اختياري)"])}
             <input name="availability" maxLength={160} />
@@ -264,6 +294,8 @@ export function DemoRequest({ tr }: { tr: Translate }) {
             "We received your callback request. A time will be arranged separately.",
             "استلمنا طلب الاتصال. سننسّق معك لتحديد الموعد.",
           ])}
+        {status === "invalid" &&
+          tr(["Check your details and try again.", "تحقّق من بياناتك وحاول مجددًا."])}
         {status === "error" && (
           <p>
             {tr([
