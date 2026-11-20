@@ -470,8 +470,8 @@ const faqs: readonly [Bilingual, Bilingual][] = [
   [
     ["Who handles e-invoice transmission?", "من يتولى إرسال الفواتير الإلكترونية؟"],
     [
-      "Configure an accredited service provider to exchange structured invoices. Provider setup and credentials are required.",
-      "هيّئ مزوّد خدمة معتمدًا لتبادل الفواتير المهيكلة. يلزم إعداد المزوّد وبيانات الاتصال به.",
+      "The accredited provider configured for your deployment handles transmission after its setup is complete.",
+      "يتولى مزوّد الخدمة المعتمد المُعدّ لنسخة التطبيق لديك إرسال الفواتير بعد اكتمال إعداده.",
     ],
   ],
 ];
@@ -541,7 +541,10 @@ function Home({ base, locale, tr }: { base: string; locale: string; tr: Translat
           </div>
           <div className="phase-partners">
             <p>
-              {tr(["Accredited service provider integrations", "تكاملات مع مزوّدي خدمة معتمدين"])}
+              {tr([
+                "One accredited provider per deployment",
+                "مزوّد خدمة معتمد واحد لكل نسخة من التطبيق",
+              ])}
             </p>
             <div>
               {["A-Cube", "Complyance"].map((provider) => (

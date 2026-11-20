@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { buildLimiter, clientIp } from "../middleware/rateLimit";
 import { z } from "zod";
+import { toAsciiDigits } from "../../shared/arabic-text";
 import { supportEmail } from "../../shared/marketing-brand";
 import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, sendEmail } from "../services/email.service";
@@ -12,7 +13,8 @@ const callbackRequest = z.object({
   phone: z
     .string()
     .trim()
-    .regex(/^\+?[0-9 ().-]{7,32}$/)
+    .transform(toAsciiDigits)
+    .pipe(z.string().regex(/^\+?[0-9 ().-]{7,32}$/))
     .refine((phone) => phone.replace(/\D/g, "").length >= 7),
   availability: z.string().trim().max(160).optional(),
 });

@@ -1596,9 +1596,6 @@ export default function BankReconciliation() {
                     <CheckCircle2 className="w-3.5 h-3.5 text-success" />
                     <span>{strings.formatDrCr}</span>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {t["bankReconciliation.liveBankFeedsAreNot"]}
-                  </p>
                 </div>
                 <Button
                   type="button"

@@ -38,8 +38,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SHOT_DIR = path.join(__dirname, ".artifacts");
 const RUN_ARTIFACT_PATH = path.join(SHOT_DIR, "customer-launch-last-run.json");
 
+const LOCALIZED_HOMEPAGES = {
+  "/en": { lang: "en", dir: "ltr", title: "Accounting and VAT for UAE businesses" },
+  "/ar": { lang: "ar", dir: "rtl", title: "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات" },
+};
+
 const PUBLIC_ROUTES = [
   "/",
+  ...Object.keys(LOCALIZED_HOMEPAGES),
   "/register",
   "/login",
   "/forgot-password",
@@ -327,6 +333,21 @@ async function main() {
   // Public launch surface: these are the routes ads and prospects will hit first.
   for (const route of PUBLIC_ROUTES) {
     const bodyText = await crawlRoute(route);
+    const homepage = LOCALIZED_HOMEPAGES[route];
+    if (homepage) {
+      const actual = await page.locator("html").evaluate((html) => ({
+        lang: html.lang,
+        dir: html.dir,
+        title: html.querySelector("h1")?.textContent,
+      }));
+      if (
+        actual.lang !== homepage.lang ||
+        actual.dir !== homepage.dir ||
+        actual.title !== homepage.title
+      ) {
+        await fail(`localized homepage ${route}`, { expected: homepage, actual });
+      }
+    }
     const unsupportedClaim = bodyText.match(PUBLIC_UNSUPPORTED_CLAIMS)?.[0] ?? null;
     if (unsupportedClaim) {
       await fail(`public claim ${route}`, { unsupportedClaim });

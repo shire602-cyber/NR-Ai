@@ -217,14 +217,14 @@ const featureData = [
     slug: "e-invoicing",
     title: ["UAE e-invoicing", "الفوترة الإلكترونية في الإمارات"],
     lead: [
-      "Prepare for UAE e-invoicing with integrations for accredited service providers A-Cube and Complyance.",
-      "استعد للفوترة الإلكترونية في الإمارات عبر التكامل مع مزوّدي الخدمة المعتمدين A-Cube وComplyance.",
+      "Prepare for UAE e-invoicing with the accredited provider configured for your deployment, either A-Cube or Complyance.",
+      "استعد للفوترة الإلكترونية في الإمارات مع مزوّد الخدمة المعتمد المُعدّ لنسخة التطبيق لديك، إما A-Cube أو Complyance.",
     ],
     steps: [
       ["Review your company and customer tax details.", "راجع البيانات الضريبية لشركتك وعملائك."],
       [
-        "Choose an accredited provider and configure its credentials.",
-        "اختر مزوّد خدمة معتمدًا وأعدّ بيانات الاتصال به.",
+        "Confirm which provider is enabled for your deployment and complete its setup.",
+        "تحقّق من مزوّد الخدمة المفعّل لنسخة التطبيق لديك وأكمل إعداده.",
       ],
       [
         "Validate invoice data and test the provider connection before going live.",

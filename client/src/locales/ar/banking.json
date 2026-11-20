@@ -94,7 +94,6 @@
   "banking.line.confirmDraft": "ترحيل المسودة",
   "banking.line.matched": "تمت تسوية الحركة",
   "banking.feeds.title": "الربط البنكي",
-  "banking.feeds.description": "سيتوفر الربط البنكي المباشر لاحقًا.",
   "banking.feeds.notConnected": "غير متصل — يتطلب عقدًا مع مزود الخدمة",
   "banking.feeds.connect": "ربط",
   "banking.feeds.linkAccount": "الحساب البنكي الذي يستقبل الحركات",

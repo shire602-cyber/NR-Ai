@@ -116,12 +116,25 @@ describe("D1 public site", () => {
   });
 
   it("[D1] the landing page renders fully in Arabic (no stray English copy)", async () => {
-    await setLocale("ar");
-    await render("MuhasibLanding");
-    const { t } = await import("../../client/src/lib/i18n");
-    expect(container.querySelector("h1")?.textContent).toContain(t.ar["marketing.heroTitleLead"]);
-    expect(document.title).toBe(t.ar["marketing.seoHomeTitle"]);
-    expect(arabicModeEnglishLines()).toEqual([]);
+    const { default: PhaseRoot } =
+      await import("../../client/src/components/marketing/phase/PhaseRoot");
+    const previousUrl = window.location.href;
+    window.history.replaceState(null, "", "/ar");
+    try {
+      await act(async () => root.render(createElement(PhaseRoot)));
+      const title = "المحاسبة وضريبة القيمة المضافة للشركات في الإمارات";
+      expect(container.querySelector("h1")?.textContent).toBe(title);
+      expect(document.title).toContain(title);
+      expect(container.querySelector('.phase-site[lang="ar"][dir="rtl"]')).not.toBeNull();
+      expect(container.querySelector(".phase-hero img")?.getAttribute("src")).toBe(
+        "/product/dashboard-ar.webp"
+      );
+      expect(container.querySelector('a[hreflang="en"]')?.getAttribute("href")).toBe("/en");
+      expect(container.textContent).toContain("مزوّد خدمة معتمد واحد لكل نسخة من التطبيق");
+      expect(arabicModeEnglishLines()).toEqual([]);
+    } finally {
+      window.history.replaceState(null, "", previousUrl);
+    }
   });
 
   it("[D1] auth and legal pages share the shell in Arabic", async () => {
