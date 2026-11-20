@@ -133,6 +133,36 @@ async function mainShows(page, text, timeoutMs = 20000) {
   return false;
 }
 
+/** Sign in a fresh company owner and finish the real three-step wizard before crawling. */
+async function completeExpressOnboarding(page, email, label) {
+  const timeout = 45000;
+  const login = await page.request.post(`${BASE}/api/auth/login`, {
+    data: { email, password: "Password123!" },
+  });
+  if (!login.ok()) throw new Error(`${label} login failed with HTTP ${login.status()}`);
+
+  try {
+    await page.goto(`${BASE}/dashboard`, { timeout });
+    await page.waitForURL((url) => url.pathname === "/onboarding", { timeout });
+    await page.getByTestId("onboarding-express").click({ timeout });
+    await page.getByTestId("onboarding-skip").click({ timeout });
+    const [completion] = await Promise.all([
+      page.waitForResponse(
+        (res) =>
+          res.request().method() === "POST" &&
+          /^\/api\/companies\/[^/]+\/onboarding\/complete$/.test(new URL(res.url()).pathname),
+        { timeout }
+      ),
+      page.getByTestId("onboarding-task-explore").click({ timeout }),
+    ]);
+    if (!completion.ok())
+      throw new Error(`Onboarding completion returned HTTP ${completion.status()}`);
+    await page.waitForURL((url) => url.pathname === "/dashboard", { timeout });
+  } catch (cause) {
+    throw new Error(`${label} express onboarding did not finish at ${page.url()}`, { cause });
+  }
+}
+
 async function resolveExecutablePath() {
   if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
   try {
@@ -190,31 +220,7 @@ async function main() {
     await fail("register", { detail: `status ${reg.status()}` });
     throw new Error(`register failed: ${reg.status()}`);
   }
-  // W5-E: registration returns no session; sign in (sets the auth cookies).
-  await page.request.post(`${BASE}/api/auth/login`, { data: { email, password: "Password123!" } });
-
-  await page.goto(`${BASE}/dashboard`);
-  await page.waitForTimeout(3000);
-  if (page.url().includes("onboarding")) {
-    const express = page.locator('[data-testid="onboarding-express"]');
-    // The redirect to /onboarding can land after a fixed wait on a cold build.
-    await express.waitFor({ timeout: 10000 }).catch(() => undefined);
-    if (await express.count()) {
-      await express.click();
-      await page.waitForTimeout(4000);
-      // WP-B: onboarding is three screens; skip the starting point, then look around.
-      for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
-        const next = page.locator(`[data-testid="${id}"]`);
-        if (await next.count()) {
-          await next.click();
-          await page.waitForTimeout(1500);
-        }
-      }
-    }
-  }
-  if (!page.url().includes("dashboard")) {
-    await fail("express-onboarding", { detail: `ended on ${page.url()}` });
-  }
+  await completeExpressOnboarding(page, email, "Owner");
 
   // Promote to admin + firm owner so the crawl covers admin and firm suites.
   const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
@@ -1199,30 +1205,7 @@ async function main() {
       await mCtx.close();
       return;
     }
-    // W5-E: registration returns no session; sign in (sets the auth cookies).
-    await mPage.request.post(`${BASE}/api/auth/login`, {
-      data: { email: mEmail, password: "Password123!" },
-    });
-    // Complete onboarding via express so the dashboard doesn't redirect.
-    await mPage.goto(`${BASE}/dashboard`);
-    await mPage.waitForTimeout(2500);
-    if (mPage.url().includes("onboarding")) {
-      const express = mPage.locator('[data-testid="onboarding-express"]');
-      // The redirect to /onboarding can land after a fixed wait on a cold build.
-      await express.waitFor({ timeout: 10000 }).catch(() => undefined);
-      if (await express.count()) {
-        await express.click();
-        await mPage.waitForTimeout(3500);
-        // WP-B: onboarding is three screens; skip the starting point, then look around.
-        for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
-          const next = mPage.locator(`[data-testid="${id}"]`);
-          if (await next.count()) {
-            await next.click();
-            await mPage.waitForTimeout(1500);
-          }
-        }
-      }
-    }
+    await completeExpressOnboarding(mPage, mEmail, label);
     const mDb = new pg.Client({ connectionString: process.env.DATABASE_URL });
     await mDb.connect();
     await mDb.query(`UPDATE users SET user_type = $1, email_verified = true WHERE email = $2`, [
