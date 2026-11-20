@@ -353,6 +353,18 @@ export interface ConvertResult extends RateResult {
   convertedFils: number;
 }
 
+/** Apply one resolved rate to multiple integer amounts with the same rounding. */
+export function convertFilsAtRate(
+  amountFils: number,
+  rate: Pick<RateResult, "inverse" | "storedRate" | "rateText">
+): number {
+  // Divide by the stored rate instead of multiplying by a rounded reciprocal.
+  const convertedFils = rate.inverse
+    ? new D(amountFils).dividedBy(new D(rate.storedRate)).toDecimalPlaces(0).toNumber()
+    : mulRate(amountFils, rate.rateText);
+  return Object.is(convertedFils, -0) ? 0 : convertedFils;
+}
+
 /** Convert integer fils of `from` into integer fils of `to` (half-up). */
 export async function convert(
   companyId: string,
@@ -366,12 +378,7 @@ export async function convert(
     throw new DomainError("INVALID_AMOUNT", 400, { amountFils });
   }
   const r = await getRate(companyId, from, to, date, opts);
-  // Divide by the stored rate for inverse pairs instead of multiplying by a
-  // rounded reciprocal, so AED→USD with (USD, AED, 3.6725) stays exact.
-  const convertedFils = r.inverse
-    ? new D(amountFils).dividedBy(new D(r.storedRate)).toDecimalPlaces(0).toNumber()
-    : mulRate(amountFils, r.rateText);
-  return { ...r, amountFils, convertedFils: Object.is(convertedFils, -0) ? 0 : convertedFils };
+  return { ...r, amountFils, convertedFils: convertFilsAtRate(amountFils, r) };
 }
 
 // ─── Writes ───────────────────────────────────────────────────────────────

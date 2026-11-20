@@ -9,6 +9,9 @@
  *   Cr 1050 Input VAT           Box 13 (recoverable VAT)
  *   Cr bank / cash              Box 14 (payable)      -- or Dr bank for a refund (Box 14 < 0)
  *
+ * The filed boxes stay in AED. The VAT controls clear at their carrying value in the books,
+ * and cash uses the payment-date rate. Any difference goes to realized FX.
+ *
  * The entry is dated on the payment date (after the period; the A1 filed-period lock refuses a
  * VAT posting dated inside a submitted / filed period). Its source `vat_return_settlement` is
  * not a VAT transaction of the period it is dated in, so the VAT engine leaves it out of the
@@ -21,9 +24,14 @@ import { DomainError } from "../errors";
 import { ledgerQueryable } from "../ledger/tx";
 import { lockVatReturns } from "../ledger/vat-lock";
 import { recordAudit } from "../services/audit.service";
+import { bankCurrencyOf, cashLegFor } from "../services/fx/bank-currency";
+import { convertFilsAtRate, getRate } from "../services/fx/rates";
+import { getFxAccounts } from "../services/invoice-posting.service";
 import {
+  loadBaseCurrency,
   postJournal,
   reverseBySource,
+  VAT_FILING_CURRENCY,
   withLedgerTx,
   type LedgerTx,
   type PostJournalLineInput,
@@ -42,6 +50,14 @@ interface ReturnRow {
   period_end: string;
   box12: string;
   box13: string;
+  vat_group_id: string | null;
+  amends_return_id: string | null;
+  reconciliation_snapshot: {
+    basis?: string;
+    returnOutputVatFils?: number;
+    returnInputVatFils?: number;
+    filingVatGroup?: unknown;
+  } | null;
   payment_date: string | null;
   payment_amount: string | null;
   payment_status: string | null;
@@ -57,7 +73,8 @@ async function loadReturn(
   const { rows } = await ledgerQueryable(tx).query(
     `SELECT id, status, period_start::date::text AS period_start,
             period_end::date::text AS period_end, box12_total_due_tax::text AS box12,
-            box13_recoverable_tax::text AS box13, payment_status,
+            box13_recoverable_tax::text AS box13, vat_group_id, amends_return_id,
+            reconciliation_snapshot, payment_status,
             payment_date::date::text AS payment_date, payment_amount::text AS payment_amount,
             declaration_date::date::text AS filed_on
        FROM vat_returns WHERE id = $1 AND company_id = $2 ${tx ? "FOR UPDATE" : ""}`,
@@ -112,19 +129,32 @@ interface SettlementJournal {
   paymentAccountId: string | null;
 }
 
+interface PriorSettlement {
+  returnIds: string[];
+  outputFils: number;
+  inputFils: number;
+  outputBaseFils: number;
+  inputBaseFils: number;
+}
+
 async function findSettlementJournal(
   companyId: string,
   vatReturnId: string,
   tx?: LedgerTx
 ): Promise<SettlementJournal | undefined> {
+  // Before FX-aware settlements the AED box deltas were copied directly to the journal columns.
+  // Keep those original nominal amounts for legacy replay, even on a non-AED ledger.
   const { rows } = await ledgerQueryable(tx).query(
     `SELECT je.id, je.entry_number AS "entryNumber", to_char(je.date, 'YYYY-MM-DD') AS date,
             je.reference,
-            COALESCE(SUM(ROUND(jl.debit * 100) - ROUND(jl.credit * 100))
+            COALESCE((je.memo_params ->> 'vatOutputAedFils')::bigint,
+                SUM(ROUND(jl.debit * 100) - ROUND(jl.credit * 100))
                 FILTER (WHERE a.code = '2020'), 0)::bigint AS "outputFils",
-            COALESCE(SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100))
+            COALESCE((je.memo_params ->> 'vatInputAedFils')::bigint,
+                SUM(ROUND(jl.credit * 100) - ROUND(jl.debit * 100))
                 FILTER (WHERE a.code = '1050'), 0)::bigint AS "inputFils",
-            MAX(jl.account_id::text) FILTER (WHERE a.code NOT IN ('2020', '1050'))
+            COALESCE(je.memo_params ->> 'vatPaymentAccountId',
+                MAX(jl.account_id::text) FILTER (WHERE a.code NOT IN ('2020', '1050')))
                 AS "paymentAccountId"
        FROM journal_entries je
        JOIN journal_lines jl ON jl.entry_id = je.id
@@ -136,6 +166,129 @@ async function findSettlementJournal(
     [companyId, VAT_SETTLEMENT_SOURCE, vatReturnId]
   );
   return rows[0] as SettlementJournal | undefined;
+}
+
+/** Standalone return reconciliation is calculated in the ledger currency before AED conversion. */
+function bookVatAmounts(ret: ReturnRow) {
+  const snapshot = ret.reconciliation_snapshot;
+  const output = snapshot?.returnOutputVatFils;
+  const input = snapshot?.returnInputVatFils;
+  // Group reconciliation is consolidated in AED. A legacy amendment lacking its filing scope
+  // might also be a group return, so its reconciliation figures cannot establish book amounts.
+  if (
+    ret.vat_group_id ||
+    snapshot?.filingVatGroup ||
+    (ret.amends_return_id && snapshot?.filingVatGroup === undefined) ||
+    snapshot?.basis !== "vat_control_accounts" ||
+    typeof output !== "number" ||
+    !Number.isSafeInteger(output) ||
+    typeof input !== "number" ||
+    !Number.isSafeInteger(input)
+  ) {
+    return null;
+  }
+  return { output, input };
+}
+
+function settlementRoundsToZero(): DomainError {
+  return new DomainError(
+    "VAT_SETTLEMENT_ROUNDS_TO_ZERO",
+    422,
+    undefined,
+    "The VAT settlement is too small to record in the selected currency."
+  );
+}
+
+async function buildSettlementLines(
+  tx: LedgerTx,
+  ret: ReturnRow,
+  prior: PriorSettlement,
+  input: { companyId: string; paymentAccountId: string; date: string },
+  outputFils: number,
+  inputFils: number
+): Promise<PostJournalLineInput[]> {
+  const { companyId, paymentAccountId, date } = input;
+  const base = await loadBaseCurrency(companyId, tx);
+  const carrying = base === VAT_FILING_CURRENCY ? null : bookVatAmounts(ret);
+  const netFils = outputFils - inputFils;
+  const rate =
+    netFils || !carrying ? await getRate(companyId, VAT_FILING_CURRENCY, base, date, { tx }) : null;
+  const toBase = (fils: number) => (rate ? convertFilsAtRate(fils, rate) : fils);
+  // Group returns and older returns without book amounts use the payment-date rate on the
+  // outstanding AED amounts. For standalone returns subtract the controls actually posted
+  // on the amendment chain from the return's recorded functional-currency amounts.
+  const outputBaseFils = carrying ? carrying.output - prior.outputBaseFils : toBase(outputFils);
+  const inputBaseFils = carrying ? carrying.input - prior.inputBaseFils : toBase(inputFils);
+  const amended = prior.returnIds.length > 0;
+  const params = { from: ret.period_start, to: ret.period_end };
+  const side = (fils: number) => (fils > 0 ? { debitFils: fils } : { creditFils: -fils });
+  const lines: PostJournalLineInput[] = [];
+  if (outputBaseFils)
+    lines.push({
+      accountId: await accountId(companyId, "2020", tx),
+      ...side(outputBaseFils),
+      systemVat: true,
+      ...journalLine(amended ? "vatAmendedReturnOutput" : "vatReturnOutput", params),
+    });
+  if (inputBaseFils)
+    lines.push({
+      accountId: await accountId(companyId, "1050", tx),
+      ...side(-inputBaseFils),
+      systemVat: true,
+      ...journalLine(amended ? "vatAmendedReturnInput" : "vatReturnInput", params),
+    });
+  let bankMovement = 0;
+  if (netFils) {
+    const cash = await cashLegFor({
+      companyId,
+      base,
+      bankCurrency: await bankCurrencyOf(companyId, paymentAccountId, ledgerQueryable(tx)),
+      docCurrency: VAT_FILING_CURRENCY,
+      docAmountFils: Math.abs(netFils),
+      docRate: rate?.rateText ?? "1",
+      // Translate the single net remittance before rounding to ledger cents.
+      docBaseFils: toBase(Math.abs(netFils)),
+      date,
+      tx,
+    });
+    if (!cash.cashBaseFils || (cash.tag && !toFils(cash.tag.amount)))
+      throw settlementRoundsToZero();
+    bankMovement = netFils > 0 ? -cash.cashBaseFils : cash.cashBaseFils;
+    lines.push({
+      accountId: paymentAccountId,
+      ...side(bankMovement),
+      ...(cash.tag
+        ? {
+            foreignCurrency: cash.tag.foreignCurrency,
+            ...(netFils > 0
+              ? { foreignCredit: cash.tag.amount }
+              : { foreignDebit: cash.tag.amount }),
+            exchangeRate: cash.tag.exchangeRate,
+          }
+        : {}),
+      ...journalLine(
+        netFils > 0
+          ? amended
+            ? "vatAmendedReturnPaid"
+            : "vatReturnPaid"
+          : amended
+            ? "vatAmendedReturnRefund"
+            : "vatReturnRefund",
+        params
+      ),
+    });
+  }
+  if (!lines.length) throw settlementRoundsToZero();
+  const difference = outputBaseFils - inputBaseFils + bankMovement;
+  if (difference) {
+    const accounts = await getFxAccounts(tx, companyId);
+    lines.push({
+      accountId: difference > 0 ? accounts.gain : accounts.loss,
+      ...side(-difference),
+      ...journalLine(difference > 0 ? "vatSettlementFxGain" : "vatSettlementFxLoss", params),
+    });
+  }
+  return lines;
 }
 
 /** The posted, unreversed settlement entry of a return, or null. */
@@ -190,6 +343,7 @@ export async function settleVatReturn(input: {
   req?: Request;
 }) {
   const reference = input.reference || null;
+  const paymentAccountId = input.paymentAccountId.toLowerCase();
   return withLedgerTx(async (tx) => {
     await lockVatReturns(tx, input.companyId);
     const ret = await loadReturn(input.companyId, input.vatReturnId, tx);
@@ -198,7 +352,7 @@ export async function settleVatReturn(input: {
       if (
         settled.date !== input.date ||
         settled.reference !== reference ||
-        (settled.paymentAccountId && settled.paymentAccountId !== input.paymentAccountId)
+        (settled.paymentAccountId && settled.paymentAccountId !== paymentAccountId)
       ) {
         throw new DomainError("VAT_RETURN_ALREADY_SETTLED", 409);
       }
@@ -253,9 +407,7 @@ export async function settleVatReturn(input: {
         `The return was filed on ${ret.filed_on}. Date the payment or refund on or after the filing date.`
       );
     }
-    await assertCashOrBank(input.companyId, input.paymentAccountId, tx);
-    const output = await accountId(input.companyId, "2020", tx);
-    const inputVat = await accountId(input.companyId, "1050", tx);
+    await assertCashOrBank(input.companyId, paymentAccountId, tx);
     // B2 (NH4): an amended return (voluntary disclosure) replaces the figures of the return it
     // amends, but what was already paid or refunded for those returns stays paid. Only the
     // difference is settled now (Exec. Reg. Art. 70: the disclosure states the difference).
@@ -273,39 +425,14 @@ export async function settleVatReturn(input: {
           : undefined
       );
     }
-    const amended = prior.returnIds.length > 0;
-    const lineParams = { from: String(ret.period_start), to: String(ret.period_end) };
-    const side = (fils: number) => (fils >= 0 ? { debitFils: fils } : { creditFils: -fils });
-    const lines: PostJournalLineInput[] = [];
-    if (outputFils !== 0)
-      lines.push({
-        accountId: output,
-        ...side(outputFils),
-        systemVat: true,
-        ...journalLine(amended ? "vatAmendedReturnOutput" : "vatReturnOutput", lineParams),
-      });
-    if (inputFils !== 0)
-      lines.push({
-        accountId: inputVat,
-        ...side(-inputFils),
-        systemVat: true,
-        ...journalLine(amended ? "vatAmendedReturnInput" : "vatReturnInput", lineParams),
-      });
-    if (netFils !== 0)
-      lines.push({
-        accountId: input.paymentAccountId,
-        ...side(-netFils),
-        ...journalLine(
-          netFils > 0
-            ? amended
-              ? "vatAmendedReturnPaid"
-              : "vatReturnPaid"
-            : amended
-              ? "vatAmendedReturnRefund"
-              : "vatReturnRefund",
-          lineParams
-        ),
-      });
+    const lines = await buildSettlementLines(
+      tx,
+      ret,
+      prior,
+      { companyId: input.companyId, paymentAccountId, date: input.date },
+      outputFils,
+      inputFils
+    );
     // B2: one live settlement per return, but a reversed one may be settled again; each attempt
     // gets its own key (the first keeps the original format), so a re-settlement after a reversal
     // posts a new entry instead of replaying the reversed one.
@@ -327,7 +454,15 @@ export async function settleVatReturn(input: {
             : netFils >= 0
               ? "vatReturnPayment"
               : "vatReturnRefund",
-          { from: ret.period_start, to: ret.period_end }
+          {
+            from: ret.period_start,
+            to: ret.period_end,
+            // Store the statutory amounts on the immutable entry, including amounts with no
+            // separately representable base line. The memo template uses only the dates.
+            vatOutputAedFils: String(outputFils),
+            vatInputAedFils: String(inputFils),
+            vatPaymentAccountId: paymentAccountId,
+          }
         ),
         status: "posted",
         source: VAT_SETTLEMENT_SOURCE,
@@ -367,7 +502,7 @@ function settlementResult(
   entry: { id: string; entryNumber: string },
   outputFils: number,
   inputFils: number,
-  prior: { returnIds: string[]; outputFils: number; inputFils: number }
+  prior: PriorSettlement
 ) {
   return {
     vatReturnId,
@@ -387,15 +522,14 @@ function settlementResult(
 
 /**
  * B2 (NH4): VAT already settled for the returns `vatReturnId` supersedes (its amends_return_id
- * chain): the output VAT debited to 2020 and the input VAT credited to 1050 by their live
- * (posted, unreversed) settlement entries. Each earlier settlement on the chain was itself only
- * a difference, so the sum is what has been paid or refunded for the period so far.
+ * chain): each live settlement was itself only a difference. Sum the AED deltas for the amount
+ * already paid or refunded, and sum the actual ledger lines for VAT control carrying values.
  */
 async function settledOnSupersededReturns(
   companyId: string,
   vatReturnId: string,
   tx: LedgerTx
-): Promise<{ returnIds: string[]; outputFils: number; inputFils: number }> {
+): Promise<PriorSettlement> {
   const { rows } = await ledgerQueryable(tx).query(
     `WITH RECURSIVE chain(id, amends, depth) AS (
        SELECT id, amends_return_id, 0 FROM vat_returns WHERE id = $2 AND company_id = $1
@@ -405,10 +539,12 @@ async function settledOnSupersededReturns(
         WHERE r.company_id = $1 AND c.depth < 50
      )
      SELECT je.source_id AS return_id,
+            (je.memo_params ->> 'vatOutputAedFils')::bigint AS output_aed,
+            (je.memo_params ->> 'vatInputAedFils')::bigint AS input_aed,
             COALESCE(SUM(CASE WHEN a.code = '2020'
-                              THEN ROUND(jl.debit * 100) - ROUND(jl.credit * 100) END), 0)::bigint AS output,
+                              THEN ROUND(jl.debit * 100) - ROUND(jl.credit * 100) END), 0)::bigint AS output_base,
             COALESCE(SUM(CASE WHEN a.code = '1050'
-                              THEN ROUND(jl.credit * 100) - ROUND(jl.debit * 100) END), 0)::bigint AS input
+                              THEN ROUND(jl.credit * 100) - ROUND(jl.debit * 100) END), 0)::bigint AS input_base
        FROM chain c
        JOIN journal_entries je ON je.company_id = $1 AND je.source = $3
                               AND je.source_id = c.id AND je.status = 'posted'
@@ -416,13 +552,15 @@ async function settledOnSupersededReturns(
        JOIN journal_lines jl ON jl.entry_id = je.id
      JOIN accounts a ON a.id = jl.account_id AND a.company_id = je.company_id
       WHERE c.depth > 0
-      GROUP BY je.source_id`,
+      GROUP BY je.id`,
     [companyId, vatReturnId, VAT_SETTLEMENT_SOURCE]
   );
   return {
     returnIds: rows.map((r) => r.return_id as string).sort(),
-    outputFils: rows.reduce((s, r) => s + Number(r.output), 0),
-    inputFils: rows.reduce((s, r) => s + Number(r.input), 0),
+    outputFils: rows.reduce((s, r) => s + Number(r.output_aed ?? r.output_base), 0),
+    inputFils: rows.reduce((s, r) => s + Number(r.input_aed ?? r.input_base), 0),
+    outputBaseFils: rows.reduce((s, r) => s + Number(r.output_base), 0),
+    inputBaseFils: rows.reduce((s, r) => s + Number(r.input_base), 0),
   };
 }
 
