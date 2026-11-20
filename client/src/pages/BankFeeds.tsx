@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Landmark, Upload } from "lucide-react";
-import { useLocation, useSearch } from "wouter";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
-import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useTranslation } from "@/lib/i18n";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { BANK_AUTHORIZATION_RETURN_PATH as callbackPath } from "@/lib/route-config";
+import { ApiError, apiRequest } from "@/lib/queryClient";
+import { BANK_AUTHORIZATION_RETURN_PATH as callbackPath } from "@shared/bank-authorization-paths";
 
 type AuthorizationReturn =
-  | { kind: "pending"; code: string; state: string }
+  | { kind: "pending" | "retry"; code: string; state: string }
   | { kind: "submitting" | "cancelled" | "failed" }
   | null;
 
@@ -32,45 +31,42 @@ function readAuthorizationReturn(search: string): AuthorizationReturn {
 export default function BankFeeds() {
   const { t } = useTranslation();
   const [path, navigate] = useLocation();
-  const search = useSearch();
-  const { companyId, isLoading, error } = useDefaultCompany();
   const [returned, setReturned] = useState(() =>
-    path === callbackPath ? readAuthorizationReturn(search) : null
+    path === callbackPath && typeof window !== "undefined"
+      ? readAuthorizationReturn(window.location.search)
+      : null
   );
+  const cleaned = useRef(false);
   const submitted = useRef(false);
-  const needsWorkspace = returned?.kind === "pending" && !isLoading && (!!error || !companyId);
 
   useEffect(() => {
-    // The pending return lives in memory while the company query recovers.
-    if (path === callbackPath && search) navigate(callbackPath, { replace: true });
-  }, [path, search, navigate]);
+    if (path !== callbackPath || !returned || cleaned.current) return;
+    cleaned.current = true;
+    navigate(callbackPath, { replace: true });
+  }, [path, returned, navigate]);
 
   useEffect(() => {
-    if (
-      path !== callbackPath ||
-      returned?.kind !== "pending" ||
-      isLoading ||
-      error ||
-      !companyId ||
-      submitted.current
-    )
-      return;
+    if (path !== callbackPath || returned?.kind !== "pending" || submitted.current) return;
     submitted.current = true;
     const { code, state } = returned;
     setReturned({ kind: "submitting" });
-    void apiRequest(
-      "POST",
-      `/api/companies/${companyId}/bank-connections/callback`,
-      { code, state },
-      undefined,
-      { queueWhenOffline: false }
-    ).then(
+    void apiRequest("POST", "/api/bank-connections/callback", { code, state }, undefined, {
+      queueWhenOffline: false,
+    }).then(
       () => {
         if (window.location.pathname === callbackPath) navigate("/bank-feeds", { replace: true });
       },
-      () => setReturned({ kind: "failed" })
+      (error: unknown) => {
+        // An offline refusal occurs before the POST. Keep the return in memory for retry.
+        if (error instanceof ApiError && error.status === 0) {
+          submitted.current = false;
+          setReturned({ kind: "retry", code, state });
+        } else {
+          setReturned({ kind: "failed" });
+        }
+      }
     );
-  }, [path, returned, companyId, isLoading, error, navigate]);
+  }, [path, returned, navigate]);
 
   return (
     <div className="space-y-6">
@@ -82,17 +78,15 @@ export default function BankFeeds() {
               ? t["banking.feeds.returnCancelled"]
               : returned.kind === "failed"
                 ? t["banking.feeds.returnError"]
-                : needsWorkspace
-                  ? t["banking.feeds.returnWorkspaceError"]
+                : returned.kind === "retry"
+                  ? t["banking.feeds.returnOffline"]
                   : t["banking.feeds.returnPending"]}
           </p>
-          {needsWorkspace && (
+          {returned.kind === "retry" && (
             <Button
               variant="outline"
               size="sm"
-              onClick={() =>
-                void queryClient.refetchQueries({ queryKey: ["/api/companies"], exact: true })
-              }
+              onClick={() => setReturned({ ...returned, kind: "pending" })}
             >
               {t["banking.feeds.returnRetry"]}
             </Button>

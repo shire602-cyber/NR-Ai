@@ -3,6 +3,7 @@ import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { requireFeature } from "../middleware/featureGate";
 import { requirePermission } from "../middleware/companyRolePolicy";
+import { assertTrialAccess } from "../middleware/trialAccessPolicy";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
@@ -20,6 +21,7 @@ import {
   linkConnection,
   providerStatuses,
   registerBankFeedJobs,
+  resolveCallbackCompany,
   sanitizeConnection,
   startConnect,
   syncConnection,
@@ -102,7 +104,7 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // Manual (statement-only) connection record. Open-banking connections come only from callback.
+  // Manual statement association. External authorizations are recorded by the callback.
   app.post(
     "/api/companies/:companyId/bank-connections",
     authMiddleware,
@@ -193,7 +195,7 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
-  // ─── Open banking (to the external boundary) ────────────────────────────
+  // ─── Financial-data authorization and processing ────────────────────────
 
   app.get(
     "/api/bank/providers",
@@ -232,6 +234,38 @@ export function registerBankRoutes(app: Express) {
     })
   );
 
+  const finishAuthorization = asyncHandler(async (req, res) => {
+    const { companyId } = req.params;
+    await assertAccess(req, companyId);
+    const body = parsedBody<z.output<typeof bankFeedCallbackBody>>(req);
+    const result = await completeCallback({
+      ...body,
+      companyId,
+      userId: userId(req),
+    });
+    logger.info({ companyId, count: result.connections.length }, "Authorization return processed");
+    res.status(201).json(result);
+  });
+
+  app.post(
+    "/api/bank-connections/callback",
+    authMiddleware,
+    requireCustomer,
+    strictBody(bankFeedCallbackBody),
+    asyncHandler(async (req, _res, next) => {
+      const body = parsedBody<z.output<typeof bankFeedCallbackBody>>(req);
+      const companyId = await resolveCallbackCompany({ ...body, userId: userId(req) });
+      // Apply the same workspace guards using the company bound to the authenticated user's state.
+      await assertAccess(req, companyId);
+      await assertTrialAccess(companyId, req.user!);
+      req.params.companyId = companyId;
+      next();
+    }),
+    requireFeature("bankImport"),
+    requirePermission("settings.company"),
+    finishAuthorization
+  );
+
   app.post(
     "/api/companies/:companyId/bank-connections/callback",
     authMiddleware,
@@ -239,23 +273,7 @@ export function registerBankRoutes(app: Express) {
     requireFeature("bankImport"),
     requirePermission("settings.company"),
     strictBody(bankFeedCallbackBody),
-    asyncHandler(async (req: Request, res: Response) => {
-      const { companyId } = req.params;
-      await assertAccess(req, companyId);
-      const body = parsedBody<z.output<typeof bankFeedCallbackBody>>(req);
-      const result = await completeCallback({
-        companyId,
-        userId: userId(req),
-        provider: body.provider,
-        code: body.code,
-        state: body.state,
-      });
-      logger.info(
-        { companyId, count: result.connections.length },
-        "Authorization return processed"
-      );
-      res.status(201).json(result);
-    })
+    finishAuthorization
   );
 
   app.post(

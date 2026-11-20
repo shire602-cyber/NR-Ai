@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
-import { bankStatementCopy } from "../../shared/bank-statement-copy";
+import { bankStatementCopy, statementRecognized } from "../../shared/bank-statement-copy";
 
 const h = useHarness();
 const base = (t: Tenant) => `/api/companies/${t.company.id}`;
@@ -113,6 +113,21 @@ async function liveEntries(companyId: string, source: string) {
 }
 
 describe("statement import copy", () => {
+  it.each([
+    ["2026-10-03", statementRecognized.en, 1],
+    ["invalid-date", null, 0],
+  ] as const)(
+    "reports a recognized statement only when it has valid rows (%s)",
+    async (date, detectedFormatLabel, validRows) => {
+      const t = await vatTenant();
+      const reply = await t.as.post(`${base(t)}/bank-statements/preview`, {
+        csvContent: `Date,Description,Debit,Credit\n${date},Test line,0,12.50\n`,
+      });
+      expect(reply.status, reply.text).toBe(200);
+      expect(reply.body).toMatchObject({ detectedFormatLabel, validRows });
+    }
+  );
+
   it("prompts for CSV when either statement entry point receives empty input", async () => {
     const t = await vatTenant();
     const ba = await bankAccount(t);

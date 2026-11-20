@@ -4,16 +4,17 @@
  * allow-listed, tokens are encrypted at rest and never returned, sync dedupes by provider id.
  * Provider HTTP is a recorded sandbox-shaped fixture; nothing calls a real bank.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import type { FetchLike } from "../../server/services/bank-feeds/types";
 import { bankStatementCopy, bankStatementTitle } from "../../shared/bank-statement-copy";
+import { LEGACY_BANK_AUTHORIZATION_RETURN_PATH } from "../../shared/bank-authorization-paths";
 
 const h = useHarness();
 const REDIRECT = "https://app.example.test/bank-feeds/callback";
 const ENTITY_SECRET = "lean-entity-7f1c2d9e-secret";
 
-function leanFixture(calls: string[]): FetchLike {
+function leanFixture(calls: string[], expectedCode = ENTITY_SECRET): FetchLike {
   return async (url, init) => {
     calls.push(url);
     const body = init?.body ? JSON.parse(init.body) : {};
@@ -24,7 +25,7 @@ function leanFixture(calls: string[]): FetchLike {
       text: async () => JSON.stringify(data),
     });
     if (url.endsWith("/data/v1/accounts")) {
-      expect(body.entity_id).toBe(ENTITY_SECRET);
+      expect(body.entity_id).toBe(expectedCode);
       return json({
         status: "OK",
         payload: {
@@ -75,6 +76,7 @@ async function setBankFeedFetch(fn: FetchLike | null): Promise<void> {
 }
 
 async function clearEnv() {
+  vi.unstubAllEnvs();
   delete process.env.LEAN_APP_TOKEN;
   delete process.env.BANK_FEED_REDIRECT_URIS;
   await setBankFeedFetch(null);
@@ -171,6 +173,80 @@ describe("W3-C bank feeds", () => {
       }
     );
     expect(stolen.status).toBe(400);
+  });
+
+  it("redeems the saved workspace and user after switching, rechecking permission before consuming state", async () => {
+    const origin = "https://app.example.test";
+    const legacyRedirect = `${origin}${LEGACY_BANK_AUTHORIZATION_RETURN_PATH}`;
+    vi.stubEnv("FRONTEND_URL", origin);
+    process.env.LEAN_APP_TOKEN = "sandbox-app-token";
+    const calls: string[] = [];
+    const code = "fixture%2F+sample%252F/";
+    await setBankFeedFetch(leanFixture(calls, code));
+    const a = await tenant();
+    const b = await h.createSecondTenant();
+    await h.sql(
+      `INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'owner'), ($3, $4, 'owner')`,
+      [b.company.id, a.user.id, a.company.id, b.user.id]
+    );
+    const providers = await a.as.get("/api/bank/providers");
+    expect(providers.body.redirectUris).toEqual(expect.arrayContaining([REDIRECT, legacyRedirect]));
+    const started = await a.as.post(`/api/companies/${a.company.id}/bank-connections/connect`, {
+      provider: "lean",
+      redirectUrl: legacyRedirect,
+    });
+    expect(started.status, started.text).toBe(200);
+    const state = new URL(started.body.authUrl).searchParams.get("state");
+    const payload = { code, state };
+    expect(
+      (await a.as.post(`/api/companies/${b.company.id}/bank-connections/callback`, payload)).status
+    ).toBe(400);
+    const wrongUser = await b.as.post("/api/bank-connections/callback", payload);
+    expect(wrongUser.body.code).toBe("INVALID_OAUTH_STATE");
+
+    await h.sql(`UPDATE company_users SET role = 'viewer' WHERE company_id = $1 AND user_id = $2`, [
+      a.company.id,
+      a.user.id,
+    ]);
+    const forbidden = await a.as.post("/api/bank-connections/callback", payload);
+    expect(forbidden.status, forbidden.text).toBe(403);
+    expect(forbidden.body.code).toBe("PERMISSION_DENIED");
+    expect(calls).toHaveLength(0);
+    const [unspent] = await h.sql(
+      `SELECT used_at FROM bank_feed_oauth_states WHERE company_id = $1`,
+      [a.company.id]
+    );
+    expect(unspent.used_at).toBeNull();
+
+    await h.sql(`UPDATE company_users SET role = 'owner' WHERE company_id = $1 AND user_id = $2`, [
+      a.company.id,
+      a.user.id,
+    ]);
+    const originalBillingEnforcement = process.env.BILLING_ENFORCEMENT;
+    vi.stubEnv("BILLING_ENFORCEMENT", "true");
+    await h.sql(
+      `UPDATE subscriptions SET plan_id = 'free', trial_ends_at = now() - interval '1 day' WHERE company_id = $1`,
+      [a.company.id]
+    );
+    const locked = await a.as.post("/api/bank-connections/callback", payload);
+    expect(locked.status, locked.text).toBe(402);
+    expect(locked.body.code).toBe("PLAN_REQUIRED");
+    expect(calls).toHaveLength(0);
+    vi.stubEnv("BILLING_ENFORCEMENT", originalBillingEnforcement);
+    await h.sql(
+      `UPDATE subscriptions SET trial_ends_at = now() + interval '1 day' WHERE company_id = $1`,
+      [a.company.id]
+    );
+    const returns = await Promise.all([
+      a.as.post("/api/bank-connections/callback", payload),
+      a.as.post("/api/bank-connections/callback", payload),
+    ]);
+    expect(returns.map((reply) => reply.status).sort()).toEqual([201, 400]);
+    expect(calls).toHaveLength(1);
+    const aConnections = await a.as.get(`/api/companies/${a.company.id}/bank-connections`);
+    const bConnections = await a.as.get(`/api/companies/${b.company.id}/bank-connections`);
+    expect(aConnections.body).toMatchObject([{ companyId: a.company.id, provider: "lean" }]);
+    expect(bConnections.body).toEqual([]);
   });
 
   it("[R06-14] tokens are encrypted at rest, never returned, and sync dedupes by provider id [R06-19]", async () => {

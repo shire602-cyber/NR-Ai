@@ -95,6 +95,16 @@ describe("bank statement imported notification", () => {
       "No new transactions; 2 already imported",
       "notification.bankStatementNothingNew.message",
     ],
+    [
+      "3 transaction(s) imported from Emirates NBD (PJSC) (OFX format); 2 already imported",
+      "3 transaction(s) imported from Emirates NBD (PJSC); 2 already imported",
+      "notification.bankStatementImportedSkipped.message",
+    ],
+    [
+      "3 transaction(s) imported from Emirates NBD (PJSC) (Generic (Arabic/English) format)",
+      "3 transaction(s) imported from Emirates NBD (PJSC)",
+      "notification.bankStatementImported.message",
+    ],
   ])(
     "removes historical format copy while keeping transaction counts",
     (message, expected, key) => {
@@ -108,10 +118,18 @@ describe("bank statement imported notification", () => {
       expect(renderDescriptor(key, described.messageParams, "", en)).toBe(expected);
       const arabic = arMessage(key, described.messageParams);
       expect(arabic).not.toMatch(/MT940|CAMT|OFX|QFX|صيغة/);
+      if (expected.includes("(PJSC)")) expect(arabic).toContain("Emirates NBD (PJSC)");
       if (expected.includes("already imported"))
         expect(arabic).toContain("معاملتان مستوردتان مسبقًا");
     }
   );
+
+  it("keeps parentheses in a bank's name when there is no known historical suffix", () => {
+    const message = "3 transaction(s) imported from Example Bank (Special format)";
+    const notification = withNotificationCopy({ title: "Bank statement imported", message });
+    expect(notification.message).toBe(message);
+    expect(notification.copy.messageParams.bank).toBe("Example Bank (Special format)");
+  });
 });
 
 describe("bank statement import toasts", () => {

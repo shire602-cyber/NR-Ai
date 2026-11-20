@@ -67,6 +67,19 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.aiDraftsReview.title", "AI draft journal entries to review: {count}"),
 ];
 
+// Duplicate notices are more specific than the normal import completion message.
+const STATEMENT_IMPORT_MESSAGES = [
+  T(
+    "notification.bankStatementImportedSkipped.message",
+    "{count} transaction(s) imported[ from {bank}]; {skipped} already imported"
+  ),
+  T(
+    "notification.bankStatementNothingNew.message",
+    "No new transactions[ from {bank}]; {skipped} already imported"
+  ),
+  T("notification.bankStatementImported.message", "{count} transaction(s) imported[ from {bank}]"),
+];
+
 /** Notification messages, most specific first. `prefix` messages carry trailing catalog text. */
 export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T(
@@ -112,16 +125,7 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
     "notification.whatsappLogged.message",
     "WhatsApp draft logged for {phone}; no provider delivery occurred."
   ),
-  // Step 1 / F4: re-imports say what was skipped; the Arabic catalog entries use ICU plurals.
-  T(
-    "notification.bankStatementImportedSkipped.message",
-    "{count} transaction(s) imported[ from {bank}]; {skipped} already imported"
-  ),
-  T(
-    "notification.bankStatementNothingNew.message",
-    "No new transactions[ from {bank}]; {skipped} already imported"
-  ),
-  T("notification.bankStatementImported.message", "{count} transaction(s) imported[ from {bank}]"),
+  ...STATEMENT_IMPORT_MESSAGES,
   T(
     "notification.receiptUploadedUnknown.message",
     "New receipt from unknown merchant[ for {amount}]"
@@ -340,26 +344,16 @@ export interface NotificationCopyDescriptor {
   messageParams: Record<string, string>;
 }
 
-const LEGACY_STATEMENT_IMPORT_MESSAGES = [
-  T(
-    "notification.bankStatementImportedSkipped.message",
-    "{count} transaction(s) imported from [{bank}] ({format} format); {skipped} already imported"
-  ),
-  T(
-    "notification.bankStatementNothingNew.message",
-    "No new transactions from [{bank}] ({format} format); {skipped} already imported"
-  ),
-  T(
-    "notification.bankStatementImported.message",
-    "{count} transaction(s) imported from [{bank}] ({format} format)"
-  ),
-];
+// Earlier renderers appended these file or parser-profile labels after the bank's name.
+const LEGACY_STATEMENT_FORMAT_SUFFIX =
+  / \((?:CSV|XLSX|MT940|CAMT\.?053|OFX(?:\/QFX)?|QFX|Generic(?: \(Arabic\/English\))?|Emirates ?NBD|ADCB|FAB|Mashreq(?: ?Neo)?|RAKBANK|CBD|Commercial Bank of Dubai|Wio) format\)(?=(?:; \d+ already imported)?$)/i;
 
 function legacyStatementImportCopy(n: { title: string; message: string }): CopyDescriptor | null {
   if (!/^Bank statement imported$/i.test(n.title)) return null;
-  const copy = parseServerCopy(n.message, LEGACY_STATEMENT_IMPORT_MESSAGES);
-  if (copy) delete copy.params.format;
-  return copy;
+  const withoutFormat = n.message.replace(LEGACY_STATEMENT_FORMAT_SUFFIX, "");
+  if (withoutFormat === n.message) return null;
+  const wording = withoutFormat.replace(/ from[ \t]+(?=(?:; \d+ already imported)?$)/i, "");
+  return parseServerCopy(wording, STATEMENT_IMPORT_MESSAGES);
 }
 
 /** Keys + params for a stored notification (old or new rows alike). */

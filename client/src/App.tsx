@@ -17,7 +17,10 @@ import { AppSidebar } from "@/components/layout/AppSidebar";
 import { PortalLayout } from "@/components/layout/PortalLayout";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { isAppSectionPath } from "@/components/layout/app-sections";
-import { BANK_AUTHORIZATION_RETURN_PATH } from "@/lib/route-config";
+import {
+  BANK_AUTHORIZATION_RETURN_PATH,
+  LEGACY_BANK_AUTHORIZATION_RETURN_PATH,
+} from "@shared/bank-authorization-paths";
 import { ErrorBoundary, SectionBoundary } from "@/components/ErrorBoundary";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -220,7 +223,7 @@ import { TrialAccessGate } from "@/components/billing/TrialAccessGate";
 import { CommandPaletteProvider } from "@/components/CommandPaletteProvider";
 import { GlobalShortcutsProvider } from "@/components/ShortcutsHelp";
 import { SkipLink } from "@/components/SkipLink";
-import { RedirectTo } from "@/components/layout/RedirectTo";
+import { RawQueryRedirect, RedirectTo } from "@/components/layout/RedirectTo";
 import { openCommandPalette } from "@/lib/commandPalette";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { BrandMark } from "@/components/BrandMark";
@@ -564,6 +567,15 @@ function Router() {
           </Suspense>
         </TrialAccessGate>
       </ProtectedRoute>
+    );
+  }
+
+  if (pathname === LEGACY_BANK_AUTHORIZATION_RETURN_PATH) {
+    return (
+      <Route path="/banking/callback">
+        <PageLoader variant="form" />
+        <RawQueryRedirect to={BANK_AUTHORIZATION_RETURN_PATH} />
+      </Route>
     );
   }
 

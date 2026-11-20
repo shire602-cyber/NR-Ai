@@ -176,7 +176,7 @@
   "banking.imports.sourceImport": "Statement import",
   "banking.feeds.returnPending": "Finishing authorization…",
   "banking.feeds.returnCancelled": "Authorization was canceled",
-  "banking.feeds.returnWorkspaceError": "Could not load your workspace. Retry to finish authorization.",
+  "banking.feeds.returnOffline": "You’re offline. Retry when you’re back online to finish authorization.",
   "banking.feeds.returnRetry": "Retry",
   "banking.feeds.returnError": "Could not finish authorization",
   "banking.import.statementRecognized": "Statement recognized",

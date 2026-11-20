@@ -23,7 +23,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { BANK_STATEMENT_PROBE } from "./lib/bank-statement-evidence.mjs";
+import {
+  BANK_STATEMENT_PROBE,
+  verifiedStatementMatchCount,
+} from "./lib/bank-statement-evidence.mjs";
 
 const BASE = (process.env.BASE_URL || process.argv[2] || "").replace(/\/$/, "");
 if (!BASE) {
@@ -1338,10 +1341,12 @@ async function seedBank(companyId, account, dates, invoices, receipts) {
   );
   count("bankAccounts");
 
+  const invoiceReference = `BANK-${runStamp}-001`;
+  const receiptReference = `BANK-${runStamp}-002`;
   const rows = [
     "date,description,debit,credit,balance,reference",
-    `${dates.currentLate},Customer payment Blue Palm,,25000,325000,BANK-${runStamp}-001`,
-    `${dates.currentLate},CloudStack payment,4410,,320590,BANK-${runStamp}-002`,
+    `${dates.currentLate},Customer payment Blue Palm,,25000,325000,${invoiceReference}`,
+    `${dates.currentLate},CloudStack payment,4410,,320590,${receiptReference}`,
     `${dates.currentMid},Bank service fee,95,,320495,BANK-${runStamp}-003`,
     `${dates.today},Customer receipt Atlas Free Zone,,15000,335495,BANK-${runStamp}-004`,
   ];
@@ -1357,54 +1362,41 @@ async function seedBank(companyId, account, dates, invoices, receipts) {
 
   const transactionsPath = `/api/companies/${companyId}/bank-statements/transactions?bankAccountId=${bankAccount.id}`;
   const transactions = await http("bank transactions", transactionsPath);
-  const creditTxn = Array.isArray(transactions)
-    ? transactions.find((txn) => safeNumber(txn.amount) > 0)
-    : null;
-  const targetInvoice = invoices.find(
-    (invoice) => invoice.customerName === T("Blue Palm Services LLC")
-  );
-  if (creditTxn?.id && targetInvoice?.id) {
-    await optional("manual bank match invoice", () =>
-      http(
-        "manual bank match invoice",
-        `/api/companies/${companyId}/bank-statements/${creditTxn.id}/match`,
-        {
-          method: "POST",
-          body: { matchedType: "invoice", matchedId: targetInvoice.id },
-        }
-      )
-    ).then((matched) => matched && count("bankMatches"));
-  }
-
-  const debitTxn = Array.isArray(transactions)
-    ? transactions.find((txn) => safeNumber(txn.amount) < 0)
-    : null;
-  const postedReceipt =
-    receipts.find((receipt) => receipt.merchant === T("CloudStack FZ LLC")) || receipts[0];
-  if (debitTxn?.id && postedReceipt?.id) {
-    await optional("manual bank match receipt", () =>
-      http(
-        "manual bank match receipt",
-        `/api/companies/${companyId}/bank-statements/${debitTxn.id}/match`,
-        {
-          method: "POST",
-          body: { matchedType: "receipt", matchedId: postedReceipt.id },
-        }
-      )
-    ).then((matched) => matched && count("bankMatches"));
+  const targets = [
+    {
+      reference: invoiceReference,
+      type: "invoice",
+      targetId: invoices.find((invoice) => invoice.customerName === T("Blue Palm Services LLC"))
+        ?.id,
+    },
+    {
+      reference: receiptReference,
+      type: "receipt",
+      targetId: receipts.find((receipt) => receipt.merchant === T("CloudStack FZ LLC"))?.id,
+    },
+  ];
+  for (const { reference, type, targetId } of targets) {
+    const transaction = Array.isArray(transactions)
+      ? transactions.find((txn) => txn.reference === reference)
+      : null;
+    if (!transaction?.id || !targetId) continue;
+    const name = `manual bank match ${type}`;
+    await optional(name, () =>
+      http(name, `/api/companies/${companyId}/bank-statements/${transaction.id}/match`, {
+        method: "POST",
+        body: { matchedType: type, matchedId: targetId },
+      })
+    );
   }
 
   const matched = await optional("verify reconciled statement rows", () =>
     http("verify reconciled statement rows", transactionsPath)
   );
-  const reconciledRows = Array.isArray(matched)
-    ? matched.filter(
-        (txn) => txn.reference?.startsWith(`BANK-${runStamp}-`) && txn.isReconciled === true
-      ).length
-    : 0;
+  const reconciledRows = verifiedStatementMatchCount(matched, targets);
+  if (reconciledRows > 0) count("bankMatches", reconciledRows);
   summary.probes.push({
     name: BANK_STATEMENT_PROBE,
-    passed: imported.imported > 0 && reconciledRows > 0,
+    passed: imported.imported > 0 && reconciledRows === targets.length,
     detail: { imported: imported.imported, reconciledRows },
   });
 }

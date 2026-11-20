@@ -401,10 +401,11 @@ export function registerBankStatementRoutes(app: Express) {
       }
 
       const errorRows = parsed.rows.filter((r) => r.errors.length > 0);
+      const validRows = parsed.rows.length - errorRows.length;
       res.json({
         kind: parsed.kind,
         detectedFormat: parsed.format,
-        detectedFormatLabel: statementRecognized.en,
+        detectedFormatLabel: validRows > 0 ? statementRecognized.en : null,
         delimiter: parsed.delimiter,
         decimalSeparator: parsed.decimalSeparator,
         dateOrder: parsed.dateOrder,
@@ -415,7 +416,7 @@ export function registerBankStatementRoutes(app: Express) {
         accountHint: parsed.accountHint,
         currency: parsed.currency,
         totalRows: parsed.rows.length,
-        validRows: parsed.rows.length - errorRows.length,
+        validRows,
         errorRows: errorRows.length,
         ignoredRows: parsed.ignored.length,
         sampleRows: parsed.rows.slice(0, 10).map((r) => ({

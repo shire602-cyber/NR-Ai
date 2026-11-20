@@ -5,7 +5,7 @@
  *  - the OAuth state is random, stored as a SHA-256 hash, single-use, 10-minute expiry, bound to
  *    company + user + provider, and verified on callback (400 INVALID_OAUTH_STATE otherwise)
  *  - the redirect URI must be on an allow-list (BANK_FEED_REDIRECT_URIS, else FRONTEND_URL /
- *    AUTH_PUBLIC_URL + /bank-feeds/callback)
+ *    AUTH_PUBLIC_URL + the registered authorization return paths)
  *  - tokens are stored only through storage.createBankConnection / updateBankConnectionTokens,
  *    which encrypt with server/services/secret-vault.ts; API responses never include them
  *  - scheduled sync (job "bankFeeds.sync") dedupes by provider transaction id and emits
@@ -18,6 +18,10 @@ import { DomainError } from "../../errors";
 import { storage } from "../../storage";
 import { createLogger } from "../../config/logger";
 import { bankStatementCopy } from "../../../shared/bank-statement-copy";
+import {
+  BANK_AUTHORIZATION_RETURN_PATH,
+  LEGACY_BANK_AUTHORIZATION_RETURN_PATH,
+} from "../../../shared/bank-authorization-paths";
 import { getCapability, type CapabilityStatus } from "../../../shared/capabilities";
 import { fromFils } from "../../../shared/money";
 import {
@@ -89,7 +93,10 @@ export function allowedRedirectUris(): string[] {
   for (const base of [process.env.FRONTEND_URL, process.env.AUTH_PUBLIC_URL]) {
     if (!base) continue;
     try {
-      out.push(new URL("/bank-feeds/callback", base).toString());
+      out.push(
+        new URL(BANK_AUTHORIZATION_RETURN_PATH, base).toString(),
+        new URL(LEGACY_BANK_AUTHORIZATION_RETURN_PATH, base).toString()
+      );
     } catch {
       /* ignore malformed env */
     }
@@ -151,27 +158,43 @@ export function sanitizeConnection(c: BankConnection) {
   };
 }
 
-export async function completeCallback(input: {
-  companyId: string;
+type CallbackStateScope = {
   userId: string;
   provider?: BankFeedProviderId;
-  code: string;
   state: string;
-}): Promise<{ connections: ReturnType<typeof sanitizeConnection>[] }> {
+};
+
+function activeCallbackState(input: CallbackStateScope) {
+  return and(
+    eq(bankFeedOauthStates.stateHash, hashState(input.state)),
+    eq(bankFeedOauthStates.userId, input.userId),
+    input.provider ? eq(bankFeedOauthStates.provider, input.provider) : undefined,
+    isNull(bankFeedOauthStates.usedAt),
+    gt(bankFeedOauthStates.expiresAt, new Date())
+  );
+}
+
+export async function resolveCallbackCompany(input: CallbackStateScope): Promise<string> {
+  const [row] = await db
+    .select({ companyId: bankFeedOauthStates.companyId })
+    .from(bankFeedOauthStates)
+    .where(activeCallbackState(input))
+    .limit(1);
+  if (!row) throw new DomainError("INVALID_OAUTH_STATE", 400, undefined, bankStatementCopy.en);
+  return row.companyId;
+}
+
+export async function completeCallback(
+  input: CallbackStateScope & {
+    companyId: string;
+    code: string;
+  }
+): Promise<{ connections: ReturnType<typeof sanitizeConnection>[] }> {
   // The stored state binds the authorization to its adapter even when the return URL omits it.
   const [row] = await db
     .update(bankFeedOauthStates)
     .set({ usedAt: new Date() })
-    .where(
-      and(
-        eq(bankFeedOauthStates.stateHash, hashState(input.state)),
-        eq(bankFeedOauthStates.companyId, input.companyId),
-        eq(bankFeedOauthStates.userId, input.userId),
-        input.provider ? eq(bankFeedOauthStates.provider, input.provider) : undefined,
-        isNull(bankFeedOauthStates.usedAt),
-        gt(bankFeedOauthStates.expiresAt, new Date())
-      )
-    )
+    .where(and(activeCallbackState(input), eq(bankFeedOauthStates.companyId, input.companyId)))
     .returning();
   if (!row) {
     throw new DomainError("INVALID_OAUTH_STATE", 400, undefined, bankStatementCopy.en);

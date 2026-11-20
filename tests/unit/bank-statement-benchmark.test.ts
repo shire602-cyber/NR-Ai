@@ -4,6 +4,7 @@ import {
   BANK_STATEMENT_PROBE,
   bankStatementEvidence,
   bankStatementReportRow,
+  verifiedStatementMatchCount,
 } from "../e2e/lib/bank-statement-evidence.mjs";
 
 const route = { href: "/bank-reconciliation", ok: true };
@@ -25,6 +26,29 @@ describe("benchmark evidence for CSV statement reconciliation", () => {
     const passed = bankStatementEvidence([], [{ name: BANK_STATEMENT_PROBE, passed: true }]);
     expect(passed).toEqual({ reconciliationPageVisit: "not-run", uploadAndReconcile: "pass" });
     expect(bankStatementReportRow(passed)[1]).toBe("Pass");
+  });
+
+  it("verifies the seeded references against the exact invoice and receipt IDs", () => {
+    const targets = [
+      { reference: "BANK-001", type: "invoice", targetId: "invoice-1" },
+      { reference: "BANK-002", type: "receipt", targetId: "receipt-1" },
+    ];
+    const wrong = [
+      { reference: "BANK-004", isReconciled: true, matchedInvoiceId: "invoice-1" },
+      { reference: "BANK-001", isReconciled: true, matchedInvoiceId: "invoice-2" },
+      { reference: "BANK-002", isReconciled: false, matchedReceiptId: "receipt-1" },
+    ];
+    expect(verifiedStatementMatchCount(wrong, targets)).toBe(0);
+    expect(
+      verifiedStatementMatchCount(
+        [
+          ...wrong,
+          { reference: "BANK-001", isReconciled: true, matchedInvoiceId: "invoice-1" },
+          { reference: "BANK-002", isReconciled: true, matchedReceiptId: "receipt-1" },
+        ],
+        targets
+      )
+    ).toBe(2);
   });
 
   it("records the historical read-only run as a page visit", () => {

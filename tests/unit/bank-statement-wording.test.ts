@@ -10,10 +10,14 @@ import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BankFeeds from "../../client/src/pages/BankFeeds";
+import { RawQueryRedirect } from "../../client/src/components/layout/RedirectTo";
 import NotificationPreferences from "../../client/src/pages/NotificationPreferences";
 import { loadLocale, t, useI18n } from "../../client/src/lib/i18n";
 import * as queryApi from "../../client/src/lib/queryClient";
-import { BANK_AUTHORIZATION_RETURN_PATH } from "../../client/src/lib/route-config";
+import {
+  BANK_AUTHORIZATION_RETURN_PATH,
+  LEGACY_BANK_AUTHORIZATION_RETURN_PATH,
+} from "../../shared/bank-authorization-paths";
 import { bankStatementCopy, bankStatementTitle } from "../../shared/bank-statement-copy";
 import { withNotificationCopy } from "../../shared/server-copy";
 import { bankFeedCallbackBody } from "../../shared/validators/banking";
@@ -21,22 +25,14 @@ import { bankFeedCallbackBody } from "../../shared/validators/banking";
 vi.mock("@/components/layout/SettingsLayout", () => ({
   SettingsLayout: ({ children }: PropsWithChildren) => children,
 }));
-const workspace = vi.hoisted(() => ({
-  companyId: "" as string | undefined,
-  isLoading: false,
-  error: null as Error | null,
-}));
-vi.mock("@/hooks/useDefaultCompany", () => ({ useDefaultCompany: () => workspace }));
-
 const prohibitedCopy =
-  /\bbank[- ]feeds?\b|\blive (?:bank )?feeds?\b|\bopen[- ]banking\b|connect your bank|reconnect|الربط البنكي|مزامنة (?:الحساب|الخلاصة) البنكي/i;
+  /\bbank[- ]feeds?\b|\blive (?:bank )?feeds?\b|\bopen[- ]banking\b|connect your bank|reconnect|thousands of financial institutions and tools|الربط البنكي|مزامنة (?:الحساب|الخلاصة) البنكي/i;
 
 describe("signed-in CSV statement wording", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
 
   beforeEach(() => {
-    Object.assign(workspace, { companyId: "fixture-company", isLoading: false, error: null });
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal(
       "ResizeObserver",
@@ -64,6 +60,19 @@ describe("signed-in CSV statement wording", () => {
     act(() => useI18n.getState().setLocale(locale));
   }
 
+  it("forwards the legacy return query without changing its encoding or adding history", async () => {
+    const state = randomBytes(32).toString("base64url");
+    const search = `?code=return%252F%2b%20value&state=${state}&provider=lean`;
+    window.history.replaceState({}, "", `${LEGACY_BANK_AUTHORIZATION_RETURN_PATH}${search}`);
+    const entries = window.history.length;
+    await act(async () =>
+      root.render(createElement(RawQueryRedirect, { to: BANK_AUTHORIZATION_RETURN_PATH }))
+    );
+    expect(window.location.pathname).toBe(BANK_AUTHORIZATION_RETURN_PATH);
+    expect(window.location.search).toBe(search);
+    expect(window.history.length).toBe(entries);
+  });
+
   it.each(["en", "ar"] as const)(
     "shows CSV guidance on both legacy banking paths in %s",
     async (locale) => {
@@ -86,27 +95,28 @@ describe("signed-in CSV statement wording", () => {
   );
 
   it.each(["en", "ar"] as const)(
-    "completes and clears an authorization return in %s",
+    "posts the original encoded authorization code once and clears the URL in %s",
     async (locale) => {
       await setLocale(locale);
       const post = vi.spyOn(queryApi, "apiRequest").mockResolvedValue({ connections: [{}] });
       const codeField = locale === "ar" ? "entity_id" : "code";
+      const code = "return%2F+sample%252F/";
       const state = randomBytes(32).toString("base64url");
       window.history.replaceState(
         {},
         "",
-        `/bank-feeds/callback?${codeField}=fixture-code&state=${state}&provider=lean`
+        `/bank-feeds/callback?${new URLSearchParams({ [codeField]: code, state, provider: "lean" })}`
       );
       await act(async () => root.render(createElement(StrictMode, null, createElement(BankFeeds))));
       expect(post).toHaveBeenCalledExactlyOnceWith(
         "POST",
-        "/api/companies/fixture-company/bank-connections/callback",
-        { code: "fixture-code", state },
+        "/api/bank-connections/callback",
+        { code, state },
         undefined,
         { queueWhenOffline: false }
       );
       expect(bankFeedCallbackBody.parse(post.mock.calls[0][2])).toEqual({
-        code: "fixture-code",
+        code,
         state,
       });
       expect(window.location.pathname + window.location.search).toBe("/bank-feeds");
@@ -115,36 +125,27 @@ describe("signed-in CSV statement wording", () => {
   );
 
   it.each(["en", "ar"] as const)(
-    "keeps an unsubmitted return through a workspace retry in %s",
+    "keeps an unsubmitted return in memory when retrying after going offline in %s",
     async (locale) => {
       await setLocale(locale);
-      const post = vi.spyOn(queryApi, "apiRequest").mockResolvedValue({ connections: [{}] });
+      const post = vi
+        .spyOn(queryApi, "apiRequest")
+        .mockRejectedValueOnce(new queryApi.ApiError("offline fixture", 0))
+        .mockResolvedValueOnce({ connections: [{}] });
       const render = () => root.render(createElement(StrictMode, null, createElement(BankFeeds)));
-      Object.assign(workspace, {
-        companyId: undefined,
-        isLoading: false,
-        error: new Error("temporary"),
-      });
-      const retry = vi
-        .spyOn(queryApi.queryClient, "refetchQueries")
-        .mockImplementation(async () => {
-          Object.assign(workspace, { companyId: "fixture-company", error: null });
-          render();
-        });
       const state = randomBytes(32).toString("base64url");
       window.history.replaceState({}, "", `/bank-feeds/callback?code=fixture-code&state=${state}`);
       await act(async () => render());
       expect(window.location.pathname + window.location.search).toBe("/bank-feeds/callback");
-      expect(post).not.toHaveBeenCalled();
+      expect(post).toHaveBeenCalledOnce();
       expect(container.querySelector('[role="status"]')?.textContent).toBe(
-        t[locale]["banking.feeds.returnWorkspaceError"]
+        t[locale]["banking.feeds.returnOffline"]
       );
       const button = container.querySelector("button");
       expect(button?.textContent).toBe(t[locale]["banking.feeds.returnRetry"]);
       await act(async () => button!.click());
-      expect(retry).toHaveBeenCalledOnce();
-      expect(post).toHaveBeenCalledOnce();
-      expect(bankFeedCallbackBody.parse(post.mock.calls[0][2])).toEqual({
+      expect(post).toHaveBeenCalledTimes(2);
+      expect(bankFeedCallbackBody.parse(post.mock.calls[1][2])).toEqual({
         code: "fixture-code",
         state,
       });
@@ -264,6 +265,10 @@ it("keeps the audit, data map and both roadmap formats free of superseded wordin
       /bankConnectedDescription|bank account is already connected|حسابك البنكي مرتبط بالفعل|Named integrations: \*\*Chase/i
     );
   }
+  const digits = readFileSync("docs/archive/root/Digits-Platform-Research.md", "utf8");
+  expect(digits).toContain("### Other Integrations\n- [Historical comparison excerpt redacted.]");
+  const bankingValidators = readFileSync("shared/validators/banking.ts", "utf8");
+  expect(bankingValidators).not.toMatch(prohibitedCopy);
   const benchmark = readFileSync("docs/qa/2026-06-21-benchmark-audit/benchmark-run.json", "utf8");
   expect(benchmark).toContain("[Historical copy redacted]");
   expect(benchmark).not.toMatch(
