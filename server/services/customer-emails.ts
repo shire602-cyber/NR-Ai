@@ -12,7 +12,7 @@
  * body or footer; the attached PDF carries the tax-invoice particulars.
  */
 import type { Company, Invoice } from "../../shared/schema";
-import { DOCUMENT_ACCENT_DEFAULT } from "../../shared/document-accent";
+import { PRODUCT_NAME } from "../../shared/product-brand";
 import {
   emailDate,
   emailDateBlock,
@@ -36,7 +36,7 @@ export interface BuiltEmail {
 /** Plain strings (subject, text part) carry no bidi isolates: some clients show them as boxes. */
 const stripBidi = (value: string) => value.replace(/[\u2066-\u2069]/g, "");
 
-function build(
+export function buildCustomerEmail(
   content: BilingualEmailContent,
   language: EmailLanguage,
   subject: BilingualBlock
@@ -135,10 +135,10 @@ export function buildInvoiceEmail(
 ): BuiltEmail {
   const language = opts.language ?? "bilingual";
   const total = emailMoney(invoice.total, invoice.currency);
-  const number = isolateInline(invoice.number);
+  const number = isolateInline(invoice.number, "ltr");
   const co = isolateInline(company.name);
   const custom = message ? [escapeHtml(message).replace(/\n/g, "<br>")] : [];
-  const contact = company.contactEmail ? isolateInline(company.contactEmail) : null;
+  const contact = company.contactEmail ? isolateInline(company.contactEmail, "ltr") : null;
   const url = opts.payUrl || opts.portalUrl || null;
   const content: BilingualEmailContent = {
     ...brandFields(company),
@@ -179,7 +179,7 @@ export function buildInvoiceEmail(
         ? { button: { url, label: { en: "View invoice", ar: "عرض الفاتورة" } } }
         : {}),
   };
-  return build(content, language, {
+  return buildCustomerEmail(content, language, {
     en: `Invoice ${invoice.number} from ${company.name}`,
     ar: `فاتورة رقم ${invoice.number} من ${company.name}`,
   });
@@ -247,7 +247,7 @@ export function buildReminderEmail(i: ReminderEmailInput): BuiltEmail {
   const days = Math.max(0, i.daysOverdue);
   const vars = reminderTemplateVars(i);
   const amount = emailMoney(i.openFils / 100, i.invoice.currency);
-  const number = isolateInline(i.invoice.number);
+  const number = isolateInline(i.invoice.number, "ltr");
   const due = emailDateBlock(i.invoice.dueDate);
   const link = i.payUrl ?? i.portalUrl ?? null;
 
@@ -284,7 +284,7 @@ export function buildReminderEmail(i: ReminderEmailInput): BuiltEmail {
 
   const content: BilingualEmailContent = {
     ...brandFields(i.company),
-    accent: overdue ? "#B91C1C" : DOCUMENT_ACCENT_DEFAULT,
+    ...(overdue ? { accent: "#B91C1C" } : {}),
     heading: overdue
       ? { en: "Overdue invoice", ar: "فاتورة متأخرة السداد" }
       : { en: "Payment reminder", ar: "تذكير بالسداد" },
@@ -314,7 +314,7 @@ export function buildReminderEmail(i: ReminderEmailInput): BuiltEmail {
         }
       : {}),
   };
-  const built = build(content, language, defaultSubject);
+  const built = buildCustomerEmail(content, language, defaultSubject);
   return customSubject ? { ...built, subject: stripBidi(customSubject) } : built;
 }
 
@@ -337,7 +337,7 @@ export interface ReceiptEmailInput {
 export function buildReceiptEmail(i: ReceiptEmailInput): BuiltEmail {
   const language = i.language ?? "bilingual";
   const amount = emailMoney(i.amount, i.currency);
-  const number = isolateInline(i.invoiceNumber);
+  const number = isolateInline(i.invoiceNumber, "ltr");
   const content: BilingualEmailContent = {
     brandName: i.company.name,
     footer: companyFooter(i.company),
@@ -366,7 +366,7 @@ export function buildReceiptEmail(i: ReceiptEmailInput): BuiltEmail {
       ...(i.reference ? [{ label: { en: "Reference", ar: "المرجع" }, value: i.reference }] : []),
     ],
   };
-  return build(content, language, {
+  return buildCustomerEmail(content, language, {
     en: `Payment receipt: invoice ${i.invoiceNumber}`,
     ar: `إيصال دفع: الفاتورة ${i.invoiceNumber}`,
   });
@@ -431,7 +431,7 @@ export function buildQuoteEmail(i: QuoteEmailInput): BuiltEmail {
         }
       : {}),
   };
-  return build(content, language, {
+  return buildCustomerEmail(content, language, {
     en: `Quote ${i.quoteNumber} from ${i.company.name}`,
     ar: `عرض سعر رقم ${i.quoteNumber} من ${i.company.name}`,
   });
@@ -486,7 +486,7 @@ export function buildStatementEmail(i: StatementEmailInput): BuiltEmail {
       })),
     ],
   };
-  return build(content, language, {
+  return buildCustomerEmail(content, language, {
     en: `Statement of account from ${i.company.name}`,
     ar: `كشف حساب من ${i.company.name}`,
   });
@@ -522,7 +522,7 @@ export function buildPortalCodeEmail(input: {
       ],
     },
   };
-  return build(content, language, {
+  return buildCustomerEmail(content, language, {
     en: `Your sign-in code: ${input.code}`,
     ar: `رمز الدخول: ${input.code}`,
   });
@@ -567,7 +567,7 @@ export function buildApproverRequestEmail(input: {
       ar: "يعمل الرابط لمدة 14 يوماً، وللشركة إلغاؤه في أي وقت.",
     },
   };
-  return build(content, language, {
+  return buildCustomerEmail(content, language, {
     en: `${input.companyName}: approve the e-invoicing partner in EmaraTax`,
     ar: `${input.companyName}: الموافقة على شريك الفوترة الإلكترونية في إمارات تاكس`,
   });
@@ -612,7 +612,7 @@ export function buildApproverDoneEmail(input: {
         }
       : {}),
   };
-  return build(content, language, {
+  return buildCustomerEmail(content, language, {
     en: `${input.companyName}: the e-invoicing partner approval is marked done`,
     ar: `${input.companyName}: تم تأكيد الموافقة على شريك الفوترة الإلكترونية`,
   });
@@ -622,28 +622,28 @@ export function buildApproverDoneEmail(input: {
 
 export function buildEmailVerificationEmail(verifyUrl: string, name?: string | null): BuiltEmail {
   const content: BilingualEmailContent = {
-    brandName: "Muhasib.ai",
-    footer: "Muhasib.ai",
+    brandName: PRODUCT_NAME,
+    footer: PRODUCT_NAME,
     heading: { en: "Confirm your email address", ar: "تأكيد عنوان البريد الإلكتروني" },
     preheader: {
-      en: "Confirm your email address for Muhasib.ai. The link is valid for 48 hours.",
-      ar: "أكّدوا عنوان بريدكم الإلكتروني لدى Muhasib.ai. الرابط صالح لمدة 48 ساعة.",
+      en: `Confirm your email address for ${PRODUCT_NAME}. The link is valid for 48 hours.`,
+      ar: `أكّدوا عنوان بريدكم الإلكتروني لدى ${PRODUCT_NAME}. الرابط صالح لمدة 48 ساعة.`,
     },
     paragraphs: {
       en: [
         name ? `Hello ${isolateInline(name)},` : "Hello,",
-        "Confirm your email address for Muhasib.ai. The link is valid for 48 hours.",
+        `Confirm your email address for ${isolateInline(PRODUCT_NAME, "ltr")}. The link is valid for 48 hours.`,
         "If you did not create an account, you can ignore this message.",
       ],
       ar: [
         arabicOnly(name) ? `مرحباً ${isolateInline(arabicOnly(name) as string)}،` : "مرحباً،",
-        "أكّدوا عنوان بريدكم الإلكتروني لدى Muhasib.ai. الرابط صالح لمدة 48 ساعة.",
+        `أكّدوا عنوان بريدكم الإلكتروني لدى ${isolateInline(PRODUCT_NAME, "ltr")}. الرابط صالح لمدة 48 ساعة.`,
         "إذا لم تنشئوا حساباً فيمكنكم تجاهل هذه الرسالة.",
       ],
     },
     button: { url: verifyUrl, label: { en: "Confirm email", ar: "تأكيد البريد الإلكتروني" } },
   };
-  return build(content, "bilingual", {
+  return buildCustomerEmail(content, "bilingual", {
     en: "Confirm your email address",
     ar: "تأكيد عنوان البريد الإلكتروني",
   });
@@ -653,8 +653,8 @@ export function buildEmailVerificationEmail(verifyUrl: string, name?: string | n
 
 export function buildPasswordResetEmail(resetUrl: string): BuiltEmail {
   const content: BilingualEmailContent = {
-    brandName: "Muhasib.ai",
-    footer: "Muhasib.ai",
+    brandName: PRODUCT_NAME,
+    footer: PRODUCT_NAME,
     heading: { en: "Reset your password", ar: "إعادة تعيين كلمة المرور" },
     preheader: {
       en: "Use this link to choose a new password. It expires in 1 hour.",
@@ -672,8 +672,8 @@ export function buildPasswordResetEmail(resetUrl: string): BuiltEmail {
     },
     button: { url: resetUrl, label: { en: "Reset password", ar: "إعادة تعيين كلمة المرور" } },
   };
-  return build(content, "bilingual", {
-    en: "Reset your Muhasib.ai password",
-    ar: "إعادة تعيين كلمة مرور Muhasib.ai",
+  return buildCustomerEmail(content, "bilingual", {
+    en: `Reset your ${PRODUCT_NAME} password`,
+    ar: `إعادة تعيين كلمة مرور ${PRODUCT_NAME}`,
   });
 }

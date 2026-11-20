@@ -52,7 +52,7 @@ const LANGS: EmailLanguage[] = ["en", "ar", "bilingual"];
 function arabicText(html: string): string {
   const start = html.indexOf('<div dir="rtl" lang="ar"');
   const rest = start < 0 ? "" : html.slice(html.indexOf(">", start));
-  const end = rest.search(/<\/td>\s*<\/tr>\s*<tr><td class="em-pad" style="background:#F9FAFB/);
+  const end = rest.indexOf("</div>");
   return htmlToText(end < 0 ? rest : rest.slice(0, end));
 }
 
@@ -222,6 +222,20 @@ describe("invoice email details", () => {
     expect(e.html).toMatch(/padding:14px 32px/);
     expect(e.html).toMatch(/@media only screen and \(max-width:620px\)/);
     expect(e.html).toContain('bgcolor="#');
+  });
+
+  it("styles the bilingual sections independently and keeps Arabic invoice links and IDs LTR", () => {
+    const e = buildInvoiceEmail(invoice, company, undefined, { portalUrl: PAY });
+    expect(e.html).toContain("#0B6A4A");
+    expect(e.html).toContain("#14241E");
+    expect(e.html).toContain("#F7F8F4");
+    expect(e.html).toContain("'Geist','Segoe UI',Arial");
+    expect(e.html).toContain("'Noto Sans Arabic',Tahoma,Arial");
+    expect(e.html).toContain("<!--[if mso]>");
+    expect(e.html).toContain('dir="rtl" align="right"');
+    expect(e.html).toContain('dir="ltr" align="left"');
+    expect(e.html).toContain(`<a dir="ltr" href="${PAY}"`);
+    expect(e.html).toContain(`direction:ltr;unicode-bidi:isolate;">${invoice.number}</span>`);
   });
 
   it("escapes the customer name and the custom message", () => {

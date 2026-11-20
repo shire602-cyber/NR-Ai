@@ -20,12 +20,7 @@ import { fromFils, mulRate } from "../../shared/money";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { generateInvoicePDF } from "./pdf-invoice.service";
 import { resolveEmailLanguage } from "./email-layout";
-import {
-  buildReminderEmail,
-  sendEmail,
-  sendInvoiceEmail,
-  type EmailLanguage,
-} from "./email.service";
+import { buildReminderEmail, sendEmail, sendInvoiceEmail } from "./email.service";
 import { registerOutboxJob, type OutgoingAttachment } from "../outbox";
 import { registerEventOutboxJob } from "../platform/event-outbox";
 import { registerObjectDeletionJob } from "./object-deletion-queue";
@@ -401,10 +396,11 @@ async function dunOne(args: {
       summary.failed++;
       return;
     }
-    const lang =
-      setting.language === "bilingual"
-        ? resolveEmailLanguage(null, contact.preferredLanguage)
-        : (setting.language as EmailLanguage);
+    const language = resolveEmailLanguage(
+      setting.language === "bilingual" ? null : setting.language,
+      contact.preferredLanguage
+    );
+    const { paymentsAvailability } = await import("./payments");
     const { subject, html, text } = buildReminderEmail({
       invoice,
       company,
@@ -413,9 +409,9 @@ async function dunOne(args: {
       openFils: Number(inv.open_fils),
       level,
       daysOverdue,
-      payUrl: setting.includePayLink ? link : null,
+      payUrl: setting.includePayLink && paymentsAvailability().available ? link : null,
       portalUrl: link,
-      language: lang,
+      language,
       customSubject: setting.emailSubject,
       customTemplate: setting.emailTemplate,
     });
@@ -963,6 +959,7 @@ async function finishGeneratedInvoice(
       undefined,
       {
         throwOnFailure: false,
+        language: resolveEmailLanguage(null, contact?.preferredLanguage),
         customerNameAr: contact?.nameAr ?? null,
       }
     );

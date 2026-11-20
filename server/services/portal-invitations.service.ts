@@ -48,6 +48,7 @@ import {
 } from "./portal-access.service";
 import { hasEmailProvider, sendEmail } from "./email.service";
 import { renderPortalInviteEmail, normaliseInviteLanguage } from "./portal-invite-email";
+import { resolveEmailLanguage } from "./email-layout";
 import { paymentsAvailability, publicBaseUrl } from "./payments";
 import { recordAudit } from "./audit.service";
 import { isPlaceholderPasswordHash, passwordPolicySchema } from "../auth";
@@ -285,6 +286,7 @@ export async function createInvitation(args: {
   }
   await enforceInviteRate(companyId);
 
+  const language = resolveEmailLanguage(body.language, contact.preferredLanguage);
   const token = newToken();
   let inv: CustomerPortalInvitation;
   try {
@@ -295,7 +297,7 @@ export async function createInvitation(args: {
         contactId: contact.id,
         email,
         name: body.name || contact.contactPerson || null,
-        language: body.language,
+        language,
         message: body.message || null,
         tokenHash: token.hash,
         expiresAt: new Date(Date.now() + PORTAL_INVITE_TTL_DAYS * 86_400_000),
@@ -326,7 +328,7 @@ export async function createInvitation(args: {
     entityType: "customer_portal_invitation",
     entityId: inv.id,
     before: null,
-    after: { contactId: contact.id, email, language: body.language, delivery: sent.delivery },
+    after: { contactId: contact.id, email, language, delivery: sent.delivery },
     req: args.req,
   });
   return {

@@ -34,7 +34,7 @@ describe("STEP5 portal invitation email", () => {
   it("English: subject, greeting, button link with the fragment token, expiry date", () => {
     const m = render();
     expect(m.subject).toBe("Desert Rose <LLC> invited you to view your invoices");
-    expect(m.html).toContain("Hi Layla,");
+    expect(m.html).toContain("Hi <bdi>Layla</bdi>,");
     expect(m.html).toContain("Set up your account");
     expect(m.html).toContain(`href="${URL}"`);
     expect(m.html).toContain("1 December 2026");
@@ -51,6 +51,8 @@ describe("STEP5 portal invitation email", () => {
     expect(m.html).not.toContain("Set up your account");
     expect(m.html).toContain(`href="${URL}"`);
     expect(m.text).toContain("أنشئ حسابك");
+    expect(m.text).toContain("عزيزنا النور للتجارة،");
+    expect(m.text).not.toContain("Layla");
   });
 
   it("bilingual carries both languages and a joined subject", () => {
@@ -83,9 +85,24 @@ describe("STEP5 portal invitation email", () => {
   });
 
   it("mentions paying online only when a gateway is available", () => {
-    expect(render({}, false).html).not.toContain("pay online");
-    expect(render({}, true).html).toContain("pay online");
-    expect(render({ language: "ar" }, true).html).toContain("وتسدّد عبر الإنترنت");
+    for (const content of [render({}, false).html, render({}, false).text]) {
+      expect(content).not.toContain("pay online");
+    }
+    const mail = render({ language: "bilingual" }, true);
+    for (const content of [mail.html, mail.text]) {
+      expect(content).toContain("pay online");
+      expect(content).toContain("السداد عبر الإنترنت");
+      expect(content).toContain("statement of account");
+      expect(content).toContain("عرض كشف حسابك");
+    }
+  });
+
+  it("keeps the billing reply address and leaves the company tax number out of both parts", () => {
+    const mail = render({ language: "bilingual" });
+    for (const content of [mail.html, mail.text]) {
+      expect(content).toContain("billing@desertrose.test");
+      expect(content).not.toContain("100300000000003");
+    }
   });
 
   it("formats dates in the reader's language with Latin digits and normalises the language", () => {

@@ -90,6 +90,10 @@ describe("W4-D dunning engine", () => {
     expect(mails[0].to_address).toBe("ap@customer.example");
     // No provider in the harness: queued and honestly blocked, never "sent".
     expect(mails[0].status).toBe("blocked_no_provider");
+    expect(mails[0].html).toContain('<div dir="ltr" lang="en"');
+    expect(mails[0].html).toContain('<div dir="rtl" lang="ar"');
+    expect(mails[0].html).toContain("عرض الفاتورة");
+    expect(mails[0].html).not.toContain("ادفع الآن");
     const att = await h.sql(
       `SELECT filename, content_type, size_bytes FROM email_outbox_attachments WHERE outbox_id = $1`,
       [mails[0].id]

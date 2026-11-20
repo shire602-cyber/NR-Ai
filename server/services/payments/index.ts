@@ -27,6 +27,7 @@ import { createLogger } from "../../config/logger";
 import { has, resolve } from "../../platform/service-registry";
 import { postJournal } from "../../ledger";
 import { fromFils } from "../../../shared/money";
+import { PRODUCT_NAME } from "../../../shared/product-brand";
 import { invoiceOpenFils, isIssuedStatus } from "../invoice-posting.service";
 import { buildReceiptEmail, sendEmail } from "../email.service";
 import { resolveEmailLanguage } from "../email-layout";
@@ -622,7 +623,7 @@ async function emailReceipt(link: PaymentLink, amountFils: number) {
   if (!contact?.email) return;
   const [company] = await db.select().from(companies).where(eq(companies.id, link.companyId));
   const built = buildReceiptEmail({
-    company: company ?? { name: "Muhasib.ai", businessAddress: null, contactEmail: null },
+    company: company ?? { name: PRODUCT_NAME, businessAddress: null, contactEmail: null },
     customerName: contact.name,
     customerNameAr: contact.nameAr ?? null,
     invoiceNumber: invoice.number,
