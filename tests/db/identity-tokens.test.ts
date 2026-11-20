@@ -45,6 +45,34 @@ describe("R17-04 refresh tokens are not access tokens", () => {
 });
 
 describe("R01-06 password reset and change revoke outstanding tokens", () => {
+  it("invalidates old mailbox reset links on email change and accepts a link issued to the replacement", async () => {
+    const t = await h.createTenant();
+    const admin = await h.createTenant({ isAdmin: true });
+    const endpoint = `/api/admin/users/${t.user.id}`;
+    async function requestReset(email: string) {
+      const result = await h.anon.post("/api/auth/forgot-password", { email });
+      expect(result.status).toBe(200);
+      return new URL(result.body.devResetUrl).searchParams.get("token");
+    }
+    const oldToken = await requestReset(t.email);
+    const replacement = `replacement-${t.email}`;
+    expect((await admin.as.patch(endpoint, { email: replacement })).status).toBe(200);
+    expect(
+      await h.sql("SELECT id FROM password_reset_tokens WHERE user_id = $1", [t.user.id])
+    ).toHaveLength(0);
+
+    const password = "Replacement9Password!";
+    const stale = await h.anon.post("/api/auth/reset-password", { token: oldToken, password });
+    expect(stale.body.code).toBe("RESET_TOKEN_INVALID");
+    await login({ ...t, email: replacement });
+
+    const newToken = await requestReset(replacement);
+    expect(
+      (await h.anon.post("/api/auth/reset-password", { token: newToken, password })).status
+    ).toBe(200);
+    await login({ ...t, email: replacement }, password);
+  });
+
   it("R01-06: old access and refresh tokens fail after a password reset", async () => {
     const t = await h.createTenant({ name: "Reset" });
     const old = await login(t);

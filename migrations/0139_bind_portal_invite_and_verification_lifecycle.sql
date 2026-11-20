@@ -7,7 +7,7 @@ CREATE OR REPLACE FUNCTION revoke_portal_invitations_after_contact_change()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   UPDATE customer_portal_invitations
-  SET status = 'revoked', revoked_at = now(), updated_at = now()
+  SET status = 'revoked', revoked_at = now() AT TIME ZONE 'UTC', updated_at = now() AT TIME ZONE 'UTC'
   WHERE contact_id = NEW.id AND company_id = NEW.company_id AND status IN ('pending', 'expired');
   RETURN NEW;
 END;
@@ -25,8 +25,9 @@ CREATE OR REPLACE FUNCTION revoke_portal_invitation_after_delivery_failure()
 RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   UPDATE customer_portal_invitations
-  SET status = 'revoked', revoked_at = now(), updated_at = now()
-  WHERE id = NEW.related_entity_id AND last_outbox_id = NEW.id AND status = 'pending';
+  SET status = 'revoked', revoked_at = now() AT TIME ZONE 'UTC', updated_at = now() AT TIME ZONE 'UTC'
+  WHERE id = NEW.related_entity_id AND last_outbox_id = NEW.id AND status = 'pending'
+    AND expires_at > (now() AT TIME ZONE 'UTC');
   NEW.html := NULL;
   NEW.text_body := NULL;
   RETURN NEW;
@@ -44,15 +45,15 @@ EXECUTE FUNCTION revoke_portal_invitation_after_delivery_failure();
 
 -- Reconcile stale reservations that were created before these rules were enforced.
 UPDATE customer_portal_invitations AS invite
-SET status = 'revoked', revoked_at = now(), updated_at = now()
+SET status = 'revoked', revoked_at = now() AT TIME ZONE 'UTC', updated_at = now() AT TIME ZONE 'UTC'
 FROM customer_contacts AS contact
 WHERE contact.id = invite.contact_id AND contact.company_id = invite.company_id
   AND invite.status IN ('pending', 'expired')
   AND (NOT contact.is_active OR nullif(lower(btrim(contact.email)), '') IS DISTINCT FROM invite.contact_email_at_issue);
 
 UPDATE customer_portal_invitations AS invite
-SET status = 'revoked', revoked_at = now(), updated_at = now()
-WHERE invite.status = 'pending' AND NOT EXISTS (
+SET status = 'revoked', revoked_at = now() AT TIME ZONE 'UTC', updated_at = now() AT TIME ZONE 'UTC'
+WHERE invite.status = 'pending' AND invite.expires_at > (now() AT TIME ZONE 'UTC') AND NOT EXISTS (
   SELECT 1 FROM email_outbox AS mail
   WHERE mail.id = invite.last_outbox_id AND mail.status NOT IN ('dead', 'bounced', 'complained', 'cancelled')
 );

@@ -383,16 +383,16 @@ export async function exchangeOAuthCallback(
   if (!issuer || !subject) throw new OAuthIdentityError("Missing issuer or subject");
   validateProviderIssuer(provider, issuer);
 
+  const claimedEmail = claimString(claims, "email");
   const rawEmail =
-    claimString(claims, "email") ||
-    claimString(claims, "preferred_username") ||
-    claimString(claims, "upn");
+    claimedEmail || claimString(claims, "preferred_username") || claimString(claims, "upn");
   if (!rawEmail || !rawEmail.includes("@")) {
     throw new OAuthIdentityError("OAuth provider did not return a usable email");
   }
 
-  const googleEmailVerified = claims.email_verified === true || claims.email_verified === "true";
-  if (provider === "google" && !googleEmailVerified) {
+  const emailVerified =
+    !!claimedEmail && (claims.email_verified === true || claims.email_verified === "true");
+  if (provider === "google" && !emailVerified) {
     throw new OAuthIdentityError("Google email is not verified");
   }
 
@@ -405,7 +405,7 @@ export async function exchangeOAuthCallback(
     issuer,
     subject,
     email,
-    emailVerified: provider === "google" ? true : true,
+    emailVerified,
     name,
     picture,
     claims,

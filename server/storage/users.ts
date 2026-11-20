@@ -18,6 +18,14 @@ import { normalizeEmail } from "./helpers";
 import { DomainError } from "../errors";
 import { assertPortalInviteEmailAvailable, lockPortalInviteEmail } from "./portal-invite-email";
 
+function validResetToken(tokenHash: string) {
+  return and(
+    eq(passwordResetTokens.tokenHash, tokenHash),
+    isNull(passwordResetTokens.usedAt),
+    gt(passwordResetTokens.expiresAt, new Date())
+  );
+}
+
 export class UserStorage {
   // Users
   async getUser(id: string): Promise<User | undefined> {
@@ -88,15 +96,24 @@ export class UserStorage {
   }
 
   // Password reset tokens
-  async createPasswordResetToken(input: {
+  async replacePasswordResetToken(input: {
     userId: string;
+    email: string;
     tokenHash: string;
     expiresAt: Date;
-  }): Promise<void> {
-    await db.insert(passwordResetTokens).values({
-      userId: input.userId,
-      tokenHash: input.tokenHash,
-      expiresAt: input.expiresAt,
+  }): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      const [user] = await tx
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, input.userId))
+        .for("update");
+      if (!user || normalizeEmail(user.email) !== normalizeEmail(input.email)) return false;
+      await tx.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, input.userId));
+      await tx
+        .insert(passwordResetTokens)
+        .values({ userId: input.userId, tokenHash: input.tokenHash, expiresAt: input.expiresAt });
+      return true;
     });
   }
 
@@ -106,25 +123,35 @@ export class UserStorage {
     const [row] = await db
       .select({ id: passwordResetTokens.id, userId: passwordResetTokens.userId })
       .from(passwordResetTokens)
-      .where(
-        and(
-          eq(passwordResetTokens.tokenHash, tokenHash),
-          isNull(passwordResetTokens.usedAt),
-          gt(passwordResetTokens.expiresAt, new Date())
-        )
-      );
+      .where(validResetToken(tokenHash));
     return row || undefined;
   }
 
-  async markPasswordResetTokenUsed(id: string): Promise<void> {
-    await db
-      .update(passwordResetTokens)
-      .set({ usedAt: new Date() })
-      .where(eq(passwordResetTokens.id, id));
-  }
-
-  async deletePasswordResetTokensForUser(userId: string): Promise<void> {
-    await db.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, userId));
+  async resetPasswordWithToken(
+    userId: string,
+    tokenHash: string,
+    passwordHash: string
+  ): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      // Email changes and reset requests also take the user lock before touching tokens.
+      const [user] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.id, userId))
+        .for("update");
+      if (!user) return false;
+      const [used] = await tx
+        .delete(passwordResetTokens)
+        .where(and(eq(passwordResetTokens.userId, userId), validResetToken(tokenHash)))
+        .returning({ id: passwordResetTokens.id });
+      if (!used) return false;
+      await tx
+        .update(users)
+        .set({ passwordHash, passwordChangedAt: new Date() })
+        .where(eq(users.id, userId));
+      await tx.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, userId));
+      return true;
+    });
   }
 
   // Admin Stats
@@ -181,6 +208,7 @@ export class UserStorage {
         .where(eq(users.id, id))
         .returning();
       await tx.delete(emailVerificationTokens).where(eq(emailVerificationTokens.userId, id));
+      await tx.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, id));
       return user;
     });
   }

@@ -121,6 +121,7 @@ export async function enqueueEmail(input: EnqueueEmailInput, executor = db): Pro
   }
   const provider = activeProviderName();
   const insert = async (tx: typeof db) => {
+    const now = new Date();
     const [inserted] = await tx
       .insert(emailOutbox)
       .values({
@@ -136,6 +137,9 @@ export async function enqueueEmail(input: EnqueueEmailInput, executor = db): Pro
         relatedEntityType: input.relatedEntityType ?? null,
         relatedEntityId: input.relatedEntityId ?? null,
         status: provider ? "queued" : "blocked_no_provider",
+        nextAttemptAt: now,
+        createdAt: now,
+        updatedAt: now,
         maxAttempts: input.maxAttempts ?? DEFAULT_MAX_ATTEMPTS,
         sensitive: input.sensitive === true,
         idempotencyKey: input.idempotencyKey ?? null,
@@ -174,22 +178,23 @@ export async function enqueueEmail(input: EnqueueEmailInput, executor = db): Pro
 const isCurrentPortalInvite = sql`EXISTS (
   SELECT 1 FROM ${customerPortalInvitations} AS invite
   WHERE invite.id = ${emailOutbox.relatedEntityId} AND invite.last_outbox_id = ${emailOutbox.id}
-    AND invite.status = 'pending' AND invite.expires_at > now()
+    AND invite.status = 'pending' AND invite.expires_at > (now() AT TIME ZONE 'UTC')
 )`;
 
 /** Claim rows for delivery (FOR UPDATE SKIP LOCKED); stale `sending` locks are reclaimed. */
 async function claim(ids: string[] | null, limit: number): Promise<EmailOutboxRow[]> {
   const params: unknown[] = [LOCK_MS, limit];
-  let filter = `(status IN ('queued','retrying') AND next_attempt_at <= now())
-                OR (status = 'sending' AND locked_until < now())`;
+  let filter = `(status IN ('queued','retrying') AND next_attempt_at <= (now() AT TIME ZONE 'UTC'))
+                OR (status = 'sending' AND locked_until < (now() AT TIME ZONE 'UTC'))`;
   if (ids) {
     params.push(ids);
     filter = `id = ANY($3::uuid[]) AND (status IN ('queued','retrying')
-              OR (status = 'sending' AND locked_until < now()))`;
+              OR (status = 'sending' AND locked_until < (now() AT TIME ZONE 'UTC')))`;
   }
   const { rows } = await pool.query(
     `UPDATE email_outbox SET status = 'sending',
-            locked_until = now() + ($1::int * interval '1 millisecond'), updated_at = now()
+            locked_until = (now() AT TIME ZONE 'UTC') + ($1::int * interval '1 millisecond'),
+            updated_at = now() AT TIME ZONE 'UTC'
       WHERE id IN (SELECT id FROM email_outbox WHERE ${filter}
                     ORDER BY next_attempt_at LIMIT $2 FOR UPDATE SKIP LOCKED)
       RETURNING id`,
@@ -320,10 +325,10 @@ export async function deliverOutboxMessage(id: string): Promise<OutboxResult | n
 export async function processOutbox(limit = 50): Promise<Record<string, number>> {
   if (activeProviderName()) {
     await pool.query(
-      `UPDATE email_outbox SET status = 'queued', next_attempt_at = now(), last_error = NULL,
-              updated_at = now()
+      `UPDATE email_outbox SET status = 'queued', next_attempt_at = now() AT TIME ZONE 'UTC', last_error = NULL,
+              updated_at = now() AT TIME ZONE 'UTC'
         WHERE status = 'blocked_no_provider'
-          AND created_at > now() - CASE WHEN sensitive THEN interval '1 hour'
+          AND created_at > (now() AT TIME ZONE 'UTC') - CASE WHEN sensitive THEN interval '1 hour'
                                         ELSE interval '24 hours' END`
     );
   }

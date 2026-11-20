@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 import type { OutgoingEmail } from "../../server/outbox";
+import type { PoolClient } from "pg";
 
 const h = useHarness();
 const DAY = 86_400_000;
@@ -1087,6 +1088,59 @@ describe("STEP5 portal invitations", () => {
       ).status
     ).toBe(200);
     expect(await h.sql("SELECT id FROM users WHERE email = $1", [email])).toHaveLength(1);
+  });
+
+  it("uses UTC expiry for delivery and rejection under a non-UTC database session", async (ctx) => {
+    if (!h.concurrencySupported) return ctx.skip();
+    const supplier = await h.createTenant();
+    const issued = await invite(supplier, await contact(supplier, "UTC expiry"));
+    expect(issued.status).toBe(201);
+    const id = issued.body.invitation.id;
+    const [inviteRow] = await h.sql(
+      `UPDATE customer_portal_invitations
+      SET expires_at = (now() AT TIME ZONE 'UTC') + interval '10 minutes'
+      WHERE id = $1 RETURNING last_outbox_id`,
+      [id]
+    );
+    const { pool } = await import("../../server/db");
+    const setZone = (client: PoolClient) => {
+      void client.query("SET TIME ZONE 'Asia/Dubai'");
+    };
+    const { applyProviderEvent, requeueOutboxMessage, setEmailTransportOverride } =
+      await import("../../server/outbox");
+    setEmailTransportOverride({
+      name: "test",
+      send: async () => ({ providerMessageId: "utc-expiry-test" }),
+    });
+    pool.on("acquire", setZone);
+    try {
+      const zone = await pool.query("SHOW TIME ZONE");
+      expect(zone.rows[0].TimeZone).toBe("Asia/Dubai");
+      const sent = await requeueOutboxMessage(inviteRow.last_outbox_id, supplier.company.id);
+      expect(sent?.status).toBe("sent");
+      expect(
+        await h.sql("SELECT status FROM customer_portal_invitations WHERE id = $1", [id])
+      ).toEqual([{ status: "pending" }]);
+
+      await applyProviderEvent({
+        provider: "test",
+        outboxId: inviteRow.last_outbox_id,
+        type: "bounced",
+      });
+      expect(
+        await h.sql("SELECT status FROM customer_portal_invitations WHERE id = $1", [id])
+      ).toEqual([{ status: "revoked" }]);
+    } finally {
+      pool.off("acquire", setZone);
+      const clients = await Promise.all(
+        Array.from({ length: pool.totalCount }, () => pool.connect())
+      );
+      try {
+        await Promise.all(clients.map((client) => client.query("RESET TIME ZONE")));
+      } finally {
+        clients.forEach((client) => client.release());
+      }
+    }
   });
 
   it("[S5-13] bulk invite reports a per-contact outcome and caps at 100", async () => {

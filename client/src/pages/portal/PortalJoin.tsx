@@ -552,7 +552,8 @@ function JoinPanel({
 
         <div>
           <Label htmlFor="join-password">{t["portal.join.passwordLabel"]}</Label>
-          <div className="relative mt-1.5">
+          {/* Keep the input padding and toggle placement in the same direction as the password. */}
+          <div dir="ltr" className="relative mt-1.5">
             <Input
               id="join-password"
               ref={passwordRef}
@@ -560,7 +561,6 @@ function JoinPanel({
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
-              dir="ltr"
               className="h-11 pe-12 text-base"
               aria-invalid={error?.field === "password"}
               aria-describedby={

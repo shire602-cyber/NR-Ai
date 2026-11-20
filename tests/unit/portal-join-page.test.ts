@@ -177,6 +177,20 @@ for (const locale of ["en", "ar"] as const) {
       expect(mocks.apiRequest).not.toHaveBeenCalled();
     });
 
+    it("keeps the password padding and visibility button in the same inline direction", async () => {
+      document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+      respondWith(() => invite({ language: locale }));
+      await mount();
+      const password = byId("join-password") as HTMLInputElement;
+      const toggle = byId("join-toggle-password")!;
+      expect(password.closest("[dir]")?.getAttribute("dir")).toBe("ltr");
+      expect(toggle.closest("[dir]")).toBe(password.closest("[dir]"));
+      expect(password.classList.contains("pe-12")).toBe(true);
+      expect(toggle.classList.contains("end-0")).toBe(true);
+      await click(toggle);
+      expect(password.type).toBe("text");
+    });
+
     it("the checklist updates and Submit needs the terms and a valid password", async () => {
       respondWith(() => invite({ language: locale }));
       await mount();

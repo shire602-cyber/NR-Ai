@@ -201,7 +201,7 @@ export type InsertOAuthLoginState = z.infer<typeof insertOAuthLoginStateSchema>;
 export type OAuthLoginState = typeof oauthLoginStates.$inferSelect;
 
 // One-time tokens issued by /auth/forgot-password and consumed by /auth/reset-password.
-// usedAt is set the moment the token is redeemed so a captured token cannot be replayed.
+// Successful resets delete the token. usedAt is retained to reject redeemed legacy rows.
 export const passwordResetTokens = pgTable(
   "password_reset_tokens",
   {

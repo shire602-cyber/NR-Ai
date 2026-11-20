@@ -41,8 +41,8 @@ function profile(subject: string, email: string) {
   };
 }
 
-async function callback() {
-  const r = await h.anon.get("/api/auth/oauth/google/callback?state=s&code=c");
+async function callback(provider = "google") {
+  const r = await h.anon.get(`/api/auth/oauth/${provider}/callback?state=s&code=c`);
   const cookies = r.headers.getSetCookie().map((c) => c.split(";")[0]);
   const access = cookies.find((c) => c.startsWith("muhasib-access="))?.split("=")[1];
   return { r, access };
@@ -107,5 +107,31 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
     const adm = await admin.as.get("/api/admin/auth/sso-status");
     expect(adm.status).toBe(200);
     expect(adm.body.saml.status).toBe("requires_external");
+  });
+
+  it("keeps an unverified Microsoft signup unverified and refuses to link by an unverified address", async () => {
+    const microsoft = (subject: string, email: string) => ({
+      ...profile(subject, email),
+      provider: "microsoft",
+      issuer: "https://login.microsoftonline.com/test-tenant/v2.0",
+      emailVerified: false,
+    });
+    const email = "microsoft-unverified@example.test";
+    profiles.push(microsoft("ms-unverified", email));
+    expect((await callback("microsoft")).access).toBeTruthy();
+    expect(await h.sql("SELECT email_verified FROM users WHERE email = $1", [email])).toEqual([
+      { email_verified: false },
+    ]);
+
+    const existing = await h.createTenant();
+    profiles.push(microsoft("ms-unverified-collision", existing.email));
+    const rejected = await callback("microsoft");
+    expect(rejected.access).toBeFalsy();
+    expect(rejected.r.headers.get("location")).toContain("oauth_error=1");
+    expect(
+      await h.sql(
+        "SELECT id FROM auth_identities WHERE provider_subject = 'ms-unverified-collision'"
+      )
+    ).toHaveLength(0);
   });
 });

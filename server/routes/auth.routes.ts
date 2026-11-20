@@ -105,6 +105,7 @@ import {
   oauthCallbackFailureUrl,
   oauthCallbackSuccessUrl,
   oauthRedirectUri,
+  OAuthIdentityError,
   type OAuthIdentityProfile,
 } from "../services/oauth.service";
 
@@ -238,7 +239,7 @@ async function createOAuthCustomer(
     userType: "customer",
     isAdmin: false,
     passwordHash,
-    emailVerified: true,
+    emailVerified: profile.emailVerified,
     avatarUrl: profile.picture,
   } as unknown as Parameters<typeof storage.createUser>[0]);
   const company = await provisionCustomerCompany(user.id, `${profile.name}'s Company`);
@@ -264,6 +265,11 @@ async function resolveOAuthUser(
 
   const existingUser = await getUserByNormalizedOAuthEmail(profile.email);
   if (existingUser) {
+    if (!profile.emailVerified) {
+      throw new OAuthIdentityError(
+        "A verified provider email is required to link an existing account"
+      );
+    }
     await linkAuthIdentity(existingUser.id, profile);
     await markOAuthLogin(existingUser.id, profile);
     return {
@@ -1015,8 +1021,13 @@ export function registerAuthRoutes(app: Express): void {
       const tokenHash = hashResetToken(rawToken);
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-      await storage.deletePasswordResetTokensForUser(user.id);
-      await storage.createPasswordResetToken({ userId: user.id, tokenHash, expiresAt });
+      const issued = await storage.replacePasswordResetToken({
+        userId: user.id,
+        email: user.email,
+        tokenHash,
+        expiresAt,
+      });
+      if (!issued) return res.json(genericResponse);
       await auditSecurityEvent(req, "auth.password_reset_requested", user.id, {});
 
       const env = getEnv();
@@ -1076,8 +1087,15 @@ export function registerAuthRoutes(app: Express): void {
 
       const tokenHash = hashResetToken(token);
       const record = await storage.findValidPasswordResetToken(tokenHash);
+      const reset =
+        record &&
+        (await storage.resetPasswordWithToken(
+          record.userId,
+          tokenHash,
+          await bcrypt.hash(password, 10)
+        ));
 
-      if (!record) {
+      if (!record || !reset) {
         resetPasswordLockout.recordFailure(key);
         return res.status(400).json({
           message: "This reset link is invalid or has expired. Please request a new one.",
@@ -1085,10 +1103,6 @@ export function registerAuthRoutes(app: Express): void {
         });
       }
 
-      const passwordHash = await bcrypt.hash(password, 10);
-      await storage.updateUserPassword(record.userId, passwordHash);
-      await storage.markPasswordResetTokenUsed(record.id);
-      await storage.deletePasswordResetTokensForUser(record.userId);
       // R01-06: every device signed in before the reset is signed out.
       await revokeAllUserTokens(record.userId);
       await auditSecurityEvent(req, "auth.password_reset", record.userId, {});

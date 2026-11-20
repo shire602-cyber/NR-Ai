@@ -622,6 +622,20 @@ async function portalInviteJourney(h, { phone }) {
       const dir = await cpage.evaluate(() => document.documentElement.dir);
       expect(dir === (h.ar ? "rtl" : "ltr"), `html dir ${dir}`);
       if (h.ar) await expectNoEnglish(cpage, "body");
+      const passwordLayout = await tid(cpage, "join-password").evaluate((input) => {
+        const toggle = input.parentElement.querySelector('[data-testid="join-toggle-password"]');
+        const { paddingLeft, paddingRight, direction } = getComputedStyle(input);
+        const bounds = input.getBoundingClientRect();
+        const button = toggle.getBoundingClientRect();
+        return {
+          direction,
+          clear:
+            button.left >= bounds.right - parseFloat(paddingRight) &&
+            bounds.left + parseFloat(paddingLeft) < button.left,
+        };
+      });
+      expect(passwordLayout.direction === "ltr", "password entry should stay left to right");
+      expect(passwordLayout.clear, "password toggle overlaps the editable text area");
       if (phone) {
         await noSideScroll(cpage, "join");
         const box = await tid(cpage, "join-submit").boundingBox();
