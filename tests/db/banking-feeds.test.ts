@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import type { FetchLike } from "../../server/services/bank-feeds/types";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 
 const h = useHarness();
 const REDIRECT = "https://app.example.test/bank-feeds/callback";
@@ -95,13 +96,19 @@ describe("W3-C bank feeds", () => {
         redirectUrl: REDIRECT,
       });
       expect(r.status, r.text).toBe(503);
-      expect(r.body.code).toBe("BANK_FEED_NOT_CONFIGURED");
+      expect(r.body).toMatchObject({
+        code: "BANK_FEED_NOT_CONFIGURED",
+        message: BANK_RECONCILIATION_COPY.en,
+      });
     }
     const status = await t.as.get(`/api/bank/providers`);
     expect(status.body.isConfigured).toBe(false);
     for (const s of status.body.statuses) {
-      expect(s).toMatchObject({ configured: false, status: "requires_external" });
-      expect(s.message.en).toBe("Not connected — requires provider contract");
+      expect(s).toMatchObject({
+        configured: false,
+        status: "requires_external",
+        message: BANK_RECONCILIATION_COPY,
+      });
     }
   });
 

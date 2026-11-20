@@ -410,8 +410,8 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
       {
         title: ["Zoho Books", "زوهو بوكس"],
         body: [
-          "Zoho Books UAE documents manual bank statement imports and bank feeds for supported connections. It also supports exporting data from individual modules.",
-          "يوثّق زوهو بوكس في الإمارات استيراد كشوف الحسابات يدويًا والربط البنكي المباشر للاتصالات المدعومة. كما يتيح تصدير البيانات من وحدات البرنامج كلٍّ على حدة.",
+          "Zoho Books UAE documents importing bank statements manually and exporting data from individual modules.",
+          "يوضّح زوهو بوكس في الإمارات كيفية استيراد كشوف الحسابات البنكية يدويًا وتصدير البيانات من وحدات البرنامج كلٍّ على حدة.",
         ],
       },
     ],
@@ -419,8 +419,8 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
       title: ["What to test", "ما يستحق الاختبار"],
       items: [
         [
-          "If a live bank feed is essential, check whether Zoho Books supports your bank and account type under the plan you would use.",
-          "إذا كان الربط البنكي المباشر ضروريًا، فتحقّق من دعم زوهو بوكس لبنكك ونوع حسابك ضمن الباقة التي ستستخدمها.",
+          "Import a sample CSV from your bank and check how you review matches against recorded transactions.",
+          "استورد ملف CSV تجريبيًا من بنكك وتحقّق من طريقة مراجعة مطابقته مع المعاملات المسجّلة.",
         ],
         [
           "Create a sample invoice, review the VAT treatment and check how the workflow fits the rest of your tools.",

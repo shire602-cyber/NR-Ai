@@ -167,6 +167,10 @@ for MFA users, and each restore is written to the audit chain.
    obligations to the UAE Data Office and affected data subjects without
    undue delay.
 
+## Bank reconciliation
+
+Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
+
 ## Known limitations (honest list)
 
 - No SOC 2 / ISO 27001 certification — this document is readiness evidence,
@@ -179,8 +183,5 @@ for MFA users, and each restore is written to the audit chain.
   edge provider. Neither is active until configured.
 - E-invoice XML validates locally against PINT AE shape; live ASP/FTA
   submission awaits provider credentials and is marked "not connected".
-- Bank feeds run on the provider abstraction with manual import as the
-  production path until a provider (Tarabut/Dapi/Salt Edge/FINX) is
-  contracted.
 - Rate-limit stores are in-memory per instance; multi-instance deployments
   need a shared store before horizontal scaling.

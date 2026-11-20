@@ -5,6 +5,7 @@ import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/em
 import { isOpenBankingConfigured } from "../services/open-banking.service";
 import { isEmailIntakeEnabled, isEmailIntakeConfigured } from "../services/email-intake-provider";
 import { isObjectStorageConfigured, objectStorageBackend } from "../services/fileStorage";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { connectorStatuses } from "../services/connectors/oauth";
 
 /**
@@ -81,13 +82,11 @@ export function registerIntegrationStatusRoutes(app: Express) {
         },
         {
           key: "openBanking",
-          name: "Live bank feeds",
+          name: "Bank provider diagnostics",
           configured: isOpenBankingConfigured(),
-          detail: null,
-          requiredEnv: [
-            "Provider credentials per docs/EXTERNAL_DEPENDENCIES.md (Tarabut / Dapi / Salt Edge candidates)",
-          ],
-          unlocks: "Automatic bank transaction sync (CSV/OFX import works today)",
+          detail: BANK_RECONCILIATION_COPY.en,
+          requiredEnv: [],
+          unlocks: "Provider connection status",
         },
         {
           key: "push",

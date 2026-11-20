@@ -153,8 +153,7 @@ export const CUSTOMER_GROUPS: NavGroup[] = [
         url: "/bank-accounts",
         icon: Landmark,
         testId: "banking.accounts.title",
-        // Fable P12: no bank-feed provider is available yet, so Bank feeds has no nav item;
-        // the route stays (it says "Not available yet") and highlights Accounts.
+        // The bank connection route highlights Accounts and offers CSV import when unconfigured.
         matches: ["/bank-feeds"],
       },
       {

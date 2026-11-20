@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { readDashboardSource } from "./dashboardSource";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 
 const repoRoot = process.cwd();
 
@@ -74,10 +75,8 @@ const bannedLaunchClaims = [
   /Connect Your Bank/i,
   /Securely link your.*bank account/i,
   /via encrypted feeds/i,
-  /UAE bank feeds/i,
-  /live bank feeds are coming later/i,
-  /سيتوفر الربط البنكي المباشر لاحقًا/,
-  /Photo, email forward, or bank feed/i,
+  /\b(?:live|bank)\s+feeds?\b/i,
+  /الربط (?:البنكي|المصرفي) المباشر/,
   /sync a bank line/i,
   /compliant with FTA/i,
   /SOC 2 Type II/i,
@@ -314,11 +313,34 @@ describe("Public SaaS launch surface", () => {
     for (const expectedDemoSignal of [
       "Sample company workspace",
       "Pearl Trading LLC",
-      "CSV statement import, no live feed needed",
+      "CSV statement import",
       "Export VAT 201 workbook",
     ]) {
       expect(demoSource).toContain(expectedDemoSignal);
     }
+  });
+
+  it.each(["en", "ar"] as const)("uses the same CSV wording in %s customer copy", (locale) => {
+    const load = (namespace: string): Record<string, string> =>
+      JSON.parse(readRepoFile(`client/src/locales/${locale}/${namespace}.json`));
+    const banking = load("banking");
+    const errors = load("serverErrors");
+    const marketing = load("marketing");
+    const csv = BANK_RECONCILIATION_COPY[locale];
+
+    expect(banking["banking.feeds.unavailableTitle"]).not.toMatch(
+      /\b(?:feed|feeds|soon|later)\b|(?:قريب|لاحق|الربط)/i
+    );
+    expect([
+      banking["banking.emptyTransactionsDescription"],
+      banking["banking.feeds.unavailableBody"],
+      errors["serverErrors.BANK_FEED_NOT_CONFIGURED"],
+      errors["serverErrors.BANK_FEED_BALANCE_UNAVAILABLE"],
+      marketing["marketing.bankBody"],
+      marketing["marketing.faq3A"],
+      marketing["marketing.helpGuide4Body"],
+      marketing["marketing.prEveryBankBody"],
+    ]).toEqual(Array(8).fill(csv));
   });
 
   // X6b: the old test here compared advertised free-plan limits with source text. Pricing, the

@@ -1,13 +1,11 @@
+import { BANK_RECONCILIATION_COPY } from "@shared/bank-reconciliation-copy";
 import { planDefinition } from "@shared/plans";
 
 export const starterPrice = planDefinition("starter").monthlyPrice;
 export type { SiteLocale } from "./routes";
 export type Bilingual = readonly [string, string];
 
-export const bankCopy: Bilingual = [
-  "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
-  "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
-];
+export const bankCopy: Bilingual = [BANK_RECONCILIATION_COPY.en, BANK_RECONCILIATION_COPY.ar];
 export const vatCopy: Bilingual = [
   "Prepare and review VAT 201 in the app, then submit it in EmaraTax.",
   "أعدّ وراجع إقرار ضريبة القيمة المضافة VAT 201 في التطبيق، ثم قدّمه عبر EmaraTax.",

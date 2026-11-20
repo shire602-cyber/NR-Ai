@@ -7,6 +7,7 @@ import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
+import { BANK_RECONCILIATION_COPY } from "../../shared/bank-reconciliation-copy";
 import { getCapabilitySnapshot } from "../../shared/capabilities";
 import {
   bankFeedCallbackBody,
@@ -291,7 +292,7 @@ export function registerBankRoutes(app: Express) {
         "BANK_FEED_BALANCE_UNAVAILABLE",
         503,
         undefined,
-        "Live balances need a configured bank feed; use the reconciliation statement instead"
+        BANK_RECONCILIATION_COPY.en
       );
     })
   );

@@ -146,6 +146,16 @@ async function crawl(locale) {
     const response = await page.goto(new URL(path, base).href);
     assert.equal(response?.status(), 200, path);
     await checkPage(page, locale, path);
+    if (path === `${prefix}/product/bank-reconciliation`) {
+      const csv = translated(
+        [
+          "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+          "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+        ],
+        locale
+      );
+      assert.equal(await page.locator("#phase-main .phase-lead").innerText(), csv);
+    }
     if (path === `${prefix}/pricing`) {
       const prices = page.locator("#phase-main .mk-tier__price");
       await prices.nth(2).waitFor();
