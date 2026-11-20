@@ -23,6 +23,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { storage } from "../storage";
 import { db, pool } from "../db";
 import { authMiddleware } from "../middleware/auth";
+import { assertTrialAccess } from "../middleware/trialAccessPolicy";
 import { asyncHandler } from "../middleware/errorHandler";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
@@ -156,6 +157,7 @@ async function staffContact(
   // /portal is outside the central company-role policy, so the staff routes check the role here:
   // a viewer may read link metadata but not mint or revoke links (J4).
   await assertCompanyPermission(actorFromRequest(req), contact.companyId, [permission]);
+  await assertTrialAccess(contact.companyId, req.user!);
   return contact;
 }
 
