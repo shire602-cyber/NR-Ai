@@ -102,7 +102,7 @@ export class EngagementStorage extends InsightStorage {
     await db
       .update(notifications)
       .set({ isRead: true, readAt: new Date() })
-      .where(eq(notifications.userId, userId));
+      .where(and(eq(notifications.userId, userId), customerVisibleNotification()));
   }
 
   async dismissNotification(id: string, userId: string): Promise<Notification | undefined> {

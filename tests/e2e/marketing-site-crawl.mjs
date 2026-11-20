@@ -138,6 +138,18 @@ async function checkMissingPage(locale) {
   );
 }
 
+async function checkEncodedPage(locale, encoded, canonical) {
+  contextErrors.length = 0;
+  const url = new URL(`/${locale}/${encoded}/?source=crawl`, base).href;
+  const response = await page.goto(url);
+  assert.equal(response?.status(), 200, `${url} localized HTML status`);
+  assert.equal((await page.request.head(url)).status(), 200, `${url} HEAD status`);
+  await checkHeading(page, url, translated(localizedHeadings[canonical], locale));
+  assert.deepEqual(contextErrors, [], url);
+  const encodedSeparator = new URL(`/${locale}/product%2Finvoicing`, base).href;
+  assert.equal((await page.request.head(encodedSeparator)).status(), 404, encodedSeparator);
+}
+
 async function crawl(locale) {
   const prefix = `/${locale}`;
   const queue = new Set([prefix]);
@@ -297,6 +309,8 @@ async function checkEditorialRecovery(locale) {
 }
 
 try {
+  await checkEncodedPage("en", "%70ricing", "/pricing");
+  await checkEncodedPage("ar", "%73ervices", "/services");
   await crawl("en");
   await crawl("ar");
 

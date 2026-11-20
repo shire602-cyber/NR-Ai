@@ -42,7 +42,13 @@ const marketingPaths = new Set([
 function documentStatus(url: string): 200 | 404 {
   const pathname = url.split(/[?#]/, 1)[0];
   if (!siteLocale(pathname)) return 200;
-  const localPath = pathname.slice(3).replace(/\/$/, "");
+  let localPath: string;
+  try {
+    // Match Wouter's decoding without treating encoded delimiters as path separators.
+    localPath = decodeURI(pathname.slice(3)).replace(/\/$/, "");
+  } catch {
+    return 404;
+  }
   return marketingPaths.has(localPath) || editorialPath(localPath) ? 200 : 404;
 }
 
