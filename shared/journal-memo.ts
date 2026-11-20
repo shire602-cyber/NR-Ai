@@ -379,6 +379,8 @@ export const JOURNAL_LINE_TEMPLATES = {
   vatAmendedReturnInput: "Amended VAT return {from} to {to}: input VAT",
   vatAmendedReturnPaid: "Amended VAT return {from} to {to}: VAT paid to the FTA",
   vatAmendedReturnRefund: "Amended VAT return {from} to {to}: VAT refund from the FTA",
+  vatSettlementFxGain: "VAT return {from} to {to}: realized exchange gain",
+  vatSettlementFxLoss: "VAT return {from} to {to}: realized exchange loss",
   vatReliefOutput: "Output VAT relief - {ref}",
   vatReliefRecovered: "VAT recovered on bad debt - {ref}",
   irrecoverableInputVat: "Irrecoverable input VAT",
