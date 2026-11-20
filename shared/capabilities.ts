@@ -16,6 +16,8 @@
  * This module adds no routes.
  */
 
+import { BANK_RECONCILIATION_COPY } from "./bank-reconciliation-copy";
+
 export type CapabilityStatus = "live" | "sandbox" | "requires_external" | "disabled";
 
 export type CapabilityId =
@@ -169,11 +171,8 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_lean",
-    label: { en: "Bank feeds via Lean", ar: "الربط البنكي عبر Lean" },
-    externalAction: {
-      en: "Sign a Lean Technologies contract and obtain a production app token.",
-      ar: "وقّع عقداً مع Lean Technologies واحصل على رمز تطبيق إنتاجي.",
-    },
+    label: { en: "Lean Technologies", ar: "لين تكنولوجيز" },
+    externalAction: BANK_RECONCILIATION_COPY,
     envVars: ["LEAN_APP_TOKEN", "LEAN_API_BASE_URL"],
     whenUnconfigured: "requires_external",
     detect: (env) =>
@@ -185,11 +184,8 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_tarabut",
-    label: { en: "Bank feeds via Tarabut", ar: "الربط البنكي عبر Tarabut" },
-    externalAction: {
-      en: "Sign a Tarabut Gateway contract and obtain production client credentials.",
-      ar: "وقّع عقداً مع Tarabut Gateway واحصل على بيانات اعتماد إنتاجية.",
-    },
+    label: { en: "Tarabut Gateway", ar: "بوابة ترابط" },
+    externalAction: BANK_RECONCILIATION_COPY,
     envVars: ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET", "TARABUT_API_BASE_URL"],
     whenUnconfigured: "requires_external",
     detect: (env) =>
@@ -201,11 +197,8 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_wio",
-    label: { en: "Wio Bank feed", ar: "الربط مع بنك Wio" },
-    externalAction: {
-      en: "Register with Wio Business open-banking and obtain production client credentials.",
-      ar: "سجّل في الخدمات المصرفية المفتوحة لدى Wio Business واحصل على بيانات اعتماد إنتاجية.",
-    },
+    label: { en: "Wio Business", ar: "ويو للأعمال" },
+    externalAction: BANK_RECONCILIATION_COPY,
     envVars: ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET", "WIO_API_BASE_URL"],
     whenUnconfigured: "requires_external",
     detect: (env) =>

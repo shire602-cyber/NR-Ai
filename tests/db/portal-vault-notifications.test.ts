@@ -292,7 +292,7 @@ describe("W4-D notification engine", () => {
     ).toBe(0);
   });
 
-  it("[R13-32] payment received, bank sync failure, task due and overdue invoices all notify staff", async () => {
+  it("[R13-32] staff receive payment, task and invoice alerts without provider alerts", async () => {
     const t = await h.createTenant();
     const inv = await t.as.post(`/api/companies/${t.company.id}/invoices`, {
       customerName: "Notify Co",
@@ -335,15 +335,41 @@ describe("W4-D notification engine", () => {
       )
     ).map((r) => r.event_key.split(":")[0]);
     expect(keys).toEqual(
-      expect.arrayContaining([
-        "bank.sync_failed",
-        "invoice.issued",
-        "invoice.overdue",
-        "payment.received",
-        "task.due",
-      ])
+      expect.arrayContaining(["invoice.issued", "invoice.overdue", "payment.received", "task.due"])
     );
+    expect(keys).not.toContain("bank.sync_failed");
+    const preferences = await t.as.get("/api/notification-preferences");
+    expect(preferences.status).toBe(200);
+    expect(preferences.body.eventTypes).toContain("task.due");
+    expect(preferences.body.eventTypes).not.toContain("bank.sync_failed");
     expect(keys.filter((k) => k === "invoice.overdue").length).toBe(1);
+  });
+
+  it("hides stored provider alerts and cancels an older queued email", async () => {
+    const t = await h.createTenant();
+    const eventKey = `bank.sync_failed:${crypto.randomUUID()}`;
+    const [notice] = await h.sql<{ id: string }>(
+      `INSERT INTO notifications (user_id, type, title, message, event_key)
+       VALUES ($1, 'system', 'Bank feed sync failed', 'Reconnect it under Banking.', $2)
+       RETURNING id`,
+      [t.user.id, eventKey]
+    );
+    const result = await t.as.get("/api/notifications");
+    expect(result.status).toBe(200);
+    expect(result.body.notifications).not.toContainEqual(
+      expect.objectContaining({ id: notice.id })
+    );
+    expect(result.body.unreadCount).toBe(0);
+    expect((await t.as.patch(`/api/notifications/${notice.id}/read`)).status).toBe(404);
+    expect((await t.as.patch(`/api/notifications/${notice.id}/dismiss`)).status).toBe(404);
+
+    const [email] = await h.sql<{ id: string }>(
+      `INSERT INTO email_outbox (to_address, subject, category, idempotency_key)
+       VALUES ($1, 'Bank feed sync failed', 'notification', $2) RETURNING id`,
+      [t.email.toLowerCase(), `notif:${eventKey}:${t.user.id}`]
+    );
+    const { deliverOutboxMessage } = await import("../../server/outbox/outbox");
+    await expect(deliverOutboxMessage(email.id)).resolves.toMatchObject({ status: "cancelled" });
   });
 
   it("[R16-18][R13-33] per-type email choice goes through the outbox with an honest status; daily digest batches", async () => {
@@ -367,7 +393,11 @@ describe("W4-D notification engine", () => {
 
     const d = await h.createSecondTenant();
     await d.as.put("/api/notification-preferences", { digestFrequency: "daily" });
-    await emit("bank.sync_failed", { companyId: d.company.id, entityId: crypto.randomUUID() });
+    await h.sql(
+      `INSERT INTO notifications (user_id, type, title, message, event_key)
+       VALUES ($1, 'system', 'Bank feed sync failed', 'Reconnect it under Banking.', $2)`,
+      [d.user.id, `bank.sync_failed:${crypto.randomUUID()}`]
+    );
     await emit("task.due", {
       companyId: d.company.id,
       entityId: crypto.randomUUID(),
@@ -386,7 +416,7 @@ describe("W4-D notification engine", () => {
       [d.email.toLowerCase()]
     );
     expect(digest.length).toBe(1);
-    expect(digest[0].subject).toContain("2 update(s)");
+    expect(digest[0].subject).toContain("1 update(s)");
     expect(
       (await t.as.put("/api/notification-preferences", { digestFrequency: "hourly" })).status
     ).toBe(400);

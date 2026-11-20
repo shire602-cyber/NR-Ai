@@ -17,8 +17,10 @@ Wafeq, Zoho Books, QuickBooks, Xero, and all other AI/non-AI accounting
 software." That claim is too broad and the zip has concrete blockers:
 dependency vulnerabilities, failing lint, a broken formatting script, a
 cross-user notification mutation bug, likely webhook SSRF exposure, incomplete
-e-invoicing, no direct EmaraTax filing, no live bank feeds, no third-party
+e-invoicing, no direct EmaraTax filing, no third-party
 security/compliance certification, and no production customer evidence.
+
+Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 
 Best honest positioning:
 
@@ -26,7 +28,7 @@ Best honest positioning:
   if the target is VAT/corporate-tax workpapers, Arabic/RTL, WhatsApp-driven
   chasing, client operations, and firm portfolio management.
 - Not currently better than Digits for AI-native bookkeeping automation,
-  bank/payroll connectivity, native mobile, MCP/developer ecosystem, or
+  payroll connectivity, native mobile, MCP/developer ecosystem, or
   security posture claims.
 - Not currently better than Wafeq or Zoho Books for market trust, certification
   posture, direct VAT filing, mature regional accounting operations, and live
@@ -247,7 +249,7 @@ Current public positioning from Digits:
 Assessment:
 
 - Muhasib has stronger UAE compliance depth and firm-specific UAE workflows.
-- Digits is ahead on AI-native ledger maturity, bank/payroll connectivity,
+- Digits is ahead on AI-native ledger maturity, payroll connectivity,
   mobile, MCP, public market trust, and security posture.
 
 ### Wafeq
@@ -307,7 +309,7 @@ Assessment:
 
 Current public positioning from Xero:
 
-- Cloud accounting with bank feeds, invoicing, expenses, bills, payroll,
+- Cloud accounting with invoicing, expenses, bills, payroll,
   analytics, practice tools, app store, mobile, support, and accountant
   collaboration.
 - Xero highlights JAX AI, Syft analytics, Workpapers, Xero HQ, Xero Practice
@@ -316,7 +318,7 @@ Current public positioning from Xero:
 Assessment:
 
 - Muhasib has stronger UAE-specific product intent.
-- Xero is far ahead on maturity, ecosystem, bank feeds, partner network, and
+- Xero is far ahead on maturity, ecosystem, partner network, and
   practice management proof.
 
 ## Feature Scorecard

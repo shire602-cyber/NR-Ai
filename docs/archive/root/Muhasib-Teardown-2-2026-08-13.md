@@ -141,7 +141,7 @@ This is the same lesson as last time and it did not land: *the bugs are exactly 
 Six days closer to the deadline. Still:
 
 - **No accredited ASP.** The adapter is written — genuinely good, and it means signing is now a config change, not a build. But an unsigned contract transmits zero invoices. <AED 50m filers must appoint by **31 March 2027**. That is the only clock that matters and it has run for six days while the effort went into deleting `carousel.tsx`.
-- **No bank feeds.** Still CSV-only. QuickBooks has ADCB, DIB, ENBD, FAB, RAKBANK.
+- Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 - **No customers.** Zero. Every one of the 61 navigation destinations remains a guess.
 - **Arabic is still a facade.** 49 of 111 pages import a translation helper; ~3,400 hardcoded English strings. An Arabic user still gets an Arabic sidebar around an English application. In the market where that is your差异, it is still not done.
 

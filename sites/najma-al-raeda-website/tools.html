@@ -59,18 +59,24 @@
         <span class="eyebrow">Corporate Tax estimate</span>
         <h3 style="margin:10px 0 24px;">Your details</h3>
         <div class="calc-field">
-          <label for="ct-profit">Annual taxable income (AED)</label>
-          <input type="number" id="ct-profit" value="600000" min="0" step="1000" />
+          <label for="ct-profit">Taxable income for the period (AED)</label>
+          <input type="number" id="ct-profit" value="600000" min="0" step="0.01" required />
           <div class="calc-hint">Taxable profit after allowable deductions &mdash; not revenue.</div>
         </div>
         <div class="calc-field">
-          <label for="ct-revenue">Annual revenue (AED)</label>
-          <input type="number" id="ct-revenue" value="1200000" min="0" step="1000" />
-          <div class="calc-hint">Used to check Small Business Relief eligibility (&le; AED 3m).</div>
+          <label for="ct-revenue">Revenue for the period (AED)</label>
+          <input type="number" id="ct-revenue" value="1200000" min="0" step="0.01" required aria-describedby="ct-revenue-hint ct-msg" />
+          <div class="calc-hint" id="ct-revenue-hint">Revenue for the tax period. The relief limit is AED 3 million.</div>
         </div>
         <div class="calc-field">
-          <label style="display:flex;align-items:center;gap:10px;font-weight:500;">
-            <input type="checkbox" id="ct-sbr" style="width:auto;" /> Apply Small Business Relief if eligible
+          <label class="calc-check">
+            <input type="checkbox" id="ct-sbr-eligible" aria-describedby="ct-sbr-conditions"> I confirm the eligibility conditions below.
+          </label>
+          <p class="calc-hint" id="ct-sbr-conditions">I am a UAE resident person for Corporate Tax purposes. Revenue is AED 3 million or less in this and all prior tax periods under UAE Corporate Tax. This period starts on or after 1 June 2023 and ends by 31 December 2026. I am neither a Qualifying Free Zone Person nor a member of a multinational group subject to UAE country-by-country reporting.</p>
+        </div>
+        <div class="calc-field">
+          <label class="calc-check">
+            <input type="checkbox" id="ct-sbr"> I intend to elect Small Business Relief in my Corporate Tax return for this period.
           </label>
         </div>
       </div>
@@ -80,7 +86,7 @@
         <div class="calc-result"><div class="rl">Taxed at 9%</div><div class="rv" id="ct-taxed">AED 225,000</div></div>
         <div class="calc-result total"><div class="rl">Estimated Corporate Tax due</div><div class="rv" id="ct-due">AED 20,250</div></div>
         <div class="calc-result"><div class="rl">Effective tax rate</div><div class="rv" id="ct-eff">3.4%</div></div>
-        <p class="calc-note" id="ct-msg">Based on 0% up to AED 375,000 and 9% above. Free-zone qualifying income and other reliefs may change this.</p>
+        <p class="calc-note" id="ct-msg" role="status">Based on 0% up to AED 375,000 and 9% above. Free-zone qualifying income and other reliefs may change this.</p>
       </div>
     </div>
 
@@ -90,7 +96,7 @@
         <h3 style="margin:10px 0 24px;">Your details</h3>
         <div class="calc-field">
           <label for="vat-amount">Amount (AED)</label>
-          <input type="number" id="vat-amount" value="10000" min="0" step="100" />
+          <input type="number" id="vat-amount" value="10000" min="0" max="9999999999999.99" step="0.01" required />
         </div>
         <div class="calc-field">
           <label for="vat-dir">This amount is&hellip;</label>
@@ -102,9 +108,9 @@
       </div>
       <div class="calc-output">
         <span class="eyebrow">Your estimate</span>
-        <div class="calc-result"><div class="rl">Net amount (excl. VAT)</div><div class="rv" id="vat-net">AED 10,000</div></div>
-        <div class="calc-result total"><div class="rl">VAT at 5%</div><div class="rv" id="vat-vat">AED 500</div></div>
-        <div class="calc-result"><div class="rl">Gross amount (incl. VAT)</div><div class="rv" id="vat-gross">AED 10,500</div></div>
+        <div class="calc-result"><div class="rl">Net amount (excl. VAT)</div><div class="rv" id="vat-net">AED 10,000.00</div></div>
+        <div class="calc-result total"><div class="rl">VAT at 5%</div><div class="rv" id="vat-vat">AED 500.00</div></div>
+        <div class="calc-result"><div class="rl">Gross amount (incl. VAT)</div><div class="rv" id="vat-gross">AED 10,500.00</div></div>
         <p class="calc-note">Standard UAE VAT rate is 5%. Zero-rated and exempt supplies are treated differently &mdash; ask us if unsure.</p>
       </div>
     </div>

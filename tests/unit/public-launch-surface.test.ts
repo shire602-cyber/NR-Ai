@@ -328,19 +328,28 @@ describe("Public SaaS launch surface", () => {
     const marketing = load("marketing");
     const csv = BANK_RECONCILIATION_COPY[locale];
 
-    expect(banking["banking.feeds.unavailableTitle"]).not.toMatch(
-      /\b(?:feed|feeds|soon|later)\b|(?:قريب|لاحق|الربط)/i
+    expect(load("portal")).not.toHaveProperty(["portal.eventType.bank.sync_failed"]);
+    expect(load("components")).not.toHaveProperty([
+      "components.srv.notification.bankSyncFailed.title",
+    ]);
+    const providerErrors = Object.entries(errors).filter(([key]) =>
+      key.startsWith("serverErrors.BANK_FEED_")
     );
+    expect(providerErrors).not.toHaveLength(0);
+    for (const [key, message] of providerErrors) expect(message, key).toBe(csv);
     expect([
       banking["banking.emptyTransactionsDescription"],
-      banking["banking.feeds.unavailableBody"],
-      errors["serverErrors.BANK_FEED_NOT_CONFIGURED"],
-      errors["serverErrors.BANK_FEED_BALANCE_UNAVAILABLE"],
       marketing["marketing.bankBody"],
       marketing["marketing.faq3A"],
       marketing["marketing.helpGuide4Body"],
       marketing["marketing.prEveryBankBody"],
-    ]).toEqual(Array(8).fill(csv));
+    ]).toEqual(Array(5).fill(csv));
+  });
+
+  it("documents CSV reconciliation without an availability claim about bank providers", () => {
+    const audit = readRepoFile("docs/archive/root/muhasibaisource20260611-audit.md");
+    expect(audit).not.toMatch(/no live bank feeds/i);
+    expect(audit).toContain(BANK_RECONCILIATION_COPY.en);
   });
 
   // X6b: the old test here compared advertised free-plan limits with source text. Pricing, the

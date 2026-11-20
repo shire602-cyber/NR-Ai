@@ -1,6 +1,6 @@
 # Najma Al Raeda — Website
 
-Premium-minimal marketing site for **Najma Al Raeda**, a Dubai accounting, tax & advisory firm (est. 2017 · 700+ clients · 500+ active).
+Premium-minimal marketing site for **Najma Al Raeda**, a Dubai accounting, tax & advisory firm (est. 2017).
 
 ## Pages
 - `index.html` — Home (hero, services overview, why-us, stats, CTA)

@@ -12,6 +12,15 @@ const arabicPath = (file) =>
 const arabicRoutes = new Set(files.map(arabicPath));
 const englishRoutes = new Set(["/", ...files.map((file) => `/${file}`)]);
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH });
+const reviewFailures = [];
+
+function checkReview(name, actual, expected) {
+  try {
+    assert.deepEqual(actual, expected, name);
+  } catch (error) {
+    reviewFailures.push(error.message);
+  }
+}
 
 async function openContext(locale, options = {}) {
   const context = await browser.newContext({
@@ -65,6 +74,116 @@ async function assertDocument(page, expected, locale) {
   assert.equal(state.overflow, false, `${expected} page reflows`);
 }
 
+async function checkPublishedMetrics(page) {
+  const copy = await page.evaluate(() =>
+    [
+      document.body.textContent,
+      document.title,
+      ...Array.from(document.querySelectorAll("meta[content]"), (tag) => tag.content),
+    ].join(" ")
+  );
+  const normalized = copy.replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
+  const claim = normalized.match(
+    /\b(?:700|500|40)\s*\+|\b98\s*[%٪]|\b(?:700|500)\s+(?:active clients?|clients?|businesses|منشأة|عميل)|\b40\s+(?:industries|قطاع)/iu
+  );
+  checkReview(
+    `${new URL(page.url()).pathname} published client or industry metric`,
+    claim?.[0],
+    undefined
+  );
+}
+
+async function checkReliefGuide(page, locale) {
+  const conditions = await page.locator("article .prose, .article .prose").innerText();
+  const required =
+    locale === "ar"
+      ? ["الفترات الضريبية السابقة", "31 ديسمبر 2026", "اخترت تسهيلات الأعمال الصغيرة"]
+      : ["all prior relevant periods", "31 December 2026", "elect Small Business Relief"];
+  for (const phrase of required) {
+    checkReview(`${locale} relief guide includes ${phrase}`, conditions.includes(phrase), true);
+  }
+}
+
+async function checkCalculators(page, locale) {
+  const ar = locale === "ar";
+  const format = (value, decimals = 0) => {
+    const number = new Intl.NumberFormat(ar ? "ar-AE" : "en-US", {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(value);
+    return ar ? `${number} درهم` : `AED ${number}`;
+  };
+  const revenue = page.locator("#ct-revenue");
+  const due = page.locator("#ct-due");
+  const election = page.locator("#ct-sbr");
+  const eligibility = page.locator("#ct-sbr-eligible");
+  await page.locator("#ct-profit").fill("600000");
+  checkReview(`${locale} ordinary Corporate Tax estimate`, await due.innerText(), format(20250));
+  await election.check();
+  checkReview(
+    `${locale} election needs eligibility confirmation`,
+    await due.innerText(),
+    format(20250)
+  );
+  for (const invalid of ["", "-1"]) {
+    await revenue.fill(invalid);
+    checkReview(`${locale} invalid revenue ${JSON.stringify(invalid)}`, await due.innerText(), "—");
+    checkReview(
+      `${locale} revenue field is invalid`,
+      await revenue.getAttribute("aria-invalid"),
+      "true"
+    );
+  }
+  await revenue.fill("3000000");
+  checkReview(`${locale} eligibility confirmation field`, await eligibility.count(), 1);
+  if (await eligibility.count()) {
+    const checklist = await page.locator("#ct-sbr-conditions").innerText();
+    checkReview(
+      `${locale} prior-period revenue is in the conditions`,
+      (ar ? /الفترات الضريبية السابقة/ : /prior tax periods/).test(checklist),
+      true
+    );
+    await election.uncheck();
+    await eligibility.check();
+    checkReview(
+      `${locale} confirmation alone needs an election`,
+      await due.innerText(),
+      format(20250)
+    );
+    await election.check();
+    checkReview(`${locale} confirmed relief estimate`, await due.innerText(), format(0));
+    checkReview(
+      `${locale} relief is conditional`,
+      (ar ? /تقدير مشروط/ : /conditional estimate/i).test(
+        await page.locator("#ct-msg").innerText()
+      ),
+      true
+    );
+    await revenue.fill("3000000.01");
+    checkReview(`${locale} revenue above the relief cap`, await due.innerText(), format(20250));
+  }
+
+  await page
+    .getByRole("button", { name: ar ? "ضريبة القيمة المضافة" : "VAT", exact: true })
+    .click();
+  for (const [mode, amount, amounts] of [
+    ["remove", "100", [95.24, 4.76, 100]],
+    ["add", "0.10", [0.1, 0.01, 0.11]],
+    ["add", "19.99", [19.99, 1, 20.99]],
+  ]) {
+    await page.locator("#vat-dir").selectOption(mode);
+    await page.locator("#vat-amount").fill(amount);
+    const values = await Promise.all(
+      ["net", "vat", "gross"].map((id) => page.locator(`#vat-${id}`).innerText())
+    );
+    checkReview(
+      `${locale} VAT ${mode} ${amount}`,
+      values,
+      amounts.map((value) => format(value, 2))
+    );
+  }
+}
+
 async function assertInternalLinks(page, locale) {
   const links = await page.locator("a[href]").evaluateAll((anchors) =>
     anchors.map((anchor) => ({
@@ -93,6 +212,8 @@ try {
     try {
       await assertDocument(page, target, "ar");
       await assertInternalLinks(page, "ar");
+      await checkPublishedMetrics(page);
+      if (file === "insight-small-business-relief.html") await checkReliefGuide(page, "ar");
     } catch (error) {
       failures.push(`${file}: ${error.message}`);
     }
@@ -117,9 +238,7 @@ try {
   await page.waitForURL(new URL("/ar/", base).href);
   await assertDocument(page, "/ar/", "ar");
   await page.goto(new URL("/ar/tools/", base).href);
-  await page.getByRole("button", { name: "ضريبة القيمة المضافة", exact: true }).click();
-  await page.getByLabel("المبلغ (بالدرهم)", { exact: true }).fill("20000");
-  assert.match(await page.locator("#vat-vat").innerText(), /(?:1,000|١٬٠٠٠) درهم/u);
+  await checkCalculators(page, "ar");
   await page.goto(new URL("/ar/contact/", base).href);
   await page.getByLabel("الاسم الكامل").fill("جهة اختبار");
   await page.locator("#email").fill("example@invalid");
@@ -136,7 +255,11 @@ try {
     assert.equal(response?.status(), 200, file);
     await assertDocument(englishPage, `/${file}`, "en");
     await assertInternalLinks(englishPage, "en");
+    await checkPublishedMetrics(englishPage);
+    if (file === "insight-small-business-relief.html") await checkReliefGuide(englishPage, "en");
   }
+  await englishPage.goto(new URL("/tools.html", base).href);
+  await checkCalculators(englishPage, "en");
   // An explicit Arabic URL wins over browser detection. Verify its desktop mega-menu too.
   await englishPage.goto(new URL("/ar/service-bookkeeping/", base).href);
   await assertDocument(englishPage, "/ar/service-bookkeeping/", "ar");
@@ -158,6 +281,7 @@ try {
   assert.equal(response?.status(), 200);
   await assertDocument(staticPage, "/ar/insight-vat-essentials/", "ar");
   await noJs.close();
+  assert.deepEqual(reviewFailures, [], "calculator results and published firm metrics");
   console.log(
     `Verified ${files.length} Arabic routes and ${files.length} English pages, language switching, navigation, form validation and calculator output.`
   );

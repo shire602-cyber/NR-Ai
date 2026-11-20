@@ -27,6 +27,7 @@ import { listJobs, registerJob } from "../platform/job-registry";
 import { escapeHtml, renderBilingualEmail, sendEmail } from "./email.service";
 import { isCapabilityLive } from "../../shared/capabilities";
 import { notificationCopy, renderServerCopy } from "../../shared/server-copy";
+import { customerVisibleNotification } from "../storage/notification-visibility";
 
 const log = createLogger("notification-engine");
 
@@ -38,7 +39,6 @@ export const NOTIFICATION_EVENT_TYPES = [
   "bill.approved",
   "bill.paid",
   "payroll.approved",
-  "bank.sync_failed",
   "compliance.deadline_due",
   "task.due",
 ] as const;
@@ -78,7 +78,6 @@ const TYPE_RULES: Record<
   "bill.approved": { category: null, emailByDefault: false, notificationType: "system" },
   "bill.paid": { category: null, emailByDefault: false, notificationType: "system" },
   "payroll.approved": { category: null, emailByDefault: true, notificationType: "system" },
-  "bank.sync_failed": { category: null, emailByDefault: true, notificationType: "system" },
   "compliance.deadline_due": {
     category: "vatDeadlines",
     emailByDefault: true,
@@ -379,21 +378,6 @@ export async function notificationForEvent(event: DomainEvent): Promise<NotifyIn
         relatedEntityType: "payroll_run",
         actionUrl: "/payroll",
       };
-    case "bank.sync_failed":
-      return {
-        ...base,
-        type: "bank.sync_failed",
-        ...notificationCopy(
-          "notification.bankSyncFailed.title",
-          "notification.bankSyncFailed.message",
-          { provider: p.provider as string | undefined, reason: p.reason as string | undefined }
-        ),
-        priority: "high",
-        relatedEntityType: "bank_connection",
-        actionUrl: "/bank-feeds",
-        // One notification per failure day, not per retry.
-        eventKey: `${p.entityId}:${String(p.occurredAt).slice(0, 10)}`,
-      };
     case "compliance.deadline_due":
       return {
         ...base,
@@ -442,7 +426,6 @@ export function registerNotificationEngine(): void {
       "bill.approved",
       "bill.paid",
       "payroll.approved",
-      "bank.sync_failed",
       "compliance.deadline_due",
       "task.due",
     ] as const) {
@@ -564,6 +547,7 @@ export async function sendDailyDigests(now: Date = new Date()): Promise<number> 
       .where(
         and(
           eq(notifications.userId, u.userId),
+          customerVisibleNotification(),
           isNull(notifications.digestedAt),
           gte(notifications.createdAt, since)
         )

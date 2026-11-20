@@ -286,7 +286,7 @@ export default function BankReconciliation() {
   const { companyId, isLoading: isLoadingCompany } = useDefaultCompany();
 
   const [selectedBankAccount, setSelectedBankAccount] = useState<string>("");
-  // `?import=1` (e.g. from Bank feeds) opens the statement import straight away.
+  // `?import=1` (e.g. from the legacy banking route) opens the statement import straight away.
   const [importDialogOpen, setImportDialogOpen] = useState(
     () =>
       typeof window !== "undefined" &&

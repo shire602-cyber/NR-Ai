@@ -116,7 +116,7 @@ function assertAllowedRedirect(uri: string): void {
       "REDIRECT_URI_NOT_ALLOWED",
       400,
       { allowed },
-      "The redirect URI is not on the bank-feed allow-list"
+      BANK_RECONCILIATION_COPY.en
     );
   }
 }
@@ -188,12 +188,7 @@ export async function completeCallback(input: {
     )
     .returning();
   if (!row) {
-    throw new DomainError(
-      "INVALID_OAUTH_STATE",
-      400,
-      undefined,
-      "The bank connection request expired or did not start here. Start again."
-    );
+    throw new DomainError("INVALID_OAUTH_STATE", 400, undefined, BANK_RECONCILIATION_COPY.en);
   }
   assertConfigured(adapter);
   let tokens: FeedTokens;
@@ -239,7 +234,7 @@ function providerFailure(adapter: BankFeedAdapter, err: unknown): DomainError {
     "BANK_FEED_PROVIDER_ERROR",
     502,
     { provider: adapter.id, providerStatus: status },
-    `${adapter.label} did not respond as expected`
+    BANK_RECONCILIATION_COPY.en
   );
 }
 
@@ -268,7 +263,7 @@ export async function syncConnection(
       "BANK_FEED_ACCOUNT_NOT_LINKED",
       409,
       undefined,
-      "Link this feed to a bank account before syncing"
+      BANK_RECONCILIATION_COPY.en
     );
   }
   const ba = await storage.getBankAccountById(connection.bankAccountId, connection.companyId);

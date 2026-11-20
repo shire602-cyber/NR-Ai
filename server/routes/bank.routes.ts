@@ -270,7 +270,7 @@ export function registerBankRoutes(app: Express) {
           "BANK_FEED_NOT_SUPPORTED",
           400,
           undefined,
-          "This connection is statement-only"
+          BANK_RECONCILIATION_COPY.en
         );
       const result = await syncConnection(connection, {
         from: req.body.fromDate,

@@ -96,36 +96,6 @@
     reveals.forEach(function (el) { el.classList.add('in'); });
   }
 
-  // ---- Animated counters (respect reduced motion) ----
-  var counters = document.querySelectorAll('[data-count]');
-  var setFinal = function (el) {
-    var t = parseFloat(el.dataset.count); var suf = el.dataset.suffix || '';
-    el.textContent = (t % 1 === 0 ? t : t.toFixed(1)) + suf;
-  };
-  if (reduceMotion) {
-    counters.forEach(setFinal);
-  } else if ('IntersectionObserver' in window && counters.length) {
-    var co = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (!e.isIntersecting) return;
-        var el = e.target, target = parseFloat(el.dataset.count), suffix = el.dataset.suffix || '';
-        var dur = 1400, start = performance.now();
-        var step = function (now) {
-          var p = Math.min((now - start) / dur, 1);
-          var eased = 1 - Math.pow(1 - p, 3);
-          var val = target % 1 === 0 ? Math.floor(eased * target) : (eased * target).toFixed(1);
-          el.textContent = val + suffix;
-          if (p < 1) requestAnimationFrame(step);
-        };
-        requestAnimationFrame(step);
-        co.unobserve(el);
-      });
-    }, { threshold: 0.5 });
-    counters.forEach(function (el) { co.observe(el); });
-  } else {
-    counters.forEach(setFinal);
-  }
-
   // ---- Hero logo video: pause for reduced-motion users ----
   if (reduceMotion) {
     var hv = document.querySelector('.hero-logo-video');

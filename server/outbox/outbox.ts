@@ -21,6 +21,7 @@ import {
   type EmailOutboxStatus,
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
+import { RETIRED_BANK_NOTIFICATION_PREFIX } from "../../shared/notification-copy";
 import {
   EmailTransportError,
   activeProviderName,
@@ -197,6 +198,15 @@ async function claim(ids: string[] | null, limit: number): Promise<EmailOutboxRo
 }
 
 async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
+  if (row.idempotencyKey?.startsWith(`notif:${RETIRED_BANK_NOTIFICATION_PREFIX}`)) {
+    const [cancelled] = await db
+      .update(emailOutbox)
+      .set({ status: "cancelled", lockedUntil: null, updatedAt: new Date() })
+      .where(eq(emailOutbox.id, row.id))
+      .returning();
+    await recordEvent(row.id, "cancelled");
+    return toResult(cancelled);
+  }
   const transport = resolveTransport();
   if (!transport) {
     const [blocked] = await db

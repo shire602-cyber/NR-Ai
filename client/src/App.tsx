@@ -6,7 +6,7 @@ import { landingPathFor, onboardingRedirectTarget } from "@/lib/app-landing";
 import "@shared/zod-config";
 import { useCallback, useEffect, Suspense } from "react";
 import { lazyWithReload, clearChunkReloadGuards } from "@/lib/lazyWithReload";
-import { Switch, Route, useLocation, Link } from "wouter";
+import { Switch, Route, Redirect, useLocation, Link } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useIsFetching } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -763,7 +763,9 @@ function Router() {
             <Route path="/analytics" component={AnalyticsHub} />
             <Route path="/bank-reconciliation" component={BankReconciliation} />
             <Route path="/bank-accounts" component={BankAccounts} />
-            <Route path="/bank-feeds/callback" component={BankFeeds} />
+            <Route path="/bank-feeds/callback">
+              <Redirect to="/bank-feeds" replace />
+            </Route>
             <Route path="/bank-feeds" component={BankFeeds} />
             <Route path="/evidence-center" component={EvidenceCenter} />
             <Route path="/vat-filing" component={VATFiling} />
