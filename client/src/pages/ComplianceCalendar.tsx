@@ -248,14 +248,16 @@ export default function ComplianceCalendar() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card className="lg:col-span-2">
-            <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-              <div className="flex items-center gap-4">
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
+              <div className="flex min-w-0 items-center gap-2 sm:gap-4">
                 <Button
                   variant="outline"
                   size="icon"
+                  className="shrink-0"
+                  aria-label={t["complianceCalendar.previousMonth"]}
                   onClick={() => setCurrentDate(subMonths(currentDate, 1))}
                 >
-                  <ChevronLeft className="w-4 h-4" />
+                  <ChevronLeft className="h-4 w-4 rtl:-scale-x-100" aria-hidden />
                 </Button>
                 <h2 className="text-lg font-semibold">
                   {format(currentDate, "MMMM yyyy", dateFnsOptions(locale))}
@@ -263,9 +265,11 @@ export default function ComplianceCalendar() {
                 <Button
                   variant="outline"
                   size="icon"
+                  className="shrink-0"
+                  aria-label={t["complianceCalendar.nextMonth"]}
                   onClick={() => setCurrentDate(addMonths(currentDate, 1))}
                 >
-                  <ChevronRight className="w-4 h-4" />
+                  <ChevronRight className="h-4 w-4 rtl:-scale-x-100" aria-hidden />
                 </Button>
               </div>
               {/* Sweep: already on this month, "Today" has nothing to do. */}
@@ -315,41 +319,50 @@ export default function ComplianceCalendar() {
                   const isSelected = selectedDate && isSameDay(day, selectedDate);
 
                   return (
-                    <div
+                    <button
                       key={day.toISOString()}
-                      className={`h-24 p-1 border rounded-md cursor-pointer transition-colors hover-elevate ${
+                      type="button"
+                      aria-label={formatDate(day, locale)}
+                      aria-pressed={Boolean(isSelected)}
+                      className={`relative flex h-24 min-w-0 flex-col items-stretch rounded-md border p-1 text-start transition-colors hover-elevate ${
                         !isSameMonth(day, currentDate) ? "opacity-50" : ""
                       } ${isToday(day) ? "border-primary bg-primary/5" : ""} ${
                         isSelected ? "ring-2 ring-primary" : ""
                       }`}
                       onClick={() => setSelectedDate(day)}
                     >
-                      <div className={`text-sm font-medium ${isToday(day) ? "text-primary" : ""}`}>
+                      <span className={`text-sm font-medium ${isToday(day) ? "text-primary" : ""}`}>
                         {format(day, "d")}
-                      </div>
-                      <div className="mt-1 space-y-0.5 overflow-hidden">
+                      </span>
+                      <span className="mt-1 space-y-0.5 overflow-hidden">
                         {events.slice(0, 2).map((event) => {
                           const Icon = CATEGORY_ICONS[event.category] || Clock;
                           return (
-                            <div
+                            <span
                               key={event.id}
-                              className={`text-xs px-1 py-0.5 rounded truncate ${CATEGORY_COLORS[event.category]}`}
+                              title={event.title}
+                              className={`block truncate rounded px-1 py-0.5 text-xs ${CATEGORY_COLORS[event.category]}`}
                             >
-                              <Icon className="w-3 h-3 inline-block me-1" />
-                              {event.title.substring(0, 15)}
-                            </div>
+                              <Icon className="me-1 inline-block h-3 w-3" aria-hidden />
+                              <bdi>{event.title}</bdi>
+                            </span>
                           );
                         })}
                         {events.length > 2 && (
-                          <div className="text-xs text-muted-foreground px-1">
-                            +{events.length - 2} more
-                          </div>
+                          <span className="block truncate px-1 text-xs text-muted-foreground">
+                            {formatMessage(t["complianceCalendar.moreEvents"], {
+                              count: events.length - 2,
+                            })}
+                          </span>
                         )}
-                      </div>
+                      </span>
                       {hasOverdue && (
-                        <AlertTriangle className="w-3 h-3 text-destructive absolute top-1 end-1" />
+                        <AlertTriangle
+                          className="absolute end-1 top-1 h-3 w-3 text-destructive"
+                          aria-hidden
+                        />
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </div>

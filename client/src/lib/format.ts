@@ -1,7 +1,12 @@
 // Formatting utilities for currency and numbers
-import { formatMoneyText } from "./format-money";
+import { isolateLtrText } from "./format-bidi";
+import { formatMoneyText, MINUS_SIGN } from "./format-money";
 import { useI18n } from "./i18n";
-import { formatDate as formatDisplayDate, parseCalendarDate } from "./format-date";
+import {
+  ARABIC_DISPLAY_LOCALE,
+  formatDate as formatDisplayDate,
+  parseCalendarDate,
+} from "./format-date";
 
 /**
  * Display money as a string. Delegates to the one money formatter (lib/format-money.ts):
@@ -33,13 +38,33 @@ export function formatCurrencyPlain(
   }).format(amount);
 }
 
-export function formatNumber(num: number, locale: string = "en"): string {
-  const formatLocale = locale === "ar" ? "ar-AE" : "en-AE";
+// Financial figures use Latin digits, comma grouping, and a decimal point in both UI locales.
+const numberFormatter = new Intl.NumberFormat("en-AE", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+  numberingSystem: "latn",
+});
+const integerFormatter = new Intl.NumberFormat("en-AE", {
+  maximumFractionDigits: 0,
+  numberingSystem: "latn",
+});
+const percentFormatter = new Intl.NumberFormat("en-AE", {
+  style: "percent",
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 1,
+  numberingSystem: "latn",
+});
 
-  return new Intl.NumberFormat(formatLocale, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num);
+function displayFigure(text: string, locale: string): string {
+  return locale === "ar" ? isolateLtrText(text.replace(/^-/, MINUS_SIGN)) : text;
+}
+
+export function formatNumber(num: number, locale: string = "en"): string {
+  return displayFigure(numberFormatter.format(num), locale);
+}
+
+export function formatInteger(num: number, locale: string = "en"): string {
+  return displayFigure(integerFormatter.format(num), locale);
 }
 
 /** Display date, `d MMM yyyy` (lib/format-date.ts). */
@@ -64,20 +89,14 @@ export function formatDatePlain(date: Date | string, locale: string = "en"): str
 export function formatMonthKey(key: string, locale: string = "en"): string {
   const match = /^(\d{4})-(\d{2})/.exec(key ?? "");
   if (!match) return key;
-  const formatLocale = locale === "ar" ? "ar-AE" : "en-AE";
+  const formatLocale = locale === "ar" ? ARABIC_DISPLAY_LOCALE : "en-AE";
   return new Intl.DateTimeFormat(formatLocale, { month: "short", timeZone: "UTC" }).format(
     new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1))
   );
 }
 
 export function formatPercent(value: number, locale: string = "en"): string {
-  const formatLocale = locale === "ar" ? "ar-AE" : "en-AE";
-
-  return new Intl.NumberFormat(formatLocale, {
-    style: "percent",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 1,
-  }).format(value);
+  return displayFigure(percentFormatter.format(value), locale);
 }
 
 /**

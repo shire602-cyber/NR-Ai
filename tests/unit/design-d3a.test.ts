@@ -105,9 +105,8 @@ describe("D3a design pass", () => {
   it("CSS: tables keep the document direction and phones get two-line row cards", () => {
     // Source-level: jsdom does not evaluate stylesheets, so the selectors are asserted directly.
     const rtl = read("client/src/styles/rtl.css");
-    expect(rtl).toContain(
-      '[dir="rtl"] .tabular-nums:not(table):not(thead):not(tbody):not(tfoot):not(tr)'
-    );
+    expect(rtl).not.toContain(".tabular-nums");
+    expect(rtl).toMatch(/:where\(th, td\):dir\(rtl\)\s*\{\s*text-align: start/);
     const mobile = read("client/src/styles/mobile.css");
     expect(mobile).toContain('table.row-cards td[data-cell="title"]');
     expect(mobile).toContain('table.row-cards td[data-cell="amount"]');
