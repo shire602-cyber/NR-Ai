@@ -20,6 +20,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { CardListSkeleton } from "@/components/ui/loading-skeletons";
+import { ErrorState } from "@/components/ui/error-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   Select,
@@ -54,6 +55,7 @@ import {
   deriveConfidenceBand,
   receiptReviewDecision,
   type ConfidenceBand,
+  type ValidationIssue,
   type ReviewSnapshot,
 } from "@shared/receipt-confidence";
 import { DateRangeFilter, type DateRange } from "@/components/DateRangeFilter";
@@ -137,6 +139,7 @@ interface ExtractedData {
   // Confidence banding and review routing (R05-23)
   confidenceBand?: ConfidenceBand;
   reviewReasons?: string[];
+  validationIssues?: Pick<ValidationIssue, "code">[];
   reviewed?: boolean;
   original?: ReviewSnapshot;
   ocrSource?: string;
@@ -151,8 +154,12 @@ interface ExtractedData {
 
 /** Fill in band + the "as extracted" snapshot used to record the reviewer's decision. */
 function withReviewMeta(data: ExtractedData): ExtractedData {
-  const band =
-    data.confidenceBand ?? deriveConfidenceBand({ extractionConfidence: data.confidence }).band;
+  const reportedBand = data.confidenceBand;
+  const band = reportedBand
+    ? Object.hasOwn(BAND_LABELS, reportedBand)
+      ? reportedBand
+      : "low"
+    : deriveConfidenceBand({ extractionConfidence: data.confidence }).band;
   return {
     ...data,
     confidenceBand: band,
@@ -359,11 +366,34 @@ function isInternalClassifierMethod(value: unknown): value is InternalClassifier
 // Human-readable labels for how a category suggestion was derived, shown on
 // the review card so users understand why a category was pre-filled.
 const CLASSIFIER_METHOD_LABELS: Record<string, string> = {
-  rule: "your company rules",
-  keyword: "UAE keyword match",
-  statistical: "your past classifications",
-  openai: "AI vision",
+  rule: "pageLabels.receiptCategoryRule",
+  keyword: "pageLabels.receiptCategoryKeyword",
+  statistical: "pageLabels.receiptCategoryHistory",
+  openai: "pageLabels.receiptCategoryAi",
 };
+
+const OCR_REVIEW_ISSUE_LABELS: Record<string, string> = {
+  MISSING_AMOUNT: "pageLabels.receiptIssueMissingAmount",
+  AMOUNT_MISMATCH: "pageLabels.receiptIssueAmounts",
+  DATE_FORMAT: "pageLabels.receiptIssueDate",
+  DATE_FUTURE: "pageLabels.receiptIssueFutureDate",
+  DATE_ANCIENT: "pageLabels.receiptIssueOldDate",
+  DATE_MISSING: "pageLabels.receiptIssueMissingDate",
+  CURRENCY_INVALID: "pageLabels.receiptIssueCurrency",
+  TRN_INVALID: "pageLabels.receiptIssueTrn",
+  VAT_RATE_UNUSUAL: "pageLabels.receiptIssueVat",
+};
+
+function receiptReviewNotes(data: ExtractedData, locale: string, t: Record<string, string>) {
+  const reasons = data.reviewReasons ?? [];
+  if (locale !== "ar" || reasons.length === 0) return reasons;
+
+  const fallback = "pageLabels.receiptIssueGeneral";
+  const keys = (data.validationIssues ?? []).map(
+    ({ code }) => OCR_REVIEW_ISSUE_LABELS[code] ?? fallback
+  );
+  return keys.length ? Array.from(new Set(keys), (key) => t[key]) : [t[fallback]];
+}
 
 /** Display label for a stored (English) receipt category; unknown categories show as stored. */
 const RECEIPT_CATEGORY_KEYS: Record<string, string> = {
@@ -402,12 +432,12 @@ export default function Receipts() {
       : "receipts"
   );
   // X3: ask up front whether automatic reading (AI/OCR) is enabled, so a scan never spins for a
-  // minute and then fails. `false` = not enabled; undefined = still loading (scan proceeds).
-  const { data: ocrStatus } = useQuery<{ aiConfigured: boolean }>({
+  // minute and then fails. The scan controls wait for a positive status.
+  const { data: ocrStatus, isLoading: ocrStatusLoading } = useQuery<{ aiConfigured: boolean }>({
     queryKey: ["/api/ocr/status"],
     staleTime: 5 * 60 * 1000,
   });
-  const autoReadUnavailable = ocrStatus?.aiConfigured === false;
+  const autoReadUnavailable = !ocrStatusLoading && ocrStatus?.aiConfigured !== true;
   const [processedReceipts, setProcessedReceipts] = useState<ProcessedReceipt[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessingBulk, setIsProcessingBulk] = useState(false);
@@ -430,6 +460,7 @@ export default function Receipts() {
   const [isExporting, setIsExporting] = useState(false);
   const [isOcrExporting, setIsOcrExporting] = useState(false);
   const [manualExpenseDialogOpen, setManualExpenseDialogOpen] = useState(false);
+  const [manualSource, setManualSource] = useState<ProcessedReceipt | null>(null);
   const [imagePreview, setImagePreview] = useState<{ src: string; merchant?: string } | null>(null);
   // R05-19b (S2): split lines / revise a posted receipt / split one upload into receipts.
   const [linesDialog, setLinesDialog] = useState<{
@@ -450,7 +481,12 @@ export default function Receipts() {
   });
 
   // Fetch receipts
-  const { data: receipts, isLoading } = useQuery<any[]>({
+  const {
+    data: receipts,
+    isLoading,
+    error: receiptsError,
+    refetch: refetchReceipts,
+  } = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "receipts"],
     enabled: !!companyId,
   });
@@ -553,7 +589,13 @@ export default function Receipts() {
   });
 
   const manualExpenseMutation = useMutation({
-    mutationFn: async (data: ReceiptFormData) => {
+    mutationFn: async ({
+      data,
+      source,
+    }: {
+      data: ReceiptFormData;
+      source: ProcessedReceipt | null;
+    }) => {
       return apiRequest("POST", `/api/companies/${companyId}/receipts`, {
         merchant: data.merchant,
         date: data.date,
@@ -561,9 +603,12 @@ export default function Receipts() {
         vatAmount: data.vatAmount,
         category: data.category,
         currency: data.currency,
+        ...(source ? { imageData: source.preview } : {}),
       });
     },
-    onSuccess: () => {
+    onSuccess: (_created, { source }) => {
+      if (source) setProcessedReceipts((previous) => previous.filter((row) => row !== source));
+      setManualSource(null);
       queryClient.invalidateQueries({ queryKey: ["/api/companies", companyId, "receipts"] });
       toast({
         title: tr("Expense created successfully", "تم إنشاء المصروف"),
@@ -748,12 +793,15 @@ export default function Receipts() {
 
   const onManualExpenseSubmit = (data: ReceiptFormData) => {
     manualExpenseMutation.mutate({
-      ...data,
-      amount: Number(data.amount),
-      vatAmount:
-        data.vatAmount === 0 || data.vatAmount === null || isNaN(data.vatAmount as number)
-          ? null
-          : Number(data.vatAmount),
+      source: manualSource,
+      data: {
+        ...data,
+        amount: Number(data.amount),
+        vatAmount:
+          data.vatAmount === 0 || data.vatAmount === null || isNaN(data.vatAmount as number)
+            ? null
+            : Number(data.vatAmount),
+      },
     });
   };
 
@@ -928,8 +976,12 @@ export default function Receipts() {
     setProcessedReceipts((prev) => prev.filter((_, i) => i !== index));
   };
 
-  /** Explain (en/ar) that automatic reading is off and open manual entry right away. */
-  const explainAutoReadUnavailable = () => {
+  const openManualExpense = (source: ProcessedReceipt | null) => {
+    setManualSource(source);
+    setManualExpenseDialogOpen(true);
+  };
+
+  const explainAutoReadUnavailable = (source: ProcessedReceipt) => {
     toast({
       title: tr("Automatic reading isn't enabled yet", "القراءة التلقائية غير مفعّلة بعد"),
       description: tr(
@@ -937,14 +989,14 @@ export default function Receipts() {
         "لا يمكننا قراءة الإيصالات تلقائياً بعد. أدخل التفاصيل بنفسك وأرفق الصورة كإثبات."
       ),
     });
-    setManualExpenseDialogOpen(true);
+    openManualExpense(source);
   };
 
   const processReceipt = async (index: number) => {
     const receipt = processedReceipts[index];
     if (!receipt) return;
     if (autoReadUnavailable) {
-      explainAutoReadUnavailable();
+      explainAutoReadUnavailable(receipt);
       return;
     }
 
@@ -1046,7 +1098,18 @@ export default function Receipts() {
             suggestedCategory: result.category || "Other",
             classifier: result.classifier || null,
             confidenceBand: result.confidenceBand,
-            reviewReasons: Array.isArray(result.reviewReasons) ? result.reviewReasons : [],
+            reviewReasons: Array.isArray(result.reviewReasons)
+              ? result.reviewReasons.filter((reason: unknown) => typeof reason === "string")
+              : [],
+            validationIssues: Array.isArray(result.validationIssues)
+              ? result.validationIssues.filter(
+                  (issue: unknown) =>
+                    issue !== null &&
+                    typeof issue === "object" &&
+                    "code" in issue &&
+                    typeof issue.code === "string"
+                )
+              : [],
             ocrSource: result.ocrSource,
             supplierTrn: result.supplierTrn ?? null,
             isTaxInvoice: Boolean(result.isTaxInvoice),
@@ -1196,11 +1259,7 @@ export default function Receipts() {
       .map((receipt, index) => (isOcrRetryable(receipt) ? index : -1))
       .filter((index) => index >= 0);
 
-    if (indexesToProcess.length === 0) return;
-    if (autoReadUnavailable) {
-      explainAutoReadUnavailable();
-      return;
-    }
+    if (indexesToProcess.length === 0 || ocrStatusLoading || autoReadUnavailable) return;
 
     setIsProcessingBulk(true);
 
@@ -1659,12 +1718,12 @@ export default function Receipts() {
         title={t["purchases.receiptsTitle"]}
         description={
           autoReadUnavailable
-            ? t["pages.receiptsSubtitleManual"]
+            ? t["pageLabels.receiptsManualWorkflow"]
             : (t as any).receiptScannerSubtitle
         }
         actions={
           <Button
-            onClick={() => setManualExpenseDialogOpen(true)}
+            onClick={() => openManualExpense(null)}
             className="w-full sm:w-auto"
             data-testid="button-add-manual-expense"
           >
@@ -1773,34 +1832,36 @@ export default function Receipts() {
 
               {/* Action Buttons */}
               {processedReceipts.length > 0 && (
-                <div className="flex gap-2">
-                  <Button
-                    onClick={processAllReceipts}
-                    disabled={isProcessingBulk || retryableOcrCount === 0}
-                    className="flex-1"
-                    size="lg"
-                    data-testid="button-process-all"
-                  >
-                    {isProcessingBulk ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <T k="invoices.processing" />
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        {errorCount > 0 && pendingCount === 0
-                          ? formatMessage(t["screens.retryFailedOcr"], { count: errorCount })
-                          : errorCount > 0
-                            ? formatMessage(t["screens.processRetryOcr"], {
-                                count: retryableOcrCount,
-                              })
-                            : formatMessage(t["screens.processAllReceipts"], {
-                                count: pendingCount,
-                              })}
-                      </>
-                    )}
-                  </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {!autoReadUnavailable && (
+                    <Button
+                      onClick={processAllReceipts}
+                      disabled={ocrStatusLoading || isProcessingBulk || retryableOcrCount === 0}
+                      className="flex-1"
+                      size="lg"
+                      data-testid="button-process-all"
+                    >
+                      {isProcessingBulk ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <T k="invoices.processing" />
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          {errorCount > 0 && pendingCount === 0
+                            ? formatMessage(t["screens.retryFailedOcr"], { count: errorCount })
+                            : errorCount > 0
+                              ? formatMessage(t["screens.processRetryOcr"], {
+                                  count: retryableOcrCount,
+                                })
+                              : formatMessage(t["screens.processAllReceipts"], {
+                                  count: pendingCount,
+                                })}
+                        </>
+                      )}
+                    </Button>
+                  )}
 
                   <Button
                     onClick={saveAllReceipts}
@@ -1917,7 +1978,7 @@ export default function Receipts() {
                         >
                           <img
                             src={receipt.preview}
-                            alt={`Receipt ${index + 1}`}
+                            alt=""
                             className="w-full h-full object-cover"
                           />
                           <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -1930,6 +1991,7 @@ export default function Receipts() {
                           className="absolute -top-2 -end-2 h-6 w-6"
                           onClick={() => removeReceipt(index)}
                           disabled={isProcessingBulk}
+                          aria-label={t["components.ui.fileDropRemove"]}
                           data-testid={`button-remove-${index}`}
                         >
                           <X className="w-3 h-3" />
@@ -1953,8 +2015,20 @@ export default function Receipts() {
                           </div>
                         )}
 
+                        {((autoReadUnavailable && receipt.status === "pending") ||
+                          receipt.status === "error") && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => openManualExpense(receipt)}
+                            data-testid={`button-manual-receipt-${index}`}
+                          >
+                            {t["pageLabels.addExpenseManually"]}
+                          </Button>
+                        )}
+
                         {receipt.status === "processing" && (
-                          <div className="space-y-2">
+                          <div className="space-y-2" role="status">
                             <div className="flex items-center justify-between text-sm">
                               <span className="flex items-center gap-2">
                                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -2026,75 +2100,91 @@ export default function Receipts() {
                         {receipt.status === "completed" && receipt.data && (
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div className="space-y-1">
-                              <Label className="text-xs">Merchant / supplier</Label>
+                              <Label htmlFor={`ocr-merchant-${index}`}>
+                                {t["forms.receipt.merchant"]}
+                              </Label>
                               <Input
+                                id={`ocr-merchant-${index}`}
+                                dir="auto"
                                 value={receipt.data.merchant || ""}
                                 onChange={(e) =>
                                   updateReceiptData(index, { merchant: e.target.value })
                                 }
-                                className="h-8"
+                                className="min-h-10"
                                 data-testid={`input-merchant-${index}`}
                               />
                             </div>
 
                             <div className="space-y-1">
-                              <Label className="text-xs">Date</Label>
+                              <Label htmlFor={`ocr-date-${index}`}>{t.date}</Label>
                               <DatePicker
+                                id={`ocr-date-${index}`}
                                 value={receipt.data.date || ""}
                                 onChange={(value) => updateReceiptData(index, { date: value })}
-                                className="h-8"
+                                className="min-h-10"
                                 data-testid={`input-date-${index}`}
                               />
                             </div>
 
                             {receipt.data.invoiceNumber && (
-                              <div className="space-y-1 col-span-2">
-                                <Label className="text-xs">Invoice / receipt number</Label>
+                              <div className="space-y-1 sm:col-span-2">
+                                <Label htmlFor={`ocr-number-${index}`}>
+                                  {t["pageLabels.receiptDocumentNumber"]}
+                                </Label>
                                 <Input
+                                  id={`ocr-number-${index}`}
+                                  dir="ltr"
                                   value={receipt.data.invoiceNumber || ""}
                                   onChange={(e) =>
                                     updateReceiptData(index, { invoiceNumber: e.target.value })
                                   }
-                                  className="h-8"
+                                  className="min-h-10"
                                 />
                               </div>
                             )}
 
                             <div className="space-y-1">
-                              <Label className="text-xs">Subtotal (excl. VAT)</Label>
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={receipt.data.subtotal ?? receipt.data.total ?? ""}
-                                onChange={(e) =>
-                                  updateReceiptData(index, { subtotal: parseFloat(e.target.value) })
-                                }
-                                className="h-8"
-                              />
-                            </div>
-
-                            <div className="space-y-1">
-                              <Label className="text-xs">
-                                VAT ({receipt.data.vatPercentage ?? 5}%)
+                              <Label htmlFor={`ocr-subtotal-${index}`}>
+                                {t["pageLabels.receiptSubtotal"]}
                               </Label>
                               <Input
                                 type="number"
                                 step="0.01"
+                                id={`ocr-subtotal-${index}`}
+                                value={receipt.data.subtotal ?? receipt.data.total ?? ""}
+                                onChange={(e) =>
+                                  updateReceiptData(index, { subtotal: parseFloat(e.target.value) })
+                                }
+                                className="min-h-10"
+                              />
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label htmlFor={`ocr-vat-${index}`}>
+                                {t["screens.vatAmountAed"]}
+                              </Label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                id={`ocr-vat-${index}`}
                                 value={receipt.data.vatAmount ?? ""}
                                 onChange={(e) =>
                                   updateReceiptData(index, {
                                     vatAmount: parseFloat(e.target.value),
                                   })
                                 }
-                                className="h-8"
+                                className="min-h-10"
                               />
                             </div>
 
                             <div className="space-y-1">
-                              <Label className="text-xs font-semibold">Total (incl. VAT)</Label>
+                              <Label htmlFor={`ocr-total-${index}`}>
+                                {t["pageLabels.receiptTotal"]}
+                              </Label>
                               <Input
                                 type="number"
                                 step="0.01"
+                                id={`ocr-total-${index}`}
                                 value={receipt.data.total ?? ""}
                                 onChange={(e) =>
                                   updateReceiptData(index, { total: parseFloat(e.target.value) })
@@ -2115,7 +2205,7 @@ export default function Receipts() {
                                 }
                               >
                                 <SelectTrigger
-                                  className="h-8"
+                                  className="min-h-10"
                                   data-testid={`select-category-${index}`}
                                 >
                                   <SelectValue placeholder={t["forms.claim.category"]} />
@@ -2162,7 +2252,7 @@ export default function Receipts() {
                             </div>
 
                             {receipt.data.lineItems && receipt.data.lineItems.length > 0 && (
-                              <div className="col-span-2 space-y-1">
+                              <div className="sm:col-span-2 space-y-1">
                                 <Label className="text-xs">
                                   <T k="pages.lineItems" />
                                 </Label>
@@ -2184,7 +2274,7 @@ export default function Receipts() {
 
                             {receipt.data.confidenceBand && (
                               <div
-                                className="col-span-2 space-y-1"
+                                className="sm:col-span-2 space-y-1"
                                 data-testid={`confidence-band-${index}`}
                               >
                                 <p className="text-xs text-muted-foreground flex flex-wrap items-center gap-2">
@@ -2224,10 +2314,12 @@ export default function Receipts() {
                                 </p>
                                 {receipt.data.reviewReasons &&
                                   receipt.data.reviewReasons.length > 0 && (
-                                    <ul className="text-xs text-muted-foreground list-disc ps-4">
-                                      {receipt.data.reviewReasons.map((reason, i) => (
-                                        <li key={i}>{reason}</li>
-                                      ))}
+                                    <ul className="list-disc space-y-1 ps-4 text-small text-muted-foreground">
+                                      {receiptReviewNotes(receipt.data, locale, t).map(
+                                        (reason, i) => (
+                                          <li key={i}>{reason}</li>
+                                        )
+                                      )}
                                     </ul>
                                   )}
                                 {bandRequiresReview(receipt.data.confidenceBand) && (
@@ -2257,7 +2349,7 @@ export default function Receipts() {
                               receipt.data.reverseChargeSuggested ||
                               receipt.data.ocrSource === "ai") && (
                               <div
-                                className="col-span-2 flex flex-wrap gap-2 text-xs"
+                                className="sm:col-span-2 flex flex-wrap gap-2 text-xs"
                                 data-testid={`tax-invoice-signals-${index}`}
                               >
                                 {receipt.data.supplierTrn && (
@@ -2288,29 +2380,23 @@ export default function Receipts() {
                               </div>
                             )}
 
-                            {receipt.data.classifier?.method && (
-                              <div className="col-span-2">
-                                <p
-                                  className="text-xs text-muted-foreground"
-                                  data-testid={`text-classifier-why-${index}`}
-                                  title={receipt.data.classifier.reason || undefined}
-                                >
-                                  Category suggested by{" "}
-                                  <span className="font-medium text-foreground">
-                                    {CLASSIFIER_METHOD_LABELS[receipt.data.classifier.method] ??
-                                      receipt.data.classifier.method}
-                                  </span>
-                                  {typeof receipt.data.classifier.confidence === "number" && (
-                                    <>
-                                      {" "}
-                                      · {Math.round(receipt.data.classifier.confidence * 100)}%
-                                      confident
-                                    </>
-                                  )}
-                                  . You can change it above — your correction trains the model.
-                                </p>
-                              </div>
-                            )}
+                            {receipt.data.classifier?.method &&
+                              Object.hasOwn(
+                                CLASSIFIER_METHOD_LABELS,
+                                receipt.data.classifier.method
+                              ) && (
+                                <div className="sm:col-span-2">
+                                  <p
+                                    className="text-xs text-muted-foreground"
+                                    data-testid={`text-classifier-why-${index}`}
+                                  >
+                                    {formatMessage(t["pageLabels.receiptSuggestedCategory"], {
+                                      source:
+                                        t[CLASSIFIER_METHOD_LABELS[receipt.data.classifier.method]],
+                                    })}
+                                  </p>
+                                </div>
+                              )}
                           </div>
                         )}
                       </div>
@@ -2376,6 +2462,8 @@ export default function Receipts() {
                 <div className="p-4">
                   <CardListSkeleton count={4} />
                 </div>
+              ) : receiptsError && !receipts ? (
+                <ErrorState compact onRetry={() => void refetchReceipts()} />
               ) : filteredReceipts && filteredReceipts.length > 0 ? (
                 <VirtualList
                   items={filteredReceipts as any[]}
@@ -3098,14 +3186,23 @@ export default function Receipts() {
       </Dialog>
 
       {/* Manual Expense Entry Dialog */}
-      <Dialog open={manualExpenseDialogOpen} onOpenChange={setManualExpenseDialogOpen}>
+      <Dialog
+        open={manualExpenseDialogOpen}
+        onOpenChange={(open) => {
+          if (manualExpenseMutation.isPending) return;
+          setManualExpenseDialogOpen(open);
+          if (!open) setManualSource(null);
+        }}
+      >
         <DialogContent size="md" data-testid="dialog-manual-expense">
           <DialogHeader>
             <DialogTitle>
               <T k="pageLabels.addExpenseManually" />
             </DialogTitle>
             <DialogDescription>
-              <T k="pageLabels.enterExpenseDetailsWithoutOcrScanning" />
+              {manualSource
+                ? t["pageLabels.receiptImageAttached"]
+                : t["pageLabels.enterExpenseDetailsWithoutOcrScanning"]}
             </DialogDescription>
           </DialogHeader>
           <Form {...manualExpenseForm}>
@@ -3217,7 +3314,11 @@ export default function Receipts() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setManualExpenseDialogOpen(false)}
+                  onClick={() => {
+                    setManualSource(null);
+                    setManualExpenseDialogOpen(false);
+                  }}
+                  disabled={manualExpenseMutation.isPending}
                 >
                   <T k="banking.common.cancel" />
                 </Button>

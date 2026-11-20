@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ErrorState } from "@/components/ui/error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -234,12 +235,22 @@ export default function VATFiling() {
   const [notes, setNotes] = useState("");
   const [vatFormData, setVatFormData] = useState<VatWorksheetData>(DEFAULT_VAT_DATA);
 
-  const { data: company } = useQuery<Company>({
+  const {
+    data: company,
+    isLoading: companyProfileLoading,
+    error: companyError,
+    refetch: refetchCompany,
+  } = useQuery<Company>({
     queryKey: ["/api/companies", companyId],
     enabled: !!companyId,
   });
 
-  const { data: vatReturns, isLoading: isLoadingReturns } = useQuery<VATReturn[]>({
+  const {
+    data: vatReturns,
+    isLoading: isLoadingReturns,
+    error: returnsError,
+    refetch: refetchReturns,
+  } = useQuery<VATReturn[]>({
     queryKey: ["/api/companies", companyId, "vat-returns"],
     enabled: !!companyId,
   });
@@ -873,7 +884,7 @@ export default function VATFiling() {
     }
   };
 
-  if (isLoadingCompany) {
+  if (isLoadingCompany || companyProfileLoading) {
     return (
       <div className="space-y-6">
         <Skeleton className="h-8 w-64" />
@@ -965,6 +976,24 @@ export default function VATFiling() {
     );
   }
 
+  if ((companyError && !company) || (returnsError && !vatReturns)) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Compliance"
+          title={locale === "ar" ? "إقرار ضريبة القيمة المضافة 201" : "UAE VAT 201 return"}
+          description={t["pageLabels.vat201Workflow"]}
+        />
+        <ErrorState
+          onRetry={() => {
+            if (companyError) void refetchCompany();
+            if (returnsError) void refetchReturns();
+          }}
+        />
+      </div>
+    );
+  }
+
   // E3 (J2-r3): a company that is not VAT registered files no VAT return and recovers no input
   // VAT, so the page says so instead of showing return figures.
   if (company && !isVatRegistered(company)) {
@@ -996,11 +1025,7 @@ export default function VATFiling() {
       <PageHeader
         eyebrow={locale === "ar" ? "الامتثال الضريبي" : "Compliance"}
         title={locale === "ar" ? "إقرار ضريبة القيمة المضافة 201" : "UAE VAT 201 return"}
-        description={
-          locale === "ar"
-            ? "إعداد أرقام VAT 201 ومراجعتها وتصديرها لاستخدامها في قناة التقديم الرسمية"
-            : "Prepare VAT 201 totals, review the worksheet evidence, and export filing support for the official channel."
-        }
+        description={t["pageLabels.vat201Workflow"]}
         backHref="/reports"
         backLabel={t["compliance.vatFilingBackToReports"]}
         actions={

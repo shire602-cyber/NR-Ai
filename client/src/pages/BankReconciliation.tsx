@@ -1,7 +1,7 @@
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
 import { accountDisplayName } from "@/lib/account-name";
 import { localizeServerWarning } from "@/lib/validation-messages";
-import { useState, useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,7 @@ import { FileDrop } from "@/components/ui/file-drop";
 import { Label } from "@/components/ui/label";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Link } from "wouter";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -50,7 +51,6 @@ import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatCurrency } from "@/lib/format";
-import Tesseract from "tesseract.js";
 import {
   Upload,
   FileText,
@@ -105,19 +105,6 @@ interface BankAccount {
   currency: string;
   glAccountId: string | null;
   isActive: boolean;
-}
-
-let pdfJsPromise: Promise<typeof import("pdfjs-dist")> | null = null;
-
-function loadPdfJs(): Promise<typeof import("pdfjs-dist")> {
-  pdfJsPromise ??= Promise.all([
-    import("pdfjs-dist"),
-    import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-  ]).then(([pdfjsLib, worker]) => {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = worker.default;
-    return pdfjsLib;
-  });
-  return pdfJsPromise;
 }
 
 interface MatchSuggestion {
@@ -327,17 +314,26 @@ export default function BankReconciliation() {
   const [statementOverrides, setStatementOverrides] = useState<StatementOverrides>({});
   const [acknowledgeAmbiguity, setAcknowledgeAmbiguity] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [pdfProgress, setPdfProgress] = useState(0);
-  const [processingStatus, setProcessingStatus] = useState("");
+  const previewRequest = useRef(0);
 
   // ─── Queries ──────────────────────────────────────────────────────────────
 
-  const { data: bankAccounts, isLoading: isLoadingBankAccounts } = useQuery<BankAccount[]>({
+  const {
+    data: bankAccounts,
+    isLoading: isLoadingBankAccounts,
+    error: accountsError,
+    refetch: refetchAccounts,
+  } = useQuery<BankAccount[]>({
     queryKey: ["/api/companies", companyId, "bank-accounts"],
     enabled: !!companyId,
   });
 
-  const { data: transactions, isLoading: isLoadingTransactions } = useQuery<BankTransaction[]>({
+  const {
+    data: transactions,
+    isLoading: isLoadingTransactions,
+    error: transactionsError,
+    refetch: refetchTransactions,
+  } = useQuery<BankTransaction[]>({
     queryKey: ["/api/companies", companyId, "bank-statements", "transactions"],
     enabled: !!companyId,
   });
@@ -422,7 +418,7 @@ export default function BankReconciliation() {
     mutationFn: async (payload: {
       bankAccountId: string;
       fileBase64: string;
-      fileName?: string;
+      fileName: string;
       dateOrder?: "DMY" | "MDY";
       decimalSeparator?: "." | ",";
       mapping?: Partial<Record<MapperField, number | null>>;
@@ -449,8 +445,6 @@ export default function BankReconciliation() {
       });
       setImportDialogOpen(false);
       resetStatementPreview();
-      setPdfProgress(0);
-      setProcessingStatus("");
     },
     onError: (error: any) => {
       toast({
@@ -593,17 +587,15 @@ export default function BankReconciliation() {
     notMapped: t["banking.import.notMapped"],
     confirmAssumption: t["banking.import.confirmAssumption"],
     previewLoading: t["banking.import.previewLoading"],
-    previewFailed: t["banking.import.previewFailed"],
+    previewFailed: t["pageLabels.bankCsvPreviewFailed"],
     sampleRows: t["banking.import.sampleRows"],
     colDate: t["banking.import.colDate"],
     colDescription: t["banking.import.colDescription"],
     colDebit: t["banking.import.colDebit"],
     colCredit: t["banking.import.colCredit"],
-    formats: t["banking.import.formats"],
     formatCsv: t["banking.import.formatCsv"],
     formatDelimiters: t["banking.import.formatDelimiters"],
     formatDrCr: t["banking.import.formatDrCr"],
-    formatPdf: t["banking.import.formatPdf"],
     importAction: t["banking.import.importAction"],
     fields: {
       date: t["banking.import.field.date"],
@@ -618,6 +610,8 @@ export default function BankReconciliation() {
   };
 
   const resetStatementPreview = () => {
+    previewRequest.current += 1;
+    setPreviewLoading(false);
     setImportFile(null);
     setStatementPreview(null);
     setPreviewError(null);
@@ -625,15 +619,13 @@ export default function BankReconciliation() {
     setAcknowledgeAmbiguity(false);
   };
 
-  const isPdfFile = (file: File) =>
-    file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-
   const runStatementPreview = async (
     file: File,
     overrides: StatementOverrides,
     headerRow?: number
   ) => {
     if (!companyId) return;
+    const request = ++previewRequest.current;
     setPreviewLoading(true);
     setPreviewError(null);
     try {
@@ -647,12 +639,13 @@ export default function BankReconciliation() {
           ...(overrides.mapping && headerRow ? { headerRow } : {}),
         }
       )) as StatementPreview;
-      setStatementPreview(preview);
-    } catch (error: any) {
+      if (request === previewRequest.current) setStatementPreview(preview);
+    } catch {
+      if (request !== previewRequest.current) return;
       setStatementPreview(null);
-      setPreviewError(error?.message || strings.previewFailed);
+      setPreviewError(strings.previewFailed);
     } finally {
-      setPreviewLoading(false);
+      if (request === previewRequest.current) setPreviewLoading(false);
     }
   };
 
@@ -672,128 +665,43 @@ export default function BankReconciliation() {
   };
 
   const handleStatementFile = (file: File | undefined) => {
-    if (file) {
-      setImportFile(file);
-      setStatementPreview(null);
-      setStatementOverrides({});
-      setAcknowledgeAmbiguity(false);
-      setPdfProgress(0);
-      setProcessingStatus("");
-      if (!isPdfFile(file)) void runStatementPreview(file, {});
-    }
-  };
-
-  const convertPdfPageToImage = async (page: any): Promise<Blob> => {
-    const scale = 2;
-    const viewport = page.getViewport({ scale });
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d")!;
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
-    await page.render({ canvasContext: context, viewport, canvas } as any).promise;
-    return new Promise((resolve) => canvas.toBlob((blob) => resolve(blob!), "image/png"));
-  };
-
-  const extractTransactionsFromText = async (text: string): Promise<any[]> => {
-    try {
-      const response = await apiRequest("POST", "/api/ai/parse-bank-statement", { text });
-      return response.transactions || [];
-    } catch {
-      return [];
-    }
-  };
-
-  const handleImport = async () => {
-    if (!importFile || !selectedBankAccount) {
-      toast({
-        variant: "destructive",
-        title: translateNow("toasts.missingInformation"),
-        description: translateNow("toasts.selectABankAccountAndUploadA"),
-      });
+    if (!file) return;
+    resetStatementPreview();
+    if (!/\.csv$/i.test(file.name)) {
+      setPreviewError(t["pageLabels.bankCsvFileRequired"]);
       return;
     }
+    setImportFile(file);
+    void runStatementPreview(file, {});
+  };
+
+  const canImport =
+    !!importFile &&
+    !!selectedBankAccount &&
+    !previewLoading &&
+    !!statementPreview &&
+    statementPreview.validRows > 0 &&
+    (!statementPreview.requiresChoice || acknowledgeAmbiguity);
+
+  const handleImport = async () => {
+    if (!canImport || isImporting) return;
 
     setIsImporting(true);
-
     try {
-      if (isPdfFile(importFile)) {
-        // PDF → text → AI parse → import as JSON
-        setProcessingStatus("Converting PDF pages...");
-        const pdfjsLib = await loadPdfJs();
-        const arrayBuffer = await importFile.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        const totalPages = Math.min(pdf.numPages, 10);
-        let allText = "";
-
-        for (let p = 1; p <= totalPages; p++) {
-          setProcessingStatus(`Processing page ${p} of ${totalPages}...`);
-          setPdfProgress((p / totalPages) * 50);
-          const page = await pdf.getPage(p);
-          const textContent = await page.getTextContent();
-          const pageText = textContent.items.map((i: any) => i.str).join(" ");
-          if (pageText.trim().length > 50) {
-            allText += pageText + "\n";
-          } else {
-            setProcessingStatus(`Running OCR on page ${p}...`);
-            const imageBlob = await convertPdfPageToImage(page);
-            const result = await Tesseract.recognize(imageBlob, "eng");
-            allText += result.data.text + "\n";
-          }
-        }
-
-        setProcessingStatus("Extracting transactions...");
-        setPdfProgress(75);
-        const txns = await extractTransactionsFromText(allText);
-        setPdfProgress(100);
-
-        if (txns.length === 0) {
-          toast({
-            variant: "destructive",
-            title: translateNow("toasts.noTransactionsFound"),
-            description: translateNow("toasts.tryADifferentFormat"),
-          });
-          return;
-        }
-
-        // For PDFs, fall back to old JSON import endpoint
-        await apiRequest("POST", `/api/companies/${companyId}/bank-transactions/import`, {
-          transactions: txns,
-          bankAccountId: selectedBankAccount,
-        });
-        queryClient.invalidateQueries({
-          queryKey: ["/api/companies", companyId, "bank-statements"],
-        });
-        toast({
-          title: translateNow("toasts.importSuccessful"),
-          description: formatMessage(translateNow("toasts.importedTransactions"), {
-            count: txns.length,
-          }),
-        });
-        setImportDialogOpen(false);
-        resetStatementPreview();
-      } else {
-        // CSV / XLSX / MT940 / CAMT.053 / OFX — send the file bytes plus the user's choices.
-        await importMutation.mutateAsync({
-          bankAccountId: selectedBankAccount,
-          fileBase64: await fileToBase64(importFile),
-          fileName: importFile.name,
-          ...statementOverrides,
-          ...(statementOverrides.mapping && statementPreview?.headerRow
-            ? { headerRow: statementPreview.headerRow }
-            : {}),
-          acknowledgeAmbiguity,
-        });
-      }
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: translateNow("toasts.importFailed"),
-        description: error?.message,
+      await importMutation.mutateAsync({
+        bankAccountId: selectedBankAccount,
+        fileBase64: await fileToBase64(importFile),
+        fileName: importFile.name,
+        ...statementOverrides,
+        ...(statementOverrides.mapping && statementPreview.headerRow
+          ? { headerRow: statementPreview.headerRow }
+          : {}),
+        acknowledgeAmbiguity,
       });
+    } catch {
+      // The mutation keeps the selected file and reports the import error.
     } finally {
       setIsImporting(false);
-      setProcessingStatus("");
-      setPdfProgress(0);
     }
   };
 
@@ -840,7 +748,7 @@ export default function BankReconciliation() {
       <PageHeader
         eyebrow={t["shell.nav.banking"]}
         title={t.bankReconciliation}
-        description={t.bankReconciliationDescription}
+        description={t["pageLabels.bankCsvWorkflow"]}
         primaryAction={
           <Button
             onClick={() => setImportDialogOpen(true)}
@@ -986,12 +894,20 @@ export default function BankReconciliation() {
             </div>
 
             <DataTableCard
+              error={{
+                onRetry: () => {
+                  if (accountsError) void refetchAccounts();
+                  if (transactionsError) void refetchTransactions();
+                },
+              }}
               status={
-                isLoadingTransactions
-                  ? "loading"
-                  : filteredTransactions.length === 0
-                    ? "empty"
-                    : "ready"
+                (accountsError && !bankAccounts) || (transactionsError && !transactions)
+                  ? "error"
+                  : isLoadingTransactions
+                    ? "loading"
+                    : filteredTransactions.length === 0
+                      ? "empty"
+                      : "ready"
               }
               columnLabels={[t.date, t.description, t.amount, t.status]}
               empty={
@@ -1012,7 +928,7 @@ export default function BankReconciliation() {
                   : {
                       icon: Building2,
                       title: t["banking.emptyTransactionsTitle"],
-                      description: t["banking.emptyTransactionsDescription"],
+                      description: t["pageLabels.bankCsvWorkflow"],
                       action: {
                         label: t["banking.importStatementAction"],
                         permission: "documents.write",
@@ -1426,6 +1342,7 @@ export default function BankReconciliation() {
       <Dialog
         open={importDialogOpen}
         onOpenChange={(open) => {
+          if (isImporting) return;
           setImportDialogOpen(open);
           if (!open) resetStatementPreview();
         }}
@@ -1433,14 +1350,18 @@ export default function BankReconciliation() {
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto grid-cols-[minmax(0,1fr)]">
           <DialogHeader>
             <DialogTitle>{t.importBankStatement}</DialogTitle>
-            <DialogDescription>{t.uploadBankStatement}</DialogDescription>
+            <DialogDescription>{t["pageLabels.bankCsvWorkflow"]}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>
                 <T k="pageLabels.bankAccount" />
               </Label>
-              <Select value={selectedBankAccount} onValueChange={setSelectedBankAccount}>
+              <Select
+                value={selectedBankAccount}
+                onValueChange={setSelectedBankAccount}
+                disabled={!bankAccounts?.length || isImporting}
+              >
                 <SelectTrigger data-testid="select-import-bank-account">
                   <SelectValue placeholder={t["bankReconciliation.selectAccount"]} />
                 </SelectTrigger>
@@ -1452,8 +1373,13 @@ export default function BankReconciliation() {
                   ))}
                 </SelectContent>
               </Select>
-              {(!bankAccounts || bankAccounts.length === 0) && (
-                <p className="text-xs text-warning">{t["banking.accounts.none"]}</p>
+              {bankAccounts?.length === 0 && (
+                <div className="rounded-lg border border-border bg-surface-sunken px-3 py-2">
+                  <p className="text-small text-foreground">{t["banking.accounts.none"]}</p>
+                  <Button asChild variant="link" className="px-0">
+                    <Link href="/bank-accounts">{t["banking.accounts.title"]}</Link>
+                  </Button>
+                </div>
               )}
             </div>
             <div className="space-y-2">
@@ -1461,47 +1387,33 @@ export default function BankReconciliation() {
                 <T k="pageLabels.statementFile" />
               </Label>
               <FileDrop
-                accept=".csv,.txt,.xlsx,.sta,.mt940,.xml,.ofx,.qfx,.pdf,application/pdf"
+                accept=".csv,text/csv"
                 onFiles={(files) => handleStatementFile(files[0])}
                 disabled={isImporting}
                 value={importFile?.name ?? null}
+                onClear={resetStatementPreview}
                 inputTestId="input-bank-statement-file"
               />
-              {importFile && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  {isPdfFile(importFile) ? (
-                    <FileText className="w-4 h-4 text-destructive" />
-                  ) : (
-                    <FileSpreadsheet className="w-4 h-4 text-success" />
-                  )}
-                  <span>
-                    {importFile.name} ({(importFile.size / 1024).toFixed(1)} KB)
-                  </span>
-                </div>
-              )}
               {previewLoading && (
-                <p className="text-xs text-muted-foreground flex items-center gap-2">
+                <p
+                  role="status"
+                  className="text-small text-muted-foreground flex items-center gap-2"
+                >
                   <Loader2 className="w-3 h-3 animate-spin" />
                   {strings.previewLoading}
                 </p>
               )}
               {previewError && (
-                <p className="text-xs text-destructive" data-testid="text-statement-preview-error">
+                <p
+                  role="alert"
+                  className="text-small text-destructive"
+                  data-testid="text-statement-preview-error"
+                >
                   {previewError}
                 </p>
               )}
-              {isImporting && pdfProgress > 0 && (
-                <div className="space-y-1">
-                  <Progress
-                    value={pdfProgress}
-                    aria-label={processingStatus || undefined}
-                    className="h-2"
-                  />
-                  <p className="text-xs text-muted-foreground">{processingStatus}</p>
-                </div>
-              )}
             </div>
-            {statementPreview && importFile && !isPdfFile(importFile) && (
+            {statementPreview && importFile && (
               <div
                 className="border rounded-md p-3 space-y-3"
                 dir={locale === "ar" ? "rtl" : "ltr"}
@@ -1687,7 +1599,7 @@ export default function BankReconciliation() {
               </div>
             )}
             <div className="bg-muted/50 p-3 rounded-md text-sm space-y-1.5">
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-1.5">
                   <p className="font-medium text-xs">
                     <T k="pageLabels.supportedFormats" />
@@ -1697,20 +1609,12 @@ export default function BankReconciliation() {
                     <span>{strings.formatCsv}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-success" />
-                    <span>{strings.formats}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
                     <CheckCircle2 className="w-3.5 h-3.5 text-success" />
                     <span>{strings.formatDelimiters}</span>
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <CheckCircle2 className="w-3.5 h-3.5 text-success" />
                     <span>{strings.formatDrCr}</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <FileText className="w-3.5 h-3.5 text-destructive" />
-                    <span>{strings.formatPdf}</span>
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {t["bankReconciliation.liveBankFeedsAreNot"]}
@@ -1742,16 +1646,7 @@ export default function BankReconciliation() {
             </Button>
             <Button
               onClick={handleImport}
-              disabled={
-                isImporting ||
-                !importFile ||
-                !selectedBankAccount ||
-                previewLoading ||
-                (!!statementPreview &&
-                  !isPdfFile(importFile) &&
-                  (statementPreview.validRows === 0 ||
-                    (statementPreview.requiresChoice && !acknowledgeAmbiguity)))
-              }
+              disabled={isImporting || !canImport}
               data-testid="button-confirm-import"
             >
               {isImporting && <Loader2 className="w-4 h-4 animate-spin" />}

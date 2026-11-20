@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, FileImage, File, FolderOpen, Loader2, CheckCircle2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -65,7 +66,12 @@ export default function PortalDocuments() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  const { data: documents = [], isLoading } = useQuery<any[]>({
+  const {
+    data: documents = [],
+    isLoading,
+    isLoadingError,
+    refetch,
+  } = useQuery<any[]>({
     queryKey: ["portal-documents"],
     queryFn: () => apiRequest("GET", "/api/client-portal/documents"),
   });
@@ -131,6 +137,8 @@ export default function PortalDocuments() {
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
             </div>
+          ) : isLoadingError ? (
+            <ErrorState compact onRetry={() => void refetch()} />
           ) : documents.length === 0 ? (
             <EmptyState
               headingLevel="h2"

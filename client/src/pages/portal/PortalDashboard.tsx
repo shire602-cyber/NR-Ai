@@ -8,6 +8,8 @@ import { Alert } from "@/components/ui/alert";
 import { BalanceSummary } from "@/components/portal/BalanceSummary";
 import { PORTAL_WELCOME_KEY } from "@/lib/portal-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ErrorState } from "@/components/ui/error-state";
+import { CardListSkeleton } from "@/components/ui/loading-skeletons";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
@@ -44,11 +46,21 @@ interface PortalDocumentRow {
  */
 export default function PortalDashboard() {
   const { t, locale } = useTranslation();
-  const { data, isLoading } = useQuery({
+  const {
+    data,
+    isLoading,
+    error: dashboardError,
+    refetch: refetchDashboard,
+  } = useQuery({
     queryKey: ["portal-dashboard"],
     queryFn: () => apiRequest("GET", "/api/client-portal/dashboard"),
   });
-  const { data: documents = [] } = useQuery<PortalDocumentRow[]>({
+  const {
+    data: documents = [],
+    isLoading: documentsLoading,
+    isLoadingError: documentsFailed,
+    refetch: refetchDocuments,
+  } = useQuery<PortalDocumentRow[]>({
     queryKey: ["portal-documents"],
     queryFn: () => apiRequest("GET", "/api/client-portal/documents"),
   });
@@ -138,7 +150,11 @@ export default function PortalDashboard() {
           )}
         </CardHeader>
         <CardContent className="p-0">
-          {!isLoading && recentInvoices.length === 0 ? (
+          {isLoading ? (
+            <CardListSkeleton className="p-4" count={3} />
+          ) : dashboardError && !data ? (
+            <ErrorState compact onRetry={() => void refetchDashboard()} />
+          ) : recentInvoices.length === 0 ? (
             <EmptyState
               headingLevel="h2"
               icon={FileText}
@@ -206,7 +222,11 @@ export default function PortalDashboard() {
           )}
         </CardHeader>
         <CardContent className={documents.length ? "p-0" : undefined}>
-          {documents.length === 0 ? (
+          {documentsLoading ? (
+            <CardListSkeleton count={2} />
+          ) : documentsFailed ? (
+            <ErrorState compact onRetry={() => void refetchDocuments()} />
+          ) : documents.length === 0 ? (
             <EmptyState
               compact
               headingLevel="h2"

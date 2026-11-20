@@ -22,6 +22,7 @@ import {
   emailMoney,
   htmlToText,
   renderBilingualEmail,
+  renderEmailText,
   resolveEmailLanguage,
   type EmailLanguage,
 } from "../../server/services/email-layout";
@@ -87,6 +88,25 @@ function expectShell(e: BuiltEmail, language: EmailLanguage) {
 }
 
 describe("layout and formatters", () => {
+  it.each(["en", "ar"] as const)(
+    "renders the product palette and isolated wordmark in %s",
+    (lang) => {
+      const content = {
+        brandName: "Oasis Trading",
+        heading: { en: "Invoice", ar: "الفاتورة" },
+        paragraphs: { en: ["Your invoice is ready."], ar: ["فاتورتك جاهزة."] },
+      };
+      const html = renderBilingualEmail(content, lang);
+      expect(html).toContain(lang === "ar" ? 'lang="ar" dir="rtl"' : 'lang="en" dir="ltr"');
+      expect(html).toContain("background:#F7F8F4");
+      expect(html).toContain("background:#0B6A4A");
+      expect(html).toContain("color:#14241E");
+      expect(html).toContain("'Noto Sans Arabic'");
+      expect(html).toContain("<bdi>Muhasib.ai</bdi>");
+      expect(renderEmailText(content, lang)).toContain("Muhasib.ai");
+    }
+  );
+
   it("formats money and dates by the app's rules (Latin digits, د.إ in Arabic)", () => {
     expect(emailMoney(1250, "AED").en).toBe("AED \u2066" + "1,250.00\u2069");
     expect(emailMoney(1250, "AED").ar).toContain("د.إ");

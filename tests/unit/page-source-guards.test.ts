@@ -191,7 +191,7 @@ describe("Mobile launch UX guards", () => {
       expect(source).toContain("muhasib-sample-bank-statement.csv");
       expect(source).toContain('t["bankReconciliation.liveBankFeedsAreNot"]');
       // Step 1 / F4: the supported-format lines are catalog copy (en and ar), not page literals.
-      for (const key of ["formatCsv", "formatDelimiters", "formatDrCr", "formatPdf"]) {
+      for (const key of ["formatCsv", "formatDelimiters", "formatDrCr"]) {
         expect(source).toContain(`banking.import.${key}`);
       }
       const bankingEn = JSON.parse(readFileSync("client/src/locales/en/banking.json", "utf8"));
@@ -235,7 +235,6 @@ describe("Mobile launch UX guards", () => {
         const catalog = JSON.parse(readFileSync(`client/src/locales/${loc}/banking.json`, "utf8"));
         expect(catalog["banking.import.columnMapping"]).toBe(text);
       }
-      expect(source).toContain(".xlsx");
     });
 
     it("R06-11 ambiguity must be confirmed before importing", () => {

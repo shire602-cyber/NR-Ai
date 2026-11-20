@@ -2,7 +2,7 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { Languages, Menu, X } from "lucide-react";
 import { SkipLink } from "@/components/SkipLink";
-import { BrandMark } from "@/components/BrandMark";
+import { BrandMark, ProductWordmark } from "@/components/BrandMark";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
@@ -19,10 +19,7 @@ export function MarketingBrand({
   return (
     <Link href="/" className={`mk-brand ${className}`} data-testid={testId}>
       <BrandMark size="sm" />
-      <span translate="no" lang="en" dir="ltr">
-        {"Muhasib"}
-        <span className="mk-brand__dot">{".ai"}</span>
-      </span>
+      <ProductWordmark accentClassName="mk-brand__dot" />
     </Link>
   );
 }

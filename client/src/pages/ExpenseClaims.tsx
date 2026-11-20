@@ -37,6 +37,7 @@ import { DatePicker } from "@/components/ui/date-picker";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { ErrorState } from "@/components/ui/error-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeleton, StatCardSkeleton } from "@/components/ui/loading-skeletons";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -292,7 +293,12 @@ export default function ExpenseClaims() {
 
   // ─── Queries ──────────────────────────────────────────
 
-  const { data: allClaims = [], isLoading: isLoadingClaims } = useQuery<ExpenseClaim[]>({
+  const {
+    data: allClaims = [],
+    isLoading: isLoadingClaims,
+    isLoadingError: claimsFailed,
+    refetch: refetchClaims,
+  } = useQuery<ExpenseClaim[]>({
     queryKey: [`/api/companies/${companyId}/expense-claims`],
     enabled: !!companyId,
   });
@@ -1298,8 +1304,9 @@ export default function ExpenseClaims() {
         </div>
       )}
 
+      {claimsFailed && <ErrorState onRetry={() => void refetchClaims()} />}
       {/* ─── Tabs ──────────────────────────────────────── */}
-      <Tabs defaultValue="my-claims" className="space-y-4">
+      <Tabs defaultValue="my-claims" className="space-y-4" hidden={claimsFailed}>
         <TabsList>
           <TabsTrigger value="my-claims">
             <FileText aria-hidden />
