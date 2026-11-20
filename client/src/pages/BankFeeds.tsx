@@ -155,7 +155,7 @@ export default function BankFeeds() {
   const header = (
     <PageHeader
       eyebrow={tt["shell.nav.banking"]}
-      title={tt["banking.feeds.title"]}
+      title={tt[available.length ? "banking.feeds.title" : "bankReconciliation"]}
     />
   );
 
