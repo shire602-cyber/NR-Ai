@@ -134,6 +134,9 @@ jobs:
       - name: npm run test:db
         run: npm run test:db
 
+      - name: Migration rehearsal (disposable Postgres 16)
+        run: npm run test:migration-rehearsal
+
   e2e:
     name: Browser E2E · full route crawl
     # Pinned: Playwright has no Chromium build for ubuntu-latest (26.04) yet.

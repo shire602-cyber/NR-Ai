@@ -46,16 +46,6 @@ CREATE INDEX IF NOT EXISTS "idx_bank_transactions_import_batch"
   ON "bank_transactions" ("import_batch_id") WHERE "import_batch_id" IS NOT NULL;
 --> statement-breakpoint
 
--- ── R06-01: GL link comes from the managed bank account ───────────────────────
-UPDATE "bank_transactions" bt
-   SET "bank_account_id" = ba."gl_account_id"
-  FROM "bank_accounts" ba
- WHERE bt."bank_statement_account_id" = ba."id"
-   AND ba."gl_account_id" IS NOT NULL
-   AND bt."bank_account_id" IS DISTINCT FROM ba."gl_account_id"
-   AND (bt."bank_account_id" IS NULL OR bt."is_reconciled" = false);
---> statement-breakpoint
-
 -- ── R06-18: data check. A row is reconciled exactly when match_status = matched. ─
 UPDATE "bank_transactions" SET "match_status" = 'unmatched'
  WHERE "match_status" IS NULL OR "match_status" NOT IN ('unmatched', 'suggested', 'matched');
@@ -75,6 +65,18 @@ UPDATE "bank_transactions" SET "match_status" = 'matched'
 UPDATE "bank_transactions" SET "match_status" = 'suggested'
  WHERE "is_reconciled" = false AND "match_status" = 'matched';
 --> statement-breakpoint
+
+-- ── R06-01: GL link comes from the managed bank account ───────────────────────
+-- Clear stale matches above so their GL links are repaired on the first pass.
+UPDATE "bank_transactions" bt
+   SET "bank_account_id" = ba."gl_account_id"
+  FROM "bank_accounts" ba
+ WHERE bt."bank_statement_account_id" = ba."id"
+   AND ba."gl_account_id" IS NOT NULL
+   AND bt."bank_account_id" IS DISTINCT FROM ba."gl_account_id"
+   AND (bt."bank_account_id" IS NULL OR bt."is_reconciled" = false);
+--> statement-breakpoint
+
 CREATE OR REPLACE FUNCTION "bank_transactions_match_state"() RETURNS trigger AS $$
 BEGIN
   IF NEW."match_status" IS NULL OR NEW."match_status" NOT IN ('unmatched', 'suggested', 'matched') THEN

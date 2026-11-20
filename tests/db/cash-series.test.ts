@@ -143,8 +143,16 @@ describe("CASH-SERIES own number series", () => {
       [u.company.id]
     );
 
+    const cashSequence = () =>
+      h.sql(
+        `SELECT last_value::text, updated_at::text FROM invoice_number_sequences
+          WHERE company_id = $1 AND doc_type = 'cash_sale' AND year = 2026`,
+        [t.company.id]
+      );
     await runMigration();
-    await runMigration(); // idempotent
+    const seededSequence = await cashSequence();
+    await runMigration();
+    expect(await cashSequence()).toEqual(seededSequence);
 
     expect(
       await h.sql(
@@ -157,6 +165,14 @@ describe("CASH-SERIES own number series", () => {
     expect(next.status, next.text).toBe(201);
     expect(next.body.number).toBe("CS-2026-00006");
     expect((await invoice(t)).body.number).toBe("INV-2026-00008");
+    await h.sql(
+      `UPDATE invoice_number_sequences SET last_value = 9
+        WHERE company_id = $1 AND doc_type = 'cash_sale' AND year = 2026`,
+      [t.company.id]
+    );
+    const advancedSequence = await cashSequence();
+    await runMigration();
+    expect(await cashSequence()).toEqual(advancedSequence);
 
     const [setting] = await h.sql<{ prefix: string }>(
       `SELECT prefix FROM document_numbering_settings WHERE company_id = $1 AND doc_type = 'cash_sale'`,
