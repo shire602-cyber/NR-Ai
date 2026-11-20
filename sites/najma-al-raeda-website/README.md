@@ -3,7 +3,7 @@
 Premium-minimal marketing site for **Najma Al Raeda**, a Dubai accounting, tax & advisory firm (est. 2017 · 700+ clients · 500+ active).
 
 ## Pages
-- `index.html` — Home (hero, services overview, why-us, stats, testimonials, CTA)
+- `index.html` — Home (hero, services overview, why-us, stats, CTA)
 - `services.html` — Services overview, each links to a deep page
 - `service-*.html` — 6 deep service pages (bookkeeping, vat-tax, audit, cfo, company-formation, payroll) with what's-included, process, FAQ
 - `industries.html` — Sector grid linking to landing pages
@@ -22,10 +22,16 @@ Premium-minimal marketing site for **Najma Al Raeda**, a Dubai accounting, tax &
 Warm off-white paper, near-black ink, refined bronze/gold accent. Cormorant Garamond display + Inter body. Fully responsive.
 
 ## Run
-Open `index.html` in any browser, or serve locally:
+Serve the static site from its directory.
 ```
-cd website && python3 -m http.server 8080
+cd sites/najma-al-raeda-website && python3 -m http.server 8080
 ```
+
+English uses the existing `.html` URLs. Each Arabic page lives under `/ar/` as a static
+document with right-to-left layout. The language switch opens the equivalent page and
+saves the choice. On the first visit to an English URL, the site uses the browser’s
+preferred supported language. Run `npm run e2e:firm-site` from the repository root while
+the preview server is running to check both languages and the language switch.
 
 ## Notes
 
@@ -36,8 +42,7 @@ cd website && python3 -m http.server 8080
 - Team section: anonymous role cards (no names/photos), as requested.
 
 ### Still to replace before launch
-- **Form ID** — add a Formspree (or similar) ID to `data-endpoint` in `contact.html` (see "Activating the contact form" below). Until then the form falls back to opening the visitor's email app.
-- **Testimonials** — the two quotes on the home page are still sample names; swap for real client quotes (ideally with a Google rating).
+- **Form ID** — add a Formspree (or similar) ID to `data-endpoint` in both `contact.html` and `ar/contact/index.html`. Until then, the form opens a draft in the visitor's email app.
 - **FTA tax-agent number** — the footer says "Registered FTA Tax Agency"; add the actual TAAN if you want it shown.
 - **Insights articles** — accurate general guidance, but have a tax professional review against the latest FTA rules before publishing.
 
@@ -49,6 +54,6 @@ The tax calculator gives indicative estimates only (UAE VAT 5%; Corporate Tax 0%
 The contact form is fully wired and works in two modes:
 
 1. **Right now / no setup** — if no form service is configured, submitting opens the visitor's email app with the message pre-addressed to `hello@nraccounts.com`. The form validates name + email and blocks spam bots first.
-2. **Recommended (silent background send)** — create a free form at [formspree.io](https://formspree.io) that delivers to `hello@nraccounts.com`, copy its form ID, and in `contact.html` replace `REPLACE_WITH_FORM_ID` in the form's `data-endpoint` (e.g. `https://formspree.io/f/abcdwxyz`). The form will then submit in the background and show the success message without leaving the page. No other change needed.
+2. **With a form service** — create a form that delivers to `hello@nraccounts.com` and replace `REPLACE_WITH_FORM_ID` in the `data-endpoint` in both contact documents. The form then submits in the background and shows a confirmation. [Formspree](https://formspree.io)
 
 (Any equivalent form service — Web3Forms, Getform, Basin — works; just point `data-endpoint` at its POST URL.)

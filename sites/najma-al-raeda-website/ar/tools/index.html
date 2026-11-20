@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>حاسبة مجانية لضريبة القيمة المضافة وضريبة الشركات | نجمة الرائدة</title>
+<meta name="description" content="حاسبة تفاعلية مجانية من نجمة الرائدة لتقدير ضريبة القيمة المضافة بنسبة 5٪ وضريبة الشركات بمعدلها العام البالغ 9٪.">
+<link rel="alternate" hreflang="en" href="/tools.html">
+<link rel="alternate" hreflang="ar" href="/ar/tools/">
+<script src="/assets/locale.js"></script>
+<link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://d8j0ntlcm91z4.cloudfront.net" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap nav">
+    <a class="brand" href="/ar/">
+      <img class="brand-mark" src="/assets/logo.svg" alt="نجمة الرائدة">
+      <span class="brand-name">نجمة الرائدة<small>خدمات المحاسبة</small></span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="/ar/">الرئيسية</a></li>
+      <li><a href="/ar/services/">الخدمات</a></li>
+      <li><a href="/ar/industries/">القطاعات</a></li>
+      <li><a href="/ar/insights/">المقالات</a></li>
+      <li><a href="/ar/tools/" class="active">الأدوات</a></li>
+      <li><a href="/ar/about/">عن المكتب</a></li>
+      <li><a href="/ar/contact/">اتصل بنا</a></li>
+    </ul>
+    <div class="nav-cta">
+      <a class="language-link" href="/tools.html?lang=en" lang="en" hreflang="en">English</a>
+      <a href="/ar/contact/" class="btn btn-primary">احجز استشارة <span class="arrow">←</span></a>
+    </div>
+    <button class="nav-toggle" aria-label="القائمة"><span></span><span></span><span></span></button>
+  </div>
+</header>
+
+<section class="page-hero">
+  <div class="wrap reveal">
+    <div class="crumbs"><a href="/ar/">الرئيسية</a> / الأدوات</div>
+    <span class="eyebrow">أداة مجانية</span>
+    <h1 class="display" style="font-size:clamp(2.4rem,5vw,4rem);margin-top:18px;">حاسبة ضريبة القيمة المضافة وضريبة الشركات في الإمارات.</h1>
+    <p class="lead">احصل على تقدير فوري لضريبة القيمة المضافة أو ضريبة الشركات، بالاستناد إلى قواعد الهيئة الاتحادية للضرائب.</p>
+  </div>
+</section>
+<section style="padding-top:30px;">
+  <div class="wrap">
+    <div class="calc-tabs reveal" style="max-width:420px;">
+      <button class="calc-tab active" type="button" aria-controls="ct-calc" aria-pressed="true">ضريبة الشركات</button>
+      <button class="calc-tab" type="button" aria-controls="vat-calc" aria-pressed="false">ضريبة القيمة المضافة</button>
+    </div>
+
+    <div class="calc-wrap reveal" id="ct-calc">
+      <div class="calc-input">
+        <span class="eyebrow">تقدير ضريبة الشركات</span>
+        <h3 style="margin:10px 0 24px;">بياناتك</h3>
+        <div class="calc-field">
+          <label for="ct-profit">الدخل السنوي الخاضع للضريبة (بالدرهم)</label>
+          <input type="number" id="ct-profit" value="600000" min="0" step="1000">
+          <div class="calc-hint">الربح الخاضع للضريبة بعد الخصومات المسموح بها.</div>
+        </div>
+        <div class="calc-field">
+          <label for="ct-revenue">الإيرادات السنوية (بالدرهم)</label>
+          <input type="number" id="ct-revenue" value="1200000" min="0" step="1000">
+          <div class="calc-hint">لتقدير أهلية المنشأة لتسهيلات الأعمال الصغيرة عند حد 3 ملايين درهم.</div>
+        </div>
+        <div class="calc-field">
+          <label style="display:flex;align-items:center;gap:10px;font-weight:500;">
+            <input type="checkbox" id="ct-sbr" style="width:auto;"> طبّق تسهيلات الأعمال الصغيرة عند استيفاء الشروط
+          </label>
+        </div>
+      </div>
+      <div class="calc-output">
+        <span class="eyebrow">التقدير</span>
+        <div class="calc-result"><div class="rl">الخاضع لمعدل 0٪ (أول 375,000 درهم)</div><div class="rv" id="ct-zero">375,000 درهم</div></div>
+        <div class="calc-result"><div class="rl">الخاضع لمعدل 9٪</div><div class="rv" id="ct-taxed">225,000 درهم</div></div>
+        <div class="calc-result total"><div class="rl">ضريبة الشركات التقديرية المستحقة</div><div class="rv" id="ct-due">20,250 درهمًا</div></div>
+        <div class="calc-result"><div class="rl">المعدل الضريبي الفعلي</div><div class="rv" id="ct-eff">3.4%</div></div>
+        <p class="calc-note" id="ct-msg">يستند التقدير إلى 0٪ حتى 375,000 درهم و9٪ على ما زاد. وقد تؤثر فيه قواعد الدخل المؤهل في المناطق الحرة والتسهيلات الأخرى.</p>
+      </div>
+    </div>
+
+    <div class="calc-wrap reveal" id="vat-calc" style="display:none;">
+      <div class="calc-input">
+        <span class="eyebrow">تقدير ضريبة القيمة المضافة</span>
+        <h3 style="margin:10px 0 24px;">بياناتك</h3>
+        <div class="calc-field">
+          <label for="vat-amount">المبلغ (بالدرهم)</label>
+          <input type="number" id="vat-amount" value="10000" min="0" step="100">
+        </div>
+        <div class="calc-field">
+          <label for="vat-dir">طريقة إدخال المبلغ</label>
+          <select id="vat-dir">
+            <option value="add">المبلغ الصافي لإضافة ضريبة 5٪</option>
+            <option value="remove">المبلغ الإجمالي لاستخراج ضريبة 5٪</option>
+          </select>
+        </div>
+      </div>
+      <div class="calc-output">
+        <span class="eyebrow">التقدير</span>
+        <div class="calc-result"><div class="rl">المبلغ الصافي قبل الضريبة</div><div class="rv" id="vat-net">10,000 درهم</div></div>
+        <div class="calc-result total"><div class="rl">ضريبة القيمة المضافة بنسبة 5٪</div><div class="rv" id="vat-vat">500 درهم</div></div>
+        <div class="calc-result"><div class="rl">المبلغ الإجمالي شامل الضريبة</div><div class="rv" id="vat-gross">10,500 درهم</div></div>
+        <p class="calc-note">المعدل الأساسي لضريبة القيمة المضافة في الإمارات 5٪. وتختلف معاملة التوريدات الخاضعة لمعدل الصفر والتوريدات المعفاة. يمكنك سؤال فريقنا عن حالتك.</p>
+      </div>
+    </div>
+    <p class="form-note" style="margin-top:22px;max-width:760px;">هذه الأرقام تقديرات إرشادية عامة. للحصول على احتساب ضريبي يناسب نشاطك، <a href="/ar/contact/" style="color:var(--gold-deep);font-weight:600;">احجز استشارة مجانية</a>.</p>
+  </div>
+</section>
+
+<section class="cta-band has-texture" style="--tex:url('https://d8j0ntlcm91z4.cloudfront.net/user_3Er19yhNcCBleF6VbHc1DnoxQpn/hf_20260623_145717_868fd67b-e559-4dc4-ad53-5b04054bde42.png')">
+  <div class="wrap inner reveal">
+    <span class="eyebrow">هل تحتاج إلى احتساب دقيق؟</span>
+    <h2>نساعدك في إعداد إقرارات ضريبة القيمة المضافة وضريبة الشركات.</h2>
+    <p class="lead">يتابع متخصصونا المسجلون لدى الهيئة التسجيل واحتساب الضريبة وتقديم الإقرارات.</p>
+    <div class="cta-actions">
+      <a href="/ar/contact/" class="btn btn-primary">احجز استشارة <span class="arrow">←</span></a>
+      <a href="/ar/tools/" class="btn btn-ghost">جرّب حاسبة الضرائب</a>
+    </div>
+  </div>
+</section>
+<script src="/assets/calculator.js"></script>
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="footer-about">
+        <a class="brand" href="/ar/">
+          <img class="brand-mark" src="/assets/logo.svg" alt="نجمة الرائدة">
+          <span class="brand-name" style="color:var(--paper)">نجمة الرائدة</span>
+        </a>
+        <p>مكتب للمحاسبة والضرائب والاستشارات في دبي، يساند المنشآت في جميع أنحاء الإمارات منذ عام 2017.</p>
+      </div>
+      <div class="footer-col">
+        <h5>الخدمات</h5>
+        <ul>
+          <li><a href="/ar/service-bookkeeping/">مسك الدفاتر</a></li>
+          <li><a href="/ar/service-vat-tax/">ضريبة القيمة المضافة وضريبة الشركات</a></li>
+          <li><a href="/ar/service-audit/">التدقيق والتأكيد</a></li>
+          <li><a href="/ar/service-cfo/">الإدارة المالية والاستشارات</a></li>
+          <li><a href="/ar/service-company-formation/">تأسيس الشركات</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>استكشف</h5>
+        <ul>
+          <li><a href="/ar/insights/">المقالات</a></li>
+          <li><a href="/ar/tools/">حاسبة الضرائب</a></li>
+          <li><a href="/ar/industries/">القطاعات</a></li>
+          <li><a href="/ar/about/">عن المكتب</a></li>
+          <li><a href="/ar/contact/">اتصل بنا</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>تواصل معنا</h5>
+        <ul>
+          <li><a href="mailto:hello@nraccounts.com" dir="ltr">hello@nraccounts.com</a></li>
+          <li><a href="tel:+97143360773" dir="ltr">+971 4 336 0773</a></li>
+          <li><a href="/ar/contact/">برج الفطيم، ساحة بني ياس، دبي</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <p>© <span id="year">2026</span> نجمة الرائدة للمحاسبة والاستشارات. جميع الحقوق محفوظة.</p>
+      <p>وكالة ضريبية مسجلة لدى الهيئة الاتحادية للضرائب · معتمدة لدى المناطق الحرة · دبي، الإمارات العربية المتحدة</p>
+    </div>
+  </div>
+</footer>
+
+<script src="/assets/script.js"></script>
+</body>
+</html>

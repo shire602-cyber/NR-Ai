@@ -1,10 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Free UAE VAT &amp; Corporate Tax Calculator | Najma Al Raeda</title>
 <meta name="description" content="Free interactive UAE VAT and Corporate Tax calculator from Najma Al Raeda. Estimate your 5% VAT and 9% Corporate Tax instantly." />
+<link rel="alternate" hreflang="en" href="/tools.html" />
+<link rel="alternate" hreflang="ar" href="/ar/tools/" />
+<script src="assets/locale.js"></script>
 <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -29,6 +32,7 @@
       <li><a href="contact.html">Contact</a></li>
     </ul>
     <div class="nav-cta">
+      <a class="language-link" href="/ar/tools/" lang="ar" hreflang="ar">العربية</a>
       <a href="contact.html" class="btn btn-primary">Book a consultation <span class="arrow">&rarr;</span></a>
     </div>
     <button class="nav-toggle" aria-label="Menu"><span></span><span></span><span></span></button>
@@ -46,8 +50,8 @@
 <section style="padding-top:30px;">
   <div class="wrap">
     <div class="calc-tabs reveal" style="max-width:420px;">
-      <div class="calc-tab active" data-tab="ct">Corporate Tax</div>
-      <div class="calc-tab" data-tab="vat">VAT</div>
+      <button class="calc-tab active" type="button" aria-controls="ct-calc" aria-pressed="true">Corporate Tax</button>
+      <button class="calc-tab" type="button" aria-controls="vat-calc" aria-pressed="false">VAT</button>
     </div>
 
     <div class="calc-wrap reveal" id="ct-calc">
@@ -119,43 +123,7 @@
     </div>
   </div>
 </section>
-<script>
-(function(){
-  var fmt=function(n){return 'AED '+Math.round(n).toLocaleString('en-US');};
-  var tabs=document.querySelectorAll('.calc-tab');
-  var ct=document.getElementById('ct-calc'), vat=document.getElementById('vat-calc');
-  tabs.forEach(function(t){t.addEventListener('click',function(){
-    tabs.forEach(function(x){x.classList.remove('active');});t.classList.add('active');
-    if(t.dataset.tab==='ct'){ct.style.display='';vat.style.display='none';}else{ct.style.display='none';vat.style.display='';}
-  });});
-  function ctCalc(){
-    var p=parseFloat(document.getElementById('ct-profit').value)||0;
-    var rev=parseFloat(document.getElementById('ct-revenue').value)||0;
-    var sbr=document.getElementById('ct-sbr').checked;
-    var THRESH=375000, eligible=rev<=3000000, due, taxed, msg;
-    if(sbr&&eligible){due=0;taxed=0;msg='Small Business Relief applied: revenue is at or below AED 3m, so taxable income is treated as nil for this period.';}
-    else{taxed=Math.max(0,p-THRESH);due=taxed*0.09;
-      msg='Based on 0% up to AED 375,000 and 9% above.'+(sbr&&!eligible?' Small Business Relief not applied: revenue exceeds AED 3m.':'');}
-    document.getElementById('ct-zero').textContent=fmt(Math.min(p,THRESH));
-    document.getElementById('ct-taxed').textContent=fmt(taxed);
-    document.getElementById('ct-due').textContent=fmt(due);
-    document.getElementById('ct-eff').textContent=(p>0?((due/p)*100).toFixed(1):'0.0')+'%';
-    document.getElementById('ct-msg').textContent=msg;
-  }
-  function vatCalc(){
-    var a=parseFloat(document.getElementById('vat-amount').value)||0;
-    var dir=document.getElementById('vat-dir').value, net,vt,gross;
-    if(dir==='add'){net=a;vt=a*0.05;gross=a*1.05;}else{net=a/1.05;vt=a-net;gross=a;}
-    document.getElementById('vat-net').textContent=fmt(net);
-    document.getElementById('vat-vat').textContent=fmt(vt);
-    document.getElementById('vat-gross').textContent=fmt(gross);
-  }
-  ['ct-profit','ct-revenue'].forEach(function(id){document.getElementById(id).addEventListener('input',ctCalc);});
-  document.getElementById('ct-sbr').addEventListener('change',ctCalc);
-  ['vat-amount','vat-dir'].forEach(function(id){document.getElementById(id).addEventListener('input',vatCalc);});
-  ctCalc();vatCalc();
-})();
-</script>
+<script src="assets/calculator.js"></script>
 <footer class="site-footer">
   <div class="wrap">
     <div class="footer-grid">
