@@ -1,5 +1,5 @@
 import { marketingBrand, supportEmail } from "@shared/marketing-brand";
-import { bankCopy, bankFeedCopy, featureBySlug, vatCopy, type Bilingual } from "../content";
+import { bankCopy, featureBySlug, vatCopy, type Bilingual } from "../content";
 import type { EditorialPath, editorialIndexes } from "./pages";
 
 interface Section {
@@ -89,10 +89,7 @@ const providerList: SourceLink = {
 };
 
 const appTitle: Bilingual = [marketingBrand, marketingBrand];
-const bankWorkflow: Bilingual = [
-  `${bankCopy[0]}. ${bankFeedCopy[0]}`,
-  `${bankCopy[1]}. ${bankFeedCopy[1]}`,
-];
+const bankWorkflow: Bilingual = [`${bankCopy[0]}.`, `${bankCopy[1]}.`];
 
 const cutover: Section = {
   title: [
@@ -547,8 +544,8 @@ export const editorialDetails: Record<DetailPath, Details> & Partial<Record<Inde
       {
         title: ["In-app backups and restore", "النسخ الاحتياطي والاستعادة داخل التطبيق"],
         body: [
-          "In-app backup snapshots are encrypted and checked for integrity. Before restoring, review the preview. The app creates a safety snapshot before applying the restore.",
-          "يشفّر التطبيق النسخ الاحتياطية ويتحقّق من سلامتها. راجع المعاينة قبل الاستعادة. ينشئ التطبيق نسخة احتياطية إضافية قبل تنفيذ الاستعادة.",
+          "In-app backups are encrypted and checked for integrity. Both restore modes offer a preview. The app creates an automatic safety snapshot before a Replace restore only. Merge is the default and adds missing records while keeping existing values.",
+          "يشفّر التطبيق النسخ الاحتياطية ويتحقّق من سلامتها. تتوفر معاينة في كلا وضعي الاستعادة. ينشئ التطبيق نسخة احتياطية تلقائية قبل الاستعادة في وضع الاستبدال فقط. يضيف وضع الدمج، وهو الوضع الافتراضي، السجلات المفقودة ويُبقي القيم الحالية.",
         ],
       },
       {

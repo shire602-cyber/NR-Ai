@@ -21,10 +21,10 @@ import {
 import { BrandMark } from "@/components/BrandMark";
 import { usePageMeta } from "../hooks";
 import { useI18n } from "@/lib/i18n";
+import { loadWithChunkRetry } from "@/lib/lazyWithReload";
 import { Link, useLocation } from "wouter";
 import {
   bankCopy,
-  bankFeedCopy,
   featureBySlug,
   features,
   starterPrice,
@@ -34,14 +34,35 @@ import {
 } from "./content";
 import { DemoRequest, FreeTool } from "./Forms";
 import { marketingBrand, supportEmail } from "@shared/marketing-brand";
-import { siteLocale } from "./routes";
+import { siteLocale, type SiteLocale } from "./routes";
 import { editorialPages, editorialPath } from "./editorial/pages";
 import "@fontsource/noto-sans-arabic/arabic-400.css";
 import "@fontsource/noto-sans-arabic/arabic-700.css";
 import "./phase.css";
 
 const MonthlyPlans = lazy(() => import("./MonthlyPlans"));
-const EditorialContent = lazy(() => import("./editorial/EditorialContent"));
+const EditorialContent = lazy(() =>
+  loadWithChunkRetry(() => import("./editorial/EditorialContent"), {
+    key: "marketing-editorial",
+    reload: false,
+  }).catch(() => ({ default: EditorialUnavailable }))
+);
+
+function EditorialUnavailable({ locale }: { locale: SiteLocale }) {
+  const ar = locale === "ar";
+  return (
+    <div className="phase-editorial">
+      <p role="alert">{ar ? "تعذّر تحميل محتوى الصفحة." : "This page’s content couldn’t load."}</p>
+      <button
+        className="phase-button phase-primary"
+        type="button"
+        onClick={() => window.location.reload()}
+      >
+        {ar ? "أعِد المحاولة" : "Retry"}
+      </button>
+    </div>
+  );
+}
 
 const start = ["Start free trial", "ابدأ التجربة المجانية"] as const;
 const demo = ["Book a demo", "احجز عرضًا توضيحيًا"] as const;
@@ -454,7 +475,7 @@ const homeLead = [
 const faqs: readonly [Bilingual, Bilingual][] = [
   [
     ["How do I reconcile my bank account?", "كيف أطابق حسابي البنكي؟"],
-    [`${bankCopy[0]}. ${bankFeedCopy[0]}`, `${bankCopy[1]}. ${bankFeedCopy[1]}`],
+    [`${bankCopy[0]}.`, `${bankCopy[1]}.`],
   ],
   [["How do I file my VAT return?", "كيف أقدّم إقرار ضريبة القيمة المضافة؟"], vatCopy],
   [

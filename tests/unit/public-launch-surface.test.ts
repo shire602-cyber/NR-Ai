@@ -75,6 +75,8 @@ const bannedLaunchClaims = [
   /Securely link your.*bank account/i,
   /via encrypted feeds/i,
   /UAE bank feeds/i,
+  /live bank feeds are coming later/i,
+  /سيتوفر الربط البنكي المباشر لاحقًا/,
   /Photo, email forward, or bank feed/i,
   /sync a bank line/i,
   /compliant with FTA/i,
