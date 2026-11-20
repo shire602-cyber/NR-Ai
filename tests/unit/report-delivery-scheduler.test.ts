@@ -63,7 +63,11 @@ vi.mock("../../server/services/report-render/delivery", () => ({
 import { storage } from "../../server/storage";
 import { executeReportDeliveryRun } from "../../server/services/report-render/delivery";
 import { createAndEmitNotification } from "../../server/services/socket.service";
-import { getReportDeliveryPlans } from "../../server/services/report-delivery.service";
+import arabicReportCatalog from "../../client/src/locales/ar-catalog/reportCatalog.json";
+import {
+  getReportDeliveryPlan,
+  getReportDeliveryPlans,
+} from "../../server/services/report-delivery.service";
 import {
   getReportDeliveryScheduleDecision,
   scanDueReportDeliveries,
@@ -90,6 +94,33 @@ describe("report delivery scheduler", () => {
     vi.mocked(storage.createReportDeliverySchedulerScan).mockClear();
     vi.mocked(executeReportDeliveryRun).mockClear();
     vi.mocked(createAndEmitNotification).mockClear();
+  });
+
+  it("preserves the Monday delivery after saving the unchanged Arabic cadence", () => {
+    const subscriptionId = "owner-weekly-executive-delivery";
+    const friday = new Date("2026-11-20T12:00:00.000Z");
+    const monday = new Date("2026-11-23T08:00:00.000Z");
+    const catalogPlan = getReportDeliveryPlan(subscriptionId, friday)!;
+    // The delivery settings editor submits the displayed cadence when Save is clicked.
+    const savedPlan = getReportDeliveryPlan(subscriptionId, friday, [
+      {
+        subscriptionId,
+        enabled: true,
+        cadenceOverride:
+          arabicReportCatalog["reportCatalog.delivery.owner-weekly-executive-delivery.cadence"],
+        channelOverride: null,
+        formatOverride: null,
+        recipientsOverride: null,
+        deliveryGuardrailOverride: null,
+        updatedAt: friday,
+      },
+    ])!;
+
+    expect(catalogPlan.nextRunAt).toBe(monday.toISOString());
+    expect({
+      nextRun: savedPlan.nextRunAt,
+      dueOnMonday: getReportDeliveryScheduleDecision(savedPlan, null, monday).shouldQueue,
+    }).toEqual({ nextRun: catalogPlan.nextRunAt, dueOnMonday: true });
   });
 
   it("queues initial subscriptions only when their cadence window is due", () => {
