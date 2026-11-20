@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ErrorState } from "@/components/ui/error-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { PortalInvoiceList, type PortalInvoice } from "@/components/portal/PortalInvoiceList";
 import { useToast } from "@/hooks/use-toast";
@@ -10,7 +11,12 @@ export default function PortalInvoices() {
   const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { data: invoices = [], isLoading } = useQuery<PortalInvoice[]>({
+  const {
+    data: invoices = [],
+    isLoading,
+    isLoadingError,
+    refetch,
+  } = useQuery<PortalInvoice[]>({
     queryKey: ["portal-invoices"],
     queryFn: () => apiRequest("GET", "/api/client-portal/invoices"),
     staleTime: 60_000,
@@ -38,11 +44,15 @@ export default function PortalInvoices() {
   return (
     <div className="mx-auto max-w-[1040px] space-y-6">
       <PageHeader title={t["portal.doc.invoices"]} description={t["portal.doc.invoicesHint"]} />
-      <PortalInvoiceList
-        invoices={invoices}
-        loading={isLoading}
-        onlinePayment={dashboard?.onlinePayment?.available === true}
-      />
+      {isLoadingError ? (
+        <ErrorState onRetry={() => void refetch()} />
+      ) : (
+        <PortalInvoiceList
+          invoices={invoices}
+          loading={isLoading}
+          onlinePayment={dashboard?.onlinePayment?.available === true}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 {
-  "banking.import.csvRequired": "Choose a bank CSV export.",
+  "banking.import.csvRequired": "Choose a CSV file exported from your bank.",
   "banking.accounts.title": "Bank accounts",
   "banking.accounts.description": "Every bank account is linked to its own GL account so its lines can be reconciled.",
   "banking.accounts.add": "Add bank account",
@@ -183,7 +183,7 @@
   "banking.recon.findMatches": "Find matches",
   "banking.recon.report": "Reconciliation report",
   "banking.recon.moreActions": "More actions",
-  "banking.feeds.unavailableTitle": "Live bank feeds are coming later.",
+  "banking.feeds.unavailableTitle": "Import a bank CSV",
   "banking.feeds.unavailableBody": "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
   "banking.feeds.importStatement": "Import a statement",
   "banking.feeds.accountsTitle": "Your bank accounts",

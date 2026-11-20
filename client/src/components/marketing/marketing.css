@@ -1447,7 +1447,7 @@
   flex-direction: column;
   justify-content: space-between;
   padding: 2.5rem clamp(2.5rem, 1rem + 3vw, 4rem);
-  background: var(--band);
+  background: hsl(var(--brand-ink));
   color: var(--band-ink);
   isolation: isolate;
 }

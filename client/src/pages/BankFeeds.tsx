@@ -184,7 +184,7 @@ export default function BankFeeds() {
   if (available.length === 0) {
     return (
       <div className="space-y-6">
-        {header}
+        <PageHeader eyebrow={tt["shell.nav.banking"]} title={tt["shell.nav.reconciliation"]} />
         <Card>
           <EmptyState
             size="md"

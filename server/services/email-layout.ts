@@ -17,7 +17,7 @@
  * format-date): Latin digits, `AED 1,250.00` in English, `1,250.00 د.إ` in Arabic,
  * `16 Nov 2026` / `16 نوفمبر 2026`.
  */
-import { DOCUMENT_ACCENT_DEFAULT } from "../../shared/document-accent";
+import { PRODUCT_COLORS, PRODUCT_NAME } from "../../shared/product-brand";
 import { formatDate as formatAppDate } from "../../client/src/lib/format-date";
 import { formatMoneyText } from "../../client/src/lib/format-money";
 
@@ -113,7 +113,7 @@ export function isolateInline(value: string): string {
 
 // ─── HTML ───────────────────────────────────────────────────────────
 
-const FONT = "Arial,'Noto Naskh Arabic','Segoe UI',Tahoma,sans-serif";
+const FONT = "Geist,'Geist Sans','Noto Sans Arabic','Segoe UI',Tahoma,Arial,sans-serif";
 
 function valueOf(v: string | BilingualBlock, lang: "en" | "ar"): string {
   return typeof v === "string" ? v : v[lang];
@@ -129,18 +129,18 @@ function section(dir: "ltr" | "rtl", lang: "en" | "ar", c: BilingualEmailContent
     )
     .join("");
   const summary = c.summary?.length
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F9FAFB;border:1px solid #E5E7EB;border-radius:8px;margin:6px 0 20px;">${c.summary
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PRODUCT_COLORS.paper};border:1px solid #E5E7EB;border-radius:8px;margin:6px 0 20px;">${c.summary
         .map(
           (row) =>
             `<tr><td style="padding:9px 14px;color:#6B7280;font-size:13px;text-align:${align};">${escapeHtml(
               row.label[lang]
-            )}</td><td dir="${dir}" style="padding:9px 14px;color:#111827;font-size:14px;text-align:${opposite};${
+            )}</td><td dir="${dir}" style="padding:9px 14px;color:${PRODUCT_COLORS.ink};font-size:14px;text-align:${opposite};${
               row.strong ? "font-weight:bold;" : ""
             }">${escapeHtml(valueOf(row.value, lang))}</td></tr>`
         )
         .join("")}</table>`
     : "";
-  const accent = c.accent ?? DOCUMENT_ACCENT_DEFAULT;
+  const accent = c.accent ?? PRODUCT_COLORS.emerald;
   const button = c.button
     ? `<table role="presentation" cellpadding="0" cellspacing="0" align="center" class="em-btn" style="margin:22px auto;"><tr><td align="center" bgcolor="${escapeHtml(
         accent
@@ -155,7 +155,7 @@ function section(dir: "ltr" | "rtl", lang: "en" | "ar", c: BilingualEmailContent
       )}" style="color:#6B7280;">${escapeHtml(c.button.url)}</a></p>`
     : "";
   const heading = c.heading[lang]
-    ? `<h2 style="margin:0 0 14px;color:#111827;font-size:20px;line-height:1.35;text-align:${align};">${escapeHtml(c.heading[lang])}</h2>`
+    ? `<h2 style="margin:0 0 14px;color:${PRODUCT_COLORS.ink};font-size:20px;line-height:1.35;text-align:${align};">${escapeHtml(c.heading[lang])}</h2>`
     : "";
   const note = c.note
     ? `<p style="color:#6B7280;font-size:12px;line-height:1.6;margin:0 0 6px;text-align:${align};">${escapeHtml(c.note[lang])}</p>`
@@ -172,8 +172,8 @@ const FOOTER_REPLY: BilingualBlock = {
   ar: "للاستفسار يرجى مراسلة",
 };
 const FOOTER_SENT_WITH: BilingualBlock = {
-  en: "Sent with Muhasib.ai",
-  ar: "أُرسلت عبر Muhasib.ai",
+  en: "Sent with",
+  ar: "أُرسلت عبر",
 };
 
 /** Footer sentences; `html` isolates the company name and the reply address so a Latin name
@@ -182,14 +182,8 @@ function footerLines(c: BilingualEmailContent, lang: "en" | "ar", html = false):
   const wrap = (v: string) => (html ? `<bdi>${escapeHtml(v)}</bdi>` : v);
   const lines = [`${FOOTER_AUTOMATED[lang]} ${wrap(c.brandName)}.`];
   if (c.contactEmail) lines.push(`${FOOTER_REPLY[lang]} ${wrap(c.contactEmail)}.`);
-  if (c.brandName !== "Muhasib.ai") lines.push(wrap_sent(lang, html));
+  if (c.brandName !== PRODUCT_NAME) lines.push(`${FOOTER_SENT_WITH[lang]} ${wrap(PRODUCT_NAME)}`);
   return lines;
-}
-
-function wrap_sent(lang: "en" | "ar", html: boolean): string {
-  return html
-    ? FOOTER_SENT_WITH[lang].replace("Muhasib.ai", "<bdi>Muhasib.ai</bdi>")
-    : FOOTER_SENT_WITH[lang];
 }
 
 function preheaderOf(c: BilingualEmailContent, language: EmailLanguage): string {
@@ -208,7 +202,7 @@ export function renderBilingualEmail(c: BilingualEmailContent, language: EmailLa
   if (language !== "en") parts.push(section("rtl", "ar", c));
   const rootLang = language === "ar" ? "ar" : "en";
   const rootDir = language === "ar" ? "rtl" : "ltr";
-  const accent = c.accent ?? DOCUMENT_ACCENT_DEFAULT;
+  const accent = c.accent ?? PRODUCT_COLORS.emerald;
   const footerBlocks = (
     language === "bilingual" ? (["en", "ar"] as const) : ([rootLang] as const)
   ).map(
@@ -233,9 +227,9 @@ export function renderBilingualEmail(c: BilingualEmailContent, language: EmailLa
 }
 </style>
 </head>
-<body style="margin:0;padding:0;background:#F3F4F6;font-family:${FONT};-webkit-text-size-adjust:100%;">
-  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#F3F4F6;opacity:0;">${pre}${"&#8199;&#847; ".repeat(20)}</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F6;">
+<body style="margin:0;padding:0;background:${PRODUCT_COLORS.paper};font-family:${FONT};-webkit-text-size-adjust:100%;">
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:${PRODUCT_COLORS.paper};opacity:0;">${pre}${"&#8199;&#847; ".repeat(20)}</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PRODUCT_COLORS.paper};">
     <tr><td align="center" style="padding:24px 12px;">
       <!--[if mso]><table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0"><tr><td><![endif]-->
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:10px;overflow:hidden;">
@@ -243,7 +237,7 @@ export function renderBilingualEmail(c: BilingualEmailContent, language: EmailLa
           <span style="color:#ffffff;font-size:20px;font-weight:bold;line-height:1.3;">${escapeHtml(c.brandName)}</span>
         </td></tr>
         <tr><td class="em-pad" style="padding:28px 32px;">${parts.join("\n")}</td></tr>
-        <tr><td class="em-pad" style="background:#F9FAFB;padding:18px 32px;border-top:1px solid #E5E7EB;">
+        <tr><td class="em-pad" style="background:${PRODUCT_COLORS.paper};padding:18px 32px;border-top:1px solid #E5E7EB;">
           ${c.footer ? `<p style="color:#6B7280;font-size:12px;line-height:1.6;margin:0 0 6px;text-align:center;">${escapeHtml(c.footer)}</p>` : ""}
           ${footerBlocks.join("\n")}
         </td></tr>

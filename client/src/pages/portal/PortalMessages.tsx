@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import { ErrorState } from "@/components/ui/error-state";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -36,7 +37,12 @@ export default function PortalMessages() {
   const [subject, setSubject] = useState("");
   const [content, setContent] = useState("");
 
-  const { data: messages = [], isLoading } = useQuery<any[]>({
+  const {
+    data: messages = [],
+    isLoading,
+    isLoadingError,
+    refetch,
+  } = useQuery<any[]>({
     queryKey: ["portal-messages"],
     queryFn: () => apiRequest("GET", "/api/client-portal/messages"),
   });
@@ -82,6 +88,8 @@ export default function PortalMessages() {
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
             </div>
+          ) : isLoadingError ? (
+            <ErrorState compact onRetry={() => void refetch()} />
           ) : thread.length === 0 ? (
             <EmptyState
               headingLevel="h2"

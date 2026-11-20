@@ -11,8 +11,8 @@
  * Seller TRN and internal ids (payment-provider event ids, database ids) never appear in the
  * body or footer; the attached PDF carries the tax-invoice particulars.
  */
+import { PRODUCT_COLORS, PRODUCT_NAME } from "../../shared/product-brand";
 import type { Company, Invoice } from "../../shared/schema";
-import { DOCUMENT_ACCENT_DEFAULT } from "../../shared/document-accent";
 import {
   emailDate,
   emailDateBlock,
@@ -284,7 +284,7 @@ export function buildReminderEmail(i: ReminderEmailInput): BuiltEmail {
 
   const content: BilingualEmailContent = {
     ...brandFields(i.company),
-    accent: overdue ? "#B91C1C" : DOCUMENT_ACCENT_DEFAULT,
+    accent: overdue ? "#B91C1C" : PRODUCT_COLORS.emerald,
     heading: overdue
       ? { en: "Overdue invoice", ar: "فاتورة متأخرة السداد" }
       : { en: "Payment reminder", ar: "تذكير بالسداد" },
@@ -622,7 +622,7 @@ export function buildApproverDoneEmail(input: {
 
 export function buildEmailVerificationEmail(verifyUrl: string, name?: string | null): BuiltEmail {
   const content: BilingualEmailContent = {
-    brandName: "Muhasib.ai",
+    brandName: PRODUCT_NAME,
     footer: "Muhasib.ai",
     heading: { en: "Confirm your email address", ar: "تأكيد عنوان البريد الإلكتروني" },
     preheader: {
@@ -653,7 +653,7 @@ export function buildEmailVerificationEmail(verifyUrl: string, name?: string | n
 
 export function buildPasswordResetEmail(resetUrl: string): BuiltEmail {
   const content: BilingualEmailContent = {
-    brandName: "Muhasib.ai",
+    brandName: PRODUCT_NAME,
     footer: "Muhasib.ai",
     heading: { en: "Reset your password", ar: "إعادة تعيين كلمة المرور" },
     preheader: {

@@ -1,6 +1,6 @@
 import type { FormEvent, ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
-import { BrandMark } from "@/components/BrandMark";
+import { BrandMark, ProductWordmark } from "@/components/BrandMark";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatMessage, useTranslation } from "@/lib/i18n";
@@ -31,10 +31,10 @@ export function OnboardingShell({
         <div className="mx-auto flex h-14 w-full max-w-[70rem] items-center justify-between gap-4 px-4 md:px-8">
           <span className="flex items-center gap-2.5" translate="no">
             <BrandMark size="sm" />
-            <span className="text-[0.9375rem] font-semibold text-foreground" lang="en" dir="ltr">
-              {"Muhasib"}
-              <span className="text-accent">{".ai"}</span>
-            </span>
+            <ProductWordmark
+              className="text-[0.9375rem] font-semibold text-foreground"
+              accentClassName="text-accent"
+            />
           </span>
           {step ? (
             <p className="text-small text-muted-foreground" data-testid="onboarding-step-count">
@@ -62,7 +62,7 @@ export function OnboardingShell({
 /** Title (text-h1) and one intro line (text-lead). */
 export function StepHeading({ title, lead }: { title: ReactNode; lead?: ReactNode }) {
   return (
-    <header className="mb-8">
+    <header className="mb-6 md:mb-8">
       <h1 className="text-h1 text-balance text-foreground">{title}</h1>
       {lead ? <p className="mt-2 text-lead text-muted-foreground text-pretty">{lead}</p> : null}
     </header>
@@ -116,14 +116,14 @@ export function StepActions({
         "md:static md:z-auto md:mt-10 md:border-0 md:bg-transparent md:p-0"
       )}
     >
-      <div className="mx-auto flex w-full max-w-[32.5rem] items-center gap-3">
+      <div className="mx-auto flex w-full max-w-[32.5rem] flex-wrap items-center gap-2 sm:gap-3">
         {onBack ? (
           <Button type="button" variant="ghost" onClick={onBack} data-testid="onboarding-back">
             <ArrowLeft aria-hidden="true" className="h-4 w-4 rtl:rotate-180" />
             {t["onboarding.v3Back"]}
           </Button>
         ) : null}
-        <div className="ms-auto flex items-center gap-3">
+        <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
           {secondary}
           {primary}
         </div>

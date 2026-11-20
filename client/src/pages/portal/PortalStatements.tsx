@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { FileDown, Loader2 } from "lucide-react";
+import { FileDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
+import { CardListSkeleton } from "@/components/ui/loading-skeletons";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { T } from "@/components/layout/T";
@@ -29,18 +31,10 @@ interface Statement {
 
 export default function PortalStatements() {
   const { t, locale } = useTranslation();
-  const { data, isLoading } = useQuery<Statement>({
+  const { data, isLoading, error, refetch } = useQuery<Statement>({
     queryKey: ["portal-statements"],
     queryFn: () => apiRequest("GET", "/api/client-portal/statements"),
   });
-
-  if (isLoading) {
-    return (
-      <div className="flex h-48 items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden />
-      </div>
-    );
-  }
 
   const sections = data?.sections ?? [];
   return (
@@ -66,7 +60,11 @@ export default function PortalStatements() {
           ) : undefined
         }
       />
-      {sections.length === 0 ? (
+      {isLoading ? (
+        <CardListSkeleton count={3} />
+      ) : error && !data ? (
+        <ErrorState onRetry={() => void refetch()} />
+      ) : sections.length === 0 ? (
         <Card>
           <CardContent className="p-0">
             <EmptyState

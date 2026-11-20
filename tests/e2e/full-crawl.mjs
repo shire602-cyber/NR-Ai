@@ -194,26 +194,13 @@ async function main() {
   await page.request.post(`${BASE}/api/auth/login`, { data: { email, password: "Password123!" } });
 
   await page.goto(`${BASE}/dashboard`);
-  await page.waitForTimeout(3000);
-  if (page.url().includes("onboarding")) {
-    const express = page.locator('[data-testid="onboarding-express"]');
-    // The redirect to /onboarding can land after a fixed wait on a cold build.
-    await express.waitFor({ timeout: 10000 }).catch(() => undefined);
-    if (await express.count()) {
-      await express.click();
-      await page.waitForTimeout(4000);
-      // WP-B: onboarding is three screens; skip the starting point, then look around.
-      for (const id of ["onboarding-skip", "onboarding-task-explore"]) {
-        const next = page.locator(`[data-testid="${id}"]`);
-        if (await next.count()) {
-          await next.click();
-          await page.waitForTimeout(1500);
-        }
-      }
-    }
-  }
-  if (!page.url().includes("dashboard")) {
+  try {
+    for (const step of ["onboarding-express", "onboarding-skip", "onboarding-task-explore"])
+      await page.getByTestId(step).click({ timeout: 25000 });
+    await page.waitForURL(`${BASE}/dashboard`, { timeout: 25000 });
+  } catch (error) {
     await fail("express-onboarding", { detail: `ended on ${page.url()}` });
+    throw error;
   }
 
   // Promote to admin + firm owner so the crawl covers admin and firm suites.
@@ -256,7 +243,14 @@ async function main() {
     apiFailures = [];
     try {
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
-      await page.waitForTimeout(1700);
+      await page
+        .waitForFunction(
+          () => (document.querySelector("main")?.innerText.trim().length ?? 0) >= 40,
+          undefined,
+          { timeout: 15000 }
+        )
+        .catch(() => undefined);
+      await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => undefined);
       const finalUrl = page.url().replace(BASE, "");
       const mainText = await page
         .locator("main")
@@ -1328,7 +1322,13 @@ async function main() {
     const DATE_TEXT = /\b\d{1,2}(?:[–-]\d{1,2})? [A-Z][a-z]{2} \d{4}\b|\b[A-Z][a-z]{2} \d{4}\b/g;
     const datesOn = async (p) => {
       await p.goto(`${BASE}/vat-filing`, { timeout: 45000 });
-      await p.waitForTimeout(2500);
+      await p
+        .waitForFunction(
+          (pattern) => new RegExp(pattern).test(document.querySelector("main")?.innerText ?? ""),
+          DATE_TEXT.source,
+          { timeout: 15000 }
+        )
+        .catch(() => undefined);
       const text = await p
         .locator("main")
         .innerText()

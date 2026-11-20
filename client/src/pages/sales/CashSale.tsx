@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ErrorState } from "@/components/ui/error-state";
 import { useToast } from "@/hooks/use-toast";
 import { useDefaultCompany } from "@/hooks/useDefaultCompany";
 import { useCompanyPermission } from "@/hooks/useCompanyPermission";
@@ -80,7 +81,12 @@ export default function CashSale() {
     queryKey: ["/api/companies", companyId, "customer-contacts"],
     enabled: !!companyId,
   });
-  const { data: accounts = [] } = useQuery<any[]>({
+  const {
+    data: accounts = [],
+    isLoading: accountsLoading,
+    isLoadingError: accountsFailed,
+    refetch: refetchAccounts,
+  } = useQuery<any[]>({
     queryKey: ["/api/companies", companyId, "accounts"],
     enabled: !!companyId,
   });
@@ -200,7 +206,7 @@ export default function CashSale() {
             onClick={() => record.mutate()}
             data-testid="button-record-cash-sale"
           >
-            {t["invoices.cashSale.submit"]}
+            {record.isPending ? t["forms.saving"] : t["invoices.cashSale.submit"]}
           </Button>
         </>
       }
@@ -262,9 +268,19 @@ export default function CashSale() {
           )}
           <div className="space-y-2">
             <Label htmlFor="cash-account">{t["invoices.cashSale.paidInto"]}</Label>
-            <Select value={accountId} onValueChange={setAccountId}>
+            <Select
+              value={accountId}
+              onValueChange={setAccountId}
+              disabled={paymentAccounts.length === 0}
+            >
               <SelectTrigger id="cash-account" data-testid="select-cash-account">
-                <SelectValue placeholder={t["invoices.receive.chooseAccount"]} />
+                <SelectValue
+                  placeholder={
+                    accountsLoading
+                      ? t["components.ui.loading"]
+                      : t["invoices.receive.chooseAccount"]
+                  }
+                />
               </SelectTrigger>
               <SelectContent>
                 {paymentAccounts.map((a) => (
@@ -274,6 +290,11 @@ export default function CashSale() {
                 ))}
               </SelectContent>
             </Select>
+            {accountsFailed ? (
+              <ErrorState compact onRetry={() => void refetchAccounts()} />
+            ) : !accountsLoading && paymentAccounts.length === 0 ? (
+              <p className="text-small text-muted-foreground">{t["invoices.noCashBankAccounts"]}</p>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label htmlFor="cash-date">{t["invoices.receive.date"]}</Label>

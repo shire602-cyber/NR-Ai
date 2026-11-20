@@ -160,7 +160,6 @@ const featureData = [
         "Review suggestions and resolve unmatched entries.",
         "راجع المطابقات المقترحة وعالج الحركات غير المطابقة.",
       ],
-      ["Live bank feeds are coming later.", "سيتوفر الربط البنكي المباشر لاحقًا."],
     ],
   },
   {

@@ -989,7 +989,7 @@
   "pages.payrollNoAccessTitle": "Payroll is not available to your role",
   "pages.payrollNoAccessBody": "Payroll and employee pay are visible to owners, administrators, accountants and approvers. Ask the company owner if you need access.",
   "pages.billPayTotalRemaining": "Total: {total} | Remaining: {remaining}",
-  "pages.receiptsSubtitleManual": "Upload receipts and enter the details yourself, or attach them as proof",
+  "pages.receiptsSubtitleManual": "Upload a receipt, then enter its details and save the image with the expense.",
   "pages.subscriptionArrivesLater": "Arrives later",
   "pages.movementOpening": "Opening stock",
   "pages.unitShort.each": "each",

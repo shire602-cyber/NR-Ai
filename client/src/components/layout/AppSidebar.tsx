@@ -33,7 +33,7 @@ import { removeToken } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useQueryClient } from "@tanstack/react-query";
 import { CompanySwitcher } from "@/components/CompanySwitcher";
-import { BrandMark } from "@/components/BrandMark";
+import { BrandMark, ProductWordmark } from "@/components/BrandMark";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSubscription } from "@/hooks/useSubscription";
 import { featureForRoute } from "@/lib/plan-routes";
@@ -284,10 +284,10 @@ export function AppSidebar() {
         <SidebarHeader className="px-3 pt-4 pb-3 space-y-3">
           <div className="flex items-center gap-2.5 px-1">
             <BrandMark size="md" />
-            {/* i18n-ignore: brand name */}
-            <div className="font-semibold text-[15px] tracking-tight text-sidebar-accent-foreground leading-tight">
-              Muhasib<span className="text-sidebar-primary">.ai</span>
-            </div>
+            <ProductWordmark
+              className="font-semibold text-[15px] tracking-tight text-sidebar-accent-foreground leading-tight"
+              accentClassName="text-sidebar-primary"
+            />
           </div>
           <CompanySwitcher />
         </SidebarHeader>
