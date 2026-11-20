@@ -433,6 +433,37 @@ describe("E2 PINT AE UBL -> GETS", () => {
     ).toBe(183.63);
   });
 
+  // Field names and types follow https://docs.complyance.io/countries/ae/fields/.
+  it("preserves the VAT-inclusive AED total for a foreign-currency invoice", () => {
+    const xml = xmlOf(byName("foreign currency"));
+    // USD 1,050 at 3.6725 AED/USD, rounded to fils.
+    expect(xml).toContain("<cbc:DocumentDescription>3856.13</cbc:DocumentDescription>");
+    expect(ublToGets(xml).payload.extensions).toMatchObject({
+      ae_totalAmountIncludingTaxInAED: 3856.13,
+    });
+  });
+
+  it("preserves the seller and buyer passport issuing countries", () => {
+    const f = PINT_AE_FIXTURES[byName("standard")];
+    const seller = {
+      ...fixtureCompany,
+      sellerIdType: "PAS",
+      sellerIdNumber: "P0000001",
+      sellerIdCountry: "AE",
+    };
+    const { xml } = generateEInvoiceXML(
+      f.invoice,
+      f.lines,
+      seller,
+      { ...f.customer, legalIdType: "PAS", legalId: "P0000002", legalAuthority: "GB" },
+      f.opts
+    );
+    expect(ublToGets(xml).payload.extensions).toMatchObject({
+      ae_seller_passportIssuingCountry: "AE",
+      ae_buyer_passportCountry: "GB",
+    });
+  });
+
   it("every PINT AE fixture maps (lines carry gross price, base quantity and tax)", () => {
     for (let i = 0; i < PINT_AE_FIXTURES.length; i++) {
       const g = ublToGets(xmlOf(i));
