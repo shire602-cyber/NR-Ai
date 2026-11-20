@@ -34,6 +34,15 @@ async function backup(t: Tenant, name = "Snapshot A") {
 }
 
 describe("W5-B backups", () => {
+  it.each(["customer_portal_accounts", "customer_portal_invitations"])(
+    "keeps %s out of the accounting backup and restore manifest",
+    async (table) => {
+      const { buildBackupManifest } = await import("../../server/services/backup.service");
+      const manifest = await buildBackupManifest();
+      expect(manifest.tables.map((entry) => entry.name)).not.toContain(table);
+    }
+  );
+
   it("[R19-06] the manifest captures every company-scoped table or excludes it with a reason", async () => {
     const svc = await import("../../server/services/backup.service");
     const manifest = await svc.buildBackupManifest();
