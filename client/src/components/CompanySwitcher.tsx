@@ -38,9 +38,11 @@ const SWITCHER_SEARCH_THRESHOLD = 8;
  */
 export function CompanySwitcher({
   variant = "sidebar",
+  allowCreate = true,
 }: {
   /** sidebar: full-width outline button. compact: the mobile top-bar company name button. */
   variant?: "sidebar" | "compact";
+  allowCreate?: boolean;
 } = {}) {
   const { toast } = useToast();
   const { t } = useTranslation();
@@ -55,7 +57,7 @@ export function CompanySwitcher({
   const canReturnToFirm = canAccessNraCenter(currentUser);
   // Broken-path sweep: a customer (owner) can add another company from here; the plan's company
   // cap is enforced by the server and explained by the PlanLimitDialog.
-  const canCreate = canCreateCompany(currentUser);
+  const canCreate = allowCreate && canCreateCompany(currentUser);
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
 
