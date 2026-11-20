@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import { authMiddleware, adminMiddleware } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
 import { hasEmailProvider, hasResendConfig, hasSmtpConfig } from "../services/email.service";
@@ -81,13 +82,11 @@ export function registerIntegrationStatusRoutes(app: Express) {
         },
         {
           key: "openBanking",
-          name: "Live bank feeds",
+          name: "Bank provider status",
           configured: isOpenBankingConfigured(),
           detail: null,
-          requiredEnv: [
-            "Provider credentials per docs/EXTERNAL_DEPENDENCIES.md (Tarabut / Dapi / Salt Edge candidates)",
-          ],
-          unlocks: "Automatic bank transaction sync (CSV/OFX import works today)",
+          requiredEnv: [],
+          unlocks: bankStatementCopy.en,
         },
         {
           key: "push",

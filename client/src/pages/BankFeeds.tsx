@@ -155,7 +155,7 @@ export default function BankFeeds() {
   const header = (
     <PageHeader
       eyebrow={tt["shell.nav.banking"]}
-      title={tt["banking.feeds.title"]}
+      title={tt[available.length ? "banking.feeds.title" : "banking.feeds.unavailableTitle"]}
     />
   );
 
@@ -189,7 +189,7 @@ export default function BankFeeds() {
           <EmptyState
             size="md"
             icon={Landmark}
-            title={tt["banking.feeds.unavailableTitle"]}
+            title={tt["banking.feeds.importStatement"]}
             description={tt["banking.feeds.unavailableBody"]}
             action={{
               label: tt["banking.feeds.importStatement"],

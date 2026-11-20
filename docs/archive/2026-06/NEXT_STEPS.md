@@ -17,7 +17,7 @@ _Snapshot + prioritized roadmap. Living doc._
 
 **Built and tested, dormant until you flip a switch:**
 - **Email document intake pilot** — end to end: clients email docs → inbound
-  webhook → OCR → autopilot drafts the books → completeness check vs bank feed →
+  webhook → OCR → autopilot drafts the books → completeness check against the imported bank statement →
   document chasing → firm review UI. Needs a provider + secret to go live (Phase 1).
 
 ---
@@ -44,9 +44,7 @@ From `LAUNCH_READINESS.md` — all owner inputs, enforcement already coded/teste
 3. **Domain:** buy + point DNS at Railway, set `FRONTEND_URL` (feeds CORS + reset
    links).
 4. **Web push:** `npx web-push generate-vapid-keys`, paste both.
-5. **Bank feed:** choose Tarabut / Dapi / Salt Edge / Lean, sandbox creds (the
-   adapter + reconciliation are ready — and bank recon is what powers the intake
-   completeness check).
+5. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 6. Then open a **private beta** to a handful of real companies.
 
 ## Phase 3 — Run the email-intake pilot (the 6-month proof, owner-led)

@@ -331,7 +331,7 @@ They are not user-research scores.
 | UAE e-invoicing readiness | 3/10 | Planned, not implemented. Wafeq markets e-invoicing now. |
 | AI bookkeeping automation | 5/10 | Many AI surfaces, but Digits/QBO market deeper AI-native automation. |
 | Firm/accountant operations | 8/10 | Strong differentiator if UX and security are fixed. |
-| Bank feeds and reconciliation | 4/10 | CSV/import exists; live feeds require credentials/provider. Digits/QBO/Xero lead. |
+| Bank reconciliation | 4/10 | Upload a CSV exported from your bank, review suggested matches, and reconcile against your books. |
 | Security engineering | 6/10 | Good foundation, but vuln audit, SSRF, notification scoping, cert gaps hurt. |
 | Compliance/certification proof | 3/10 | No SOC 2/ISO/FTA accreditation evidence in repo; Wafeq/Zoho claim stronger proof. |
 | Test automation | 8/10 | 509 unit tests and build/check pass; E2E claim not locally verified here. |
@@ -364,7 +364,7 @@ ecosystem scale and avoids fighting Digits on pure AI-native ledger automation.
 8. Encrypt every credential-bearing DB column, not only bank connections.
 9. Implement UAE e-invoicing/PINT AE validation and ASP adapter.
 10. Add or integrate direct EmaraTax VAT filing if the goal is to beat Zoho in UAE compliance.
-11. Turn live bank feeds from "prepared" into working provider integrations.
+11. Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 12. Run full E2E locally/CI and keep the route crawl passing.
 13. Get third-party security review, then SOC 2/ISO roadmap if selling to firms.
 14. Get accountant pilot customers and measure time saved versus Wafeq/Zoho/manual workflows.

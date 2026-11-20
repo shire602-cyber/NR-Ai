@@ -75,6 +75,7 @@ const UNSUPPORTED_CLAIMS = [
   /FTA[-\s]?(accredited|compliant|registered|approved)/i,
   /submits? (your|the) (VAT )?return(s)? (to|with) the FTA automatically/i,
   /(?:connect to|sync from) (?:a |your )?(?:live )?bank feeds?/i,
+  /\b(?:bank|live) feeds?\b|الربط البنكي المباشر/i,
   /money-back/i,
   /UAE-hosted/i,
   // "Most popular" is a plan-card highlight the owner asked for (X6b); it states no user count.
@@ -83,6 +84,51 @@ const UNSUPPORTED_CLAIMS = [
 ];
 
 describe("D1 public site", () => {
+  it.each([
+    {
+      locale: "en",
+      question: "How do I reconcile my bank account?",
+      copy: "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+    },
+    {
+      locale: "ar",
+      question: "كيف أطابق حسابي البنكي؟",
+      copy: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+    },
+  ] as const)(
+    "[D1] banking copy describes CSV reconciliation in $locale",
+    async ({ locale, question, copy }) => {
+      const { default: PhaseSite } =
+        await import("../../client/src/components/marketing/phase/PhaseSite");
+      const { t } = await import("../../client/src/lib/i18n");
+      const previousUrl = window.location.href;
+      try {
+        window.history.replaceState(null, "", `/${locale}`);
+        await act(async () => root.render(createElement(PhaseSite)));
+        const faq = [...container.querySelectorAll(".phase-faq details")].find(
+          (item) => item.querySelector("summary")?.textContent?.trim() === question
+        );
+        expect(faq?.querySelector("p")?.textContent).toBe(copy);
+
+        act(() => root.unmount());
+        root = createRoot(container);
+        window.history.replaceState(null, "", `/${locale}/product/bank-reconciliation`);
+        await act(async () => root.render(createElement(PhaseSite)));
+        expect(container.querySelector(".phase-lead")?.textContent).toBe(copy);
+        expect(container.querySelector(".phase-product-detail ol")?.textContent).not.toMatch(
+          /\b(?:bank|live) feeds?\b|الربط البنكي المباشر/i
+        );
+        expect(t[locale]["marketing.faq3A"]).toBe(copy);
+        expect(t[locale]["marketing.prEveryBankBody"]).toBe(copy);
+        expect(t[locale]["banking.feeds.unavailableBody"]).toBe(copy);
+        expect(t[locale]["serverErrors.BANK_FEED_NOT_CONFIGURED"]).toBe(copy);
+      } finally {
+        act(() => root.render(null));
+        window.history.replaceState(null, "", previousUrl);
+      }
+    }
+  );
+
   it("[D1] the landing page leads with an honest value proposition and sets its SEO meta", async () => {
     const { default: PhaseSite } =
       await import("../../client/src/components/marketing/phase/PhaseSite");
@@ -90,16 +136,18 @@ describe("D1 public site", () => {
     const h1 = container.querySelector("h1");
     expect(h1?.textContent).toBe("Accounting and VAT for UAE businesses");
     expect(document.title).toContain(h1?.textContent);
-    expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toContain(
-      "Send bilingual invoices"
-    );
+    expect(
+      document.head.querySelector('meta[name="description"]')?.getAttribute("content")
+    ).toContain("Send bilingual invoices");
     // Primary CTAs keep their routes.
     const register = container.querySelector('[data-testid="button-hero-start"]');
     expect(register?.getAttribute("href")).toBe("/register");
     expect(container.querySelector('[data-testid="button-hero-demo"]')?.getAttribute("href")).toBe(
       "/en/book-a-demo"
     );
-    expect(container.textContent).toContain("Prepare and review VAT 201 in the app, then submit it in EmaraTax.");
+    expect(container.textContent).toContain(
+      "Prepare and review VAT 201 in the app, then submit it in EmaraTax."
+    );
     for (const claim of UNSUPPORTED_CLAIMS) {
       expect(container.textContent ?? "", String(claim)).not.toMatch(claim);
     }

@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 import type { FetchLike } from "../../server/services/bank-feeds/types";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 
 const h = useHarness();
 const REDIRECT = "https://app.example.test/bank-feeds/callback";
@@ -96,6 +97,7 @@ describe("W3-C bank feeds", () => {
       });
       expect(r.status, r.text).toBe(503);
       expect(r.body.code).toBe("BANK_FEED_NOT_CONFIGURED");
+      expect(r.body.message).toBe(bankStatementCopy.en);
     }
     const status = await t.as.get(`/api/bank/providers`);
     expect(status.body.isConfigured).toBe(false);
