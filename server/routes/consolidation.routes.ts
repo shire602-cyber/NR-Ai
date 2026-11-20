@@ -147,7 +147,7 @@ export function registerConsolidationRoutes(app: Express): void {
     "/api/company-groups",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      res.json(await listGroupsForUser(userIdOf(req)));
+      res.json(await listGroupsForUser(req.user!));
     })
   );
 
@@ -182,7 +182,7 @@ export function registerConsolidationRoutes(app: Express): void {
     "/api/company-groups/:groupId",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      await assertCanViewGroup(userIdOf(req), req.params.groupId);
+      await assertCanViewGroup(req.user!, req.params.groupId);
       res.json(await groupDetail(req.params.groupId));
     })
   );
@@ -192,7 +192,7 @@ export function registerConsolidationRoutes(app: Express): void {
     authMiddleware,
     strictBody(updateGroupBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const group = await assertCanManageGroup(userIdOf(req), req.params.groupId);
+      const group = await assertCanManageGroup(req.user!, req.params.groupId);
       res.json(await updateGroup(group.id, parsedBody<z.output<typeof updateGroupBody>>(req)));
     })
   );
@@ -202,7 +202,7 @@ export function registerConsolidationRoutes(app: Express): void {
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
       const userId = userIdOf(req);
-      const group = await assertCanManageGroup(userId, req.params.groupId);
+      const group = await assertCanManageGroup(req.user!, req.params.groupId);
       await deleteGroup(group.id);
       await recordAudit({
         userId,
@@ -223,11 +223,11 @@ export function registerConsolidationRoutes(app: Express): void {
     strictBody(addMemberBody),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = userIdOf(req);
-      const group = await assertCanManageGroup(userId, req.params.groupId);
+      const group = await assertCanManageGroup(req.user!, req.params.groupId);
       const body = parsedBody<z.output<typeof addMemberBody>>(req);
       const row = await addMember({
         group,
-        userId,
+        user: req.user!,
         companyId: body.memberCompanyId,
         ownershipPercent: body.ownershipPercent,
         method: body.method,
@@ -252,7 +252,7 @@ export function registerConsolidationRoutes(app: Express): void {
     authMiddleware,
     strictBody(updateMemberBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const group = await assertCanManageGroup(userIdOf(req), req.params.groupId);
+      const group = await assertCanManageGroup(req.user!, req.params.groupId);
       res.json(
         await updateMember({
           group,
@@ -267,7 +267,7 @@ export function registerConsolidationRoutes(app: Express): void {
     "/api/company-groups/:groupId/members/:memberId",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const group = await assertCanManageGroup(userIdOf(req), req.params.groupId);
+      const group = await assertCanManageGroup(req.user!, req.params.groupId);
       await removeMember(group, req.params.memberId);
       res.json({ deleted: true });
     })
@@ -278,7 +278,7 @@ export function registerConsolidationRoutes(app: Express): void {
     authMiddleware,
     strictBody(mapBody),
     asyncHandler(async (req: Request, res: Response) => {
-      const group = await assertCanManageGroup(userIdOf(req), req.params.groupId);
+      const group = await assertCanManageGroup(req.user!, req.params.groupId);
       const body = parsedBody<z.output<typeof mapBody>>(req);
       res.status(201).json(await addIntercompanyMap({ group, ...body }));
     })
@@ -288,7 +288,7 @@ export function registerConsolidationRoutes(app: Express): void {
     "/api/company-groups/:groupId/intercompany-maps/:mapId",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const group = await assertCanManageGroup(userIdOf(req), req.params.groupId);
+      const group = await assertCanManageGroup(req.user!, req.params.groupId);
       await removeIntercompanyMap(group, req.params.mapId);
       res.json({ deleted: true });
     })
@@ -300,7 +300,7 @@ export function registerConsolidationRoutes(app: Express): void {
     strictBody(eliminationBody),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = userIdOf(req);
-      const group = await assertCanManageGroup(userId, req.params.groupId);
+      const group = await assertCanManageGroup(req.user!, req.params.groupId);
       const body = parsedBody<z.output<typeof eliminationBody>>(req);
       const j = await createManualElimination({
         group,
@@ -334,7 +334,7 @@ export function registerConsolidationRoutes(app: Express): void {
     strictBody(z.object({})),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = userIdOf(req);
-      const group = await assertCanManageGroup(userId, req.params.groupId);
+      const group = await assertCanManageGroup(req.user!, req.params.groupId);
       const j = await voidElimination(group, req.params.journalId, userId);
       await recordAudit({
         userId,
@@ -353,7 +353,7 @@ export function registerConsolidationRoutes(app: Express): void {
     "/api/company-groups/:groupId/consolidated-statements",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const group = await assertCanViewGroup(userIdOf(req), req.params.groupId);
+      const group = await assertCanViewGroup(req.user!, req.params.groupId);
       res.json(await consolidatedStatements(group.id, readPeriod(req)));
     })
   );
@@ -362,7 +362,7 @@ export function registerConsolidationRoutes(app: Express): void {
     "/api/company-groups/:groupId/consolidated-statements/export",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const group = await assertCanViewGroup(userIdOf(req), req.params.groupId);
+      const group = await assertCanViewGroup(req.user!, req.params.groupId);
       const format = req.query.format === "csv" ? "csv" : "xlsx";
       const period = readPeriod(req);
       const s = await consolidatedStatements(group.id, period);
@@ -381,7 +381,7 @@ export function registerConsolidationRoutes(app: Express): void {
     strictBody(runBody),
     asyncHandler(async (req: Request, res: Response) => {
       const userId = userIdOf(req);
-      const group = await assertCanManageGroup(userId, req.params.groupId);
+      const group = await assertCanManageGroup(req.user!, req.params.groupId);
       const { from, to } = parsedBody<z.output<typeof runBody>>(req);
       if (from > to) throw new DomainError("INVALID_REPORT_RANGE", 400, { from, to });
       const { run, statements } = await recordConsolidationRun({ group, userId, from, to });
@@ -402,7 +402,7 @@ export function registerConsolidationRoutes(app: Express): void {
     "/api/company-groups/:groupId/consolidation-runs",
     authMiddleware,
     asyncHandler(async (req: Request, res: Response) => {
-      const group = await assertCanViewGroup(userIdOf(req), req.params.groupId);
+      const group = await assertCanViewGroup(req.user!, req.params.groupId);
       res.json(await listRuns(group.id));
     })
   );

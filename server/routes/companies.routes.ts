@@ -2,7 +2,8 @@ import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { authMiddleware, requireCustomer } from "../middleware/auth";
 import { asyncHandler } from "../middleware/errorHandler";
-import { checkCompanyQuota } from "../middleware/featureGate";
+import { billingEnforced, checkCompanyQuota } from "../middleware/featureGate";
+import { bypassesTrialLock, companyTrialLocked } from "../middleware/trialAccessPolicy";
 import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { assertUaeVatRate } from "../http/vat-rate-guard";
@@ -211,11 +212,24 @@ export function registerCompanyRoutes(app: Express) {
       // myRole lets the client keep owner-only flows (the setup wizard) away from
       // invited members. Firm-accessible client companies have no direct membership.
       const roles = await storage.getCompanyRolesByUserId(userId);
-      res.json(
-        companies.map((company) => ({
-          ...withNrClientVatGroup(company),
-          myRole: roles[company.id] ?? null,
-        }))
+      const enforceTrialLock = billingEnforced() && !bypassesTrialLock(req.user!);
+      res.set("Cache-Control", "private, no-store").json(
+        await Promise.all(
+          companies.map(async (company) => {
+            const myRole = roles[company.id] ?? null;
+            if (enforceTrialLock && (await companyTrialLocked(company.id))) {
+              // The company switcher and billing need identity and role, but no business data.
+              return {
+                id: company.id,
+                name: company.name,
+                companyType: company.companyType,
+                onboardingCompleted: company.onboardingCompleted,
+                myRole,
+              };
+            }
+            return { ...withNrClientVatGroup(company), myRole };
+          })
+        )
       );
     })
   );

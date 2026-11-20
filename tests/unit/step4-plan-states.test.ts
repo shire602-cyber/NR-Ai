@@ -31,6 +31,15 @@ const sub = vi.hoisted(() => ({
 }));
 vi.mock("../../client/src/hooks/useSubscription", () => ({
   useSubscription: () => sub.state,
+  useCompanySubscription: () => ({
+    data: {
+      trialLocked: sub.state.isReadOnly,
+      entitlement: {
+        chosenPlan: sub.state.chosenPlan,
+        activationRequestedAt: sub.state.activationRequestedAt,
+      },
+    },
+  }),
   usePlanChoiceActions: () => ({
     choose: { isPending: false, mutate: () => {} },
     activate: { isPending: false, mutate: () => {} },
@@ -40,7 +49,7 @@ vi.mock("../../client/src/hooks/useCurrentUser", () => ({
   useCurrentUser: () => ({ data: sub.user }),
 }));
 vi.mock("../../client/src/hooks/useDefaultCompany", () => ({
-  useDefaultCompany: () => ({ companyId: "c1" }),
+  useDefaultCompany: () => ({ companyId: "c1", companies: [] }),
 }));
 vi.mock("../../client/src/hooks/useCompanyPermission", () => ({
   useCompanyPermission: () => ({ can: () => sub.canBilling, gate: () => ({}) }),
@@ -253,10 +262,12 @@ describe.each(["en", "ar"] as const)("trial banner states (%s)", (locale) => {
     expect(text(el)).toContain(L("keep adding records", "لمواصلة إضافة السجلات"));
   });
 
-  it("ended + no choice: read-only until a plan is chosen; one 'Choose a plan'", async () => {
+  it("ended + no choice: locked until a plan is activated; one 'Choose a plan'", async () => {
     const el = await banner("ended-none");
     expect(el.getAttribute("data-trial-state")).toBe("ended");
-    expect(text(el)).toContain(L("read-only until you choose a plan", "للقراءة فقط حتى تختار خطة"));
+    expect(text(el)).toContain(
+      L("locked until you choose and activate a paid plan", "مقفلة حتى تختار خطة مدفوعة وتفعّلها")
+    );
     expect(q("trial-contact-us")!.textContent).toBe(L("Choose a plan", "اختر خطة"));
     expect(el.querySelectorAll("a, button")).toHaveLength(1);
   });
@@ -266,7 +277,7 @@ describe.each(["en", "ar"] as const)("trial banner states (%s)", (locale) => {
     const body = text(el);
     expect(body).toContain(L("Your trial ended on", "انتهت فترتك التجريبية في"));
     expect(body).toContain(
-      L("read-only until Professional is activated", "حتى يتم تفعيل الخطة الاحترافية")
+      L("locked until Professional is activated", "حتى تفعيل الخطة الاحترافية")
     );
     expect(body).not.toContain(L("stays open", "مفتوحة"));
     expect(body).not.toContain(L("Choose a plan", "اختر خطة"));
@@ -286,7 +297,7 @@ describe.each(["en", "ar"] as const)("trial banner states (%s)", (locale) => {
         `طُلب التفعيل في ${formatDate(REQUESTED, locale)}. سنؤكد لك بالبريد الإلكتروني.`
       )
     );
-    expect(body).toContain(L("stay read-only until we activate it", "للقراءة فقط حتى نفعّلها"));
+    expect(body).toContain(L("stays locked until we activate your plan", "مقفلة حتى نفعّل خطتك"));
     expect(body).not.toContain(L("Activate Professional", "فعّل الخطة الاحترافية"));
     expect(el.querySelectorAll("a, button")).toHaveLength(1);
     expect(el.querySelector("a")!.textContent).toBe(L("See plan", "عرض الخطة"));
@@ -295,7 +306,7 @@ describe.each(["en", "ar"] as const)("trial banner states (%s)", (locale) => {
 
 // ── the plan-lock banner and the plan-limit dialog ─────────────────────────────────────────
 
-describe.each(["en", "ar"] as const)("plan-lock banner and plan-limit dialog (%s)", (locale) => {
+describe.each(["en", "ar"] as const)("trial lock screen and plan-limit dialog (%s)", (locale) => {
   beforeEach(async () => setLocale(locale));
   const L = (en: string, ar: string) => (locale === "en" ? en : ar);
 
@@ -303,47 +314,60 @@ describe.each(["en", "ar"] as const)("plan-lock banner and plan-limit dialog (%s
     {
       name: "ended-none" as const,
       body: L(
-        "Choose a plan and activate it to add or change records.",
-        "اختر خطة وفعّلها لإضافة السجلات أو تعديلها."
+        "Choose and activate a paid plan to regain access.",
+        "اختر خطة مدفوعة وفعّلها لاستعادة الوصول."
       ),
       cta: L("Choose a plan", "اختر خطة"),
     },
     {
       name: "ended-chosen" as const,
-      body: L(
-        "Activate Professional to add or change records again.",
-        "فعّل الخطة الاحترافية لتعود إلى إضافة السجلات أو تعديلها."
-      ),
+      body: L("Activate Professional to regain access.", "فعّل الخطة الاحترافية لاستعادة الوصول."),
       cta: L("Activate Professional", "فعّل الخطة الاحترافية"),
     },
     {
       name: "ended-requested" as const,
-      body: L("Activation requested on", "طُلب التفعيل في"),
+      body: L("We received your activation request.", "استلمنا طلب التفعيل."),
       cta: L("See plan", "عرض الخطة"),
     },
   ];
 
   it.each(cases)(
-    "lock banner, $name: one CTA with the right label",
+    "lock screen, $name: replaces workspace and offers billing and support",
     async ({ name, body, cta }) => {
       sub.state = stateFor(name);
-      const { PlanLockBanner } = await import("../../client/src/components/billing/PlanLockBanner");
-      await render(createElement(PlanLockBanner));
-      const el = q("plan-lock-banner")!;
-      expect(el.getAttribute("data-plan-phase")).toBe(name);
+      const { TrialAccessGate } =
+        await import("../../client/src/components/billing/TrialAccessGate");
+      await render(
+        createElement(TrialAccessGate, {
+          children: createElement("div", null, "Workspace records"),
+        })
+      );
+      const el = q("trial-lock-screen")!;
+      expect(el.querySelector("h1")?.textContent).toBe(
+        L("Your 14-day trial has ended", "انتهت تجربتك المجانية لمدة 14 يومًا")
+      );
       expect(text(el)).toContain(body);
-      expect(q("plan-lock-upgrade")!.textContent).toBe(cta);
-      expect(el.querySelectorAll("a, button")).toHaveLength(1);
-      if (name !== "ended-none") expect(text(el)).not.toContain(L("Choose a plan", "اختر خطة"));
+      expect(text(el)).toContain(L("Your data is saved.", "بياناتك محفوظة."));
+      expect(text()).not.toContain("Workspace records");
+      const links = el.querySelectorAll("a");
+      expect(links).toHaveLength(2);
+      expect(links[0].textContent).toBe(cta);
+      expect(links[1].getAttribute("href")).toBe("mailto:support@muhasib.ai");
     }
   );
 
-  it("the dashboard shows the state once: its trial banner, not a second lock banner", async () => {
-    sub.state = stateFor("ended-chosen");
-    window.history.replaceState(null, "", "/dashboard");
-    const { PlanLockBanner } = await import("../../client/src/components/billing/PlanLockBanner");
-    await render(createElement(PlanLockBanner));
-    expect(q("plan-lock-banner")).toBeNull();
+  it("mounts only the billing content at /subscription while locked", async () => {
+    sub.state = stateFor("ended-none");
+    window.history.replaceState(null, "", "/subscription");
+    const { TrialAccessGate } = await import("../../client/src/components/billing/TrialAccessGate");
+    await render(
+      createElement(TrialAccessGate, {
+        children: createElement("div", null, "Workspace records"),
+        billing: createElement("div", null, "Billing recovery"),
+      })
+    );
+    expect(text()).toContain("Billing recovery");
+    expect(text()).not.toContain("Workspace records");
   });
 
   it.each(cases)(
@@ -364,7 +388,7 @@ describe.each(["en", "ar"] as const)("plan-lock banner and plan-limit dialog (%s
       const body = text(dialog);
       if (name === "ended-none") {
         expect(body).toContain(
-          L("Choose a plan and activate it to add or change records.", "اختر خطة وفعّلها")
+          L("Choose and activate a paid plan to regain access.", "اختر خطة مدفوعة وفعّلها")
         );
       } else {
         expect(body).not.toContain(L("Choose a plan", "اختر خطة"));
@@ -375,7 +399,7 @@ describe.each(["en", "ar"] as const)("plan-lock banner and plan-limit dialog (%s
       }
       if (name === "ended-chosen") {
         expect(body).toContain(
-          L("Activate Professional to add or change records", "فعّل الخطة الاحترافية")
+          L("Activate Professional to regain access", "فعّل الخطة الاحترافية")
         );
       }
       if (name === "ended-requested") {
@@ -437,13 +461,13 @@ describe.each(["en", "ar"] as const)("Settings > Billing states (%s)", (locale) 
     expect(q("button-activate-plan")).toBeNull();
   });
 
-  it("ended + requested: read-only until we activate it, never 'stays open until <past date>'", async () => {
+  it("ended + requested: locked until plan activation, never 'stays open until <past date>'", async () => {
     await page("ended-requested");
     const block = q("activation-requested")!;
     expect(text(block)).toContain(
       L(
-        "Your books stay read-only until we activate it. Nothing is deleted.",
-        "تبقى دفاترك للقراءة فقط حتى نفعّلها. لا يُحذف شيء."
+        "Your workspace stays locked until we activate your plan. Your data is saved.",
+        "تبقى مساحة عملك مقفلة حتى نفعّل خطتك. بياناتك محفوظة."
       )
     );
     expect(text()).not.toContain(L("stay fully open", "مفتوحة بالكامل"));
@@ -814,11 +838,11 @@ describe("ended + no choice says choose AND activate", () => {
   it("the dashboard banner, the lock alert, the plan card and the plan block (en + ar)", async () => {
     const both = (en: string, ar: string) => ({ en, ar });
     const needles = [
-      both("choose a plan and activate it", "تختار خطة وتفعّلها"),
-      both("Choose a plan and activate it to add or change records", "اختر خطة وفعّلها لإضافة"),
+      both("choose and activate a paid plan", "تختار خطة مدفوعة وتفعّلها"),
+      both("Your workspace is locked.", "مساحة عملك مقفلة."),
       both(
-        "Choose a plan and activate it to add and change records again",
-        "اختر خطة وفعّلها لتعود"
+        "Choose and activate a paid plan to regain access.",
+        "اختر خطة مدفوعة وفعّلها لاستعادة الوصول."
       ),
       both("Choose a plan and activate it to add records again", "اختر خطة وفعّلها لتعود"),
     ];

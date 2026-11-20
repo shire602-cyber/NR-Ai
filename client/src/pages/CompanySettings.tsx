@@ -88,7 +88,6 @@ const EMIRATE_OPTIONS = [
 
 const COUNTRY_OPTIONS = [
   { value: "AE", label: "United Arab Emirates" }, // i18n-ignore: English fallback, translated by optionLabel
-  { value: "SA", label: "Saudi Arabia" }, // i18n-ignore: English fallback, translated by optionLabel
   { value: "QA", label: "Qatar" },
   { value: "KW", label: "Kuwait" },
   { value: "BH", label: "Bahrain" },
@@ -232,10 +231,6 @@ export default function CompanySettings() {
     setLogoPreview(companyLogoSrc(company));
   }, [company, form]);
 
-  // Saudi Arabia is no longer offered as a company country; a stored legacy value still shows.
-  const countryOptions = COUNTRY_OPTIONS.filter(
-    (c) => c.value !== "SA" || company?.addressCountry === "SA"
-  );
   // A stored default VAT rate outside the offered list (a legacy 15%) falls back to 5%.
   const watchedVatRate = useWatch({ control: form.control, name: "defaultVatRate" });
   useEffect(() => {
@@ -816,14 +811,26 @@ export default function CompanySettings() {
                         <FormLabel>
                           <T k="pageLabels.country" />
                         </FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value ?? "AE"}>
+                        <Select
+                          value={field.value === "SA" ? "" : (field.value ?? "AE")}
+                          onValueChange={(value) => {
+                            // The native select reports an empty value for a legacy country with no option.
+                            if (value) field.onChange(value);
+                          }}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-address-country">
-                              <SelectValue />
+                              <SelectValue
+                                placeholder={
+                                  field.value === "SA"
+                                    ? optionLabel(t, "country", "SA", "Saudi Arabia")
+                                    : undefined
+                                }
+                              />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {countryOptions.map((c) => (
+                            {COUNTRY_OPTIONS.map((c) => (
                               <SelectItem key={c.value} value={c.value}>
                                 {optionLabel(t, "country", c.value, c.label)}
                               </SelectItem>
