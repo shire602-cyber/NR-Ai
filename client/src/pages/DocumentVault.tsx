@@ -318,7 +318,7 @@ export default function DocumentVault() {
           }
           actions={
             <Button onClick={() => setUploadDialogOpen(true)} data-testid="button-upload-document">
-              <Plus className="w-4 h-4 mr-2" />
+              <Plus className="h-4 w-4" aria-hidden />
               {locale === "ar" ? "رفع مستند" : t["pages.uploadDocument"]}
             </Button>
           }
@@ -353,23 +353,27 @@ export default function DocumentVault() {
           <Card>
             <CardHeader>
               <div className="flex flex-col md:flex-row gap-4 justify-between">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                <div className="relative min-w-0 flex-1">
+                  <Search
+                    className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden
+                  />
                   <Input
-                    placeholder={locale === "ar" ? "بحث في المستندات..." : "Search documents..."}
+                    aria-label={t["documentVault.search"]}
+                    placeholder={t["documentVault.search"]}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
+                    className="ps-10"
                     data-testid="input-search-documents"
                   />
                 </div>
                 <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                   <SelectTrigger
-                    className="w-[200px]"
+                    className="w-full md:w-[200px]"
                     data-testid="select-category-filter"
                     aria-label={t["adminDocuments.filterByCategory"]}
                   >
-                    <Filter className="w-4 h-4 mr-2" />
+                    <Filter className="me-2 h-4 w-4" aria-hidden />
                     <SelectValue
                       placeholder={
                         locale === "ar" ? "تصفية حسب الفئة" : t["adminDocuments.filterByCategory"]
@@ -406,17 +410,15 @@ export default function DocumentVault() {
                         <TableHead>
                           {locale === "ar" ? "اسم المستند" : t["pages.documentName"]}
                         </TableHead>
-                        <TableHead>{locale === "ar" ? "الفئة" : "Category"}</TableHead>
+                        <TableHead>{t["pages.category"]}</TableHead>
                         <TableHead>
                           {locale === "ar" ? "تاريخ الانتهاء" : t["pageLabels.expiryDate"]}
                         </TableHead>
-                        <TableHead>{locale === "ar" ? "الحالة" : "Status"}</TableHead>
+                        <TableHead>{t["pages.status"]}</TableHead>
                         <TableHead>
                           {locale === "ar" ? "تاريخ الرفع" : t["documentVault.uploadDate"]}
                         </TableHead>
-                        <TableHead className="text-right">
-                          {locale === "ar" ? "إجراءات" : "Actions"}
-                        </TableHead>
+                        <TableHead className="text-end">{t["pages.actions"]}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -428,14 +430,20 @@ export default function DocumentVault() {
                           <TableRow key={doc.id} data-testid={`row-document-${doc.id}`}>
                             <TableCell>
                               <div className="flex items-center gap-2">
-                                <FileText className="w-4 h-4 text-muted-foreground" />
-                                <div>
-                                  <div className="font-medium">
+                                <FileText
+                                  className="h-4 w-4 shrink-0 text-muted-foreground"
+                                  aria-hidden
+                                />
+                                <div className="min-w-0">
+                                  <bdi className="block break-words font-medium" translate="no">
                                     {locale === "ar" && doc.nameAr ? doc.nameAr : doc.name}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">
+                                  </bdi>
+                                  <bdi
+                                    className="block break-all text-xs text-muted-foreground"
+                                    translate="no"
+                                  >
                                     {doc.fileName}
-                                  </div>
+                                  </bdi>
                                 </div>
                               </div>
                             </TableCell>
@@ -481,7 +489,7 @@ export default function DocumentVault() {
                                   )}
                                   {expiryStatus.status === "valid" && (
                                     <>
-                                      <CheckCircle2 className="w-3 h-3 mr-1" />
+                                      <CheckCircle2 className="me-1 h-3 w-3" aria-hidden />
                                       {locale === "ar" ? "صالح" : "Valid"}
                                     </>
                                   )}
@@ -495,11 +503,12 @@ export default function DocumentVault() {
                             <TableCell className="whitespace-nowrap">
                               {formatDate(doc.createdAt, locale)}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-end">
                               <div className="flex justify-end gap-2">
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  aria-label={t["adminDocuments.view"]}
                                   onClick={() => void openVaultFile(doc, false)}
                                   data-testid={`button-view-${doc.id}`}
                                 >
@@ -508,6 +517,7 @@ export default function DocumentVault() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  aria-label={t["adminDocuments.download"]}
                                   onClick={() => void openVaultFile(doc, true)}
                                   data-testid={`button-download-${doc.id}`}
                                 >
@@ -516,6 +526,7 @@ export default function DocumentVault() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  aria-label={t["adminDocuments.delete"]}
                                   className="text-destructive hover:text-destructive"
                                   onClick={() => {
                                     if (
@@ -558,12 +569,13 @@ export default function DocumentVault() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>
                     {locale === "ar" ? "اسم المستند (إنجليزي)" : "Document name (English)"}
                   </Label>
                   <Input
+                    dir="ltr"
                     value={newDocument.name}
                     onChange={(e) => setNewDocument({ ...newDocument, name: e.target.value })}
                     placeholder={t["documentVault.tradeLicense2025"]}
@@ -618,7 +630,7 @@ export default function DocumentVault() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label>
                     {locale === "ar" ? "تاريخ الانتهاء (اختياري)" : "Expiry date (optional)"}
@@ -677,7 +689,7 @@ export default function DocumentVault() {
                 disabled={isUploading}
                 data-testid="button-confirm-upload"
               >
-                {isUploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {isUploading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
                 {locale === "ar" ? "رفع" : "Upload"}
               </Button>
             </DialogFooter>

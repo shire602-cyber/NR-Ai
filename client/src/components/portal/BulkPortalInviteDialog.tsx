@@ -14,6 +14,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { ApiError, apiRequest } from "@/lib/queryClient";
+import { formatInteger } from "@/lib/format";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import type { PortalSheetContact } from "@/components/portal/PortalAccessSheet";
 import { portalSummaryKey } from "@/lib/portal-invite";
@@ -37,7 +38,7 @@ interface BulkProps {
 }
 
 function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const eligible = useMemo(
@@ -94,9 +95,9 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
         <ul className="max-h-72 space-y-1 overflow-y-auto text-small" data-testid="bulk-results">
           {results.map((r) => (
             <li key={r.contactId} className="flex items-center justify-between gap-3 py-1">
-              <span className="truncate" dir="auto">
+              <bdi className="min-w-0 truncate" translate="no" title={nameOf(r.contactId)}>
                 {nameOf(r.contactId)}
-              </span>
+              </bdi>
               <span className="shrink-0 text-muted-foreground">
                 {t[`portal.bulk.outcome.${r.outcome}`]}
               </span>
@@ -112,8 +113,8 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
           <div className="flex items-center justify-between gap-3 text-small">
             <span>
               {formatMessage(t["portal.bulk.selected"], {
-                count: picked.size,
-                total: eligible.length,
+                count: formatInteger(picked.size, locale),
+                total: formatInteger(eligible.length, locale),
               })}
             </span>
             <Button
@@ -144,12 +145,21 @@ function BulkBody({ onOpenChange, companyId, contacts, summary }: BulkProps) {
                   htmlFor={`bulk-${c.id}`}
                   className="min-w-0 flex-1 cursor-pointer font-normal"
                 >
-                  <span className="block truncate text-small font-medium" dir="auto">
+                  <bdi
+                    className="block truncate text-small font-medium"
+                    translate="no"
+                    title={c.name}
+                  >
                     {c.name}
-                  </span>
-                  <span className="block truncate text-caption text-muted-foreground" dir="ltr">
+                  </bdi>
+                  <bdi
+                    className="block truncate text-caption text-muted-foreground"
+                    dir="ltr"
+                    translate="no"
+                    title={c.email ?? undefined}
+                  >
                     {c.email}
-                  </span>
+                  </bdi>
                 </Label>
               </li>
             ))}

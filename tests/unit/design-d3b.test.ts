@@ -17,12 +17,11 @@ describe("D3b design pass: system fixes", () => {
     expect(cn("text-sm", "text-caption")).toBe("text-caption");
   });
 
-  it("RTL: tabular figures no longer force whole tables/containers into LTR", () => {
+  it("RTL: numeric columns align at the inline end without changing cell direction", () => {
     const rtl = read("client/src/styles/rtl.css");
-    expect(rtl).toContain(
-      '[dir="rtl"] .tabular-nums:not(table):not(thead):not(tbody):not(tfoot):not(tr):not(:has(*))'
+    expect(rtl).toMatch(
+      /:where\(th, td\):dir\(rtl\):where\(\.numeric, \[data-numeric\], \.table-numeric\)\s*\{\s*text-align: end;\s*\}/
     );
-    expect(rtl).not.toMatch(/\[dir="rtl"\] \.tabular-nums \{/);
   });
 });
 

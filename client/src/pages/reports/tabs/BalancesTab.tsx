@@ -27,7 +27,7 @@ import {
 } from "../shared";
 import { localizeJournalMemo } from "@/lib/journal-memo";
 import { format } from "date-fns";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatInteger } from "@/lib/format";
 import { Money } from "@/components/ui/money";
 import { useReportsPageContext } from "../context";
 import { StatementDownloads } from "../StatementParts";
@@ -202,7 +202,7 @@ export default function BalancesTab() {
                     <T k="reportCenter.openBills" />
                   </div>
                   <div className="tabular-nums text-2xl font-semibold">
-                    {payableAgingSummary.billCount.toLocaleString(locale)}
+                    {formatInteger(payableAgingSummary.billCount, locale)}
                   </div>
                 </div>
               </div>
@@ -235,7 +235,7 @@ export default function BalancesTab() {
                       {payableAgingBuckets.map((bucket) => (
                         <TableRow key={bucket.label}>
                           <TableCell className="font-medium">{t[bucket.labelKey]}</TableCell>
-                          <TableCell data-numeric>{bucket.count.toLocaleString(locale)}</TableCell>
+                          <TableCell data-numeric>{formatInteger(bucket.count, locale)}</TableCell>
                           <TableCell data-numeric className=" font-medium">
                             <Money amount={bucket.amount} currency={"AED"} />
                           </TableCell>

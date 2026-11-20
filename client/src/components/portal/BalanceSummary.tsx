@@ -57,7 +57,11 @@ export function BalanceSummary({ data, loading }: { data?: BalanceData; loading?
       {data.outstandingByCurrency.map((o) => {
         const overdue = overdueBy.get(o.currency);
         return (
-          <Card key={o.currency} className="p-5" data-testid={`portal-balance-${o.currency}`}>
+          <Card
+            key={o.currency}
+            className="min-w-0 p-5"
+            data-testid={`portal-balance-${o.currency}`}
+          >
             <p className="text-caption font-medium text-muted-foreground">
               {t["portal.dash.balanceDue"]}
             </p>
@@ -65,9 +69,7 @@ export function BalanceSummary({ data, loading }: { data?: BalanceData; loading?
               <Money amount={Number(o.amount)} currency={o.currency} />
             </p>
             <p className="mt-1 text-small text-muted-foreground">
-              {o.count === 1
-                ? t["portal.invoiceCountOne"]
-                : formatMessage(t["portal.invoiceCountMany"], { count: o.count })}
+              {formatMessage(t["portal.invoiceCount"], { count: o.count })}
             </p>
             {overdue ? (
               <p
@@ -91,8 +93,10 @@ export function BalanceSummary({ data, loading }: { data?: BalanceData; loading?
             {t["portal.dash.nextDue"]}
           </p>
           <p className="mt-1 text-body font-semibold">
-            <bdi>{data.nextDue.number}</bdi> ·{" "}
-            <DateText value={data.nextDue.dueDate} locale={locale} />
+            <bdi dir="ltr" translate="no" className="[overflow-wrap:anywhere]">
+              {data.nextDue.number}
+            </bdi>{" "}
+            · <DateText value={data.nextDue.dueDate} locale={locale} />
           </p>
           <p className="text-small text-muted-foreground">
             <Money amount={data.nextDue.amountDue} currency={data.nextDue.currency} />
