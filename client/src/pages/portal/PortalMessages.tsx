@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, portalQuery } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/format-date";
 
@@ -37,8 +37,7 @@ export default function PortalMessages() {
   const [content, setContent] = useState("");
 
   const { data: messages = [], isLoading } = useQuery<any[]>({
-    queryKey: ["portal-messages"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/messages"),
+    ...portalQuery("/api/client-portal/messages"),
   });
 
   const sendMutation = useMutation({

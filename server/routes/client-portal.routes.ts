@@ -62,9 +62,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /**
  * A signed-in user with an active binding to an active contact. The binding is the only source of
  * access: the user's type and any company membership are irrelevant here. `X-Portal-Account`
- * picks one of the user's OWN bindings (a foreign id is ignored).
+ * picks one of the user's OWN bindings. An unavailable selection fails without switching scope.
  */
 async function requirePortalUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+  res.set("Cache-Control", "no-store");
   const user = req.user as { id: string } | undefined;
   if (!user) {
     res.status(401).json({ message: "Authentication required", code: "AUTH_REQUIRED" });
@@ -72,7 +73,8 @@ async function requirePortalUser(req: Request, res: Response, next: NextFunction
   }
   const header = req.headers["x-portal-account"];
   const preferred = typeof header === "string" && UUID_RE.test(header) ? header : null;
-  const binding = await portalAccountForUser(user.id, preferred);
+  const binding =
+    header === undefined || preferred ? await portalAccountForUser(user.id, preferred) : null;
   if (!binding) {
     const [removed] = await db
       .select({ id: customerPortalAccounts.id })
@@ -169,7 +171,7 @@ export function registerClientPortalRoutes(app: Express): void {
     "/api/client-portal/company",
     ...chain,
     asyncHandler(async (req: Request, res: Response) => {
-      const { company, contact } = scopeOf(req);
+      const { accountId, company, contact } = scopeOf(req);
       // The accounting firm serving this client (active engagement), for the portal header.
       const [firm] = await db
         .select({ name: firms.name })
@@ -178,6 +180,7 @@ export function registerClientPortalRoutes(app: Express): void {
         .where(and(eq(firmClientLinks.companyId, company.id), eq(firmClientLinks.status, "active")))
         .limit(1);
       res.json({
+        portalAccountId: accountId,
         firmName: firm?.name ?? null,
         id: company.id,
         name: company.name,
@@ -193,6 +196,7 @@ export function registerClientPortalRoutes(app: Express): void {
     "/api/client-portal/accounts",
     authMiddleware as RequestHandler,
     asyncHandler(async (req: Request, res: Response) => {
+      res.set("Cache-Control", "no-store");
       const userId = (req.user as { id: string }).id;
       const bindings = await portalAccountsForUser(userId);
       const out = [];
@@ -201,7 +205,7 @@ export function registerClientPortalRoutes(app: Express): void {
           storage.getCompany(b.companyId),
           storage.getCustomerContact(b.contactId),
         ]);
-        if (!company || !contact || !contact.isActive) continue;
+        if (!company || !contact || contact.companyId !== company.id || !contact.isActive) continue;
         out.push({
           id: b.id,
           company: { id: company.id, name: company.name, logoUrl: company.logoUrl ?? null },

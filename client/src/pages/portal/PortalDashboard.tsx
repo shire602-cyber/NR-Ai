@@ -20,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { apiRequest } from "@/lib/queryClient";
+import { portalQuery } from "@/lib/queryClient";
 import { formatMessage, useTranslation } from "@/lib/i18n";
 import { DateText } from "@/components/documents/DateText";
 
@@ -45,17 +45,14 @@ interface PortalDocumentRow {
 export default function PortalDashboard() {
   const { t, locale } = useTranslation();
   const { data, isLoading } = useQuery({
-    queryKey: ["portal-dashboard"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/dashboard"),
+    ...portalQuery("/api/client-portal/dashboard"),
   });
   const { data: documents = [] } = useQuery<PortalDocumentRow[]>({
-    queryKey: ["portal-documents"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/documents"),
+    ...portalQuery("/api/client-portal/documents"),
   });
 
   const { data: company } = useQuery<{ name?: string }>({
-    queryKey: ["portal-company"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/company"),
+    ...portalQuery("/api/client-portal/company"),
     staleTime: 5 * 60 * 1000,
   });
   const [welcome, setWelcome] = useState(() => {

@@ -110,9 +110,12 @@ export class UserStorage {
         .for("update");
       if (!user || normalizeEmail(user.email) !== normalizeEmail(input.email)) return false;
       await tx.delete(passwordResetTokens).where(eq(passwordResetTokens.userId, input.userId));
-      await tx
-        .insert(passwordResetTokens)
-        .values({ userId: input.userId, tokenHash: input.tokenHash, expiresAt: input.expiresAt });
+      await tx.insert(passwordResetTokens).values({
+        userId: input.userId,
+        email: normalizeEmail(user.email),
+        tokenHash: input.tokenHash,
+        expiresAt: input.expiresAt,
+      });
       return true;
     });
   }
@@ -123,7 +126,13 @@ export class UserStorage {
     const [row] = await db
       .select({ id: passwordResetTokens.id, userId: passwordResetTokens.userId })
       .from(passwordResetTokens)
-      .where(validResetToken(tokenHash));
+      .innerJoin(users, eq(users.id, passwordResetTokens.userId))
+      .where(
+        and(
+          validResetToken(tokenHash),
+          sql`${passwordResetTokens.email} = lower(btrim(${users.email}))`
+        )
+      );
     return row || undefined;
   }
 
@@ -135,14 +144,20 @@ export class UserStorage {
     return db.transaction(async (tx) => {
       // Email changes and reset requests also take the user lock before touching tokens.
       const [user] = await tx
-        .select({ id: users.id })
+        .select({ email: users.email })
         .from(users)
         .where(eq(users.id, userId))
         .for("update");
       if (!user) return false;
       const [used] = await tx
         .delete(passwordResetTokens)
-        .where(and(eq(passwordResetTokens.userId, userId), validResetToken(tokenHash)))
+        .where(
+          and(
+            eq(passwordResetTokens.userId, userId),
+            eq(passwordResetTokens.email, normalizeEmail(user.email)),
+            validResetToken(tokenHash)
+          )
+        )
         .returning({ id: passwordResetTokens.id });
       if (!used) return false;
       await tx

@@ -412,8 +412,8 @@ export async function exchangeOAuthCallback(
   };
 }
 
-export async function getAuthIdentity(profile: OAuthIdentityProfile) {
-  const [identity] = await db
+export async function getAuthIdentity(profile: OAuthIdentityProfile, executor: typeof db = db) {
+  const [identity] = await executor
     .select()
     .from(authIdentities)
     .where(
@@ -426,49 +426,69 @@ export async function getAuthIdentity(profile: OAuthIdentityProfile) {
   return identity;
 }
 
+function microsoftMailboxMatch(profile: OAuthIdentityProfile) {
+  if (profile.provider !== "microsoft") return undefined;
+  if (!profile.emailVerified) {
+    throw new OAuthIdentityError("Microsoft sign-in requires a verified provider email");
+  }
+  return sql`lower(${users.email}) = ${normalizeOAuthEmail(profile.email)}`;
+}
+
 export async function linkAuthIdentity(
   userId: string,
   profile: OAuthIdentityProfile
 ): Promise<void> {
-  await db
-    .insert(authIdentities)
-    .values({
-      userId,
-      provider: profile.provider,
-      issuer: profile.issuer,
-      providerSubject: profile.subject,
-      providerEmail: profile.email,
-      providerEmailVerified: profile.emailVerified,
-      profile: profile.claims,
-      lastLoginAt: new Date(),
-    })
-    .onConflictDoNothing();
+  const mailbox = microsoftMailboxMatch(profile);
+  await db.transaction(async (tx) => {
+    if (mailbox) {
+      const [user] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, userId), mailbox))
+        .for("update");
+      if (!user)
+        throw new OAuthIdentityError("Verified Microsoft email must match the account email");
+    }
+    await tx
+      .insert(authIdentities)
+      .values({
+        userId,
+        provider: profile.provider,
+        issuer: profile.issuer,
+        providerSubject: profile.subject,
+        providerEmail: profile.email,
+        providerEmailVerified: profile.emailVerified,
+        profile: profile.claims,
+        lastLoginAt: new Date(),
+      })
+      .onConflictDoNothing();
 
-  const linked = await getAuthIdentity(profile);
-  if (!linked || linked.userId !== userId) {
-    throw new OAuthIdentityError("OAuth identity is already linked to another user");
-  }
+    const linked = await getAuthIdentity(profile, tx);
+    if (!linked || linked.userId !== userId) {
+      throw new OAuthIdentityError("OAuth identity is already linked to another user");
+    }
+  });
 }
 
-export async function markOAuthLogin(
-  userId: string,
-  profile?: OAuthIdentityProfile
-): Promise<void> {
+export async function markOAuthLogin(userId: string, profile: OAuthIdentityProfile) {
   const now = new Date();
-  await db
-    .update(users)
-    .set({
-      lastLoginAt: now,
-      ...(profile?.emailVerified
-        ? {
-            emailVerified: sql<boolean>`CASE WHEN lower(${users.email}) = ${normalizeOAuthEmail(profile.email)} THEN true ELSE ${users.emailVerified} END`,
-          }
-        : {}),
-    })
-    .where(eq(users.id, userId));
+  const mailbox = microsoftMailboxMatch(profile);
+  return db.transaction(async (tx) => {
+    const [user] = await tx
+      .update(users)
+      .set({
+        lastLoginAt: now,
+        ...(profile.emailVerified
+          ? {
+              emailVerified: sql<boolean>`CASE WHEN lower(${users.email}) = ${normalizeOAuthEmail(profile.email)} THEN true ELSE ${users.emailVerified} END`,
+            }
+          : {}),
+      })
+      .where(and(eq(users.id, userId), mailbox))
+      .returning();
+    if (!user) throw new OAuthIdentityError("OAuth identity does not match the current account");
 
-  if (profile) {
-    await db
+    await tx
       .update(authIdentities)
       .set({
         providerEmail: profile.email,
@@ -478,12 +498,14 @@ export async function markOAuthLogin(
       })
       .where(
         and(
+          eq(authIdentities.userId, userId),
           eq(authIdentities.provider, profile.provider),
           eq(authIdentities.issuer, profile.issuer),
           eq(authIdentities.providerSubject, profile.subject)
         )
       );
-  }
+    return user;
+  });
 }
 
 export async function getUserByNormalizedOAuthEmail(email: string) {

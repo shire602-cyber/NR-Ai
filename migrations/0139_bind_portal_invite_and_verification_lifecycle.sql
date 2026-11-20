@@ -1,7 +1,9 @@
 -- 0139_bind_portal_invite_and_verification_lifecycle (S5) binds verification to an email and closes invalid invitations.
--- Idempotent. Unbound verification links cannot be carried forward safely.
+-- Idempotent. Unbound verification and reset links cannot be carried forward safely.
 ALTER TABLE email_verification_tokens ADD COLUMN IF NOT EXISTS email text;
 DELETE FROM email_verification_tokens WHERE email IS NULL;
+ALTER TABLE password_reset_tokens ADD COLUMN IF NOT EXISTS email text;
+DELETE FROM password_reset_tokens WHERE email IS NULL;
 
 CREATE OR REPLACE FUNCTION revoke_portal_invitations_after_contact_change()
 RETURNS trigger LANGUAGE plpgsql AS $$

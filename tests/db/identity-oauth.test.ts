@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { useHarness } from "./harness";
+import { FAKE_PASSWORD } from "../fixtures/credentials/fake-credentials";
 
 const profiles: Array<Record<string, unknown>> = [];
 
@@ -38,6 +39,15 @@ function profile(subject: string, email: string) {
     emailVerified: true,
     name: "OAuth Person",
     claims: { sub: subject },
+  };
+}
+
+function microsoft(subject: string, email: string, emailVerified = false) {
+  return {
+    ...profile(subject, email),
+    provider: "microsoft",
+    issuer: "https://login.microsoftonline.com/test-tenant/v2.0",
+    emailVerified,
   };
 }
 
@@ -109,19 +119,14 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
     expect(adm.body.saml.status).toBe("requires_external");
   });
 
-  it("keeps an unverified Microsoft signup unverified and refuses to link by an unverified address", async () => {
-    const microsoft = (subject: string, email: string) => ({
-      ...profile(subject, email),
-      provider: "microsoft",
-      issuer: "https://login.microsoftonline.com/test-tenant/v2.0",
-      emailVerified: false,
-    });
+  it("requires mailbox proof before a Microsoft signup or account link", async () => {
     const email = "microsoft-unverified@example.test";
     profiles.push(microsoft("ms-unverified", email));
-    expect((await callback("microsoft")).access).toBeTruthy();
-    expect(await h.sql("SELECT email_verified FROM users WHERE email = $1", [email])).toEqual([
-      { email_verified: false },
-    ]);
+    expect((await callback("microsoft")).access).toBeFalsy();
+    expect(await h.sql("SELECT id FROM users WHERE email = $1", [email])).toHaveLength(0);
+    expect(
+      await h.sql("SELECT id FROM auth_identities WHERE provider_email = $1", [email])
+    ).toHaveLength(0);
 
     const existing = await h.createTenant();
     profiles.push(microsoft("ms-unverified-collision", existing.email));
@@ -133,5 +138,57 @@ describe("R01-15 OAuth flow with a mocked provider", () => {
         "SELECT id FROM auth_identities WHERE provider_subject = 'ms-unverified-collision'"
       )
     ).toHaveLength(0);
+
+    const verified = "microsoft-verified@example.test";
+    profiles.push(microsoft("ms-verified", verified, true));
+    expect((await callback("microsoft")).access).toBeTruthy();
+    expect(
+      await h.sql("SELECT provider_email_verified FROM auth_identities WHERE provider_email = $1", [
+        verified,
+      ])
+    ).toEqual([{ provider_email_verified: true }]);
+  });
+
+  it("revalidates a legacy Microsoft link against the account's current mailbox", async () => {
+    const t = await h.createTenant();
+    const oldEmail = `former-${t.email}`;
+    const legacy = microsoft("ms-legacy", oldEmail);
+    await h.sql(
+      `INSERT INTO auth_identities
+        (user_id, provider, issuer, provider_subject, provider_email, provider_email_verified, profile)
+       VALUES ($1, $2, $3, $4, $5, true, '{}'::jsonb)`,
+      [t.user.id, legacy.provider, legacy.issuer, legacy.subject, oldEmail]
+    );
+    const forgot = await h.anon.post("/api/auth/forgot-password", { email: t.email });
+    const token = new URL(forgot.body.devResetUrl).searchParams.get("token");
+    const recovered = await h.anon.post("/api/auth/reset-password", {
+      token,
+      password: FAKE_PASSWORD,
+    });
+    expect(recovered.status, recovered.text).toBe(200);
+    expect((await h.client(t.token).get("/api/auth/me")).status).toBe(401);
+
+    const sessions = () => h.sql("SELECT id FROM refresh_sessions WHERE user_id = $1", [t.user.id]);
+    const before = await sessions();
+    for (const unproven of [
+      microsoft(legacy.subject, t.email),
+      microsoft(legacy.subject, oldEmail, true),
+    ]) {
+      profiles.push(unproven);
+      expect((await callback("microsoft")).access).toBeFalsy();
+    }
+    expect(await sessions()).toEqual(before);
+
+    profiles.push(microsoft(legacy.subject, t.email, true));
+    const { access } = await callback("microsoft");
+    expect(access).toBeTruthy();
+    expect((await h.client(decodeURIComponent(access!)).get("/api/auth/me")).body.id).toBe(
+      t.user.id
+    );
+    expect(
+      await h.sql("SELECT provider_email FROM auth_identities WHERE provider_subject = $1", [
+        legacy.subject,
+      ])
+    ).toEqual([{ provider_email: t.email }]);
   });
 });

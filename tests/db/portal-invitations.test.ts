@@ -635,6 +635,39 @@ describe("STEP5 portal invitations", () => {
     expect((await cust3.get("/api/client-portal/invoices")).status).toBe(403);
   });
 
+  it("rejects a revoked selection when the customer still has another supplier", async () => {
+    const first = await h.createTenant();
+    const second = await h.createSecondTenant();
+    const firstContact = await contact(first, "First buyer");
+    const secondContact = await contact(second, "Second buyer");
+    const { b, email, portalAccountId } = await onboard(first, firstContact);
+    const next = await invite(second, secondContact, { email, language: "en" });
+    expect(next.status, next.text).toBe(201);
+    const accepted = await b.accept(await tokenOf(next.body.invitation.id), email, {
+      acceptTerms: true,
+    });
+    expect(accepted.status, accepted.text).toBe(200);
+    const secondAccountId = accepted.body.portalAccountId;
+    const selected = { "x-portal-account": portalAccountId };
+    const companyPath = "/api/client-portal/company";
+    expect((await b.get(companyPath, selected)).body.id).toBe(first.company.id);
+
+    const revoked = await first.as.delete(
+      `/api/companies/${first.company.id}/portal-accounts/${portalAccountId}`
+    );
+    expect(revoked.status, revoked.text).toBe(200);
+    const company = await b.get(companyPath, selected);
+    expect(company.status, company.text).toBe(403);
+    expect(company.body.code).toBe("PORTAL_ACCESS_REVOKED");
+    const cleared = await b.get(companyPath);
+    expect(cleared.status, cleared.text).toBe(403);
+    expect(cleared.body.code).toBe("PORTAL_ACCESS_REVOKED");
+    const list = await b.get("/api/client-portal/accounts", selected);
+    expect(list.body.map((account: { id: string }) => account.id)).toEqual([secondAccountId]);
+    const chosen = await b.get(companyPath, { "x-portal-account": secondAccountId });
+    expect(chosen.body.id).toBe(second.company.id);
+  });
+
   it("[S5-06] a portal user sees only their contact's documents and never reaches company routes", async () => {
     const a = await h.createTenant({ name: "Iso A" });
     const b = await h.createTenant({ name: "Iso B" });
@@ -688,7 +721,7 @@ describe("STEP5 portal invitations", () => {
     expect([403, 404]).toContain(sneaky.status);
     expect((await cust.get("/api/companies")).body).toEqual([]);
 
-    // X-Portal-Account pointing at someone else's binding is ignored, never honoured.
+    // X-Portal-Account pointing at someone else's binding cannot fall back to another scope.
     const foreign = (
       await h.sql(`SELECT id FROM customer_portal_accounts WHERE id <> $1 LIMIT 1`, [
         portalAccountId,
@@ -697,7 +730,8 @@ describe("STEP5 portal invitations", () => {
     const forged = await cust.get("/api/client-portal/invoices", {
       "x-portal-account": foreign?.id ?? "00000000-0000-4000-8000-000000000000",
     });
-    expect(forged.body.map((i: { id: string }) => i.id)).toEqual([myInv.id]);
+    expect(forged.status, forged.text).toBe(403);
+    expect(forged.body.code).toBe("PORTAL_ACCESS_REVOKED");
   });
 
   it("[S5-07] existing accounts sign in first; same-email binds without a password; mismatch is refused; several suppliers switch", async () => {

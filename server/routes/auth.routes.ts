@@ -255,12 +255,14 @@ async function resolveOAuthUser(
   profile: OAuthIdentityProfile,
   signupPlan: SignupPlanChoice | null = null
 ): Promise<{ user: User; mode: "existing_identity" | "linked_existing" | "created_customer" }> {
+  // Legacy Microsoft links may have been marked verified without a verified email claim.
+  if (profile.provider === "microsoft" && !profile.emailVerified) {
+    throw new OAuthIdentityError("Microsoft sign-in requires a verified provider email");
+  }
   const identity = await getAuthIdentity(profile);
   if (identity) {
-    const user = await storage.getUser(identity.userId);
-    if (!user) throw new Error("OAuth identity is linked to a missing user");
-    await markOAuthLogin(user.id, profile);
-    return { user: (await storage.getUser(user.id)) ?? user, mode: "existing_identity" };
+    const user = await markOAuthLogin(identity.userId, profile);
+    return { user, mode: "existing_identity" };
   }
 
   const existingUser = await getUserByNormalizedOAuthEmail(profile.email);
@@ -271,17 +273,14 @@ async function resolveOAuthUser(
       );
     }
     await linkAuthIdentity(existingUser.id, profile);
-    await markOAuthLogin(existingUser.id, profile);
-    return {
-      user: (await storage.getUser(existingUser.id)) ?? existingUser,
-      mode: "linked_existing",
-    };
+    const user = await markOAuthLogin(existingUser.id, profile);
+    return { user, mode: "linked_existing" };
   }
 
   const createdUser = await createOAuthCustomer(req, profile, signupPlan);
   await linkAuthIdentity(createdUser.id, profile);
-  await markOAuthLogin(createdUser.id, profile);
-  return { user: (await storage.getUser(createdUser.id)) ?? createdUser, mode: "created_customer" };
+  const user = await markOAuthLogin(createdUser.id, profile);
+  return { user, mode: "created_customer" };
 }
 
 function callbackUrlFromRequest(req: Request, provider: "google" | "microsoft"): URL {

@@ -28,7 +28,7 @@ import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 import { VALIDATION_NAMESPACES } from "@/lib/validation-messages";
 import { removeToken } from "@/lib/auth";
 import { failedPasswordRules } from "@shared/validators/password-rules";
-import { PORTAL_WELCOME_KEY } from "@/lib/portal-state";
+import { PORTAL_WELCOME_KEY, setSelectedPortalAccount } from "@/lib/portal-state";
 
 /** The invitation token lives in the URL fragment; it is moved to this tab's storage and stripped. */
 const TOKEN_KEY = "muhasib.portalInvite";
@@ -337,6 +337,7 @@ export default function PortalJoin() {
             if (me) await establishAuthenticatedSession(me).catch(() => undefined);
             await queryClient.invalidateQueries({ queryKey: currentUserQueryKey });
           }
+          setSelectedPortalAccount(res.portalAccountId);
           setLocation(res.redirectTo || "/client-portal/dashboard");
         }}
       />
@@ -345,6 +346,7 @@ export default function PortalJoin() {
 }
 
 interface AcceptResult {
+  portalAccountId: string;
   redirectTo: string;
   user?: unknown;
 }

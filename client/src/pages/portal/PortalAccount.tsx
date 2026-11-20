@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Building2, Check, Languages, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,8 +8,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ChangePasswordCard } from "@/pages/security/ChangePasswordCard";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSessionActions } from "@/hooks/useSessionActions";
-import { apiRequest } from "@/lib/queryClient";
-import { getSelectedPortalAccount, setSelectedPortalAccount } from "@/lib/auth";
+import { apiRequest, portalQuery } from "@/lib/queryClient";
+import { getSelectedPortalAccount, setSelectedPortalAccount } from "@/lib/portal-state";
 import { useI18n, useTranslation } from "@/lib/i18n";
 
 interface PortalAccountRow {
@@ -26,17 +26,14 @@ export default function PortalAccount() {
   const { t, locale } = useTranslation();
   const { setLocale } = useI18n();
   const [, navigate] = useLocation();
-  const queryClient = useQueryClient();
   const { signOut } = useSessionActions();
   const { data: user } = useCurrentUser();
   const [busy, setBusy] = useState(false);
   const { data: accounts = [] } = useQuery<PortalAccountRow[]>({
-    queryKey: ["portal-accounts"],
-    queryFn: () => apiRequest("GET", "/api/client-portal/accounts"),
+    ...portalQuery("/api/client-portal/accounts"),
     staleTime: 5 * 60 * 1000,
   });
   const selected = getSelectedPortalAccount();
-  const current = accounts.find((a) => a.id === selected) ?? accounts[0];
 
   const signOutEverywhere = async () => {
     setBusy(true);
@@ -124,7 +121,7 @@ export default function PortalAccount() {
                     </span>
                   </span>
                 </span>
-                {a.id === current?.id ? (
+                {a.id === selected ? (
                   <span className="flex shrink-0 items-center gap-1 text-caption font-medium text-success">
                     <Check className="h-4 w-4" aria-hidden />
                     {t["portal.account.current"]}
@@ -136,9 +133,6 @@ export default function PortalAccount() {
                     className="min-h-11"
                     onClick={() => {
                       setSelectedPortalAccount(a.id);
-                      queryClient.removeQueries({
-                        predicate: (q) => String(q.queryKey[0]).startsWith("portal-"),
-                      });
                       navigate("/client-portal/dashboard");
                     }}
                   >

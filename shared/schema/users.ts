@@ -211,6 +211,7 @@ export const passwordResetTokens = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    email: text("email"), // Normalized mailbox that received the link. Unbound tokens are rejected.
     tokenHash: text("token_hash").notNull().unique(), // SHA-256 of the token; raw token only ever lives in the email
     expiresAt: timestamp("expires_at").notNull(),
     usedAt: timestamp("used_at"),
