@@ -87,7 +87,7 @@ describe("S5 plan gates fail closed (W5-B FAIL-OPEN)", () => {
     expect(rows).toEqual([{ plan_id: "free" }]);
   });
 
-  it("[S5-1] with enforcement on, a company with NO subscription row is never upgraded: its trial runs from its creation, then writes are refused", async () => {
+  it("[S5-1] with enforcement on, a company with NO subscription row is never upgraded: its trial runs from its creation, then workspace access is refused", async () => {
     process.env.BILLING_ENFORCEMENT = "true";
     const t = await h.createTenant();
     await h.sql(`DELETE FROM subscriptions WHERE company_id = $1`, [t.company.id]);
@@ -100,9 +100,9 @@ describe("S5 plan gates fail closed (W5-B FAIL-OPEN)", () => {
     const central = await t.as.post(`/api/companies/${t.company.id}/fixed-assets`, {});
     expect(central.status, central.text).toBe(402);
     expect(central.body).toMatchObject({ code: "PLAN_REQUIRED", currentTier: null });
-    // Reads stay open (data is never hidden).
+    // Reads are refused too.
     const read = await t.as.get(`/api/companies/${t.company.id}/fixed-assets`);
-    expect(read.status, read.text).toBe(200);
+    expect(read.status, read.text).toBe(402);
 
     const pro = await h.createTenant({ planId: "professional" });
     const ok = await pro.as.post(`/api/companies/${pro.company.id}/fixed-assets`, {});

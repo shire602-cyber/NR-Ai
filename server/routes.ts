@@ -14,6 +14,7 @@ import { createLogger } from "./config/logger";
 import { companyRolePolicy } from "./middleware/companyRolePolicy";
 import { rejectApiKeysOutsidePublicApi } from "./middleware/api-key-auth";
 import { planFeaturePolicy, storageLimitPolicy, usageLimitPolicy } from "./middleware/featureGate";
+import { trialAccessPolicy } from "./middleware/trialAccessPolicy";
 import { registerPublicApiRoutes } from "./routes/public-api.routes";
 import { registerImportRoutes } from "./routes/import.routes";
 
@@ -50,6 +51,7 @@ import { registerOnboardingRoutes } from "./routes/onboarding.routes";
 import { registerBackupRoutes } from "./routes/backups.routes";
 import { registerReferralRoutes } from "./routes/referrals.routes";
 import { registerFeedbackRoutes } from "./routes/feedback.routes";
+import { registerMarketingRoutes } from "./routes/marketing.routes";
 import { registerNajmaHandoffRoutes } from "./routes/najma-handoff.routes";
 import { registerClientErrorRoutes } from "./routes/client-errors.routes";
 import { registerVATRoutes } from "./routes/vat.routes";
@@ -136,7 +138,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ─── Plan gates and usage meter (W5-B, R19-04, R19-05) ──
   // METHOD + path tables in server/middleware/featureGate.ts: feature flags
   // (403 TIER_LOCKED) and monthly quotas (402 USAGE_LIMIT_REACHED).
-  app.use("/api", planFeaturePolicy, usageLimitPolicy, storageLimitPolicy);
+  app.use("/api", trialAccessPolicy, planFeaturePolicy, usageLimitPolicy, storageLimitPolicy);
   // S4: refresh the stored compliance calendar after writes that change its inputs.
   app.use("/api", complianceObligationRefreshObserver);
 
@@ -224,6 +226,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   registerImportRoutes(app);
   registerReferralRoutes(app);
   registerFeedbackRoutes(app);
+  registerMarketingRoutes(app);
   registerNajmaHandoffRoutes(app);
   registerClientErrorRoutes(app);
 

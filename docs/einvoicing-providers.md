@@ -84,6 +84,9 @@ both providers may stay.
 
 ### Edit
 
+- `client/src/components/marketing/phase/content.ts` — update the bilingual e-invoicing product copy.
+- `client/src/components/marketing/phase/PhaseSite.tsx` — remove the provider from the homepage.
+
 - `server/services/einvoice/providers/registry.ts`: the `ACUBE_PROVIDER_MODULE` import and list entry
 - `server/services/einvoice/providers/company-credentials.ts`: the A-Cube credential schema
 - `server/services/einvoice/providers/company-provider.ts`: scoped authentication configuration for the provider
@@ -143,6 +146,9 @@ Env to unset: `ACUBE_*`.
 - `docs/einvoicing-complyance.md`
 
 ### Edit
+
+- `client/src/components/marketing/phase/content.ts` — update the bilingual e-invoicing product copy.
+- `client/src/components/marketing/phase/PhaseSite.tsx` — remove the provider from the homepage.
 
 - `server/services/einvoice/providers/registry.ts`: the `COMPLYANCE_PROVIDER_MODULE` import and list entry
 - `server/services/einvoice/providers/company-credentials.ts`: the Complyance credential schema

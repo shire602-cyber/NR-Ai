@@ -24,11 +24,10 @@ function readRepoFileWithCatalog(path: string): string {
 
 const publicLaunchFiles = [
   "client/index.html",
-  "client/src/pages/MuhasibLanding.tsx",
+  "client/src/components/marketing/phase/PhaseSite.tsx",
+  "client/src/components/marketing/phase/content.ts",
+  "client/src/components/marketing/phase/Forms.tsx",
   "client/src/components/auth/AuthLayout.tsx",
-  // LandingPage.tsx and Landing.tsx were alternative landing pages that no
-  // route ever rendered; they were deleted. MuhasibLanding.tsx (above) is the
-  // one actually served, so this guard now scans the live page only.
   "client/src/pages/Register.tsx",
   "client/src/pages/Services.tsx",
   "client/src/pages/Pricing.tsx",

@@ -1,4 +1,5 @@
 // Internationalization utilities for English/Arabic support
+import { siteLocale } from "@/components/marketing/phase/routes";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { FIRM_FIRST_SCREEN_NAMESPACES, LOCALE_COOKIE, firmFirstScreen } from "@shared/firm-boot";
@@ -409,7 +410,7 @@ const baseT = {
     pressEnterToSend: "Press Enter to send • Supports both English and Arabic",
 
     // Bank Reconciliation
-    bankReconciliationDescription: "Import and match bank transactions with your records",
+    bankReconciliationDescription: "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
     autoMatch: "Auto-match",
     importCsv: "Import CSV",
     totalTransactions: "Total transactions",
@@ -423,10 +424,10 @@ const baseT = {
     match: "Match",
     unmatched: "Unmatched",
     importBankStatement: "Import Bank Statement",
-    uploadBankStatement: "Upload a CSV or PDF file from your bank to import transactions",
+    uploadBankStatement: "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
     bankAccount: "Bank Account",
     selectAccount: "Select account",
-    bankStatementFile: "Bank Statement File (CSV or PDF)",
+    bankStatementFile: "Bank Statement File (CSV)",
     supportedFormats: "Supported formats:",
     bankStatementsAI: "Bank statements (AI extraction)",
     matchTransaction: "Match transaction",
@@ -853,7 +854,7 @@ const baseT = {
     pressEnterToSend: "اضغط Enter للإرسال • يدعم اللغتين العربية والإنجليزية",
 
     // Bank Reconciliation
-    bankReconciliationDescription: "استيراد ومطابقة معاملات البنك",
+    bankReconciliationDescription: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
     autoMatch: "مطابقة تلقائية",
     importCsv: "استيراد",
     totalTransactions: "إجمالي المعاملات",
@@ -867,10 +868,10 @@ const baseT = {
     match: "مطابقة",
     unmatched: "غير مسوى",
     importBankStatement: "استيراد كشف حساب البنك",
-    uploadBankStatement: "قم بتحميل ملف CSV أو PDF من البنك لاستيراد المعاملات",
+    uploadBankStatement: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
     bankAccount: "حساب البنك",
     selectAccount: "اختر الحساب",
-    bankStatementFile: "ملف كشف الحساب (CSV أو PDF)",
+    bankStatementFile: "ملف كشف الحساب (CSV)",
     supportedFormats: "الصيغ المدعومة:",
     bankStatementsAI: "كشوف حساب البنك (استخراج AI)",
     matchTransaction: "مطابقة المعاملة",
@@ -1104,12 +1105,13 @@ export function loadFirmNamespaces(locale: Locale): Promise<void> {
 /** True for the signed-out marketing, auth, legal and help routes and the no-login links. */
 export function isPublicPath(pathname: string): boolean {
   const path = normalisePath(pathname);
-  return PUBLIC_PATHS.has(path) || isCustomerLinkPath(path);
+  return !!siteLocale(path) || PUBLIC_PATHS.has(path) || isCustomerLinkPath(path);
 }
 
 /** Namespaces a public path needs, or `null` for "every namespace" (app routes). */
 export function namespacesForPath(pathname: string): string[] | null {
   const path = normalisePath(pathname);
+  if (siteLocale(path)) return ["marketing"];
   if (path === "/portal/join") return [...AUTH_FORM_NAMESPACES, "portal", "serverErrors"];
   if (APPROVER_LINK_PATH.test(path)) return ["components", "einvoicing", "customerLink"];
   if (PORTAL_LINK_PATH.test(path) || INVOICE_LINK_PATH.test(path))
