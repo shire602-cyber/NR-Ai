@@ -121,19 +121,50 @@ export async function lockVatReturns(
   );
 }
 
-/** The submitted / filed VAT return whose period covers `isoDate`, or null. */
+/** Lock the companies in the same order for group filing and group membership edits. */
+export async function lockVatReturnCompanies(tx: LedgerTx, companyIds: string[]): Promise<void> {
+  for (const id of [...new Set(companyIds.map((id) => id.toLowerCase()))].sort()) {
+    await lockVatReturns(tx, id);
+  }
+}
+
+/** Take this lock before reading or changing a representative's membership, then lock companies. */
+export async function lockVatGroupMembership(
+  tx: LedgerTx,
+  representativeId: string,
+  mode: "shared" | "exclusive"
+): Promise<void> {
+  const key = sql`hashtextextended('vat-group-membership:' || ${representativeId}::uuid::text, 0)`;
+  await tx.execute(
+    mode === "shared"
+      ? sql`SELECT pg_advisory_xact_lock_shared(${key})`
+      : sql`SELECT pg_advisory_xact_lock(${key})`
+  );
+}
+
+/** Find the submitted or filed company or group return that overlaps the given dates. */
 export async function findFiledVatPeriod(
   tx: LedgerTx,
   companyId: string,
-  isoDate: string
+  from: string,
+  to = from
 ): Promise<FiledVatPeriod | null> {
   const res = await tx.execute(sql`
     SELECT id, status, period_start::date::text AS ps, period_end::date::text AS pe
-      FROM vat_returns
-     WHERE company_id = ${companyId}
-       AND status IN ('submitted', 'filed')
-       AND ${isoDate}::date >= period_start::date
-       AND ${isoDate}::date <= period_end::date
+      FROM (
+        SELECT id, status, period_start, period_end
+          FROM vat_returns
+         WHERE company_id = ${companyId}
+        UNION ALL
+        SELECT r.id, r.status, r.period_start, r.period_end
+          FROM vat_group_members m
+          JOIN vat_groups g ON g.id = m.group_id
+          JOIN vat_returns r ON r.company_id = g.representative_company_id AND r.vat_group_id = g.id
+         WHERE m.company_id = ${companyId} AND g.representative_company_id <> m.company_id
+      ) AS candidate
+     WHERE status IN ('submitted', 'filed')
+       AND ${from}::date <= period_end::date
+       AND ${to}::date >= period_start::date
      ORDER BY period_end DESC
      LIMIT 1
   `);

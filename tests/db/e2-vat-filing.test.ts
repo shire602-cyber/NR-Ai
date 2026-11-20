@@ -4,7 +4,8 @@
  * the settlement seam; the return's payment fields, the calendar and the ledger agree, and a
  * reversal returns it to unpaid. Payment status is not hand-editable.
  */
-import { describe, expect, it } from "vitest";
+import pg from "pg";
+import { describe, expect, it, vi } from "vitest";
 import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
@@ -202,6 +203,170 @@ describe("INTEGRATE-G: the compliance calendar follows the filed VAT return", ()
 });
 
 describe("VAT filing and settlement transaction boundaries", () => {
+  it("blocks a group member's backdated sale until the representative's filing commits", async (ctx) => {
+    ctx.skip(!h.concurrencySupported);
+    const representative = await vatTenant();
+    const member = await vatTenant({ trn_vat_number: "100000000000011" });
+    await h.sql("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'owner')", [
+      member.company.id,
+      representative.user.id,
+    ]);
+    const group = await representative.as.put(`${base(representative)}/vat/group`, {
+      name: "VAT Group",
+      groupTrn: "100000000000029",
+      memberCompanyIds: [member.company.id],
+    });
+    expect(group.status, group.text).toBe(200);
+    const id = await readyReturn(representative);
+    const draft = await member.as.post(`${base(member)}/invoices`, {
+      customerName: "Late customer",
+      date: "2026-03-25",
+      placeOfSupplyEmirate: "dubai",
+      lines: [{ description: "Group member sale", quantity: 1, unitPrice: 1000, vatRate: 5 }],
+    });
+    expect(draft.status, draft.text).toBe(200);
+
+    // Pause filing at its final UPDATE, after it has already read the figures.
+    const pauseKey = "73";
+    await h.sql(`CREATE FUNCTION pause_group_filing() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN PERFORM pg_advisory_xact_lock(${pauseKey}::bigint); RETURN NEW; END $$`);
+    await h.sql(`CREATE TRIGGER pause_group_filing BEFORE UPDATE ON vat_returns
+      FOR EACH ROW WHEN (NEW.status = 'filed') EXECUTE FUNCTION pause_group_filing()`);
+    const blocker = new pg.Client({ connectionString: h.databaseUrl });
+    let filing: ReturnType<Tenant["as"]["post"]> | undefined;
+    let posting: ReturnType<Tenant["as"]["patch"]> | undefined;
+    const waitForLock = (key: string) =>
+      vi.waitFor(
+        async () => {
+          const blocked = await h.sql(
+            `SELECT 1 FROM pg_locks
+            WHERE locktype = 'advisory' AND NOT granted AND objsubid = 1
+              AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+              AND classid::bigint = (($1::bigint >> 32) & 4294967295)
+              AND objid::bigint = ($1::bigint & 4294967295)`,
+            [key]
+          );
+          expect(blocked).toHaveLength(1);
+        },
+        { timeout: 8_000, interval: 25 }
+      );
+    try {
+      await blocker.connect();
+      await blocker.query("SELECT pg_advisory_lock($1::bigint)", [pauseKey]);
+      filing = representative.as.post(`/api/vat-returns/${id}/submit`, {
+        ftaReferenceNumber: "ET-GROUP",
+        filedOn: "2026-04-20",
+      });
+      await waitForLock(pauseKey);
+      const [memberLock] = await h.sql<{ key: string }>(
+        "SELECT hashtextextended('vat-returns:' || $1::uuid::text, 0)::text AS key",
+        [member.company.id]
+      );
+      posting = member.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" });
+      await waitForLock(memberLock.key);
+    } finally {
+      await blocker.end();
+      await Promise.allSettled([filing, posting]);
+      await h.sql("DROP TRIGGER pause_group_filing ON vat_returns");
+      await h.sql("DROP FUNCTION pause_group_filing()");
+    }
+
+    const [filed, posted] = await Promise.all([filing!, posting!]);
+    expect(filed.status, filed.text).toBe(200);
+    expect(filed.body).toMatchObject({ status: "filed", vatGroupId: group.body.id });
+    expect(Number(filed.body.box14PayableTax)).toBe(0);
+    expect(posted.status, posted.text).toBe(409);
+    expect(posted.body.code).toBe("VAT_PERIOD_FILED");
+    expect(await h.sql("SELECT status FROM invoices WHERE id = $1", [draft.body.id])).toEqual([
+      { status: "draft" },
+    ]);
+    expect(
+      await h.sql("SELECT id FROM journal_entries WHERE source_id = $1", [draft.body.id])
+    ).toHaveLength(0);
+
+    const amended = await representative.as.post(`/api/vat-returns/${id}/amend`, {
+      reason: "Include the member's omitted supply",
+    });
+    expect(amended.status, amended.text).toBe(201);
+    expect(amended.body.vatGroupId).toBe(group.body.id);
+    const retriedPosting = await member.as.patch(`/api/invoices/${draft.body.id}/status`, {
+      status: "sent",
+    });
+    expect(retriedPosting.status, retriedPosting.text).toBe(200);
+  });
+
+  it("requires a new reason when a ledger-only posting changes an approved VAT difference", async () => {
+    const t = await vatTenant();
+    const bank = await accountByCode(t, "1020");
+    const outputVat = await accountByCode(t, "2020");
+    const { postJournal } = await import("../../server/ledger");
+    const postLedgerOnly = (fils: number) =>
+      postJournal(
+        {
+          companyId: t.company.id,
+          date: "2026-03-25",
+          source: "invoice",
+          status: "posted",
+          lines: [
+            { accountId: bank.id, debitFils: fils },
+            { accountId: outputVat.id, creditFils: fils, systemVat: true },
+          ],
+        },
+        { actorId: t.user.id }
+      );
+
+    await postLedgerOnly(2_500);
+    const id = await draftReturn(t);
+    const approved = await t.as.post(`/api/vat-returns/${id}/ready`, {
+      overrideReason: "First invoice journal awaits recovered document",
+    });
+    expect(approved.status, approved.text).toBe(200);
+    expect(approved.body.reconciliationSnapshot.unexplainedOutputFils).toBe(-2_500);
+    const url = `/api/vat-returns/${id}/submit`;
+    const filing = { ftaReferenceNumber: "ET-FRESH-OVERRIDE", filedOn: "2026-04-20" };
+
+    // A missing input amount is insufficient evidence even if the stored output amount matches.
+    await h.sql(
+      "UPDATE vat_returns SET reconciliation_snapshot = reconciliation_snapshot - 'unexplainedInputFils' WHERE id = $1",
+      [id]
+    );
+    const malformed = await t.as.post(url, filing);
+    expect(malformed.status, malformed.text).toBe(409);
+    expect(malformed.body.code).toBe("VAT_RECONCILIATION_DIFFERENCE");
+    await h.sql("UPDATE vat_returns SET reconciliation_snapshot = $2 WHERE id = $1", [
+      id,
+      JSON.stringify(approved.body.reconciliationSnapshot),
+    ]);
+
+    await postLedgerOnly(1);
+    const blocked = await t.as.post(url, filing);
+    expect(blocked.status, blocked.text).toBe(409);
+    expect(blocked.body).toMatchObject({
+      code: "VAT_RECONCILIATION_DIFFERENCE",
+      details: { unexplainedOutputVat: -25.01, unexplainedInputVat: 0 },
+    });
+    expect(await returnRow(t, id)).toMatchObject({
+      status: "ready",
+      box14PayableTax: approved.body.box14PayableTax,
+      reconciliationSnapshot: approved.body.reconciliationSnapshot,
+    });
+    const filed = await t.as.post(url, {
+      ...filing,
+      reconciliationOverrideReason: "Reviewed the additional ledger posting",
+    });
+    expect(filed.status, filed.text).toBe(200);
+    expect(filed.body).toMatchObject({
+      status: "filed",
+      reconciliationOverrideReason: "Reviewed the additional ledger posting",
+      reconciliationSnapshot: { unexplainedOutputFils: -2_501 },
+    });
+    const audits = await h.sql(
+      "SELECT 1 FROM audit_logs WHERE action = 'vat_return.reconciliation_override' AND resource_id = $1",
+      [id]
+    );
+    expect(audits).toHaveLength(2);
+  });
+
   it("serializes filing and settlement retries and keeps the original result", async (ctx) => {
     ctx.skip(!h.concurrencySupported);
     const t = await vatTenant();
