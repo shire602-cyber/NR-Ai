@@ -80,7 +80,7 @@ function translateCell(value: unknown, key: string, dict: Record<string, string>
     if (mapped.some((part, i) => part !== parts[i])) return mapped.join("، ");
   }
   // Machine dates inside text ("2026-11", "2026-11-01 to 2026-11-30") read as Arabic dates.
-  return formatEmbeddedDates(value, "ar");
+  return formatEmbeddedDates(value, "ar", { plain: true });
 }
 
 /**

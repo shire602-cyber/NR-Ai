@@ -4,6 +4,7 @@
  * Latin digits; dates `d MMM yyyy`, ranges collapse shared parts.
  */
 import { describe, expect, it } from "vitest";
+import { isolateLtrText } from "../../client/src/lib/format-bidi";
 import {
   MINUS_SIGN,
   currencyLabel,
@@ -19,7 +20,12 @@ import {
   formatEmbeddedDates,
   formatMonthYear,
 } from "../../client/src/lib/format-date";
-import { formatCurrency } from "../../client/src/lib/format";
+import {
+  formatCurrency,
+  formatInteger,
+  formatNumber,
+  formatPercent,
+} from "../../client/src/lib/format";
 
 describe("formatMoneyParts", () => {
   it("English puts the currency code at the inline start", () => {
@@ -89,6 +95,30 @@ describe("formatMoneyText", () => {
     expect(stripBidiControls(formatCurrency(6400, "USD", "ar"))).toBe("6,400.00 USD");
     expect(formatCurrency(1, "AED", "ar")).not.toMatch(/US\$|د\.إ\./);
   });
+
+  it("isolates a foreign currency code separately from the signed amount in Arabic", () => {
+    expect(formatMoneyText(-1250.5, "USD", "ar")).toBe(
+      "\u2067\u2066−1,250.50\u2069 \u2066USD\u2069\u2069"
+    );
+  });
+});
+
+describe("Arabic numeric display policy", () => {
+  it("keeps Latin digits and isolates the entire signed figure in Arabic", () => {
+    expect(formatNumber(-1234.5, "ar")).toBe("\u2066−1,234.50\u2069");
+    expect(formatInteger(1234, "ar")).toBe("\u20661,234\u2069");
+    expect(formatPercent(-0.124, "ar")).toBe("\u2066−12.4%\u2069");
+    expect(formatNumber(-1234.5, "en")).toBe("-1,234.50");
+    expect(formatInteger(1234, "en")).toBe("1,234");
+    expect(formatPercent(-0.124, "en")).toBe("-12.4%");
+  });
+
+  it("can isolate literal invoice numbers, TRNs, and email addresses in Arabic copy", () => {
+    for (const value of ["INV-2026/001", "100000000000003", "accounts+books@example.ae"]) {
+      expect(isolateLtrText(value)).toBe(`\u2066${value}\u2069`);
+      expect(stripBidiControls(isolateLtrText(value))).toBe(value);
+    }
+  });
 });
 
 describe("formatPercentDelta", () => {
@@ -145,10 +175,18 @@ describe("formatDateRange", () => {
     expect(formatDateRange(null, "2026-11-16", "en")).toBe("16 Nov 2026");
   });
 
-  it("Arabic ranges keep Latin digits", () => {
+  it("isolates compact day ranges to prevent the RTL dash from reversing the days", () => {
     const text = formatDateRange("2026-11-01", "2026-11-16", "ar");
-    expect(text).toMatch(/^1–16 \S+ 2026$/);
-    expect(text).not.toMatch(/[٠-٩]/);
+    expect(text).toBe("\u20661–16\u2069 نوفمبر 2026");
+  });
+
+  it("keeps compact ranges and embedded dates plain for exports", () => {
+    expect(formatDateRange("2026-11-01", "2026-11-16", "ar", { plain: true })).toBe(
+      "1–16 نوفمبر 2026"
+    );
+    expect(formatEmbeddedDates("الفترة 2026-11-01 إلى 2026-11-16", "ar", { plain: true })).toBe(
+      "الفترة 1–16 نوفمبر 2026"
+    );
   });
 });
 

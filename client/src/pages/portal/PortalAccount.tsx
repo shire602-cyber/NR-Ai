@@ -59,16 +59,18 @@ export default function PortalAccount() {
         </CardHeader>
         <CardContent className="space-y-4">
           <dl className="grid gap-3 sm:grid-cols-2">
-            <div>
+            <div className="min-w-0">
               <dt className="text-caption text-muted-foreground">{t["portal.join.nameLabel"]}</dt>
-              <dd className="mt-0.5 text-small font-medium" dir="auto">
-                {user?.name ?? "—"}
+              <dd className="mt-0.5 text-small font-medium [overflow-wrap:anywhere]">
+                <bdi translate="no">{user?.name ?? "—"}</bdi>
               </dd>
             </div>
-            <div>
+            <div className="min-w-0">
               <dt className="text-caption text-muted-foreground">{t["portal.email"]}</dt>
-              <dd className="mt-0.5 break-all text-small font-medium" dir="ltr">
-                {user?.email ?? "—"}
+              <dd className="mt-0.5 text-small font-medium [overflow-wrap:anywhere]">
+                <bdi dir="ltr" translate="no">
+                  {user?.email ?? "—"}
+                </bdi>
               </dd>
             </div>
           </dl>
@@ -116,10 +118,22 @@ export default function PortalAccount() {
                     <Building2 className="h-4 w-4" aria-hidden />
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-small font-medium" dir="auto">
+                    <span
+                      className="block truncate text-small font-medium"
+                      dir="auto"
+                      translate="no"
+                      title={a.company.name}
+                    >
                       {a.company.name}
                     </span>
-                    <span className="block truncate text-caption text-muted-foreground" dir="auto">
+                    <span
+                      className="block truncate text-caption text-muted-foreground"
+                      dir="auto"
+                      translate="no"
+                      title={
+                        locale === "ar" && a.customer.nameAr ? a.customer.nameAr : a.customer.name
+                      }
+                    >
                       {locale === "ar" && a.customer.nameAr ? a.customer.nameAr : a.customer.name}
                     </span>
                   </span>
@@ -164,7 +178,7 @@ export default function PortalAccount() {
             onClick={() => void signOutEverywhere()}
             data-testid="portal-sign-out-all"
           >
-            <LogOut className="me-2 h-4 w-4 rtl:-scale-x-100" aria-hidden />
+            <LogOut className="h-4 w-4" aria-hidden />
             {t["portal.account.signOutAll"]}
           </Button>
         </CardContent>
