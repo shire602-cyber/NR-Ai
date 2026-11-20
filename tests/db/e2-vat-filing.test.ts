@@ -9,13 +9,14 @@ import { accountByCode, useHarness, type Tenant } from "./harness";
 
 const h = useHarness();
 
-async function vatTenant() {
+async function vatTenant(columns: Record<string, unknown> = {}) {
   return h.createTenant({
     companyColumns: {
       trn_vat_number: "100000000000003",
       emirate: "dubai",
       vat_filing_frequency: "Quarterly",
       vat_period_start_month: 1,
+      ...columns,
     },
   });
 }
@@ -46,16 +47,21 @@ async function activity(t: Tenant, sales: number, purchases: number) {
   expect(ap.status, ap.text).toBe(200);
 }
 
-async function readyReturn(t: Tenant) {
+async function draftReturn(t: Tenant) {
   const gen = await t.as.post(`${base(t)}/vat-returns/generate`, {
     periodStart: "2026-01-01",
     periodEnd: "2026-03-31",
   });
   expect(gen.status, gen.text).toBe(201);
-  const ready = await t.as.post(`/api/vat-returns/${gen.body.id}/ready`, {});
+  return gen.body.id as string;
+}
+
+async function readyReturn(t: Tenant) {
+  const id = await draftReturn(t);
+  const ready = await t.as.post(`/api/vat-returns/${id}/ready`, {});
   expect(ready.status, ready.text).toBe(200);
   expect(ready.body.status).toBe("ready");
-  return gen.body.id as string;
+  return id;
 }
 
 async function addMember(t: Tenant, role: string, name: string): Promise<Tenant> {
@@ -192,5 +198,217 @@ describe("INTEGRATE-G: the compliance calendar follows the filed VAT return", ()
     expect(filed.status, filed.text).toBe(200);
     const after = await calRow();
     expect(after).toMatchObject({ status: "completed", statusDerived: true, relatedEntityId: id });
+  });
+});
+
+describe("VAT filing and settlement transaction boundaries", () => {
+  it("serializes filing and settlement retries and keeps the original result", async (ctx) => {
+    ctx.skip(!h.concurrencySupported);
+    const t = await vatTenant();
+    await activity(t, 2000, 400);
+    const id = await readyReturn(t);
+    const url = `/api/vat-returns/${id}`;
+    const filing = { ftaReferenceNumber: "ET-REPLAY", filedOn: "2026-04-20" };
+    const filings = await Promise.all(
+      Array.from({ length: 12 }, () => t.as.post(`${url}/submit`, filing))
+    );
+    for (const result of filings) {
+      expect(result.status, result.text).toBe(200);
+      expect(result.body).toEqual(filings[0].body);
+    }
+    const conflict = await t.as.post(`${url}/submit`, {
+      ...filing,
+      ftaReferenceNumber: "ET-OTHER",
+    });
+    expect(conflict.status, conflict.text).toBe(409);
+    expect(conflict.body.code).toBe("VAT_FILING_CONFLICT");
+
+    const bank = await accountByCode(t, "1020");
+    const payment = { date: "2026-04-25", paymentAccountId: bank.id, reference: "" };
+    const settlements = await Promise.all(
+      Array.from({ length: 12 }, () => t.as.post(`${url}/settlement`, payment))
+    );
+    for (const result of settlements) {
+      expect(result.status, result.text).toBe(201);
+      expect(result.body).toEqual(settlements[0].body);
+    }
+    const [journal] = await h.sql(
+      "SELECT id, date::date::text AS date FROM journal_entries WHERE source = 'vat_return_settlement' AND source_id = $1",
+      [id]
+    );
+    expect(journal).toEqual({ id: settlements[0].body.journalEntryId, date: payment.date });
+    expect(
+      await h.sql(
+        "SELECT id FROM journal_entries WHERE source = 'vat_return_settlement' AND source_id = $1",
+        [id]
+      )
+    ).toHaveLength(1);
+    const audit = await h.sql<{ action: string }>(
+      "SELECT action FROM audit_logs WHERE resource_id = $1 AND action IN ('vat_return.filed', 'vat.return_settlement.create')",
+      [id]
+    );
+    expect(audit.map((row) => row.action).sort()).toEqual([
+      "vat.return_settlement.create",
+      "vat_return.filed",
+    ]);
+    await h.sql(
+      "UPDATE vat_returns SET payment_status = 'unpaid', payment_date = NULL, payment_amount = NULL WHERE id = $1",
+      [id]
+    );
+    const retry = await t.as.post(`${url}/settlement`, payment);
+    expect(retry.status, retry.text).toBe(201);
+    expect(retry.body).toEqual(settlements[0].body);
+    const row = await returnRow(t, id);
+    expect(row).toMatchObject({
+      status: "filed",
+      paymentStatus: "paid",
+      ftaReferenceNumber: filing.ftaReferenceNumber,
+    });
+    expect(String(row.paymentDate).slice(0, 10)).toBe(payment.date);
+    expect(Number(row.paymentAmount)).toBe(80);
+  });
+
+  it("serializes a filing against a backdated sales posting and requires fresh figures", async (ctx) => {
+    ctx.skip(!h.concurrencySupported);
+    const t = await vatTenant();
+    await activity(t, 2000, 400);
+    const id = await readyReturn(t);
+    const draft = await t.as.post(`${base(t)}/invoices`, {
+      customerName: "Late customer",
+      date: "2026-03-25",
+      placeOfSupplyEmirate: "dubai",
+      lines: [{ description: "Late sale", quantity: 1, unitPrice: 1000, vatRate: 5 }],
+    });
+    expect(draft.status, draft.text).toBe(200);
+
+    const filing = { ftaReferenceNumber: "ET-LATE", filedOn: "2026-04-20" };
+    const [filed, posted] = await Promise.all([
+      t.as.post(`/api/vat-returns/${id}/submit`, filing),
+      t.as.patch(`/api/invoices/${draft.body.id}/status`, { status: "sent" }),
+    ]);
+    expect([filed.status, posted.status].sort(), filed.text + posted.text).toEqual([200, 409]);
+    if (filed.status === 200) {
+      expect(posted.body.code).toBe("VAT_PERIOD_FILED");
+      expect(Number(filed.body.box14PayableTax)).toBe(80);
+    } else {
+      expect(filed.body.code).toBe("VAT_RETURN_STALE");
+      expect((await returnRow(t, id)).status).toBe("ready");
+      expect(await draftReturn(t)).toBe(id);
+      const retry = await t.as.post(`/api/vat-returns/${id}/submit`, filing);
+      expect(retry.status, retry.text).toBe(200);
+      expect(Number(retry.body.box14PayableTax)).toBe(130);
+    }
+  });
+
+  it("keeps settlement and filing dates consistent whichever request wins", async (ctx) => {
+    ctx.skip(!h.concurrencySupported);
+    const t = await vatTenant();
+    await activity(t, 2000, 400);
+    const bank = await accountByCode(t, "1020");
+    const id = await draftReturn(t);
+    const url = `/api/vat-returns/${id}`;
+    expect((await t.as.post(`${url}/submit`, {})).status).toBe(200);
+    const [filed, paid] = await Promise.all([
+      t.as.post(`${url}/submit`, { ftaReferenceNumber: "ET-DATE-RACE", filedOn: "2026-04-20" }),
+      t.as.post(`${url}/settlement`, { date: "2026-04-19", paymentAccountId: bank.id }),
+    ]);
+    if (filed.status === 200) {
+      expect(paid.status, paid.text).toBe(422);
+      expect(paid.body.code).toBe("VAT_SETTLEMENT_BEFORE_FILING");
+      expect((await t.as.get(`${url}/settlement`)).body.settlement).toBeNull();
+    } else {
+      expect(paid.status, paid.text).toBe(201);
+      expect(filed.status, filed.text).toBe(409);
+      expect(filed.body.code).toBe("VAT_FILING_AFTER_SETTLEMENT");
+      expect(await returnRow(t, id)).toMatchObject({ status: "submitted", paymentStatus: "paid" });
+    }
+  });
+
+  it("rolls back journals and return state when filing, settling or reversing fails before commit", async () => {
+    const t = await vatTenant({ partial_exemption_enabled: true });
+    await activity(t, 2000, 400);
+    const exempt = await t.as.post(`${base(t)}/invoices`, {
+      customerName: "Tenant",
+      date: "2026-03-01",
+      lines: [
+        {
+          description: "Residential rent",
+          quantity: 1,
+          unitPrice: 2000,
+          vatRate: 0,
+          vatSupplyType: "exempt",
+        },
+      ],
+    });
+    expect(exempt.status, exempt.text).toBe(200);
+    expect(
+      (await t.as.patch(`/api/invoices/${exempt.body.id}/status`, { status: "sent" })).status
+    ).toBe(200);
+    const id = await draftReturn(t);
+    const url = `/api/vat-returns/${id}`;
+    const filing = { ftaReferenceNumber: "ET-ROLLBACK", filedOn: "2026-04-20" };
+    const bank = await accountByCode(t, "1020");
+    const payment = { date: "2026-04-25", paymentAccountId: bank.id };
+    const reversal = { date: "2026-04-26", reason: "Bank rejected payment" };
+    const journals = (source: string) =>
+      h.sql(
+        "SELECT id, reversed_by_entry_id FROM journal_entries WHERE source_id = $1 AND source = $2",
+        [id, source]
+      );
+
+    // The trigger aborts the final return UPDATE, after the kernel has inserted the journal.
+    await h.sql(`CREATE FUNCTION fail_vat_return_update() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'forced VAT return update failure'; END $$`);
+    async function failWrite(request: () => ReturnType<Tenant["as"]["post"]>) {
+      await h.sql(`CREATE TRIGGER fail_vat_return_update BEFORE UPDATE ON vat_returns
+        FOR EACH ROW EXECUTE FUNCTION fail_vat_return_update()`);
+      try {
+        const result = await request();
+        expect(result.status, result.text).toBe(500);
+      } finally {
+        await h.sql("DROP TRIGGER fail_vat_return_update ON vat_returns");
+      }
+    }
+    try {
+      await failWrite(() => t.as.post(`${url}/submit`, filing));
+      expect(await journals("vat_partial_exemption")).toHaveLength(0);
+      expect(
+        await h.sql("SELECT id FROM accounts WHERE company_id = $1 AND code = '5160'", [
+          t.company.id,
+        ])
+      ).toHaveLength(0);
+      expect((await returnRow(t, id)).status).toBe("draft");
+
+      const filed = await t.as.post(`${url}/submit`, filing);
+      expect(filed.status, filed.text).toBe(200);
+      expect(await journals("vat_partial_exemption")).toHaveLength(1);
+      expect(Number(filed.body.box14PayableTax)).toBe(90);
+
+      await failWrite(() => t.as.post(`${url}/settlement`, payment));
+      expect(await journals("vat_return_settlement")).toHaveLength(0);
+      expect((await returnRow(t, id)).paymentStatus).toBe("unpaid");
+
+      const paid = await t.as.post(`${url}/settlement`, payment);
+      expect(paid.status, paid.text).toBe(201);
+      await failWrite(() => t.as.post(`${url}/settlement/reverse`, reversal));
+      expect(await journals("vat_return_settlement")).toEqual([
+        { id: paid.body.journalEntryId, reversed_by_entry_id: null },
+      ]);
+      expect((await returnRow(t, id)).paymentStatus).toBe("paid");
+      expect(
+        await h.sql("SELECT id FROM journal_entries WHERE reversed_entry_id = $1", [
+          paid.body.journalEntryId,
+        ])
+      ).toHaveLength(0);
+
+      const reversed = await t.as.post(`${url}/settlement/reverse`, reversal);
+      expect(reversed.status, reversed.text).toBe(200);
+      expect((await returnRow(t, id)).paymentStatus).toBe("unpaid");
+      const reposted = await t.as.post(`${url}/settlement`, payment);
+      expect(reposted.status, reposted.text).toBe(201);
+      expect(reposted.body.journalEntryId).not.toBe(paid.body.journalEntryId);
+    } finally {
+      await h.sql("DROP FUNCTION fail_vat_return_update()");
+    }
   });
 });

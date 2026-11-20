@@ -75,6 +75,10 @@ async function reportedByVatEngine(
        AND disposal_invoice_id IS NULL
        AND disposal_vat_treatment IS NOT NULL AND disposal_vat_treatment <> 'out_of_scope'
        AND COALESCE(disposal_amount, 0) <> 0
+    UNION ALL
+    SELECT 1 FROM journal_lines jl
+     JOIN journal_entries je ON je.id = jl.entry_id
+     WHERE je.company_id = ${companyId} AND je.id = ${entryId} AND jl.vat_treatment IS NOT NULL
     LIMIT 1
   `);
   return rowsOf(res).length > 0;
@@ -97,6 +101,24 @@ function nextDay(iso: string): string {
   const d = new Date(`${iso}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Return mutations take the exclusive lock for the company. Journal writes take the shared
+ * lock, so checking for a filed period and posting cannot straddle a filing commit.
+ * One company lock also covers settlements on the same amendment chain.
+ */
+export async function lockVatReturns(
+  tx: LedgerTx,
+  companyId: string,
+  mode: "shared" | "exclusive" = "exclusive"
+): Promise<void> {
+  const key = sql`hashtextextended('vat-returns:' || ${companyId}::uuid::text, 0)`;
+  await tx.execute(
+    mode === "shared"
+      ? sql`SELECT pg_advisory_xact_lock_shared(${key})`
+      : sql`SELECT pg_advisory_xact_lock(${key})`
+  );
 }
 
 /** The submitted / filed VAT return whose period covers `isoDate`, or null. */
@@ -176,8 +198,7 @@ export function vatPeriodFiledError(period: FiledVatPeriod, postingDate: string)
 
 /**
  * Throw 409 VAT_PERIOD_FILED when a posted entry affecting VAT is dated in (or, for a reversal,
- * undoes an entry dated in) a submitted / filed VAT period. Cheap when no return covers the
- * dates: one indexed lookup per date.
+ * undoes an entry dated in) a submitted / filed VAT period. The caller holds the VAT return lock.
  */
 export async function assertVatPeriodOpen(
   tx: LedgerTx,
@@ -194,43 +215,32 @@ export async function assertVatPeriodOpen(
   }
 ): Promise<void> {
   if (VAT_LOCK_EXEMPT_SOURCES.has(input.source ?? "")) return;
-  const candidates: Array<{ date: string; source: string | null }> = [
-    { date: input.dateIso, source: input.source },
-  ];
+  const dates = [input.dateIso];
   let originalSource: string | null = null;
-  let originalReported = false;
   if (input.reversedEntryId) {
     const res = await tx.execute(sql`
       SELECT date::date::text AS d, source FROM journal_entries
        WHERE id = ${input.reversedEntryId} AND company_id = ${input.companyId}
     `);
-    const o = rowsOf<Record<string, string | null>>(res)[0];
-    if (VAT_LOCK_EXEMPT_SOURCES.has(o?.source ?? "")) return;
-    if (o?.d && !REVERSAL_REPORTED_ON_OWN_DATE.has(o.source ?? "")) {
-      originalSource = o.source ?? null;
-      candidates.push({ date: o.d, source: originalSource });
+    const original = rowsOf<Record<string, string | null>>(res)[0];
+    if (VAT_LOCK_EXEMPT_SOURCES.has(original?.source ?? "")) return;
+    if (original?.d && !REVERSAL_REPORTED_ON_OWN_DATE.has(original.source ?? "")) {
+      originalSource = original.source;
+      dates.push(original.d);
     }
   }
-  for (const c of candidates) {
-    const period = await findFiledVatPeriod(tx, input.companyId, c.date);
+  for (const date of new Set(dates)) {
+    const period = await findFiledVatPeriod(tx, input.companyId, date);
     if (!period) continue;
-    const docSource =
+    const affectsVat =
       VAT_DOCUMENT_SOURCES.has(input.source ?? "") ||
-      VAT_DOCUMENT_SOURCES.has(originalSource ?? "");
-    if (input.reversedEntryId && !originalReported) {
-      originalReported = await reportedByVatEngine(tx, input.companyId, input.reversedEntryId);
-    }
-    const draftReported =
-      !!input.entryId && (await reportedByVatEngine(tx, input.companyId, input.entryId));
-    if (
-      docSource ||
+      VAT_DOCUMENT_SOURCES.has(originalSource ?? "") ||
       input.reportsVat === true ||
-      originalReported ||
-      draftReported ||
-      (await touchesVatAccount(tx, input.companyId, input.accountIds))
-    ) {
-      throw vatPeriodFiledError(period, c.date);
-    }
+      (await touchesVatAccount(tx, input.companyId, input.accountIds)) ||
+      (!!input.reversedEntryId &&
+        (await reportedByVatEngine(tx, input.companyId, input.reversedEntryId))) ||
+      (!!input.entryId && (await reportedByVatEngine(tx, input.companyId, input.entryId)));
+    if (affectsVat) throw vatPeriodFiledError(period, date);
     return;
   }
 }

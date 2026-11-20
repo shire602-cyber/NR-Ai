@@ -10,31 +10,35 @@
  */
 import { journalLine, journalMemo } from "@shared/journal-memo";
 import { DomainError } from "../errors";
-import { storage } from "../storage";
-import { postJournal } from "../ledger";
+import { and, eq } from "drizzle-orm";
+import { accounts } from "../../shared/schema";
+import { postJournal, type LedgerTx } from "../ledger";
 import { computeVat201, loadVatAccounts, type VatComputation } from "./vat-engine";
 
 export const IRRECOVERABLE_VAT_ACCOUNT_CODE = "5160";
 export const PARTIAL_EXEMPTION_SOURCE = "vat_partial_exemption";
 
-async function irrecoverableVatAccountId(companyId: string): Promise<string> {
-  const accounts = await storage.getAccountsByCompanyId(companyId);
-  const found = accounts.find(
-    (a) => a.code === IRRECOVERABLE_VAT_ACCOUNT_CODE && a.isActive !== false && !a.isArchived
-  );
-  if (found) return found.id;
-  const created = await storage.createAccount({
-    companyId,
-    code: IRRECOVERABLE_VAT_ACCOUNT_CODE,
-    nameEn: "Irrecoverable Input VAT (Partial Exemption)",
-    nameAr: "ضريبة المدخلات غير القابلة للاسترداد (الإعفاء الجزئي)",
-    description: "Input VAT not recoverable under partial exemption (Executive Regulation Art. 55)",
-    type: "expense",
-    subType: "operating_expense",
-    isVatAccount: false,
-    vatType: null,
-    isSystemAccount: false,
-  } as Parameters<typeof storage.createAccount>[0]);
+async function irrecoverableVatAccountId(companyId: string, tx: LedgerTx): Promise<string> {
+  const [found] = await tx
+    .select()
+    .from(accounts)
+    .where(
+      and(eq(accounts.companyId, companyId), eq(accounts.code, IRRECOVERABLE_VAT_ACCOUNT_CODE))
+    );
+  if (found && found.isActive !== false && !found.isArchived) return found.id;
+  const [created] = await tx
+    .insert(accounts)
+    .values({
+      companyId,
+      code: IRRECOVERABLE_VAT_ACCOUNT_CODE,
+      nameEn: "Irrecoverable Input VAT (Partial Exemption)",
+      nameAr: "ضريبة المدخلات غير القابلة للاسترداد (الإعفاء الجزئي)",
+      description:
+        "Input VAT not recoverable under partial exemption (Executive Regulation Art. 55)",
+      type: "expense",
+      subType: "operating_expense",
+    })
+    .returning({ id: accounts.id });
   return created.id;
 }
 
@@ -51,24 +55,27 @@ export async function postPartialExemptionForPeriod(input: {
   to: string;
   actorId: string;
   vatReturnId: string;
+  tx: LedgerTx;
 }): Promise<PartialExemptionPosting> {
-  const computation = await computeVat201({
-    companyId: input.companyId,
-    from: input.from,
-    to: input.to,
-    allowIncomplete: true,
-    includeGroup: false,
-  });
+  const computation = await computeVat201(
+    {
+      companyId: input.companyId,
+      from: input.from,
+      to: input.to,
+      allowIncomplete: true,
+      includeGroup: false,
+    },
+    input.tx
+  );
   const delta = computation.partialExemption.unpostedFils ?? 0;
   if (delta === 0) return { posted: false, deltaFils: 0, journalEntryId: null, computation };
-  const vatAccounts = await loadVatAccounts(input.companyId);
+  const vatAccounts = await loadVatAccounts(input.companyId, input.tx);
   const inputVat =
     vatAccounts.find((a) => a.vatType === "input" && a.code === "1050") ??
     vatAccounts.find((a) => a.vatType === "input");
   if (!inputVat) throw new DomainError("VAT_ACCOUNTS_MISSING", 422);
-  const costAccountId = await irrecoverableVatAccountId(input.companyId);
+  const costAccountId = await irrecoverableVatAccountId(input.companyId, input.tx);
   const amount = Math.abs(delta);
-  const posted = computation.partialExemption.postedFils ?? 0;
   const { entry } = await postJournal(
     {
       companyId: input.companyId,
@@ -77,7 +84,6 @@ export async function postPartialExemptionForPeriod(input: {
       status: "posted",
       source: PARTIAL_EXEMPTION_SOURCE,
       sourceId: input.vatReturnId,
-      idempotencyKey: `vat_partial_exemption:${input.companyId}:${input.from}:${input.to}:${posted}:${posted + delta}`,
       lines:
         delta > 0
           ? [
@@ -107,7 +113,7 @@ export async function postPartialExemptionForPeriod(input: {
               },
             ],
     },
-    { actorId: input.actorId }
+    { actorId: input.actorId, tx: input.tx }
   );
   return { posted: true, deltaFils: delta, journalEntryId: entry.id, computation };
 }

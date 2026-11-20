@@ -1,3 +1,4 @@
+import type { LedgerTx } from "../../ledger/types";
 /**
  * FX rates — the single rate convention and tenant-scoped lookup (W2-E).
  *
@@ -54,6 +55,7 @@ export interface RateResult {
 }
 
 export interface GetRateOptions {
+  tx?: LedgerTx;
   rateType?: ExchangeRateType;
   /** Proximity window in days (default 7). */
   maxAgeDays?: number;
@@ -129,8 +131,11 @@ export function invertRate(rate: Decimal.Value): Decimal {
 
 // ─── Lookup ───────────────────────────────────────────────────────────────
 
-export async function getCompanyBaseCurrency(companyId: string): Promise<string> {
-  const [row] = await db
+export async function getCompanyBaseCurrency(
+  companyId: string,
+  tx: LedgerTx = db
+): Promise<string> {
+  const [row] = await tx
     .select({ baseCurrency: companies.baseCurrency })
     .from(companies)
     .where(eq(companies.id, companyId))
@@ -151,13 +156,14 @@ async function findRow(
   from: string,
   to: string,
   asOfIso: string,
-  rateType: ExchangeRateType
+  rateType: ExchangeRateType,
+  tx: LedgerTx = db
 ): Promise<ExchangeRate | null> {
   const end = isoToDate(addDaysIso(asOfIso, 1));
   const scope = companyId
     ? or(eq(exchangeRates.companyId, companyId), isNull(exchangeRates.companyId))
     : isNull(exchangeRates.companyId);
-  const rows = await db
+  const rows = await tx
     .select()
     .from(exchangeRates)
     .where(
@@ -285,11 +291,11 @@ async function lookup(
     };
   }
 
-  const row = await findRow(companyId, from, to, asOfIso, rateType);
+  const row = await findRow(companyId, from, to, asOfIso, rateType, opts.tx);
   if (row) return buildResult(row, from, asOfIso, maxAgeDays);
 
   if (rateType !== "spot" && opts.fallbackToSpot !== false) {
-    const spot = await findRow(companyId, from, to, asOfIso, "spot");
+    const spot = await findRow(companyId, from, to, asOfIso, "spot", opts.tx);
     if (spot) {
       return buildResult(
         spot,
@@ -614,13 +620,16 @@ export async function deleteCompanyRate(companyId: string, rateId: string): Prom
 export async function toVatFilingCurrency(
   companyId: string,
   baseFils: number,
-  documentDate: Date | string
+  documentDate: Date | string,
+  tx?: LedgerTx
 ): Promise<{ filingCurrency: string; fils: number; rate: string; baseCurrency: string }> {
-  const baseCurrency = await getCompanyBaseCurrency(companyId);
+  const baseCurrency = await getCompanyBaseCurrency(companyId, tx);
   if (baseCurrency === VAT_FILING_CURRENCY) {
     return { filingCurrency: VAT_FILING_CURRENCY, fils: baseFils, rate: "1.000000", baseCurrency };
   }
-  const c = await convert(companyId, baseFils, baseCurrency, VAT_FILING_CURRENCY, documentDate);
+  const c = await convert(companyId, baseFils, baseCurrency, VAT_FILING_CURRENCY, documentDate, {
+    tx,
+  });
   return {
     filingCurrency: VAT_FILING_CURRENCY,
     fils: c.convertedFils,
