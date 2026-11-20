@@ -33,9 +33,9 @@
  * maker-checker approvals.
  */
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import { and, eq } from "drizzle-orm";
+import { and, eq, exists, isNull, notExists } from "drizzle-orm";
 import { db, pool, type AppDatabase } from "../db";
-import { companyUsers } from "../../shared/schema";
+import { companies, companyUsers, firmClientLinks } from "../../shared/schema";
 import { canAccessFirmClient, resolveFirmContext } from "../services/firm/scope";
 import { storage } from "../storage";
 import { createLogger } from "../config/logger";
@@ -610,18 +610,46 @@ export async function scopedCompanyPermissionFailure(
   lock?: "share"
 ): Promise<ScopedPermissionFailure | null> {
   if (user.userType === "client_portal") return { code: "PORTAL_USER_APP_DENIED" };
-  if (isNraFirmRole(user.firmRole)) {
+  const firmScoped = isNraFirmRole(user.firmRole);
+  if (firmScoped) {
     const firm = await resolveFirmContext(user);
-    return firm && (await canAccessFirmClient(firm, companyId, conn, lock))
-      ? null
-      : { code: "COMPANY_ACCESS_DENIED" };
+    if (firm && (await canAccessFirmClient(firm, companyId, conn, lock))) return null;
+  } else if (user.isAdmin && !isFirmRole(user.firmRole)) {
+    return null;
   }
-  if (user.isAdmin && !isFirmRole(user.firmRole)) return null;
 
+  // Firm staff can also be direct members of standalone customer companies. A firm-linked or
+  // legacy firm client must satisfy the firm scope above, including after a link is revoked.
+  const standaloneCompany = firmScoped
+    ? exists(
+        conn
+          .select({ id: companies.id })
+          .from(companies)
+          .where(
+            and(
+              eq(companies.id, companyId),
+              eq(companies.companyType, "customer"),
+              isNull(companies.deletedAt),
+              notExists(
+                conn
+                  .select({ id: firmClientLinks.id })
+                  .from(firmClientLinks)
+                  .where(eq(firmClientLinks.companyId, companies.id))
+              )
+            )
+          )
+      )
+    : undefined;
   const query = conn
     .select({ role: companyUsers.role })
     .from(companyUsers)
-    .where(and(eq(companyUsers.companyId, companyId), eq(companyUsers.userId, user.id)))
+    .where(
+      and(
+        eq(companyUsers.companyId, companyId),
+        eq(companyUsers.userId, user.id),
+        standaloneCompany
+      )
+    )
     .limit(1);
   const [membership] = await (lock ? query.for(lock) : query);
   const role = membership ? normalizeCompanyRole(membership.role) : null;

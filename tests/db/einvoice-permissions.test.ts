@@ -72,6 +72,57 @@ describe("Company-scoped e-invoicing permissions", () => {
     }
   );
 
+  it("honors a firm owner's direct role in their self-service company", async () => {
+    const owner = await h.createTenant({
+      isAdmin: true,
+      firmRole: "firm_owner",
+      userType: "admin",
+      companyColumns: { company_type: "customer" },
+    });
+    const prefix = `/api/companies/${owner.company.id}/einvoicing`;
+
+    for (const path of ["readiness", "settings", "inbound", "identity", "provider"]) {
+      const response = await owner.as.get(`${prefix}/${path}`);
+      expect(response.status, response.text).toBe(200);
+    }
+    const saved = await owner.as.put(`${prefix}/settings`, { tradeLicenceNo: "TEST-001" });
+    expect(saved.status, saved.text).toBe(200);
+    expect(saved.body.identity.tradeLicenceNo).toBe("TEST-001");
+
+    await h.sql("UPDATE company_users SET role = 'viewer' WHERE company_id = $1 AND user_id = $2", [
+      owner.company.id,
+      owner.user.id,
+    ]);
+    expect((await owner.as.get(`${prefix}/settings`)).status).toBe(200);
+    const denied = await owner.as.put(`${prefix}/settings`, { tradeLicenceNo: "TEST-002" });
+    expect(denied.status, denied.text).toBe(403);
+    expect(denied.body.code).toBe("PERMISSION_DENIED");
+    expect((await owner.as.get(`${prefix}/settings`)).body.identity.tradeLicenceNo).toBe(
+      "TEST-001"
+    );
+  });
+
+  it("keeps another firm's linked customer behind the firm scope", async () => {
+    const actor = await h.createTenant({ isAdmin: true, firmRole: "firm_owner" });
+    const customer = await h.createSecondTenant({ companyColumns: { company_type: "customer" } });
+    const [foreignFirm] = await h.sql(
+      "INSERT INTO firms (name, slug, status) VALUES ('External Test Firm', 'external-einvoice', 'active') RETURNING id"
+    );
+    await h.sql(
+      "INSERT INTO firm_client_links (firm_id, company_id, status) VALUES ($1, $2, 'active')",
+      [foreignFirm.id, customer.company.id]
+    );
+    await h.sql("INSERT INTO company_users (company_id, user_id, role) VALUES ($1, $2, 'admin')", [
+      customer.company.id,
+      actor.user.id,
+    ]);
+    const provider = await actor.as.get(
+      `/api/companies/${customer.company.id}/einvoicing/provider`
+    );
+    expect(provider.status, provider.text).toBe(403);
+    expect(provider.body.code).toBe("COMPANY_ACCESS_DENIED");
+  });
+
   it("retains scoped provider reading for a platform admin without a firm role", async () => {
     const admin = await h.createTenant({ isAdmin: true });
     const client = await h.createSecondTenant();
