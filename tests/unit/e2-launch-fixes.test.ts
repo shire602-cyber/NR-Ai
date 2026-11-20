@@ -97,6 +97,18 @@ describe("[E2][J3-r2] budgets: a line needs an income or expense account", () =>
 });
 
 describe("[E2][J3-r2] VAT filing stage", () => {
+  it.each([0, 80])("keeps filing pending after review with net VAT of %i", async (netVat) => {
+    const { vatChecklist, vatNextAction } = await import("../../client/src/lib/vat-filing-stage");
+    const reviewedReturn = { status: "submitted", box14PayableTax: netVat };
+
+    expect(vatNextAction(reviewedReturn)).toBe("recordFiling");
+    expect(vatChecklist(reviewedReturn)).toMatchObject({
+      ready: true,
+      filed: false,
+      settled: false,
+    });
+  });
+
   it("ready -> filed -> paid / refunded; one next step at a time", async () => {
     const { vatFilingStage, vatNextAction, vatChecklist } =
       await import("../../client/src/lib/vat-filing-stage");
