@@ -14,6 +14,7 @@ import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
+import { stripVTControlCharacters } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { HARNESS_DB_PREFIX, createDatabase, databaseUrl, dropDatabase, repoRoot } from "./pg-admin";
 
@@ -233,14 +234,16 @@ describe.skipIf(!enabled)("soak: real server survives mixed and malformed traffi
     );
   }, 300_000);
 
-  it("an unhandled promise rejection is logged, not fatal", async () => {
-    child!.kill("SIGUSR2");
-    const deadline = Date.now() + 10_000;
-    while (!output.includes("harness-unhandled-rejection-probe") && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    expect(output).toContain("harness-unhandled-rejection-probe");
+  it("logs an unhandled promise rejection without its message and keeps serving requests", async () => {
+    const start = output.length;
+    expect(child!.kill("SIGUSR2")).toBe(true);
+    const rejectionLog =
+      /ERROR: Captured exception\n\s+context: "monitoring"\n\s+source: "unhandledRejection"\n\s+errorType: "Error"\n\s+captured: true/;
+    await expect
+      .poll(() => stripVTControlCharacters(output.slice(start)), { timeout: 10_000 })
+      .toMatch(rejectionLog);
     await new Promise((r) => setTimeout(r, 1000));
+    expect(output.slice(start)).not.toContain("harness-unhandled-rejection-probe");
     expect(exited).toBeNull();
     expect((await call("GET", "/health/live")).status).toBe(200);
   }, 60_000);
