@@ -25,6 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, request } from "playwright-core";
+import { waitForRouteText } from "./lib/route-readiness.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 const PUBLIC_ONLY = process.env.CUSTOMER_E2E_PUBLIC_ONLY === "true";
@@ -291,11 +292,8 @@ async function main() {
     apiFailures = [];
     await page.goto(`${BASE}${route}`, { timeout: 45000 });
     await page.waitForTimeout(options.waitMs ?? 1700);
+    const bodyText = await waitForRouteText(page, "body");
     const finalUrl = cleanPath(page.url());
-    const bodyText = await page
-      .locator("body")
-      .innerText()
-      .catch(() => "");
     const failText = bodyText.match(FAIL_TEXT)?.[0] ?? null;
     const blank = bodyText.trim().length < 40;
     const redirected = options.expectPrefix ? !finalUrl.startsWith(route) : finalUrl !== route;

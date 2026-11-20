@@ -18,6 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import pg from "pg";
+import { waitForRouteText } from "./lib/route-readiness.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
 // Fable N1: browse in UAE time so a business date formatted as a browser-zone instant (a 30 Sep
@@ -263,11 +264,8 @@ async function main() {
     try {
       await page.goto(`${BASE}${route}`, { timeout: 45000 });
       await page.waitForTimeout(1700);
+      const mainText = await waitForRouteText(page, "main");
       const finalUrl = page.url().replace(BASE, "");
-      const mainText = await page
-        .locator("main")
-        .innerText()
-        .catch(() => "");
       const failText =
         mainText.match(FAIL_TEXT)?.[0] ?? (NOT_FOUND(mainText) ? "not-found screen" : null);
       const blank = mainText.trim().length < 40;
@@ -1239,17 +1237,8 @@ async function main() {
       try {
         await mPage.goto(`${BASE}${route}`, { timeout: 45000 });
         await mPage.waitForTimeout(1500);
+        const bodyText = await waitForRouteText(mPage, "main", "body");
         const finalUrl = mPage.url().replace(BASE, "");
-        const mainText = await mPage
-          .locator("main")
-          .innerText()
-          .catch(() => "");
-        const bodyText =
-          mainText ||
-          (await mPage
-            .locator("body")
-            .innerText()
-            .catch(() => ""));
         const failText = bodyText.match(FAIL_TEXT)?.[0] ?? null;
         const blank = bodyText.trim().length < 40;
         if (mErrors.length || mApi.length || failText || blank) {
@@ -1304,36 +1293,55 @@ async function main() {
     const qStart = new Date(Date.UTC(now.getUTCFullYear(), qStartMonth, 1));
     const qEnd = new Date(Date.UTC(qStart.getUTCFullYear(), qStart.getUTCMonth() + 3, 0));
     const ymd = (d) => d.toISOString().slice(0, 10);
-    await page.request.post(`${BASE}/api/companies/${companyId}/vat-returns/generate`, {
-      headers: { "x-csrf-token": csrfToken ?? "" },
-      data: { periodStart: ymd(qStart), periodEnd: ymd(qEnd) },
-    });
-    const DATE_TEXT = /\b\d{1,2}(?:[–-]\d{1,2})? [A-Z][a-z]{2} \d{4}\b|\b[A-Z][a-z]{2} \d{4}\b/g;
+    const generated = await page.request.post(
+      `${BASE}/api/companies/${companyId}/vat-returns/generate`,
+      {
+        headers: { "x-csrf-token": csrfToken ?? "" },
+        data: { periodStart: ymd(qStart), periodEnd: ymd(qEnd) },
+      }
+    );
+    if (!generated.ok())
+      throw new Error(`VAT fixture generation returned HTTP ${generated.status()}`);
+    const { id: returnId, dueDate } = await generated.json();
+    if (!returnId || !dueDate) throw new Error("VAT fixture is missing its return ID or due date");
     const datesOn = async (p) => {
       await p.goto(`${BASE}/vat-filing`, { timeout: 45000 });
-      await p.waitForTimeout(2500);
-      const text = await p
-        .locator("main")
-        .innerText()
-        .catch(() => "");
-      return [...new Set(text.match(DATE_TEXT) ?? [])].sort();
+      await p.getByTestId(`button-view-${returnId}`).click({ timeout: 20000 });
+      const workbook = p.getByTestId("vat201-workbook");
+      const value = (label) =>
+        workbook
+          .locator("dl > div")
+          .filter({ has: p.getByText(label, { exact: true }) })
+          .locator("dd")
+          .innerText({ timeout: 15000 });
+      return { period: await value("Return period"), due: await value("Return due date") };
     };
     const utcCtx = await browser.newContext({
       viewport: { width: 1440, height: 900 },
       timezoneId: "UTC",
       storageState: await ctx.storageState(),
     });
-    const utcPage = await utcCtx.newPage();
-    const utcDates = await datesOn(utcPage);
-    await utcCtx.close();
+    let utcDates;
+    try {
+      utcDates = await datesOn(await utcCtx.newPage());
+    } finally {
+      await utcCtx.close();
+    }
     const localDates = await datesOn(page);
-    const endLabel = `${qEnd.getUTCDate()} ${qEnd.toLocaleString("en-GB", { month: "short", timeZone: "UTC" }).slice(0, 3)} ${qEnd.getUTCFullYear()}`;
-    const shown = localDates.some((d) => d.includes(endLabel.split(" ").slice(1).join(" ")));
-    if (JSON.stringify(utcDates) !== JSON.stringify(localDates) || !shown) {
+    const dateLabel = (d) =>
+      `${d.getUTCDate()} ${d.toLocaleString("en-GB", { month: "short", timeZone: "UTC" }).slice(0, 3)} ${d.getUTCFullYear()}`;
+    const expected = {
+      period: `${dateLabel(qStart)} – ${dateLabel(qEnd)}`,
+      due: dateLabel(new Date(dueDate)),
+    };
+    if (
+      JSON.stringify(utcDates) !== JSON.stringify(expected) ||
+      JSON.stringify(localDates) !== JSON.stringify(expected)
+    ) {
       await fail(`timezone probe /vat-filing (${BROWSER_TIMEZONE})`, {
-        utc: utcDates.slice(0, 12),
-        local: localDates.slice(0, 12),
-        expectedPeriodEnd: endLabel,
+        utc: utcDates,
+        local: localDates,
+        expected,
       });
     }
   } catch (e) {
@@ -1366,14 +1374,7 @@ async function main() {
         })
         .catch(() => {});
       const dir = await page.evaluate(() => document.documentElement.getAttribute("dir"));
-      let mainText = "";
-      for (let i = 0; i < 30 && mainText.trim().length < 40; i++) {
-        mainText = await page
-          .locator("main")
-          .innerText()
-          .catch(() => "");
-        if (mainText.trim().length < 40) await page.waitForTimeout(500);
-      }
+      const mainText = await waitForRouteText(page, "main");
       const blank = mainText.trim().length < 40;
       if (dir !== "rtl" || routeErrors.length || blank) {
         await fail(`rtl route ${route}`, {
