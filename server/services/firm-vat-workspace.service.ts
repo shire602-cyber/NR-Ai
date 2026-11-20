@@ -10,7 +10,7 @@ import { createDraftInvoice } from "./connectors/draft-documents";
 import { issueInvoice } from "./invoice-posting.service";
 import { recordAudit } from "./audit.service";
 import { assertDifferentActor } from "../middleware/companyRolePolicy";
-import { lockVatReturns } from "../ledger/vat-lock";
+import { lockVatGroupMembership, lockVatReturns } from "../ledger/vat-lock";
 import { assertReturnIsEditable, findReturnForPeriod } from "../tax/vat-returns.service";
 import { defineMachine, reverseBySource, transitionRow, withLedgerTx } from "../ledger";
 import { mulRate, toFils } from "../../shared/money";
@@ -1724,6 +1724,7 @@ export async function generateVatReturnFromWorkpaper(workpaperId: string, actorU
   };
 
   return withLedgerTx(async (tx) => {
+    await lockVatGroupMembership(tx, workpaper.companyId);
     await lockVatReturns(tx, workpaper.companyId);
     await assertPeriodNotLocked(workpaper.companyId, workpaper.periodEnd, tx);
     const [current] = await tx

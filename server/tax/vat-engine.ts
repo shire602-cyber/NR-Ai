@@ -27,6 +27,7 @@ import { totalsForStoredDocument } from "../services/invoice-posting.service";
 import { ledgerLines } from "../reporting";
 import { loadBaseCurrency, type LedgerTx } from "../ledger";
 import { ledgerQueryable } from "../ledger/tx";
+import { loadVatGroupForRepresentative, type VatGroupInfo } from "../ledger/vat-group-scope";
 import { has, resolve } from "../platform/service-registry";
 import type { FxToVatFilingCurrency } from "../services/fx";
 import {
@@ -180,7 +181,7 @@ export interface VatComputation {
   };
   counts: Record<string, number>;
   reconciliation: VatReconciliation;
-  group: null | { groupId: string; name: string; groupTrn: string; memberIds: string[] };
+  group: VatGroupInfo | null;
   /** S1 (W5-C, R14-19): currency of the boxes; reconciliation stays in the functional currency. */
   currency: VatFilingCurrency;
 }
@@ -270,12 +271,16 @@ const DOC_SOURCES = new Set([
 
 export async function computeVat201(
   input: ComputeVatInput,
-  tx?: LedgerTx
+  tx?: LedgerTx,
+  filingVatGroup?: VatGroupInfo | null
 ): Promise<VatComputation> {
   const company = await loadVatCompany(input.companyId, tx);
-  const group = await loadVatGroupForRepresentative(input.companyId, tx);
-  if (group && input.includeGroup !== false) {
-    return computeGroup(input, company, group, tx);
+  if (input.includeGroup !== false) {
+    const group =
+      filingVatGroup === undefined
+        ? await loadVatGroupForRepresentative(input.companyId, tx)
+        : filingVatGroup;
+    if (group) return computeGroup(input, company, group, tx);
   }
   const single = await computeSingle(input, company, new Set(), tx);
   if (!input.allowIncomplete && blockingIssues(single.issues).length > 0)
@@ -1747,37 +1752,6 @@ interface LedgerVat {
 }
 
 // ─── VAT groups ──────────────────────────────────────────────────────────
-
-interface VatGroupInfo {
-  groupId: string;
-  name: string;
-  groupTrn: string;
-  memberIds: string[];
-}
-
-export async function loadVatGroupForRepresentative(
-  companyId: string,
-  tx?: LedgerTx
-): Promise<VatGroupInfo | null> {
-  if (!(await tableExists("vat_groups", tx))) return null;
-  const { rows } = await ledgerQueryable(tx).query(
-    `SELECT g.id, g.name, g.group_trn,
-            COALESCE(array_agg(m.company_id) FILTER (WHERE m.company_id IS NOT NULL), '{}') AS members
-       FROM vat_groups g LEFT JOIN vat_group_members m ON m.group_id = g.id
-      WHERE g.representative_company_id = $1
-      GROUP BY g.id`,
-    [companyId]
-  );
-  if (!rows[0]) return null;
-  const members = new Set<string>(rows[0].members ?? []);
-  members.add(companyId);
-  return {
-    groupId: rows[0].id,
-    name: rows[0].name,
-    groupTrn: rows[0].group_trn,
-    memberIds: [...members],
-  };
-}
 
 async function computeGroup(
   input: ComputeVatInput,

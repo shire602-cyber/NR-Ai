@@ -295,6 +295,187 @@ describe("VAT filing and settlement transaction boundaries", () => {
     expect(retriedPosting.status, retriedPosting.text).toBe(200);
   });
 
+  async function changeGroup(representative: Tenant, members: Tenant[]) {
+    for (const member of members) {
+      await h.sql(
+        `INSERT INTO company_users (company_id, user_id, role)
+         VALUES ($1, $2, 'owner') ON CONFLICT DO NOTHING`,
+        [member.company.id, representative.user.id]
+      );
+    }
+    const group = await representative.as.put(`${base(representative)}/vat/group`, {
+      name: "VAT Group",
+      groupTrn: "100000000000029",
+      memberCompanyIds: members.map((member) => member.company.id),
+    });
+    expect(group.status, group.text).toBe(200);
+    return group.body.id as string;
+  }
+
+  async function prepareBackdatedSale(company: Tenant, unitPrice: number) {
+    const invoice = await company.as.post(`${base(company)}/invoices`, {
+      customerName: "Late customer",
+      date: "2026-03-25",
+      placeOfSupplyEmirate: "dubai",
+      lines: [{ description: "Backdated sale", quantity: 1, unitPrice, vatRate: 5 }],
+    });
+    expect(invoice.status, invoice.text).toBe(200);
+    return () => company.as.patch(`/api/invoices/${invoice.body.id}/status`, { status: "sent" });
+  }
+
+  const groupFiling = { ftaReferenceNumber: "ET-HISTORICAL-GROUP", filedOn: "2026-04-20" };
+
+  it.each(["filed", "submitted"] as const)(
+    "keeps the original group membership after first closing the return as %s",
+    async (status) => {
+      const representative = await vatTenant();
+      const removed = await vatTenant({ trn_vat_number: "100000000000011" });
+      const added = await vatTenant({ trn_vat_number: "100000000000037" });
+      const groupId = await changeGroup(representative, [removed]);
+      const id = await readyReturn(representative);
+      const url = `/api/vat-returns/${id}/submit`;
+      const close = await representative.as.post(url, status === "filed" ? groupFiling : {});
+      expect(close.status, close.text).toBe(200);
+      expect(close.body.status).toBe(status);
+      const snapshot = close.body.reconciliationSnapshot;
+      expect(snapshot.filingVatGroup).toMatchObject({
+        groupId,
+        memberIds: [representative.company.id, removed.company.id].sort(),
+      });
+
+      await changeGroup(representative, [added]);
+      const postRemoved = await prepareBackdatedSale(removed, 1000);
+      const postAdded = await prepareBackdatedSale(added, 2000);
+      const blocked = await postRemoved();
+      expect(blocked.status, blocked.text).toBe(409);
+      expect(blocked.body.code).toBe("VAT_PERIOD_FILED");
+      const open = await postAdded();
+      expect(open.status, open.text).toBe(200);
+
+      if (status === "submitted") {
+        const filed = await representative.as.post(url, groupFiling);
+        expect(filed.status, filed.text).toBe(200);
+        expect(filed.body).toMatchObject({ status: "filed", reconciliationSnapshot: snapshot });
+        const stillBlocked = await postRemoved();
+        expect(stillBlocked.status, stillBlocked.text).toBe(409);
+        expect(stillBlocked.body.code).toBe("VAT_PERIOD_FILED");
+        const postAnother = await prepareBackdatedSale(added, 500);
+        const stillOpen = await postAnother();
+        expect(stillOpen.status, stillOpen.text).toBe(200);
+      } else {
+        const amendment = await representative.as.post(`/api/vat-returns/${id}/amend`, {
+          reason: "Include an omitted supply from the original VAT group",
+        });
+        expect(amendment.status, amendment.text).toBe(201);
+        expect(Number(amendment.body.box14PayableTax)).toBe(0);
+        expect(amendment.body.reconciliationSnapshot.filingVatGroup).toEqual(
+          snapshot.filingVatGroup
+        );
+        const reopened = await postRemoved();
+        expect(reopened.status, reopened.text).toBe(200);
+
+        const regenerated = await draftReturn(representative);
+        expect(regenerated).toBe(amendment.body.id);
+        const refiled = await representative.as.post(`/api/vat-returns/${regenerated}/submit`, {
+          ...groupFiling,
+          ftaReferenceNumber: "ET-HISTORICAL-AMENDMENT",
+        });
+        expect(refiled.status, refiled.text).toBe(200);
+        expect(Number(refiled.body.box14PayableTax)).toBe(50);
+        expect(refiled.body.reconciliationSnapshot.filingVatGroup).toEqual(snapshot.filingVatGroup);
+
+        // Some older amendments omitted vat_group_id. Their ancestor still identifies the members.
+        await h.sql(
+          `UPDATE vat_returns SET vat_group_id = NULL,
+                  reconciliation_snapshot = reconciliation_snapshot - 'filingVatGroup'
+           WHERE id = $1`,
+          [regenerated]
+        );
+        const anotherRemoved = await prepareBackdatedSale(removed, 100);
+        const lockedByAmendment = await anotherRemoved();
+        expect(lockedByAmendment.status, lockedByAmendment.text).toBe(409);
+        expect(lockedByAmendment.body.code).toBe("VAT_PERIOD_FILED");
+        const anotherAdded = await prepareBackdatedSale(added, 100);
+        const untouchedByAmendment = await anotherAdded();
+        expect(untouchedByAmendment.status, untouchedByAmendment.text).toBe(200);
+      }
+    }
+  );
+
+  it("recovers a legacy group's members from the audit chain before the next edit", async () => {
+    const representative = await vatTenant();
+    const oldMember = await vatTenant({ trn_vat_number: "100000000000011" });
+    const added = await vatTenant({ trn_vat_number: "100000000000037" });
+    const groupId = await changeGroup(representative, [oldMember]);
+    const id = await readyReturn(representative);
+    const closed = await representative.as.post(`/api/vat-returns/${id}/submit`, groupFiling);
+    expect(closed.status, closed.text).toBe(200);
+    await h.sql(
+      "UPDATE vat_returns SET reconciliation_snapshot = reconciliation_snapshot - 'filingVatGroup' WHERE id = $1",
+      [id]
+    );
+
+    // Model a membership change under the older software, after the return was recorded.
+    await h.sql("DELETE FROM vat_group_members WHERE group_id = $1 AND company_id = $2", [
+      groupId,
+      oldMember.company.id,
+    ]);
+    await h.sql("INSERT INTO vat_group_members (group_id, company_id) VALUES ($1, $2)", [
+      groupId,
+      added.company.id,
+    ]);
+    // The later event has an earlier timestamp, as can happen for transactions waiting on locks.
+    await h.sql(
+      `INSERT INTO audit_logs (company_id, user_id, action, resource_type, resource_id, details, created_at)
+       VALUES ($1, $2, 'vat.group.upsert', 'vat_group', $3, $4, now() - interval '1 day')`,
+      [
+        representative.company.id,
+        representative.user.id,
+        groupId,
+        JSON.stringify({
+          after: {
+            name: "VAT Group",
+            groupTrn: "100000000000029",
+            members: [representative.company.id, added.company.id],
+          },
+        }),
+      ]
+    );
+    const postOld = await prepareBackdatedSale(oldMember, 1000);
+    const postAdded = await prepareBackdatedSale(added, 1000);
+    const blocked = await postOld();
+    expect(blocked.status, blocked.text).toBe(409);
+    expect(blocked.body.code).toBe("VAT_PERIOD_FILED");
+    const open = await postAdded();
+    expect(open.status, open.text).toBe(200);
+    await changeGroup(representative, [added]);
+    const recovered = await returnRow(representative, id);
+    expect(recovered.reconciliationSnapshot).toEqual(closed.body.reconciliationSnapshot);
+  });
+
+  it("freezes current members for a legacy group return with no closing audit", async () => {
+    const representative = await vatTenant();
+    const oldMember = await vatTenant({ trn_vat_number: "100000000000011" });
+    const added = await vatTenant({ trn_vat_number: "100000000000037" });
+    const groupId = await changeGroup(representative, [oldMember]);
+    const id = await readyReturn(representative);
+    await h.sql("UPDATE vat_returns SET status = 'filed' WHERE id = $1", [id]);
+
+    await changeGroup(representative, [added]);
+    const recovered = await returnRow(representative, id);
+    expect(recovered.reconciliationSnapshot.filingVatGroup).toMatchObject({
+      groupId,
+      memberIds: [representative.company.id, oldMember.company.id].sort(),
+    });
+    const postOld = await prepareBackdatedSale(oldMember, 1000);
+    const postAdded = await prepareBackdatedSale(added, 1000);
+    const blocked = await postOld();
+    expect(blocked.status, blocked.text).toBe(409);
+    expect(blocked.body.code).toBe("VAT_PERIOD_FILED");
+    const open = await postAdded();
+    expect(open.status, open.text).toBe(200);
+  });
+
   it("requires a new reason when a ledger-only posting changes an approved VAT difference", async () => {
     const t = await vatTenant();
     const bank = await accountByCode(t, "1020");

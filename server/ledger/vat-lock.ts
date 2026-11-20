@@ -28,6 +28,11 @@ import { sql } from "drizzle-orm";
 import { DomainError } from "../errors";
 import { rowsOf } from "./tx";
 import type { LedgerTx } from "./types";
+import {
+  getFilingVatGroup,
+  loadVatGroupForRepresentative,
+  resolveFilingVatGroup,
+} from "./vat-group-scope";
 
 /** Journal sources whose documents the VAT engine reports, whatever their lines. */
 export const VAT_DOCUMENT_SOURCES: ReadonlySet<string> = new Set([
@@ -128,18 +133,13 @@ export async function lockVatReturnCompanies(tx: LedgerTx, companyIds: string[])
   }
 }
 
-/** Take this lock before reading or changing a representative's membership, then lock companies. */
+/** Serialize a representative's filing scope selection and membership changes before locking companies. */
 export async function lockVatGroupMembership(
   tx: LedgerTx,
-  representativeId: string,
-  mode: "shared" | "exclusive"
+  representativeId: string
 ): Promise<void> {
   const key = sql`hashtextextended('vat-group-membership:' || ${representativeId}::uuid::text, 0)`;
-  await tx.execute(
-    mode === "shared"
-      ? sql`SELECT pg_advisory_xact_lock_shared(${key})`
-      : sql`SELECT pg_advisory_xact_lock(${key})`
-  );
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${key})`);
 }
 
 /** Find the submitted or filed company or group return that overlaps the given dates. */
@@ -149,28 +149,68 @@ export async function findFiledVatPeriod(
   from: string,
   to = from
 ): Promise<FiledVatPeriod | null> {
+  const memberId = companyId.toLowerCase();
+  // Start at the relatively small group table. OFFSET 0 retains the per-representative
+  // LATERAL lookup, which can use the company/status/period index before checking member IDs.
   const res = await tx.execute(sql`
-    SELECT id, status, period_start::date::text AS ps, period_end::date::text AS pe
+    WITH own_return AS (
+      SELECT * FROM vat_returns
+       WHERE company_id = ${companyId}
+         AND status IN ('submitted', 'filed')
+         AND period_end >= ${from}::date
+         AND period_start < ${to}::date + interval '1 day'
+       ORDER BY period_end DESC LIMIT 1
+    )
+    SELECT id, status, company_id AS "companyId", amends_return_id AS "amendsReturnId",
+           vat_group_id AS "vatGroupId", reconciliation_snapshot AS "reconciliationSnapshot",
+           period_start::date::text AS ps, period_end::date::text AS pe
       FROM (
-        SELECT id, status, period_start, period_end
-          FROM vat_returns
-         WHERE company_id = ${companyId}
+        SELECT id, status, company_id, amends_return_id, vat_group_id, reconciliation_snapshot,
+               period_start, period_end
+          FROM own_return
         UNION ALL
-        SELECT r.id, r.status, r.period_start, r.period_end
-          FROM vat_group_members m
-          JOIN vat_groups g ON g.id = m.group_id
-          JOIN vat_returns r ON r.company_id = g.representative_company_id AND r.vat_group_id = g.id
-         WHERE m.company_id = ${companyId} AND g.representative_company_id <> m.company_id
-      ) AS candidate
-     WHERE status IN ('submitted', 'filed')
-       AND ${from}::date <= period_end::date
-       AND ${to}::date >= period_start::date
+        SELECT r.id, r.status, r.company_id, r.amends_return_id, r.vat_group_id,
+               r.reconciliation_snapshot, r.period_start, r.period_end
+          FROM vat_groups g
+          CROSS JOIN LATERAL (
+            SELECT * FROM vat_returns r
+             WHERE r.company_id = g.representative_company_id
+               AND (r.vat_group_id = g.id OR (r.vat_group_id IS NULL AND r.amends_return_id IS NOT NULL))
+               AND r.status IN ('submitted', 'filed')
+               AND r.period_end >= ${from}::date
+               AND r.period_start < ${to}::date + interval '1 day'
+               AND CASE
+                 WHEN jsonb_typeof(r.reconciliation_snapshot #> '{filingVatGroup,memberIds}') = 'array'
+                 THEN (r.reconciliation_snapshot #> '{filingVatGroup,memberIds}') ? ${companyId}::uuid::text
+                 ELSE true
+               END
+             OFFSET 0
+          ) r
+         WHERE NOT EXISTS (SELECT 1 FROM own_return) AND g.representative_company_id <> ${companyId}
+      ) candidate
      ORDER BY period_end DESC
-     LIMIT 1
   `);
-  const r = rowsOf<Record<string, string>>(res)[0];
-  if (!r) return null;
-  return { vatReturnId: r.id, status: r.status, periodStart: r.ps, periodEnd: r.pe };
+  const candidates = rowsOf<{
+    id: string;
+    status: string;
+    companyId: string;
+    amendsReturnId: string | null;
+    vatGroupId: string | null;
+    reconciliationSnapshot: unknown;
+    ps: string;
+    pe: string;
+  }>(res);
+  for (const r of candidates) {
+    const period = { vatReturnId: r.id, status: r.status, periodStart: r.ps, periodEnd: r.pe };
+    if (r.companyId === memberId) return period;
+    const saved = getFilingVatGroup(r.reconciliationSnapshot);
+    const group =
+      saved !== undefined
+        ? saved
+        : await resolveFilingVatGroup(tx, r, await loadVatGroupForRepresentative(r.companyId, tx));
+    if (group?.memberIds.includes(memberId)) return period;
+  }
+  return null;
 }
 
 async function touchesVatAccount(

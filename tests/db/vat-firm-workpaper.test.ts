@@ -166,6 +166,30 @@ describe("W4-E firm VAT workpaper", () => {
     expect(existing.body.map((r: { id: string }) => r.id)).toEqual([draft.body.id]);
   });
 
+  it("keeps one active return when return generation races with the workpaper", async (ctx) => {
+    ctx.skip(!h.concurrencySupported);
+    const { t, base } = await setup();
+    const returns = `/api/companies/${t.company.id}/vat-returns`;
+    const prepared = await t.as.patch(`${base}/status`, { status: "prepared" });
+    expect(prepared.status, prepared.text).toBe(200);
+    const [direct, workpaper] = await Promise.all([
+      t.as.post(`${returns}/generate`, { periodStart: "2026-07-01", periodEnd: "2026-09-30" }),
+      t.as.post(`${base}/generate-return`, {}),
+    ]);
+    expect(direct.status, direct.text).toBe(201);
+    if (workpaper.status === 200) {
+      expect(workpaper.body.vatReturn.id).toBe(direct.body.id);
+    } else {
+      expect(workpaper.status, workpaper.text).toBe(409);
+      expect(workpaper.body).toMatchObject({
+        code: "VAT_RETURN_EXISTS",
+        details: { vatReturnId: direct.body.id },
+      });
+    }
+    const existing = await t.as.get(returns);
+    expect(existing.body.map((r: { id: string }) => r.id)).toEqual([direct.body.id]);
+  });
+
   it("[R07-03] pull-from-books reads the VAT engine: out-of-scope lines produce no row, rows carry the invoice emirate", async () => {
     const { t, base } = await setup();
     const c = await t.as.post(`/api/companies/${t.company.id}/invoices`, {

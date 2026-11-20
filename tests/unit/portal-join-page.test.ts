@@ -208,8 +208,7 @@ for (const locale of ["en", "ar"] as const) {
       const alert = container.querySelector("#join-password-error");
       expect(alert?.textContent).toBe("Too common");
       expect(alert?.getAttribute("role")).toBe("alert");
-      await flush(30);
-      expect(document.activeElement?.id).toBe("join-password");
+      await vi.waitFor(() => expect(document.activeElement).toBe(byId("join-password")));
     });
 
     it("renders each invitation state with its own screen", async () => {
