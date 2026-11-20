@@ -50,6 +50,7 @@
     "check:migrations": "bash tools/check-migrations-no-secrets.sh",
     "e2e": "node tests/e2e/full-crawl.mjs",
     "e2e:customer": "node tests/e2e/customer-launch-crawl.mjs",
+    "e2e:marketing": "node tests/e2e/marketing-site-crawl.mjs",
     "e2e:customer:public": "cross-env CUSTOMER_E2E_PUBLIC_ONLY=true node tests/e2e/customer-launch-crawl.mjs",
     "e2e:arabic-runtime": "node tests/e2e/arabic-runtime-crawl.mjs",
     "e2e:arabic-public": "cross-env ARABIC_PUBLIC=true node tests/e2e/arabic-runtime-crawl.mjs",

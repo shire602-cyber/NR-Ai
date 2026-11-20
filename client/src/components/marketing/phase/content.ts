@@ -8,6 +8,10 @@ export const bankCopy: Bilingual = [
   "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
   "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
 ];
+export const bankFeedCopy: Bilingual = [
+  "Live bank feeds are coming later.",
+  "سيتوفر الربط البنكي المباشر لاحقًا.",
+];
 export const vatCopy: Bilingual = [
   "Prepare and review VAT 201 in the app, then submit it in EmaraTax.",
   "أعدّ وراجع إقرار ضريبة القيمة المضافة VAT 201 في التطبيق، ثم قدّمه عبر EmaraTax.",
@@ -160,7 +164,7 @@ const featureData = [
         "Review suggestions and resolve unmatched entries.",
         "راجع المطابقات المقترحة وعالج الحركات غير المطابقة.",
       ],
-      ["Live bank feeds are coming later.", "سيتوفر الربط البنكي المباشر لاحقًا."],
+      bankFeedCopy,
     ],
   },
   {

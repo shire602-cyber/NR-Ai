@@ -27,6 +27,8 @@ const publicLaunchFiles = [
   "client/src/components/marketing/phase/PhaseSite.tsx",
   "client/src/components/marketing/phase/content.ts",
   "client/src/components/marketing/phase/Forms.tsx",
+  "client/src/components/marketing/phase/editorial/pages.ts",
+  "client/src/components/marketing/phase/editorial/details.ts",
   "client/src/components/auth/AuthLayout.tsx",
   "client/src/pages/Register.tsx",
   "client/src/pages/Services.tsx",
