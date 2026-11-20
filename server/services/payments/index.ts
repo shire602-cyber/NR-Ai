@@ -27,7 +27,7 @@ import { createLogger } from "../../config/logger";
 import { has, resolve } from "../../platform/service-registry";
 import { postJournal } from "../../ledger";
 import { fromFils } from "../../../shared/money";
-import { PRODUCT_NAME } from "../../../shared/product-brand";
+import { marketingBrand as PRODUCT_NAME } from "../../../shared/marketing-brand";
 import { invoiceOpenFils, isIssuedStatus } from "../invoice-posting.service";
 import { buildReceiptEmail, sendEmail } from "../email.service";
 import { resolveEmailLanguage } from "../email-layout";

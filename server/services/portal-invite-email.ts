@@ -5,7 +5,7 @@
  * logs or a Referer header.
  */
 import type { Company, CustomerContact, CustomerPortalInvitation } from "../../shared/schema";
-import { PRODUCT_NAME } from "../../shared/product-brand";
+import { marketingBrand as PRODUCT_NAME } from "../../shared/marketing-brand";
 import {
   arabicGreeting,
   buildCustomerEmail,

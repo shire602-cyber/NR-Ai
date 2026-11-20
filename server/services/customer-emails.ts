@@ -12,7 +12,7 @@
  * body or footer; the attached PDF carries the tax-invoice particulars.
  */
 import type { Company, Invoice } from "../../shared/schema";
-import { PRODUCT_NAME } from "../../shared/product-brand";
+import { marketingBrand as PRODUCT_NAME } from "../../shared/marketing-brand";
 import {
   emailDate,
   emailDateBlock,

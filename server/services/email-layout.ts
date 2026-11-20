@@ -17,7 +17,7 @@
  * format-date): Latin digits, `AED 1,250.00` in English, `1,250.00 د.إ` in Arabic,
  * `16 Nov 2026` / `16 نوفمبر 2026`.
  */
-import { PRODUCT_NAME } from "../../shared/product-brand";
+import { marketingBrand as PRODUCT_NAME } from "../../shared/marketing-brand";
 import { formatDate as formatAppDate } from "../../client/src/lib/format-date";
 import { formatMoneyText } from "../../client/src/lib/format-money";
 
