@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link2, Loader2, Mail, RotateCw, Send, UserRoundX, XCircle } from "lucide-react";
-import { Alert } from "@/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
