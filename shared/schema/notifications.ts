@@ -129,8 +129,7 @@ export const reminderSettings = pgTable(
     emailTemplate: text("email_template"),
     smsTemplate: text("sms_template"),
     whatsappTemplate: text("whatsapp_template"),
-    // API defaults new rules to "contact". The column retains the legacy database default.
-    language: text("language").notNull().default("bilingual"),
+    language: text("language").notNull().default("contact"),
     attachPdf: boolean("attach_pdf").notNull().default(true),
     includePayLink: boolean("include_pay_link").notNull().default(true),
     createdAt: timestamp("created_at").defaultNow().notNull(),

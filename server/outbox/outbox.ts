@@ -21,6 +21,7 @@ import {
   type EmailOutboxStatus,
 } from "../../shared/schema";
 import { createLogger } from "../config/logger";
+import { refreshQueuedNotificationEmail } from "../services/notification-email-copy";
 import {
   EmailTransportError,
   activeProviderName,
@@ -218,15 +219,20 @@ async function attempt(row: EmailOutboxRow): Promise<OutboxResult> {
     .where(eq(emailOutboxAttachments.outboxId, row.id));
   const attempts = row.attempts + 1;
   try {
+    const refreshed = refreshQueuedNotificationEmail(row);
+    if (refreshed) {
+      await db.update(emailOutbox).set(refreshed).where(eq(emailOutbox.id, row.id));
+    }
+    const content = refreshed ?? row;
     const { providerMessageId } = await transport.send({
       outboxId: row.id,
       to: row.toAddress,
       cc: row.cc,
       replyTo: row.replyTo,
       fromName: row.fromName,
-      subject: row.subject,
-      html: row.html ?? "",
-      text: row.textBody,
+      subject: content.subject,
+      html: content.html ?? "",
+      text: content.textBody,
       attachments: attachments.map((a: typeof emailOutboxAttachments.$inferSelect) => ({
         filename: a.filename,
         contentType: a.contentType,

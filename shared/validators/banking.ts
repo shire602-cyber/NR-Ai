@@ -399,7 +399,7 @@ export const bankFeedConnectBody = z
 
 export const bankFeedCallbackBody = z
   .object({
-    provider: z.enum(BANK_FEED_PROVIDERS),
+    provider: z.enum(BANK_FEED_PROVIDERS).optional(),
     code: z.string().trim().min(1).max(4000),
     state: z.string().trim().min(16).max(200),
   })

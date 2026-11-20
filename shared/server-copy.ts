@@ -1477,14 +1477,27 @@ export function notificationCopy(
   };
 }
 
+/** Retain the stable event key for notifications already stored before the copy changed. */
+export function isBankStatementReview(eventKey: string | null | undefined): boolean {
+  return eventKey?.startsWith("bank.sync_failed:") ?? false;
+}
+
+export function normalizeNotificationCopy<
+  T extends { title: string; message: string; eventKey?: string | null },
+>(n: T): T {
+  if (!isBankStatementReview(n.eventKey)) return n;
+  return {
+    ...n,
+    ...notificationCopy("notification.bankSyncFailed.title", "notification.bankSyncFailed.message"),
+  };
+}
+
 /** Attach `copy` (stable keys + params) to a notification for API/socket responses. */
 export function withNotificationCopy<
   T extends { title: string; message: string; eventKey?: string | null },
 >(n: T): T & { copy: NotificationCopyDescriptor } {
-  const wording = n.eventKey?.startsWith("bank.sync_failed:")
-    ? notificationCopy("notification.bankSyncFailed.title", "notification.bankSyncFailed.message")
-    : n;
-  return { ...n, ...wording, copy: describeNotificationCopy(wording) };
+  const wording = normalizeNotificationCopy(n);
+  return { ...wording, copy: describeNotificationCopy(wording) };
 }
 
 /** Key + params for a stored report-delivery run error or handoff sentence, or null. */

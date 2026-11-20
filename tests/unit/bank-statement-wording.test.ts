@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { act, createElement, type PropsWithChildren } from "react";
+import { StrictMode, act, createElement, type PropsWithChildren } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { unzipSync } from "fflate";
@@ -11,11 +11,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BankFeeds from "../../client/src/pages/BankFeeds";
 import NotificationPreferences from "../../client/src/pages/NotificationPreferences";
 import { loadLocale, t, useI18n } from "../../client/src/lib/i18n";
+import * as queryApi from "../../client/src/lib/queryClient";
 import { bankStatementCopy, bankStatementTitle } from "../../shared/bank-statement-copy";
 import { withNotificationCopy } from "../../shared/server-copy";
 
 vi.mock("@/components/layout/SettingsLayout", () => ({
   SettingsLayout: ({ children }: PropsWithChildren) => children,
+}));
+vi.mock("@/hooks/useDefaultCompany", () => ({
+  useDefaultCompany: () => ({ companyId: "fixture-company", isLoading: false }),
 }));
 
 const prohibitedCopy =
@@ -43,6 +47,8 @@ describe("signed-in CSV statement wording", () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+    window.history.replaceState({}, "", "/");
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -69,6 +75,30 @@ describe("signed-in CSV statement wording", () => {
             ?.getAttribute("href")
         ).toBe("/bank-reconciliation?import=1");
       }
+    }
+  );
+
+  it.each(["en", "ar"] as const)(
+    "completes and clears an authorization return in %s",
+    async (locale) => {
+      await setLocale(locale);
+      const post = vi.spyOn(queryApi, "apiRequest").mockResolvedValue({ connections: [{}] });
+      const codeField = locale === "ar" ? "entity_id" : "code";
+      window.history.replaceState(
+        {},
+        "",
+        `/bank-feeds/callback?${codeField}=fixture-code&state=fixture-state&provider=lean`
+      );
+      await act(async () => root.render(createElement(StrictMode, null, createElement(BankFeeds))));
+      expect(post).toHaveBeenCalledExactlyOnceWith(
+        "POST",
+        "/api/companies/fixture-company/bank-connections/callback",
+        { code: "fixture-code", state: "fixture-state" },
+        undefined,
+        { queueWhenOffline: false }
+      );
+      expect(window.location.pathname + window.location.search).toBe("/bank-feeds");
+      expect(container.textContent).toContain(bankStatementCopy[locale]);
     }
   );
 
@@ -124,11 +154,19 @@ it("replaces stored banking notification text before returning it to the client"
 
 it("keeps the audit, data map and both roadmap formats free of superseded wording", () => {
   for (const file of [
+    "docs/archive/2026-06/DEVELOPMENT_STATUS.md",
     "docs/archive/root/muhasibaisource20260611-audit.md",
+    "docs/archive/teardown-evidence/competitor-briefing.md",
+    "docs/qa/2026-06-21-benchmark-audit/benchmark-run.json",
     "docs/security/data-map.md",
   ]) {
     expect(readFileSync(file, "utf8"), file).not.toMatch(prohibitedCopy);
   }
+  const benchmark = readFileSync("docs/qa/2026-06-21-benchmark-audit/benchmark-run.json", "utf8");
+  expect(benchmark).toContain("[Historical copy redacted]");
+  expect(benchmark).not.toMatch(
+    /connect invoice and bank refreshes|bank, invoice, and receipt refresh/i
+  );
   const roadmap = "docs/archive/root/Muhasib-Netmara-Audit-and-Competitive-Roadmap";
   const docx = unzipSync(readFileSync(`${roadmap}.docx`));
   const source = Buffer.from(docx["word/document.xml"])

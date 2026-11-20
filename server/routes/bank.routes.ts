@@ -7,7 +7,6 @@ import { strictBody } from "../http/strict-body";
 import { parsedBody } from "../http/parsed-body";
 import { DomainError } from "../errors";
 import { storage } from "../storage";
-import { getCapabilitySnapshot } from "../../shared/capabilities";
 import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import {
   bankFeedCallbackBody,
@@ -201,14 +200,12 @@ export function registerBankRoutes(app: Express) {
     authMiddleware,
     requireCustomer,
     asyncHandler(async (_req: Request, res: Response) => {
-      const snapshot = getCapabilitySnapshot();
       res.json({
         providers: getAvailableProviders(),
         isConfigured: isOpenBankingConfigured(),
         statuses: providerStatuses(),
         csvImport: { available: true, message: bankStatementCopy },
         redirectUris: allowedRedirectUris(),
-        capabilities: snapshot.capabilities.filter((c) => c.id.startsWith("bank_feed_")),
       });
     })
   );
@@ -253,7 +250,10 @@ export function registerBankRoutes(app: Express) {
         code: body.code,
         state: body.state,
       });
-      logger.info({ companyId, count: result.connections.length }, "Bank feed connected");
+      logger.info(
+        { companyId, count: result.connections.length },
+        "Authorization return processed"
+      );
       res.status(201).json(result);
     })
   );

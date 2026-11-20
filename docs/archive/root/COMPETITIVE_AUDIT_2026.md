@@ -259,7 +259,7 @@ This audit analyzed **40+ AI bookkeeping and accounting platforms** worldwide ac
 - **AI**: Limited AI; focuses on automation and compliance
 - **Pricing**: From $15-19/month (unlimited users)
 - **Languages**: Arabic + English
-- **What they have that Muhasib.ai doesn't**: Unlimited users on base plan, ZATCA compliance (Saudi), 24/7 support, banking integrations (Wio), RemotePass HR partnership
+- **What they have that Muhasib.ai doesn't**: Unlimited users on base plan, ZATCA compliance (Saudi), 24/7 support and a RemotePass HR partnership
 - **What Muhasib.ai has that they don't**: AI OCR scanning, AI CFO advisor, AI anomaly detection, AI auto-reconciliation, AI chat assistant, AI cash flow forecasting, WhatsApp messaging, client portal, PWA/offline, referral program, onboarding wizard
 
 #### CrossVal

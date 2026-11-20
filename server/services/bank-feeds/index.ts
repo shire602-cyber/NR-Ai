@@ -1,5 +1,5 @@
 /**
- * Bank feeds to the external boundary (W3-C: R06-14, R06-19).
+ * Financial-data adapter processing (W3-C: R06-14, R06-19).
  *
  *  - connect refuses with 503 BANK_FEED_NOT_CONFIGURED when the provider has no credentials
  *  - the OAuth state is random, stored as a SHA-256 hash, single-use, 10-minute expiry, bound to
@@ -17,7 +17,7 @@ import { db } from "../../db";
 import { DomainError } from "../../errors";
 import { storage } from "../../storage";
 import { createLogger } from "../../config/logger";
-import { bankStatementCopy, bankStatementTitle } from "../../../shared/bank-statement-copy";
+import { bankStatementCopy } from "../../../shared/bank-statement-copy";
 import { getCapability, type CapabilityStatus } from "../../../shared/capabilities";
 import { fromFils } from "../../../shared/money";
 import {
@@ -38,7 +38,7 @@ export { setBankFeedFetch } from "./http";
 export { BANK_FEED_ADAPTERS } from "./adapters";
 export type { BankFeedAdapter, FeedTokens, FeedTransaction, FeedAccount } from "./types";
 
-const log = createLogger("bank-feeds");
+const log = createLogger("financial-data-adapters");
 const STATE_TTL_MS = 10 * 60 * 1000;
 
 export function getAdapter(provider: string): BankFeedAdapter {
@@ -61,11 +61,8 @@ function assertConfigured(adapter: BankFeedAdapter): void {
 
 export interface ProviderStatus {
   id: BankFeedProviderId;
-  label: string;
   configured: boolean;
   status: CapabilityStatus;
-  message: { en: string; ar: string };
-  externalAction: { en: string; ar: string };
 }
 
 /** Honest status per provider, from shared/capabilities.ts. */
@@ -75,11 +72,8 @@ export function providerStatuses(): ProviderStatus[] {
     const configured = a.isConfigured();
     return {
       id: a.id,
-      label: bankStatementTitle.en,
       configured,
       status: configured ? cap.status : "requires_external",
-      message: bankStatementCopy,
-      externalAction: cap.externalAction,
     };
   });
 }
@@ -160,12 +154,11 @@ export function sanitizeConnection(c: BankConnection) {
 export async function completeCallback(input: {
   companyId: string;
   userId: string;
-  provider: BankFeedProviderId;
+  provider?: BankFeedProviderId;
   code: string;
   state: string;
 }): Promise<{ connections: ReturnType<typeof sanitizeConnection>[] }> {
-  const adapter = getAdapter(input.provider);
-  // Consume the state first (single use), then check configuration.
+  // The stored state binds the authorization to its adapter even when the return URL omits it.
   const [row] = await db
     .update(bankFeedOauthStates)
     .set({ usedAt: new Date() })
@@ -174,7 +167,7 @@ export async function completeCallback(input: {
         eq(bankFeedOauthStates.stateHash, hashState(input.state)),
         eq(bankFeedOauthStates.companyId, input.companyId),
         eq(bankFeedOauthStates.userId, input.userId),
-        eq(bankFeedOauthStates.provider, adapter.id),
+        input.provider ? eq(bankFeedOauthStates.provider, input.provider) : undefined,
         isNull(bankFeedOauthStates.usedAt),
         gt(bankFeedOauthStates.expiresAt, new Date())
       )
@@ -183,6 +176,7 @@ export async function completeCallback(input: {
   if (!row) {
     throw new DomainError("INVALID_OAUTH_STATE", 400, undefined, bankStatementCopy.en);
   }
+  const adapter = getAdapter(row.provider);
   assertConfigured(adapter);
   let tokens: FeedTokens;
   let accounts;
@@ -220,10 +214,7 @@ export async function completeCallback(input: {
 
 function providerFailure(adapter: BankFeedAdapter, err: unknown): DomainError {
   const status = err instanceof BankFeedProviderError ? err.status : 0;
-  log.warn(
-    { provider: adapter.id, status, err: (err as Error).message },
-    "Bank feed provider call failed"
-  );
+  log.warn({ provider: adapter.id, status }, "Financial-data adapter request failed");
   return new DomainError(
     "BANK_FEED_PROVIDER_ERROR",
     502,
@@ -364,7 +355,7 @@ export async function syncConnection(
   }
 }
 
-/** Scheduled sync: every active, auto-sync feed whose provider is configured. */
+/** Process transactions for active, opted-in authorizations with a configured adapter. */
 export async function runScheduledBankFeedSync(): Promise<{ synced: number; failed: number }> {
   const rows: BankConnection[] = await db
     .select()
@@ -389,8 +380,8 @@ export async function runScheduledBankFeedSync(): Promise<{ synced: number; fail
     } catch (err) {
       failed++;
       log.warn(
-        { connectionId: raw.id, err: (err as Error).message },
-        "Scheduled bank feed sync failed"
+        { connectionId: raw.id, code: err instanceof DomainError ? err.code : undefined },
+        "Scheduled transaction processing failed"
       );
     }
   }

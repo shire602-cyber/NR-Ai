@@ -4,6 +4,7 @@
  * failures retry with backoff and dead-letter after max attempts.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { bankStatementCopy } from "../../shared/bank-statement-copy";
 import { useHarness, type Tenant } from "./harness";
 
 const resendSend = vi.fn();
@@ -34,6 +35,75 @@ async function issued(t: Tenant) {
 }
 
 describe("W4-D email outbox", () => {
+  it("refreshes pre-upgrade notification and digest bodies on automatic and staff retries", async () => {
+    const t = await h.createTenant();
+    const { processOutbox, requeueOutboxMessage, setEmailTransportOverride } =
+      await import("../../server/outbox");
+    const { renderNotificationEmail, renderDigestItem } =
+      await import("../../server/services/notification-email-copy");
+    const { renderBilingualEmail } = await import("../../server/services/email-layout");
+    const old = {
+      title: "Bank feed sync failed",
+      message: "The bank feed (lean) could not sync: outage & retry. Reconnect it under Banking.",
+    };
+    const digestHtml = renderBilingualEmail(
+      {
+        brandName: "Fixture",
+        heading: { en: "Daily summary", ar: "الملخص اليومي" },
+        paragraphs: {
+          en: [
+            renderDigestItem(old),
+            renderDigestItem({ title: "Other update", message: "Keep this" }),
+          ],
+          ar: ["لديك إشعاران."],
+        },
+      },
+      "bilingual"
+    );
+    const [immediate] = await h.sql(
+      `INSERT INTO email_outbox (company_id, to_address, subject, text_body, html, category, status, attempts, idempotency_key)
+       VALUES ($1, 'legacy-note@example.test', $2, $3, $4, 'notification', 'retrying', 1, $5) RETURNING id`,
+      [
+        t.company.id,
+        old.title,
+        old.message,
+        renderNotificationEmail(old.title, old.message),
+        `notif:bank.sync_failed:fixture:${t.user.id}`,
+      ]
+    );
+    const [digest] = await h.sql(
+      `INSERT INTO email_outbox (company_id, to_address, subject, html, category, status)
+       VALUES ($1, 'legacy-digest@example.test', 'Daily summary', $2, 'digest', 'dead') RETURNING id`,
+      [t.company.id, digestHtml]
+    );
+    const send = vi.fn().mockResolvedValue({ providerMessageId: "fixture-message" });
+    setEmailTransportOverride({ name: "resend", send });
+    await processOutbox();
+    const retried = await requeueOutboxMessage(digest.id, t.company.id);
+    expect(retried?.status).toBe("sent");
+    const deliveries = send.mock.calls.map(([message]) => message);
+    const delivered = deliveries.find((m) => m.outboxId === immediate.id);
+    expect(delivered).toMatchObject({
+      subject: "Review your bank statement",
+      text: bankStatementCopy.en,
+    });
+    expect(delivered.html).toContain(bankStatementCopy.en);
+    const daily = deliveries.find((m) => m.outboxId === digest.id);
+    expect(daily.html).toContain(bankStatementCopy.en);
+    expect(daily.html).toContain("Other update</strong> — Keep this");
+    expect(daily.html).toContain("لديك إشعاران.");
+    expect(delivered.html + daily.html).not.toMatch(/bank feed|reconnect/i);
+    const persisted = await h.sql(`SELECT html, status FROM email_outbox WHERE id IN ($1, $2)`, [
+      immediate.id,
+      digest.id,
+    ]);
+    expect(persisted).toHaveLength(2);
+    for (const row of persisted) {
+      expect(row.status).toBe("sent");
+      expect(row.html).toContain(bankStatementCopy.en);
+    }
+  });
+
   it("[R16-08] no provider: send-email is queued as blocked_no_provider with the PDF, never reported sent", async () => {
     const t = await h.createTenant();
     const id = await issued(t);

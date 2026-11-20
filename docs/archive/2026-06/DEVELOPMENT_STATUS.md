@@ -42,8 +42,7 @@ page, sidebar EN/AR, and an E2E flow):
 Quotes · Credit Notes (auto reversing journal entries via
 `createJournalEntryWithLines`) · Purchase Orders · Cost Centers (journal-line
 allocation) · Financial Statements · Reconciliation Rules · Invoice
-Templates · Bank Import (connections, CSV/OFX statements, Lean-ready
-CSV reconciliation). Employee management lives in
+Templates · CSV statement import and reconciliation. Employee management lives in
 **Payroll** (the old duplicate module/page was deleted).
 
 Premium UI system (Geist/Instrument Serif, editorial PageHeader on ~65 pages,

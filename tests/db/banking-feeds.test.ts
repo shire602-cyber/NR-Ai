@@ -102,18 +102,14 @@ describe("W3-C bank feeds", () => {
     const status = await t.as.get(`/api/bank/providers`);
     expect(status.body.isConfigured).toBe(false);
     expect(status.body.csvImport).toEqual({ available: true, message: bankStatementCopy });
-    for (const s of status.body.statuses) {
-      expect(s).toMatchObject({
+    expect(status.body.statuses).toEqual(
+      ["lean", "tarabut", "wio"].map((id) => ({
+        id,
         configured: false,
         status: "requires_external",
-        label: bankStatementTitle.en,
-        message: bankStatementCopy,
-        externalAction: bankStatementCopy,
-      });
-    }
-    for (const c of status.body.capabilities) {
-      expect(c).toMatchObject({ label: bankStatementTitle, externalAction: bankStatementCopy });
-    }
+      }))
+    );
+    expect(status.text.match(/"csvImport"/g)).toHaveLength(1);
     const admin = await h.createTenant({ isAdmin: true });
     const integrations = await admin.as.get("/api/admin/integration-status");
     expect(integrations.status, integrations.text).toBe(200);
@@ -158,13 +154,18 @@ describe("W3-C bank feeds", () => {
     });
     expect(wrong.status).toBe(400);
     expect(wrong.body.code).toBe("INVALID_OAUTH_STATE");
+    const mismatched = await t.as.post(`/api/companies/${t.company.id}/bank-connections/callback`, {
+      provider: "wio",
+      code: ENTITY_SECRET,
+      state,
+    });
+    expect(mismatched.status).toBe(400);
 
     // Another tenant cannot redeem this tenant's state.
     const other = await h.createSecondTenant();
     const stolen = await other.as.post(
       `/api/companies/${other.company.id}/bank-connections/callback`,
       {
-        provider: "lean",
         code: ENTITY_SECRET,
         state,
       }
@@ -190,7 +191,6 @@ describe("W3-C bank feeds", () => {
     });
     const state = new URL(connect.body.authUrl).searchParams.get("state") as string;
     const cb = await t.as.post(`/api/companies/${t.company.id}/bank-connections/callback`, {
-      provider: "lean",
       code: ENTITY_SECRET,
       state,
     });
@@ -208,9 +208,11 @@ describe("W3-C bank feeds", () => {
     const status = await t.as.get("/api/bank/providers");
     expect(status.body.isConfigured).toBe(true);
     expect(status.body.csvImport).toEqual({ available: true, message: bankStatementCopy });
-    expect(status.body.statuses).toContainEqual(
-      expect.objectContaining({ id: "lean", configured: true, message: bankStatementCopy })
-    );
+    expect(status.body.statuses).toContainEqual({
+      id: "lean",
+      configured: true,
+      status: "sandbox",
+    });
 
     const raw = await h.sql<{ access_token: string }>(
       `SELECT access_token FROM bank_connections WHERE id = $1`,

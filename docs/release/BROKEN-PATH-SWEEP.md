@@ -128,8 +128,8 @@ e-mail delivery), which stay behind their configured boundaries.
 | `/bank-accounts (mobile)`                                   | trial, owner                                                | pass | pass | pass                                                 |
 | bank statement upload                                               | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
 | Bank statement upload (mobile)                                      | trial, owner                                                | pass | pass | pass                                                 |
-| Bank statement upload callback                                      | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
-| Bank statement upload callback (mobile)                             | trial, owner                                                | pass | pass | pass                                                 |
+| [Historical callback route name redacted]                                      | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
+| [Historical callback route name redacted] (mobile)                             | trial, owner                                                | pass | pass | pass                                                 |
 | `/bank-reconciliation`                                      | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
 | `/bank-reconciliation (mobile)`                             | trial, owner                                                | pass | pass | pass                                                 |
 | `/bank-reconciliation?import=1`                             | trial, owner, accountant, viewer                            | pass | pass | pass                                                 |
@@ -408,6 +408,11 @@ e-mail delivery), which stay behind their configured boundaries.
 
 STEP2 delta (2026-11-19, 246a8dd): the `/settings/zatca` rows were removed; the `no-ksa-rate` and
 `invoices` flows were re-run in en and ar and pass.
+
+Authorization return recheck (2026-11-21, PR #75). In local Chromium with a simulated processor,
+the callback returned HTTP 201 in English and Arabic RTL. The browser cleared the temporary query
+parameters and displayed the localized CSV statement screen. The check recorded zero browser
+console errors or failed API requests.
 
 ### Core flows (UI, final build)
 

@@ -16,7 +16,7 @@
  * This module adds no routes.
  */
 
-import { bankStatementCopy, bankStatementTitle } from "./bank-statement-copy";
+const adapterAction = { en: "Review adapter credentials", ar: "راجع بيانات اعتماد المهايئ" };
 
 export type CapabilityStatus = "live" | "sandbox" | "requires_external" | "disabled";
 
@@ -171,8 +171,8 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_lean",
-    label: bankStatementTitle,
-    externalAction: bankStatementCopy,
+    label: { en: "Lean adapter", ar: "مهايئ لين" },
+    externalAction: adapterAction,
     envVars: ["LEAN_APP_TOKEN", "LEAN_API_BASE_URL"],
     whenUnconfigured: "requires_external",
     detect: (env) =>
@@ -184,8 +184,8 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_tarabut",
-    label: bankStatementTitle,
-    externalAction: bankStatementCopy,
+    label: { en: "Tarabut adapter", ar: "مهايئ ترابط" },
+    externalAction: adapterAction,
     envVars: ["TARABUT_CLIENT_ID", "TARABUT_CLIENT_SECRET", "TARABUT_API_BASE_URL"],
     whenUnconfigured: "requires_external",
     detect: (env) =>
@@ -197,8 +197,8 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_wio",
-    label: bankStatementTitle,
-    externalAction: bankStatementCopy,
+    label: { en: "Wio adapter", ar: "مهايئ ويو" },
+    externalAction: adapterAction,
     envVars: ["WIO_CLIENT_ID", "WIO_CLIENT_SECRET", "WIO_API_BASE_URL"],
     whenUnconfigured: "requires_external",
     detect: (env) =>

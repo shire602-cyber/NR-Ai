@@ -17,8 +17,8 @@ import { getSuggestionsForTransaction } from "../services/auto-reconcile.service
 import { createLogger } from "../config/logger";
 import { createAndEmitNotification } from "../services/socket.service";
 import { notificationCopy } from "../../shared/server-copy";
+import { statementRecognized } from "../../shared/bank-statement-copy";
 import {
-  BANK_FORMAT_LABELS,
   importFormatLabel,
   parseBankCsvText,
   parseBankStatement,
@@ -406,7 +406,7 @@ export function registerBankStatementRoutes(app: Express) {
       res.json({
         kind: parsed.kind,
         detectedFormat: parsed.format,
-        detectedFormatLabel: BANK_FORMAT_LABELS[parsed.format],
+        detectedFormatLabel: statementRecognized.en,
         delimiter: parsed.delimiter,
         decimalSeparator: parsed.decimalSeparator,
         dateOrder: parsed.dateOrder,
