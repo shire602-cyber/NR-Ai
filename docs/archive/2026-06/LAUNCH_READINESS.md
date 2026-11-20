@@ -28,7 +28,7 @@ that runs in CI or locally, not by assertion._
 | Locked periods respected by VAT/CT/journal/AI posting                                                 | `assertPeriodNotLocked` call sites + E2E month-end flow                                                                                                                                                                        |
 | AI cannot mutate books without approval/audit                                                         | PR #52; autopilot threshold floor 0.8, draft-only AI GL queue, `ai_autopost_receipt` audit rows (`receipt-autopilot.test.ts`, 33 tests)                                                                                        |
 | Unpaid plan cannot access paid endpoints by changing frontend state                                   | `tests/unit/billing-enforcement.test.ts` — server-side 403 TIER_LOCKED with `BILLING_ENFORCEMENT=true`; gates mounted in 10+ route modules                                                                                     |
-| Provider-less bank environments show manual import only                                               | Open-banking adapter reports unconfigured; manual statement import is the fallback path                                                                                                                                        |
+| Import and reconcile bank statements from CSV                                                         | Users upload a CSV exported from their bank and review the suggested matches.                                                                                                                                                 |
 | Trust documentation                                                                                   | `docs/TRUST.md` (security, retention, backup proof, audit coverage, incident checklist)                                                                                                                                        |
 | No real-company data used                                                                             | All tests run against freshly seeded fixtures; E2E registers throwaway accounts per run                                                                                                                                        |
 
@@ -39,12 +39,10 @@ that runs in CI or locally, not by assertion._
 2. **Stripe** — keys + 8 price IDs, test a checkout, then flip
    `BILLING_ENFORCEMENT=true` **last**. Enforcement behavior is already
    tested.
-3. **Bank feed provider** — choose Tarabut / Dapi / Salt Edge / FINX,
-   paste sandbox creds; adapter + sync pipeline are ready.
-4. **Push** — `npx web-push generate-vapid-keys`, paste both keys.
-5. **Domain** — buy, point DNS at Railway, set `FRONTEND_URL` (now also
+3. **Push** — `npx web-push generate-vapid-keys`, paste both keys.
+4. **Domain** — buy, point DNS at Railway, set `FRONTEND_URL` (now also
    feeds CORS and password-reset links).
-6. **Live ASP/FTA e-invoicing provider** — when UAE accreditation lists
+5. **Live ASP/FTA e-invoicing provider** — when UAE accreditation lists
    firm up; XML generation/validation is ready and marked "not connected".
 
 ## Competitive claim discipline
@@ -55,7 +53,7 @@ and loss carryforward, PINT AE e-invoice readiness, Arabic/RTL throughout,
 firm NRA Center, WhatsApp chasing, AI close with guardrails) — verified by
 this repo's own test suite. Claims of global feature parity with Digits,
 Wafeq, Zoho Books, QuickBooks, or Xero are **not** made: those require
-third-party benchmarking, live bank feeds, and a billing track record.
+third-party benchmarking and a billing track record.
 
 ## Pilot protocol (when the owner starts real-company testing)
 

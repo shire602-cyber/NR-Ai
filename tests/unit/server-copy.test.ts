@@ -32,6 +32,7 @@ import {
   withNotificationCopy,
 } from "../../shared/server-copy";
 import { localizeNotification } from "../../client/src/lib/notification-display";
+import { BANK_STATEMENT_IMPORT_HREF } from "../../shared/app-links";
 import { notificationForEvent } from "../../server/services/notification-engine.service";
 import { buildReportDeliveryNotificationForPlan } from "../../server/services/report-delivery.service";
 
@@ -137,6 +138,38 @@ describe("server copy templates", () => {
       titleKey: null,
       messageKey: null,
     });
+  });
+
+  it("offers CSV import for a cached banking failure in both languages", () => {
+    const old = {
+      title: "Bank feed sync failed",
+      message:
+        "The bank feed (Lean) could not sync: opaque-adapter-reason. Reconnect it under Banking.",
+      actionUrl: "/bank-feeds",
+      copy: {
+        titleKey: "notification.bankSyncFailed.title",
+        titleParams: {},
+        messageKey: "notification.bankSyncFailed.message",
+        messageParams: { provider: "Lean", reason: "opaque-adapter-reason" },
+      },
+    };
+    for (const [locale, catalog] of [
+      ["en", en],
+      ["ar", ar],
+    ] as const) {
+      const expected = {
+        title: catalog["components.srv.notification.bankSyncFailed.title"],
+        message: catalog["components.srv.notification.bankSyncFailed.message"],
+        actionUrl: BANK_STATEMENT_IMPORT_HREF,
+      };
+      expect(localizeNotification(old, catalog, locale)).toEqual(expected);
+      expect(localizeNotification(withNotificationCopy(old), catalog, locale)).toEqual(expected);
+      expect(expected.message).toContain("CSV");
+      expect(expected.message).not.toMatch(/Lean|opaque-adapter-reason/);
+    }
+    const fallback = localizeNotification(old, {}, "en");
+    expect(fallback.message).toContain("CSV");
+    expect(fallback.message).not.toMatch(/Lean|opaque-adapter-reason/);
   });
 
   it("emits the same sentences the engine used to write, now with keys", async () => {

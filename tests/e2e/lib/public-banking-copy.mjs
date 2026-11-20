@@ -16,6 +16,8 @@ export const publicBankFeedPromises = [
   /(?:(?:سيتوفر|سيتاح|سيُتاح)\s+الربط البنكي|الربط البنكي[^.؟\n]{0,60}(?:لاحق|قريب|مستقبل))/u,
 ];
 
+export const standaloneBankFeedLabels = [/^Bank feeds?$/i, /^الربط البنكي$/u];
+
 export const bankingDescriptionSelectors = [
   'meta[name="description"]',
   'meta[property="og:description"]',

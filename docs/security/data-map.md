@@ -19,8 +19,8 @@ opinion and has not been reviewed by counsel or an auditor.
 
 ## Processors and sub-processors (only when configured)
 
-The application calls a third party only when its environment variables are set; the
-capability report (`shared/capabilities.ts`, `/api/integrations/status`) shows which are live.
+The capability registry (`shared/capabilities.ts`) tracks configured integrations. In the
+customer banking workflow, users upload CSV statements for import and reconciliation.
 
 | Processor                                     | Data sent                                                                       | Trigger / env                               |
 | --------------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------- |
@@ -29,7 +29,7 @@ capability report (`shared/capabilities.ts`, `/api/integrations/status`) shows w
 | AI providers (OpenAI, Anthropic)              | receipt images/text, transaction descriptions for classification and assistants | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`       |
 | Email (Resend or SMTP provider)               | recipient address, message body, attachments                                    | `RESEND_API_KEY`, `SMTP_*`                  |
 | Payments (Stripe)                             | billing contact, invoice amount, payer details                                  | `STRIPE_*`                                  |
-| Bank feeds (Lean, Tarabut, Wio)               | bank account and transaction data (inbound)                                     | provider env vars                           |
+| Optional banking adapters                    | bank account and transaction data (inbound)                                     | operator-provisioned adapter credentials   |
 | E-invoicing ASP                               | e-invoice XML (buyer/seller identifiers)                                        | `EINVOICE_ASP_*`, `ACUBE_*`, `COMPLYANCE_*` |
 | SMS / WhatsApp (Twilio, Meta)                 | phone numbers, message text                                                     | `TWILIO_*`, `WHATSAPP_*`                    |
 | Error monitoring (Sentry)                     | stack traces, request metadata                                                  | `SENTRY_DSN`                                |

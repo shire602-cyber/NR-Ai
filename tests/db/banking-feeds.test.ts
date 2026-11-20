@@ -98,17 +98,38 @@ describe("W3-C bank feeds", () => {
       expect(r.body.code).toBe("BANK_FEED_NOT_CONFIGURED");
     }
     const status = await t.as.get(`/api/bank/providers`);
+    expect(status.status).toBe(200);
     expect(status.body.isConfigured).toBe(false);
-    for (const s of status.body.statuses) {
-      expect(s).toMatchObject({ configured: false, status: "requires_external" });
-      expect(s.message.en).toBe("Not connected — requires provider contract");
-    }
+    expect(status.body.statuses).toEqual(
+      ["lean", "tarabut", "wio"].map((id) => ({
+        id,
+        configured: false,
+        status: "requires_external",
+      }))
+    );
+    expect(status.body.capabilities).toEqual(
+      ["lean", "tarabut", "wio"].map((id) => ({
+        id: `bank_feed_${id}`,
+        status: "requires_external",
+      }))
+    );
   });
 
   it("[R06-14] the redirect URI must be allow-listed and the callback state must match", async () => {
     process.env.LEAN_APP_TOKEN = "sandbox-app-token";
     process.env.BANK_FEED_REDIRECT_URIS = REDIRECT;
     const t = await tenant();
+    const providers = await t.as.get("/api/bank/providers");
+    expect(providers.status).toBe(200);
+    expect(providers.body.providers).toContain("lean");
+    expect(providers.body.redirectUris).toContain(REDIRECT);
+    expect(providers.body.statuses).toContainEqual({
+      id: "lean",
+      status: "sandbox",
+      configured: true,
+    });
+    expect(providers.body.capabilities).toContainEqual({ id: "bank_feed_lean", status: "sandbox" });
+    expect(providers.text).not.toMatch(/label|externalAction|envVars|provider contract/i);
     const evil = await t.as.post(`/api/companies/${t.company.id}/bank-connections/connect`, {
       provider: "lean",
       redirectUrl: "http://x",
@@ -256,6 +277,8 @@ describe("W3-C bank feeds", () => {
     const r = await t.as.post(`/api/bank-connections/${id}/sync`, {});
     expect(r.status).toBe(502);
     expect(r.body.code).toBe("BANK_FEED_PROVIDER_ERROR");
+    expect(r.body.message).toContain("CSV");
+    expect(r.body.message).not.toMatch(/Lean|boom|HTTP 500/i);
     await new Promise((res) => setTimeout(res, 50));
     expect(seen).toContain(id);
     if (typeof off === "function") off();
@@ -264,5 +287,10 @@ describe("W3-C bank feeds", () => {
       [id]
     );
     expect(row[0].status).toBe("error");
+    const connections = await t.as.get(`/api/companies/${t.company.id}/bank-connections`);
+    expect(connections.status).toBe(200);
+    expect(connections.body.find((c: { id: string }) => c.id === id)?.lastError).toBe(
+      r.body.message
+    );
   });
 });

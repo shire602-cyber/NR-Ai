@@ -18,6 +18,7 @@ import { DomainError } from "../../errors";
 import { storage } from "../../storage";
 import { createLogger } from "../../config/logger";
 import { getCapability, type CapabilityStatus } from "../../../shared/capabilities";
+import { BANK_STATEMENT_UPDATE_FAILURE } from "../../../shared/server-copy";
 import { fromFils } from "../../../shared/money";
 import {
   bankAccounts,
@@ -42,7 +43,14 @@ const STATE_TTL_MS = 10 * 60 * 1000;
 
 export function getAdapter(provider: string): BankFeedAdapter {
   const adapter = BANK_FEED_ADAPTERS[provider];
-  if (!adapter) throw new DomainError("BANK_FEED_UNKNOWN_PROVIDER", 400);
+  if (!adapter) {
+    throw new DomainError(
+      "BANK_FEED_UNKNOWN_PROVIDER",
+      400,
+      undefined,
+      "Upload a CSV exported from your bank to continue."
+    );
+  }
   return adapter;
 }
 
@@ -52,18 +60,15 @@ function assertConfigured(adapter: BankFeedAdapter): void {
       "BANK_FEED_NOT_CONFIGURED",
       503,
       { provider: adapter.id, capability: adapter.capability },
-      `${adapter.label} is not connected — it requires a provider contract and credentials`
+      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books."
     );
   }
 }
 
 export interface ProviderStatus {
   id: BankFeedProviderId;
-  label: string;
   configured: boolean;
   status: CapabilityStatus;
-  message: { en: string; ar: string };
-  externalAction: { en: string; ar: string };
 }
 
 /** Honest status per provider, from shared/capabilities.ts. */
@@ -73,21 +78,8 @@ export function providerStatuses(): ProviderStatus[] {
     const configured = a.isConfigured();
     return {
       id: a.id,
-      label: a.label,
       configured,
       status: configured ? cap.status : "requires_external",
-      message: configured
-        ? cap.status === "sandbox"
-          ? {
-              en: "Sandbox credentials — test data only",
-              ar: "بيانات اعتماد تجريبية — بيانات اختبار فقط",
-            }
-          : { en: "Configured", ar: "مُعد" }
-        : {
-            en: "Not connected — requires provider contract",
-            ar: "غير متصل — يتطلب عقداً مع مزود الخدمة",
-          },
-      externalAction: cap.externalAction,
     };
   });
 }
@@ -163,7 +155,11 @@ export function sanitizeConnection(c: BankConnection) {
   const { accessToken: _a, refreshToken: _r, ...rest } = c;
   void _a;
   void _r;
-  return { ...rest, hasToken: Boolean(c.accessToken) };
+  return {
+    ...rest,
+    lastError: c.lastError ? BANK_STATEMENT_UPDATE_FAILURE.message : null,
+    hasToken: Boolean(c.accessToken),
+  };
 }
 
 export async function completeCallback(input: {
@@ -194,7 +190,7 @@ export async function completeCallback(input: {
       "INVALID_OAUTH_STATE",
       400,
       undefined,
-      "The bank connection request expired or did not start here. Start again."
+      "This request expired or wasn't recognized. Upload a CSV statement to continue."
     );
   }
   assertConfigured(adapter);
@@ -206,7 +202,14 @@ export async function completeCallback(input: {
   } catch (err) {
     throw providerFailure(adapter, err);
   }
-  if (accounts.length === 0) throw new DomainError("BANK_FEED_NO_ACCOUNTS", 422);
+  if (accounts.length === 0) {
+    throw new DomainError(
+      "BANK_FEED_NO_ACCOUNTS",
+      422,
+      undefined,
+      "Choose a bank account in Bank reconciliation and upload a CSV statement."
+    );
+  }
   const out = [];
   for (const account of accounts) {
     const connection = await storage.createBankConnection({
@@ -241,7 +244,7 @@ function providerFailure(adapter: BankFeedAdapter, err: unknown): DomainError {
     "BANK_FEED_PROVIDER_ERROR",
     502,
     { provider: adapter.id, providerStatus: status },
-    `${adapter.label} did not respond as expected`
+    BANK_STATEMENT_UPDATE_FAILURE.message
   );
 }
 
@@ -270,13 +273,18 @@ export async function syncConnection(
       "BANK_FEED_ACCOUNT_NOT_LINKED",
       409,
       undefined,
-      "Link this feed to a bank account before syncing"
+      "Choose a bank account in Bank reconciliation and upload a CSV statement."
     );
   }
   const ba = await storage.getBankAccountById(connection.bankAccountId, connection.companyId);
   if (!ba) throw new DomainError("BANK_ACCOUNT_NOT_FOUND", 404);
   if (!connection.accessToken || !connection.externalAccountId) {
-    throw new DomainError("BANK_FEED_RECONNECT_REQUIRED", 409);
+    throw new DomainError(
+      "BANK_FEED_RECONNECT_REQUIRED",
+      409,
+      undefined,
+      "Upload a CSV exported from your bank to continue."
+    );
   }
   let tokens: FeedTokens = {
     accessToken: connection.accessToken,
@@ -439,6 +447,13 @@ export async function linkConnection(
     .where(and(eq(bankAccounts.id, bankAccountId), eq(bankAccounts.companyId, companyId)));
   if (!ba) throw new DomainError("BANK_ACCOUNT_NOT_FOUND", 404);
   const updated = await storage.updateBankConnection(connectionId, { bankAccountId });
-  if (!updated) throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404);
+  if (!updated) {
+    throw new DomainError(
+      "BANK_CONNECTION_NOT_FOUND",
+      404,
+      undefined,
+      "Banking record not found. Upload a CSV statement to continue."
+    );
+  }
   return updated;
 }

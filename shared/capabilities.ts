@@ -24,6 +24,7 @@ export type CapabilityId =
   | "ai"
   | "stripe_billing"
   | "invoice_payments"
+  | "bank_statement_csv"
   | "bank_feed_lean"
   | "bank_feed_tarabut"
   | "bank_feed_wio"
@@ -168,8 +169,19 @@ const DEFS: readonly CapabilityDef[] = [
     },
   },
   {
+    id: "bank_statement_csv",
+    label: { en: "CSV bank statement import", ar: "استيراد كشوف الحساب بصيغة CSV" },
+    externalAction: {
+      en: "Upload a CSV exported from your bank.",
+      ar: "ارفع كشف حساب بصيغة CSV صادرًا عن بنكك.",
+    },
+    envVars: [],
+    whenUnconfigured: "disabled",
+    detect: () => "live",
+  },
+  {
     id: "bank_feed_lean",
-    label: { en: "Bank feeds via Lean", ar: "الربط البنكي عبر Lean" },
+    label: { en: "Lean adapter", ar: "موصل Lean" },
     externalAction: {
       en: "Sign a Lean Technologies contract and obtain a production app token.",
       ar: "وقّع عقداً مع Lean Technologies واحصل على رمز تطبيق إنتاجي.",
@@ -185,7 +197,7 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_tarabut",
-    label: { en: "Bank feeds via Tarabut", ar: "الربط البنكي عبر Tarabut" },
+    label: { en: "Tarabut adapter", ar: "موصل Tarabut" },
     externalAction: {
       en: "Sign a Tarabut Gateway contract and obtain production client credentials.",
       ar: "وقّع عقداً مع Tarabut Gateway واحصل على بيانات اعتماد إنتاجية.",
@@ -201,7 +213,7 @@ const DEFS: readonly CapabilityDef[] = [
   },
   {
     id: "bank_feed_wio",
-    label: { en: "Wio Bank feed", ar: "الربط مع بنك Wio" },
+    label: { en: "Wio adapter", ar: "موصل Wio" },
     externalAction: {
       en: "Register with Wio Business open-banking and obtain production client credentials.",
       ar: "سجّل في الخدمات المصرفية المفتوحة لدى Wio Business واحصل على بيانات اعتماد إنتاجية.",

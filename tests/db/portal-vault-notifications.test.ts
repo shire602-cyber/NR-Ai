@@ -346,6 +346,54 @@ describe("W4-D notification engine", () => {
     expect(keys.filter((k) => k === "invoice.overdue").length).toBe(1);
   });
 
+  it("returns neutral CSV guidance for both a stored legacy bank failure and a new event", async () => {
+    const t = await h.createTenant();
+    const entityId = crypto.randomUUID();
+    const oldMessage =
+      "The bank feed (Lean) could not sync: old-provider-reason. Reconnect it under Banking.";
+    const [{ id: oldId }] = await h.sql<{ id: string }>(
+      `INSERT INTO notifications (user_id, company_id, type, title, message, action_url, event_key)
+       VALUES ($1, $2, 'system', 'Bank feed sync failed', $3, '/bank-feeds', $4) RETURNING id`,
+      [t.user.id, t.company.id, oldMessage, `bank.sync_failed:${crypto.randomUUID()}:2026-06-01`]
+    );
+    await emit("bank.sync_failed", {
+      companyId: t.company.id,
+      entityId,
+      provider: "tarabut",
+      reason: "new-provider-reason",
+    });
+
+    const result = await t.as.get("/api/notifications");
+    expect(result.status, result.text).toBe(200);
+    const rows = result.body.notifications.filter((n: { eventKey?: string }) =>
+      n.eventKey?.startsWith("bank.sync_failed:")
+    );
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row).toMatchObject({
+        title: "Bank transaction update failed",
+        actionUrl: "/bank-reconciliation?import=1",
+        copy: { titleParams: {}, messageParams: {} },
+      });
+      expect(row.message).toContain("CSV");
+      expect(JSON.stringify(row)).not.toMatch(/Lean|tarabut|provider-reason|\/bank-feeds/i);
+    }
+    const stored = await h.sql<{ message: string; action_url: string }>(
+      `SELECT message, action_url FROM notifications WHERE user_id = $1 AND event_key LIKE $2`,
+      [t.user.id, `bank.sync_failed:${entityId}:%`]
+    );
+    expect(stored).toEqual([
+      {
+        message:
+          "We couldn't update your bank transactions. Upload a CSV exported from your bank to continue.",
+        action_url: "/bank-reconciliation?import=1",
+      },
+    ]);
+    expect(
+      (await h.sql(`SELECT message FROM notifications WHERE id = $1`, [oldId]))[0].message
+    ).toBe(oldMessage);
+  });
+
   it("[R16-18][R13-33] per-type email choice goes through the outbox with an honest status; daily digest batches", async () => {
     const t = await h.createTenant();
     await t.as.put("/api/notification-preferences", {

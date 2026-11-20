@@ -12,6 +12,7 @@
  */
 
 import { EMAIL_NOT_SET_UP_RUN_ERROR } from "./notification-copy";
+import { BANK_STATEMENT_IMPORT_HREF } from "./app-links";
 
 export interface CopyDescriptor {
   key: string;
@@ -36,6 +37,13 @@ const T = (
   defaults?: Record<string, string>
 ): CopyTemplate => ({ key, en, prefix, ...(defaults ? { defaults } : {}) });
 
+export const BANK_STATEMENT_UPDATE_FAILURE = {
+  title: "Bank transaction update failed",
+  message:
+    "We couldn't update your bank transactions. Upload a CSV exported from your bank to continue.",
+  actionUrl: BANK_STATEMENT_IMPORT_HREF,
+} as const;
+
 /** Notification titles, most specific first. */
 export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.invoiceIssued.title", "Invoice {number} issued"),
@@ -45,7 +53,7 @@ export const NOTIFICATION_TITLE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.title", "Bill approved {label}"),
   T("notification.billPaid.title", "Bill paid {label}"),
   T("notification.payrollApproved.title", "Payroll approved"),
-  T("notification.bankSyncFailed.title", "Bank feed sync failed"),
+  T("notification.bankSyncFailed.title", BANK_STATEMENT_UPDATE_FAILURE.title),
   T("notification.deadlineDue.title", "Deadline due[ {dueDate}]"),
   T("notification.taskDue.title", "Task due[ {dueDate}]"),
   T("notification.invoiceOverdue.title", "Invoice {number} is overdue"),
@@ -85,10 +93,7 @@ export const NOTIFICATION_MESSAGE_TEMPLATES: readonly CopyTemplate[] = [
   T("notification.billApproved.message", "Bill {label} was approved for payment."),
   T("notification.billPaid.message", "Bill {label} was paid."),
   T("notification.payrollApproved.message", "Payroll for {month}/{year} was approved."),
-  T(
-    "notification.bankSyncFailed.message",
-    "The bank feed[ ({provider})] could not sync[: {reason}]. Reconnect it under Banking."
-  ),
+  T("notification.bankSyncFailed.message", BANK_STATEMENT_UPDATE_FAILURE.message),
   T("notification.deadlineDueGeneric.message", "A compliance obligation is due[ on {dueDate}]."),
   T("notification.taskDue.message", "A task is due[ on {dueDate}]."),
   T("notification.invoiceOverdue.message", "Invoice {number} for {customer} was due on {dueDate}."),
@@ -343,6 +348,23 @@ export interface NotificationCopyDescriptor {
   titleParams: Record<string, string>;
   messageKey: string | null;
   messageParams: Record<string, string>;
+}
+
+type NotificationCopySource = {
+  title: string;
+  message: string;
+  eventKey?: string | null;
+  copy?: NotificationCopyDescriptor | null;
+};
+
+/** Normalize current and historical bank failures without carrying old provider parameters. */
+export function bankStatementUpdateFailureCopy(n: NotificationCopySource) {
+  return n.eventKey?.startsWith("bank.sync_failed:") ||
+    n.copy?.titleKey === "notification.bankSyncFailed.title" ||
+    n.title === BANK_STATEMENT_UPDATE_FAILURE.title ||
+    /^bank feed sync failed$/i.test(n.title)
+    ? BANK_STATEMENT_UPDATE_FAILURE
+    : null;
 }
 
 /** Keys + params for a stored notification (old or new rows alike). */
@@ -1480,10 +1502,11 @@ export function notificationCopy(
 }
 
 /** Attach `copy` (stable keys + params) to a notification for API/socket responses. */
-export function withNotificationCopy<T extends { title: string; message: string }>(
+export function withNotificationCopy<T extends NotificationCopySource>(
   n: T
 ): T & { copy: NotificationCopyDescriptor } {
-  return { ...n, copy: describeNotificationCopy(n) };
+  const row = { ...n, ...bankStatementUpdateFailureCopy(n) };
+  return { ...row, copy: describeNotificationCopy(row) };
 }
 
 /** Key + params for a stored report-delivery run error or handoff sentence, or null. */

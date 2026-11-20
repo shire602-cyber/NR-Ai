@@ -2,7 +2,7 @@
  * W5-B backups (R19-06, R19-07, R17-08, R17-22, R19-17): full-company,
  * encrypted, permissioned snapshots with merge / replace restore.
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { useHarness, type Tenant } from "./harness";
 
@@ -170,9 +170,15 @@ describe("W5-B backups", () => {
     const jsonExport = await owner.as.get(`/api/backups/${b.id}/download`);
     expect(jsonExport.status, jsonExport.text).toBe(200);
     expect(jsonExport.body).toEqual(dl.body);
+    const expectedDigest = createHash("sha256").update(jsonExport.text).digest("base64");
+    const archivedDigest = Buffer.from(snapshot.checksum, "hex").toString("base64");
+    expect(jsonExport.headers.get("Content-Digest")).toBe(`sha-256=:${expectedDigest}:`);
+    expect(expectedDigest).not.toBe(archivedDigest);
+    expect(jsonExport.headers.get("Cache-Control")).toContain("no-transform");
     const encryptedExport = await owner.as.get(`/api/backups/${b.id}/download?format=encrypted`);
     expect(encryptedExport.status, encryptedExport.text).toBe(200);
     expect(encryptedExport.text).toMatch(/^enc:v1:/);
+    expect(encryptedExport.headers.get("Content-Digest")).toBeNull();
     expect(openSnapshot(encryptedExport.text, null).snapshot).toEqual(dl.body);
     const [archived] = await h.sql(`SELECT data_snapshot, checksum FROM backups WHERE id = $1`, [
       b.id,

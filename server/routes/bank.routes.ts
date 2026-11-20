@@ -46,10 +46,18 @@ async function assertAccess(req: Request, companyId: string): Promise<void> {
 /** Tenant-scoped connection lookup: another company's id answers 404. */
 async function ownedConnection(req: Request, id: string, companyId?: string) {
   const connection = await storage.getBankConnection(id);
-  if (!connection || (companyId && connection.companyId !== companyId))
-    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, "Bank connection not found");
-  if (!(await storage.hasCompanyAccess(userId(req), connection.companyId)))
-    throw new DomainError("BANK_CONNECTION_NOT_FOUND", 404, undefined, "Bank connection not found");
+  if (
+    !connection ||
+    (companyId && connection.companyId !== companyId) ||
+    !(await storage.hasCompanyAccess(userId(req), connection.companyId))
+  ) {
+    throw new DomainError(
+      "BANK_CONNECTION_NOT_FOUND",
+      404,
+      undefined,
+      "Banking record not found. Upload a CSV statement to continue."
+    );
+  }
   return connection;
 }
 
@@ -206,7 +214,9 @@ export function registerBankRoutes(app: Express) {
         isConfigured: isOpenBankingConfigured(),
         statuses: providerStatuses(),
         redirectUris: allowedRedirectUris(),
-        capabilities: snapshot.capabilities.filter((c) => c.id.startsWith("bank_feed_")),
+        capabilities: snapshot.capabilities
+          .filter((c) => c.id.startsWith("bank_feed_"))
+          .map(({ id, status }) => ({ id, status })),
       });
     })
   );
@@ -269,7 +279,7 @@ export function registerBankRoutes(app: Express) {
           "BANK_FEED_NOT_SUPPORTED",
           400,
           undefined,
-          "This connection is statement-only"
+          "Upload a CSV exported from your bank to import transactions."
         );
       const result = await syncConnection(connection, {
         from: req.body.fromDate,
@@ -291,7 +301,7 @@ export function registerBankRoutes(app: Express) {
         "BANK_FEED_BALANCE_UNAVAILABLE",
         503,
         undefined,
-        "Live balances need a configured bank feed; use the reconciliation statement instead"
+        "Bank balance unavailable. Upload a CSV statement to review your balance in Bank reconciliation."
       );
     })
   );

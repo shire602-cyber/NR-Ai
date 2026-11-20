@@ -2,12 +2,31 @@
  * STEP1 F6: Admin > Integrations reads real status from the server and the Google Sheets test is
  * a real, admin-only call (it was a hard-coded "Connected" badge and a button that did nothing).
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { useHarness } from "./harness";
 
 const h = useHarness();
 
 describe("STEP1 F6 admin integrations", () => {
+  it("shows Banking configured for built-in CSV import independently of adapter credentials", async () => {
+    const admin = await h.createTenant({ name: "BankingStatusAdmin", isAdmin: true });
+    const banking = async () => {
+      const response = await admin.as.get("/api/admin/integration-status");
+      expect(response.status, response.text).toBe(200);
+      return response.body.integrations.find((item: { key: string }) => item.key === "openBanking");
+    };
+    try {
+      vi.stubEnv("LEAN_APP_TOKEN", undefined);
+      const before = await banking();
+      expect(before).toMatchObject({ name: "Banking", configured: true, requiredEnv: [] });
+      expect(before.unlocks).toContain("CSV");
+      vi.stubEnv("LEAN_APP_TOKEN", "sandbox-fixture");
+      expect(await banking()).toEqual(before);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("[F6-status] an admin reads configured/not configured; a customer is refused", async () => {
     const admin = await h.createTenant({ name: "IntegrationsAdmin", isAdmin: true });
     const customer = await h.createTenant({ name: "IntegrationsCustomer" });

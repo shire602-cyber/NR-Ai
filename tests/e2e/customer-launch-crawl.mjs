@@ -29,6 +29,7 @@ import {
   bankingDescriptionSelectors,
   publicBankFeedPromises,
   publicBankingCopy,
+  standaloneBankFeedLabels,
 } from "./lib/public-banking-copy.mjs";
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5000";
@@ -393,6 +394,11 @@ async function main() {
       .find(Boolean);
     if (unsupportedClaim) {
       await fail(`public claim ${route}`, { unsupportedClaim });
+    }
+    for (const label of standaloneBankFeedLabels) {
+      if (await page.getByText(label).filter({ visible: true }).count()) {
+        await fail(`public bank label ${route}`, { label: label.source });
+      }
     }
   }
 

@@ -358,15 +358,18 @@ export function exportSnapshot(
   stored: string,
   checksum: string | null,
   encrypted: boolean
-): string {
+): { body: string; contentDigest?: string } {
   const { json, snapshot } = openSnapshot(stored, checksum);
   if (!("tables" in snapshot) || !Object.hasOwn(snapshot.tables, BANK_GL_MIGRATION_FINDINGS)) {
-    return encrypted ? stored : json;
+    return { body: encrypted ? stored : json };
   }
   delete snapshot.tables[BANK_GL_MIGRATION_FINDINGS];
-  return encrypted && isEncryptedSecret(stored)
-    ? sealSnapshot(snapshot).sealed
-    : JSON.stringify(snapshot);
+  if (encrypted && isEncryptedSecret(stored)) {
+    return { body: sealSnapshot(snapshot).sealed };
+  }
+  const body = JSON.stringify(snapshot);
+  const digest = crypto.createHash("sha256").update(body).digest("base64");
+  return { body, contentDigest: `sha-256=:${digest}:` };
 }
 
 interface LegacySnapshot {

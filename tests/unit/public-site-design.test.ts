@@ -13,6 +13,7 @@ import {
   bankingDescriptionSelectors,
   publicBankFeedPromises,
   publicBankingCopy,
+  standaloneBankFeedLabels,
 } from "../e2e/lib/public-banking-copy.mjs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -88,6 +89,13 @@ const UNSUPPORTED_CLAIMS = [
   /SOC 2 (Type II )?(certified|compliant)/i,
 ];
 
+function expectNoStandaloneBankFeedLabel() {
+  const labels = [...container.querySelectorAll("*")].map((node) => node.textContent?.trim() ?? "");
+  for (const label of standaloneBankFeedLabels) {
+    expect(labels.find((text) => label.test(text))).toBeUndefined();
+  }
+}
+
 describe("D1 public site", () => {
   it.each(["en", "ar"] as const)(
     "keeps the %s banking FAQ, product and metadata CSV-focused",
@@ -110,6 +118,7 @@ describe("D1 public site", () => {
         for (const promise of publicBankFeedPromises) {
           expect(container.textContent ?? "").not.toMatch(promise);
         }
+        expectNoStandaloneBankFeedLabel();
 
         await act(async () =>
           window.history.pushState(null, "", `/${locale}/product/bank-reconciliation`)
@@ -121,6 +130,7 @@ describe("D1 public site", () => {
         for (const promise of publicBankFeedPromises) {
           expect(container.textContent ?? "").not.toMatch(promise);
         }
+        expectNoStandaloneBankFeedLabel();
       } finally {
         window.history.replaceState(null, "", previousUrl);
       }
