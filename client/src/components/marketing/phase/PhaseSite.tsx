@@ -383,13 +383,10 @@ function Workflows({ base, locale, tr }: { base: string; locale: string; tr: Tra
 
 function Plans({ tr, immediate = false }: { tr: Translate; immediate?: boolean }) {
   const grid = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(immediate);
+  const [visible, setVisible] = useState(false);
+  const showPlans = immediate || visible || typeof IntersectionObserver === "undefined";
   useEffect(() => {
-    if (visible) return;
-    if (!("IntersectionObserver" in window)) {
-      setVisible(true);
-      return;
-    }
+    if (showPlans) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -401,13 +398,13 @@ function Plans({ tr, immediate = false }: { tr: Translate; immediate?: boolean }
     );
     if (grid.current) observer.observe(grid.current);
     return () => observer.disconnect();
-  }, [visible]);
+  }, [showPlans]);
   return (
     <div className="phase-plan-grid" ref={grid}>
       <div className="phase-plan-intro">
         <p>{tr(["14 days free. No card required.", "١٤ يومًا مجاناً. دون بطاقة مصرفية."])}</p>
       </div>
-      {(visible || immediate) && (
+      {showPlans && (
         <Suspense fallback={null}>
           <MonthlyPlans />
         </Suspense>
