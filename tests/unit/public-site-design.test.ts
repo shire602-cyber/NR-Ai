@@ -90,16 +90,18 @@ describe("D1 public site", () => {
     const h1 = container.querySelector("h1");
     expect(h1?.textContent).toBe("Accounting and VAT for UAE businesses");
     expect(document.title).toContain(h1?.textContent);
-    expect(document.head.querySelector('meta[name="description"]')?.getAttribute("content")).toContain(
-      "Send bilingual invoices"
-    );
+    expect(
+      document.head.querySelector('meta[name="description"]')?.getAttribute("content")
+    ).toContain("Send bilingual invoices");
     // Primary CTAs keep their routes.
     const register = container.querySelector('[data-testid="button-hero-start"]');
     expect(register?.getAttribute("href")).toBe("/register");
     expect(container.querySelector('[data-testid="button-hero-demo"]')?.getAttribute("href")).toBe(
       "/en/book-a-demo"
     );
-    expect(container.textContent).toContain("Prepare and review VAT 201 in the app, then submit it in EmaraTax.");
+    expect(container.textContent).toContain(
+      "Prepare and review VAT 201 in the app, then submit it in EmaraTax."
+    );
     for (const claim of UNSUPPORTED_CLAIMS) {
       expect(container.textContent ?? "", String(claim)).not.toMatch(claim);
     }
@@ -136,6 +138,44 @@ describe("D1 public site", () => {
       window.history.replaceState(null, "", previousUrl);
     }
   });
+
+  it.each([
+    [
+      "en",
+      "How do I reconcile my bank account?",
+      "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+    ],
+    [
+      "ar",
+      "كيف أطابق حسابي البنكي؟",
+      "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
+    ],
+  ])(
+    "shows only the CSV workflow on the %s bank FAQ and product page",
+    async (locale, question, copy) => {
+      const { default: PhaseSite } =
+        await import("../../client/src/components/marketing/phase/PhaseSite");
+      const previousUrl = window.location.href;
+      try {
+        window.history.replaceState(null, "", `/${locale}`);
+        await act(async () => root.render(createElement(PhaseSite)));
+        const bankFaq = [...container.querySelectorAll(".phase-faq details")].find(
+          (item) => item.querySelector("summary")?.textContent?.trim() === question
+        );
+        expect(bankFaq?.querySelector("p")?.textContent).toBe(copy);
+
+        await act(async () => {
+          window.history.pushState(null, "", `/${locale}/product/bank-reconciliation`);
+        });
+        expect(container.querySelector(".phase-lead")?.textContent).toBe(copy);
+        expect(container.querySelector(".phase-product-detail ol")?.textContent).not.toMatch(
+          /bank feeds?|coming (?:soon|later)|الربط البنكي المباشر|قريب|لاحق/i
+        );
+      } finally {
+        window.history.replaceState(null, "", previousUrl);
+      }
+    }
+  );
 
   it("[D1] auth and legal pages share the shell in Arabic", async () => {
     await setLocale("ar");

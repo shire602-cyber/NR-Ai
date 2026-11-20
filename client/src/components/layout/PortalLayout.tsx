@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -28,6 +28,8 @@ import { ApiError, apiRequest } from "@/lib/queryClient";
 import { getSelectedPortalAccount, setSelectedPortalAccount } from "@/lib/auth";
 import { useSessionActions } from "@/hooks/useSessionActions";
 import { PortalStatePage } from "@/components/portal/PortalStatePage";
+import { useActiveIntoView, useEdgeFade } from "@/components/ui/use-scroll-fade";
+import { bidiIsolate } from "@/lib/customer-link";
 import { formatMessage, useI18n, useTranslation } from "@/lib/i18n";
 
 const NAV_ITEMS = [
@@ -51,6 +53,9 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
   const { setLocale } = useI18n();
   const queryClient = useQueryClient();
   const { signOut } = useSessionActions();
+  const mobileNav = useRef<HTMLElement>(null);
+  const mobileNavFade = useEdgeFade(mobileNav);
+  useActiveIntoView(mobileNav);
 
   const { data: company, error: companyError } = useQuery({
     queryKey: ["portal-company"],
@@ -88,7 +93,11 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
     t[NAV_ITEMS.find((n) => location.startsWith(n.href))?.labelKey ?? "shell.portalFallbackTitle"];
   const companyName = company?.name ?? t["shell.myCompany"];
   // The browser tab, history and screen readers name the page ("Invoices · Al Noor Trading").
-  const pageTitle = company?.name ? `${title} · ${company.name}` : title;
+  const pageTitle = company?.name
+    ? `${title} · ${locale === "ar" ? bidiIsolate(company.name) : company.name}`
+    : title;
+  const customerName =
+    (locale === "ar" ? company?.customer?.nameAr : null) || company?.customer?.name;
   useEffect(() => {
     if (!pageTitle) return;
     const before = document.title;
@@ -110,7 +119,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="flex h-screen w-full bg-background">
+    <div className="flex h-screen w-full bg-background supports-[height:100dvh]:h-dvh">
       {/* Sidebar (desktop) */}
       <aside className="hidden w-60 flex-shrink-0 flex-col border-e border-border bg-sidebar md:flex">
         {/* Company header */}
@@ -118,7 +127,12 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3">
             {companyMark}
             <div className="min-w-0">
-              <p className="truncate text-small font-semibold text-foreground" dir="auto">
+              <p
+                className="truncate text-small font-semibold text-foreground"
+                dir="auto"
+                translate={company?.name ? "no" : undefined}
+                title={company?.name}
+              >
                 {companyName}
               </p>
               <p className="text-caption text-muted-foreground">{t["portal.doc.clientPortal"]}</p>
@@ -144,9 +158,10 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                 ].join(" ")}
               >
                 <Icon
-                  className={["h-4 w-4", active ? "text-accent" : "text-muted-foreground"].join(
-                    " "
-                  )}
+                  className={[
+                    "h-4 w-4 shrink-0",
+                    active ? "text-accent" : "text-muted-foreground",
+                  ].join(" ")}
                   aria-hidden
                 />
                 {label}
@@ -164,7 +179,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             onClick={handleLogout}
             data-testid="portal-sign-out-side"
           >
-            <LogOut className="w-4 h-4 me-2 rtl:-scale-x-100" aria-hidden />
+            <LogOut className="me-2 h-4 w-4" aria-hidden />
             {t["portal.doc.signOut"]}
           </Button>
         </div>
@@ -178,7 +193,12 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             <div className="md:hidden">{companyMark}</div>
             {/* Not a heading: each page's PageHeader owns the single h1. */}
             <p className="truncate text-body font-semibold text-foreground">
-              <span className="block truncate md:hidden" dir="auto">
+              <span
+                className="block truncate md:hidden"
+                dir="auto"
+                translate={company?.name ? "no" : undefined}
+                title={company?.name}
+              >
                 {companyName}
               </span>
               <span className="hidden md:inline">{title}</span>
@@ -188,7 +208,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
             <span className="hidden max-w-[280px] truncate text-caption text-muted-foreground sm:inline">
               {company?.firmName ? (
                 <>
-                  <span dir="auto">{company.firmName}</span> · {t["portal.doc.clientPortal"]}
+                  <bdi translate="no">{company.firmName}</bdi> · {t["portal.doc.clientPortal"]}
                 </>
               ) : (
                 t["portal.doc.clientPortal"]
@@ -200,25 +220,35 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="max-w-[160px] gap-1.5"
+                    className="max-w-[clamp(6rem,32vw,10rem)] gap-1.5"
                     aria-label={t["portal.switcher.label"]}
                     data-testid="portal-supplier-switcher"
                   >
-                    <span className="truncate" dir="auto">
+                    <span
+                      className="min-w-0 truncate"
+                      dir="auto"
+                      translate="no"
+                      title={current?.company.name}
+                    >
                       {current?.company.name}
                     </span>
                     <ChevronsUpDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-[220px]">
+                <DropdownMenuContent align="end" className="w-60 max-w-[calc(100vw-2rem)]">
                   <DropdownMenuLabel>{t["portal.switcher.title"]}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   {accounts.map((a) => (
                     <DropdownMenuItem key={a.id} onSelect={() => switchSupplier(a.id)}>
-                      <span className="flex-1 truncate" dir="auto">
+                      <span
+                        className="min-w-0 flex-1 truncate"
+                        dir="auto"
+                        translate="no"
+                        title={a.company.name}
+                      >
                         {a.company.name}
                       </span>
-                      {a.id === current?.id && <Check className="ms-2 h-4 w-4" aria-hidden />}
+                      {a.id === current?.id && <Check className="h-4 w-4" aria-hidden />}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -236,29 +266,32 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                   <UserRound aria-hidden />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[200px]">
-                {company?.customer?.name && (
+              <DropdownMenuContent align="end" className="w-56 max-w-[calc(100vw-2rem)]">
+                {customerName && (
                   <>
-                    <DropdownMenuLabel className="truncate font-medium" dir="auto">
-                      {locale === "ar" && company.customer.nameAr
-                        ? company.customer.nameAr
-                        : company.customer.name}
+                    <DropdownMenuLabel
+                      className="truncate font-medium"
+                      dir="auto"
+                      translate="no"
+                      title={customerName}
+                    >
+                      {customerName}
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
                   </>
                 )}
                 <DropdownMenuItem onSelect={() => navigate("/client-portal/account")}>
-                  <UserRound className="h-4 w-4 me-2" aria-hidden />
+                  <UserRound className="h-4 w-4" aria-hidden />
                   {t["portal.account.nav"]}
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setLocale(locale === "en" ? "ar" : "en")}>
-                  <Languages className="h-4 w-4 me-2" aria-hidden />
+                  <Languages className="h-4 w-4" aria-hidden />
                   <span lang={locale === "en" ? "ar" : "en"}>
                     {locale === "en" ? "العربية" : "English"}
                   </span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={handleLogout} data-testid="portal-sign-out">
-                  <LogOut className="h-4 w-4 me-2 rtl:-scale-x-100" aria-hidden />
+                  <LogOut className="h-4 w-4" aria-hidden />
                   {t["portal.doc.signOut"]}
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -268,8 +301,10 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
 
         {/* Section switcher (mobile): one scrollable row of pills, 44px touch targets. */}
         <nav
-          className="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-card px-3 py-1.5 [scrollbar-width:none] md:hidden"
+          ref={mobileNav}
+          className="flex min-w-0 shrink-0 snap-x snap-proximity gap-1 overflow-x-auto border-b border-border bg-card px-3 py-1.5 [scrollbar-width:none] md:hidden"
           aria-label={t["portal.doc.clientPortal"]}
+          style={mobileNavFade}
         >
           {NAV_ITEMS.map(({ labelKey, href, icon: Icon }) => {
             const active = location === href || location.startsWith(href + "/");
@@ -279,7 +314,7 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                 href={href}
                 aria-current={active ? "page" : undefined}
                 className={[
-                  "flex h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-small font-medium",
+                  "flex h-11 shrink-0 snap-start items-center gap-2 whitespace-nowrap rounded-md px-3 text-small font-medium",
                   active ? "bg-muted text-foreground" : "text-muted-foreground",
                 ].join(" ")}
               >
@@ -299,7 +334,9 @@ export function PortalLayout({ children }: { children: React.ReactNode }) {
                   tone="danger"
                   title={t["portal.states.removedTitle"]}
                   body={formatMessage(t["portal.states.removedBody"], {
-                    supplier: current?.company.name ?? t["portal.join.theSupplier"],
+                    supplier: current
+                      ? bidiIsolate(current.company.name)
+                      : t["portal.join.theSupplier"],
                   })}
                   actions={
                     <>

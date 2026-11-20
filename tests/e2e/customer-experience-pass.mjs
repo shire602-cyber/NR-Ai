@@ -39,7 +39,7 @@ const copy = {
     vat: "Prepare and review your VAT 201 here, then submit your return in EmaraTax.",
   },
   ar: {
-    bank: "ارفع ملف CSV صدّرته من مصرفك، ثم راجع المطابقات المقترحة وطابق المعاملات مع دفاترك",
+    bank: "ارفع كشف حسابك البنكي بصيغة CSV، وراجع المطابقات المقترحة، ثم طابقها مع دفاترك",
     csvRequired: "اختر ملف CSV صدّرته من مصرفك.",
     vat: "أعدّ إقرار ضريبة القيمة المضافة 201 وراجعه هنا، ثم قدّمه عبر إمارات تاكس.",
   },
@@ -448,6 +448,17 @@ async function run(browser, lang, device) {
     await screen("/bank-reconciliation", "bank", async () => {
       await page.getByText(copy[lang].bank, { exact: true }).first().waitFor();
       await bankFlow(page, lang, name);
+    });
+    await screen("/bank-feeds", "bank-csv-fallback", async () => {
+      await page.getByText(copy[lang].bank, { exact: true }).waitFor();
+      assert.equal(
+        await page.getByTestId("button-feeds-import-statement").getAttribute("href"),
+        "/bank-reconciliation?import=1"
+      );
+      assert.doesNotMatch(
+        await page.locator("main").innerText(),
+        /bank feeds?|coming (?:soon|later)|الربط البنكي|قريب|لاحق/i
+      );
     });
     await screen("/vat-filing", "vat-201", async () => {
       await page.getByText(copy[lang].vat, { exact: true }).waitFor();

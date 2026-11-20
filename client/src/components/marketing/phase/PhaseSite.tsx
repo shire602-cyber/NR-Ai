@@ -447,10 +447,7 @@ const homeLead = [
 const faqs: readonly [Bilingual, Bilingual][] = [
   [
     ["How do I reconcile my bank account?", "كيف أطابق حسابي البنكي؟"],
-    [
-      `${bankCopy[0]}. Live bank feeds are coming later.`,
-      `${bankCopy[1]}. سيتوفر الربط البنكي المباشر لاحقًا.`,
-    ],
+    bankCopy,
   ],
   [["How do I file my VAT return?", "كيف أقدّم إقرار ضريبة القيمة المضافة؟"], vatCopy],
   [

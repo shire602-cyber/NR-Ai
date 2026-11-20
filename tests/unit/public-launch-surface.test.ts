@@ -73,6 +73,7 @@ const bannedLaunchClaims = [
   /Securely link your.*bank account/i,
   /via encrypted feeds/i,
   /UAE bank feeds/i,
+  /الربط (?:البنكي|المصرفي) المباشر/,
   /Photo, email forward, or bank feed/i,
   /sync a bank line/i,
   /compliant with FTA/i,
@@ -136,7 +137,7 @@ describe("Public SaaS launch surface", () => {
   it("does not reintroduce unsupported public compliance or security claims", () => {
     for (const file of publicLaunchFiles) {
       const source = readRepoFile(file);
-      for (const bannedClaim of bannedLaunchClaims) {
+      for (const bannedClaim of [...bannedLaunchClaims, /\bbank\s+feeds?\b/i]) {
         expect(source, `${file} contains ${bannedClaim}`).not.toMatch(bannedClaim);
       }
     }
@@ -310,7 +311,7 @@ describe("Public SaaS launch surface", () => {
     for (const expectedDemoSignal of [
       "Sample company workspace",
       "Pearl Trading LLC",
-      "CSV statement import, no live feed needed",
+      "Bank statement imported by CSV",
       "Export VAT 201 workbook",
     ]) {
       expect(demoSource).toContain(expectedDemoSignal);

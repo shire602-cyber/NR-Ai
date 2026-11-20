@@ -50,9 +50,7 @@ shows these checks green.
   monitoring (Sentry not wired), no pilot customers.
 - **Billing not deployed** (Stripe pending); tier gates intentionally fail
   open (`BILLING_ENFORCEMENT` flag).
-- **Bank feeds are statement-import only** until an open-banking provider
-  credential exists; the connect/sync API is built and tested but not
-  exercised against a live provider.
+- Upload a CSV exported from your bank, review suggested matches, and reconcile against your books.
 - **E-invoicing (UAE e-billing mandate) not implemented** — see
   `docs/EINVOICING_PLAN.md`.
 - **Email delivery unconfigured** — flows that send mail are built but

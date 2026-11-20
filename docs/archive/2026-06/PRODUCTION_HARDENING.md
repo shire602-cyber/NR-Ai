@@ -112,7 +112,7 @@
   registered street address before GA.
 - [ ] **L2 Owner inputs (env, not code)** — see LAUNCH_READINESS.md §"What remains":
   email (Resend/SMTP), Stripe + 8 price IDs (flip `BILLING_ENFORCEMENT=true`
-  LAST), bank-feed sandbox creds, web-push VAPID keys, domain + `FRONTEND_URL`.
+  LAST), web-push VAPID keys, domain + `FRONTEND_URL`.
 - [ ] **L3 Pilot protocol** — parallel VAT run for one period, week-1 daily backup
   drills (see BACKUP_RESTORE_DRILL.md), manual review of first 20 receipts before
   enabling autopilot. Owner-run with a pilot company.

@@ -364,7 +364,7 @@ ecosystem scale and avoids fighting Digits on pure AI-native ledger automation.
 8. Encrypt every credential-bearing DB column, not only bank connections.
 9. Implement UAE e-invoicing/PINT AE validation and ASP adapter.
 10. Add or integrate direct EmaraTax VAT filing if the goal is to beat Zoho in UAE compliance.
-11. Turn live bank feeds from "prepared" into working provider integrations.
+11. Verify CSV statement import and reconciliation against representative bank exports.
 12. Run full E2E locally/CI and keep the route crawl passing.
 13. Get third-party security review, then SOC 2/ISO roadmap if selling to firms.
 14. Get accountant pilot customers and measure time saved versus Wafeq/Zoho/manual workflows.

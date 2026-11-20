@@ -81,13 +81,12 @@ export function registerIntegrationStatusRoutes(app: Express) {
         },
         {
           key: "openBanking",
-          name: "Live bank feeds",
+          name: "Bank connection diagnostics",
           configured: isOpenBankingConfigured(),
-          detail: null,
-          requiredEnv: [
-            "Provider credentials per docs/EXTERNAL_DEPENDENCIES.md (Tarabut / Dapi / Salt Edge candidates)",
-          ],
-          unlocks: "Automatic bank transaction sync (CSV/OFX import works today)",
+          detail:
+            "Upload a CSV exported from your bank, review suggested matches, and reconcile against your books",
+          requiredEnv: [],
+          unlocks: "Configured bank connections",
         },
         {
           key: "push",

@@ -39,12 +39,10 @@ that runs in CI or locally, not by assertion._
 2. **Stripe** — keys + 8 price IDs, test a checkout, then flip
    `BILLING_ENFORCEMENT=true` **last**. Enforcement behavior is already
    tested.
-3. **Bank feed provider** — choose Tarabut / Dapi / Salt Edge / FINX,
-   paste sandbox creds; adapter + sync pipeline are ready.
-4. **Push** — `npx web-push generate-vapid-keys`, paste both keys.
-5. **Domain** — buy, point DNS at Railway, set `FRONTEND_URL` (now also
+3. **Push** — `npx web-push generate-vapid-keys`, paste both keys.
+4. **Domain** — buy, point DNS at Railway, set `FRONTEND_URL` (now also
    feeds CORS and password-reset links).
-6. **Live ASP/FTA e-invoicing provider** — when UAE accreditation lists
+5. **Live ASP/FTA e-invoicing provider** — when UAE accreditation lists
    firm up; XML generation/validation is ready and marked "not connected".
 
 ## Competitive claim discipline
@@ -55,7 +53,7 @@ and loss carryforward, PINT AE e-invoice readiness, Arabic/RTL throughout,
 firm NRA Center, WhatsApp chasing, AI close with guardrails) — verified by
 this repo's own test suite. Claims of global feature parity with Digits,
 Wafeq, Zoho Books, QuickBooks, or Xero are **not** made: those require
-third-party benchmarking, live bank feeds, and a billing track record.
+third-party benchmarking and a billing track record.
 
 ## Pilot protocol (when the owner starts real-company testing)
 
